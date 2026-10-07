@@ -2,10 +2,9 @@
 // leaf count and peaks for every EncryptedStore as the chain. A record that drifted serves proofs
 // the connector rejects against the on-chain peaks, so a green run also proves the record.
 
-import { createFinalizedRpc } from '@fhevm/solana-zama-host';
-import { createHash } from "node:crypto";
+import { createFinalizedRpc, ENCRYPTED_STORE_DISCRIMINATOR } from '@fhevm/solana-zama-host';
 
-import { type Base58EncodedBytes, getAddressDecoder, getBase58Decoder } from "@solana/kit";
+import { type Base58EncodedBytes, type ReadonlyUint8Array, getAddressDecoder, getBase16Decoder, getBase58Decoder } from "@solana/kit";
 
 import { run } from "../utils/process";
 import { until } from "../utils/until";
@@ -17,11 +16,7 @@ const RECORD_CATCH_UP_TIMEOUT_MS = 60_000;
 
 export type StoreCursor = { readonly leafCount: bigint; readonly peaks: readonly string[] };
 
-/** Anchor's account discriminator: `sha256("account:EncryptedStore")[..8]`. */
-const encryptedStoreDiscriminator = (): Uint8Array =>
-  createHash("sha256").update("account:EncryptedStore").digest().subarray(0, 8);
-
-const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
+const hex = (bytes: ReadonlyUint8Array): string => getBase16Decoder().decode(bytes);
 
 /**
  * Compares both directions. A store on chain without leaves may be absent from the record, which
@@ -70,7 +65,7 @@ export const assertMerkleRecordMatchesChain = async (input: {
   const addressDecoder = getAddressDecoder();
   const program = addressDecoder.decode(Buffer.from(input.aclProgram.slice(2), "hex"));
   const psql = [...input.merkleDbPsql, "-tAc"];
-  const discriminator = getBase58Decoder().decode(encryptedStoreDiscriminator()) as Base58EncodedBytes;
+  const discriminator = getBase58Decoder().decode(ENCRYPTED_STORE_DISCRIMINATOR) as Base58EncodedBytes;
 
   const compared = await until(
     async () => {

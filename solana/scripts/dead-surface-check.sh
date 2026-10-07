@@ -242,9 +242,6 @@ HAND_DERIVATION_ROOTS=(
 # deriving a PDA, spelling a seed or building an Anchor discriminator. Over, under, zero and missing files fail. The script checks
 # counts; review rejects new entries. Keyed by path so unrelated edits do not invalidate an entry.
 HAND_DERIVATIONS_ALLOWED=(
-  "sdk/js-sdk/src/solana/encryptedStore.ts|1|PR 2 (SDK split): generated EncryptedStore and UserDecryptionDelegation decoders"
-  "sdk/js-sdk/src/solana/actions/userDecryptionDelegation.ts|1|PR 2 (SDK split): generated EncryptedStore and UserDecryptionDelegation decoders"
-  "test-suite/fhevm/src/solana/merkle-record.ts|1|PR 2 (SDK split): generated EncryptedStore and UserDecryptionDelegation decoders"
   "solana/deploy/src/wipe.ts|1|Elias decision: wipe.ts admin-sweep"
   "solana/deploy/src/bootstrap.ts|2|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
 )

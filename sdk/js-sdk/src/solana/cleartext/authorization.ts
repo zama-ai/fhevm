@@ -13,7 +13,7 @@ import {
   type MaybeEncodedAccount,
   type ProgramDerivedAddress,
 } from '@solana/kit';
-import { findEncryptedStorePda, findInvalidationPda } from '@fhevm/solana-zama-host';
+import { findDelegationRecordPda, findEncryptedStorePda, findInvalidationPda } from '@fhevm/solana-zama-host';
 import { getSysvarClockDecoder, SYSVAR_CLOCK_ADDRESS } from '@solana/sysvars';
 import type { SolanaPermitFields } from '../permit/types.js';
 import type { SolanaUserDecryptHandleEntry } from '../userDecrypt/index.js';
@@ -30,7 +30,6 @@ import {
   decodeSolanaUserDecryptionDelegation,
   isSolanaUserDecryptionDelegationLiveAt,
   SOLANA_WILDCARD_APP,
-  solanaUserDecryptionDelegationPda,
   type SolanaDelegationApplication,
 } from '../actions/userDecryptionDelegation.js';
 import { mmrMountainHeight, verifyHistoricalAccessProof, verifyPublicDecryptProof } from './mmr.js';
@@ -160,7 +159,7 @@ async function delegationRows(
   programAddress: Address,
 ): Promise<readonly [DelegationRow, DelegationRow]> {
   const row = async ({ program, scope }: SolanaDelegationApplication): Promise<DelegationRow> => ({
-    pda: await solanaUserDecryptionDelegationPda({ delegator, delegate, program, scope }, programAddress),
+    pda: await findDelegationRecordPda({ delegator, delegate, program, scope }, { programAddress }),
     program,
     scope,
   });

@@ -12,7 +12,7 @@ import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareT
 
 import { type Address, type Instruction, type Signature, type TransactionSigner } from "@solana/kit";
 
-import { solanaEncryptedStoreAddress, type SolanaDelegationApplication } from "@fhevm/sdk/solana";
+import { type SolanaDelegationApplication } from "@fhevm/sdk/solana";
 
 import { getExtendInstructionAsync, getInitializeInstructionAsync as getInitializeChainInstructionAsync } from "./internal/generated/depChain/instructions/index.js";
 import { findChainAuthorityPda, findChainPda } from "./internal/generated/depChain/pdas/index.js";
@@ -23,7 +23,7 @@ import {
 } from "./internal/generated/encryptedCounter/instructions/index.js";
 import { findCounterAuthorityPda, findCounterPda } from "./internal/generated/encryptedCounter/pdas/index.js";
 import { ENCRYPTED_COUNTER_PROGRAM_ADDRESS } from "./internal/generated/encryptedCounter/programAddress.js";
-import { ZAMA_HOST_PROGRAM_ADDRESS, findEventAuthorityPda as findZamaEventAuthorityPda } from "@fhevm/solana-zama-host";
+import { ZAMA_HOST_PROGRAM_ADDRESS, findEncryptedStorePda, findEventAuthorityPda as findZamaEventAuthorityPda } from "@fhevm/solana-zama-host";
 import { currentHandle } from "./fhe-vertical";
 import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
 
@@ -64,7 +64,7 @@ const specimenValue = async (
   // The specimen's application is `(program, scope = its state PDA)`; the value hangs off the
   // authority PDA under that scope.
   application: { program, scope: state },
-  encryptedStore: await solanaEncryptedStoreAddress(ZAMA_HOST_PROGRAM_ADDRESS, { program, authority, scope: state }),
+  encryptedStore: (await findEncryptedStorePda({ program, authority, scope: state }))[0],
 });
 
 /** `owner`'s count under the encrypted-counter specimen. */

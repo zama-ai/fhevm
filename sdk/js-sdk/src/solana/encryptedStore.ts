@@ -1,77 +1,14 @@
-import {
-  fetchEncodedAccount,
-  fixDecoderSize,
-  getAddressDecoder,
-  getArrayDecoder,
-  getBytesDecoder,
-  getStructDecoder,
-  getU32Decoder,
-  getU64Decoder,
-  getU8Decoder,
-  type Address,
-  type ReadonlyUint8Array,
-  type Rpc,
-  type SolanaRpcApi,
-} from '@solana/kit';
+import { fetchEncodedAccount, type Address, type ReadonlyUint8Array, type Rpc, type SolanaRpcApi } from '@solana/kit';
 
-import { findEncryptedStorePda, type EncryptedStoreSeeds } from '@fhevm/solana-zama-host';
+import { ENCRYPTED_STORE_DISCRIMINATOR, getEncryptedStoreDecoder, type EncryptedStore } from '@fhevm/solana-zama-host';
 
 /** The RPC shape this module reads through — `@solana/kit`'s standard API surface. */
 export type SolanaRpc = Rpc<SolanaRpcApi>;
 
-/** The three fields that, with the host program, name one encrypted store. */
-export type SolanaEncryptedStoreSeeds = Readonly<EncryptedStoreSeeds>;
+/** The decoded account, exactly as the generated `EncryptedStore` decoder reads it. */
+export type SolanaEncryptedStore = Readonly<EncryptedStore>;
 
-/**
- * The canonical address of an encrypted store: the same
- * `find_program_address([seed, program, authority, scope], host_program)` the host program
- * and the Connector run. Matches `zama_solana_acl::encrypted_store_seeds`.
- *
- * @param hostProgramId - The zama-host program id.
- * @param seeds - The three identity fields of the state.
- */
-export async function solanaEncryptedStoreAddress(
-  hostProgramId: Address,
-  seeds: SolanaEncryptedStoreSeeds,
-): Promise<Address> {
-  const [address] = await findEncryptedStorePda(seeds, { programAddress: hostProgramId });
-  return address;
-}
-
-/** The decoded account: identity fields as base58 addresses, value state as bytes. */
-export interface SolanaEncryptedStore {
-  readonly program: Address;
-  readonly authority: Address;
-  readonly scope: Address;
-  readonly slots: ReadonlyArray<{ readonly key: Uint8Array; readonly handle: Uint8Array }>;
-  readonly leafCount: bigint;
-  readonly peaks: readonly Uint8Array[];
-  readonly bump: number;
-}
-
-const encryptedStoreBodyDecoder = getStructDecoder([
-  ['program', fixDecoderSize(getBytesDecoder(), 32)],
-  ['authority', fixDecoderSize(getBytesDecoder(), 32)],
-  ['scope', fixDecoderSize(getBytesDecoder(), 32)],
-  [
-    'slots',
-    getArrayDecoder(
-      getStructDecoder([
-        ['key', fixDecoderSize(getBytesDecoder(), 32)],
-        ['handle', fixDecoderSize(getBytesDecoder(), 32)],
-      ]),
-      { size: getU32Decoder() },
-    ),
-  ],
-  ['leafCount', getU64Decoder()],
-  ['peaks', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 32), { size: getU32Decoder() })],
-  ['bump', getU8Decoder()],
-]);
-
-const DISCRIMINATOR_SIZE = 8;
 const VECTOR_ELEMENT_SIZE = 32;
-/** `sha256("account:EncryptedStore")[..8]` — the crate's `encrypted_store_discriminator()`. */
-const ENCRYPTED_STORE_DISCRIMINATOR = new Uint8Array([161, 143, 137, 73, 233, 30, 46, 118]);
 
 /** Whether `data` starts with the `EncryptedStore` discriminator. */
 export function isSolanaEncryptedStoreData(data: ReadonlyUint8Array): boolean {
@@ -83,39 +20,29 @@ export function isSolanaEncryptedStoreData(data: ReadonlyUint8Array): boolean {
  *
  * @param data - The account data exactly as the RPC returned it.
  * @param accountName - How to name the account in an error; the fetch wrapper passes its address.
- * @throws If the bytes do not decode as the assumed layout, or decode into an impossible MMR.
+ * @throws If the bytes do not decode as the generated layout, or decode into an impossible MMR.
  */
-export function decodeSolanaEncryptedStore(data: Uint8Array, accountName: string): SolanaEncryptedStore {
+export function decodeSolanaEncryptedStore(data: ReadonlyUint8Array, accountName: string): SolanaEncryptedStore {
   if (!isSolanaEncryptedStoreData(data)) {
     throw new Error(`account ${accountName} does not carry the EncryptedStore discriminator`);
   }
-  const body = data.slice(DISCRIMINATOR_SIZE);
-  const [decoded, offset] = encryptedStoreBodyDecoder.read(body, 0);
-  const trailingCapacity = body.length - offset;
+  const [store, offset] = getEncryptedStoreDecoder().read(data, 0);
+  // The account keeps spare capacity after the borsh body, in whole 32-byte vector elements.
+  const trailingCapacity = data.length - offset;
   if (
     trailingCapacity < 0 ||
     trailingCapacity % VECTOR_ELEMENT_SIZE !== 0 ||
-    decoded.peaks.length !== popcount(decoded.leafCount) ||
-    decoded.slots.length > 32 ||
-    new Set(decoded.slots.map((slot) => Array.from(slot.key).join(','))).size !== decoded.slots.length
+    store.peaks.length !== popcount(store.leafCount) ||
+    store.slots.length > 32 ||
+    new Set(store.slots.map((slot) => Array.from(slot.key).join(','))).size !== store.slots.length
   ) {
     throw new Error(
-      `EncryptedStore account ${accountName}: decoded ${decoded.peaks.length} MMR peaks for leaf count ` +
-        `${decoded.leafCount} and consumed ${offset} of ${body.length} body bytes (after the ` +
-        `${DISCRIMINATOR_SIZE}-byte discriminator) — the on-chain layout has drifted from this decoder. ` +
-        `Re-check the crate's EncryptedStore struct and update this module in lockstep.`,
+      `EncryptedStore account ${accountName}: decoded ${store.peaks.length} MMR peaks for leaf count ` +
+        `${store.leafCount} and consumed ${offset} of ${data.length} bytes — the on-chain layout has ` +
+        `drifted from the committed zama-host IDL. Regenerate the client with \`codegen:solana\`.`,
     );
   }
-  const addressDecoder = getAddressDecoder();
-  return {
-    program: addressDecoder.decode(decoded.program),
-    authority: addressDecoder.decode(decoded.authority),
-    scope: addressDecoder.decode(decoded.scope),
-    slots: decoded.slots.map((slot) => ({ key: new Uint8Array(slot.key), handle: new Uint8Array(slot.handle) })),
-    leafCount: decoded.leafCount,
-    peaks: decoded.peaks.map((peak) => new Uint8Array(peak)),
-    bump: decoded.bump,
-  };
+  return store;
 }
 
 /**
@@ -159,11 +86,14 @@ function popcount(value: bigint): number {
   return count;
 }
 
-/** Returns the handle currently bound to a named slot in this snapshot. */
-export function encryptedStoreHandle(state: SolanaEncryptedStore, key: Uint8Array): Uint8Array {
+/**
+ * Returns a copy of the handle currently bound to a named slot in this snapshot, as the
+ * `Uint8Array` the decrypt entries take.
+ */
+export function encryptedStoreHandle(state: SolanaEncryptedStore, key: ReadonlyUint8Array): Uint8Array {
   const slot = state.slots.find(
     (entry) => entry.key.length === key.length && entry.key.every((byte, index) => byte === key[index]),
   );
   if (!slot) throw new Error('encrypted store does not contain the requested slot');
-  return slot.handle;
+  return new Uint8Array(slot.handle);
 }

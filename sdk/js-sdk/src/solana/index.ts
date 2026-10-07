@@ -33,13 +33,8 @@ export type {
   SolanaDecryptPublicValuesParameters,
 } from './actions/decryptPublicValue.js';
 
-export {
-  decodeSolanaEncryptedStore,
-  encryptedStoreHandle,
-  fetchSolanaEncryptedStore,
-  solanaEncryptedStoreAddress,
-} from './encryptedStore.js';
-export type { SolanaEncryptedStoreSeeds, SolanaEncryptedStore, SolanaRpc } from './encryptedStore.js';
+export { decodeSolanaEncryptedStore, encryptedStoreHandle, fetchSolanaEncryptedStore } from './encryptedStore.js';
+export type { SolanaEncryptedStore, SolanaRpc } from './encryptedStore.js';
 export { createFhevmPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export type { FhevmSolanaPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export { createFhevmEncryptClient } from './clients/createFhevmEncryptClient.js';
@@ -67,7 +62,6 @@ export {
   fetchSolanaUserDecryptionDelegation,
   isSolanaUserDecryptionDelegationLiveAt,
   solanaDelegationWarnings,
-  solanaUserDecryptionDelegationAddress,
 } from './actions/userDecryptionDelegation.js';
 export type {
   SolanaDelegateForUserDecryptionParameters,
@@ -80,7 +74,7 @@ export type {
   SolanaUserDecryptionDelegationTuple,
   SolanaZamaHostAddressConfig,
 } from './actions/userDecryptionDelegation.js';
-export { buildRevokePermitsInstruction, solanaPermitInvalidationAddress } from './actions/revokePermits.js';
+export { buildRevokePermitsInstruction } from './actions/revokePermits.js';
 export type { SolanaPublicDecryptActions } from './clients/decorators/publicDecrypt.js';
 
 export type {

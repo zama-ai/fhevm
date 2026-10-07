@@ -12,15 +12,6 @@ import {
 import { findInvalidationPda, getRevokePermitsInstruction } from '@fhevm/solana-zama-host';
 
 /**
- * The canonical permit invalidation watermark address of a user. A missing account reads as
- * watermark zero: a user who has never revoked anything simply has no account.
- */
-export async function solanaPermitInvalidationAddress(user: Address, programAddress: Address): Promise<Address> {
-  const [derived] = await findInvalidationPda({ user }, { programAddress });
-  return derived;
-}
-
-/**
  * Builds the `zama_host::revoke_permits` instruction: kills every outstanding permit whose
  * validity window opened at or before now, in one transaction of constant work. This is the
  * requester-side lever — a delegator revoking a *delegation* uses
@@ -36,7 +27,8 @@ export async function buildRevokePermitsInstruction(params: {
   readonly programAddress: Address;
 }): Promise<Instruction> {
   const invalidation =
-    params.invalidation ?? (await solanaPermitInvalidationAddress(params.user, params.programAddress));
+    params.invalidation ??
+    (await findInvalidationPda({ user: params.user }, { programAddress: params.programAddress }))[0];
   return getRevokePermitsInstruction(
     {
       user: createNoopSigner(params.user),

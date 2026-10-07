@@ -1,13 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  AccountRole,
-  address,
-  generateKeyPairSigner,
-  getAddressEncoder,
-  getProgramDerivedAddress,
-  type Address,
-  type TransactionSigner,
-} from '@solana/kit';
+import { AccountRole, address, generateKeyPairSigner, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
 
 import {
@@ -18,10 +10,9 @@ import {
   fetchSolanaUserDecryptionDelegation,
   isSolanaUserDecryptionDelegationLiveAt,
   solanaDelegationWarnings,
-  solanaUserDecryptionDelegationAddress,
 } from './userDecryptionDelegation.js';
 import type { SolanaRpc } from '../encryptedStore.js';
-import { findHostConfigPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
+import { findDelegationRecordPda, findHostConfigPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -54,40 +45,6 @@ const SYSTEM_PROGRAM = '11111111111111111111111111111111';
 // A second deployment is a different host program id.
 const OTHER_PROGRAM = addr(0x66);
 const HOST = { programAddress: ZAMA_HOST_PROGRAM_ADDRESS };
-
-describe('solanaUserDecryptionDelegationAddress', () => {
-  it('derives the canonical record address the host program derives', async () => {
-    const derived = await solanaUserDecryptionDelegationAddress(
-      { delegator, delegate, ...application },
-      { programAddress: ZAMA_HOST_PROGRAM_ADDRESS },
-    );
-    expect(derived).toBe(RECORD_ADDRESS);
-  });
-
-  it('derives the wildcard row from the wildcard application', async () => {
-    const derived = await solanaUserDecryptionDelegationAddress(
-      { delegator, delegate, ...SOLANA_WILDCARD_APP },
-      { programAddress: ZAMA_HOST_PROGRAM_ADDRESS },
-    );
-    expect(derived).toBe(WILDCARD_RECORD_ADDRESS);
-  });
-
-  it('derives another row for another scope of the same program', async () => {
-    const derived = await solanaUserDecryptionDelegationAddress(
-      { delegator, delegate, ...application, scope: addr(0x45) },
-      { programAddress: ZAMA_HOST_PROGRAM_ADDRESS },
-    );
-    expect(derived).not.toBe(RECORD_ADDRESS);
-  });
-
-  it('derives under the configured program id', async () => {
-    const derived = await solanaUserDecryptionDelegationAddress(
-      { delegator, delegate, ...application },
-      { programAddress: OTHER_PROGRAM },
-    );
-    expect(derived).not.toBe(RECORD_ADDRESS);
-  });
-});
 
 describe('buildDelegateForUserDecryptionInstruction', () => {
   const build = () =>
@@ -168,7 +125,7 @@ describe('buildDelegateForUserDecryptionInstruction', () => {
       programAddress: OTHER_PROGRAM,
     });
     const [hostConfig] = await findHostConfigPda({ programAddress: OTHER_PROGRAM });
-    const record = await solanaUserDecryptionDelegationAddress(
+    const [record] = await findDelegationRecordPda(
       { delegator, delegate, ...application },
       { programAddress: OTHER_PROGRAM },
     );
@@ -223,7 +180,7 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
       programAddress: OTHER_PROGRAM,
     });
     const [hostConfig] = await findHostConfigPda({ programAddress: OTHER_PROGRAM });
-    const record = await solanaUserDecryptionDelegationAddress(
+    const [record] = await findDelegationRecordPda(
       { delegator, delegate, ...application },
       { programAddress: OTHER_PROGRAM },
     );
@@ -360,17 +317,7 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
   // The wildcard row as the host program would write it: the wildcard application in the tuple,
   // and the canonical bump of the wildcard address in the trailing byte.
   async function wildcardRowFixture(): Promise<{ address: Address; bytesHex: string }> {
-    const encoder = getAddressEncoder();
-    const [wildcardAddress, bump] = await getProgramDerivedAddress({
-      programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
-      seeds: [
-        new TextEncoder().encode('user-decryption-delegation'),
-        encoder.encode(delegator),
-        encoder.encode(delegate),
-        encoder.encode(SOLANA_WILDCARD_APP.program),
-        encoder.encode(SOLANA_WILDCARD_APP.scope),
-      ],
-    });
+    const [wildcardAddress, bump] = await findDelegationRecordPda({ delegator, delegate, ...SOLANA_WILDCARD_APP });
     const bytesHex =
       '25058b21493501f8' +
       '11'.repeat(32) +
@@ -438,19 +385,11 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
   });
 
   it('reads a deployment at an overridden program id: its addresses, its ownership', async () => {
-    const encoder = getAddressEncoder();
-    // Derived by hand rather than through the module, bump included: the record the other
-    // deployment's program would write carries the canonical bump of ITS address.
-    const [overriddenRecord, overriddenBump] = await getProgramDerivedAddress({
-      programAddress: OTHER_PROGRAM,
-      seeds: [
-        new TextEncoder().encode('user-decryption-delegation'),
-        encoder.encode(delegator),
-        encoder.encode(delegate),
-        encoder.encode(application.program),
-        encoder.encode(application.scope),
-      ],
-    });
+    // The record the other deployment's program would write carries the canonical bump of ITS address.
+    const [overriddenRecord, overriddenBump] = await findDelegationRecordPda(
+      { delegator, delegate, ...application },
+      { programAddress: OTHER_PROGRAM },
+    );
     const overriddenRecordBytes = RECORD_BYTES_HEX.slice(0, -2) + overriddenBump.toString(16).padStart(2, '0');
     const accounts = {
       // The row of the overridden deployment, owned by it.

@@ -14,7 +14,7 @@ import {
 } from '@solana/kit';
 import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaMerkleProofOutcome, SolanaMerkleProofReader } from './merkleProofs.js';
-import { bytesToHex } from '../../core/base/bytes.js';
+import { bytesToHex, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { decodeSolanaEncryptedStore, isSolanaEncryptedStoreData } from '../encryptedStore.js';
 import { createRetainedMmr, storeLeafCommitment, type RetainedMmr, type SolanaStoreHistoryEvent } from './mmr.js';
 import {
@@ -102,8 +102,11 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
     try {
       await extend(record, encryptedStore, covered, context.slot);
       if (record.tree.leafCount() >= covered) {
-        const peaks = record.tree.peaks(covered).map(bytesToHex);
-        if (peaks.length !== live.peaks.length || peaks.some((peak, index) => peak !== bytesToHex(live.peaks[index]))) {
+        const peaks = record.tree.peaks(covered);
+        if (
+          peaks.length !== live.peaks.length ||
+          peaks.some((peak, index) => !unsafeBytesEquals(peak, live.peaks[index]))
+        ) {
           throw new Error(`the leaves rebuilt for ${encryptedStore} do not match its peaks at leaf count ${covered}`);
         }
       }

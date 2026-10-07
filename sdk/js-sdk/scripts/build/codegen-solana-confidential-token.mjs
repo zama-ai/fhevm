@@ -120,9 +120,11 @@ const targets = [
         'initializeHostConfig',
         'defineKmsContext',
       ]),
-      // Read back live: the SDK's decrypt trust inputs and the deployment's chain-id cross-check.
-      accounts: new Set(['hostConfig', 'kmsContext']),
+      // Read back live: the SDK's decrypt trust inputs, the deployment's chain-id cross-check, the
+      // encrypted stores and the user-decryption delegation records.
+      accounts: new Set(['hostConfig', 'kmsContext', 'encryptedStore', 'userDecryptionDelegation']),
       definedTypes: new Set([
+        'encryptedSlot',
         'kmsThresholds',
         'pauseFlags',
         'coprocessorInputAttestation',
