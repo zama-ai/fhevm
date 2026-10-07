@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { AccountRole, address, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
+import { findAddressLookupTablePda } from '@solana-program/address-lookup-table';
 
 import {
   ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,
   LOOKUP_TABLE_STILL_ACTIVE,
   MAX_EXTEND_ADDRESSES_PER_TRANSACTION,
   decodeLookupTableDeactivationSlot,
-  deriveAddressLookupTableAddress,
   getCloseLookupTableInstruction,
   getCreateLookupTableInstruction,
   getDeactivateLookupTableInstruction,
@@ -32,8 +32,8 @@ describe('address lookup table instructions', () => {
       payer: authority,
       recentSlot,
     });
-    const derived = await deriveAddressLookupTableAddress(authority.address, recentSlot);
-    expect(lookupTableAddress).toBe(derived.address);
+    const [expectedAddress, expectedBump] = await findAddressLookupTablePda({ authority: authority.address, recentSlot });
+    expect(lookupTableAddress).toBe(expectedAddress);
 
     expect(instruction.programAddress).toBe(ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS);
     const data = instruction.data!;
@@ -41,7 +41,7 @@ describe('address lookup table instructions', () => {
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
     expect(view.getUint32(0, true)).toBe(0); // CreateLookupTable discriminant
     expect(view.getBigUint64(4, true)).toBe(recentSlot);
-    expect(data[12]).toBe(derived.bump);
+    expect(data[12]).toBe(expectedBump);
 
     const roles = instruction.accounts!.map((a) => a.role);
     expect(instruction.accounts![0]!.address).toBe(lookupTableAddress);

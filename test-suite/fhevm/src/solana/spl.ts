@@ -5,8 +5,7 @@ import { findVaultAuthorityPda } from '@fhevm/confidential-token';
 // tests (unlike the demo entrypoints, which run `await main()` against a live validator on
 // import).
 //
-// The instructions are hand-built with `@solana/kit` primitives on purpose: the test-suite carries
-// no `@solana-program/token` dependency. Layouts cited inline:
+// Instruction layouts cited inline:
 //   - Associated-Token `CreateIdempotent` (tag 1): no data args beyond the tag; accounts
 //     [payer(ws), ata(w), owner, mint, systemProgram, tokenProgram]. Idempotent = a no-op if the ATA
 //     already exists. https://github.com/solana-program/associated-token-account.
@@ -27,6 +26,7 @@ import {
   type Instruction,
   type TransactionSigner,
 } from "@solana/kit";
+import { findAssociatedTokenPda } from "@solana-program/token";
 
 // Well-known program ids (same literals the SDK's vault `derive.ts` and the other demo scripts use).
 export const SPL_TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
@@ -45,10 +45,7 @@ export const associatedTokenAddress = async (
   mint: Address,
   tokenProgram: Address,
 ): Promise<Address> => {
-  const [ata] = await getProgramDerivedAddress({
-    programAddress: ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
-    seeds: [encodeAddress(owner), encodeAddress(tokenProgram), encodeAddress(mint)],
-  });
+  const [ata] = await findAssociatedTokenPda({ owner, tokenProgram, mint });
   return ata;
 };
 

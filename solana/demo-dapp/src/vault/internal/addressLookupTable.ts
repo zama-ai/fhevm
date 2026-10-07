@@ -1,20 +1,18 @@
 import {
   AccountRole,
-  getProgramDerivedAddress,
   getU64Encoder,
   type AccountMeta,
   type Address,
   type Instruction,
   type TransactionSigner,
 } from '@solana/kit';
+import { findAddressLookupTablePda } from '@solana-program/address-lookup-table';
 import { base58 } from '@scure/base';
 
 /**
- * Minimal client for the native Address Lookup Table program. Kit ships no ALT program client and
- * the confidential-vault demo needs exactly four instructions — create and extend to stand up the
- * per-batch settle table at `open_batch`, deactivate and close to reclaim its rent once the batch
- * has settled — so they are built by hand here rather than pulling in a whole dependency. Layout
- * matches `solana_sdk::address_lookup_table::instruction`: a 4-byte little-endian enum
+ * The confidential-vault demo uses four Address Lookup Table instructions: create and extend for
+ * the per-batch settle table, then deactivate and close to reclaim its rent. Layout matches
+ * `solana_sdk::address_lookup_table::instruction`: a 4-byte little-endian enum
  * discriminant, then the fields.
  */
 export const ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS =
@@ -71,22 +69,6 @@ function signerMeta(signer: TransactionSigner, role: AccountRole): AccountMeta {
 }
 
 /**
- * Derives the lookup table PDA for an authority and the slot it is created in. The table address is
- * `PDA([authority, recent_slot_le], ALT program)`; the returned bump is the `bump_seed` the create
- * instruction commits to.
- */
-export async function deriveAddressLookupTableAddress(
-  authority: Address,
-  recentSlot: bigint,
-): Promise<{ readonly address: Address; readonly bump: number }> {
-  const [address, bump] = await getProgramDerivedAddress({
-    programAddress: ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,
-    seeds: [addressBytes(authority), u64le(recentSlot)],
-  });
-  return { address, bump };
-}
-
-/**
  * Builds `CreateLookupTable { recent_slot, bump_seed }` and returns it alongside the derived table
  * address. `recentSlot` must be a recent, finalized slot; the table's addresses become usable from
  * the next slot, so a table created at `open_batch` is always usable by the later `settle`.
@@ -96,7 +78,10 @@ export async function getCreateLookupTableInstruction(input: {
   readonly payer: TransactionSigner;
   readonly recentSlot: bigint;
 }): Promise<{ readonly instruction: Instruction; readonly lookupTableAddress: Address }> {
-  const { address, bump } = await deriveAddressLookupTableAddress(input.authority.address, input.recentSlot);
+  const [address, bump] = await findAddressLookupTablePda({
+    authority: input.authority.address,
+    recentSlot: input.recentSlot,
+  });
   const data = new Uint8Array(4 + 8 + 1);
   const view = new DataView(data.buffer);
   view.setUint32(0, CREATE_LOOKUP_TABLE_DISCRIMINANT, true);

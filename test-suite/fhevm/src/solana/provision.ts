@@ -19,7 +19,6 @@ import {
   fetchEncodedAccount,
   getSignatureFromTransaction,
   generateKeyPairSigner,
-  getAddressEncoder,
   getProgramDerivedAddress,
   lamports,
   sendAndConfirmTransactionFactory,
@@ -35,6 +34,7 @@ import {
 } from '@solana/kit';
 
 import type { Bytes32Hex } from '@fhevm/sdk/types';
+import { programDataAddressFor } from '../../../../solana/deploy/src/bootstrap';
 
 import {
   createFinalizedRpc,
@@ -71,8 +71,6 @@ const LAMPORTS_PER_SOL = 1_000_000_000n;
 const EUINT64_FHE_TYPE_ID = 5;
 import { BALANCE_KEY as BALANCE_LABEL } from '@fhevm/confidential-token';
 
-const addressEncoder = getAddressEncoder();
-
 const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
   a.length === b.length && a.every((byte, index) => byte === b[index]);
 
@@ -89,13 +87,7 @@ export const zamaEventAuthorityAddress = async (): Promise<Address> => {
 };
 
 /** BPF upgradeable loader `ProgramData` PDA for zama-host (`[program_id]` under the loader). */
-export const zamaHostProgramDataAddress = async (): Promise<Address> => {
-  const [programData] = await getProgramDerivedAddress({
-    programAddress: 'BPFLoaderUpgradeab1e11111111111111111111111' as Address,
-    seeds: [addressEncoder.encode(ZAMA_HOST_PROGRAM_ADDRESS)],
-  });
-  return programData;
-};
+export const zamaHostProgramDataAddress = (): Promise<Address> => programDataAddressFor(ZAMA_HOST_PROGRAM_ADDRESS);
 
 export type SendTransactionOptions = {
   /**

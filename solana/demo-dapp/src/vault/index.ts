@@ -86,7 +86,6 @@ export {
   LOOKUP_TABLE_STILL_ACTIVE,
   MAX_EXTEND_ADDRESSES_PER_TRANSACTION,
   decodeLookupTableDeactivationSlot,
-  deriveAddressLookupTableAddress,
   getCreateLookupTableInstruction,
   getCloseLookupTableInstruction,
   getDeactivateLookupTableInstruction,
