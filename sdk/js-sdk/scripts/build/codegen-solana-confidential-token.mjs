@@ -70,6 +70,11 @@ function snapshot(path) {
   );
 }
 
+const hostIdl = JSON.parse(readFileSync(idlUrl('zama_host.json'), 'utf8'));
+const hostProgram = rootNodeFromAnchor(hostIdl).program;
+// An app IDL repeats a host account's layout as a plain type (HostConfig, EncryptedStore, …).
+const hostTypeNames = new Set([...hostProgram.definedTypes, ...hostProgram.accounts].map(({ name }) => name));
+
 // One Codama render per target program. zama-host and confidential-token are product clients
 // under `solana/clients`. confidential-batcher and demo-vault remain dapp-only until they are
 // products. Codegen lives here because the committed IDLs, the Codama toolchain, and the --check
@@ -78,6 +83,9 @@ const targets = [
   {
     idlPath: idlUrl('confidential_token.json'),
     linkHostPdas: true,
+    // The host types its instructions take as arguments. The other host types its IDL repeats
+    // (HostConfig, KmsContext, EncryptedStore, …) are decoded by `@fhevm/solana-zama-host` only.
+    hostArgTypes: new Set(['coprocessorInputAttestation']),
     generatedPath: `${sdkRoot}/../../solana/clients/confidential-token/src/generated`,
     // Omit `keep`: render the full instruction/account/type/PDA surface. Events stay
     // pruned below; constants render separately. Errors stay pruned except
@@ -307,8 +315,7 @@ for (const target of targets) {
   const foreignPdaLinks = {};
   // Targets whose accounts pin zama-host PDAs default them through the `@fhevm/solana-zama-host` finders.
   if (target.linkHostPdas) {
-    const hostIdl = JSON.parse(readFileSync(idlUrl('zama_host.json'), 'utf8'));
-    const hostPdas = [...rootNodeFromAnchor(hostIdl).program.pdas, eventAuthority];
+    const hostPdas = [...hostProgram.pdas, eventAuthority];
     // updateInstructionsVisitor fills local seed defaults and drops a linked PDA's programId.
     // Preserve the foreign program binding instead of resolving it against this program's PDAs.
     codama.update(
@@ -382,6 +389,11 @@ for (const target of targets) {
           ...program.pdas.filter(({ name }) => keep.pdas && !keep.pdas.has(name)).map(({ name }) => `[pdaNode]${name}`),
         ]
       : []),
+    ...(target.hostArgTypes
+      ? program.definedTypes
+          .filter(({ name }) => hostTypeNames.has(name) && !target.hostArgTypes.has(name))
+          .map(({ name }) => `[definedTypeNode]${name}`)
+      : []),
     ...(target.keepErrors ? [] : program.errors.map(({ name }) => `[errorNode]${name}`)),
     ...(program.events ?? []).map(({ name }) => `[eventNode]${name}`),
     ...(program.constants ?? []).map(({ name }) => `[constantNode]${name}`),
@@ -422,7 +434,8 @@ for (const target of targets) {
   }
   // Codama's linked PDA resolver drops the instruction's programAddress override.
   // Inline same-program PDA definitions while preserving their argument seed bindings.
-  // Confidential-token's foreign host PDA links would be rebound to the token program here.
+  // PDAs are matched by name. Confidential-token defines its own `eventAuthority`, so its linked host
+  // `eventAuthority` would be rebound to the token program; the other targets define no host PDA name.
   if (
     [
       idlUrl('zama_host.json'),

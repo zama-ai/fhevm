@@ -399,11 +399,20 @@ if run_check 1; then
   error_files=$(grep -rln '#\[error_code\]' solana/programs solana/crates --include='*.rs')
   for file in $error_files; do
     # `Enum Variant` pairs: capitalized identifiers directly followed by `,` at enum-body
-    # indentation, under the `pub enum` that declares them.
+    # indentation, under the enum that declares them, whatever its visibility.
     pairs=$(awk '
-      /^pub enum [A-Za-z0-9_]+/ { enum = $3; sub(/[^A-Za-z0-9_].*$/, "", enum) }
+      /^(pub(\([a-z:]+\))? )?enum [A-Za-z0-9_]+/ {
+        for (i = 1; i < NF; i++) if ($i == "enum") enum = $(i + 1)
+        sub(/[^A-Za-z0-9_].*$/, "", enum)
+      }
       enum != "" && /^    [A-Z][A-Za-z0-9]+,/ { variant = $1; sub(/,$/, "", variant); print enum, variant }
     ' "$file")
+    # An enum shape the parser does not read yields no pairs, and the check would pass without
+    # looking at a single variant.
+    if [ -z "$pairs" ]; then
+      echo "UNPARSED ERROR ENUM: ${file} carries #[error_code] but check 1 read no variants from it"
+      fail=1
+    fi
     while read -r enum variant; do
       [ -n "$variant" ] || continue
       # Anchored on the enum and on both boundaries. The bare `::Variant` form let a same-named
@@ -1254,7 +1263,7 @@ FIXTURES
   # Check 1: an error variant nothing references. Two things had to be true for this fixture to
   # exercise the check rather than a neighbour: the file must carry `#[error_code]`, which is how
   # check 1 finds enums, and the variant must be indented four spaces and end in a comma, which is
-  # the shape check 1 reads as a variant of the enclosing `pub enum`.
+  # the shape check 1 reads as a variant of the enclosing enum.
   printf '#[error_code]\npub enum DeadSurfaceSelftestError {\n    DeadSurfaceSelftestUnreferenced,\n}\n' \
     > "$fixture"
   expect_fires "dead-error-variant sweep" \
@@ -1272,7 +1281,18 @@ FIXTURES
   printf 'pub fn f() -> u32 { OtherSelftestError::DeadSurfaceSelftestShared as u32 }\n' > "$caller_fixture"
   expect_fires "dead-error-variant sweep (same name, other enum)" \
     "DEAD ERROR VARIANT: DeadSurfaceSelftestError::DeadSurfaceSelftestShared" "" 1 bash "$SELF"
-  rm -f "$fixture" "$caller_fixture"
+  rm -f "$caller_fixture"
+  # A restricted-visibility enum is read like a `pub` one.
+  printf '#[error_code]\npub(crate) enum DeadSurfaceSelftestError {\n    DeadSurfaceSelftestCrateVisible,\n}\n' \
+    > "$fixture"
+  expect_fires "dead-error-variant sweep (pub(crate) enum)" \
+    "DEAD ERROR VARIANT: DeadSurfaceSelftestError::DeadSurfaceSelftestCrateVisible" "" 1 bash "$SELF"
+  # An enum the parser cannot read fails instead of passing with nothing checked.
+  printf '#[error_code]\nmod nested {\n    pub enum DeadSurfaceSelftestError {\n        DeadSurfaceSelftestNested,\n    }\n}\n' \
+    > "$fixture"
+  expect_fires "dead-error-variant sweep (unparsed enum)" \
+    "UNPARSED ERROR ENUM: ${fixture}" "" 1 bash "$SELF"
+  rm -f "$fixture"
   # Check 5: the justification prose for a reused-value retrofit. The check pins phrases in real
   # files, so a fixture cannot violate it by planting a file — it would have to delete prose from
   # one. `DEAD_SURFACE_EXTRA_RETROFIT` adds an entry instead, which is the same code path: both
