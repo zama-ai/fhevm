@@ -317,7 +317,8 @@ impl MockServer {
     }
 
     /// Register mock response for gas estimations matching predicate.
-    /// Unmatched estimations return the configured gas limit.
+    /// Only `Revert` and `Error` change the result; `Success` and unmatched
+    /// estimations return the configured gas limit.
     pub fn on_estimate_gas(
         &self,
         predicate: impl Fn(&CallParams) -> bool + Send + Sync + 'static,

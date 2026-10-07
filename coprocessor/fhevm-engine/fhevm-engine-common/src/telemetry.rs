@@ -133,8 +133,8 @@ pub fn init_json_subscriber_with_filter(
     Ok(Some(TracerProviderGuard::new(trace_provider)))
 }
 
-/// The span-exporting layer. It drops the exporter's own `opentelemetry*` events, which
-/// would otherwise be exported as part of the spans they occur in.
+/// The span-exporting layer. It drops OpenTelemetry's own spans and events (targets starting
+/// with `opentelemetry`), which would otherwise be exported as part of the spans they occur in.
 fn otlp_layer<S>(tracer: opentelemetry_sdk::trace::Tracer) -> impl Layer<S>
 where
     S: tracing::Subscriber + for<'span> tracing_subscriber::registry::LookupSpan<'span>,
@@ -242,8 +242,8 @@ fn setup_otel_with_tracer(
     Ok((tracer, trace_provider))
 }
 
-// A timeout set with `with_timeout` overrides the OTLP timeout env vars, so they are
-// read here to keep them ahead of our default.
+// A timeout set with `with_timeout` overrides the OTLP timeout env vars, so we read them
+// here and fall back to our default only when neither is set.
 fn otlp_export_timeout() -> Duration {
     parse_timeout_env(opentelemetry_otlp::OTEL_EXPORTER_OTLP_TRACES_TIMEOUT)
         .or_else(|| parse_timeout_env(opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT))

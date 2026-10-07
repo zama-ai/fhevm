@@ -492,7 +492,7 @@ impl FhevmMockWrapper {
         }
     }
 
-    /// Queue call responses (e.g., estimateGas) for a contract + selector.
+    /// Queue call responses for a contract + selector.
     pub fn queue_call_responses_for_selector(
         &self,
         contract: Address,
