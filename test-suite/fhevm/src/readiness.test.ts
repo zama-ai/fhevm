@@ -16,12 +16,12 @@ import {
 } from "./flow/readiness";
 
 describe("signerHandleFromListObjects", () => {
-  test("finds a persisted centralized KMS signing-key handle", () => {
+  test("finds a persisted KMS signing-key handle under a party's public prefix", () => {
     const handle = "60b7070add74be3827160aa635fb255eeeeb88586c4debf7ab1134ddceb4beee";
-    const xml = `<ListBucketResult><Contents><Key>PUB/VerfAddress/${handle}</Key></Contents></ListBucketResult>`;
+    const xml = `<ListBucketResult><Contents><Key>PUB-p1/VerfAddress/${handle}</Key></Contents></ListBucketResult>`;
 
-    expect(signerHandleFromListObjects(xml, "PUB")).toBe(handle);
-    expect(signerHandleFromListObjects(xml, "PUB/PUB")).toBeNull();
+    expect(signerHandleFromListObjects(xml, "PUB-p1")).toBe(handle);
+    expect(signerHandleFromListObjects(xml, "PUB-p2")).toBeNull();
   });
 
   test("does not mistake a generated CRS handle for the signing-key handle", () => {

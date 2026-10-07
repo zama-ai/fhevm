@@ -918,8 +918,8 @@ export const doctorDemo = async ({
   );
   console.log(
     process.platform === "darwin" && process.arch === "arm64"
-      ? "[doctor] centralized kms-core=linux/amd64 (Docker Desktop emulation is exercised by up); all other services remain native"
-      : "[doctor] centralized kms-core=native host platform",
+      ? "[doctor] kms-core cluster=linux/amd64 (Docker Desktop emulation is exercised by up); all other services remain native"
+      : "[doctor] kms-core cluster=native host platform",
   );
   if (errors.length === 0) console.log("[doctor] ready");
   for (const error of errors) console.error(`[doctor] ${error}`);

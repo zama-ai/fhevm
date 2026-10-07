@@ -467,7 +467,7 @@ export const discoverKmsSigners = async (
   for (let attempt = 0; attempt <= 60; attempt += 1) {
     const logs = await run(["docker", "logs", KMS_CORE_CONTAINER], { allowFailure: true });
     const text = `${logs.stdout}\n${logs.stderr}`;
-    const handle = signerHandleFromLogs(text) ?? (await fetchSignerHandle(verfAddressPrefixes(parties, 1)));
+    const handle = signerHandleFromLogs(text) ?? (await fetchSignerHandle(verfAddressPrefixes(1)));
     if (handle) {
       const signers: string[] = [];
       const caCerts: string[] = [];

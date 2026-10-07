@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { centralizedKmsCorePlatform } from "../src/generate/compose";
 import { solanaPubkeyFromKeypairFile } from "../src/generate/solana";
 import {
   DEFAULT_SOLANA_ENVIRONMENT,
@@ -245,7 +244,7 @@ describe("demo lifecycle collision policy", () => {
     expect(compose).toContain("127.0.0.1:16686:16686");
   });
 
-  test("Prometheus includes the relayer and centralized KMS targets", async () => {
+  test("Prometheus includes the relayer and KMS party 1 targets", async () => {
     const prometheus = await fs.readFile(
       path.join(import.meta.dir, "../static/config/prometheus/prometheus.yml"),
       "utf8",
@@ -1099,12 +1098,6 @@ describe("demo lifecycle ownership primitives", () => {
 });
 
 describe("Apple Silicon compose policy", () => {
-  test("emulates only the centralized kms-core on Darwin arm64", () => {
-    expect(centralizedKmsCorePlatform("darwin", "arm64")).toBe("linux/amd64");
-    expect(centralizedKmsCorePlatform("linux", "arm64")).toBeUndefined();
-    expect(centralizedKmsCorePlatform("darwin", "x64")).toBeUndefined();
-  });
-
   test("doctor requires Docker resources, keypairs, writability, and the emulated image manifest", () => {
     expect(
       doctorEnvironmentErrors(

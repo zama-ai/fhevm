@@ -238,7 +238,7 @@ flowchart LR
     subgraph poc["POC setting"]
         Localnet["Local validator"]
         TestAssets["Test assets and keys"]
-        Centralized["One key service"]
+        KeyService["Four-party test key service"]
         ToyVault["Toy public vault"]
         Keeper["Local keeper"]
         Yield["Demo-funded yield"]
@@ -248,7 +248,7 @@ flowchart LR
     Programs --- ToyVault
     Encryption --- TestAssets
     Authorization --- Keeper
-    Decryption --- Centralized
+    Decryption --- KeyService
     Accounting --- Yield
 `,
   },

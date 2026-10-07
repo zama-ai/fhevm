@@ -29,8 +29,8 @@
 #   - relayer           : bytes32 host identity, Solana user-decrypt calldata + ed25519 seam
 #   - kms-connector     : Solana user-decrypt vertical (gw-listener + kms-worker)
 #
-# Because `kms-signer` discovers the kms-core's ACTUAL signer and registers it on-chain,
-# and `bootstrap` triggers keygen into THAT kms-core, the trust model is consistent by
+# Because `kms-signer` discovers each kms-core's ACTUAL signer and registers it on-chain,
+# and `bootstrap` triggers keygen into THOSE kms-cores, the trust model is consistent by
 # construction -- the failure mode of hand-swapping the kms-core (signer + FHE key drift)
 # cannot occur. MAINNET-safe: validator pinned to 127.0.0.1:8899.
 set -euo pipefail
@@ -43,10 +43,8 @@ FHEVM="$ROOT/test-suite/fhevm"
 # (select-overrides.sh computes both in CI). Local runs keep the build-everything default; set
 # SOLANA_E2E_OVERRIDES to "none" for an explicit empty override list.
 SOLANA_E2E_OVERRIDES="${SOLANA_E2E_OVERRIDES:-gateway-contracts host-contracts coprocessor relayer kms-connector}"
-# Scenario + KMS corruption threshold t. Defaults reproduce the centralized PoC exactly.
-# `solana-threshold-kms` + KMS_THRESHOLD=1 runs the 4-party (3t+1) threshold KMS.
+# The fhevm-cli scenario. It also sets the threshold KMS topology (4 parties, t=1 by default).
 SOLANA_E2E_SCENARIO="${SOLANA_E2E_SCENARIO:-solana}"
-export KMS_THRESHOLD="${KMS_THRESHOLD:-0}"
 SOLANA_E2E_LOCK_PINS="${SOLANA_E2E_LOCK_PINS:-}"
 if [ "$SOLANA_E2E_OVERRIDES" = "none" ]; then
   SOLANA_E2E_OVERRIDES=""
@@ -134,10 +132,7 @@ PY
 #    The `solana` scenario declares the RFC-021 Solana host alongside the default EVM host, so
 #    fhevm-cli generates the Solana relayer + kms-connector config (the Solana host-process step
 #    does not patch those — single config writer).
-#    SOLANA_E2E_SCENARIO selects the fhevm-cli scenario. Default `solana` (centralized KMS).
-#    Set to `solana-threshold-kms` to run the same vertical against a real 4-party threshold KMS
-#    (fhevm-internal#1746); that scenario also requires KMS_THRESHOLD below so the on-chain
-#    certificate thresholds match 2t+1 instead of the centralized default of 1.
+#    SOLANA_E2E_SCENARIO selects the fhevm-cli scenario. Default `solana`.
 ( cd "$FHEVM" && ./fhevm-cli up \
     --scenario "$SOLANA_E2E_SCENARIO" \
     --lock-file "$LOCK" \

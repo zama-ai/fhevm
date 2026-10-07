@@ -122,9 +122,9 @@ lock, one directory per boot with its logs), the keeper's settle lookup tables i
 the validator needs a short path. Point `FHEVM_STATE_DIR` elsewhere (a preview deployment's state dir,
 a test's temp dir) and every producer and consumer follows.
 
-On Apple Silicon, the generated compose override runs only centralized `kms-core` as
-`linux/amd64`, because that pinned image has no arm64 manifest. The validator, Yellowstone plugin,
-and every other multi-arch component remain native arm64.
+On Apple Silicon, the KMS containers (`kms-core-gen-keys`, the four cores and `kms-core-init`) run
+as `linux/amd64` under emulation, because the pinned kms-core image has no arm64 manifest. The
+validator, Yellowstone plugin, and every other multi-arch component remain native arm64.
 
 `down` signals only PIDs whose current start identity matches the manifest and tears down Docker
 only when the complete container-ID set matches. A stale lifecycle lock or ownership mismatch is

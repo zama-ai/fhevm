@@ -5,7 +5,8 @@ description: >-
   EVM gateway + coprocessor stack with an RFC-021 Solana host chain. fhevm-cli owns the whole
   stack: the EVM services in compose, and the Solana host as a host process (solana-test-validator
   with the geyser plugin, program deploy, zama-host bootstrap, DB registration, gateway
-  addHostChain, and the host-listener) in the `host-process` pipeline step.
+  addHostChain, and the host-listener) in the `host-process` pipeline step. The KMS is the default
+  4-party threshold cluster (t=1, insecure test keygen).
 hostChains:
   - key: host
     chainId: "12345"

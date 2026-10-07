@@ -46,7 +46,7 @@ describe("the shipped Solana scenarios", () => {
   // Pins the #1879 retirement: the step picks its work by chain kind, so a `type: solana` host in
   // these scenarios is what makes `up` provision the validator at all. If that entry goes away,
   // clean-e2e.sh's dropped step 3 silently stops happening.
-  test.each(["solana", "solana-threshold-kms"])("%s declares a Solana host", async (name) => {
+  test.each(["solana", "solana-manifest-lifecycle"])("%s declares a Solana host", async (name) => {
     const solana = (await scenario(name)).hostChains.find((chain) => chain.type === "solana");
     expect(solana).toBeDefined();
     expect(isEvmHost({ type: "solana" })).toBe(false);

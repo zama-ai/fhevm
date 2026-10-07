@@ -42,13 +42,6 @@ on:
         description: "USDC the deposit-arc persona wraps + joins with (fresh per run avoids PDA reuse)."
         default: "1000"
         type: string
-      kms-mode:
-        description: "KMS topology. `centralized` is the single-party PoC default; `threshold` runs the 4-party (3t+1, t=1) cluster (fhevm-internal#1746)."
-        default: "centralized"
-        type: choice
-        options:
-          - centralized
-          - threshold
       scenario:
         description: "fhevm-cli scenario a `test-profile` run brings up (e.g. solana-manifest-lifecycle)."
         default: ""
@@ -85,12 +78,6 @@ jobs:
       # Acceptance clients read the protected token file directly. Never persist the fragment token
       # in GitHub Actions logs; interactive local runs keep printing the launch URL by default.
       DEMO_PRINT_LAUNCH_URL: "0"
-      # KMS corruption threshold t, job-wide: the bring-up deploys the host with it (the live
-      # client derives the 2t+1 on-chain certificate thresholds), and the host-upgrade scenario
-      # declares the same t when it rolls the program — bootstrap.ts refuses an upgrade whose
-      # declared inputs differ from the deployed KMS context. Empty (PR runs) keeps the
-      # centralized defaults on both sides.
-      KMS_THRESHOLD: ${{ inputs.kms-mode == 'threshold' && '1' || '' }}
       # Empty except on a dispatched profile run; PR runs keep the demo lane.
       TEST_PROFILE: ${{ inputs.test-profile || '' }}
       # Every producer/consumer derives the demo config path from the fhevm layout under
@@ -189,10 +176,6 @@ jobs:
           # skipped, in which case clean-e2e.sh keeps its build-everything default).
           SOLANA_E2E_OVERRIDES: ${{ steps.select-overrides.outputs.overrides }}
           SOLANA_E2E_LOCK_PINS: ${{ steps.select-overrides.outputs.lock_pins }}
-          # KMS topology. Empty (PR runs) keeps clean-e2e.sh's centralized defaults, so the PR lane
-          # is unchanged. `threshold` selects the 4-party scenario; the matching corruption
-          # threshold is the job-level KMS_THRESHOLD, which the scenario step needs as well.
-          SOLANA_E2E_SCENARIO: ${{ inputs.kms-mode == 'threshold' && 'solana-threshold-kms' || '' }}
           # This lane is where the 2-of-3 Squads delegation arc runs at all, so an unavailable
           # fixture fails the bring-up instead of leaving a green run that skipped it. Offline
           # local runs leave this unset and keep the skip.

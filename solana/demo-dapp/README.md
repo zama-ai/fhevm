@@ -25,8 +25,8 @@ bun run demo:stop
 ```
 
 The first run downloads and builds the stack. Keep tens of GiB free. Later runs reuse the build
-cache. On Apple Silicon, the stack stays on arm64 except for the centralized key service image,
-which currently runs under amd64 emulation.
+cache. On Apple Silicon, the stack stays on arm64 except for the key service containers, whose image
+is published for amd64 only and runs under emulation.
 
 `bun run demo doctor --observability` checks the machine without starting anything. The
 [local stack guide](../scripts/demo/README.md) covers status, logs, reseeding, teardown,
@@ -233,7 +233,7 @@ from redemption.
 | Automatic keeper and claims | A claim can only add funds to that user's fixed confidential account; it cannot debit or redirect them |
 | No minimum batch size | One actor could fake many participants; the demo states the privacy limit instead |
 | Share value rises instead of token balances growing | Matches common Solana vault behavior |
-| Centralized key service | Exercises the real request path with one local key holder; production should spread trust across several |
+| Four-party key service with test key generation | Exercises the real threshold request path: a result needs 3 of 4 signed shares. The fast test key generation does not keep the key split between the parties; production key generation does |
 
 The demo assumes:
 
@@ -249,7 +249,8 @@ The demo assumes:
 - one authorized signer is trusted to approve encrypted inputs sent by the browser;
 - the encrypted math worker is trusted to compute and store the encrypted results required by the
   operations recorded on Solana;
-- the centralized key service is trusted to keep values private and sign correct clear results.
+- the four key service parties are trusted to keep values private and sign correct clear results;
+  the test key generation does not guarantee that the key stays split between them.
 
 On-chain signature checks prove that an authorized service signed a result. They do not prove that a
 compromised authorized service behaved honestly.
@@ -269,7 +270,7 @@ compromised authorized service behaved honestly.
 | Rounding distributes too much | Deposit, redeem, and per-user payout calculations round down |
 | A tiny deposit rounds to zero shares at a very high share price | The vault rejects it; recovery of an already closed batch is not implemented |
 | A demo control is exposed | The operator listens only locally and requires the current run's token or an allow-listed Tailscale identity |
-| The centralized key service is compromised | It can expose values and sign accepted results; production should spread the key across several holders |
+| Key service parties are compromised | Three of the four can sign accepted results. Because the key comes from test key generation, the demo makes no claim about how many it takes to expose values; production uses secure key generation |
 | The input signer is compromised | It can approve invalid encrypted inputs; production should require several independent signers |
 | The encrypted math worker is compromised | It can corrupt or withhold encrypted results, but cannot change operations or result IDs recorded on Solana |
 | A wallet or browser is compromised | The attacker can act as that user; the protocol cannot protect a stolen signing key |
@@ -284,7 +285,7 @@ No component in the confidential deposit and redemption path is mocked or skippe
 | Encrypted inputs, balances, math, and stored encrypted data | Test keys and local workers |
 | Chain listener and finalized-state reconstruction | Local event stream |
 | History proof generation and verification | Coprocessor proof checked by the key service against the current shared-state MMR |
-| Request service, decryption worker, key service, and signed results | One centralized key service |
+| Request service, decryption worker, key service, and signed results | Four local key service parties, test key generation |
 | Wallet signing and authorized balance reveals | Built-in or external wallet; one signature per reveal |
 | Closing, settlement, and claims | Local keeper |
 | Metrics and traces | Local Prometheus and Jaeger |
