@@ -507,7 +507,7 @@ impl CoprocessorAttestationCheck {
                     error!(
                         step = %ReadinessStep::Failed,
                         int_job_id = %job_id,
-                        handle = %round.handle,
+                        handle = %round.handle(),
                         ?round,
                         "Coprocessors did not agree on the ciphertext material"
                     );
@@ -519,7 +519,7 @@ impl CoprocessorAttestationCheck {
                         let elapsed = started.elapsed();
                         error!(
                             int_job_id = %job_id,
-                            handle = %round.handle,
+                            handle = %round.handle(),
                             attempts,
                             elapsed_ms = elapsed.as_millis(),
                             ?round,
@@ -537,7 +537,7 @@ impl CoprocessorAttestationCheck {
                         int_job_id = %job_id,
                         attempt = attempts,
                         max_attempts,
-                        handle = %round.handle,
+                        handle = %round.handle(),
                         ?round,
                         "Retrying ciphertext attestation check"
                     );
