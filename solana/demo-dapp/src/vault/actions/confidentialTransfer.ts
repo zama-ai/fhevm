@@ -30,7 +30,7 @@ import { bytes32HexToHandle } from '@fhevm/sdk/solana';
 import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
-import { getConfidentialTransferInstruction,
+import { getConfidentialTransferInstructionAsync,
   findEventAuthorityPda, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 export type SolanaConfidentialTransferParameters = {
@@ -52,7 +52,6 @@ export type SolanaConfidentialTransferParameters = {
   readonly toOwner: Address;
   readonly fromStore: Address;
   readonly toStore: Address;
-  readonly hostConfig: Address;
   readonly hcuBlockMeter?: Address | undefined;
   readonly hcuTrustedAppRecord?: Address | undefined;
   readonly denyRecords?: readonly Address[] | undefined;
@@ -103,9 +102,8 @@ export async function confidentialTransfer(
   }
 
   const tokenEventAuthority = (await findEventAuthorityPda())[0];
-  const zamaEventAuthority = (await findEventAuthorityPda({ programAddress: zamaHostProgramAddress }))[0];
   const transientStore = await prepareTransientStore({ payer: feePayer, host: zamaHostProgramAddress });
-  const transferInstruction = getConfidentialTransferInstruction({
+  const transferInstruction = await getConfidentialTransferInstructionAsync({
     transientStore: transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     owner,
@@ -126,9 +124,7 @@ export async function confidentialTransfer(
     toAccount: parameters.toAccount,
     fromStore: parameters.fromStore,
     toStore: parameters.toStore,
-    zamaEventAuthority,
     zamaProgram: zamaHostProgramAddress,
-    hostConfig: parameters.hostConfig,
     ...(parameters.hcuBlockMeter !== undefined ? { hcuBlockMeter: parameters.hcuBlockMeter } : {}),
     ...(parameters.hcuTrustedAppRecord !== undefined ? { hcuTrustedAppRecord: parameters.hcuTrustedAppRecord } : {}),
     eventAuthority: tokenEventAuthority,

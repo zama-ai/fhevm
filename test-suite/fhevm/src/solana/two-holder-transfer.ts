@@ -10,7 +10,6 @@ import {
   createProvisioningContext,
   createSplMint,
   generateSolanaKeypair,
-  hostConfigAddress,
   initializeConfidentialTokenAccount,
   loadKeypairSigner,
   mintSplTo,
@@ -159,7 +158,6 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): TwoHolder
           toOwner: address(scenario.bob.owner),
           fromStore: address(alice.encryptedStore),
           toStore: address(bob.encryptedStore),
-          hostConfig: await hostConfigAddress(),
         },
       );
     },

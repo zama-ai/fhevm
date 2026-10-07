@@ -1,5 +1,5 @@
 import { tokenStoreAddress } from './internal/encryptedStores.js';
-import { findEventAuthorityPda as findZamaEventAuthorityPda } from '@fhevm/solana-zama-host';
+import { findEventAuthorityPda as findZamaEventAuthorityPda, findHostConfigPda } from '@fhevm/solana-zama-host';
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import type { Address } from '@solana/kit';
 import {
@@ -41,7 +41,6 @@ export interface VaultDemoRoots {
   readonly joinUnderlyingMint: Address;
   /** SPL mint `payoutConfidentialMint` wraps. */
   readonly payoutUnderlyingMint: Address;
-  readonly hostConfig: Address;
   readonly kmsContext: Address;
 }
 
@@ -214,7 +213,7 @@ export async function deriveSettleAccounts(
     joinMintVaultAuthority,
     batchBurnedAmountStore: batch.batchBurnedAmountStore,
     pendingBurn: (await findPendingBurnPda({ mint: roots.joinConfidentialMint, tokenAccount: batch.batchJoinTokenAccount }))[0],
-    hostConfig: roots.hostConfig,
+    hostConfig: (await findHostConfigPda())[0],
     kmsContext: roots.kmsContext,
     vault: roots.vault,
     vaultAuthority,

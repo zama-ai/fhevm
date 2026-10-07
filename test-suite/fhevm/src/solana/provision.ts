@@ -276,7 +276,6 @@ export const createConfidentialMint = async (
 ): Promise<Address> => {
   const vault = await vaultModule();
   const mint = await generateKeyPairSigner();
-  const hostConfig = await hostConfigAddress();
   const { appendTransientStoreInstructions, prepareTransientStore } = await sdkVerifyModule();
   const transientStore = await prepareTransientStore({ payer: params.authority, host: ZAMA_HOST_PROGRAM_ADDRESS });
   await context.sendTransaction(params.authority, appendTransientStoreInstructions(transientStore, [
@@ -285,7 +284,6 @@ export const createConfidentialMint = async (
       authority: params.authority,
       mint,
       underlyingMint: params.underlyingMint,
-      hostConfig,
     }),
   ]));
   const escrow = await buildVaultUnderlyingEscrowAtaInstruction({
@@ -311,7 +309,6 @@ export const initializeConfidentialTokenAccount = async (
     payer: params.payer,
     owner: params.owner,
     mint: params.mint,
-    hostConfig: await hostConfigAddress(),
   });
   if (instruction) await context.sendTransaction(params.payer, appendTransientStoreInstructions(transientStore, [instruction]));
 };
@@ -336,7 +333,6 @@ export const wrapUnderlying = async (
       mint: params.mint,
       underlyingMint: params.underlyingMint,
       tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
-      hostConfig: await hostConfigAddress(),
       amount: params.amount,
     }),
   ]));

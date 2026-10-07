@@ -70,7 +70,6 @@ const buildClaimInstructions = async (
         payer: session.keeper,
         owner: user,
         mint: roots.payoutConfidentialMint,
-        hostConfig: session.config.hostConfig,
       }),
     );
   }

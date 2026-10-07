@@ -15,7 +15,7 @@ import { TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS, findAssociatedToken
 import { BRINGUP_KMS_CONTEXT_ID } from "./addresses";
 import { findKmsContextPda } from "@fhevm/solana-zama-host";
 import { certificateCleartext, type PublicDecryptCertificate } from "./public-decrypt";
-import { hostConfigAddress, type SolanaProvisioningContext } from "./provision";
+import type { SolanaProvisioningContext } from "./provision";
 import { vaultModule, sdkVerifyModule } from "./lazy-modules";
 import {
   findPendingBurnPda,
@@ -106,8 +106,6 @@ export const confidentialBurn = async (
     balanceStore: await vault.tokenStoreAddress(params.mint, target.tokenAccount),
     totalSupplyStore: await totalSupplyStore(params.mint),
     pendingBurn: target.pendingBurn,
-    zamaEventAuthority: await eventAuthority(ZAMA_HOST_PROGRAM_ADDRESS),
-    hostConfig: await hostConfigAddress(),
     eventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     amountAttestation: params.amountAttestation,
@@ -152,7 +150,6 @@ export const redeemBurnedAmount = async (
       mint: params.underlyingMint,
     }))[0],
     burnedAmountStore: target.burnedAmountStore,
-    hostConfig: await hostConfigAddress(),
     kmsContext: await kmsContextAddress(),
     eventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
@@ -181,7 +178,6 @@ export const sealBurnedAmountHandle = async (
       mint: params.mint,
       tokenAccount: target.tokenAccount,
       encryptedStore: target.burnedAmountStore,
-      hostConfig: await hostConfigAddress(),
       kind: DisclosedValueKind.BurnedAmount,
       handle: params.handle,
     }),
@@ -199,7 +195,6 @@ export const sealTotalSupplyHandle = async (
       authority: params.authority,
       mint: params.mint,
       totalSupplyStore: await totalSupplyStore(params.mint),
-      hostConfig: await hostConfigAddress(),
       handle: params.handle,
     }),
   ]);
@@ -218,7 +213,7 @@ export const discloseCertifiedHandle = async (
 ): Promise<void> => {
   const vault = await vaultModule();
   const instruction = await vault.buildDiscloseSecpInstruction(
-    { kmsContext: await kmsContextAddress(), hostConfig: await hostConfigAddress() },
+    { kmsContext: await kmsContextAddress() },
     params.certificate,
   );
   await context.sendTransaction(params.payer, [instruction]);

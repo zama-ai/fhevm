@@ -237,7 +237,6 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
               payer: alice,
               owner: alice.address,
               mint,
-              hostConfig: config.hostConfig,
             }),
           )),
         ));
@@ -253,7 +252,6 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
           mint: config.mints.joinConfidential,
           underlyingMint: config.mints.joinUnderlying,
           tokenProgram: TOKEN_PROGRAM_ADDRESS,
-          hostConfig: config.hostConfig,
           amount: wrapBaseUnits,
         }),
       ]));
@@ -659,12 +657,12 @@ test.skipIf(!runsDemoScenarios)(
     const transientStore = await prepareTransientStore({ payer: alice, host: config.programs.host });
     const mint = roots.joinConfidentialMint;
     const init = await vault.getOrCreateConfidentialTokenAccountInstruction(rpc, {
-      transientStore, payer: alice, owner: alice.address, mint, hostConfig: config.hostConfig,
+      transientStore, payer: alice, owner: alice.address, mint,
     });
     if (init) await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [init]), WRAP_COMPUTE_UNIT_LIMIT);
     await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [await vault.buildWrapUsdcInstruction({
       transientStore, owner: alice, mint, underlyingMint: roots.joinUnderlyingMint,
-      tokenProgram: TOKEN_PROGRAM_ADDRESS, hostConfig: config.hostConfig, amount,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS, amount,
     })]), WRAP_COMPUTE_UNIT_LIMIT);
     setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: process.env.ZAMA_FHEVM_API_KEY ?? 'local' } });
     const chain = defineFhevmSolanaChain({ id: BigInt(config.chainId), fhevm: {

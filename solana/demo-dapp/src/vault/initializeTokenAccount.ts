@@ -16,8 +16,6 @@ export type SolanaVaultInitializeTokenAccountParameters = {
   readonly owner: Address;
   /** The confidential mint this account belongs to. */
   readonly mint: Address;
-  /** zama-host config PDA used for handle derivation. */
-  readonly hostConfig: Address;
 };
 
 /** Returns whether the canonical account is absent or only carries attacker-pre-funded lamports. */
@@ -45,7 +43,6 @@ export async function buildInitializeTokenAccountInstruction(
     mint: parameters.mint,
     tokenAccount,
     balanceEncryptedStore: await tokenStoreAddress(parameters.mint, tokenAccount),
-    hostConfig: parameters.hostConfig,
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   });
 }
