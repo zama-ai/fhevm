@@ -7,6 +7,11 @@ on:
         description: "Set to true for release tagging"
         required: false
         default: false
+      dry-run:
+        description: "Run every publish step in dry-run mode (nothing is published)"
+        type: boolean
+        required: false
+        default: true
 
 permissions: {}
 
@@ -55,6 +60,7 @@ jobs:
           tag: prerelease
           provenance: true
           access: public
+          dry-run: ${{ inputs.dry-run }}
 
       - name: Publish release to npm
         if: ${{ inputs.release == 'true' }}
@@ -63,6 +69,7 @@ jobs:
           package: ./library-solidity/package.json
           provenance: true
           access: public
+          dry-run: ${{ inputs.dry-run }}
 
   publish-soldeer:
     name: library-solidity-publish/publish-soldeer
@@ -90,4 +97,10 @@ jobs:
         env:
           SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
-        run: forge soldeer push "@fhevm-solidity~${VERSION}" . --skip-warnings
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            forge soldeer push "@fhevm-solidity~${VERSION}" . --skip-warnings --dry-run
+          else
+            forge soldeer push "@fhevm-solidity~${VERSION}" . --skip-warnings
+          fi
