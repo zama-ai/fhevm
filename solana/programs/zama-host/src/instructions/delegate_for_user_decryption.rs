@@ -61,6 +61,8 @@ pub fn delegate_for_user_decryption(
         delegate.to_bytes() != WILDCARD_APP,
         ZamaHostError::InvalidDelegation
     );
+    // A delegate decrypts by signing a request off chain; a PDA has no key to sign it with.
+    require!(delegate.is_on_curve(), ZamaHostError::InvalidDelegation);
     // The sentinel fills the whole application or none of it.
     require!(
         (program.to_bytes() == WILDCARD_APP) == (scope.to_bytes() == WILDCARD_APP),
