@@ -800,10 +800,18 @@ mod account_resolution_tests {
         let meta = info.meta.as_mut().unwrap();
         meta.inner_instructions.clear();
         meta.inner_instructions_none = true;
+        let host = ZAMA_HOST.parse().unwrap();
 
-        let error = prepare_transaction(info, &ZAMA_HOST.parse().unwrap())
+        let mut failed = info.clone();
+        failed.meta.as_mut().unwrap().err =
+            Some(TransactionError { err: vec![1] });
+        assert!(
+            prepare_transaction(failed, &host).unwrap().is_none(),
+            "a failed transaction is dropped before the check"
+        );
+
+        let error = prepare_transaction(info, &host)
             .expect_err("a stream without inner instructions hides host CPIs");
-
         assert!(
             format!("{error:#}").contains("no inner instructions"),
             "{error:#}"
