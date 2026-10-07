@@ -30,6 +30,8 @@ jobs:
             rust-files:
               - .github/workflows/relayer-dependency-analysis.yml
               - relayer/**
+              # The solana/ path dependencies of this workspace, direct or transitive;
+              # solana/scripts/check-path-filters.sh fails when one is missing.
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-permit/**
               - solana/crates/zama-solana-request/**

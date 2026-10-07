@@ -45,18 +45,12 @@ jobs:
             - shared/user-decryption-signature/**
             - shared/request-authorization/**
             - shared/kms-context/**
-            # `zama-solana-acl` is a path dependency of this workspace (Cargo.toml), so a change to
-            # it alone can break these crates while matching no path above. It did: renaming an
-            # `EncryptedValue` field broke two `#[cfg(test)]` sites in kms-worker, and this workflow
-            # only caught it because the same PR happened to touch kms-connector/crates.
+            # The solana/ path dependencies of this workspace, direct or transitive, and the shared
+            # fixtures its tests load; solana/scripts/check-path-filters.sh fails when one is missing.
             - solana/crates/zama-solana-acl/**
             - solana/crates/zama-solana-merkle-proofs/**
-            # The other Solana crates of the workspace, for the same reason.
             - solana/crates/zama-solana-permit/**
             - solana/crates/zama-solana-request/**
-            # The cross-implementation fixture sets kms-worker and connector-utils tests consume
-            # (permit, Merkle proof, user-decrypt byte vectors, authorization cases): an edit to a committed vector
-            # alone must run the Rust consumers that assert against it.
             - solana/test-fixtures/**
 
   test-connector:

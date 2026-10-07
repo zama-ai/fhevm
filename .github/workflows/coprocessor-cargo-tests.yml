@@ -33,18 +33,16 @@ jobs:
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
               - host-contracts/rust_bindings/**
-              # Path dependencies of this workspace, direct or transitive. A Solana-only change can
-              # therefore break these crates while matching no path above.
+              # The solana/ path dependencies of this workspace, direct or transitive, and the shared
+              # fixtures its tests load; solana/scripts/check-path-filters.sh fails when one is missing.
               - solana/programs/zama-host/**
+              # zama-host's build script reads its environment file here, through program-environment.
               - solana/environments/**
               - solana/crates/program-environment/**
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-merkle-proofs/**
               - solana/crates/zama-solana-transaction/**
-              # The Merkle proof server's wire tests read the fixture the connector parses.
-              - solana/test-fixtures/merkle-proofs/**
-              # The follower's archive test replays a captured devnet slot.
-              - solana/test-fixtures/rpc/**
+              - solana/test-fixtures/**
               # consensus-detector depends on these crates by path.
               - shared/block-manifest/**
               - shared/ciphertext-attestation/**

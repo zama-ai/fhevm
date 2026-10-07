@@ -35,9 +35,12 @@ jobs:
               # The off-chain readiness verdict (retriable vs terminal) lives in this crate, so
               # a change confined to it still has to run the relayer's own suites.
               - shared/ciphertext-attestation/**
+              # The solana/ path dependencies of this workspace, direct or transitive, and the shared
+              # fixtures its tests load; solana/scripts/check-path-filters.sh fails when one is missing.
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-permit/**
               - solana/crates/zama-solana-request/**
+              - solana/test-fixtures/**
 
   unit-test:
     name: relayer-test/unit-test (bpr)

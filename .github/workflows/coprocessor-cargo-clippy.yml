@@ -32,9 +32,10 @@ jobs:
               - .github/actions/setup-rust-and-protoc/**
               - coprocessor/fhevm-engine/**
               - host-contracts/rust_bindings/**
-              # Path dependencies of this workspace, direct or transitive, so editing them can break
-              # a clippy lane that no other filter watches.
+              # The solana/ path dependencies of this workspace, direct or transitive;
+              # solana/scripts/check-path-filters.sh fails when one is missing.
               - solana/programs/zama-host/**
+              # zama-host's build script reads its environment file here, through program-environment.
               - solana/environments/**
               - solana/crates/program-environment/**
               - solana/crates/zama-solana-acl/**

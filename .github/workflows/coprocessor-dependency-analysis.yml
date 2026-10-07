@@ -30,8 +30,11 @@ jobs:
             rust-files:
               - .github/workflows/coprocessor-dependency-analysis.yml
               - coprocessor/fhevm-engine/**
+              # The solana/ path dependencies of this workspace, direct or transitive;
+              # solana/scripts/check-path-filters.sh fails when one is missing.
               - solana/programs/zama-host/**
               - solana/crates/zama-solana-acl/**
+              - solana/crates/zama-solana-merkle-proofs/**
               - solana/crates/zama-solana-transaction/**
               - solana/crates/program-environment/**
   dependencies-check:

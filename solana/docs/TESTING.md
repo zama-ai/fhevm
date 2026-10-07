@@ -139,6 +139,14 @@ Each of those roots hid a real break at least once. The grep sweeps in
 `scripts/dead-surface-check.sh` cover some of the same trees, but grep does not
 typecheck — a root can be swept and still never compiled.
 
+In CI, a root's test, clippy and dependency-analysis workflows run on a Solana
+change only when their path filter names it. Each filter must name every `solana/` crate the
+root links, directly or through another `solana/` crate, and, for a test workflow,
+`solana/test-fixtures/**` when the root's tests load a shared fixture.
+`scripts/check-path-filters.sh` (job `solana-tests/path-filters`) reads the crates
+from `cargo metadata` and fails, naming the workflow and the path, when a filter
+misses one. The SDK's `js-sdk-tests` is held to the same fixture rule.
+
 ## Scenario layer (SDK-driven e2e)
 
 Lives in `test-suite/fhevm/e2e/` — a small harness plus scenario files. This layer **is** the live
