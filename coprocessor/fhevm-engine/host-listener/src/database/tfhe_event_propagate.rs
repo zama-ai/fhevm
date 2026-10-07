@@ -447,7 +447,7 @@ impl Database {
         if !row.inserted {
             warn!(
                 output_handle = to_hex(&output_handle),
-                "Computation upgraded to allowed, re-queueing its dependence chain"
+                "Computation upgraded to allowed, re-queuing its dependence chain"
             );
             if let Some(dependence_chain_id) = row.dependence_chain_id {
                 // Cleanup may have removed the original processed chain,
