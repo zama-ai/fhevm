@@ -13,7 +13,6 @@ import type { SolanaRpc } from '../encryptedStore.js';
 import {
   type DelegationRecordSeeds,
   findDelegationRecordPda,
-  findHostConfigPda,
   getDelegateForUserDecryptionInstructionAsync,
   getRevokeDelegationForUserDecryptionInstructionAsync,
   getUserDecryptionDelegationDecoder,
@@ -119,9 +118,9 @@ export type SolanaDelegateForUserDecryptionParameters = Omit<SolanaUserDecryptio
    */
   readonly expiresAt: bigint;
   /** Canonical singleton host config; defaults to the host config PDA when omitted. */
-  readonly hostConfig?: Address | undefined;
+  readonly hostConfig?: Address;
   /** The record address; defaults to the canonical PDA of the tuple when omitted. */
-  readonly delegationRecord?: Address | undefined;
+  readonly delegationRecord?: Address;
 } & SolanaZamaHostAddressConfig;
 
 /**
@@ -135,28 +134,9 @@ export type SolanaDelegateForUserDecryptionParameters = Omit<SolanaUserDecryptio
 export async function buildDelegateForUserDecryptionInstruction(
   params: SolanaDelegateForUserDecryptionParameters,
 ): Promise<Instruction> {
-  const { programAddress } = params;
-  const tuple: SolanaUserDecryptionDelegationTuple = {
-    delegator: resolvedAddress(params.delegator),
-    delegate: params.delegate,
-    program: params.program,
-    scope: params.scope,
-  };
-  const delegationRecord = params.delegationRecord ?? (await findDelegationRecordPda(tuple, { programAddress }))[0];
-  // The host config is resolved here, not left to the generated builder: its default resolver
-  // derives the PDA under the canonical program id even when the instruction targets another.
-  const hostConfig = params.hostConfig ?? (await findHostConfigPda({ programAddress }))[0];
+  const { payer, delegator, programAddress, ...accountsAndArgs } = params;
   return getDelegateForUserDecryptionInstructionAsync(
-    {
-      payer: resolvedSigner(params.payer),
-      delegator: resolvedSigner(params.delegator),
-      hostConfig,
-      scope: params.scope,
-      delegationRecord,
-      delegate: params.delegate,
-      program: params.program,
-      expiresAt: params.expiresAt,
-    },
+    { ...accountsAndArgs, payer: resolvedSigner(payer), delegator: resolvedSigner(delegator) },
     { programAddress },
   );
 }
@@ -169,9 +149,9 @@ export type SolanaRevokeDelegationForUserDecryptionParameters = Omit<
   /** The user revoking their grant (see [`SolanaSignerOrAddress`]). */
   readonly delegator: SolanaSignerOrAddress;
   /** Canonical singleton host config; defaults to the host config PDA when omitted. */
-  readonly hostConfig?: Address | undefined;
+  readonly hostConfig?: Address;
   /** The record address; defaults to the canonical PDA of the tuple when omitted. */
-  readonly delegationRecord?: Address | undefined;
+  readonly delegationRecord?: Address;
 } & SolanaZamaHostAddressConfig;
 
 /**
@@ -185,22 +165,14 @@ export type SolanaRevokeDelegationForUserDecryptionParameters = Omit<
 export async function buildRevokeDelegationForUserDecryptionInstruction(
   params: SolanaRevokeDelegationForUserDecryptionParameters,
 ): Promise<Instruction> {
-  const { programAddress } = params;
-  const tuple: SolanaUserDecryptionDelegationTuple = {
-    delegator: resolvedAddress(params.delegator),
-    delegate: params.delegate,
-    program: params.program,
-    scope: params.scope,
-  };
-  const delegationRecord = params.delegationRecord ?? (await findDelegationRecordPda(tuple, { programAddress }))[0];
-  // Resolved here for the same reason as in the delegate builder: the generated default is
-  // pinned to the canonical program id.
-  const hostConfig = params.hostConfig ?? (await findHostConfigPda({ programAddress }))[0];
+  const { delegator, delegate, program, scope, delegationRecord, programAddress, ...accounts } = params;
+  // The revoke instruction carries no tuple arguments, so the record cannot default from them.
+  const tuple = { delegator: resolvedAddress(delegator), delegate, program, scope };
   return getRevokeDelegationForUserDecryptionInstructionAsync(
     {
-      delegator: resolvedSigner(params.delegator),
-      hostConfig,
-      delegationRecord,
+      ...accounts,
+      delegator: resolvedSigner(delegator),
+      delegationRecord: delegationRecord ?? (await findDelegationRecordPda(tuple, { programAddress }))[0],
     },
     { programAddress },
   );
