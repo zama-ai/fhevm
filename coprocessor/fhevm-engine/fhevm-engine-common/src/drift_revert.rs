@@ -6,6 +6,14 @@
 //! processes check for a pending signal:
 //!  * gw-listener runs the revert SQL,
 //!  * other services wait until it's done, then all proceed normally
+//!
+//! This is COPROCESSOR consensus, NOT host-chain reorg. Drift is two
+//! coprocessors disagreeing on the bitwise representation of a ciphertext for
+//! the same handle (re-randomization / DSA divergence); it fires even on a
+//! chain that never reorgs. On-chain reorgs — the host chain orphaning a block
+//! the listener already ingested — are a different layer, handled by the
+//! listener's block-history reorg detection (host-listener `cmd/block_history.rs`).
+//! Discriminator: "would it fire on a chain that never reorgs?" yes -> drift.
 
 use std::sync::LazyLock;
 use std::time::Duration;
