@@ -39,6 +39,50 @@ npm run sdk:registry -- 0.13.2
 Both commands wrap `scripts/install-sdk.sh` (`local`/`registry` modes) — see
 its header comment for details.
 
+## DevNet relayer URL and API key
+
+The FHEVM SDK reads `RELAYER_URL` and `ZAMA_FHEVM_API_KEY` from the test
+process environment. Set them **inside the container**, before starting the
+tests. `RELAYER_URL` overrides the network default and accepts a base URL or
+a `/v2` suffix, with or without a trailing slash; proxy path prefixes are
+preserved. Use HTTPS when supplying an API key (the SDK permits authenticated
+HTTP only on localhost).
+
+`ZAMA_FHEVM_API_KEY` is optional and is sent as `x-api-key`. If it is absent,
+the existing Hardhat vars fallback is used; an explicitly empty value disables
+that fallback. With no effective key, requests remain unauthenticated.
+SDK authentication is configured once per process, before creating clients.
+Restart the test process to change the key. `scripts/gen_handles.ts` also
+includes the key when initializing its single-threaded runtime.
+
+For an initial test, export the URL and obtain the key from your usual secret
+source in the local shell, then forward the variables to an existing DevNet
+container:
+
+```shell
+export RELAYER_URL="https://relayer.dev.zama.cloud/v2"
+# ZAMA_FHEVM_API_KEY must already be exported if authentication is required.
+docker exec -e RELAYER_URL -e ZAMA_FHEVM_API_KEY <devnet-test-container> \
+  ./run-tests.sh -n staging -g "test user input uint64"
+```
+
+The container must already have the DevNet RPC, chain IDs, contract addresses
+and funded test signers.
+Here `staging` is the existing Hardhat network accepting `RPC_URL` and
+`CHAIN_ID_HOST`; this checkout has no network named `devnet`.
+
+For deployment, keep the URL as ordinary configuration and inject only the API
+key from a Secret into `ZAMA_FHEVM_API_KEY`. The application reads the same env
+variable in either case. Do not put the key in the image, committed env files,
+or logs. Changing these values does not require rebuilding the image.
+
+The DevNet GitOps FHEVM test workloads currently use
+`RELAYER_URL=http://relayer:3000/v2`. A follow-up GitOps change must switch to the
+authenticated HTTPS endpoint and inject the Secret when enabling authentication;
+adding a key to that internal HTTP URL would be rejected by the SDK. This change
+does not modify GitOps, CI, preview, or Testnet/Mainnet deployments. The Relayer
+SDK adapter and multichain factory are outside this implementation's scope.
+
 ## Unified user-decryption suites
 
 E2E coverage for ERC-1271 smart-account signature verification and the unified
