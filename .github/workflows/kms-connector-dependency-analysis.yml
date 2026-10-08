@@ -31,7 +31,10 @@ jobs:
               - .github/workflows/kms-connector-dependency-analysis.yml
               - kms-connector/crates/**
               - kms-connector/Cargo.*
+              # The solana/ path dependencies of this workspace, direct or transitive;
+              # solana/scripts/check-path-filters.sh fails when one is missing.
               - solana/crates/zama-solana-acl/**
+              - solana/crates/zama-solana-merkle-proofs/**
               - solana/crates/zama-solana-permit/**
               - solana/crates/zama-solana-request/**
 

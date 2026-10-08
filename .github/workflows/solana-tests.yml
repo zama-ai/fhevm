@@ -107,11 +107,11 @@ jobs:
               - solana/deploy/**
               - .github/workflows/solana-tests.yml
               - test-suite/fhevm/**
-              # The job's `tsc` resolves through the `@sdk-src/*` and `@demo-dapp/*` path aliases
-              # into these two trees, so a change confined to either one can break this typecheck.
-              # Without them the break surfaces ~40 min into the e2e job (bun strips types rather
-              # than checking them), or not at all on a PR targeting main. Retiring the aliases is
-              # tracked in fhevm-internal#1878; until then the filter has to name what tsc reads.
+              # The job's `tsc` reads the sources of these trees: the SDK and both clients as
+              # `file:` dependencies, the dapp through the `@demo-dapp/*` path alias. A change
+              # confined to one of them can break this typecheck. Without them the break surfaces
+              # ~40 min into the e2e job (bun strips types rather than checking them), or not at all
+              # on a PR targeting main.
               - sdk/js-sdk/**
               - solana/demo-dapp/**
               - solana/clients/confidential-token/**
@@ -121,6 +121,21 @@ jobs:
               - solana/**
               - sdk/js-sdk/**
               - test-suite/fhevm/**
+
+  # `cargo metadata --no-deps` and the workflow files only, under a minute. It runs on every PR: the
+  # paths that can make a filter stale are the script's own table, and a trigger list would repeat it.
+  path-filters:
+    name: solana-tests/path-filters
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Check the consumers' path filters against the solana/ paths they read
+        run: solana/scripts/check-path-filters.sh
 
   # Pure grep/sed, no toolchain, half a minute: its own job so it runs for every tree it sweeps,
   # not only the ones that trigger the SBF builds. See fhevm-internal#1859 §7.
@@ -196,11 +211,11 @@ jobs:
       # The dapp does not hand-write program clients. confidential-token is a workspace package
       # (`solana/clients/confidential-token`); batcher and demo-vault stay under
       # src/vault/internal/generated. The SDK's Codama codegen renders all of them from the
-      # committed IDLs. Its `--check` mode ran in no workflow, so a client could keep describing an
-      # instruction the program no longer has — and the confidential-token client had in fact
-      # drifted. The codegen lives with the SDK, so it runs off the graph the previous step installed.
-      # This is the only gate: the SDK `build` does not run it, so the EVM SDK image and publish
-      # need no Solana paths. The demo-dapp filter above names every IDL and generated output.
+      # committed IDLs, and its `--check` mode fails when a committed client differs from what its
+      # IDL renders. The codegen lives with the SDK, so it runs off the graph the previous step
+      # installed. This is the only gate: the SDK `build` does not run it, so the EVM SDK image and
+      # publish need no IDL or generated-client paths. The demo-dapp filter above names every IDL and
+      # generated output.
       - name: Check the dapp's generated program clients still match the committed IDLs
         working-directory: sdk/js-sdk
         run: npm run codegen:solana:check
@@ -249,8 +264,8 @@ jobs:
         with:
           bun-version: 1.3.14
 
-      # tsc follows the `@sdk-src`/`@demo-dapp` path aliases into the SDK and dapp sources, so
-      # both of their own dependency graphs must exist for their types to resolve.
+      # tsc reads the SDK's sources (a `file:` dependency) and the dapp's (the `@demo-dapp/*` path
+      # alias), so both of their own dependency graphs must exist for their types to resolve.
       - name: Install the SDK's own dependency graph (tsc resolves SDK sources)
         run: npm ci --prefix sdk/js-sdk
 
