@@ -61,12 +61,12 @@ function roots(): VaultDemoRoots {
   };
 }
 
-function claim(cleartext: string, signatures = 1) {
+function claim(cleartext: string, signatures = 1, extraData = '0x00') {
   return {
     handle: `0x${hex(BURNED_HANDLE)}`,
     abiEncodedCleartext: cleartext,
     signatures: Array.from({ length: signatures }, () => hex(new Uint8Array(65).fill(0x11))),
-    extraData: '0x00',
+    extraData,
   };
 }
 
@@ -133,11 +133,12 @@ describe('settleBatch', () => {
     expect(getSettleInstructionDataDecoder().decode(settle!.data!).cleartextTotal).toBe(800n);
   });
 
-  // The largest settle: a certificate at the host's maximum KMS threshold (MAX_KMS_SIGNERS = 16)
-  // with the deny record and both HCU witnesses. A v1 transaction is at most 4,096 bytes and 64
+  // The largest settle: a certificate at the host's maximum KMS threshold (MAX_KMS_SIGNERS = 16),
+  // with version 1 extra data (a version byte then the 32-byte KMS context id), the deny record and
+  // both HCU witnesses. A v1 transaction is at most 4,096 bytes and 64
   // account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
   it('fits one v1 transaction at the maximum KMS threshold with every witness', async () => {
-    certificate.mockResolvedValue(claim(cleartextHex(800n), 16));
+    certificate.mockResolvedValue(claim(cleartextHex(800n), 16, `0x01${'09'.repeat(32)}`));
     const { client, opts } = await setup();
     await settleBatch({ publicDecryptCertificate: certificate }, client, {
       ...opts,
