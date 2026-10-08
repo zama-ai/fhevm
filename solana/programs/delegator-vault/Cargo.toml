@@ -1,7 +1,7 @@
 [package]
 name = "delegator-vault"
 version = "0.1.0"
-description = "Test-only program-controlled delegator: a vault PDA granting user-decryption delegations via CPI"
+description = "Test-only CPI probe: a program PDA as delegator or pauser, a nested transient-store close, and CPI return-data checks"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true

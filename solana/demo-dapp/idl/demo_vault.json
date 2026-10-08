@@ -59,7 +59,6 @@
           "docs": [
             "Depositor and transfer authority over `depositor_underlying`."
           ],
-          "writable": true,
           "signer": true
         },
         {
@@ -175,7 +174,6 @@
           "docs": [
             "Donor and transfer authority over `donor_underlying`."
           ],
-          "writable": true,
           "signer": true
         },
         {
@@ -490,7 +488,6 @@
           "docs": [
             "Share owner and burn authority over `owner_shares`."
           ],
-          "writable": true,
           "signer": true
         },
         {

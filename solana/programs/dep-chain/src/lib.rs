@@ -84,7 +84,7 @@ pub mod dep_chain {
             zama_host::EncryptedStore::try_deserialize(&mut &info.try_borrow_data()?[..])?;
         let state = Store::new(&account);
         let output = state
-            .set(encrypted_tail_label())
+            .set(ENCRYPTED_TAIL_LABEL)
             .allow(ctx.accounts.owner.key());
         let execution = FheExecution::build(state.id(), |builder| {
             let result = builder.trivial_encrypt_u64(0)?;
@@ -126,9 +126,9 @@ pub mod dep_chain {
         );
         let chain = ctx.accounts.chain.key();
         let state = Store::new(&ctx.accounts.encrypted_store);
-        let operand = state.get::<Uint<64>>(encrypted_tail_label())?;
+        let operand = state.get::<Uint<64>>(ENCRYPTED_TAIL_LABEL)?;
         let output = state
-            .set(encrypted_tail_label())
+            .set(ENCRYPTED_TAIL_LABEL)
             .allow(ctx.accounts.owner.key());
         let execution = FheExecution::build(state.id(), |builder| {
             let mut value = builder.add(operand, Scalar::<Uint<64>>::u64(amount))?;
@@ -172,7 +172,7 @@ pub struct Initialize<'info> {
     #[account(
         init,
         payer = owner,
-        space = 8 + Chain::SPACE,
+        space = 8 + Chain::INIT_SPACE,
         seeds = [CHAIN_SEED, owner.key().as_ref()],
         bump,
     )]

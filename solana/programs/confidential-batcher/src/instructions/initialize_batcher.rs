@@ -11,7 +11,7 @@ pub struct InitializeBatcher<'info> {
     pub payer: Signer<'info>,
     /// Batcher config account, created here. A fresh keypair signs its own
     /// creation (the demo-vault `Vault` pattern).
-    #[account(init, payer = payer, space = 8 + Batcher::SPACE)]
+    #[account(init, payer = payer, space = 8 + Batcher::INIT_SPACE)]
     pub batcher: Box<Account<'info, Batcher>>,
     /// Confidential mint users join batches with.
     pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,

@@ -7,7 +7,6 @@ use super::*;
 #[derive(Accounts)]
 pub struct Harvest<'info> {
     /// Donor and transfer authority over `donor_underlying`.
-    #[account(mut)]
     pub donor: Signer<'info>,
     /// Vault receiving the donation.
     #[account(

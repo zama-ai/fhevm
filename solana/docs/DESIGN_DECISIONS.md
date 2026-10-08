@@ -1079,11 +1079,7 @@ zero clarity.
 
 In both directions a claim is the exact proportional floor
 `encrypted(joined) x payout_received / total_joined` in one MulDiv (fhevm-internal#1774 item 1).
-`encrypted(joined) x rate / RATE_SCALE` on a pre-floored rate costs the same FHE ops but rounds
-twice, and strands up to RATE_SCALE-scale dust per batch (6,148,914,726 raw units measured at a
-u64-scale two-user batch). The exact floor strands at most one unit per claim (pinned by
-`exact_division_strands_less_than_the_rate_would`). Sum-of-claims <= payout still holds:
-`sum(floor(j_i * P / T)) <= floor(sum(j_i) * P / T) = P`. The MulDiv intermediate
+Sum-of-claims <= payout holds: `sum(floor(j_i * P / T)) <= floor(sum(j_i) * P / T) = P`. The MulDiv intermediate
 `joined * payout_received < 2^128` stays inside the coprocessor's widened MulDiv and the result is
 at most `payout_received`, so it fits euint64; `total_joined > 0` because zero-total batches
 cancel. The frozen `payout_rate` remains on the batch and in `BatchSettled`, but is informational

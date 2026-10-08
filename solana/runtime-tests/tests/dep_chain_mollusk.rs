@@ -80,7 +80,7 @@ fn full_depth_dependent_chain_computes_in_one_execution() {
             kit::cleartext::store_u64(
                 &context,
                 encrypted_store,
-                chain_program::encrypted_tail_label()
+                chain_program::ENCRYPTED_TAIL_LABEL
             ),
             expected
         );

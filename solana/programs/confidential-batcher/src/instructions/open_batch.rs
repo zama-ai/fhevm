@@ -28,7 +28,7 @@ pub struct OpenBatch<'info> {
     #[account(
         init,
         payer = payer,
-        space = 8 + Batch::SPACE,
+        space = 8 + Batch::INIT_SPACE,
         seeds = [BATCH_SEED, batcher.key().as_ref(), &index.to_le_bytes()],
         bump,
     )]

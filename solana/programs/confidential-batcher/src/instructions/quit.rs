@@ -149,7 +149,7 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
 
     let account = fhe::read_state(&ctx.accounts.join_store)?;
     let output = zama_fhe::Store::new(&account)
-        .set(joined_amount_key())
+        .set(JOINED_AMOUNT_KEY)
         .allow(user);
     let execution =
         zama_fhe::FheExecution::build_returning(zama_fhe::Store::new(&account).id(), |builder| {
@@ -241,7 +241,7 @@ fn refund_contribution<'info>(
         )
         .with_remaining_accounts(deny_records.to_vec()),
         ct::TransferInput::Slot {
-            key: joined_amount_key(),
+            key: JOINED_AMOUNT_KEY,
         },
     )
 }

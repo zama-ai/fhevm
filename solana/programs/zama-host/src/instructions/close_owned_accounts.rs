@@ -6,9 +6,11 @@
 //! authority rather than `HostConfig.admin` because a half-initialized deployment has no config.
 
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{bpf_loader_upgradeable, system_program};
+use anchor_lang::solana_program::bpf_loader_upgradeable;
 
 use crate::errors::ZamaHostError;
+
+include!("../../../close_program_owned.rs");
 
 /// Accounts for closing program-owned accounts. Targets follow as remaining accounts.
 #[derive(Accounts)]
@@ -26,19 +28,8 @@ pub struct CloseOwnedAccounts<'info> {
 
 /// Closes each program-owned remaining account; a foreign or already closed account is skipped.
 pub fn close_owned_accounts<'info>(ctx: Context<'info, CloseOwnedAccounts<'info>>) -> Result<()> {
-    let admin = ctx.accounts.admin.to_account_info();
-    for target in ctx.remaining_accounts {
-        if target.owner != &crate::ID {
-            continue;
-        }
-        let rent = target.lamports();
-        **target.try_borrow_mut_lamports()? = 0;
-        **admin.try_borrow_mut_lamports()? = admin
-            .lamports()
-            .checked_add(rent)
-            .ok_or(ProgramError::ArithmeticOverflow)?;
-        target.resize(0)?;
-        target.assign(&system_program::ID);
-    }
-    Ok(())
+    close_program_owned(
+        &ctx.accounts.admin.to_account_info(),
+        ctx.remaining_accounts,
+    )
 }

@@ -15,10 +15,6 @@ pub const COUNTER_AUTHORITY_SEED: &[u8] = b"counter-authority";
 #[constant]
 pub const COUNT_KEY: [u8; 32] = *b"count___________________________";
 
-pub fn count_key() -> [u8; 32] {
-    COUNT_KEY
-}
-
 pub fn counter_address(owner: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[COUNTER_SEED, owner.as_ref()], &crate::id())
 }
@@ -35,11 +31,8 @@ pub fn counter_state_id(counter: Pubkey) -> StoreId {
 /// One owner's counter. The owner is bound by the PDA seeds; the stored bumps let instructions
 /// skip the bump search.
 #[account]
+#[derive(InitSpace)]
 pub struct Counter {
     pub bump: u8,
     pub authority_bump: u8,
-}
-
-impl Counter {
-    pub const SPACE: usize = 1 + 1;
 }

@@ -35,7 +35,8 @@ pub use settle::*;
 
 /// Moves lamports from the transaction payer to the batch authority PDA, which
 /// pays the rent that token CPIs charge to the account owner (token-account
-/// creation at open, the pending burn at dispatch, and execution growth at settle).
+/// creation at `open_batch`, execution growth at `cancel_dispatch` and `settle`).
+/// `dispatch` opens the pending burn with its caller's payer instead.
 /// Unspent lamports stay on the PDA until the batch is finished, when
 /// `reclaim_batch_authority` returns them to the join mint's wrapper authority.
 pub(crate) fn fund_batch_authority<'info>(

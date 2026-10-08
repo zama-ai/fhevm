@@ -25,11 +25,6 @@ pub struct Vault {
     pub authority_bump: u8,
 }
 
-impl Vault {
-    /// Serialized size of the account body, excluding the Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 32 + 1;
-}
-
 /// Shares minted for a deposit of `assets`, rounded DOWN (protocol-favoring).
 ///
 /// `shares = assets * (total_shares + VIRTUAL_SHARES) / (total_assets + VIRTUAL_ASSETS)`

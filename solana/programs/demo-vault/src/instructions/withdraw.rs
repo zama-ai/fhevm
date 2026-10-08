@@ -6,7 +6,6 @@ use super::*;
 #[derive(Accounts)]
 pub struct Withdraw<'info> {
     /// Share owner and burn authority over `owner_shares`.
-    #[account(mut)]
     pub owner: Signer<'info>,
     /// Vault whose share price the withdraw is measured against.
     #[account(

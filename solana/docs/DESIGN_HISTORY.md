@@ -1149,6 +1149,16 @@ depth (or `t>=9`) needs the scratch-account two-transaction fallback reserved in
 Relates to DD-007 (input verification model) and closes the FUTURE_DESIGN §1 / EVM_PARITY "single
 coprocessor signer at threshold 1" fragile item.
 
+### DD-042, the rate-based claim comparison
+
+DD-042 states only the exact-floor claim rule. The comparison with the replaced rate-based claim,
+and the measurement that backed it, as first written:
+
+> `encrypted(joined) x rate / RATE_SCALE` on a pre-floored rate costs the same FHE ops but rounds
+> twice, and strands up to RATE_SCALE-scale dust per batch (6,148,914,726 raw units measured at a
+> u64-scale two-user batch). The exact floor strands at most one unit per claim (pinned by
+> `exact_division_strands_less_than_the_rate_would`).
+
 ### DD-044, replaced in part by DD-048, DD-056, DD-058 and DD-061
 
 Status: adopted

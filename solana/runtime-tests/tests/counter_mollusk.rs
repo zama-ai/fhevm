@@ -72,7 +72,7 @@ fn counter_initializes_to_zero_and_adds_increments() {
     let assert_count = |ix: &Instruction, expected: u64| {
         process_fhe_instruction(&context, owner, ix, &[Check::success()]);
         assert_eq!(
-            kit::cleartext::store_u64(&context, encrypted_store, counter::count_key()),
+            kit::cleartext::store_u64(&context, encrypted_store, counter::COUNT_KEY),
             expected
         );
     };

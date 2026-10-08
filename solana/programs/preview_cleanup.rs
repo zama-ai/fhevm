@@ -15,22 +15,10 @@ pub struct PreviewAdmin<'info> {
     pub program_data: Account<'info, ProgramData>,
 }
 
+include!("close_program_owned.rs");
+
 pub fn close_owned_accounts<'info>(ctx: Context<'info, PreviewAdmin<'info>>) -> Result<()> {
-    let admin = ctx.accounts.admin.to_account_info();
-    for target in ctx.remaining_accounts {
-        if target.owner != &crate::ID {
-            continue;
-        }
-        let balance = target.lamports();
-        **target.try_borrow_mut_lamports()? = 0;
-        **admin.try_borrow_mut_lamports()? = admin
-            .lamports()
-            .checked_add(balance)
-            .ok_or(ProgramError::ArithmeticOverflow)?;
-        target.resize(0)?;
-        target.assign(&system_program::ID);
-    }
-    Ok(())
+    close_program_owned(&ctx.accounts.admin.to_account_info(), ctx.remaining_accounts)
 }
 
 #[derive(Accounts)]

@@ -10,7 +10,7 @@ pub struct InitializeVault<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     /// Vault state account, created here. A fresh keypair signs its own creation.
-    #[account(init, payer = payer, space = 8 + Vault::SPACE)]
+    #[account(init, payer = payer, space = 8 + Vault::INIT_SPACE)]
     pub vault: Box<Account<'info, Vault>>,
     /// Underlying SPL mint the vault accepts.
     pub underlying_mint: Box<Account<'info, Mint>>,
