@@ -6,7 +6,7 @@
 //! combination without a ported EVM row returns [`ZamaHostError::HcuUnknownCost`].
 //!
 //! **Numbers are the EVM `HCULimit` tables**, hardcoded, through `euint128` (type 6). Types 7
-//! (`euint160`) and 8 (`euint256`) have no rows. Caps stay `u64::MAX` (off). A cell of `0` is the
+//! (`euint160`) and 8 (`euint256`) have no rows. Caps start at `u64::MAX` (off) until the admin sets them (INVARIANTS #37). A cell of `0` is the
 //! unknown-cost sentinel — no shipped cost is 0 (Not/ebool is 2; trivial/cast is 32).
 
 use anchor_lang::prelude::*;

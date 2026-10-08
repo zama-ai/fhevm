@@ -1,4 +1,5 @@
-// Initializes HostConfig and defines the bring-up KMS context from live gateway values.
+// Initializes HostConfig with EVM's HCU limits and defines the bring-up KMS context from live
+// gateway values.
 // A re-run validates the existing host binding before skipping account initialization:
 // `define_kms_context` is `init` on the context PDA, so a second call would fail closed
 // without the skip.
@@ -12,7 +13,7 @@ import {
 } from '@solana/kit';
 import { LOADER_V3_PROGRAM_ADDRESS } from '@solana-program/loader-v3';
 
-import { BRINGUP_KMS_CONTEXT_ID, SOLANA_HOST_CHAIN_ID } from './constants';
+import { BRINGUP_KMS_CONTEXT_ID, HCU_LIMITS, SOLANA_HOST_CHAIN_ID } from './constants';
 import type { GatewayBootstrapInputs } from './gateway';
 import {
   findEventAuthorityPda,
@@ -23,6 +24,8 @@ import {
   getHostConfigDecoder,
   getInitializeHostConfigInstructionAsync,
   getKmsContextDecoder,
+  getSetMaxHcuDepthPerTxInstructionAsync,
+  getSetMaxHcuPerTxInstructionAsync,
   HOST_CONFIG_DISCRIMINATOR,
   KMS_CONTEXT_DISCRIMINATOR,
   ZAMA_HOST_PROGRAM_ADDRESS,
@@ -139,7 +142,9 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
       !equalBytes(config.decryptionContract, params.gateway.decryptionContract) ||
       config.coprocessorThreshold !== (params.coprocessorThreshold ?? 1) ||
       config.coprocessorSignerCount !== params.gateway.coprocessorSigners.length ||
-      !params.gateway.coprocessorSigners.every((signer, i) => equalBytes(signer, config.coprocessorSigners[i]!))
+      !params.gateway.coprocessorSigners.every((signer, i) => equalBytes(signer, config.coprocessorSigners[i]!)) ||
+      config.maxHcuDepthPerTx !== HCU_LIMITS.maxHcuDepthPerTx ||
+      config.maxHcuPerTx !== HCU_LIMITS.maxHcuPerTx
     ) {
       throw new Error(
         'existing HostConfig does not match deployment inputs; refuse to bind an existing host to a different stack',
@@ -163,6 +168,14 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
           grantDenyListEnabled: false,
           ...shared,
         },
+        ixConfig,
+      ),
+      await getSetMaxHcuDepthPerTxInstructionAsync(
+        { admin: params.payer, value: HCU_LIMITS.maxHcuDepthPerTx, ...shared },
+        ixConfig,
+      ),
+      await getSetMaxHcuPerTxInstructionAsync(
+        { admin: params.payer, value: HCU_LIMITS.maxHcuPerTx, ...shared },
         ixConfig,
       ),
     ]);

@@ -1,9 +1,7 @@
-//! Sets the per-`fhe_execute` critical-path (depth) HCU limit (mirrors EVM `setMaxHCUDepthPerTx`).
+//! Sets the per-transaction critical-path (depth) HCU limit (mirrors EVM `setMaxHCUDepthPerTx`).
 //!
-//! Naming note: the field is `max_hcu_depth_per_tx` to match EVM's `setMaxHCUDepthPerTx`, but on
-//! Solana the limit is enforced per `fhe_execute` execution, which can be smaller than a whole transaction
-//! (a tx may contain several executions). The EVM-aligned name is intentional; the scope difference is
-//! by design.
+//! Depth follows handles across every `fhe_execute` in the transaction: they all use the one
+//! transient store the transaction's final instruction closes, as EVM's transient counters do.
 
 use anchor_lang::prelude::*;
 

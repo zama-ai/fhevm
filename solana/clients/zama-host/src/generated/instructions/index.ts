@@ -15,4 +15,6 @@ export * from './makeStoreHandlePublic.js';
 export * from './openTransientStore.js';
 export * from './revokeDelegationForUserDecryption.js';
 export * from './revokePermits.js';
+export * from './setMaxHcuDepthPerTx.js';
+export * from './setMaxHcuPerTx.js';
 export * from './verifyPublicDecrypt.js';

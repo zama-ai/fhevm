@@ -1,5 +1,7 @@
 import { type Address, type Instruction, type TransactionSigner, generateKeyPairSigner } from '@solana/kit';
 import { describe, expect, test } from 'bun:test';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 
 import { BRINGUP_KMS_CONTEXT_ID, type GatewayBootstrapInputs } from './addresses';
 import {
@@ -10,6 +12,7 @@ import {
   lifecycleComposeProject,
 } from './deploy';
 import {
+  findEventAuthorityPda,
   findHostConfigPda,
   findKmsContextPda,
   findRandNoncePda,
@@ -17,14 +20,23 @@ import {
   getDefineKmsContextInstructionDataEncoder,
   getHostConfigEncoder,
   getInitializeHostConfigInstructionDataDecoder,
+  getSetMaxHcuDepthPerTxInstructionDataDecoder,
+  getSetMaxHcuPerTxInstructionDataDecoder,
+  type HostConfigArgs,
   KMS_CONTEXT_DISCRIMINATOR,
+  SET_MAX_HCU_DEPTH_PER_TX_DISCRIMINATOR,
+  SET_MAX_HCU_PER_TX_DISCRIMINATOR,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
 import { zamaHostProgramDataAddress } from './provision';
 import { loadCoprocessorScenario, resolveScenarioFile } from '../scenario/resolve';
+import { HCU_LIMITS } from '../../../../solana/deploy/src/constants';
 import type { HostDeployContext } from '../../../../solana/deploy/src/send';
+import { REPO_ROOT } from '../layout';
 
 const address20 = (byte: number): Uint8Array => new Uint8Array(20).fill(byte);
+// The program's unlimited sentinel, `u64::MAX`.
+const unlimited = 2n ** 64n - 1n;
 
 const kmsCorruptionThreshold = 1;
 
@@ -37,7 +49,12 @@ const gateway: GatewayBootstrapInputs = {
 };
 
 /** A fake context capturing sent instructions, with stubbed host-config / kms-context reads. */
-const fakeContext = async (hostConfigExists: boolean, payer: Address, kmsContextExists = false) => {
+const fakeContext = async (
+  hostConfigExists: boolean,
+  payer: Address,
+  kmsContextExists = false,
+  hcuLimits: Pick<HostConfigArgs, 'maxHcuPerTx' | 'maxHcuDepthPerTx'> = HCU_LIMITS,
+) => {
   const [hostConfig] = await findHostConfigPda();
   const [kmsContext] = await findKmsContextPda({ contextId: BRINGUP_KMS_CONTEXT_ID });
   const sent: Instruction[][] = [];
@@ -68,9 +85,8 @@ const fakeContext = async (hostConfigExists: boolean, payer: Address, kmsContext
                             currentKmsContextId: BRINGUP_KMS_CONTEXT_ID,
                             paused: { execution: false, verifiedInputs: false, aclWrites: false },
                             grantDenyListEnabled: false,
-                            maxHcuPerTx: 1n,
-                            maxHcuDepthPerTx: 1n,
-                            hcuBlockCapPerApp: 1n,
+                            ...hcuLimits,
+                            hcuBlockCapPerApp: unlimited,
                             bump: 0,
                           }),
                         ).toString('base64')
@@ -162,13 +178,20 @@ describe('host bootstrap thresholds', () => {
 });
 
 describe('bootstrapZamaHost', () => {
-  test('fresh validator: initializes the host config, then defines KMS context 1', async () => {
+  test('fresh validator: initializes the host config with the HCU limits, then defines KMS context 1', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(false, payer.address);
     await bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold });
 
     expect(sent).toHaveLength(2);
-    const [[initialize], [defineContext]] = sent;
+    expect(sent[0]).toHaveLength(3);
+    const [[initialize, setDepth, setTotal], [defineContext]] = sent;
+    expect(Buffer.from(setDepth.data!.subarray(0, 8))).toEqual(Buffer.from(SET_MAX_HCU_DEPTH_PER_TX_DISCRIMINATOR));
+    expect(Buffer.from(setTotal.data!.subarray(0, 8))).toEqual(Buffer.from(SET_MAX_HCU_PER_TX_DISCRIMINATOR));
+    expect(getSetMaxHcuDepthPerTxInstructionDataDecoder().decode(setDepth.data!).value).toBe(
+      HCU_LIMITS.maxHcuDepthPerTx,
+    );
+    expect(getSetMaxHcuPerTxInstructionDataDecoder().decode(setTotal.data!).value).toBe(HCU_LIMITS.maxHcuPerTx);
     expect(initialize.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     const programData = await zamaHostProgramDataAddress();
     expect(initialize.accounts?.some((account) => account.address === programData)).toBe(true);
@@ -187,7 +210,7 @@ describe('bootstrapZamaHost', () => {
     expect(defineData.thresholds).toEqual({ publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 1 });
   });
 
-  test('bootstrap derives the randomness account under the given host, not the compiled default', async () => {
+  test('bootstrap targets the given host and its randomness account, not the compiled default', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(false, payer.address);
     const programAddress = (await generateKeyPairSigner()).address;
@@ -197,6 +220,14 @@ describe('bootstrapZamaHost', () => {
     const accounts = sent[0][0].accounts!.map((account) => account.address);
     expect(accounts).toContain(givenNonce);
     expect(accounts).not.toContain(defaultNonce);
+    const [hostConfig] = await findHostConfigPda({ programAddress });
+    const [eventAuthority] = await findEventAuthorityPda({ programAddress });
+    for (const instruction of sent[0]) {
+      expect(instruction.programAddress).toBe(programAddress);
+      const addresses = instruction.accounts!.map((account) => account.address);
+      expect(addresses).toContain(hostConfig);
+      expect(addresses).toContain(eventAuthority);
+    }
   });
 
   test('configured validator: skips initialize_host_config, still defines the context', async () => {
@@ -232,6 +263,18 @@ describe('bootstrapZamaHost', () => {
     expect(sent).toHaveLength(0);
   });
 
+  test('refuses a host with other HCU limits without submitting transactions', async () => {
+    const payer = await generateKeyPairSigner();
+    for (const hcuLimits of [
+      { ...HCU_LIMITS, maxHcuPerTx: unlimited },
+      { ...HCU_LIMITS, maxHcuDepthPerTx: unlimited },
+    ]) {
+      const { context, sent } = await fakeContext(true, payer.address, false, hcuLimits);
+      await expect(bootstrapZamaHost(context, { payer, gateway })).rejects.toThrow('does not match');
+      expect(sent).toHaveLength(0);
+    }
+  });
+
   test('already bootstrapped: skips both initialize_host_config and define_kms_context', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(true, payer.address, true);
@@ -260,4 +303,13 @@ test('first-deploy preflight rejects malformed inputs without sending initializa
     ).rejects.toThrow();
   }
   expect(sent).toHaveLength(0);
+});
+
+test('HCU limits match the values the EVM deployment initializes HCULimit with', async () => {
+  const tasks = await readFile(path.join(REPO_ROOT, 'host-contracts/tasks/taskDeploy.ts'), 'utf8');
+  const task = tasks.slice(tasks.indexOf("task('task:deployHCULimit')"));
+  const args = task.match(/fn: 'initializeFromEmptyProxy', args: \[([^\]]*)\]/)?.[1];
+  // HCULimit.initializeFromEmptyProxy(hcuCapPerBlock, maxHCUDepthPerTx, maxHCUPerTx).
+  const [, depth, total] = [...(args ?? '').matchAll(/BigInt\('(\d+)'\)/g)].map((match) => BigInt(match[1]!));
+  expect({ maxHcuDepthPerTx: depth, maxHcuPerTx: total }).toEqual(HCU_LIMITS);
 });
