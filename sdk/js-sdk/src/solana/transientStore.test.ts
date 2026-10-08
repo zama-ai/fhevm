@@ -144,7 +144,7 @@ describe('transientStoreTransactions', () => {
     const transientStore = await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
     // Three 1,500-byte instructions exceed the 4,096-byte v1 limit together but fit one per transaction.
     // The planner then splits the sandwich and leaves the close in a later transaction than the open;
-    // single-transaction sign and send refuse that plan before executing any of it.
+    // single-transaction sign and send refuse it before executing any of it.
     const oversized = [body(1, 1500), body(2, 1500), body(3, 1500)];
     for (const send of [client.signFheTransaction, client.sendFheTransaction]) {
       const error = await send(transientStore, oversized).catch((caught: unknown) => caught);
@@ -181,14 +181,14 @@ describe('transientStoreTransactions', () => {
     );
   });
 
-  it('hands out no plan that a caller could extend past the close', async () => {
+  it('exposes no composed transaction a caller could extend past the close', async () => {
     const { sending, client } = recordingClient();
     const transientStore = await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
     expect(Object.keys(client).filter((key) => !(key in sending))).toEqual([
       'signFheTransaction',
       'sendFheTransaction',
     ]);
-    // @ts-expect-error The body is a list of instructions, never a composed plan.
+    // @ts-expect-error The body is a list of instructions, never a composed `InstructionPlan`.
     await expect(client.sendFheTransaction(transientStore, sequentialInstructionPlan([body(1)]))).rejects.toThrow();
   });
 });

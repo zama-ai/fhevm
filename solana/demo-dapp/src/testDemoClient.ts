@@ -1,3 +1,4 @@
+/** Public API surface: the demo's tests, which drive the demo client over a scripted RPC. */
 import {
   getCompiledTransactionMessageDecoder,
   getTransactionEncoder,

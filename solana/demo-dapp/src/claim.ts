@@ -101,17 +101,17 @@ export const claimBatchPayout = async (
   user: Address,
 ): Promise<Signature | null> => {
   const client = createDemoClient(session.config, session.keeper);
-  const send = async (plan: NonNullable<Awaited<ReturnType<typeof buildClaimInstructions>>>) =>
-    (await client.sendFheTransaction(plan.transientStore, plan.instructions)).context.signature;
-  const plan = await buildClaimInstructions(session, position, direction, user);
-  if (plan === null) return null;
+  const send = async (claim: NonNullable<Awaited<ReturnType<typeof buildClaimInstructions>>>) =>
+    (await client.sendFheTransaction(claim.transientStore, claim.instructions)).context.signature;
+  const claim = await buildClaimInstructions(session, position, direction, user);
+  if (claim === null) return null;
   try {
-    return await send(plan);
+    return await send(claim);
   } catch (error) {
-    if (!plan.initializesAccount) throw error;
-    const retryPlan = await buildClaimInstructions(session, position, direction, user);
-    if (retryPlan === null) return null;
-    if (retryPlan.initializesAccount) throw error;
-    return send(retryPlan);
+    if (!claim.initializesAccount) throw error;
+    const retry = await buildClaimInstructions(session, position, direction, user);
+    if (retry === null) return null;
+    if (retry.initializesAccount) throw error;
+    return send(retry);
   }
 };

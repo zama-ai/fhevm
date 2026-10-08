@@ -12,9 +12,6 @@ remains:
 - A gateway-sync authority that mirrors the EVM `GatewayConfig` coprocessor registry into
   `set_coprocessor_signers`, instead of admin-driven rotation.
 - The real proof / transciphering service that produces the attested ciphertext behind the signature.
-- A KMS threshold above 8 signatures overflows a legacy `redeem_burned_amount` transaction
-  (`runtime-tests/tests/disclose_packet_fit.rs`). Redeem would then need an address lookup table,
-  as the batcher's `settle` uses.
 
 ## 2. Attested contract naming on the gateway
 

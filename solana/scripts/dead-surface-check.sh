@@ -676,11 +676,10 @@ if run_check 3; then
     'deliberately not a batch' -iE '\bbatch(es|ed|ing)?\b'
   # "plan" is CORE-only: test-suite/fhevm threads a docker-compose `plan: StackSpec` through every
   # generator. Inside the FHE core an execution is the only thing a "plan" could be. The one
-  # exception is the demo dapp's claim helper, where a plan is a list of Solana instructions to send
-  # — an unrelated meaning — so the four lines that name it are spelled out rather than exempting
-  # every sentence that happens to end in "plan".
+  # exception is the name of Kit's `@solana/kit-plugin-instruction-plan` package, whose instruction
+  # plans are lists of Solana instructions to send — an unrelated meaning.
   check_alias 'plan — one fhe_execute invocation is an execution' core \
-    'const plan = await|plan === null|plan\.instructions|plan\.initializesAccount' \
+    'kit-plugin-instruction-plan' \
     -iE '\bplans?\b'
   # dictionary <- pool. CORE-only: the listener is full of Postgres connection
   # pools, and it is not swept here. Inside the FHE core the only collection that could be called a

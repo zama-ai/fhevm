@@ -639,9 +639,14 @@ asks the next coprocessor as soon as one answers without a proof, fails or refus
 request another can serve, or hold it longer than that delay. Authorization was
 never its to give (#30).
 
-**48. [HOLDS]** Settle transactions at production KMS thresholds fit one packet
-only as v0 + one address lookup table; a legacy settle never fits. Pinned by
-`settle_transaction_size_needs_v0_lookup_table_and_fits` and `redeem_settle_transaction_size_needs_v0_lookup_table_and_fits`.
+**48. [HOLDS]** Clients send every transaction as version 1 (at most 4,096
+bytes and 64 account keys). Settle at the host's largest KMS threshold and join
+at its largest coprocessor threshold, each with every deny and HCU witness, fit
+one, and that settle stays within the compute a transaction may request. Pinned
+by `fits one v1 transaction at the maximum KMS threshold with every witness`
+(`solana/demo-dapp/src/vault/settleBatch.test.ts`), `fits one v1 transaction at
+the maximum coprocessor threshold with every witness` (`joinBatch.test.ts`) and
+`mollusk_settle_at_the_largest_kms_certificate_fits_the_compute_budget`.
 
 **50. [OPERATIONAL]** The relayer's ACL preflight covers EVM host chains and,
 advisorily, Solana delegated entries: a delegation row that is dead at the
@@ -653,16 +658,6 @@ it — so an unauthorized one is rejected by the KMS connectors after the
 gateway fee is paid. This does not affect authorization (#42, #45); for
 now we accept that a rejected request can still cost a fee, and that
 this leaves room for spam.
-
-**52. [OPERATIONAL]** Every batch gets its own settle address lookup table, and
-the demo runs the full table lifecycle: create + extend at `open_batch`
-(chunked so no extend can exceed the transaction wire limit), deactivate
-immediately after settlement, close once the ~513-slot deactivation
-cooldown has elapsed, refunding rent to the keeper. Deactivate and close
-are best-effort rent hygiene — a failure never fails a settlement, and the
-close crank retries on the next batch preparation. One composition function
-fills the table and compresses against it, so provisioned and consumed
-membership cannot diverge (`solana/demo-dapp/src/vault`).
 
 **54. [HOLDS]** `FheExecution::build` enforces three typed resource ceilings:
 

@@ -76,8 +76,8 @@ function isTransientStoreLifecycleInstruction(host: Address, instruction: Instru
 }
 
 // zama-host requires the close to be the transaction's last instruction. Single-transaction sign and
-// send refuse a sandwich the planner had to split, and nothing else can join its plan. Non-divisible
-// marks it atomic for any executor that does run split plans.
+// send refuse a sandwich the planner had to split, and nothing else can join it. Non-divisible marks
+// it atomic for any executor that does split one.
 function fheTransactionPlan(
   transientStore: TransientStore,
   instructions: readonly Instruction[],
@@ -124,11 +124,11 @@ export function transientStoreTransactions() {
       Promise.resolve().then(() => fheTransactionPlan(transientStore, instructions));
     return extendClient<T, TransientStoreTransactions<T>>(client, {
       signFheTransaction: (transientStore, instructions, config) =>
-        planned(transientStore, instructions).then((plan) => client.signTransaction(plan, config)) as ReturnType<
+        planned(transientStore, instructions).then((sandwich) => client.signTransaction(sandwich, config)) as ReturnType<
           T['signTransaction']
         >,
       sendFheTransaction: (transientStore, instructions, config) =>
-        planned(transientStore, instructions).then((plan) => client.sendTransaction(plan, config)) as ReturnType<
+        planned(transientStore, instructions).then((sandwich) => client.sendTransaction(sandwich, config)) as ReturnType<
           T['sendTransaction']
         >,
     });
