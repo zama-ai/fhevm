@@ -9,29 +9,22 @@ use host_listener::contracts::TfheContract::TfheContractEvents;
 use std::str::FromStr;
 
 const RANDOM_SUPPORTED_TYPES_CPU: &[i32] = &[
-    0,  // bool
-    1,  // 4 bit
-    2,  // 8 bit
-    3,  // 16 bit
-    4,  // 32 bit
-    5,  // 64 bit
-    6,  // 128 bit
-    7,  // 160 bit
-    8,  // 256 bit
-    9,  // 512 bit
-    10, // 1024 bit
-    11, // 2048 bit
-];
-
-const RANDOM_SUPPORTED_TYPES_GPU: &[i32] = &[
     0, // bool
-    1, // 4 bit
     2, // 8 bit
     3, // 16 bit
     4, // 32 bit
     5, // 64 bit
     6, // 128 bit
-    7, // 160 bit
+    8, // 256 bit
+];
+
+const RANDOM_SUPPORTED_TYPES_GPU: &[i32] = &[
+    0, // bool
+    2, // 8 bit
+    3, // 16 bit
+    4, // 32 bit
+    5, // 64 bit
+    6, // 128 bit
     8, // 256 bit
 ];
 
@@ -44,7 +37,6 @@ const RANDOM_SUPPORTED_TYPES_GPU: &[i32] = &[
 // exercises the full type set below.
 const RANDOM_SUPPORTED_TYPES_LOCAL: &[i32] = &[
     0, // bool
-    1, // 4 bit
     2, // 8 bit
     3, // 16 bit
     4, // 32 bit
@@ -185,14 +177,11 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
 
     // Per-type bounds matching the old gRPC test to avoid GPU edge cases.
     let type_bounds: &[(i32, &str)] = &[
-        (0, "2"),
-        (1, "16"),
         (2, "128"),
         (3, "16384"),
         (4, "1073741824"),
         (5, "4611686018427387904"),
         (6, "85070591730234615865843651857942052864"),
-        (7, "365375409332725729550921208179070754913983135744"),
         (
             8,
             "28948022309329048855892746252171976963317496166410141009864396001978282409984",

@@ -10,8 +10,8 @@ use tfhe::{
         CastInto, CiphertextList, FheEq, FheMax, FheMin, FheOrd, FheTryTrivialEncrypt,
         FusedMulScalarDiv, FusedScalarMulScalarDiv, IfThenElse, RotateLeft, RotateRight,
     },
-    CompactCiphertextListExpander, FheBool, FheUint1024, FheUint128, FheUint16, FheUint160,
-    FheUint2048, FheUint256, FheUint32, FheUint4, FheUint512, FheUint64, FheUint8, Seed,
+    CompactCiphertextListExpander, FheBool, FheUint128, FheUint16, FheUint160, FheUint256,
+    FheUint32, FheUint64, FheUint8, Seed,
 };
 
 pub fn deserialize_fhe_ciphertext(
@@ -2656,19 +2656,9 @@ pub fn generate_random_number(
     upper_bound: Option<&[u8]>,
 ) -> Result<SupportedFheCiphertexts, FhevmError> {
     match the_type {
-        0 => Ok(SupportedFheCiphertexts::FheBool(
+        0 if upper_bound.is_none() => Ok(SupportedFheCiphertexts::FheBool(
             FheBool::generate_oblivious_pseudo_random(Seed(seed)),
         )),
-        1 => {
-            let bit_count = 4;
-            let random_bits = upper_bound
-                .map(be_number_random_bits)
-                .unwrap_or(bit_count)
-                .min(bit_count) as u64;
-            Ok(SupportedFheCiphertexts::FheUint4(
-                FheUint4::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
-            ))
-        }
         2 => {
             let bit_count = 8;
             let random_bits = upper_bound
@@ -2719,16 +2709,6 @@ pub fn generate_random_number(
                 FheUint128::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
             ))
         }
-        7 => {
-            let bit_count = 160;
-            let random_bits = upper_bound
-                .map(be_number_random_bits)
-                .unwrap_or(bit_count)
-                .min(bit_count) as u64;
-            Ok(SupportedFheCiphertexts::FheUint160(
-                FheUint160::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
-            ))
-        }
         8 => {
             let bit_count = 256;
             let random_bits = upper_bound
@@ -2737,36 +2717,6 @@ pub fn generate_random_number(
                 .min(bit_count) as u64;
             Ok(SupportedFheCiphertexts::FheUint256(
                 FheUint256::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
-            ))
-        }
-        9 => {
-            let bit_count = 512;
-            let random_bits = upper_bound
-                .map(be_number_random_bits)
-                .unwrap_or(bit_count)
-                .min(bit_count) as u64;
-            Ok(SupportedFheCiphertexts::FheBytes64(
-                FheUint512::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
-            ))
-        }
-        10 => {
-            let bit_count = 1024;
-            let random_bits = upper_bound
-                .map(be_number_random_bits)
-                .unwrap_or(bit_count)
-                .min(bit_count) as u64;
-            Ok(SupportedFheCiphertexts::FheBytes128(
-                FheUint1024::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
-            ))
-        }
-        11 => {
-            let bit_count = 2048;
-            let random_bits = upper_bound
-                .map(be_number_random_bits)
-                .unwrap_or(bit_count)
-                .min(bit_count) as u64;
-            Ok(SupportedFheCiphertexts::FheBytes256(
-                FheUint2048::generate_oblivious_pseudo_random_bounded(Seed(seed), random_bits),
             ))
         }
         other => Err(FhevmError::UnknownFheType(other as i32)),
