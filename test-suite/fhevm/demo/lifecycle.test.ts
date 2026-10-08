@@ -21,9 +21,9 @@ import {
   assertExactOwnedDockerResources,
   bootAuthorizationTokenPath,
   collisionErrors,
+  daemonBuilderPlatforms,
   DEMO_REQUIRED_COMMANDS,
   demoReservedPorts,
-  buildxInspectPlatforms,
   doctorEnvironmentErrors,
   demoComposeProject,
   demoLaunchUrl,
@@ -33,6 +33,7 @@ import {
   existingBootAction,
   isDemoDappApiResponseHealthy,
   isExactOwnedProcess,
+  kmsCoreClusterLine,
   observabilityComposeCommand,
   observabilityModeMatches,
   ownedContainer,
@@ -1173,21 +1174,88 @@ describe("Apple Silicon compose policy", () => {
     ).toEqual([]);
   });
 
-  test("reads every builder node's platforms from docker buildx inspect", () => {
+  const arm64Daemon = {
+    docker: { cpus: 8, memoryBytes: 16 * 1024 ** 3, osType: "linux", architecture: "aarch64" },
+    coreManifestArchitectures: ["amd64"],
+    missingKeypairs: [],
+    runtimeWritable: true,
+  };
+  const doctorErrorsWithBuilder = (inspect: { code: number; stdout: string; stderr: string }) => {
+    const builder = daemonBuilderPlatforms(inspect);
+    return doctorEnvironmentErrors({
+      ...arm64Daemon,
+      dockerBuildxError: builder.error,
+      builderPlatforms: builder.platforms,
+    });
+  };
+
+  test("reads the platforms of the daemon's docker-driver builder", () => {
+    const inspect = {
+      code: 0,
+      stdout: [
+        "Name:          desktop-linux",
+        "Driver:        docker",
+        "Last Activity: 2026-10-06 19:57:59 +0000 UTC",
+        "",
+        "Nodes:",
+        "Name:             desktop-linux",
+        "Endpoint:         desktop-linux",
+        "Status:           running",
+        "Platforms:        linux/arm64, linux/amd64*, linux/amd64/v2, linux/riscv64",
+      ].join("\n"),
+      stderr: "",
+    };
+    expect(daemonBuilderPlatforms(inspect)).toEqual({
+      platforms: ["linux/arm64", "linux/amd64", "linux/amd64/v2", "linux/riscv64"],
+    });
+    expect(doctorErrorsWithBuilder(inspect)).toEqual([]);
+  });
+
+  test("does not trust platforms listed by a builder other than the daemon's own", () => {
+    // A remote or multi-node builder can list linux/amd64 while the local arm64 daemon has no emulation.
     expect(
-      buildxInspectPlatforms(
-        [
-          "Name:          desktop-linux",
-          "Driver:        docker",
+      doctorErrorsWithBuilder({
+        code: 0,
+        stdout: [
+          "Name:          cloud",
+          "Driver:        remote",
+          "",
           "Nodes:",
-          "Name:             desktop-linux",
-          "Status:           running",
-          "Platforms:        linux/arm64, linux/amd64*, linux/amd64/v2, linux/riscv64",
-          "Name:             second",
-          "Platforms:        linux/arm64",
+          "Name:             cloud0",
+          "Platforms:        linux/amd64",
         ].join("\n"),
-      ),
-    ).toEqual(["linux/arm64", "linux/amd64", "linux/amd64/v2", "linux/riscv64"]);
-    expect(buildxInspectPlatforms("Name: x\nError: context deadline exceeded")).toEqual([]);
+        stderr: "",
+      }),
+    ).toEqual(["Docker Buildx unavailable: builder driver is remote, not the daemon's docker driver"]);
+  });
+
+  test("reports a broken builder, which docker buildx inspect prints with exit code 0", () => {
+    // Output of buildx v0.36.0-desktop.1 against a Docker Desktop engine that does not answer.
+    const deadline =
+      'Get "http://%2FUsers%2Fwork%2F.docker%2Frun%2Fdocker.sock/_ping": context deadline exceeded';
+    expect(
+      doctorErrorsWithBuilder({
+        code: 0,
+        stdout: [
+          "Name:          desktop-linux",
+          "Driver:        ",
+          "Last Activity: 2026-10-06 19:57:59 +0000 UTC",
+          `Error:         ${deadline}`,
+        ].join("\n"),
+        stderr: "",
+      }),
+    ).toEqual([`Docker Buildx unavailable: ${deadline}`]);
+    expect(
+      doctorErrorsWithBuilder({ code: 1, stdout: "", stderr: "docker: 'buildx' is not a docker command.\n" }),
+    ).toEqual(["Docker Buildx unavailable: docker: 'buildx' is not a docker command."]);
+  });
+
+  test("labels the cores emulated from the daemon's architecture, not the host's", () => {
+    expect(kmsCoreClusterLine({ ...arm64Daemon.docker, architecture: "aarch64" })).toBe(
+      "kms-core cluster=linux/amd64 (emulated); all other services remain native",
+    );
+    expect(kmsCoreClusterLine({ ...arm64Daemon.docker, architecture: "x86_64" })).toBe(
+      "kms-core cluster=linux/amd64; all other services remain native",
+    );
   });
 });
