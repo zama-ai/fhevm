@@ -109,8 +109,18 @@ impl EthRpcApiServer for MockRpcHandler {
         Ok(None)
     }
 
-    async fn estimate_gas(&self, _tx: Value, _block: Option<String>) -> RpcResult<String> {
-        Ok(format!("0x{:x}", self.config.gas_limit))
+    async fn estimate_gas(&self, tx: Value, _block: Option<String>) -> RpcResult<String> {
+        let matched = CallParams::try_from(&tx)
+            .ok()
+            .and_then(|params| self.pattern_matcher.find_estimate_gas_match(&params));
+        match matched {
+            Some(Response::Revert { reason, .. }) => {
+                let error_message = reason.as_deref().unwrap_or("execution reverted");
+                Err(ErrorObject::owned(-32000, error_message, None::<()>))
+            }
+            Some(Response::Error(message)) => Err(ErrorObject::owned(-32603, message, None::<()>)),
+            Some(Response::Success { .. }) | None => Ok(format!("0x{:x}", self.config.gas_limit)),
+        }
     }
 
     async fn gas_price(&self) -> RpcResult<String> {

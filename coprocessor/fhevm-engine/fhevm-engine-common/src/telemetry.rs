@@ -127,15 +127,23 @@ pub fn init_json_subscriber_with_filter(
         }
     };
 
-    let telemetry_layer = tracing_opentelemetry::layer()
-        .with_tracer(tracer)
-        .with_filter(filter_fn(|metadata| {
-            !is_otel_internal_target(metadata.target())
-        }));
-    base.with(telemetry_layer).try_init()?;
+    base.with(otlp_layer(tracer)).try_init()?;
     opentelemetry::global::set_tracer_provider(trace_provider.clone());
     let _ = TRACER_PROVIDER.set(trace_provider.clone());
     Ok(Some(TracerProviderGuard::new(trace_provider)))
+}
+
+/// The span-exporting layer. It drops OpenTelemetry's own spans and events (targets starting
+/// with `opentelemetry`), which would otherwise be exported as child spans and span events.
+fn otlp_layer<S>(tracer: opentelemetry_sdk::trace::Tracer) -> impl Layer<S>
+where
+    S: tracing::Subscriber + for<'span> tracing_subscriber::registry::LookupSpan<'span>,
+{
+    tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_filter(filter_fn(|metadata| {
+            !is_otel_internal_target(metadata.target())
+        }))
 }
 
 fn is_otel_internal_target(target: &str) -> bool {
@@ -234,6 +242,8 @@ fn setup_otel_with_tracer(
     Ok((tracer, trace_provider))
 }
 
+// A timeout set with `with_timeout` overrides the OTLP timeout env vars, so we read them
+// here and fall back to our default only when neither is set.
 fn otlp_export_timeout() -> Duration {
     parse_timeout_env(opentelemetry_otlp::OTEL_EXPORTER_OTLP_TRACES_TIMEOUT)
         .or_else(|| parse_timeout_env(opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT))
@@ -654,29 +664,17 @@ mod tests {
     }
 
     #[test]
-    fn otel_internal_targets_are_not_forwarded_to_filtered_layer() {
-        use std::sync::{
-            atomic::{AtomicUsize, Ordering},
-            Arc,
-        };
-        use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
+    fn otlp_layer_drops_opentelemetry_events() {
+        use opentelemetry_sdk::trace::InMemorySpanExporter;
 
-        struct CountingLayer(Arc<AtomicUsize>);
-
-        impl<S: tracing::Subscriber> Layer<S> for CountingLayer {
-            fn on_event(&self, _event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
-                self.0.fetch_add(1, Ordering::SeqCst);
-            }
-        }
-
-        let forwarded = Arc::new(AtomicUsize::new(0));
-        let filtered_layer =
-            CountingLayer(forwarded.clone()).with_filter(tracing_subscriber::filter::filter_fn(
-                |metadata| !is_otel_internal_target(metadata.target()),
-            ));
-        let subscriber = tracing_subscriber::registry().with(filtered_layer);
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let subscriber = tracing_subscriber::registry().with(otlp_layer(provider.tracer("test")));
 
         tracing::subscriber::with_default(subscriber, || {
+            let _span = tracing::info_span!("request").entered();
             tracing::info!(target: "opentelemetry", "internal");
             tracing::info!(target: "opentelemetry_sdk", "internal");
             tracing::info!(target: "opentelemetry-otlp", "internal");
@@ -684,6 +682,15 @@ mod tests {
             tracing::info!(target: "host_listener", "application");
         });
 
-        assert_eq!(forwarded.load(Ordering::SeqCst), 1);
+        let spans = exporter.get_finished_spans().expect("finished spans");
+        let [span] = spans.as_slice() else {
+            panic!("expected one exported span, got {}", spans.len());
+        };
+        let events: Vec<&str> = span
+            .events
+            .iter()
+            .map(|event| event.name.as_ref())
+            .collect();
+        assert_eq!(events, ["application"]);
     }
 }
