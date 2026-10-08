@@ -10,7 +10,7 @@ import {
   getCancelDispatchInstructionDataDecoder,
 } from './internal/generated/confidentialBatcher/instructions/cancelDispatch.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
+import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
@@ -94,5 +94,20 @@ describe('buildCancelDispatchInstruction', () => {
     const decoded = getCancelDispatchInstructionDataDecoder().decode(instruction.data!);
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(CANCEL_DISPATCH_DISCRIMINATOR));
     expect(decoded.authorityFundingLamports).toBe(7n);
+  });
+
+  it('appends, under the deny list, the join mint deny record for the restored burn', async () => {
+    const payer = signer(addr(1));
+    const input = {
+      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
+      payer,
+      batcher: addr(2),
+      batch: addr(3),
+      joinConfidentialMint: addr(4),
+    };
+    const plain = await buildCancelDispatchInstruction(input);
+    const instruction = await buildCancelDispatchInstruction({ ...input, denyListEnabled: true });
+    const [joinMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: addr(4) });
+    expect(instruction.accounts!.slice(plain.accounts!.length)).toEqual([{ address: joinMintRecord, role: 0 }]);
   });
 });

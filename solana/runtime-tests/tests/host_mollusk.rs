@@ -31,11 +31,12 @@ use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
     coprocessor_signer_address, cost_snapshot, deny_scope_record_account, empty_system_account,
     encrypted_store_account, event_authority, funded_system_account, handle_for_chain,
-    hcu_trusted_app_record_account, host_svm as mollusk, host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash,
-    label, new_encrypted_store, new_encrypted_store_with_slot, paused_host_config,
-    program_owned_account, rand_nonce_account, read_encrypted_store, readonly, readonly_signer,
-    serialized_account, signing, system_account, system_program_account, u256_be, writable,
-    HostConfigParams, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
+    hcu_trusted_app_record_account, host_svm as mollusk,
+    host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
+    new_encrypted_store, new_encrypted_store_with_slot, paused_host_config, program_owned_account,
+    rand_nonce_account, read_encrypted_store, readonly, readonly_signer, serialized_account,
+    signing, system_account, system_program_account, u256_be, writable, HostConfigParams,
+    DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
 };
 
 mod host_fixtures;

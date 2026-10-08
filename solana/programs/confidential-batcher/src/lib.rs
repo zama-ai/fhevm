@@ -177,7 +177,7 @@ pub mod confidential_batcher {
     /// the received payout into confidential payout tokens, and records the
     /// batch's informational public rate. A zero-total batch is canceled
     /// instead. Permissionless.
-    /// Deny records: `(token, payout mint)`, required even for a zero total.
+    /// Deny records: `(token, payout mint)`, or none for a zero total, which runs no execution.
     pub fn settle<'info>(
         ctx: Context<'info, Settle<'info>>,
         cleartext_total: u64,

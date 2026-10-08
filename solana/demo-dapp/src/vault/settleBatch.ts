@@ -129,9 +129,11 @@ export async function settleBatch(
     payoutMintHcuBlockMeter: options.payoutMintHcuBlockMeter,
     payoutMintHcuTrustedAppRecord: options.payoutMintHcuTrustedAppRecord,
   });
-  const settleInstruction = await withDenyRecords(settleWithoutDenyRecords, options.denyListEnabled, [
-    tokenApp(roots.payoutConfidentialMint),
-  ]);
+  const settleInstruction = await withDenyRecords(
+    settleWithoutDenyRecords,
+    options.denyListEnabled,
+    cleartextTotal === 0n ? [] : [tokenApp(roots.payoutConfidentialMint)],
+  );
 
   const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
   const transaction = await buildAndSignSettleTransaction({

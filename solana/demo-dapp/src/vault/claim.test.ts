@@ -12,6 +12,7 @@ import {
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import {
   CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
+  findDenyScopeRecordPda,
   getCloseTransientStoreInstructionDataDecoder,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
@@ -165,5 +166,27 @@ describe('buildClaimInstruction', () => {
     expect(addresses[15]).toBe('4pn8uFyj9EnVWa8g8YGQedU4sCLBCNEQnhcJBZRnkwtw'); // batchPayoutBalanceStore
     expect(addresses[17]).toBe('CAspHyipvqeHA78sMa73uD2ThP84Zw4ywXG71dyrNpXp'); // zamaEventAuthority
     expect(addresses[20]).toBe('FmW1wCB2eZQFwLVuALBH2Y3yh9uscwcExz1i4zFGYZgp'); // tokenEventAuthority
+  });
+
+  it('appends, under the deny list, the batch then the payout mint deny record', async () => {
+    const input = {
+      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
+      payer,
+      user,
+      batcher,
+      batch,
+      payoutConfidentialMint,
+      payoutUnderlyingMint,
+      tokenProgram: SPL_TOKEN,
+    };
+    const plain = await buildClaimInstruction(input);
+    const instruction = await buildClaimInstruction({ ...input, denyListEnabled: true });
+    const [batchRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, scope: batch });
+    const [payoutMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: payoutConfidentialMint });
+    // The MulDiv runs as the batch; the payout transfer runs as the payout mint.
+    expect(instruction.accounts!.slice(plain.accounts!.length)).toEqual([
+      { address: batchRecord, role: 0 },
+      { address: payoutMintRecord, role: 0 },
+    ]);
   });
 });

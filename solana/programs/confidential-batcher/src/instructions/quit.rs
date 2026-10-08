@@ -145,44 +145,7 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     // The refund reads the join store, so its token execution also touches the batch application.
     let [refund_deny_records, reset_deny_records] =
         split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [2, 1])?;
-    ct::cpi::confidential_transfer_from_value(
-        CpiContext::new_with_signer(
-            ctx.accounts.confidential_token_program.key(),
-            ct::cpi::accounts::ConfidentialTransferFromValue {
-                owner: ctx.accounts.batch_authority.to_account_info(),
-                payer: ctx.accounts.payer.to_account_info(),
-                mint: ctx.accounts.join_confidential_mint.to_account_info(),
-                underlying_mint: ctx.accounts.join_underlying_mint.to_account_info(),
-                from_ata: ctx.accounts.batch_authority_ata.to_account_info(),
-                to_ata: ctx.accounts.user_ata.to_account_info(),
-                from_account: ctx.accounts.batch_join_token_account.to_account_info(),
-                to_account: ctx.accounts.user_token_account.to_account_info(),
-                from_store: ctx.accounts.batch_balance_store.to_account_info(),
-                to_store: ctx.accounts.user_balance_store.to_account_info(),
-                amount_store: Some(ctx.accounts.join_store.to_account_info()),
-                amount_authority: Some(ctx.accounts.join_record.to_account_info()),
-
-                zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-                transient_store: ctx.accounts.transient_store.to_account_info(),
-                instructions: ctx.accounts.instructions.to_account_info(),
-                zama_program: ctx.accounts.zama_program.to_account_info(),
-                host_config: ctx.accounts.host_config.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                hcu_block_meter: forward(&ctx.accounts.join_mint_hcu_block_meter),
-                hcu_trusted_app_record: forward(&ctx.accounts.join_mint_hcu_trusted_app_record),
-                event_authority: ctx
-                    .accounts
-                    .confidential_token_event_authority
-                    .to_account_info(),
-                program: ctx.accounts.confidential_token_program.to_account_info(),
-            },
-            &[&authority_seeds, record_seeds],
-        )
-        .with_remaining_accounts(refund_deny_records.to_vec()),
-        ct::TransferInput::Slot {
-            key: joined_amount_key(),
-        },
-    )?;
+    refund_contribution(&ctx, &[&authority_seeds, record_seeds], refund_deny_records)?;
 
     let account = fhe::read_state(&ctx.accounts.join_store)?;
     let output = zama_fhe::Store::new(&account)
@@ -207,8 +170,16 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         program: ctx.accounts.zama_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
         deny_records: reset_deny_records,
-        hcu_block_meter: forward(&ctx.accounts.batch_hcu_block_meter),
-        hcu_trusted_app_record: forward(&ctx.accounts.batch_hcu_trusted_app_record),
+        hcu_block_meter: ctx
+            .accounts
+            .batch_hcu_block_meter
+            .as_ref()
+            .map(|account| account.to_account_info()),
+        hcu_trusted_app_record: ctx
+            .accounts
+            .batch_hcu_trusted_app_record
+            .as_ref()
+            .map(|account| account.to_account_info()),
     }
     .invoke(execution, vec![ctx.accounts.join_store.to_account_info()])?;
 
@@ -218,4 +189,59 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         user,
     });
     Ok(())
+}
+
+// Keep CPI account assembly in a separate SBF function; Quit also builds the reset execution.
+#[inline(never)]
+fn refund_contribution<'info>(
+    ctx: &Context<'info, Quit<'info>>,
+    signer_seeds: &[&[&[u8]]],
+    deny_records: &[AccountInfo<'info>],
+) -> Result<()> {
+    ct::cpi::confidential_transfer_from_value(
+        CpiContext::new_with_signer(
+            ctx.accounts.confidential_token_program.key(),
+            ct::cpi::accounts::ConfidentialTransferFromValue {
+                owner: ctx.accounts.batch_authority.to_account_info(),
+                payer: ctx.accounts.payer.to_account_info(),
+                mint: ctx.accounts.join_confidential_mint.to_account_info(),
+                underlying_mint: ctx.accounts.join_underlying_mint.to_account_info(),
+                from_ata: ctx.accounts.batch_authority_ata.to_account_info(),
+                to_ata: ctx.accounts.user_ata.to_account_info(),
+                from_account: ctx.accounts.batch_join_token_account.to_account_info(),
+                to_account: ctx.accounts.user_token_account.to_account_info(),
+                from_store: ctx.accounts.batch_balance_store.to_account_info(),
+                to_store: ctx.accounts.user_balance_store.to_account_info(),
+                amount_store: Some(ctx.accounts.join_store.to_account_info()),
+                amount_authority: Some(ctx.accounts.join_record.to_account_info()),
+
+                zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                transient_store: ctx.accounts.transient_store.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
+                zama_program: ctx.accounts.zama_program.to_account_info(),
+                host_config: ctx.accounts.host_config.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                hcu_block_meter: ctx
+                    .accounts
+                    .join_mint_hcu_block_meter
+                    .as_ref()
+                    .map(|account| account.to_account_info()),
+                hcu_trusted_app_record: ctx
+                    .accounts
+                    .join_mint_hcu_trusted_app_record
+                    .as_ref()
+                    .map(|account| account.to_account_info()),
+                event_authority: ctx
+                    .accounts
+                    .confidential_token_event_authority
+                    .to_account_info(),
+                program: ctx.accounts.confidential_token_program.to_account_info(),
+            },
+            signer_seeds,
+        )
+        .with_remaining_accounts(deny_records.to_vec()),
+        ct::TransferInput::Slot {
+            key: joined_amount_key(),
+        },
+    )
 }

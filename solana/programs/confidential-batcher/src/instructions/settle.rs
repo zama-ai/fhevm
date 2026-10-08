@@ -194,8 +194,12 @@ pub fn settle<'info>(
     );
     let batch_key = ctx.accounts.batch.key();
     let burned_total_handle = ctx.accounts.batch.burned_total_handle;
-    let [wrap_deny_records] =
-        split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [1])?;
+    // A zero-total batch is canceled before the wrap, so it runs no execution and takes no records.
+    let [wrap_deny_records] = split_deny_records(
+        &ctx.accounts.host_config,
+        ctx.remaining_accounts,
+        [usize::from(cleartext_total > 0)],
+    )?;
 
     fund_batch_authority(
         &ctx.accounts.payer,
@@ -343,8 +347,16 @@ pub fn settle<'info>(
                 host_config: ctx.accounts.host_config.to_account_info(),
                 token_program: ctx.accounts.token_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
-                hcu_block_meter: forward(&ctx.accounts.payout_mint_hcu_block_meter),
-                hcu_trusted_app_record: forward(&ctx.accounts.payout_mint_hcu_trusted_app_record),
+                hcu_block_meter: ctx
+                    .accounts
+                    .payout_mint_hcu_block_meter
+                    .as_ref()
+                    .map(|account| account.to_account_info()),
+                hcu_trusted_app_record: ctx
+                    .accounts
+                    .payout_mint_hcu_trusted_app_record
+                    .as_ref()
+                    .map(|account| account.to_account_info()),
                 event_authority: ctx
                     .accounts
                     .confidential_token_event_authority

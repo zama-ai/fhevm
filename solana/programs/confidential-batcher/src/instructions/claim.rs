@@ -177,8 +177,16 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         program: ctx.accounts.zama_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
         deny_records: claim_deny_records,
-        hcu_block_meter: forward(&ctx.accounts.batch_hcu_block_meter),
-        hcu_trusted_app_record: forward(&ctx.accounts.batch_hcu_trusted_app_record),
+        hcu_block_meter: ctx
+            .accounts
+            .batch_hcu_block_meter
+            .as_ref()
+            .map(|account| account.to_account_info()),
+        hcu_trusted_app_record: ctx
+            .accounts
+            .batch_hcu_trusted_app_record
+            .as_ref()
+            .map(|account| account.to_account_info()),
     }
     .invoke(
         execution,
@@ -234,8 +242,16 @@ fn pay_claim<'info>(
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
-                hcu_block_meter: forward(&ctx.accounts.payout_mint_hcu_block_meter),
-                hcu_trusted_app_record: forward(&ctx.accounts.payout_mint_hcu_trusted_app_record),
+                hcu_block_meter: ctx
+                    .accounts
+                    .payout_mint_hcu_block_meter
+                    .as_ref()
+                    .map(|account| account.to_account_info()),
+                hcu_trusted_app_record: ctx
+                    .accounts
+                    .payout_mint_hcu_trusted_app_record
+                    .as_ref()
+                    .map(|account| account.to_account_info()),
                 event_authority: ctx
                     .accounts
                     .confidential_token_event_authority

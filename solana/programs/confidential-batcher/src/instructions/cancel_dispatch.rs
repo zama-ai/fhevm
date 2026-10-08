@@ -130,8 +130,16 @@ pub fn cancel_dispatch<'info>(
                 instructions: ctx.accounts.instructions.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
-                hcu_block_meter: forward(&ctx.accounts.join_mint_hcu_block_meter),
-                hcu_trusted_app_record: forward(&ctx.accounts.join_mint_hcu_trusted_app_record),
+                hcu_block_meter: ctx
+                    .accounts
+                    .join_mint_hcu_block_meter
+                    .as_ref()
+                    .map(|account| account.to_account_info()),
+                hcu_trusted_app_record: ctx
+                    .accounts
+                    .join_mint_hcu_trusted_app_record
+                    .as_ref()
+                    .map(|account| account.to_account_info()),
                 event_authority: ctx
                     .accounts
                     .confidential_token_event_authority

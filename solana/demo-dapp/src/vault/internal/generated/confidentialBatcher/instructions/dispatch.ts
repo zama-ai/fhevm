@@ -73,6 +73,8 @@ export type DispatchInstruction<
   TAccountConfidentialTokenProgram extends string | AccountMeta<string> =
     'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL',
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
+  TAccountJoinMintHcuBlockMeter extends string | AccountMeta<string> = string,
+  TAccountJoinMintHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -114,6 +116,12 @@ export type DispatchInstruction<
         ? ReadonlyAccount<TAccountConfidentialTokenProgram>
         : TAccountConfidentialTokenProgram,
       TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
+      TAccountJoinMintHcuBlockMeter extends string
+        ? WritableAccount<TAccountJoinMintHcuBlockMeter>
+        : TAccountJoinMintHcuBlockMeter,
+      TAccountJoinMintHcuTrustedAppRecord extends string
+        ? ReadonlyAccount<TAccountJoinMintHcuTrustedAppRecord>
+        : TAccountJoinMintHcuTrustedAppRecord,
       ...TRemainingAccounts,
     ]
   >;
@@ -161,6 +169,8 @@ export type DispatchAsyncInput<
   TAccountConfidentialTokenEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountConfidentialTokenProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays the burn's output ACL rent. Anyone. */
   payer: TAccountPayer;
@@ -191,6 +201,16 @@ export type DispatchAsyncInput<
   confidentialTokenProgram?: TAccountConfidentialTokenProgram;
   /** System program used for ACL account creation. */
   systemProgram?: TAccountSystemProgram;
+  /**
+   * The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+   * application is not trusted.
+   */
+  joinMintHcuBlockMeter?: TAccountJoinMintHcuBlockMeter;
+  /**
+   * The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+   * application is trusted.
+   */
+  joinMintHcuTrustedAppRecord?: TAccountJoinMintHcuTrustedAppRecord;
 };
 
 export async function getDispatchInstructionAsync<
@@ -214,6 +234,8 @@ export async function getDispatchInstructionAsync<
   TAccountConfidentialTokenEventAuthority extends InstructionAccountInput,
   TAccountConfidentialTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountJoinMintHcuBlockMeter extends InstructionAccountInput,
+  TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: DispatchAsyncInput<
@@ -236,7 +258,9 @@ export async function getDispatchInstructionAsync<
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
     TAccountConfidentialTokenProgram,
-    TAccountSystemProgram
+    TAccountSystemProgram,
+    TAccountJoinMintHcuBlockMeter,
+    TAccountJoinMintHcuTrustedAppRecord
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -288,7 +312,15 @@ export async function getDispatchInstructionAsync<
       TAccountConfidentialTokenProgram,
       InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
     >,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountJoinMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountJoinMintHcuTrustedAppRecord>
+    >
   >
 > {
   // Program address.
@@ -391,6 +423,16 @@ export async function getDispatchInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    joinMintHcuBlockMeter: {
+      value: input.joinMintHcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    joinMintHcuTrustedAppRecord: {
+      value: input.joinMintHcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -447,6 +489,8 @@ export async function getDispatchInstructionAsync<
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
       getAccountMeta('confidentialTokenProgram', accounts.confidentialTokenProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
+      getAccountMeta('joinMintHcuBlockMeter', accounts.joinMintHcuBlockMeter),
+      getAccountMeta('joinMintHcuTrustedAppRecord', accounts.joinMintHcuTrustedAppRecord),
     ],
     data: getDispatchInstructionDataEncoder().encode({}),
     programAddress,
@@ -498,7 +542,15 @@ export async function getDispatchInstructionAsync<
       TAccountConfidentialTokenProgram,
       InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
     >,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountJoinMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountJoinMintHcuTrustedAppRecord>
+    >
   >);
 }
 
@@ -523,6 +575,8 @@ export type DispatchInput<
   TAccountConfidentialTokenEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountConfidentialTokenProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays the burn's output ACL rent. Anyone. */
   payer: TAccountPayer;
@@ -553,6 +607,16 @@ export type DispatchInput<
   confidentialTokenProgram?: TAccountConfidentialTokenProgram;
   /** System program used for ACL account creation. */
   systemProgram?: TAccountSystemProgram;
+  /**
+   * The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+   * application is not trusted.
+   */
+  joinMintHcuBlockMeter?: TAccountJoinMintHcuBlockMeter;
+  /**
+   * The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+   * application is trusted.
+   */
+  joinMintHcuTrustedAppRecord?: TAccountJoinMintHcuTrustedAppRecord;
 };
 
 export function getDispatchInstruction<
@@ -576,6 +640,8 @@ export function getDispatchInstruction<
   TAccountConfidentialTokenEventAuthority extends InstructionAccountInput,
   TAccountConfidentialTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountJoinMintHcuBlockMeter extends InstructionAccountInput,
+  TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: DispatchInput<
@@ -598,7 +664,9 @@ export function getDispatchInstruction<
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
     TAccountConfidentialTokenProgram,
-    TAccountSystemProgram
+    TAccountSystemProgram,
+    TAccountJoinMintHcuBlockMeter,
+    TAccountJoinMintHcuTrustedAppRecord
   >,
   config?: { programAddress?: TProgramAddress },
 ): DispatchInstruction<
@@ -643,7 +711,15 @@ export function getDispatchInstruction<
     TAccountConfidentialTokenProgram,
     InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
   >,
-  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+  ResolvedInstructionAccountMeta<
+    TAccountJoinMintHcuBlockMeter,
+    InstructionAccountInputAddress<TAccountJoinMintHcuBlockMeter>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountJoinMintHcuTrustedAppRecord,
+    InstructionAccountInputAddress<TAccountJoinMintHcuTrustedAppRecord>
+  >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
@@ -745,6 +821,16 @@ export function getDispatchInstruction<
       isSigner: false,
       isWritable: false,
     },
+    joinMintHcuBlockMeter: {
+      value: input.joinMintHcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    joinMintHcuTrustedAppRecord: {
+      value: input.joinMintHcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -783,6 +869,8 @@ export function getDispatchInstruction<
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
       getAccountMeta('confidentialTokenProgram', accounts.confidentialTokenProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
+      getAccountMeta('joinMintHcuBlockMeter', accounts.joinMintHcuBlockMeter),
+      getAccountMeta('joinMintHcuTrustedAppRecord', accounts.joinMintHcuTrustedAppRecord),
     ],
     data: getDispatchInstructionDataEncoder().encode({}),
     programAddress,
@@ -834,7 +922,15 @@ export function getDispatchInstruction<
       TAccountConfidentialTokenProgram,
       InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
     >,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountJoinMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountJoinMintHcuTrustedAppRecord>
+    >
   >);
 }
 
@@ -873,6 +969,16 @@ export type ParsedDispatchInstruction<
     confidentialTokenProgram: TAccountMetas[18];
     /** System program used for ACL account creation. */
     systemProgram: TAccountMetas[19];
+    /**
+     * The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+     * application is not trusted.
+     */
+    joinMintHcuBlockMeter?: TAccountMetas[20] | undefined;
+    /**
+     * The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+     * application is trusted.
+     */
+    joinMintHcuTrustedAppRecord?: TAccountMetas[21] | undefined;
   };
   data: DispatchInstructionData;
 };
@@ -880,10 +986,10 @@ export type ParsedDispatchInstruction<
 export function parseDispatchInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedDispatchInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 20) {
+  if (instruction.accounts.length < 22) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 20,
+      expectedAccountMetas: 22,
     });
   }
   let accountIndex = 0;
@@ -891,6 +997,10 @@ export function parseDispatchInstruction<TProgram extends string, TAccountMetas 
     const accountMeta = (instruction.accounts as TAccountMetas)[accountIndex]!;
     accountIndex += 1;
     return accountMeta;
+  };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS ? undefined : accountMeta;
   };
   return {
     programAddress: instruction.programAddress,
@@ -915,6 +1025,8 @@ export function parseDispatchInstruction<TProgram extends string, TAccountMetas 
       confidentialTokenEventAuthority: getNextAccount(),
       confidentialTokenProgram: getNextAccount(),
       systemProgram: getNextAccount(),
+      joinMintHcuBlockMeter: getNextOptionalAccount(),
+      joinMintHcuTrustedAppRecord: getNextOptionalAccount(),
     },
     data: getDispatchInstructionDataDecoder().decode(instruction.data),
   };

@@ -30,9 +30,11 @@ import { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
 import { getJoinInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/join.js';
 import {
   CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
+  findDenyScopeRecordPda,
   getCloseTransientStoreInstructionDataDecoder,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
+import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 const CHAIN_ID = 72057594037940281n;
@@ -170,6 +172,22 @@ describe('joinBatch (attested arm)', () => {
     expect(data.contractChainId).toBe(CHAIN_ID);
     expect(Array.from(data.inputHandle)).toEqual(Array.from(inputProof.handles[0]!.bytes32));
     expect(data.signatures).toHaveLength(1);
+  });
+
+  it('appends, under the deny list, the join mint then the batch deny record', async () => {
+    const submittedJoinAccounts = async (denyListEnabled: boolean): Promise<Address[]> => {
+      const { params, simulate } = await sendableParameters(vi.fn());
+      await joinBatch(context, { ...params, denyListEnabled });
+      const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(simulate.mock.calls[0]![0] as string));
+      const message = decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(transaction.messageBytes));
+      return Array.from(message.instructions[2]!.accounts ?? [], (account) => account.address);
+    };
+    const plain = await submittedJoinAccounts(false);
+    const { params } = await sendableParameters(vi.fn());
+    const [joinMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: params.joinConfidentialMint });
+    const [batchRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, scope: params.batch });
+    // The attested transfer runs as the join mint; the contribution runs as the batch.
+    expect((await submittedJoinAccounts(true)).slice(plain.length)).toEqual([joinMintRecord, batchRecord]);
   });
 
   // One coprocessor signature leaves room for one lever's witnesses: 1229 bytes with the deny

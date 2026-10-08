@@ -86,14 +86,6 @@ pub(crate) fn split_deny_records<'a, 'info, const N: usize>(
     }))
 }
 
-/// Forwards an optional HCU block meter or trust record into a CPI unchanged. The host checks it
-/// against the application the execution runs as.
-pub(crate) fn forward<'info>(
-    account: &Option<UncheckedAccount<'info>>,
-) -> Option<AccountInfo<'info>> {
-    account.as_ref().map(|account| account.to_account_info())
-}
-
 /// Signer-seed bytes for a batch authority PDA.
 pub(crate) struct BatchAuthoritySeeds {
     batch: Pubkey,

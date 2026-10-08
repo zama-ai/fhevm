@@ -1040,7 +1040,9 @@ fn settle_ix(
             authority_funding_lamports: AUTHORITY_FUNDING,
         },
     );
-    fixture.with_deny_records(ix, &[&[fixture.payout_app()]])
+    let payout = [fixture.payout_app()];
+    let wrap: &[host::AppScope] = if cleartext_total == 0 { &[] } else { &payout };
+    fixture.with_deny_records(ix, &[wrap])
 }
 
 fn claim_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instruction {
@@ -3183,6 +3185,39 @@ fn witnessed_batch_with_alice() -> (BatcherFixture, Ctx, BatchKeys) {
         300,
     );
     (fixture, context, keys)
+}
+
+/// A zero-total settle cancels before the wrap, so under the deny list it takes no deny records.
+#[test]
+fn mollusk_zero_total_settle_takes_no_deny_records() {
+    let fixture = BatcherFixture {
+        levers: HostLevers {
+            deny_list: true,
+            ..HostLevers::default()
+        },
+        ..BatcherFixture::new(batcher::BatchDirection::Deposit)
+    };
+    let context = production_mollusk().with_context(fixture.accounts(0, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 0);
+    let pending_burn = keys.pending_burn(fixture.join_mint().mint);
+    let mut extra_record = settle_ix(&fixture, &keys, 0, signatures, extra_data, pending_burn);
+    extra_record
+        .accounts
+        .push(readonly(host::deny_scope_address(fixture.payout_app()).0));
+    check_batcher_instruction(
+        &context,
+        &extra_record,
+        &[batcher_error(batcher::BatcherError::DenyRecordsMismatch)],
+    );
+
+    run_settle(&context, &fixture, &keys, burned_handle, 0);
+    assert_eq!(
+        read_batch(&context, keys.batch).status,
+        batcher::BatchStatus::Canceled
+    );
 }
 
 #[test]

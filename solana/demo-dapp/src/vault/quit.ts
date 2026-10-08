@@ -1,5 +1,5 @@
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
-import type { Instruction } from '@solana/kit';
+import type { Address, Instruction } from '@solana/kit';
 
 import {
   getQuitInstructionAsync,
@@ -15,6 +15,9 @@ import { batchApp, tokenApp, withDenyRecords, type DenyListParameters } from './
 export type SolanaVaultQuitParameters = Omit<QuitAsyncInput, 'transientStore' | 'instructions'> &
   DenyListParameters & {
   readonly transientStore: TransientStore;
+  /** Plain addresses: the deny records are derived from them. */
+  readonly batch: Address;
+  readonly joinConfidentialMint: Address;
 };
 
 /**
