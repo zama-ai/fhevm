@@ -7,7 +7,7 @@ import { asBytes32Hex, hexToBytes32 } from '../../core/base/bytes.js';
 import { toSolanaZkProof } from '../../core/coprocessor/SolanaZkProof-p.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { base58 } from '@scure/base';
+import { getBase58Decoder } from '@solana/kit';
 
 import { submitInputProof } from './submitInputProof.js';
 
@@ -120,10 +120,10 @@ describe('submitInputProof', () => {
     expect(new Headers(init.headers).get('x-api-key')).toBe('test-key');
     expect(JSON.parse(init.body as string)).toEqual({
       ciphertextWithInputVerification: '01',
-      contractAddress: base58.encode(hexToBytes32(CONTRACT)),
+      contractAddress: getBase58Decoder().decode(hexToBytes32(CONTRACT)),
       contractChainId: '0x0100000000003039',
       extraData: '0x00',
-      userAddress: base58.encode(hexToBytes32(USER)),
+      userAddress: getBase58Decoder().decode(hexToBytes32(USER)),
     });
   });
 

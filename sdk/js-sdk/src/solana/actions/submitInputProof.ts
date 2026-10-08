@@ -8,7 +8,7 @@ import { asBytesHex, bytesToHexNo0x, hexToBytes32 } from '../../core/base/bytes.
 import { InputProofError } from '../../core/errors/InputProofError.js';
 import { assertHandleArrayEquals } from '../../core/handle/FhevmHandle.js';
 
-import { base58 } from '@scure/base';
+import { getAddressDecoder } from '@solana/kit';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -60,10 +60,10 @@ export async function submitInputProof(
     relayerUrl: fhevm.solanaChain.fhevm.relayerUrl,
     payload: {
       ciphertextWithInputVerification: bytesToHexNo0x(inputProof.ciphertextWithZkProof),
-      contractAddress: base58.encode(hexToBytes32(inputProof.contractAddress)),
+      contractAddress: getAddressDecoder().decode(hexToBytes32(inputProof.contractAddress)),
       contractChainId: u64ToHex0x(inputProof.chainId),
       extraData: asBytesHex('0x00'),
-      userAddress: base58.encode(hexToBytes32(inputProof.userAddress)),
+      userAddress: getAddressDecoder().decode(hexToBytes32(inputProof.userAddress)),
     },
     options: relayerOptions,
     logger: fhevm.runtime.config.logger,

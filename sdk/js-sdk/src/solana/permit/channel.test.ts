@@ -17,7 +17,7 @@ import type {
   SolanaPermitWireFields,
   WalletAccount,
 } from './index.js';
-import { base58 } from '@scure/base';
+import { getBase58Decoder } from '@solana/kit';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -46,7 +46,7 @@ const USER_PUBKEY = ed25519.getPublicKey(USER_SEED);
 
 /** A full Wallet Standard account around a key, as every fake wallet below carries one. */
 const accountOf = (publicKey: Uint8Array): WalletAccount => ({
-  address: base58.encode(publicKey),
+  address: getBase58Decoder().decode(publicKey),
   publicKey,
   chains: ['solana:localnet'],
   features: [SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE],
@@ -188,6 +188,15 @@ describe('a wallet holding another key', () => {
   it('is refused before it is asked to sign anything', async () => {
     const { wallet, signOffchainMessage } = walletSigningWith(OTHER_SEED);
     await expect(channelFailureOf(() => signSolanaPermit(wallet, permitFields()))).resolves.toEqual({
+      reason: 'signer-mismatch',
+    });
+    expect(signOffchainMessage).not.toHaveBeenCalled();
+  });
+
+  it('is refused when it reports its key as anything but a Uint8Array', async () => {
+    const { wallet, signOffchainMessage } = walletSigningWith(USER_SEED);
+    const arrayKeyWallet = { ...wallet, account: { ...wallet.account, publicKey: Array.from(USER_PUBKEY) } };
+    await expect(channelFailureOf(() => signSolanaPermit(arrayKeyWallet as never, permitFields()))).resolves.toEqual({
       reason: 'signer-mismatch',
     });
     expect(signOffchainMessage).not.toHaveBeenCalled();

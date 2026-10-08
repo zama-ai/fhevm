@@ -10,7 +10,7 @@
 
 import type { SolanaPermitFields, SolanaPermitWireFields } from './index.js';
 import { shake256 } from '@noble/hashes/sha3.js';
-import { base58 } from '@scure/base';
+import { getBase58Decoder, getBase58Encoder } from '@solana/kit';
 import { describe, expect, it } from 'vitest';
 import {
   PERMIT_IDENTITY_LEN,
@@ -70,8 +70,8 @@ const linesOf = (fields: SolanaPermitFields): readonly string[] => renderSolanaP
  * characters. Copied from the canon's reference record, because the point of the pair is that these
  * particular byte values straddle the width boundary.
  */
-const SHORT_BASE58_KEY = base58.decode('zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz');
-const LONG_BASE58_KEY = base58.decode('21111111111111111111111111111111111111111111');
+const SHORT_BASE58_KEY = new Uint8Array(getBase58Encoder().encode('zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz'));
+const LONG_BASE58_KEY = new Uint8Array(getBase58Encoder().encode('21111111111111111111111111111111111111111111'));
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -229,17 +229,21 @@ describe('the canonical text', () => {
     );
     expect(lines.slice(-3)).toEqual([
       'Scopes (2):',
-      `- ${base58.encode(program)}/${base58.encode(identity(0x02))}`,
-      `- ${base58.encode(program)}/${base58.encode(identity(0x03))}`,
+      `- ${getBase58Decoder().decode(program)}/${getBase58Decoder().decode(identity(0x02))}`,
+      `- ${getBase58Decoder().decode(program)}/${getBase58Decoder().decode(identity(0x03))}`,
     ]);
   });
 
   it('shows identities in base58, the form a signer sees everywhere else', () => {
     const lines = linesOf(fieldsOf());
-    expect(lines[1]).toBe(`User: ${base58.encode(identity(0x11))}`);
-    expect(lines[2]).toBe(`Verifying program: ${base58.encode(identity(0x22))}`);
-    expect(lines[5]).toBe(`KMS context: ${base58.encode(identity(0x33))}`);
-    expect(lines[6]).toBe(`KMS epoch: ${base58.encode(identity(0x44))}`);
+    expect(lines[1]).toBe(`User: ${getBase58Decoder().decode(identity(0x11))}`);
+    expect(lines[2]).toBe(`Verifying program: ${getBase58Decoder().decode(identity(0x22))}`);
+    expect(lines[5]).toBe(`KMS context: ${getBase58Decoder().decode(identity(0x33))}`);
+    expect(lines[6]).toBe(`KMS epoch: ${getBase58Decoder().decode(identity(0x44))}`);
+  });
+
+  it('writes each leading zero byte as a leading 1', () => {
+    expect(linesOf(fieldsOf({ userAddress: identity(0x00) }))[1]).toBe(`User: ${'1'.repeat(32)}`);
   });
 
   // Base58 is not fixed width, and the renderer does not pad it to look like it is: a verifier that
@@ -250,7 +254,7 @@ describe('the canonical text', () => {
     const lines = linesOf(
       fieldsOf({ allowedScopes: [scopeOf(program, SHORT_BASE58_KEY), scopeOf(program, LONG_BASE58_KEY)] }),
     );
-    const programPrefix = `- ${base58.encode(program)}/`;
+    const programPrefix = `- ${getBase58Decoder().decode(program)}/`;
     expect(lines.slice(-2).map((line) => line.length - programPrefix.length)).toEqual([43, 44]);
   });
 
@@ -279,7 +283,7 @@ describe('the transport-key fingerprint', () => {
   it('is what the text commits to', () => {
     const transportKey = transportKeyOf(0x5a);
     expect(linesOf(fieldsOf({ transportKey }))[4]).toBe(
-      `Transport key (SHAKE-256): ${base58.encode(transportKeyFingerprint(transportKey))}`,
+      `Transport key (SHAKE-256): ${getBase58Decoder().decode(transportKeyFingerprint(transportKey))}`,
     );
   });
 
