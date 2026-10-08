@@ -111,6 +111,13 @@ export const validateBootstrapInputs = (params: BootstrapZamaHostParams): void =
   kmsCertificateThreshold(params.kmsCorruptionThreshold, params.gateway.kmsSigners.length);
 };
 
+const describeHcuLimits = ({
+  maxHcuDepthPerTx,
+  maxHcuPerTx,
+  hcuBlockCapPerApp,
+}: Record<keyof typeof HCU_LIMITS, bigint>): string =>
+  `maxHcuDepthPerTx=${maxHcuDepthPerTx} maxHcuPerTx=${maxHcuPerTx} hcuBlockCapPerApp=${hcuBlockCapPerApp}`;
+
 export const bootstrapZamaHost = async (context: HostDeployContext, params: BootstrapZamaHostParams): Promise<void> => {
   validateBootstrapInputs(params);
   const programAddress = params.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
@@ -142,13 +149,16 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
       !equalBytes(config.decryptionContract, params.gateway.decryptionContract) ||
       config.coprocessorThreshold !== (params.coprocessorThreshold ?? 1) ||
       config.coprocessorSignerCount !== params.gateway.coprocessorSigners.length ||
-      !params.gateway.coprocessorSigners.every((signer, i) => equalBytes(signer, config.coprocessorSigners[i]!)) ||
-      config.maxHcuDepthPerTx !== HCU_LIMITS.maxHcuDepthPerTx ||
-      config.maxHcuPerTx !== HCU_LIMITS.maxHcuPerTx
+      !params.gateway.coprocessorSigners.every((signer, i) => equalBytes(signer, config.coprocessorSigners[i]!))
     ) {
       throw new Error(
         'existing HostConfig does not match deployment inputs; refuse to bind an existing host to a different stack',
       );
+    }
+    const foundHcu = describeHcuLimits(config);
+    const expectedHcu = describeHcuLimits(HCU_LIMITS);
+    if (foundHcu !== expectedHcu) {
+      throw new Error(`existing HostConfig HCU limits differ from the deployment's: found ${foundHcu}, expected ${expectedHcu}`);
     }
     console.log('host_config matches deployment inputs');
   } else if (!params.validateOnly) {

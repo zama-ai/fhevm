@@ -194,8 +194,10 @@ test(
     expect(first.stdout).toContain('OK initialize');
     const before = await hostData();
     expect(before).toBeDefined();
-    const { maxHcuDepthPerTx, maxHcuPerTx } = getHostConfigDecoder().decode(Buffer.from(before![0], 'base64'));
-    expect({ maxHcuDepthPerTx, maxHcuPerTx }).toEqual(HCU_LIMITS);
+    const { maxHcuDepthPerTx, maxHcuPerTx, hcuBlockCapPerApp } = getHostConfigDecoder().decode(
+      Buffer.from(before![0], 'base64'),
+    );
+    expect({ maxHcuDepthPerTx, maxHcuPerTx, hcuBlockCapPerApp }).toEqual(HCU_LIMITS);
     const again = await deploy();
     expect(again.code, again.stderr).toBe(0);
     expect(again.stdout).toContain('unchanged');

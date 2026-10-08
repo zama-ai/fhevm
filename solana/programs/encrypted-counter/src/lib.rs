@@ -1,6 +1,6 @@
 //! Minimal host consumer: a per-owner counter stored in an encrypted dictionary.
 //! The counter PDA signs state creation and FHE calls; each new count is decryptable by its owner.
-//! The specimen assumes the PoC's disabled deny list and unrestricted HCU configuration.
+//! The specimen assumes the PoC's disabled deny list and an unlimited per-application HCU block cap.
 
 // Anchor macros generate framework-shaped code that trips rustc/Clippy checks.
 #![allow(unexpected_cfgs)]

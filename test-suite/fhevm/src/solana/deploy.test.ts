@@ -53,7 +53,7 @@ const fakeContext = async (
   hostConfigExists: boolean,
   payer: Address,
   kmsContextExists = false,
-  hcuLimits: Pick<HostConfigArgs, 'maxHcuPerTx' | 'maxHcuDepthPerTx'> = HCU_LIMITS,
+  hcuLimits: Pick<HostConfigArgs, keyof typeof HCU_LIMITS> = HCU_LIMITS,
 ) => {
   const [hostConfig] = await findHostConfigPda();
   const [kmsContext] = await findKmsContextPda({ contextId: BRINGUP_KMS_CONTEXT_ID });
@@ -86,7 +86,6 @@ const fakeContext = async (
                             paused: { execution: false, verifiedInputs: false, aclWrites: false },
                             grantDenyListEnabled: false,
                             ...hcuLimits,
-                            hcuBlockCapPerApp: unlimited,
                             bump: 0,
                           }),
                         ).toString('base64')
@@ -268,9 +267,13 @@ describe('bootstrapZamaHost', () => {
     for (const hcuLimits of [
       { ...HCU_LIMITS, maxHcuPerTx: unlimited },
       { ...HCU_LIMITS, maxHcuDepthPerTx: unlimited },
+      { ...HCU_LIMITS, hcuBlockCapPerApp: 1_000_000n },
     ]) {
       const { context, sent } = await fakeContext(true, payer.address, false, hcuLimits);
-      await expect(bootstrapZamaHost(context, { payer, gateway })).rejects.toThrow('does not match');
+      await expect(bootstrapZamaHost(context, { payer, gateway })).rejects.toThrow(
+        `found maxHcuDepthPerTx=${hcuLimits.maxHcuDepthPerTx} maxHcuPerTx=${hcuLimits.maxHcuPerTx} ` +
+          `hcuBlockCapPerApp=${hcuLimits.hcuBlockCapPerApp}, expected maxHcuDepthPerTx=5000000`,
+      );
       expect(sent).toHaveLength(0);
     }
   });
@@ -311,5 +314,8 @@ test('HCU limits match the values the EVM deployment initializes HCULimit with',
   const args = task.match(/fn: 'initializeFromEmptyProxy', args: \[([^\]]*)\]/)?.[1];
   // HCULimit.initializeFromEmptyProxy(hcuCapPerBlock, maxHCUDepthPerTx, maxHCUPerTx).
   const [, depth, total] = [...(args ?? '').matchAll(/BigInt\('(\d+)'\)/g)].map((match) => BigInt(match[1]!));
-  expect({ maxHcuDepthPerTx: depth, maxHcuPerTx: total }).toEqual(HCU_LIMITS);
+  expect({ maxHcuDepthPerTx: depth, maxHcuPerTx: total }).toEqual({
+    maxHcuDepthPerTx: HCU_LIMITS.maxHcuDepthPerTx,
+    maxHcuPerTx: HCU_LIMITS.maxHcuPerTx,
+  });
 });
