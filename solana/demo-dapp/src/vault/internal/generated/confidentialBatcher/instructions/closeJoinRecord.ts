@@ -30,14 +30,17 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
 import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
   type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from '../programAddress.js';
 
@@ -93,35 +96,49 @@ export function getCloseJoinRecordInstructionDataCodec(): FixedSizeCodec<
 }
 
 export type CloseJoinRecordAsyncInput<
-  TAccountUser extends string = string,
-  TAccountBatch extends string = string,
-  TAccountJoinRecord extends string = string,
+  TAccountUser extends InstructionSignerInput = InstructionSignerInput,
+  TAccountBatch extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** The user who joined; receives the record's rent. */
-  user: TransactionSigner<TAccountUser>;
+  user: TAccountUser;
   /** The batch the record belongs to. */
-  batch: Address<TAccountBatch>;
+  batch: TAccountBatch;
   /** The user's join record for this batch; closed to `user`. */
-  joinRecord?: Address<TAccountJoinRecord>;
+  joinRecord?: TAccountJoinRecord;
 };
 
 export async function getCloseJoinRecordInstructionAsync<
-  TAccountUser extends string,
-  TAccountBatch extends string,
-  TAccountJoinRecord extends string,
+  TAccountUser extends InstructionSignerInput,
+  TAccountBatch extends InstructionAccountInput,
+  TAccountJoinRecord extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: CloseJoinRecordAsyncInput<TAccountUser, TAccountBatch, TAccountJoinRecord>,
   config?: { programAddress?: TProgramAddress },
-): Promise<CloseJoinRecordInstruction<TProgramAddress, TAccountUser, TAccountBatch, TAccountJoinRecord>> {
+): Promise<
+  CloseJoinRecordInstruction<
+    TProgramAddress,
+    ResolvedInstructionAccountMeta<TAccountUser, InstructionAccountInputAddress<TAccountUser>>,
+    ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
+    ResolvedInstructionAccountMeta<TAccountJoinRecord, InstructionAccountInputAddress<TAccountJoinRecord>>
+  >
+> {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    user: { value: input.user ?? null, isWritable: true },
-    batch: { value: input.batch ?? null, isWritable: false },
-    joinRecord: { value: input.joinRecord ?? null, isWritable: true },
+    user: { value: input.user ?? null, isSigner: true, isWritable: true },
+    batch: { value: input.batch ?? null, isSigner: false, isWritable: false },
+    joinRecord: {
+      value: input.joinRecord ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -137,7 +154,6 @@ export async function getCloseJoinRecordInstructionAsync<
     });
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('user', accounts.user),
@@ -146,43 +162,59 @@ export async function getCloseJoinRecordInstructionAsync<
     ],
     data: getCloseJoinRecordInstructionDataEncoder().encode({}),
     programAddress,
-  } as CloseJoinRecordInstruction<TProgramAddress, TAccountUser, TAccountBatch, TAccountJoinRecord>);
+  } as CloseJoinRecordInstruction<
+    TProgramAddress,
+    ResolvedInstructionAccountMeta<TAccountUser, InstructionAccountInputAddress<TAccountUser>>,
+    ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
+    ResolvedInstructionAccountMeta<TAccountJoinRecord, InstructionAccountInputAddress<TAccountJoinRecord>>
+  >);
 }
 
 export type CloseJoinRecordInput<
-  TAccountUser extends string = string,
-  TAccountBatch extends string = string,
-  TAccountJoinRecord extends string = string,
+  TAccountUser extends InstructionSignerInput = InstructionSignerInput,
+  TAccountBatch extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** The user who joined; receives the record's rent. */
-  user: TransactionSigner<TAccountUser>;
+  user: TAccountUser;
   /** The batch the record belongs to. */
-  batch: Address<TAccountBatch>;
+  batch: TAccountBatch;
   /** The user's join record for this batch; closed to `user`. */
-  joinRecord: Address<TAccountJoinRecord>;
+  joinRecord: TAccountJoinRecord;
 };
 
 export function getCloseJoinRecordInstruction<
-  TAccountUser extends string,
-  TAccountBatch extends string,
-  TAccountJoinRecord extends string,
+  TAccountUser extends InstructionSignerInput,
+  TAccountBatch extends InstructionAccountInput,
+  TAccountJoinRecord extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: CloseJoinRecordInput<TAccountUser, TAccountBatch, TAccountJoinRecord>,
   config?: { programAddress?: TProgramAddress },
-): CloseJoinRecordInstruction<TProgramAddress, TAccountUser, TAccountBatch, TAccountJoinRecord> {
+): CloseJoinRecordInstruction<
+  TProgramAddress,
+  ResolvedInstructionAccountMeta<TAccountUser, InstructionAccountInputAddress<TAccountUser>>,
+  ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
+  ResolvedInstructionAccountMeta<TAccountJoinRecord, InstructionAccountInputAddress<TAccountJoinRecord>>
+> {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    user: { value: input.user ?? null, isWritable: true },
-    batch: { value: input.batch ?? null, isWritable: false },
-    joinRecord: { value: input.joinRecord ?? null, isWritable: true },
+    user: { value: input.user ?? null, isSigner: true, isWritable: true },
+    batch: { value: input.batch ?? null, isSigner: false, isWritable: false },
+    joinRecord: {
+      value: input.joinRecord ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('user', accounts.user),
@@ -191,7 +223,12 @@ export function getCloseJoinRecordInstruction<
     ],
     data: getCloseJoinRecordInstructionDataEncoder().encode({}),
     programAddress,
-  } as CloseJoinRecordInstruction<TProgramAddress, TAccountUser, TAccountBatch, TAccountJoinRecord>);
+  } as CloseJoinRecordInstruction<
+    TProgramAddress,
+    ResolvedInstructionAccountMeta<TAccountUser, InstructionAccountInputAddress<TAccountUser>>,
+    ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
+    ResolvedInstructionAccountMeta<TAccountJoinRecord, InstructionAccountInputAddress<TAccountJoinRecord>>
+  >);
 }
 
 export type ParsedCloseJoinRecordInstruction<

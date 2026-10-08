@@ -31,14 +31,17 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
 import {
   getAccountMetaFactory,
   getNonNullResolvedInstructionInput,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
   type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 import {
@@ -123,35 +126,35 @@ export function getDefineKmsContextInstructionDataCodec(): Codec<
 }
 
 export type DefineKmsContextAsyncInput<
-  TAccountAdmin extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountKmsContext extends string = string,
-  TAccountSystemProgram extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountAdmin extends InstructionSignerInput = InstructionSignerInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Configured host admin and rent payer for the context account. */
-  admin: TransactionSigner<TAccountAdmin>;
+  admin: TAccountAdmin;
   /** Singleton config PDA; its `current_kms_context_id` is set to `context_id`. */
-  hostConfig?: Address<TAccountHostConfig>;
+  hostConfig?: TAccountHostConfig;
   /** KMS context PDA created for `context_id`. */
-  kmsContext?: Address<TAccountKmsContext>;
+  kmsContext?: TAccountKmsContext;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
-  eventAuthority?: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  systemProgram?: TAccountSystemProgram;
+  eventAuthority?: TAccountEventAuthority;
+  program?: TAccountProgram;
   contextId: DefineKmsContextInstructionDataArgs['contextId'];
   signers: DefineKmsContextInstructionDataArgs['signers'];
   thresholds: DefineKmsContextInstructionDataArgs['thresholds'];
 };
 
 export async function getDefineKmsContextInstructionAsync<
-  TAccountAdmin extends string,
-  TAccountHostConfig extends string,
-  TAccountKmsContext extends string,
-  TAccountSystemProgram extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountAdmin extends InstructionSignerInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
   input: DefineKmsContextAsyncInput<
@@ -166,25 +169,48 @@ export async function getDefineKmsContextInstructionAsync<
 ): Promise<
   DefineKmsContextInstruction<
     TProgramAddress,
-    TAccountAdmin,
-    TAccountHostConfig,
-    TAccountKmsContext,
-    TAccountSystemProgram,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    admin: { value: input.admin ?? null, isWritable: true },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: true },
-    kmsContext: { value: input.kmsContext ?? null, isWritable: true },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    admin: { value: input.admin ?? null, isSigner: true, isWritable: true },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    kmsContext: {
+      value: input.kmsContext ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -225,7 +251,6 @@ export async function getDefineKmsContextInstructionAsync<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('admin', accounts.admin),
@@ -239,45 +264,45 @@ export async function getDefineKmsContextInstructionAsync<
     programAddress,
   } as DefineKmsContextInstruction<
     TProgramAddress,
-    TAccountAdmin,
-    TAccountHostConfig,
-    TAccountKmsContext,
-    TAccountSystemProgram,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 
 export type DefineKmsContextInput<
-  TAccountAdmin extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountKmsContext extends string = string,
-  TAccountSystemProgram extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountAdmin extends InstructionSignerInput = InstructionSignerInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Configured host admin and rent payer for the context account. */
-  admin: TransactionSigner<TAccountAdmin>;
+  admin: TAccountAdmin;
   /** Singleton config PDA; its `current_kms_context_id` is set to `context_id`. */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig: TAccountHostConfig;
   /** KMS context PDA created for `context_id`. */
-  kmsContext: Address<TAccountKmsContext>;
+  kmsContext: TAccountKmsContext;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
-  eventAuthority: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  systemProgram?: TAccountSystemProgram;
+  eventAuthority: TAccountEventAuthority;
+  program?: TAccountProgram;
   contextId: DefineKmsContextInstructionDataArgs['contextId'];
   signers: DefineKmsContextInstructionDataArgs['signers'];
   thresholds: DefineKmsContextInstructionDataArgs['thresholds'];
 };
 
 export function getDefineKmsContextInstruction<
-  TAccountAdmin extends string,
-  TAccountHostConfig extends string,
-  TAccountKmsContext extends string,
-  TAccountSystemProgram extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountAdmin extends InstructionSignerInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
   input: DefineKmsContextInput<
@@ -291,24 +316,47 @@ export function getDefineKmsContextInstruction<
   config?: { programAddress?: TProgramAddress },
 ): DefineKmsContextInstruction<
   TProgramAddress,
-  TAccountAdmin,
-  TAccountHostConfig,
-  TAccountKmsContext,
-  TAccountSystemProgram,
-  TAccountEventAuthority,
-  TAccountProgram
+  ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+  ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    admin: { value: input.admin ?? null, isWritable: true },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: true },
-    kmsContext: { value: input.kmsContext ?? null, isWritable: true },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    admin: { value: input.admin ?? null, isSigner: true, isWritable: true },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    kmsContext: {
+      value: input.kmsContext ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -324,7 +372,6 @@ export function getDefineKmsContextInstruction<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('admin', accounts.admin),
@@ -338,12 +385,12 @@ export function getDefineKmsContextInstruction<
     programAddress,
   } as DefineKmsContextInstruction<
     TProgramAddress,
-    TAccountAdmin,
-    TAccountHostConfig,
-    TAccountKmsContext,
-    TAccountSystemProgram,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 

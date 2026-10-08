@@ -30,10 +30,16 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableSignerAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
+  type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
+} from '@solana/program-client-core';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from '../programAddress.js';
 import {
   getBatchDirectionDecoder,
@@ -117,39 +123,39 @@ export function getInitializeBatcherInstructionDataCodec(): FixedSizeCodec<
 }
 
 export type InitializeBatcherInput<
-  TAccountPayer extends string = string,
-  TAccountBatcher extends string = string,
-  TAccountJoinConfidentialMint extends string = string,
-  TAccountPayoutConfidentialMint extends string = string,
-  TAccountVault extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountBatcher extends InstructionSignerInput = InstructionSignerInput,
+  TAccountJoinConfidentialMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutConfidentialMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVault extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Rent payer and the account that submits the initialization. */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /**
    * Batcher config account, created here. A fresh keypair signs its own
    * creation (the demo-vault `Vault` pattern).
    */
-  batcher: TransactionSigner<TAccountBatcher>;
+  batcher: TAccountBatcher;
   /** Confidential mint users join batches with. */
-  joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
+  joinConfidentialMint: TAccountJoinConfidentialMint;
   /** Confidential mint claims pay out in. */
-  payoutConfidentialMint: Address<TAccountPayoutConfidentialMint>;
+  payoutConfidentialMint: TAccountPayoutConfidentialMint;
   /** Public vault the batcher fronts. */
-  vault: Address<TAccountVault>;
+  vault: TAccountVault;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
   minBatchAgeSlots: InitializeBatcherInstructionDataArgs['minBatchAgeSlots'];
   direction: InitializeBatcherInstructionDataArgs['direction'];
 };
 
 export function getInitializeBatcherInstruction<
-  TAccountPayer extends string,
-  TAccountBatcher extends string,
-  TAccountJoinConfidentialMint extends string,
-  TAccountPayoutConfidentialMint extends string,
-  TAccountVault extends string,
-  TAccountSystemProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountBatcher extends InstructionSignerInput,
+  TAccountJoinConfidentialMint extends InstructionAccountInput,
+  TAccountPayoutConfidentialMint extends InstructionAccountInput,
+  TAccountVault extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: InitializeBatcherInput<
@@ -163,30 +169,45 @@ export function getInitializeBatcherInstruction<
   config?: { programAddress?: TProgramAddress },
 ): InitializeBatcherInstruction<
   TProgramAddress,
-  TAccountPayer,
-  TAccountBatcher,
-  TAccountJoinConfidentialMint,
-  TAccountPayoutConfidentialMint,
-  TAccountVault,
-  TAccountSystemProgram
+  ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+  ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
+  ResolvedInstructionAccountMeta<
+    TAccountJoinConfidentialMint,
+    InstructionAccountInputAddress<TAccountJoinConfidentialMint>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutConfidentialMint,
+    InstructionAccountInputAddress<TAccountPayoutConfidentialMint>
+  >,
+  ResolvedInstructionAccountMeta<TAccountVault, InstructionAccountInputAddress<TAccountVault>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    batcher: { value: input.batcher ?? null, isWritable: true },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    batcher: { value: input.batcher ?? null, isSigner: true, isWritable: true },
     joinConfidentialMint: {
       value: input.joinConfidentialMint ?? null,
+      isSigner: false,
       isWritable: false,
     },
     payoutConfidentialMint: {
       value: input.payoutConfidentialMint ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    vault: { value: input.vault ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    vault: { value: input.vault ?? null, isSigner: false, isWritable: false },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -198,7 +219,6 @@ export function getInitializeBatcherInstruction<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -212,12 +232,18 @@ export function getInitializeBatcherInstruction<
     programAddress,
   } as InitializeBatcherInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountBatcher,
-    TAccountJoinConfidentialMint,
-    TAccountPayoutConfidentialMint,
-    TAccountVault,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinConfidentialMint,
+      InstructionAccountInputAddress<TAccountJoinConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutConfidentialMint,
+      InstructionAccountInputAddress<TAccountPayoutConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<TAccountVault, InstructionAccountInputAddress<TAccountVault>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 

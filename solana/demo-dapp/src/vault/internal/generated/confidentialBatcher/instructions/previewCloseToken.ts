@@ -34,11 +34,17 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
+  type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
+} from '@solana/program-client-core';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const PREVIEW_CLOSE_TOKEN_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -108,29 +114,29 @@ export function getPreviewCloseTokenInstructionDataCodec(): Codec<
 }
 
 export type PreviewCloseTokenInput<
-  TAccountAdmin extends string = string,
-  TAccountProgramData extends string = string,
-  TAccountAuthority extends string = string,
-  TAccountAccount extends string = string,
-  TAccountMint extends string = string,
-  TAccountTokenProgram extends string = string,
+  TAccountAdmin extends InstructionSignerInput = InstructionSignerInput,
+  TAccountProgramData extends InstructionAccountInput = InstructionAccountInput,
+  TAccountAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  admin: TransactionSigner<TAccountAdmin>;
-  programData: Address<TAccountProgramData>;
-  authority: Address<TAccountAuthority>;
-  account: Address<TAccountAccount>;
-  mint: Address<TAccountMint>;
-  tokenProgram?: Address<TAccountTokenProgram>;
+  admin: TAccountAdmin;
+  programData: TAccountProgramData;
+  authority: TAccountAuthority;
+  account: TAccountAccount;
+  mint: TAccountMint;
+  tokenProgram?: TAccountTokenProgram;
   seeds: PreviewCloseTokenInstructionDataArgs['seeds'];
 };
 
 export function getPreviewCloseTokenInstruction<
-  TAccountAdmin extends string,
-  TAccountProgramData extends string,
-  TAccountAuthority extends string,
-  TAccountAccount extends string,
-  TAccountMint extends string,
-  TAccountTokenProgram extends string,
+  TAccountAdmin extends InstructionSignerInput,
+  TAccountProgramData extends InstructionAccountInput,
+  TAccountAuthority extends InstructionAccountInput,
+  TAccountAccount extends InstructionAccountInput,
+  TAccountMint extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: PreviewCloseTokenInput<
@@ -144,24 +150,43 @@ export function getPreviewCloseTokenInstruction<
   config?: { programAddress?: TProgramAddress },
 ): PreviewCloseTokenInstruction<
   TProgramAddress,
-  TAccountAdmin,
-  TAccountProgramData,
-  TAccountAuthority,
-  TAccountAccount,
-  TAccountMint,
-  TAccountTokenProgram
+  ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>,
+  ResolvedInstructionAccountMeta<TAccountProgramData, InstructionAccountInputAddress<TAccountProgramData>>,
+  ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountAccount, InstructionAccountInputAddress<TAccountAccount>>,
+  ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+  ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    admin: { value: input.admin ?? null, isWritable: true },
-    programData: { value: input.programData ?? null, isWritable: false },
-    authority: { value: input.authority ?? null, isWritable: false },
-    account: { value: input.account ?? null, isWritable: true },
-    mint: { value: input.mint ?? null, isWritable: true },
-    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    admin: { value: input.admin ?? null, isSigner: true, isWritable: true },
+    programData: {
+      value: input.programData ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    authority: {
+      value: input.authority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    account: {
+      value: input.account ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    mint: { value: input.mint ?? null, isSigner: false, isWritable: true },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -174,7 +199,6 @@ export function getPreviewCloseTokenInstruction<
       'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('admin', accounts.admin),
@@ -188,12 +212,12 @@ export function getPreviewCloseTokenInstruction<
     programAddress,
   } as PreviewCloseTokenInstruction<
     TProgramAddress,
-    TAccountAdmin,
-    TAccountProgramData,
-    TAccountAuthority,
-    TAccountAccount,
-    TAccountMint,
-    TAccountTokenProgram
+    ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>,
+    ResolvedInstructionAccountMeta<TAccountProgramData, InstructionAccountInputAddress<TAccountProgramData>>,
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountAccount, InstructionAccountInputAddress<TAccountAccount>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>
   >);
 }
 

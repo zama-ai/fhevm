@@ -38,11 +38,17 @@ import {
   type ReadonlyAccount,
   type ReadonlySignerAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
+  type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
+} from '@solana/program-client-core';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const INITIALIZE_HOST_CONFIG_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -173,35 +179,35 @@ export function getInitializeHostConfigInstructionDataCodec(): Codec<
 }
 
 export type InitializeHostConfigAsyncInput<
-  TAccountPayer extends string = string,
-  TAccountAdmin extends string = string,
-  TAccountProgramData extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountRandNonce extends string = string,
-  TAccountSystemProgram extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountAdmin extends InstructionSignerInput = InstructionSignerInput,
+  TAccountProgramData extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountRandNonce extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays rent for the config account. */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /** Initial admin stored in the config. Must be the BPF upgrade authority. */
-  admin: TransactionSigner<TAccountAdmin>;
+  admin: TAccountAdmin;
   /**
    * Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority.
    * A finalized program (`upgrade_authority_address == None`) cannot initialize.
    */
-  programData: Address<TAccountProgramData>;
+  programData: TAccountProgramData;
   /** Singleton config PDA. */
-  hostConfig?: Address<TAccountHostConfig>;
+  hostConfig?: TAccountHostConfig;
   /**
    * The host's single rand nonce, created alongside the config so every rand execution can
    * take it from the first slot on.
    */
-  randNonce?: Address<TAccountRandNonce>;
+  randNonce?: TAccountRandNonce;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
-  eventAuthority?: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  systemProgram?: TAccountSystemProgram;
+  eventAuthority?: TAccountEventAuthority;
+  program?: TAccountProgram;
   chainId: InitializeHostConfigInstructionDataArgs['chainId'];
   gatewayChainId: InitializeHostConfigInstructionDataArgs['gatewayChainId'];
   inputVerificationContract: InitializeHostConfigInstructionDataArgs['inputVerificationContract'];
@@ -212,14 +218,14 @@ export type InitializeHostConfigAsyncInput<
 };
 
 export async function getInitializeHostConfigInstructionAsync<
-  TAccountPayer extends string,
-  TAccountAdmin extends string,
-  TAccountProgramData extends string,
-  TAccountHostConfig extends string,
-  TAccountRandNonce extends string,
-  TAccountSystemProgram extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountAdmin extends InstructionSignerInput,
+  TAccountProgramData extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountRandNonce extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
   input: InitializeHostConfigAsyncInput<
@@ -236,29 +242,56 @@ export async function getInitializeHostConfigInstructionAsync<
 ): Promise<
   InitializeHostConfigInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountAdmin,
-    TAccountProgramData,
-    TAccountHostConfig,
-    TAccountRandNonce,
-    TAccountSystemProgram,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>,
+    ResolvedInstructionAccountMeta<TAccountProgramData, InstructionAccountInputAddress<TAccountProgramData>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountRandNonce, InstructionAccountInputAddress<TAccountRandNonce>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    admin: { value: input.admin ?? null, isWritable: false },
-    programData: { value: input.programData ?? null, isWritable: false },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: true },
-    randNonce: { value: input.randNonce ?? null, isWritable: true },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    admin: { value: input.admin ?? null, isSigner: true, isWritable: false },
+    programData: {
+      value: input.programData ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    randNonce: {
+      value: input.randNonce ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -296,7 +329,6 @@ export async function getInitializeHostConfigInstructionAsync<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -312,47 +344,47 @@ export async function getInitializeHostConfigInstructionAsync<
     programAddress,
   } as InitializeHostConfigInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountAdmin,
-    TAccountProgramData,
-    TAccountHostConfig,
-    TAccountRandNonce,
-    TAccountSystemProgram,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>,
+    ResolvedInstructionAccountMeta<TAccountProgramData, InstructionAccountInputAddress<TAccountProgramData>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountRandNonce, InstructionAccountInputAddress<TAccountRandNonce>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 
 export type InitializeHostConfigInput<
-  TAccountPayer extends string = string,
-  TAccountAdmin extends string = string,
-  TAccountProgramData extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountRandNonce extends string = string,
-  TAccountSystemProgram extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountAdmin extends InstructionSignerInput = InstructionSignerInput,
+  TAccountProgramData extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountRandNonce extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays rent for the config account. */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /** Initial admin stored in the config. Must be the BPF upgrade authority. */
-  admin: TransactionSigner<TAccountAdmin>;
+  admin: TAccountAdmin;
   /**
    * Upgradeable loader `ProgramData` for this program; `admin` must be its upgrade authority.
    * A finalized program (`upgrade_authority_address == None`) cannot initialize.
    */
-  programData: Address<TAccountProgramData>;
+  programData: TAccountProgramData;
   /** Singleton config PDA. */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig: TAccountHostConfig;
   /**
    * The host's single rand nonce, created alongside the config so every rand execution can
    * take it from the first slot on.
    */
-  randNonce: Address<TAccountRandNonce>;
+  randNonce: TAccountRandNonce;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
-  eventAuthority: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  systemProgram?: TAccountSystemProgram;
+  eventAuthority: TAccountEventAuthority;
+  program?: TAccountProgram;
   chainId: InitializeHostConfigInstructionDataArgs['chainId'];
   gatewayChainId: InitializeHostConfigInstructionDataArgs['gatewayChainId'];
   inputVerificationContract: InitializeHostConfigInstructionDataArgs['inputVerificationContract'];
@@ -363,14 +395,14 @@ export type InitializeHostConfigInput<
 };
 
 export function getInitializeHostConfigInstruction<
-  TAccountPayer extends string,
-  TAccountAdmin extends string,
-  TAccountProgramData extends string,
-  TAccountHostConfig extends string,
-  TAccountRandNonce extends string,
-  TAccountSystemProgram extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountAdmin extends InstructionSignerInput,
+  TAccountProgramData extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountRandNonce extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
   input: InitializeHostConfigInput<
@@ -386,28 +418,55 @@ export function getInitializeHostConfigInstruction<
   config?: { programAddress?: TProgramAddress },
 ): InitializeHostConfigInstruction<
   TProgramAddress,
-  TAccountPayer,
-  TAccountAdmin,
-  TAccountProgramData,
-  TAccountHostConfig,
-  TAccountRandNonce,
-  TAccountSystemProgram,
-  TAccountEventAuthority,
-  TAccountProgram
+  ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+  ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>,
+  ResolvedInstructionAccountMeta<TAccountProgramData, InstructionAccountInputAddress<TAccountProgramData>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountRandNonce, InstructionAccountInputAddress<TAccountRandNonce>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+  ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    admin: { value: input.admin ?? null, isWritable: false },
-    programData: { value: input.programData ?? null, isWritable: false },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: true },
-    randNonce: { value: input.randNonce ?? null, isWritable: true },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    admin: { value: input.admin ?? null, isSigner: true, isWritable: false },
+    programData: {
+      value: input.programData ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    randNonce: {
+      value: input.randNonce ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -423,7 +482,6 @@ export function getInitializeHostConfigInstruction<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -439,14 +497,14 @@ export function getInitializeHostConfigInstruction<
     programAddress,
   } as InitializeHostConfigInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountAdmin,
-    TAccountProgramData,
-    TAccountHostConfig,
-    TAccountRandNonce,
-    TAccountSystemProgram,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>,
+    ResolvedInstructionAccountMeta<TAccountProgramData, InstructionAccountInputAddress<TAccountProgramData>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountRandNonce, InstructionAccountInputAddress<TAccountRandNonce>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 

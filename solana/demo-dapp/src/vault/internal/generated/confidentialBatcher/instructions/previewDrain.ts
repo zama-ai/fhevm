@@ -34,11 +34,17 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
+  type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
+} from '@solana/program-client-core';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const PREVIEW_DRAIN_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([229, 176, 14, 73, 64, 247, 65, 76]);
@@ -102,43 +108,58 @@ export function getPreviewDrainInstructionDataCodec(): Codec<
 }
 
 export type PreviewDrainInput<
-  TAccountAdmin extends string = string,
-  TAccountProgramData extends string = string,
-  TAccountAuthority extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountAdmin extends InstructionSignerInput = InstructionSignerInput,
+  TAccountProgramData extends InstructionAccountInput = InstructionAccountInput,
+  TAccountAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  admin: TransactionSigner<TAccountAdmin>;
-  programData: Address<TAccountProgramData>;
-  authority: Address<TAccountAuthority>;
-  systemProgram?: Address<TAccountSystemProgram>;
+  admin: TAccountAdmin;
+  programData: TAccountProgramData;
+  authority: TAccountAuthority;
+  systemProgram?: TAccountSystemProgram;
   seeds: PreviewDrainInstructionDataArgs['seeds'];
 };
 
 export function getPreviewDrainInstruction<
-  TAccountAdmin extends string,
-  TAccountProgramData extends string,
-  TAccountAuthority extends string,
-  TAccountSystemProgram extends string,
+  TAccountAdmin extends InstructionSignerInput,
+  TAccountProgramData extends InstructionAccountInput,
+  TAccountAuthority extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: PreviewDrainInput<TAccountAdmin, TAccountProgramData, TAccountAuthority, TAccountSystemProgram>,
   config?: { programAddress?: TProgramAddress },
 ): PreviewDrainInstruction<
   TProgramAddress,
-  TAccountAdmin,
-  TAccountProgramData,
-  TAccountAuthority,
-  TAccountSystemProgram
+  ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>,
+  ResolvedInstructionAccountMeta<TAccountProgramData, InstructionAccountInputAddress<TAccountProgramData>>,
+  ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    admin: { value: input.admin ?? null, isWritable: true },
-    programData: { value: input.programData ?? null, isWritable: false },
-    authority: { value: input.authority ?? null, isWritable: true },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    admin: { value: input.admin ?? null, isSigner: true, isWritable: true },
+    programData: {
+      value: input.programData ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    authority: {
+      value: input.authority ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -150,7 +171,6 @@ export function getPreviewDrainInstruction<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('admin', accounts.admin),
@@ -162,10 +182,10 @@ export function getPreviewDrainInstruction<
     programAddress,
   } as PreviewDrainInstruction<
     TProgramAddress,
-    TAccountAdmin,
-    TAccountProgramData,
-    TAccountAuthority,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountAdmin, InstructionAccountInputAddress<TAccountAdmin>>,
+    ResolvedInstructionAccountMeta<TAccountProgramData, InstructionAccountInputAddress<TAccountProgramData>>,
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 

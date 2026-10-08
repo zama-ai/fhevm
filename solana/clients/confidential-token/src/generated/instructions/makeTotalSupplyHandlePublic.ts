@@ -30,14 +30,17 @@ import {
   type ReadonlyAccount,
   type ReadonlySignerAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
 import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
   type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
 import { findTotalSupplyAuthorityPda } from '../pdas/index.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
@@ -123,36 +126,36 @@ export function getMakeTotalSupplyHandlePublicInstructionDataCodec(): FixedSizeC
 }
 
 export type MakeTotalSupplyHandlePublicAsyncInput<
-  TAccountPayer extends string = string,
-  TAccountAuthority extends string = string,
-  TAccountMint extends string = string,
-  TAccountTotalSupplyAuthority extends string = string,
-  TAccountTotalSupplyStore extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  payer: TransactionSigner<TAccountPayer>;
-  authority: TransactionSigner<TAccountAuthority>;
-  mint: Address<TAccountMint>;
-  totalSupplyAuthority?: Address<TAccountTotalSupplyAuthority>;
+  payer: TAccountPayer;
+  authority: TAccountAuthority;
+  mint: TAccountMint;
+  totalSupplyAuthority?: TAccountTotalSupplyAuthority;
   /** Encrypted total-supply value whose current handle is sealed. */
-  totalSupplyStore: Address<TAccountTotalSupplyStore>;
-  hostConfig?: Address<TAccountHostConfig>;
-  zamaProgram?: Address<TAccountZamaProgram>;
-  systemProgram?: Address<TAccountSystemProgram>;
+  totalSupplyStore: TAccountTotalSupplyStore;
+  hostConfig?: TAccountHostConfig;
+  zamaProgram?: TAccountZamaProgram;
+  systemProgram?: TAccountSystemProgram;
   handle: MakeTotalSupplyHandlePublicInstructionDataArgs['handle'];
 };
 
 export async function getMakeTotalSupplyHandlePublicInstructionAsync<
-  TAccountPayer extends string,
-  TAccountAuthority extends string,
-  TAccountMint extends string,
-  TAccountTotalSupplyAuthority extends string,
-  TAccountTotalSupplyStore extends string,
-  TAccountHostConfig extends string,
-  TAccountZamaProgram extends string,
-  TAccountSystemProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput,
+  TAccountTotalSupplyAuthority extends InstructionAccountInput,
+  TAccountTotalSupplyStore extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: MakeTotalSupplyHandlePublicAsyncInput<
@@ -169,35 +172,59 @@ export async function getMakeTotalSupplyHandlePublicInstructionAsync<
 ): Promise<
   MakeTotalSupplyHandlePublicInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountAuthority,
-    TAccountMint,
-    TAccountTotalSupplyAuthority,
-    TAccountTotalSupplyStore,
-    TAccountHostConfig,
-    TAccountZamaProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<
+      TAccountTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    authority: { value: input.authority ?? null, isWritable: false },
-    mint: { value: input.mint ?? null, isWritable: false },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    authority: {
+      value: input.authority ?? null,
+      isSigner: true,
+      isWritable: false,
+    },
+    mint: { value: input.mint ?? null, isSigner: false, isWritable: false },
     totalSupplyAuthority: {
       value: input.totalSupplyAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     totalSupplyStore: {
       value: input.totalSupplyStore ?? null,
+      isSigner: false,
       isWritable: true,
     },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -206,9 +233,12 @@ export async function getMakeTotalSupplyHandlePublicInstructionAsync<
 
   // Resolve default values.
   if (!accounts.totalSupplyAuthority.value) {
-    accounts.totalSupplyAuthority.value = await findTotalSupplyAuthorityPda({
-      mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
-    });
+    accounts.totalSupplyAuthority.value = await findTotalSupplyAuthorityPda(
+      {
+        mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
@@ -223,7 +253,6 @@ export async function getMakeTotalSupplyHandlePublicInstructionAsync<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -241,48 +270,51 @@ export async function getMakeTotalSupplyHandlePublicInstructionAsync<
     programAddress,
   } as MakeTotalSupplyHandlePublicInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountAuthority,
-    TAccountMint,
-    TAccountTotalSupplyAuthority,
-    TAccountTotalSupplyStore,
-    TAccountHostConfig,
-    TAccountZamaProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<
+      TAccountTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 
 export type MakeTotalSupplyHandlePublicInput<
-  TAccountPayer extends string = string,
-  TAccountAuthority extends string = string,
-  TAccountMint extends string = string,
-  TAccountTotalSupplyAuthority extends string = string,
-  TAccountTotalSupplyStore extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  payer: TransactionSigner<TAccountPayer>;
-  authority: TransactionSigner<TAccountAuthority>;
-  mint: Address<TAccountMint>;
-  totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
+  payer: TAccountPayer;
+  authority: TAccountAuthority;
+  mint: TAccountMint;
+  totalSupplyAuthority: TAccountTotalSupplyAuthority;
   /** Encrypted total-supply value whose current handle is sealed. */
-  totalSupplyStore: Address<TAccountTotalSupplyStore>;
-  hostConfig: Address<TAccountHostConfig>;
-  zamaProgram?: Address<TAccountZamaProgram>;
-  systemProgram?: Address<TAccountSystemProgram>;
+  totalSupplyStore: TAccountTotalSupplyStore;
+  hostConfig: TAccountHostConfig;
+  zamaProgram?: TAccountZamaProgram;
+  systemProgram?: TAccountSystemProgram;
   handle: MakeTotalSupplyHandlePublicInstructionDataArgs['handle'];
 };
 
 export function getMakeTotalSupplyHandlePublicInstruction<
-  TAccountPayer extends string,
-  TAccountAuthority extends string,
-  TAccountMint extends string,
-  TAccountTotalSupplyAuthority extends string,
-  TAccountTotalSupplyStore extends string,
-  TAccountHostConfig extends string,
-  TAccountZamaProgram extends string,
-  TAccountSystemProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput,
+  TAccountTotalSupplyAuthority extends InstructionAccountInput,
+  TAccountTotalSupplyStore extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: MakeTotalSupplyHandlePublicInput<
@@ -298,34 +330,58 @@ export function getMakeTotalSupplyHandlePublicInstruction<
   config?: { programAddress?: TProgramAddress },
 ): MakeTotalSupplyHandlePublicInstruction<
   TProgramAddress,
-  TAccountPayer,
-  TAccountAuthority,
-  TAccountMint,
-  TAccountTotalSupplyAuthority,
-  TAccountTotalSupplyStore,
-  TAccountHostConfig,
-  TAccountZamaProgram,
-  TAccountSystemProgram
+  ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+  ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+  ResolvedInstructionAccountMeta<
+    TAccountTotalSupplyAuthority,
+    InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
+  >,
+  ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    authority: { value: input.authority ?? null, isWritable: false },
-    mint: { value: input.mint ?? null, isWritable: false },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    authority: {
+      value: input.authority ?? null,
+      isSigner: true,
+      isWritable: false,
+    },
+    mint: { value: input.mint ?? null, isSigner: false, isWritable: false },
     totalSupplyAuthority: {
       value: input.totalSupplyAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     totalSupplyStore: {
       value: input.totalSupplyStore ?? null,
+      isSigner: false,
       isWritable: true,
     },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -341,7 +397,6 @@ export function getMakeTotalSupplyHandlePublicInstruction<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -359,14 +414,17 @@ export function getMakeTotalSupplyHandlePublicInstruction<
     programAddress,
   } as MakeTotalSupplyHandlePublicInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountAuthority,
-    TAccountMint,
-    TAccountTotalSupplyAuthority,
-    TAccountTotalSupplyStore,
-    TAccountHostConfig,
-    TAccountZamaProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<
+      TAccountTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 

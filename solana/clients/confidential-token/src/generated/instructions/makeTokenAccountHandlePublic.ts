@@ -30,14 +30,17 @@ import {
   type ReadonlyAccount,
   type ReadonlySignerAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
 import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
   type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
 import { findTokenAccountPda } from '../pdas/index.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
@@ -131,36 +134,36 @@ export function getMakeTokenAccountHandlePublicInstructionDataCodec(): FixedSize
 }
 
 export type MakeTokenAccountHandlePublicAsyncInput<
-  TAccountPayer extends string = string,
-  TAccountOwner extends string = string,
-  TAccountMint extends string = string,
-  TAccountTokenAccount extends string = string,
-  TAccountEncryptedStore extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountOwner extends InstructionSignerInput = InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEncryptedStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  payer: TransactionSigner<TAccountPayer>;
-  owner: TransactionSigner<TAccountOwner>;
-  mint: Address<TAccountMint>;
-  tokenAccount?: Address<TAccountTokenAccount>;
-  encryptedStore: Address<TAccountEncryptedStore>;
-  hostConfig?: Address<TAccountHostConfig>;
-  zamaProgram?: Address<TAccountZamaProgram>;
-  systemProgram?: Address<TAccountSystemProgram>;
+  payer: TAccountPayer;
+  owner: TAccountOwner;
+  mint: TAccountMint;
+  tokenAccount?: TAccountTokenAccount;
+  encryptedStore: TAccountEncryptedStore;
+  hostConfig?: TAccountHostConfig;
+  zamaProgram?: TAccountZamaProgram;
+  systemProgram?: TAccountSystemProgram;
   kind: MakeTokenAccountHandlePublicInstructionDataArgs['kind'];
   handle: MakeTokenAccountHandlePublicInstructionDataArgs['handle'];
 };
 
 export async function getMakeTokenAccountHandlePublicInstructionAsync<
-  TAccountPayer extends string,
-  TAccountOwner extends string,
-  TAccountMint extends string,
-  TAccountTokenAccount extends string,
-  TAccountEncryptedStore extends string,
-  TAccountHostConfig extends string,
-  TAccountZamaProgram extends string,
-  TAccountSystemProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountOwner extends InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput,
+  TAccountTokenAccount extends InstructionAccountInput,
+  TAccountEncryptedStore extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: MakeTokenAccountHandlePublicAsyncInput<
@@ -177,29 +180,52 @@ export async function getMakeTokenAccountHandlePublicInstructionAsync<
 ): Promise<
   MakeTokenAccountHandlePublicInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountOwner,
-    TAccountMint,
-    TAccountTokenAccount,
-    TAccountEncryptedStore,
-    TAccountHostConfig,
-    TAccountZamaProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<TAccountTokenAccount, InstructionAccountInputAddress<TAccountTokenAccount>>,
+    ResolvedInstructionAccountMeta<TAccountEncryptedStore, InstructionAccountInputAddress<TAccountEncryptedStore>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    owner: { value: input.owner ?? null, isWritable: false },
-    mint: { value: input.mint ?? null, isWritable: false },
-    tokenAccount: { value: input.tokenAccount ?? null, isWritable: false },
-    encryptedStore: { value: input.encryptedStore ?? null, isWritable: true },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    owner: { value: input.owner ?? null, isSigner: true, isWritable: false },
+    mint: { value: input.mint ?? null, isSigner: false, isWritable: false },
+    tokenAccount: {
+      value: input.tokenAccount ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    encryptedStore: {
+      value: input.encryptedStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -208,10 +234,13 @@ export async function getMakeTokenAccountHandlePublicInstructionAsync<
 
   // Resolve default values.
   if (!accounts.tokenAccount.value) {
-    accounts.tokenAccount.value = await findTokenAccountPda({
-      mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
-      owner: getAddressFromResolvedInstructionAccount('owner', accounts.owner.value),
-    });
+    accounts.tokenAccount.value = await findTokenAccountPda(
+      {
+        mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
+        owner: getAddressFromResolvedInstructionAccount('owner', accounts.owner.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
@@ -226,7 +255,6 @@ export async function getMakeTokenAccountHandlePublicInstructionAsync<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -244,48 +272,48 @@ export async function getMakeTokenAccountHandlePublicInstructionAsync<
     programAddress,
   } as MakeTokenAccountHandlePublicInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountOwner,
-    TAccountMint,
-    TAccountTokenAccount,
-    TAccountEncryptedStore,
-    TAccountHostConfig,
-    TAccountZamaProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<TAccountTokenAccount, InstructionAccountInputAddress<TAccountTokenAccount>>,
+    ResolvedInstructionAccountMeta<TAccountEncryptedStore, InstructionAccountInputAddress<TAccountEncryptedStore>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 
 export type MakeTokenAccountHandlePublicInput<
-  TAccountPayer extends string = string,
-  TAccountOwner extends string = string,
-  TAccountMint extends string = string,
-  TAccountTokenAccount extends string = string,
-  TAccountEncryptedStore extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountOwner extends InstructionSignerInput = InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEncryptedStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  payer: TransactionSigner<TAccountPayer>;
-  owner: TransactionSigner<TAccountOwner>;
-  mint: Address<TAccountMint>;
-  tokenAccount: Address<TAccountTokenAccount>;
-  encryptedStore: Address<TAccountEncryptedStore>;
-  hostConfig: Address<TAccountHostConfig>;
-  zamaProgram?: Address<TAccountZamaProgram>;
-  systemProgram?: Address<TAccountSystemProgram>;
+  payer: TAccountPayer;
+  owner: TAccountOwner;
+  mint: TAccountMint;
+  tokenAccount: TAccountTokenAccount;
+  encryptedStore: TAccountEncryptedStore;
+  hostConfig: TAccountHostConfig;
+  zamaProgram?: TAccountZamaProgram;
+  systemProgram?: TAccountSystemProgram;
   kind: MakeTokenAccountHandlePublicInstructionDataArgs['kind'];
   handle: MakeTokenAccountHandlePublicInstructionDataArgs['handle'];
 };
 
 export function getMakeTokenAccountHandlePublicInstruction<
-  TAccountPayer extends string,
-  TAccountOwner extends string,
-  TAccountMint extends string,
-  TAccountTokenAccount extends string,
-  TAccountEncryptedStore extends string,
-  TAccountHostConfig extends string,
-  TAccountZamaProgram extends string,
-  TAccountSystemProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountOwner extends InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput,
+  TAccountTokenAccount extends InstructionAccountInput,
+  TAccountEncryptedStore extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: MakeTokenAccountHandlePublicInput<
@@ -301,28 +329,51 @@ export function getMakeTokenAccountHandlePublicInstruction<
   config?: { programAddress?: TProgramAddress },
 ): MakeTokenAccountHandlePublicInstruction<
   TProgramAddress,
-  TAccountPayer,
-  TAccountOwner,
-  TAccountMint,
-  TAccountTokenAccount,
-  TAccountEncryptedStore,
-  TAccountHostConfig,
-  TAccountZamaProgram,
-  TAccountSystemProgram
+  ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+  ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+  ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+  ResolvedInstructionAccountMeta<TAccountTokenAccount, InstructionAccountInputAddress<TAccountTokenAccount>>,
+  ResolvedInstructionAccountMeta<TAccountEncryptedStore, InstructionAccountInputAddress<TAccountEncryptedStore>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    owner: { value: input.owner ?? null, isWritable: false },
-    mint: { value: input.mint ?? null, isWritable: false },
-    tokenAccount: { value: input.tokenAccount ?? null, isWritable: false },
-    encryptedStore: { value: input.encryptedStore ?? null, isWritable: true },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    owner: { value: input.owner ?? null, isSigner: true, isWritable: false },
+    mint: { value: input.mint ?? null, isSigner: false, isWritable: false },
+    tokenAccount: {
+      value: input.tokenAccount ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    encryptedStore: {
+      value: input.encryptedStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -338,7 +389,6 @@ export function getMakeTokenAccountHandlePublicInstruction<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -356,14 +406,14 @@ export function getMakeTokenAccountHandlePublicInstruction<
     programAddress,
   } as MakeTokenAccountHandlePublicInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountOwner,
-    TAccountMint,
-    TAccountTokenAccount,
-    TAccountEncryptedStore,
-    TAccountHostConfig,
-    TAccountZamaProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<TAccountTokenAccount, InstructionAccountInputAddress<TAccountTokenAccount>>,
+    ResolvedInstructionAccountMeta<TAccountEncryptedStore, InstructionAccountInputAddress<TAccountEncryptedStore>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 

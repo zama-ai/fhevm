@@ -39,7 +39,10 @@ import {
 import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
   type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
 
@@ -116,23 +119,23 @@ export function getDiscloseSecpInstructionDataCodec(): Codec<
 }
 
 export type DiscloseSecpAsyncInput<
-  TAccountHostConfig extends string = string,
-  TAccountKmsContext extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
-  hostConfig?: Address<TAccountHostConfig>;
+  hostConfig?: TAccountHostConfig;
   /**
    * KMS context PDA for the id the certificate commits to (any live context; validated by the
    * verifier CPI).
    */
-  kmsContext: Address<TAccountKmsContext>;
+  kmsContext: TAccountKmsContext;
   /** ZamaHost program used for the stateless verifier CPI. */
-  zamaProgram?: Address<TAccountZamaProgram>;
-  eventAuthority?: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  zamaProgram?: TAccountZamaProgram;
+  eventAuthority?: TAccountEventAuthority;
+  program?: TAccountProgram;
   handle: DiscloseSecpInstructionDataArgs['handle'];
   cleartext: DiscloseSecpInstructionDataArgs['cleartext'];
   signatures: DiscloseSecpInstructionDataArgs['signatures'];
@@ -140,11 +143,11 @@ export type DiscloseSecpAsyncInput<
 };
 
 export async function getDiscloseSecpInstructionAsync<
-  TAccountHostConfig extends string,
-  TAccountKmsContext extends string,
-  TAccountZamaProgram extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: DiscloseSecpAsyncInput<
@@ -158,23 +161,46 @@ export async function getDiscloseSecpInstructionAsync<
 ): Promise<
   DiscloseSecpInstruction<
     TProgramAddress,
-    TAccountHostConfig,
-    TAccountKmsContext,
-    TAccountZamaProgram,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    kmsContext: { value: input.kmsContext ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    kmsContext: {
+      value: input.kmsContext ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -206,7 +232,6 @@ export async function getDiscloseSecpInstructionAsync<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -219,32 +244,32 @@ export async function getDiscloseSecpInstructionAsync<
     programAddress,
   } as DiscloseSecpInstruction<
     TProgramAddress,
-    TAccountHostConfig,
-    TAccountKmsContext,
-    TAccountZamaProgram,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 
 export type DiscloseSecpInput<
-  TAccountHostConfig extends string = string,
-  TAccountKmsContext extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig: TAccountHostConfig;
   /**
    * KMS context PDA for the id the certificate commits to (any live context; validated by the
    * verifier CPI).
    */
-  kmsContext: Address<TAccountKmsContext>;
+  kmsContext: TAccountKmsContext;
   /** ZamaHost program used for the stateless verifier CPI. */
-  zamaProgram?: Address<TAccountZamaProgram>;
-  eventAuthority: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  zamaProgram?: TAccountZamaProgram;
+  eventAuthority: TAccountEventAuthority;
+  program?: TAccountProgram;
   handle: DiscloseSecpInstructionDataArgs['handle'];
   cleartext: DiscloseSecpInstructionDataArgs['cleartext'];
   signatures: DiscloseSecpInstructionDataArgs['signatures'];
@@ -252,11 +277,11 @@ export type DiscloseSecpInput<
 };
 
 export function getDiscloseSecpInstruction<
-  TAccountHostConfig extends string,
-  TAccountKmsContext extends string,
-  TAccountZamaProgram extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: DiscloseSecpInput<
@@ -269,22 +294,45 @@ export function getDiscloseSecpInstruction<
   config?: { programAddress?: TProgramAddress },
 ): DiscloseSecpInstruction<
   TProgramAddress,
-  TAccountHostConfig,
-  TAccountKmsContext,
-  TAccountZamaProgram,
-  TAccountEventAuthority,
-  TAccountProgram
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+  ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+  ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    kmsContext: { value: input.kmsContext ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    kmsContext: {
+      value: input.kmsContext ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -301,7 +349,6 @@ export function getDiscloseSecpInstruction<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('hostConfig', accounts.hostConfig),
@@ -314,11 +361,11 @@ export function getDiscloseSecpInstruction<
     programAddress,
   } as DiscloseSecpInstruction<
     TProgramAddress,
-    TAccountHostConfig,
-    TAccountKmsContext,
-    TAccountZamaProgram,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 

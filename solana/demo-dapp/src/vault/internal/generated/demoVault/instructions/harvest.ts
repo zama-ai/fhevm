@@ -30,11 +30,17 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
+  type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
+} from '@solana/program-client-core';
 import { DEMO_VAULT_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const HARVEST_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([228, 241, 31, 182, 53, 169, 59, 199]);
@@ -97,35 +103,35 @@ export function getHarvestInstructionDataCodec(): FixedSizeCodec<HarvestInstruct
 }
 
 export type HarvestInput<
-  TAccountDonor extends string = string,
-  TAccountVault extends string = string,
-  TAccountUnderlyingMint extends string = string,
-  TAccountDonorUnderlying extends string = string,
-  TAccountVaultTokenAccount extends string = string,
-  TAccountTokenProgram extends string = string,
+  TAccountDonor extends InstructionSignerInput = InstructionSignerInput,
+  TAccountVault extends InstructionAccountInput = InstructionAccountInput,
+  TAccountUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountDonorUnderlying extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVaultTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Donor and transfer authority over `donor_underlying`. */
-  donor: TransactionSigner<TAccountDonor>;
+  donor: TAccountDonor;
   /** Vault receiving the donation. */
-  vault: Address<TAccountVault>;
+  vault: TAccountVault;
   /** Underlying SPL mint, read for its decimals. */
-  underlyingMint: Address<TAccountUnderlyingMint>;
+  underlyingMint: TAccountUnderlyingMint;
   /** Donor's underlying token account (source). */
-  donorUnderlying: Address<TAccountDonorUnderlying>;
+  donorUnderlying: TAccountDonorUnderlying;
   /** Vault token account whose balance is increased by the donation. */
-  vaultTokenAccount: Address<TAccountVaultTokenAccount>;
+  vaultTokenAccount: TAccountVaultTokenAccount;
   /** SPL token program. */
-  tokenProgram?: Address<TAccountTokenProgram>;
+  tokenProgram?: TAccountTokenProgram;
   amount: HarvestInstructionDataArgs['amount'];
 };
 
 export function getHarvestInstruction<
-  TAccountDonor extends string,
-  TAccountVault extends string,
-  TAccountUnderlyingMint extends string,
-  TAccountDonorUnderlying extends string,
-  TAccountVaultTokenAccount extends string,
-  TAccountTokenProgram extends string,
+  TAccountDonor extends InstructionSignerInput,
+  TAccountVault extends InstructionAccountInput,
+  TAccountUnderlyingMint extends InstructionAccountInput,
+  TAccountDonorUnderlying extends InstructionAccountInput,
+  TAccountVaultTokenAccount extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof DEMO_VAULT_PROGRAM_ADDRESS,
 >(
   input: HarvestInput<
@@ -139,27 +145,43 @@ export function getHarvestInstruction<
   config?: { programAddress?: TProgramAddress },
 ): HarvestInstruction<
   TProgramAddress,
-  TAccountDonor,
-  TAccountVault,
-  TAccountUnderlyingMint,
-  TAccountDonorUnderlying,
-  TAccountVaultTokenAccount,
-  TAccountTokenProgram
+  ResolvedInstructionAccountMeta<TAccountDonor, InstructionAccountInputAddress<TAccountDonor>>,
+  ResolvedInstructionAccountMeta<TAccountVault, InstructionAccountInputAddress<TAccountVault>>,
+  ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+  ResolvedInstructionAccountMeta<TAccountDonorUnderlying, InstructionAccountInputAddress<TAccountDonorUnderlying>>,
+  ResolvedInstructionAccountMeta<TAccountVaultTokenAccount, InstructionAccountInputAddress<TAccountVaultTokenAccount>>,
+  ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? DEMO_VAULT_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    donor: { value: input.donor ?? null, isWritable: true },
-    vault: { value: input.vault ?? null, isWritable: false },
-    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
-    donorUnderlying: { value: input.donorUnderlying ?? null, isWritable: true },
-    vaultTokenAccount: {
-      value: input.vaultTokenAccount ?? null,
+    donor: { value: input.donor ?? null, isSigner: true, isWritable: true },
+    vault: { value: input.vault ?? null, isSigner: false, isWritable: false },
+    underlyingMint: {
+      value: input.underlyingMint ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    donorUnderlying: {
+      value: input.donorUnderlying ?? null,
+      isSigner: false,
       isWritable: true,
     },
-    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    vaultTokenAccount: {
+      value: input.vaultTokenAccount ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -172,7 +194,6 @@ export function getHarvestInstruction<
       'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('donor', accounts.donor),
@@ -186,12 +207,15 @@ export function getHarvestInstruction<
     programAddress,
   } as HarvestInstruction<
     TProgramAddress,
-    TAccountDonor,
-    TAccountVault,
-    TAccountUnderlyingMint,
-    TAccountDonorUnderlying,
-    TAccountVaultTokenAccount,
-    TAccountTokenProgram
+    ResolvedInstructionAccountMeta<TAccountDonor, InstructionAccountInputAddress<TAccountDonor>>,
+    ResolvedInstructionAccountMeta<TAccountVault, InstructionAccountInputAddress<TAccountVault>>,
+    ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+    ResolvedInstructionAccountMeta<TAccountDonorUnderlying, InstructionAccountInputAddress<TAccountDonorUnderlying>>,
+    ResolvedInstructionAccountMeta<
+      TAccountVaultTokenAccount,
+      InstructionAccountInputAddress<TAccountVaultTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>
   >);
 }
 

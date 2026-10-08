@@ -31,14 +31,17 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
 import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
   type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
 import { ENCRYPTED_COUNTER_PROGRAM_ADDRESS } from '../programAddress.js';
 
@@ -106,40 +109,40 @@ export function getInitializeInstructionDataCodec(): FixedSizeCodec<
 }
 
 export type InitializeAsyncInput<
-  TAccountOwner extends string = string,
-  TAccountCounter extends string = string,
-  TAccountCounterAuthority extends string = string,
-  TAccountEncryptedStore extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountZamaEventAuthority extends string = string,
-  TAccountTransientStore extends string = string,
-  TAccountInstructions extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountOwner extends InstructionSignerInput = InstructionSignerInput,
+  TAccountCounter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountCounterAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEncryptedStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  owner: TransactionSigner<TAccountOwner>;
-  counter?: Address<TAccountCounter>;
-  counterAuthority?: Address<TAccountCounterAuthority>;
-  encryptedStore: Address<TAccountEncryptedStore>;
-  hostConfig?: Address<TAccountHostConfig>;
-  zamaEventAuthority?: Address<TAccountZamaEventAuthority>;
-  transientStore: Address<TAccountTransientStore>;
-  instructions: Address<TAccountInstructions>;
-  zamaProgram?: Address<TAccountZamaProgram>;
-  systemProgram?: Address<TAccountSystemProgram>;
+  owner: TAccountOwner;
+  counter?: TAccountCounter;
+  counterAuthority?: TAccountCounterAuthority;
+  encryptedStore: TAccountEncryptedStore;
+  hostConfig?: TAccountHostConfig;
+  zamaEventAuthority?: TAccountZamaEventAuthority;
+  transientStore: TAccountTransientStore;
+  instructions: TAccountInstructions;
+  zamaProgram?: TAccountZamaProgram;
+  systemProgram?: TAccountSystemProgram;
 };
 
 export async function getInitializeInstructionAsync<
-  TAccountOwner extends string,
-  TAccountCounter extends string,
-  TAccountCounterAuthority extends string,
-  TAccountEncryptedStore extends string,
-  TAccountHostConfig extends string,
-  TAccountZamaEventAuthority extends string,
-  TAccountTransientStore extends string,
-  TAccountInstructions extends string,
-  TAccountZamaProgram extends string,
-  TAccountSystemProgram extends string,
+  TAccountOwner extends InstructionSignerInput,
+  TAccountCounter extends InstructionAccountInput,
+  TAccountCounterAuthority extends InstructionAccountInput,
+  TAccountEncryptedStore extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ENCRYPTED_COUNTER_PROGRAM_ADDRESS,
 >(
   input: InitializeAsyncInput<
@@ -158,39 +161,75 @@ export async function getInitializeInstructionAsync<
 ): Promise<
   InitializeInstruction<
     TProgramAddress,
-    TAccountOwner,
-    TAccountCounter,
-    TAccountCounterAuthority,
-    TAccountEncryptedStore,
-    TAccountHostConfig,
-    TAccountZamaEventAuthority,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+    ResolvedInstructionAccountMeta<TAccountCounter, InstructionAccountInputAddress<TAccountCounter>>,
+    ResolvedInstructionAccountMeta<TAccountCounterAuthority, InstructionAccountInputAddress<TAccountCounterAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountEncryptedStore, InstructionAccountInputAddress<TAccountEncryptedStore>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ENCRYPTED_COUNTER_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    owner: { value: input.owner ?? null, isWritable: true },
-    counter: { value: input.counter ?? null, isWritable: true },
+    owner: { value: input.owner ?? null, isSigner: true, isWritable: true },
+    counter: {
+      value: input.counter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     counterAuthority: {
       value: input.counterAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    encryptedStore: { value: input.encryptedStore ?? null, isWritable: true },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
+    encryptedStore: {
+      value: input.encryptedStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    transientStore: { value: input.transientStore ?? null, isWritable: true },
-    instructions: { value: input.instructions ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    transientStore: {
+      value: input.transientStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    instructions: {
+      value: input.instructions ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -233,7 +272,6 @@ export async function getInitializeInstructionAsync<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('owner', accounts.owner),
@@ -251,54 +289,57 @@ export async function getInitializeInstructionAsync<
     programAddress,
   } as InitializeInstruction<
     TProgramAddress,
-    TAccountOwner,
-    TAccountCounter,
-    TAccountCounterAuthority,
-    TAccountEncryptedStore,
-    TAccountHostConfig,
-    TAccountZamaEventAuthority,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+    ResolvedInstructionAccountMeta<TAccountCounter, InstructionAccountInputAddress<TAccountCounter>>,
+    ResolvedInstructionAccountMeta<TAccountCounterAuthority, InstructionAccountInputAddress<TAccountCounterAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountEncryptedStore, InstructionAccountInputAddress<TAccountEncryptedStore>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 
 export type InitializeInput<
-  TAccountOwner extends string = string,
-  TAccountCounter extends string = string,
-  TAccountCounterAuthority extends string = string,
-  TAccountEncryptedStore extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountZamaEventAuthority extends string = string,
-  TAccountTransientStore extends string = string,
-  TAccountInstructions extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountOwner extends InstructionSignerInput = InstructionSignerInput,
+  TAccountCounter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountCounterAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEncryptedStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  owner: TransactionSigner<TAccountOwner>;
-  counter: Address<TAccountCounter>;
-  counterAuthority: Address<TAccountCounterAuthority>;
-  encryptedStore: Address<TAccountEncryptedStore>;
-  hostConfig: Address<TAccountHostConfig>;
-  zamaEventAuthority: Address<TAccountZamaEventAuthority>;
-  transientStore: Address<TAccountTransientStore>;
-  instructions: Address<TAccountInstructions>;
-  zamaProgram?: Address<TAccountZamaProgram>;
-  systemProgram?: Address<TAccountSystemProgram>;
+  owner: TAccountOwner;
+  counter: TAccountCounter;
+  counterAuthority: TAccountCounterAuthority;
+  encryptedStore: TAccountEncryptedStore;
+  hostConfig: TAccountHostConfig;
+  zamaEventAuthority: TAccountZamaEventAuthority;
+  transientStore: TAccountTransientStore;
+  instructions: TAccountInstructions;
+  zamaProgram?: TAccountZamaProgram;
+  systemProgram?: TAccountSystemProgram;
 };
 
 export function getInitializeInstruction<
-  TAccountOwner extends string,
-  TAccountCounter extends string,
-  TAccountCounterAuthority extends string,
-  TAccountEncryptedStore extends string,
-  TAccountHostConfig extends string,
-  TAccountZamaEventAuthority extends string,
-  TAccountTransientStore extends string,
-  TAccountInstructions extends string,
-  TAccountZamaProgram extends string,
-  TAccountSystemProgram extends string,
+  TAccountOwner extends InstructionSignerInput,
+  TAccountCounter extends InstructionAccountInput,
+  TAccountCounterAuthority extends InstructionAccountInput,
+  TAccountEncryptedStore extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ENCRYPTED_COUNTER_PROGRAM_ADDRESS,
 >(
   input: InitializeInput<
@@ -316,38 +357,74 @@ export function getInitializeInstruction<
   config?: { programAddress?: TProgramAddress },
 ): InitializeInstruction<
   TProgramAddress,
-  TAccountOwner,
-  TAccountCounter,
-  TAccountCounterAuthority,
-  TAccountEncryptedStore,
-  TAccountHostConfig,
-  TAccountZamaEventAuthority,
-  TAccountTransientStore,
-  TAccountInstructions,
-  TAccountZamaProgram,
-  TAccountSystemProgram
+  ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+  ResolvedInstructionAccountMeta<TAccountCounter, InstructionAccountInputAddress<TAccountCounter>>,
+  ResolvedInstructionAccountMeta<TAccountCounterAuthority, InstructionAccountInputAddress<TAccountCounterAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountEncryptedStore, InstructionAccountInputAddress<TAccountEncryptedStore>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<
+    TAccountZamaEventAuthority,
+    InstructionAccountInputAddress<TAccountZamaEventAuthority>
+  >,
+  ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+  ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+  ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ENCRYPTED_COUNTER_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    owner: { value: input.owner ?? null, isWritable: true },
-    counter: { value: input.counter ?? null, isWritable: true },
+    owner: { value: input.owner ?? null, isSigner: true, isWritable: true },
+    counter: {
+      value: input.counter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     counterAuthority: {
       value: input.counterAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    encryptedStore: { value: input.encryptedStore ?? null, isWritable: true },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
+    encryptedStore: {
+      value: input.encryptedStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    transientStore: { value: input.transientStore ?? null, isWritable: true },
-    instructions: { value: input.instructions ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    transientStore: {
+      value: input.transientStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    instructions: {
+      value: input.instructions ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -360,7 +437,6 @@ export function getInitializeInstruction<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('owner', accounts.owner),
@@ -378,16 +454,19 @@ export function getInitializeInstruction<
     programAddress,
   } as InitializeInstruction<
     TProgramAddress,
-    TAccountOwner,
-    TAccountCounter,
-    TAccountCounterAuthority,
-    TAccountEncryptedStore,
-    TAccountHostConfig,
-    TAccountZamaEventAuthority,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+    ResolvedInstructionAccountMeta<TAccountCounter, InstructionAccountInputAddress<TAccountCounter>>,
+    ResolvedInstructionAccountMeta<TAccountCounterAuthority, InstructionAccountInputAddress<TAccountCounterAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountEncryptedStore, InstructionAccountInputAddress<TAccountEncryptedStore>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 

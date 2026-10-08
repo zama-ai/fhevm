@@ -151,7 +151,8 @@ const targets = [
         'resultGrant',
         'slotWrite',
       ]),
-      // Rendered as defined types, discriminator included: the JS renderer draws no events.
+      // Rendered as defined types plus a discriminator constant, the names the SDK's leafRecord
+      // decodes with; the renderer's own event pages would name them FheExecutedEventEvent.
       events: new Set(['fheExecutedEvent']),
       // The generated builders default their host_config and rand_nonce accounts to these
       // same-program PDAs; the SDK and the deployment derive hostConfig and kmsContext directly.
@@ -375,7 +376,9 @@ for (const target of targets) {
   // Host types render once, in `@fhevm/solana-zama-host`; a linked app client imports them from there.
   const foreignTypeLinks = target.linkHostPdas
     ? Object.fromEntries(
-        program.definedTypes.filter(({ name }) => hostTypeNames.has(name)).map(({ name }) => [name, 'zamaHost']),
+        (program.definedTypes ?? [])
+          .filter(({ name }) => hostTypeNames.has(name))
+          .map(({ name }) => [name, 'zamaHost']),
       )
     : {};
   for (const name of Object.keys(foreignTypeLinks)) {
@@ -386,7 +389,7 @@ for (const target of targets) {
   const keep = target.keep;
   if (keep) {
     for (const [kind, names] of Object.entries(keep)) {
-      const present = new Set(program[kind].map((node) => node.name));
+      const present = new Set((program[kind] ?? []).map((node) => node.name));
       for (const name of names) {
         if (!present.has(name)) throw new Error(`Required Codama ${kind} node is missing: ${name}`);
       }
@@ -402,7 +405,7 @@ for (const target of targets) {
           ...program.accounts
             .filter(({ name }) => !(keep.accounts ?? new Set()).has(name))
             .map(({ name }) => `[accountNode]${name}`),
-          ...program.definedTypes
+          ...(program.definedTypes ?? [])
             .filter(({ name }) => !keep.definedTypes.has(name))
             .map(({ name }) => `[definedTypeNode]${name}`),
           ...program.pdas.filter(({ name }) => keep.pdas && !keep.pdas.has(name)).map(({ name }) => `[pdaNode]${name}`),
@@ -414,13 +417,13 @@ for (const target of targets) {
     ...(program.constants ?? []).map(({ name }) => `[constantNode]${name}`),
   ];
   codama.update(deleteNodesVisitor(selectors));
-  const keptEvents = program.events.filter(({ name }) => keep?.events?.has(name));
+  const keptEvents = (program.events ?? []).filter(({ name }) => keep?.events?.has(name));
   if (keptEvents.length > 0) {
     codama.update(
       updateProgramsVisitor({
         [program.name]: {
           definedTypes: [
-            ...codama.getRoot().program.definedTypes,
+            ...(codama.getRoot().program.definedTypes ?? []),
             ...keptEvents.map(({ name, docs, data }) => definedTypeNode({ name, docs, type: data })),
           ],
         },
@@ -494,7 +497,7 @@ for (const target of targets) {
   writeFileSync(`${temporaryGeneratedPath}/programAddress.ts`, target.programAddress(program, anchorIdl));
   writeFileSync(
     `${temporaryGeneratedPath}/constants.ts`,
-    renderProgramConstants(program.constants, anchorIdl.constants ?? [], anchorIdl.events ?? []),
+    renderProgramConstants(program.constants ?? [], anchorIdl.constants ?? [], anchorIdl.events ?? []),
   );
   if (target.errorTable) {
     writeFileSync(
