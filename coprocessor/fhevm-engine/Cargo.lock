@@ -13619,7 +13619,6 @@ name = "zama-host"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
- "borsh",
  "bytemuck",
  "program-environment",
  "solana-instructions-sysvar",
@@ -13784,7 +13783,6 @@ dependencies = [
  "alloy-primitives",
  "anyhow",
  "bincode",
- "bs58",
  "clap",
  "fhevm-engine-common",
  "hex",

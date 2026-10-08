@@ -5076,7 +5076,6 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "zama-host",
- "zama-solana-acl",
 ]
 
 [[package]]
@@ -5084,7 +5083,6 @@ name = "zama-host"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
- "borsh",
  "bytemuck",
  "k256",
  "program-environment",
@@ -5168,7 +5166,6 @@ dependencies = [
  "solana-packet 3.0.0",
  "solana-program",
  "solana-sdk",
- "zama-fhe",
  "zama-host",
  "zama-solana-acl",
  "zama-solana-test-kit",

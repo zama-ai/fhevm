@@ -3418,7 +3418,6 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "zama-solana-acl",
- "zama-solana-request",
 ]
 
 [[package]]

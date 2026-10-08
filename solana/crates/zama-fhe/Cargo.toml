@@ -14,4 +14,3 @@ idl-build = ["anchor-lang/idl-build", "zama-host/idl-build"]
 [dependencies]
 anchor-lang = "1.2.0"
 zama-host = { path = "../../programs/zama-host", features = ["no-entrypoint"] }
-zama-solana-acl = { path = "../zama-solana-acl" }
