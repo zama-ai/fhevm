@@ -71,11 +71,15 @@ fi
 ( cd "$ROOT/sdk/js-sdk" && npm run clean && npm run build:esm && npm run build:types )
 ( cd "$ROOT/solana/deploy" && bun install --frozen-lockfile )
 ( cd "$ROOT/solana/clients/confidential-token" && bun install --frozen-lockfile )
+# The demo dapp's vault module builds the confidential-token instructions that the token scenarios
+# and the kms-context-switch Solana leg send, and it resolves its imports from its own graph.
+( cd "$ROOT/solana/demo-dapp" && bun install --frozen-lockfile )
 ( cd "$FHEVM" && bun install --frozen-lockfile )
 [ -L "$FHEVM/node_modules/@fhevm/sdk" ]
 # Prove both runtimes resolve the SDK and its dependencies through the symlink.
 ( cd "$FHEVM" && node --input-type=module -e "await import('@fhevm/sdk/solana')" )
 ( cd "$FHEVM" && bun -e "await import('@fhevm/sdk/solana')" )
+( cd "$FHEVM" && bun -e "await import('@demo-dapp/vault/index.js')" )
 
 # The real Squads v4 program for the delegated-decrypt scenario, fetched from mainnet and
 # sha256-pinned (nothing is committed — see the fetch script's header). Offline is non-fatal by
