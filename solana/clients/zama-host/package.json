@@ -13,6 +13,11 @@
       "import": "./dist/esm/index.js",
       "require": "./dist/cjs/index.js"
     },
+    "./client": {
+      "types": "./dist/types/finalizedClient.d.ts",
+      "import": "./dist/esm/finalizedClient.js",
+      "require": "./dist/cjs/finalizedClient.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -26,10 +31,17 @@
   },
   "peerDependencies": {
     "@solana/kit": "^8.4.0",
-    "@solana/program-client-core": "^8.4.0"
+    "@solana/program-client-core": "^8.4.0",
+    "@solana/kit-plugin-rpc": "^0.19.0"
+  },
+  "peerDependenciesMeta": {
+    "@solana/kit-plugin-rpc": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@solana/kit": "8.4.0",
+    "@solana/kit-plugin-rpc": "0.19.0",
     "@solana/program-client-core": "8.4.0",
     "@types/node": "22.20.1",
     "typescript": "6.0.3"

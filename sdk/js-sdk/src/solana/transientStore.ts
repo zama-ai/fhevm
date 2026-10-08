@@ -1,8 +1,14 @@
 import {
-  appendTransactionMessageInstructions,
+  extendClient,
+  nonDivisibleSequentialInstructionPlan,
   type Address,
+  type ClientWithTransactionSending,
+  type ClientWithTransactionSigning,
+  type ExtendedClient,
   type Instruction,
-  type TransactionMessage,
+  type SequentialInstructionPlan,
+  type SuccessfulSingleTransactionPlanResult,
+  type TransactionPlanResultContext,
   type TransactionSigner,
 } from '@solana/kit';
 
@@ -30,14 +36,14 @@ type TransientStoreLifecycle = {
 
 const lifecycleByStore = new WeakMap<TransientStore, TransientStoreLifecycle>();
 
-/** The payer's per-transaction journal PDA on zama-host. Open and close stay inside `appendTransientStoreInstructions`. */
+/** The payer's per-transaction journal PDA on zama-host. Open and close stay inside `transientStoreTransactions`. */
 export type TransientStore = {
   readonly address: Address;
 };
 
 /**
  * The payer's transient store: zama-host's per-transaction journal for FHE results and grants.
- * FHE transactions must open it first and close it last; `appendTransientStoreInstructions` does both.
+ * FHE transactions must open it first and close it last; `transientStoreTransactions` does both.
  */
 export async function prepareTransientStore(parameters: {
   readonly payer: TransactionSigner;
@@ -59,7 +65,7 @@ export async function prepareTransientStore(parameters: {
 function lifecycleOf(transientStore: TransientStore): TransientStoreLifecycle {
   const lifecycle = lifecycleByStore.get(transientStore);
   if (lifecycle === undefined) {
-    throw new Error('appendTransientStoreInstructions requires the TransientStore returned by prepareTransientStore');
+    throw new Error('An FHE transaction requires the TransientStore returned by prepareTransientStore');
   }
   return lifecycle;
 }
@@ -71,38 +77,58 @@ function isTransientStoreLifecycleInstruction(host: Address, instruction: Instru
   );
 }
 
-function sandwichTransientStore(
+// zama-host requires the close to be the transaction's last instruction. Single-transaction sign and
+// send refuse a sandwich the planner had to split, and nothing else can join its plan. Non-divisible
+// marks it atomic for any executor that does run split plans.
+function fheTransactionPlan(
   transientStore: TransientStore,
   instructions: readonly Instruction[],
-  alreadyPresent: readonly Instruction[] = [],
-): Instruction[] {
+): SequentialInstructionPlan {
   const { open, close, host } = lifecycleOf(transientStore);
-  if (
-    [...alreadyPresent, ...instructions].some((instruction) => isTransientStoreLifecycleInstruction(host, instruction))
-  ) {
-    throw new Error(
-      'FHE transaction instructions must not open or close the transient store; appendTransientStoreInstructions already does both',
-    );
+  if (instructions.some((instruction) => isTransientStoreLifecycleInstruction(host, instruction))) {
+    throw new Error('FHE transaction instructions must not open or close the transient store; the client does both');
   }
-  return [open, ...instructions, close];
+  return nonDivisibleSequentialInstructionPlan([open, ...instructions, close]);
 }
 
-/** Surround `instructions` with the matching open (first) and close (last). Two arguments return the list; three append onto a Kit message. */
-export function appendTransientStoreInstructions(
-  transientStore: TransientStore,
-  instructions: readonly Instruction[],
-): Instruction[];
-export function appendTransientStoreInstructions<TMessage extends TransactionMessage>(
-  transientStore: TransientStore,
-  instructions: readonly Instruction[],
-  message: TMessage,
-): ReturnType<typeof appendTransactionMessageInstructions<TMessage, Instruction[]>>;
-export function appendTransientStoreInstructions(
-  transientStore: TransientStore,
-  instructions: readonly Instruction[],
-  message?: TransactionMessage,
-): unknown {
-  const alreadyPresent = message === undefined ? [] : message.instructions;
-  const sandwiched = sandwichTransientStore(transientStore, instructions, alreadyPresent);
-  return message === undefined ? sandwiched : appendTransactionMessageInstructions(sandwiched, message);
+type TransactionConfig = Parameters<ClientWithTransactionSending['sendTransaction']>[1];
+
+/** What `transientStoreTransactions` adds to a Kit client. */
+export type TransientStoreTransactions<
+  TSigned extends TransactionPlanResultContext,
+  TSent extends TransactionPlanResultContext,
+> = {
+  readonly signFheTransaction: (
+    transientStore: TransientStore,
+    instructions: readonly Instruction[],
+    config?: TransactionConfig,
+  ) => Promise<SuccessfulSingleTransactionPlanResult<TSigned>>;
+  readonly sendFheTransaction: (
+    transientStore: TransientStore,
+    instructions: readonly Instruction[],
+    config?: TransactionConfig,
+  ) => Promise<SuccessfulSingleTransactionPlanResult<TSent>>;
+};
+
+/**
+ * Kit plugin: `signFheTransaction` and `sendFheTransaction` put `instructions` between the transient
+ * store's open and close and sign or send them as one transaction through the client's planner.
+ * A sandwich that does not fit one transaction fails at planning, before anything is signed.
+ */
+export function transientStoreTransactions() {
+  return <TSigned extends TransactionPlanResultContext, TSent extends TransactionPlanResultContext, T extends object>(
+    client: T & ClientWithTransactionSigning<TSigned> & ClientWithTransactionSending<TSent>,
+  ): ExtendedClient<T, TransientStoreTransactions<TSigned, TSent>> =>
+    extendClient<T, TransientStoreTransactions<TSigned, TSent>>(client, {
+      signFheTransaction: async (
+        transientStore: TransientStore,
+        instructions: readonly Instruction[],
+        config?: TransactionConfig,
+      ) => await client.signTransaction(fheTransactionPlan(transientStore, instructions), config),
+      sendFheTransaction: async (
+        transientStore: TransientStore,
+        instructions: readonly Instruction[],
+        config?: TransactionConfig,
+      ) => await client.sendTransaction(fheTransactionPlan(transientStore, instructions), config),
+    });
 }

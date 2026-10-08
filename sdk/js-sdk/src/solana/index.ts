@@ -90,12 +90,8 @@ export type { FhevmSolanaChain } from '../core/types/fhevmSolanaChain.js';
 export { defineFhevmSolanaChain } from '../core/chains/utilsSolana.js';
 export { isSolanaHostChainId } from '../core/chains/hostChainId.js';
 
-export {
-  INSTRUCTIONS_SYSVAR_ADDRESS,
-  appendTransientStoreInstructions,
-  prepareTransientStore,
-} from './transientStore.js';
-export type { TransientStore } from './transientStore.js';
+export { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore, transientStoreTransactions } from './transientStore.js';
+export type { TransientStore, TransientStoreTransactions } from './transientStore.js';
 export { solanaHostProgram } from './clients/createFhevmBaseClient.js';
 
 export { toSolanaZkProof } from '../core/coprocessor/SolanaZkProof-p.js';
