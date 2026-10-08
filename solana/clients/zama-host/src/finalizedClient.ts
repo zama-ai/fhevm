@@ -23,7 +23,7 @@ import { transactionPlanner } from '@solana/kit-plugin-instruction-plan';
 import { rpcTransactionPlanSigningExecutor, type RpcSignContext } from '@solana/kit-plugin-rpc';
 
 /** Agave's maximum, which is also the limit a version 0 transaction gets when it sets none. */
-export const LOADED_ACCOUNTS_DATA_SIZE_LIMIT = 64 * 1024 * 1024;
+const MAX_LOADED_ACCOUNTS_DATA_SIZE_LIMIT = 64 * 1024 * 1024;
 
 /** A sent transaction's context: the signing context, with the fee payer's signature always present. */
 export type FinalizedSendContext = RpcSignContext & { readonly signature: Signature };
@@ -35,7 +35,8 @@ export type FinalizedSendContext = RpcSignContext & { readonly signature: Signat
  *
  * The loaded-data limit is set up front, so the executor keeps it. Left to the executor, it would be
  * the exact simulated size, and a shared store that grows before the transaction lands would make it
- * fail on chain, with the fee charged. The limit does not change the fee.
+ * fail on chain, with the fee charged. The limit does not change the fee; until execution, block
+ * packing counts it as 16,384 compute units, as it does for every version 0 transaction.
  *
  * The executor signs partially, for a wallet that adds its signature later. Callers journal the
  * signature before sending, so `signTransaction` rejects a transaction a signer left unsigned.
@@ -50,7 +51,7 @@ export function v1TransactionSigning() {
             pipe(
               createTransactionMessage({ version: 1 }),
               (message) => setTransactionMessageFeePayerSigner(client.payer, message),
-              (message) => setTransactionMessageLoadedAccountsDataSizeLimit(LOADED_ACCOUNTS_DATA_SIZE_LIMIT, message),
+              (message) => setTransactionMessageLoadedAccountsDataSizeLimit(MAX_LOADED_ACCOUNTS_DATA_SIZE_LIMIT, message),
               fillTransactionMessageProvisoryResourceLimits,
             ),
         }),

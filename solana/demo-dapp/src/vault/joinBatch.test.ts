@@ -15,6 +15,7 @@ import {
   address,
   generateKeyPairSigner,
   getSignatureFromTransaction,
+  getTransactionMessageComputeUnitLimit,
   getTransactionMessageLoadedAccountsDataSizeLimit,
   isSolanaError,
   SOLANA_ERROR__FAILED_TO_SIGN_TRANSACTION,
@@ -30,7 +31,6 @@ import { base58 } from '@scure/base';
 import { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
 import { getJoinInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/join.js';
 import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
-import { LOADED_ACCOUNTS_DATA_SIZE_LIMIT } from '@fhevm/solana-zama-host/client';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import { encodedSize, TEST_BLOCKHASH, messageOf, testDemoClient } from '../testDemoClient';
@@ -128,8 +128,13 @@ describe('joinBatch (attested arm)', () => {
     // message, so there is no compute-budget instruction.
     const message = messageOf(transaction);
     expect(message.version).toBe(1);
-    // Not the simulated 100,000 bytes: a join balance store that grows before the join lands must still fit.
-    expect(getTransactionMessageLoadedAccountsDataSizeLimit(message)).toBe(LOADED_ACCOUNTS_DATA_SIZE_LIMIT);
+    // Compute comes from the simulated 200,000 units plus Kit's margin. The loaded-data limit is
+    // Agave's 64 MiB maximum, not the simulated 100,000 bytes, so a join balance store that grows
+    // before the join lands still fits. Kit keeps an explicit limit only while it treats 64 MiB as
+    // set, so this also guards Kit upgrades.
+    expect(getTransactionMessageComputeUnitLimit(message)).toBeGreaterThan(200_000);
+    expect(getTransactionMessageComputeUnitLimit(message)).toBeLessThan(1_400_000);
+    expect(getTransactionMessageLoadedAccountsDataSizeLimit(message)).toBe(64 * 1024 * 1024);
     expect([...message.instructions].map((instruction) => instruction.programAddress)).toEqual([
       ZAMA_HOST_PROGRAM_ADDRESS,
       CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,

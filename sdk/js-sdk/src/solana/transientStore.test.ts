@@ -12,6 +12,7 @@ import {
   pipe,
   sequentialInstructionPlan,
   setTransactionMessageFeePayerSigner,
+  setTransactionMessageLoadedAccountsDataSizeLimit,
   SOLANA_ERROR__INSTRUCTION_PLANS__UNEXPECTED_TRANSACTION_PLAN,
   type SolanaError,
   type Instruction,
@@ -37,9 +38,8 @@ const body = (tag: number, size = 1): Instruction => ({
   data: new Uint8Array(size).fill(tag),
 });
 
-// kit-plugin-rpc's version-1 planner (`rpcTransactionPlanner({ version: 1 })`), built from the same Kit
-// parts because its 0.19.0 type declarations do not compile without skipLibCheck. The executor records
-// each transaction it is handed.
+// The version-1 planner zama-host's `v1TransactionSigning` uses, built from the same Kit parts: the SDK
+// does not depend on zama-host. The executor records each transaction it is handed.
 function recordingClient() {
   const executed: TransactionMessage[] = [];
   const executor = createTransactionPlanExecutor({
@@ -53,6 +53,7 @@ function recordingClient() {
       pipe(
         createTransactionMessage({ version: 1 }),
         (message) => setTransactionMessageFeePayerSigner(payer, message),
+        (message) => setTransactionMessageLoadedAccountsDataSizeLimit(64 * 1024 * 1024, message),
         fillTransactionMessageProvisoryResourceLimits,
       ),
   });

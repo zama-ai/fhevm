@@ -134,8 +134,8 @@ describe('settleBatch', () => {
   });
 
   // The largest settle: a certificate at the host's maximum KMS threshold (MAX_KMS_SIGNERS = 16),
-  // with version 1 extra data (a version byte then the 32-byte KMS context id), the deny record and
-  // both HCU witnesses. A v1 transaction is at most 4,096 bytes and 64
+  // with version 1 extra data (a version byte then the 32-byte KMS context id, the largest the SDK
+  // sends, since the host holds no epoch), the deny record and both HCU witnesses. A v1 transaction is at most 4,096 bytes and 64
   // account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
   it('fits one v1 transaction at the maximum KMS threshold with every witness', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n), 16, `0x01${'09'.repeat(32)}`));
