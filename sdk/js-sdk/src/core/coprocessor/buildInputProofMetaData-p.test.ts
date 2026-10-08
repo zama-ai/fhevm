@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
-import { solanaHostChainId } from '../chains/utilsSolana.js';
-import { buildInputProofMetaData, isSolanaHostChainId } from './buildInputProofMetaData-p.js';
+import { solanaHostChainId } from '../chains/hostChainId.js';
+import { buildInputProofMetaData } from './buildInputProofMetaData-p.js';
 
 describe('buildInputProofMetaData', () => {
   it('assembles the 92-byte EVM layout (contract||user||acl||chainId)', () => {
@@ -49,11 +49,6 @@ describe('buildInputProofMetaData', () => {
         aclContractAddress: `0x${'33'.repeat(32)}`,
       }),
     ).toThrow();
-  });
-
-  it('isSolanaHostChainId reads the type byte', () => {
-    expect(isSolanaHostChainId(12345)).toBe(false);
-    expect(isSolanaHostChainId(solanaHostChainId(12345n))).toBe(true);
   });
 
   it('refuses an unknown chain type byte', () => {

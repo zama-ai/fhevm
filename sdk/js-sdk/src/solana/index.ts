@@ -88,6 +88,7 @@ export type { SolanaZkProof, SolanaZkProofLike } from '../core/types/zkProof-p.j
 
 export type { FhevmSolanaChain } from '../core/types/fhevmSolanaChain.js';
 export { defineFhevmSolanaChain } from '../core/chains/utilsSolana.js';
+export { isSolanaHostChainId } from '../core/chains/hostChainId.js';
 
 export {
   INSTRUCTIONS_SYSVAR_ADDRESS,

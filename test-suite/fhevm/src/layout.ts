@@ -5,6 +5,7 @@ import { getAddressEncoder } from "@solana/kit";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
+import { solanaHostChainId } from "../../../sdk/js-sdk/src/core/chains/hostChainId";
 import { BRINGUP_KMS_CONTEXT_HEX } from "../../../solana/deploy/src/constants";
 import { programIdsFor, readSolanaEnvironment } from "../../../solana/deploy/src/environment";
 import type {
@@ -215,6 +216,9 @@ export const coprocessorDbPsql = (container = COPROCESSOR_DB_CONTAINER): readonl
   "-d",
   "coprocessor",
 ];
+// Localnet Solana host chain id (cluster tag 12345), the one the stack deploys and the e2e
+// harness defaults to. It fits in PostgreSQL BIGINT as a positive i64.
+export const SOLANA_HOST_CHAIN_ID = solanaHostChainId(12345n);
 // Solana host program id as bytes32 — the Solana ACL identity the SDK binds into input proofs.
 // Single source for the transfer orchestrator and the e2e harness's loadEnv default.
 export const SOLANA_ACL_PROGRAM: `0x${string}` = `0x${Buffer.from(

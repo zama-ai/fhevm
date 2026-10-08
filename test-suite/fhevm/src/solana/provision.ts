@@ -42,6 +42,7 @@ import {
 } from '@solana-program/token';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import { programDataAddressFor } from '../../../../solana/deploy/src/bootstrap';
+import { isSolanaHostChainId } from '../../../../sdk/js-sdk/src/core/chains/hostChainId';
 import {
   createFinalizedRpc,
   decodeHostConfig,
@@ -60,7 +61,6 @@ import { vaultModule, sdkVerifyModule } from './lazy-modules';
 // live-client requested); the cheaper steps are simply unaffected by the higher ceiling.
 const PROVISIONING_COMPUTE_UNIT_LIMIT = 1_400_000;
 const LAMPORTS_PER_SOL = 1_000_000_000n;
-const EUINT64_FHE_TYPE_ID = 5;
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, findTokenAccountPda, BALANCE_KEY as BALANCE_LABEL } from '@fhevm/confidential-token';
 
 const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
@@ -350,7 +350,7 @@ export const readHostChainId = async (context: SolanaProvisioningContext): Promi
   // Decoded by the generated Codama client, so the field layout tracks the committed IDL instead
   // of a hand-maintained byte offset. The discriminator constant is generated from it too.
   const { data: config } = decodeHostConfig(configInfo);
-  if (((config.chainId >> 56n) & 0xffn) !== 0x01n) {
+  if (!isSolanaHostChainId(config.chainId)) {
     throw new Error('HostConfig chain id is missing the Solana type byte');
   }
   return config.chainId;
@@ -411,8 +411,8 @@ export const readTokenBalanceStore = async (
 
   const currentHandle = `0x${Buffer.from(encryptedStoreHandle(state, BALANCE_LABEL)).toString('hex')}` as Bytes32Hex;
   const handle = bytes32HexToHandle(currentHandle); // throws on a bad handle version or FHE type id
-  if (handle.fheTypeId !== EUINT64_FHE_TYPE_ID) {
-    throw new Error(`balance handle is not a euint64 handle (FHE type id ${handle.fheTypeId})`);
+  if (handle.fheType !== 'euint64') {
+    throw new Error(`balance handle is not a euint64 handle (${handle.fheType})`);
   }
 
   const chainId = await readHostChainId(context);

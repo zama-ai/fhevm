@@ -38,7 +38,6 @@ pub struct KmsContext {
 }
 
 impl KmsContext {
-    /// Upper bound on KMS nodes per context (bounds account size).
-    pub const MAX_SIGNERS: usize = 16;
+    pub const MAX_SIGNERS: usize = crate::constants::MAX_KMS_SIGNERS as usize;
     pub const SPACE: usize = 32 + (4 + Self::MAX_SIGNERS * 20) + 4 + 1 + 1;
 }

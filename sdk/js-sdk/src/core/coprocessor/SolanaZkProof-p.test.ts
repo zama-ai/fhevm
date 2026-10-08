@@ -3,7 +3,7 @@ import type { EncryptionBits } from '../types/fheType.js';
 import { describe, it, expect } from 'vitest';
 
 import { toSolanaZkProof } from './SolanaZkProof-p.js';
-import { solanaHostChainId } from '../chains/utilsSolana.js';
+import { solanaHostChainId } from '../chains/hostChainId.js';
 
 const CHAIN_ID = solanaHostChainId(12345n);
 const ACL = `0x${'33'.repeat(32)}`;

@@ -3,9 +3,7 @@ import { isAddress } from '../base/address.js';
 import { hexToBytes20, hexToBytes32, isBytes32Hex } from '../base/bytes.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
 
-import { chainTypeByte, isEvmHostChainId, isSolanaHostChainId } from '../chains/utilsSolana.js';
-
-export { isEvmHostChainId, isSolanaHostChainId };
+import { chainTypeByte, isEvmHostChainId, isSolanaHostChainId } from '../chains/hostChainId.js';
 
 /**
  * Assembles the auxiliary data that the input ZK proof is bound to.

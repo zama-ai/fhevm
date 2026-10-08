@@ -4964,5 +4964,39 @@
         ]
       }
     }
+  ],
+  "constants": [
+    {
+      "name": "MAX_COPROCESSOR_SIGNERS",
+      "docs": [
+        "Upper bound on registered coprocessor signers. A hard cap keeps the `HostConfig` byte layout",
+        "pinned (the array serializes to `MAX_COPROCESSOR_SIGNERS * 20` bytes regardless of how many",
+        "signers are active) and bounds the per-attestation recovery cost."
+      ],
+      "type": "u8",
+      "value": "8"
+    },
+    {
+      "name": "MAX_KMS_SIGNERS",
+      "docs": [
+        "Upper bound on KMS nodes per context (bounds the `KmsContext` account size)."
+      ],
+      "type": "u8",
+      "value": "16"
+    },
+    {
+      "name": "WILDCARD_APP",
+      "docs": [
+        "The application a wildcard user-decryption delegation row carries in both its program and its",
+        "scope position — the shared crate's constant."
+      ],
+      "type": {
+        "array": [
+          "u8",
+          32
+        ]
+      },
+      "value": "[255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255]"
+    }
   ]
 }

@@ -13,7 +13,8 @@ import {
 } from '@solana/kit';
 import { LOADER_V3_PROGRAM_ADDRESS } from '@solana-program/loader-v3';
 
-import { BRINGUP_KMS_CONTEXT_ID, HCU_LIMITS, SOLANA_HOST_CHAIN_ID } from './constants';
+import { assertValidSolanaChainId, isEvmHostChainId } from '../../../sdk/js-sdk/src/core/chains/hostChainId';
+import { BRINGUP_KMS_CONTEXT_ID, HCU_LIMITS } from './constants';
 import type { GatewayBootstrapInputs } from './gateway';
 import {
   findEventAuthorityPda,
@@ -28,6 +29,8 @@ import {
   getSetMaxHcuPerTxInstructionAsync,
   HOST_CONFIG_DISCRIMINATOR,
   KMS_CONTEXT_DISCRIMINATOR,
+  MAX_COPROCESSOR_SIGNERS,
+  MAX_KMS_SIGNERS,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
 import type { HostDeployContext } from './send';
@@ -75,14 +78,15 @@ export type BootstrapZamaHostParams = {
   readonly programAddress?: Address;
   /** Validate existing bindings without sending initialization transactions. */
   readonly validateOnly?: boolean;
-  readonly chainId?: bigint;
+  readonly chainId: bigint;
 };
 
 // Mirror program input constraints so malformed first-deploy config cannot upload bytecode first.
 export const validateBootstrapInputs = (params: BootstrapZamaHostParams): void => {
+  assertValidSolanaChainId(params.chainId);
   for (const [name, signers, maximum] of [
-    ['coprocessor', params.gateway.coprocessorSigners, 8],
-    ['KMS', params.gateway.kmsSigners, 16],
+    ['coprocessor', params.gateway.coprocessorSigners, MAX_COPROCESSOR_SIGNERS],
+    ['KMS', params.gateway.kmsSigners, MAX_KMS_SIGNERS],
   ] as const) {
     const addresses = signers.map((signer) => Buffer.from(signer).toString('hex'));
     if (
@@ -98,7 +102,7 @@ export const validateBootstrapInputs = (params: BootstrapZamaHostParams): void =
   if (!Number.isSafeInteger(threshold) || threshold < 1 || threshold > params.gateway.coprocessorSigners.length) {
     throw new Error('coprocessor threshold must be between 1 and signer count');
   }
-  if (params.gateway.gatewayChainId < 0n || ((params.gateway.gatewayChainId >> 56n) & 0xffn) !== 0n) {
+  if (params.gateway.gatewayChainId < 0n || !isEvmHostChainId(params.gateway.gatewayChainId)) {
     throw new Error('gateway chain id must be a uint64-padded EVM id (high byte 0x00)');
   }
   if (
@@ -139,7 +143,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
     const config = getHostConfigDecoder().decode(existing.data);
     if (
       config.admin !== params.payer.address ||
-      config.chainId !== (params.chainId ?? SOLANA_HOST_CHAIN_ID) ||
+      config.chainId !== params.chainId ||
       config.gatewayChainId !== params.gateway.gatewayChainId ||
       !equalBytes(config.inputVerificationContract, params.gateway.inputVerificationContract) ||
       !equalBytes(config.decryptionContract, params.gateway.decryptionContract) ||
@@ -170,7 +174,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
           admin: params.payer,
           programData,
           randNonce,
-          chainId: params.chainId ?? SOLANA_HOST_CHAIN_ID,
+          chainId: params.chainId,
           gatewayChainId: params.gateway.gatewayChainId,
           inputVerificationContract: params.gateway.inputVerificationContract,
           coprocessorSigners: [...params.gateway.coprocessorSigners],

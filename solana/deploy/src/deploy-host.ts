@@ -9,7 +9,7 @@ import { createHostDeployContext } from './send';
 export const deployHostProgram = async (
   parameters: Omit<Parameters<typeof deployProgramArtifacts>[0], 'programs' | 'programKeypairPaths'> & {
     readonly programKeypairPath?: string;
-    readonly chainId?: bigint;
+    readonly chainId: bigint;
     readonly gateway: GatewayBootstrapInputs;
     readonly coprocessorThreshold?: number;
     readonly kmsCorruptionThreshold: number;

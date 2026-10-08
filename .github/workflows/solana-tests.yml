@@ -60,6 +60,8 @@ jobs:
               - .github/workflows/solana-tests.yml
               - .dockerignore
               - solana/**
+              # The one SDK file the deployer bundles.
+              - sdk/js-sdk/src/core/chains/hostChainId.ts
               - test-suite/fhevm/package.json
               - test-suite/fhevm/bun.lock
               - test-suite/fhevm/src/**

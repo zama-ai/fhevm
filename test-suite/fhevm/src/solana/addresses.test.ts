@@ -11,9 +11,9 @@ import {
   readActiveKmsPair,
   readEvmKmsThresholds,
   readGatewayBootstrapInputs,
-  SOLANA_HOST_CHAIN_ID,
   solanaUserDecryptContext,
 } from "./addresses";
+import { SOLANA_HOST_CHAIN_ID } from "../layout";
 import { BRINGUP_KMS_CONTEXT_HEX } from "../../../../solana/deploy/src/constants";
 
 const ADDRESS_A = "0x000000000000000000000000000000000000aaaa";
