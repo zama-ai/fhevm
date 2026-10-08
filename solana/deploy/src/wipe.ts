@@ -15,7 +15,7 @@ import { programDataAddressFor } from './bootstrap';
 import type { HostDeployContext } from './send';
 
 const CLOSE_OWNED_ACCOUNTS_DISCRIMINATOR = new Uint8Array([36, 68, 214, 114, 46, 227, 146, 228]);
-/** Each target adds 33 bytes to the message; 25 keeps a batch well under the 1232-byte packet. */
+/** Each target adds an account key; 25 keeps a batch well inside a version 1 transaction (64 keys, 4,096 bytes). */
 const TARGETS_PER_TRANSACTION = 25;
 /** `UpgradeableLoaderState::ProgramData`: u32 tag, u64 slot, then `Option<Pubkey>` as u8 + 32 bytes. */
 const PROGRAM_DATA_AUTHORITY_OFFSET = 4 + 8;

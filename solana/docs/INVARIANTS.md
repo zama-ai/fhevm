@@ -623,7 +623,7 @@ not when the threat model changes.
 ## I. Sizes, limits, and operations
 
 **14. [HOLDS]** Executions are capped at 32 steps. Packet size and CU cost depend on the shape; the cap does not imply a
-fit in a 1,232-byte transaction or 200k CU. `runtime-tests/cost-snapshots/fhe_execute_boundary.json` pins each shape's
+fit in a 4,096-byte version 1 transaction or 200k CU. `runtime-tests/cost-snapshots/fhe_execute_boundary.json` pins each shape's
 instruction-data bytes and CU at its largest passing size. These are host-instruction measurements, before transaction
 overhead and application CPIs.
 Pinned by `rejects_more_than_max_ops`, `cost_snapshot_fhe_execute_max_steps` and `cost_snapshot_boundary_sweeps`.
@@ -665,7 +665,7 @@ this leaves room for spam.
 
 - **Steps** — at most the host's `MAX_FHE_EXECUTION_STEPS` (32), or `TooManySteps`.
 - **CPI packet** — serialized instruction data, including its discriminator, fits `CPI_INSTRUCTION_DATA_LIMIT` (10 KiB),
-  or `ExceedsCpiInstructionDataLimit`. A transaction's 1,232-byte wire limit is separate: a compact app instruction can
+  or `ExceedsCpiInstructionDataLimit`. A transaction's wire limit (4,096 bytes as version 1) is separate: a compact app instruction can
   construct a larger host CPI.
 - **Build heap** — allocations requested by build, packet serialization, account resolution and invoke tables stay
   within `BUILD_HEAP_BUDGET_BYTES` (24 KiB), or `ExceedsBuildHeapBudget`. `HeapBudget` charges allocations before they
@@ -689,8 +689,8 @@ maximum-width sums reach 6. These shape measurements do not guarantee that an ar
 **66. [HOLDS]** TransientStore has fixed storage for 112 result occurrences and 32 explicit grants (10,168 bytes including
 discriminator). Repeated handles count as occurrences to preserve step/output references. Each execution admits at most
 32 steps and 32 effects; return selection admits 32 handles, including repeated selections. Capacity overflow fails
-atomically. SBF capacity is not packet capacity: application CPIs can construct payloads larger than the outer 1,232-byte
-transaction. The SDK heap model, runtime shape sweeps and packet-fit tests measure these separate limits.
+atomically. SBF capacity is not packet capacity: application CPIs can construct payloads larger than the outer 4,096-byte
+version 1 transaction. The SDK heap model, runtime shape sweeps and packet-fit tests measure these separate limits.
 Pinned by `result_journal_capacity_is_shared_across_calls_and_fails_atomically` and
 `maximum_result_grants_fit_one_execution_and_leave_no_account`.
 

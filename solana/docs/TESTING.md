@@ -90,7 +90,7 @@ cargo test -p zama-solana-runtime-tests --test token_mollusk -- --nocapture
 cargo test -p zama-solana-runtime-tests --test batcher_mollusk -- --nocapture
 cargo test -p zama-solana-runtime-tests --test vault_mollusk -- --nocapture
 cargo test -p zama-solana-runtime-tests --test permit_invalidation_mollusk -- --nocapture
-# Disclosure packet sizing: the largest disclose payload still fits its transport budget.
+# Disclosure sizing: how many KMS signatures fit a 1,232-byte legacy packet (clients send version 1, 4,096 bytes).
 cargo test -p zama-solana-runtime-tests --test disclose_packet_fit -- --nocapture
 # Admin and Store-authority properties over random instruction sequences, then the planted bugs
 # they must catch (rebuilds zama-host per patch and restores it).

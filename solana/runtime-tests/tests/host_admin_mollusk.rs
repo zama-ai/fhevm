@@ -901,8 +901,8 @@ fn mollusk_close_owned_accounts_refunds_admin_and_skips_foreign_accounts() {
 
 #[test]
 fn mollusk_close_owned_accounts_fits_one_deployer_transaction() {
-    // wipe.ts sends this many targets per transaction with no compute-budget instruction, so a
-    // full batch must fit both the 1232-byte packet and the default 200k-unit transaction budget.
+    // wipe.ts sends this many targets per version 1 transaction (4,096 bytes, 64 account keys). A
+    // full batch fits the stricter 1232-byte legacy packet and stays under 200k compute units.
     const TARGETS_PER_TRANSACTION: usize = 25; // mirrors solana/deploy/src/wipe.ts
     let admin = Pubkey::new_unique();
     let (program_data, program_data_acct) = program_data_account(Some(admin));

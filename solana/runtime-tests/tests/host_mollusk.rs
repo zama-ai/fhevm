@@ -5453,8 +5453,9 @@ fn cost_snapshot_fhe_execute_max_steps() {
 fn mollusk_fhe_execute_max_op_transaction_fits_packet() {
     // MAX_FHE_EXECUTION_STEPS is derived from measured budgets (fhevm-internal#1853 W8). This is the
     // byte-budget half: the whole signed transaction for the max-op execution — envelope included —
-    // must fit one 1,232-byte packet including the transient store lifecycle. Richer account/operand
-    // shapes have separate capacity probes.
+    // fits one 1,232-byte legacy packet including the transient store lifecycle. Clients send version
+    // 1 transactions (4,096 bytes), so this is the stricter bound. Richer account/operand shapes have
+    // separate capacity probes.
     let fixture = snapshot_fixture();
     // The Solana transaction packet limit (solana-packet's PACKET_DATA_SIZE: 1280-byte
     // IPv6 minimum MTU minus 48 bytes of headers).
