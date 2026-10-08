@@ -24,8 +24,8 @@
 //! depth.
 //!
 //! What is measured is a *matrix of buildable shapes*, not one worst case, because the builder's
-//! typed ceilings shape what can exist at all: the step ceiling bounds every shape, and the CPI
-//! packet check caps attestation-heavy executions well below it. Every shape the builder admits
+//! typed ceilings shape what can exist at all: the step ceiling bounds every shape, and the
+//! build-heap budget caps attestation-heavy executions well below it. Every shape the builder admits
 //! must fit — that is the claim the single step ceiling rests on — and the fit test below asserts
 //! it for each row of the matrix.
 //!

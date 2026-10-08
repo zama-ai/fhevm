@@ -114,8 +114,9 @@ pub enum FheExecutionError {
     TooManyEffects,
     /// The serialized `fhe_execute` packet exceeds the 10 KiB the runtime allows a CPI to
     /// carry ([`CPI_INSTRUCTION_DATA_LIMIT`]), and the packet always travels by CPI — so the
-    /// runtime would reject the invoke. Verified-input attestations are the heavy term
-    /// (roughly 1 KiB each at maximum size); split them across executions.
+    /// runtime would reject the invoke. Verified-input attestations are the heaviest term
+    /// (roughly 1 KiB each at maximum size), but the build-heap budget refuses them first:
+    /// six maximum-size attestations exceed it while five fill under half the packet.
     #[msg("The fhe_execute packet exceeds the CPI instruction data limit")]
     ExceedsCpiInstructionDataLimit,
     /// Building, serializing, and invoking this execution would request more of the program's

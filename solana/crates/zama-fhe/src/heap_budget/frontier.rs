@@ -44,7 +44,7 @@ pub(crate) fn frontier_shapes() -> Vec<(String, ShapeBuilder)> {
         }
     }
     shapes.push((
-        "mixed ops (add/sum/is_in, 1 create)".to_string(),
+        "mixed ops (add/sum/is_in, one Store output)".to_string(),
         Box::new(mixed_ops_shape()),
     ));
     shapes.push((

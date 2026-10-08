@@ -230,14 +230,14 @@ pub struct StoreOutputsExecution {
     pub outputs: Vec<(u16, Pubkey)>,
 }
 
-pub fn created_public_batch(
+pub fn public_store_outputs_execution(
     step_count: usize,
-    created_public_steps: &[usize],
+    output_steps: &[usize],
 ) -> StoreOutputsExecution {
     let payer = Pubkey::new_unique();
     store_outputs_execution(
         step_count,
-        created_public_steps,
+        output_steps,
         payer,
         sole_store_authority(Pubkey::new_unique()),
         true,
@@ -245,7 +245,7 @@ pub fn created_public_batch(
     )
 }
 
-/// [`created_public_batch`] with caller-fixed keys (for boundary sweeps recorded in the cost
+/// [`public_store_outputs_execution`] with caller-fixed keys (for boundary sweeps recorded in the cost
 /// snapshot: PDA bump searches are part of measured compute, so recorded profiles need stable
 /// keys), a caller-chosen `make_public` — `false` gives the private Store output, the shape
 /// `zama-fhe`'s `heap_budget/` measures on the app side — and the keys every output allows.

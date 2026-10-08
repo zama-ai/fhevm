@@ -28,6 +28,12 @@ use crate::validate::{
 };
 use crate::{FheExecutionError, Result};
 
+// The `u8` attestation index cannot overflow: 256 registered attestations need more registry
+// bytes than the whole build-heap budget.
+const _: () = assert!(
+    256 * core::mem::size_of::<CoprocessorInputAttestation>() > crate::BUILD_HEAP_BUDGET_BYTES
+);
+
 impl<'id> FheExecutionBuilder<'id> {
     /// Introduces a coprocessor-attested external input as a transient operand — the Solana analog
     /// of EVM `FHE.fromExternal`. The host re-verifies the attestation in-execution and requires
@@ -42,9 +48,10 @@ impl<'id> FheExecutionBuilder<'id> {
         if handle_fhe_type(attestation.input_handle) != T::FHE_TYPE.byte() {
             return Err(FheExecutionError::UnsupportedFheType);
         }
-        // 256 attestations of at least 117 serialized bytes each cannot fit the CPI packet.
+        // Unreachable: a registry of 256 attestations exceeds the build-heap budget first
+        // (asserted at the top of this file).
         let attestation_index = u8::try_from(self.verified_inputs.len())
-            .map_err(|_| FheExecutionError::ExceedsCpiInstructionDataLimit)?;
+            .map_err(|_| FheExecutionError::ExceedsBuildHeapBudget)?;
         let input_handle = attestation.input_handle;
         // The attestation moves in — its tables are the app's own bytes — but the registry
         // vector itself grows by doubling, and that growth is builder cost admitted against
