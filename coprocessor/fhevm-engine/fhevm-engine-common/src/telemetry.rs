@@ -134,7 +134,7 @@ pub fn init_json_subscriber_with_filter(
 }
 
 /// The span-exporting layer. It drops OpenTelemetry's own spans and events (targets starting
-/// with `opentelemetry`), which would otherwise be exported as part of the spans they occur in.
+/// with `opentelemetry`), which would otherwise be exported as child spans and span events.
 fn otlp_layer<S>(tracer: opentelemetry_sdk::trace::Tracer) -> impl Layer<S>
 where
     S: tracing::Subscriber + for<'span> tracing_subscriber::registry::LookupSpan<'span>,

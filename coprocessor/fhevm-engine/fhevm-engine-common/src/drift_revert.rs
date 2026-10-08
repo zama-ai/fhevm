@@ -9,12 +9,14 @@
 //!
 //! This is COPROCESSOR consensus, NOT host-chain reorg. Drift is
 //! coprocessors disagreeing on the bitwise representation of a ciphertext
-//! for the same handle: they commit different ciphertext digests to
-//! `CiphertextCommits`, or this node's digest differs from the consensus
-//! one. It fires even on a chain that never reorgs. On-chain reorgs (the
-//! host chain orphaning a block the listener already ingested) are a
-//! different layer, handled by the listener's block-history reorg detection
-//! (host-listener `cmd/block_history.rs`).
+//! for the same handle; it occurs even on a chain that never reorgs. Only a
+//! mismatch between this node's digest and the `CiphertextCommits`
+//! consensus digest writes the signal, and only when the gw-listener's
+//! `auto_revert_enabled` is set. Peers committing different digests are
+//! only logged and counted. On-chain reorgs (the host chain orphaning a
+//! block the listener already ingested) are a different layer, handled by
+//! the listener's block-history reorg detection (host-listener
+//! `cmd/block_history.rs`).
 //! Discriminator: "would it fire on a chain that never reorgs?" yes -> drift.
 
 use std::sync::LazyLock;
