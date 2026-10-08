@@ -55,7 +55,7 @@ pub mod encrypted_counter {
         let account =
             zama_host::EncryptedStore::try_deserialize(&mut &info.try_borrow_data()?[..])?;
         let state = Store::new(&account);
-        let output = state.set(count_key()).allow(ctx.accounts.owner.key());
+        let output = state.set(COUNT_KEY).allow(ctx.accounts.owner.key());
         let execution = FheExecution::build(state.id(), |builder| {
             let result = builder.trivial_encrypt_u64(0)?;
             builder.output(result, output)?;
@@ -89,8 +89,8 @@ pub mod encrypted_counter {
     pub fn increment<'info>(ctx: Context<'info, Increment<'info>>, amount: u64) -> Result<()> {
         let counter = ctx.accounts.counter.key();
         let state = Store::new(&ctx.accounts.encrypted_store);
-        let operand = state.get::<Uint<64>>(count_key())?;
-        let output = state.set(count_key()).allow(ctx.accounts.owner.key());
+        let operand = state.get::<Uint<64>>(COUNT_KEY)?;
+        let output = state.set(COUNT_KEY).allow(ctx.accounts.owner.key());
         let execution = FheExecution::build_returning(state.id(), |builder| {
             let count = builder.add(operand, Scalar::<Uint<64>>::u64(amount))?;
             builder.output(count, output)?;
@@ -132,7 +132,7 @@ pub struct Initialize<'info> {
     #[account(
         init,
         payer = owner,
-        space = 8 + Counter::SPACE,
+        space = 8 + Counter::INIT_SPACE,
         seeds = [COUNTER_SEED, owner.key().as_ref()],
         bump,
     )]

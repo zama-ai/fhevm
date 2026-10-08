@@ -29,9 +29,9 @@ import {
   type InstructionWithAccounts,
   type InstructionWithData,
   type ReadonlyAccount,
+  type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type WritableAccount,
-  type WritableSignerAccount,
 } from '@solana/kit';
 import {
   getAccountMetaFactory,
@@ -63,7 +63,7 @@ export type HarvestInstruction<
   InstructionWithAccounts<
     [
       TAccountDonor extends string
-        ? WritableSignerAccount<TAccountDonor> & AccountSignerMeta<TAccountDonor>
+        ? ReadonlySignerAccount<TAccountDonor> & AccountSignerMeta<TAccountDonor>
         : TAccountDonor,
       TAccountVault extends string ? ReadonlyAccount<TAccountVault> : TAccountVault,
       TAccountUnderlyingMint extends string ? ReadonlyAccount<TAccountUnderlyingMint> : TAccountUnderlyingMint,
@@ -160,7 +160,7 @@ export function getHarvestInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    donor: { value: input.donor ?? null, isSigner: true, isWritable: true },
+    donor: { value: input.donor ?? null, isSigner: true, isWritable: false },
     vault: { value: input.vault ?? null, isSigner: false, isWritable: false },
     underlyingMint: {
       value: input.underlyingMint ?? null,

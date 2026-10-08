@@ -15,10 +15,6 @@ pub const CHAIN_AUTHORITY_SEED: &[u8] = b"chain-authority";
 #[constant]
 pub const ENCRYPTED_TAIL_LABEL: [u8; 32] = *b"tail____________________________";
 
-pub fn encrypted_tail_label() -> [u8; 32] {
-    ENCRYPTED_TAIL_LABEL
-}
-
 pub fn chain_address(owner: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[CHAIN_SEED, owner.as_ref()], &crate::id())
 }
@@ -35,11 +31,8 @@ pub fn chain_state_id(chain: Pubkey) -> StoreId {
 /// One owner's chain. The owner is bound by the PDA seeds; the stored bumps let instructions
 /// skip the bump search.
 #[account]
+#[derive(InitSpace)]
 pub struct Chain {
     pub bump: u8,
     pub authority_bump: u8,
-}
-
-impl Chain {
-    pub const SPACE: usize = 1 + 1;
 }

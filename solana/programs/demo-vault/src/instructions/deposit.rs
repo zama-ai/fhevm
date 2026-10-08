@@ -6,7 +6,6 @@ use super::*;
 #[derive(Accounts)]
 pub struct Deposit<'info> {
     /// Depositor and transfer authority over `depositor_underlying`.
-    #[account(mut)]
     pub depositor: Signer<'info>,
     /// Vault whose share price the deposit is measured against.
     #[account(

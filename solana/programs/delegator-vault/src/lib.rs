@@ -1,24 +1,14 @@
-//! Test-only program-controlled delegator: a vault-like PDA that grants and revokes
-//! user-decryption delegations via CPI, and pauses the host as a pauser.
-//!
-//! The smallest shape of the multisig model the delegation design targets: the delegator is not
-//! a wallet but a PDA of another program, and the host's `delegator: Signer` requirement is
-//! satisfied by `invoke_signed` — exactly what a Squads vault does when a proposal executes.
-//! This program exists for the Mollusk CPI cases in
-//! `runtime-tests/tests/user_decryption_delegation_mollusk.rs` and
-//! `runtime-tests/tests/host_admin_mollusk.rs`, and is deployed nowhere.
-//!
-//! The CPI is assembled by hand — accounts struct, `Instruction`, `invoke_signed` — following
-//! `zama-fhe/src/cpi.rs`, the pattern the production consumers use.
+//! Test-only CPI probe, deployed nowhere. Its `vault` PDA stands in for a program-controlled
+//! delegator or pauser: it grants and revokes user-decryption delegations and pauses the host,
+//! signing each CPI with its seeds as a Squads vault does when a proposal executes. The host's
+//! `Signer` requirements are then met by a PDA of another program, not a wallet. It also
+//! forwards a nested transient store close and checks a callee's return data, for the Mollusk
+//! suites that need a calling program.
 
 // Anchor macros generate framework-shaped code that trips rustc/Clippy checks.
 #![allow(unexpected_cfgs)]
 
-use anchor_lang::{
-    prelude::*,
-    solana_program::{instruction::Instruction, program::invoke_signed},
-    InstructionData, ToAccountInfos,
-};
+use anchor_lang::{prelude::*, solana_program::instruction::Instruction};
 use zama_host::program::ZamaHost;
 
 declare_id!("ANFJWue3SKz6F7chTeeLfbZxqEwaGdhHb7muY6pkvFa3");
@@ -98,77 +88,63 @@ pub mod delegator_vault {
         program: Pubkey,
         expires_at: u64,
     ) -> Result<()> {
-        let cpi_accounts = zama_host::cpi::accounts::DelegateForUserDecryption {
-            payer: ctx.accounts.executor.to_account_info(),
-            delegator: ctx.accounts.vault.to_account_info(),
-            host_config: ctx.accounts.host_config.to_account_info(),
-            scope: ctx.accounts.scope.to_account_info(),
-            delegation_record: ctx.accounts.delegation_record.to_account_info(),
-            system_program: ctx.accounts.system_program.to_account_info(),
-        };
-        let instruction = Instruction {
-            program_id: ctx.accounts.zama_host.key(),
-            accounts: cpi_accounts.to_account_metas(None),
-            data: zama_host::instruction::DelegateForUserDecryption {
-                delegate,
-                program,
-                expires_at,
-            }
-            .data(),
-        };
-        // The callee's own program account rides along: `invoke_signed` resolves the target
-        // through the caller's account infos, not only through the instruction's metas.
-        let mut infos = cpi_accounts.to_account_infos();
-        infos.push(ctx.accounts.zama_host.to_account_info());
         let executor = ctx.accounts.executor.key();
         let bump = [ctx.bumps.vault];
         let seeds: &[&[u8]] = &[VAULT_SEED, executor.as_ref(), &bump];
-        invoke_signed(&instruction, &infos, &[seeds])?;
-        Ok(())
+        zama_host::cpi::delegate_for_user_decryption(
+            CpiContext::new_with_signer(
+                ctx.accounts.zama_host.key(),
+                zama_host::cpi::accounts::DelegateForUserDecryption {
+                    payer: ctx.accounts.executor.to_account_info(),
+                    delegator: ctx.accounts.vault.to_account_info(),
+                    host_config: ctx.accounts.host_config.to_account_info(),
+                    scope: ctx.accounts.scope.to_account_info(),
+                    delegation_record: ctx.accounts.delegation_record.to_account_info(),
+                    system_program: ctx.accounts.system_program.to_account_info(),
+                },
+                &[seeds],
+            ),
+            delegate,
+            program,
+            expires_at,
+        )
     }
 
     /// Revokes a delegation the executor's vault PDA granted.
     pub fn revoke_via_vault(ctx: Context<VaultDelegation>) -> Result<()> {
-        let cpi_accounts = zama_host::cpi::accounts::RevokeDelegationForUserDecryption {
-            delegator: ctx.accounts.vault.to_account_info(),
-            host_config: ctx.accounts.host_config.to_account_info(),
-            delegation_record: ctx.accounts.delegation_record.to_account_info(),
-        };
-        let instruction = Instruction {
-            program_id: ctx.accounts.zama_host.key(),
-            accounts: cpi_accounts.to_account_metas(None),
-            data: zama_host::instruction::RevokeDelegationForUserDecryption {}.data(),
-        };
-        // See the grant: the callee's program account has to be among the infos.
-        let mut infos = cpi_accounts.to_account_infos();
-        infos.push(ctx.accounts.zama_host.to_account_info());
         let executor = ctx.accounts.executor.key();
         let bump = [ctx.bumps.vault];
         let seeds: &[&[u8]] = &[VAULT_SEED, executor.as_ref(), &bump];
-        invoke_signed(&instruction, &infos, &[seeds])?;
-        Ok(())
+        zama_host::cpi::revoke_delegation_for_user_decryption(CpiContext::new_with_signer(
+            ctx.accounts.zama_host.key(),
+            zama_host::cpi::accounts::RevokeDelegationForUserDecryption {
+                delegator: ctx.accounts.vault.to_account_info(),
+                host_config: ctx.accounts.host_config.to_account_info(),
+                delegation_record: ctx.accounts.delegation_record.to_account_info(),
+            },
+            &[seeds],
+        ))
     }
 
     /// Sets host pause flags with the executor's vault PDA as the pauser.
     pub fn pause_via_vault(ctx: Context<VaultPause>, areas: zama_host::PauseFlags) -> Result<()> {
-        let cpi_accounts = zama_host::cpi::accounts::Pause {
-            pauser: ctx.accounts.vault.to_account_info(),
-            pauser_record: ctx.accounts.pauser_record.to_account_info(),
-            host_config: ctx.accounts.host_config.to_account_info(),
-            event_authority: ctx.accounts.event_authority.to_account_info(),
-            program: ctx.accounts.zama_host.to_account_info(),
-        };
-        let instruction = Instruction {
-            program_id: ctx.accounts.zama_host.key(),
-            accounts: cpi_accounts.to_account_metas(None),
-            data: zama_host::instruction::Pause { areas }.data(),
-        };
-        let infos = cpi_accounts.to_account_infos();
         let executor = ctx.accounts.executor.key();
         let bump = [ctx.bumps.vault];
         let seeds: &[&[u8]] = &[VAULT_SEED, executor.as_ref(), &bump];
-        invoke_signed(&instruction, &infos, &[seeds])?;
-        Ok(())
+        zama_host::cpi::pause(
+            CpiContext::new_with_signer(
+                ctx.accounts.zama_host.key(),
+                zama_host::cpi::accounts::Pause {
+                    pauser: ctx.accounts.vault.to_account_info(),
+                    pauser_record: ctx.accounts.pauser_record.to_account_info(),
+                    host_config: ctx.accounts.host_config.to_account_info(),
+                    event_authority: ctx.accounts.event_authority.to_account_info(),
+                    program: ctx.accounts.zama_host.to_account_info(),
+                },
+                &[seeds],
+            ),
+            areas,
+        )
     }
 }
 
