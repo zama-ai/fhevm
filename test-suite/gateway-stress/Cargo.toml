@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 fhevm_gateway_bindings = { path = "../../gateway-contracts/rust_bindings", default-features = false }
 user-decryption-signature = { path = "../../shared/user-decryption-signature" }
+kms-connector-api = { path = "../../kms-connector/crates/api", default-features = false }
 
 alloy = { version = "2.2.0", default-features = false, features = [
     "essentials",
@@ -55,3 +56,5 @@ tracing-subscriber = { version = "0.3.23", default-features = true, features = [
     "env-filter",
 ] }
 rand = "0.10.2"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
+url = { version = "2.5.8", default-features = false, features = ["serde"] }
