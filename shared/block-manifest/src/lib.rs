@@ -55,7 +55,7 @@ pub const MAX_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
 /// Genesis consensus epoch before the first `CoprocessorUpgradeProposed`.
 /// Same value for every starting stack version (`legacy`), not the crate
 /// version. Frozen: never rename it. Subsequent epochs identify breaking
-/// upgrades using `{version}/block_{n}`, where `n` is the finalized proposal's
+/// upgrades using `{consensus_version}/block_{n}`, where `n` is the finalized proposal's
 /// block number. Selecting the active epoch is the caller's responsibility.
 pub const LEGACY_CONSENSUS_EPOCH: &str = "legacy";
 /// S3 user-defined metadata key naming the consensus epoch whose stack

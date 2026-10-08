@@ -1027,11 +1027,12 @@ async fn missing_in_consensus_epoch_parent_is_materialized_as_empty() {
         .await
         .expect("connect empty-gap lineage database");
 
-    sqlx::query(
+    sqlx::query(&format!(
         "INSERT INTO consensus_epoch_history (
-             consensus_epoch, proposal_id, proposal_block, stack_version, outcome
-         ) VALUES ('1', $1, 50, 'test-green', 'pending')",
-    )
+             consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome
+         ) VALUES ('1', $1, 50, 'test-green', {}, 'pending')",
+        fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION
+    ))
     .bind(vec![0x91_u8; 32])
     .execute(&pool)
     .await
@@ -1160,11 +1161,12 @@ async fn missing_in_consensus_epoch_parent_with_producers_is_inserted_unsealed()
         .await
         .expect("connect producer-gap lineage database");
 
-    sqlx::query(
+    sqlx::query(&format!(
         "INSERT INTO consensus_epoch_history (
-             consensus_epoch, proposal_id, proposal_block, stack_version, outcome
-         ) VALUES ('1', $1, 50, 'test-green', 'pending')",
-    )
+             consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome
+         ) VALUES ('1', $1, 50, 'test-green', {}, 'pending')",
+        fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION
+    ))
     .bind(vec![0x91_u8; 32])
     .execute(&pool)
     .await
