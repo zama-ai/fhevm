@@ -8,7 +8,6 @@ import { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore } from "@fhevm/sdk/s
 
 import { type Address, type TransactionSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS, findAssociatedTokenPda } from "@solana-program/token";
-import { BRINGUP_KMS_CONTEXT_ID } from "./addresses";
 import { findKmsContextPda } from "@fhevm/solana-zama-host";
 import { certificateCleartext, type PublicDecryptCertificate } from "./public-decrypt";
 import type { SolanaProvisioningContext } from "./provision";
@@ -29,11 +28,10 @@ import {
 } from '@fhevm/confidential-token';
 import type { CoprocessorInputAttestationArgs } from '@fhevm/solana-zama-host';
 
-/** The zama-host KMS-context PDA for `contextId` (`["kms-context", 32-byte id]`). */
-export const kmsContextAddress = async (
-  contextId: Uint8Array = BRINGUP_KMS_CONTEXT_ID,
-): Promise<Address> => {
-  const [kmsContext] = await findKmsContextPda({ contextId });
+/** The zama-host KMS-context PDA of the context a certificate names in its signed `extraData`. */
+export const certificateKmsContext = async (certificate: PublicDecryptCertificate): Promise<Address> => {
+  const { solanaPublicDecryptContextId } = await sdkVerifyModule();
+  const [kmsContext] = await findKmsContextPda({ contextId: solanaPublicDecryptContextId(certificate) });
   return kmsContext;
 };
 
@@ -143,7 +141,7 @@ export const redeemBurnedAmount = async (
       mint: params.underlyingMint,
     }))[0],
     burnedAmountStore: target.burnedAmountStore,
-    kmsContext: await kmsContextAddress(),
+    kmsContext: await certificateKmsContext(params.certificate),
     eventAuthority: await eventAuthority(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     burnedHandle: args.handle,
@@ -206,7 +204,7 @@ export const discloseCertifiedHandle = async (
 ): Promise<void> => {
   const vault = await vaultModule();
   const instruction = await vault.buildDiscloseSecpInstruction(
-    { kmsContext: await kmsContextAddress() },
+    { kmsContext: await certificateKmsContext(params.certificate) },
     params.certificate,
   );
   await (await context.client(params.payer)).sendTransaction([instruction]);

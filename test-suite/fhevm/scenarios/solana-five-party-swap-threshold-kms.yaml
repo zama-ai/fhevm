@@ -1,0 +1,34 @@
+version: 1
+kind: coprocessor-consensus
+name: Solana Five-Party Node-Swap Threshold KMS
+description: >
+  five-party-swap-threshold-kms with the RFC-021 Solana host chain beside the EVM host, for
+  `fhevm-cli test kms-context-switch` with its Solana leg: zama-host defines each KMS context the
+  EVM ProtocolConfig activates, decrypts across the first switch, and refuses a certificate of the
+  destroyed baseline context. 5 cores, an initial 4-node committee (t=1) and one spare.
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: solana
+    type: solana
+    chainId: "72057594037940281"
+    rpcPort: 8899
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 0
+    args:
+      host-listener-consumer:
+        - --service-name=coprocessor-host-listener-consumer
+  - index: 1
+    args:
+      host-listener-consumer:
+        - --service-name=coprocessor1-host-listener-consumer
+kms:
+  mode: threshold
+  parties: 5          # cluster cores: 4-node committee + 1 spare
+  threshold: 1        # t for the committee (reconstruction needs 2t+1 = 3 matching responses)
+  committeeSize: 4    # initial on-chain committee == 3*t+1; cores beyond it (party 5) are spares
+  fheParams: Test

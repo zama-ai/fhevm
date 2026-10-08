@@ -19,6 +19,7 @@ export type GatewayBootstrapInputs = {
 const GATEWAY_CONFIG_ABI = parseAbi([
   'function getCoprocessorSigners() view returns (address[])',
   'function getKmsSigners() view returns (address[])',
+  'function getKmsSignersForContext(uint256 contextId) view returns (address[])',
 ]);
 
 /** Decodes a 0x-prefixed 20-byte EVM address into its raw bytes. */
@@ -56,6 +57,21 @@ export const readGatewayBootstrapInputs = async (parameters: GatewayAddressInput
     coprocessorSigners: coprocessorSigners.map(evmAddressBytes),
     kmsSigners: kmsSigners.map(evmAddressBytes),
   };
+};
+
+/** The KMS signer set the gateway registered for `contextId`, in registry order. */
+export const readGatewayKmsSignersForContext = async (
+  parameters: Pick<GatewayAddressInputs, 'gatewayRpcUrl' | 'gatewayConfigAddress'>,
+  contextId: bigint,
+): Promise<Uint8Array[]> => {
+  const client = createPublicClient({ transport: http(parameters.gatewayRpcUrl) });
+  const signers = await client.readContract({
+    address: parameters.gatewayConfigAddress as `0x${string}`,
+    abi: GATEWAY_CONFIG_ABI,
+    functionName: 'getKmsSignersForContext',
+    args: [contextId],
+  });
+  return signers.map(evmAddressBytes);
 };
 
 export const requiredEnv = (name: string): string => {

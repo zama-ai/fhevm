@@ -90,7 +90,7 @@ const deployPrograms = async (
     gateway,
     ...thresholds,
   });
-  await assertKmsThresholdsMatchEvmHost(ids.zama_host!);
+  await assertKmsThresholdsMatchEvmHost(ids.zama_host!, BRINGUP_KMS_CONTEXT_ID);
   await deployProgramArtifacts({
     rpcUrl: VALIDATOR_RPC_URL,
     deployerKeypairPath,
@@ -122,6 +122,15 @@ export const readStackState = async (): Promise<State> => {
 };
 
 /**
+ * The deployer and fee-payer wallet, which is also the HostConfig admin: airdrop, program deploy,
+ * the bootstrap and later admin instructions all sign with it. It is passed explicitly everywhere,
+ * so this setup never depends on or mutates the developer's global `solana config` (URL or
+ * keypair). Same override the demo deployer honors (deploy-demo-programs.sh).
+ */
+export const solanaDeployerKeypairPath = (): string =>
+  process.env.SOLANA_DEPLOYER_KEYPAIR ?? `${process.env.HOME}/.config/solana/id.json`;
+
+/**
  * The host bootstrap thresholds, from the scenario the EVM stack was rendered from: the
  * coprocessor topology and the KMS corruption threshold t.
  */
@@ -144,11 +153,8 @@ export const assertKmsThresholdsMatch = (solana: KmsThresholds, evm: KmsThreshol
  * Both hosts accept certificates from the same KMS, so they must ask for the same number of
  * signatures. A threshold set too low still passes every functional test, so it is checked here.
  */
-const assertKmsThresholdsMatchEvmHost = async (zamaHostId: string): Promise<void> => {
-  const [kmsContext] = await findKmsContextPda(
-    { contextId: BRINGUP_KMS_CONTEXT_ID },
-    { programAddress: zamaHostId as Address },
-  );
+export const assertKmsThresholdsMatchEvmHost = async (zamaHostId: string, contextId: Uint8Array): Promise<void> => {
+  const [kmsContext] = await findKmsContextPda({ contextId }, { programAddress: zamaHostId as Address });
   const solana = (await fetchKmsContext(createFinalizedRpc(VALIDATOR_RPC_URL), kmsContext)).data.thresholds;
   assertKmsThresholdsMatch(solana, await readEvmKmsThresholds({ hostRpcUrl: LOCAL_SOLANA_ENDPOINTS.hostRpc }));
 };
@@ -480,11 +486,7 @@ export const provisionSolanaHostNode = async (state: State): Promise<{ zamaHostI
   }
   const composeProject = lifecycleComposeProject(lifecycleDir);
   const logDir = process.env.SOLANA_LOG_DIR ?? '/tmp';
-  // Deployer/fee-payer wallet: airdrop, program deploy, and the bootstrap all sign with it, and it
-  // is passed explicitly everywhere so this setup never depends on or mutates the developer's
-  // global `solana config` (URL or keypair). Same override the demo deployer honors
-  // (deploy-demo-programs.sh).
-  const deployerKeypairPath = process.env.SOLANA_DEPLOYER_KEYPAIR ?? `${process.env.HOME}/.config/solana/id.json`;
+  const deployerKeypairPath = solanaDeployerKeypairPath();
 
   // The gateway reads come first: a missing .env.gateway or a down gateway RPC should fail here,
   // not after the multi-minute program build. The resolved values go to the log — on a bootstrap
