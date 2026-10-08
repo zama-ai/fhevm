@@ -8,7 +8,7 @@ import { hexToBytes32 } from '../../core/base/bytes.js';
 import { PRIVATE_SOLANA_TOKEN } from '../internal/solana-p.js';
 import { createCoreFhevm } from '../../core/runtime/CoreFhevm-p.js';
 import { getSolanaRuntime } from '../internal/runtime.js';
-import { assertValidSolanaChainId } from '../../core/chains/utilsSolana.js';
+import { assertValidSolanaChainId } from '../../core/chains/hostChainId.js';
 import { fetchSolanaEncryptedStore, type SolanaRpc } from '../encryptedStore.js';
 import {
   fetchSolanaUserDecryptionDelegation,

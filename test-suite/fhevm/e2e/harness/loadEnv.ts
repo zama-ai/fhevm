@@ -37,7 +37,14 @@
 import os from "node:os";
 import path from "node:path";
 
-import { coprocessorDbPsql, SOLANA_ACL_PROGRAM, solanaCleartextDeployerPath, solanaMerkleDbPsql } from "../../src/layout";
+import { isSolanaHostChainId } from "../../../../sdk/js-sdk/src/core/chains/hostChainId";
+import {
+  coprocessorDbPsql,
+  SOLANA_ACL_PROGRAM,
+  SOLANA_HOST_CHAIN_ID,
+  solanaCleartextDeployerPath,
+  solanaMerkleDbPsql,
+} from "../../src/layout";
 import { CLEARTEXT_SOLANA_ENDPOINTS, LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
 import { solanaE2eSource } from "../../src/solana/target";
 
@@ -120,7 +127,7 @@ const LOCAL_DEFAULTS = {
   relayerUrl: LOCAL_SOLANA_ENDPOINTS.relayer,
   gatewayRpcUrl: LOCAL_SOLANA_ENDPOINTS.gatewayRpc,
   hostRpcUrl: LOCAL_SOLANA_ENDPOINTS.hostRpc,
-  chainId: "72057594037940281",
+  chainId: SOLANA_HOST_CHAIN_ID.toString(),
   aclProgram: SOLANA_ACL_PROGRAM,
   coprocessorDbPsql: coprocessorDbPsql(),
   merkleDbPsql: solanaMerkleDbPsql(),
@@ -149,7 +156,7 @@ const bytes32Hex = (value: string): `0x${string}` => {
 const solanaChainId = (value: string): bigint => {
   if (!/^\d+$/.test(value)) throw new Error(`chainId must be an unsigned decimal integer, got ${value}`);
   const id = BigInt(value);
-  if (((id >> 56n) & 0xffn) !== 0x01n) {
+  if (!isSolanaHostChainId(id)) {
     throw new Error(`chainId ${value} is not a Solana type-byte chain id`);
   }
   return id;

@@ -1,9 +1,7 @@
 import { address } from '@solana/kit';
 
-import { SOLANA_HOST_CHAIN_ID } from './constants';
-
 /** Preview key material is shared with the canonical EVM host, as in local bring-up. */
-export const registerSolanaCoprocessorSql = (programId: string, sourceChainId: string, chainId: bigint = SOLANA_HOST_CHAIN_ID): string => {
+export const registerSolanaCoprocessorSql = (programId: string, sourceChainId: string, chainId: bigint): string => {
   const program = address(programId);
   const source = BigInt(sourceChainId).toString();
   return `BEGIN;

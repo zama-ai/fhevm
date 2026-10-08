@@ -61,6 +61,7 @@ COPY solana/deploy/package.json solana/deploy/bun.lock ./
 RUN bun install --frozen-lockfile --production \
     && ln -s deploy/node_modules /src/solana/node_modules
 COPY solana/deploy/src ./src
+COPY sdk/js-sdk/src/core/chains/hostChainId.ts /src/sdk/js-sdk/src/core/chains/hostChainId.ts
 COPY solana/demo-dapp/src/vault/internal/generated /src/solana/demo-dapp/src/vault/internal/generated
 COPY solana/environments/ /src/solana/environments/
 # Bundle to one file so the runtime image does not need bun or a node_modules tree.

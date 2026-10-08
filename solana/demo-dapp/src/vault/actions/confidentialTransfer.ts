@@ -26,7 +26,7 @@ import {
 import { base58 } from '@scure/base';
 
 import { hexToBytes } from '@fhevm/sdk/base';
-import { bytes32HexToHandle } from '@fhevm/sdk/solana';
+import { bytes32HexToHandle, isSolanaHostChainId } from '@fhevm/sdk/solana';
 import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
@@ -74,7 +74,7 @@ export async function confidentialTransfer(
   const inputHandle = handles[inputIndex];
   if (inputHandle === undefined) throw new Error(`inputIndex ${inputIndex} is outside the submitted proof`);
   if (inputHandle.fheType !== 'euint64') throw new Error('confidential transfer amount must be euint64');
-  if (((inputProof.chainId >> 56n) & 0xffn) !== 0x01n) throw new Error('confidential transfer requires a Solana chain id');
+  if (!isSolanaHostChainId(inputProof.chainId)) throw new Error('confidential transfer requires a Solana chain id');
   if (inputProof.chainId !== fhevm.solanaChain.id)
     throw new Error('input proof chain id does not match the client chain');
   if (base58.encode(hexToBytes(inputProof.aclContractAddress)) !== zamaHostProgramAddress) {

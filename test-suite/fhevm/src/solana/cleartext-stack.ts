@@ -25,6 +25,7 @@ import {
   SOLANA_CLEARTEXT_GOSSIP_PORT,
   SOLANA_CLEARTEXT_DIR,
   SOLANA_CLEARTEXT_RPC_PORT,
+  SOLANA_HOST_CHAIN_ID,
   solanaCleartextDeployerPath,
 } from '../layout';
 import { runStreaming } from '../utils/process';
@@ -119,6 +120,7 @@ export const startCleartextStack = async (): Promise<CleartextStack> => {
     const gateway = SOLANA_CLEARTEXT_GATEWAY;
     await bootstrapZamaHost(createHostDeployContext(rpcUrl), {
       payer,
+      chainId: SOLANA_HOST_CHAIN_ID,
       gateway: {
         gatewayChainId: BigInt(gateway.id),
         inputVerificationContract: evmAddressBytes(gateway.contracts.inputVerification.address),

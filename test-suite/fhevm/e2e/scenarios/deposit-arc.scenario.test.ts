@@ -1,4 +1,5 @@
 import {
+  BALANCE_KEY,
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   ZAMA_HOST_PROGRAM_ADDRESS,
   findPendingBurnPda,
@@ -89,11 +90,6 @@ const RENT_HYGIENE_COMPUTE_UNIT_LIMIT = 50_000;
 // Bound for the user-decrypt relayer roundtrip: the SDK's default request timeout is one hour
 // (RelayerAsyncRequest), which would let a stuck decrypt eat the whole scenario budget silently.
 const DECRYPT_ROUNDTRIP_TIMEOUT_MS = 180_000;
-// `BatchStatus` in the batcher's generated enum encoding (Pending=0, Dispatched=1, Settled=2).
-const BATCH_STATUS_PENDING = 0;
-const BATCH_STATUS_DISPATCHED = 1;
-const BATCH_STATUS_SETTLED = 2;
-const BATCH_STATUS_REFUNDING = 4;
 
 import * as vault from "@demo-dapp/vault/index.js";
 import type { Bytes32Hex } from "@fhevm/sdk/types";
@@ -280,21 +276,21 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       );
       const batchRegistryPath = path.resolve(import.meta.dir, "../../../../.fhevm/runtime/solana-demo-batch-alts.json");
       const currentBatch = await vault.getCurrentBatch(rpc, roots);
-      if (currentBatch.state.status === BATCH_STATUS_DISPATCHED) {
+      if (currentBatch.state.status === vault.BatchStatus.Dispatched) {
         throw new Error(
           `deposit batch ${currentBatch.index} (${currentBatch.addresses.batch}) is Dispatched and awaits ` +
             "settlement; settle it through the demo operator before rerunning the arc.",
         );
       }
-      if (currentBatch.state.status !== BATCH_STATUS_PENDING) {
+      if (currentBatch.state.status !== vault.BatchStatus.Pending) {
         console.log(`deposit-arc: batch ${currentBatch.index} is finished (status ${currentBatch.state.status}); opening the next one...`);
         await prepareNextBatch(dappConfig, keeper, "deposit", batchRegistryPath);
       }
       const batchBeforeJoin = await vault.getCurrentBatch(rpc, roots);
-      if (batchBeforeJoin.state.status !== BATCH_STATUS_PENDING) {
+      if (batchBeforeJoin.state.status !== vault.BatchStatus.Pending) {
         throw new Error(
           `deposit batch ${batchBeforeJoin.index} (${batchBeforeJoin.addresses.batch}) is not joinable: ` +
-            `status ${batchBeforeJoin.state.status} != Pending(${BATCH_STATUS_PENDING})`,
+            `status ${batchBeforeJoin.state.status} != Pending(${vault.BatchStatus.Pending})`,
         );
       }
       const settleLookupTable = await lookupTableForBatch(
@@ -421,7 +417,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const batchAfterDispatch = await until(
         async () => {
           const snapshot = await vault.getCurrentBatch(rpc, roots);
-          return snapshot.state.status === BATCH_STATUS_DISPATCHED &&
+          return snapshot.state.status === vault.BatchStatus.Dispatched &&
             snapshot.state.burnedTotalHandle.some((byte) => byte !== 0)
             ? snapshot
             : false;
@@ -461,7 +457,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const batchAfterSettle = await until(
         async () => {
           const snapshot = await vault.getCurrentBatch(rpc, roots);
-          return snapshot.state.status === BATCH_STATUS_SETTLED ? snapshot : false;
+          return snapshot.state.status === vault.BatchStatus.Settled ? snapshot : false;
         },
         { description: "batch status reflects the settle", timeoutMs: 60_000 },
       );
@@ -506,7 +502,6 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // delta: the balance is decrypted before and after the claim.
       const payoutMint = config.mints.payoutConfidential;
       const claimValueAccount = await vault.tokenStoreAddress(payoutMint, (await findTokenAccountPda({ mint: payoutMint, owner: alice.address }))[0]);
-      const balanceHandleKey = new TextEncoder().encode("balance_________________________");
       const aliceWallet = solanaPermitWalletFromSecretKey(aliceKeypairBytes);
       const decryptChain = defineFhevmSolanaChain({
         id: BigInt(config.chainId),
@@ -535,7 +530,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const decryptPayoutBalance = async (): Promise<bigint> => {
         const state = await vault.getEncryptedStore(publicDecryptClient, claimValueAccount).catch(() => null);
         if (state === null) return 0n;
-        const handle = encryptedStoreHandle(state, balanceHandleKey);
+        const handle = encryptedStoreHandle(state, BALANCE_KEY);
         if (handle.every((byte) => byte === 0)) return 0n;
         const clearValues = await decryptClient.decryptValues({
           session: permitSession,
@@ -580,7 +575,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       await until(
         async () => {
           const state = await vault.getEncryptedStore(publicDecryptClient, claimValueAccount);
-          return encryptedStoreHandle(state, balanceHandleKey).some((byte) => byte !== 0);
+          return encryptedStoreHandle(state, BALANCE_KEY).some((byte) => byte !== 0);
         },
         { description: "claim-amount encrypted value account exists with a nonzero current handle", timeoutMs: 60_000 },
       );
@@ -638,7 +633,7 @@ test.skipIf(!runsDemoScenarios)(
     await personas.fund(personas.roles.keeper!, 0.2);
     await prepareNextBatch(dappConfig, keeper, 'deposit', solanaBatchLookupTablesPath);
     const current = await vault.getCurrentBatch(rpc, roots);
-    expect(current.state.status).toBe(BATCH_STATUS_PENDING);
+    expect(current.state.status).toBe(vault.BatchStatus.Pending);
     // Never cancel another participant's work, including an earlier failed run.
     expect(current.state.joinCount).toBe(0n);
     const { batch, batchAuthority, batchJoinTokenAccount } = current.addresses;
@@ -677,9 +672,11 @@ test.skipIf(!runsDemoScenarios)(
     const permit = await decrypt.signPermit({ wallet: solanaPermitWalletFromSecretKey(aliceBytes), durationSeconds: 3600n });
     const userTokenAccount = (await findTokenAccountPda({ mint, owner: alice.address }))[0];
     const userBalanceStore = await vault.tokenStoreAddress(mint, userTokenAccount);
-    const readAmount = async (store: Address, key = 'balance_________________________'): Promise<bigint> => {
+    // The batcher's `joined_amount_key()`. The demo batcher does not publish it as an IDL constant.
+    const joinedAmountKey = new TextEncoder().encode('joined_amount___________________');
+    const readAmount = async (store: Address, key: Uint8Array = BALANCE_KEY): Promise<bigint> => {
       const state = await decrypt.fetchEncryptedStore(store);
-      const handle = encryptedStoreHandle(state, new TextEncoder().encode(key));
+      const handle = encryptedStoreHandle(state, key);
       await waitForSnsCommit(`0x${Buffer.from(handle).toString('hex')}`, env.coprocessorDbPsql);
       const values = await decrypt.decryptValues({ session: permit,
         entries: [{ handle, encryptedStore: addressBytes(store) }],
@@ -705,7 +702,7 @@ test.skipIf(!runsDemoScenarios)(
     expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.joinCount).toBe(1n);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin - amount);
     const joinStore = await vault.joinStoreAddress(batch, alice.address);
-    expect(await readAmount(joinStore, 'joined_amount___________________')).toBe(amount);
+    expect(await readAmount(joinStore, joinedAmountKey)).toBe(amount);
     const batcher = await vault.getBatcher(rpc, roots.batcher);
     await until(async () => (await rpc.getSlot().send()) >=
       current.state.openedSlot + batcher.minBatchAgeSlots, { description: 'refund batch dispatch age', timeoutMs: 120_000 });
@@ -718,7 +715,7 @@ test.skipIf(!runsDemoScenarios)(
     const pendingBurn = (await findPendingBurnPda({ mint, tokenAccount: batchJoinTokenAccount }))[0];
     const account = () => rpc.getAccountInfo(pendingBurn, { encoding: 'base64' }).send();
     const dispatched = await vault.getBatchByIndex(rpc, roots, current.index);
-    expect(dispatched.state.status).toBe(BATCH_STATUS_DISPATCHED);
+    expect(dispatched.state.status).toBe(vault.BatchStatus.Dispatched);
     expect(dispatched.state.joinCount).toBe(1n);
     const pendingBefore = (await account()).value;
     expect(pendingBefore).not.toBeNull();
@@ -730,7 +727,7 @@ test.skipIf(!runsDemoScenarios)(
       transientStore: keeperTransientStore, payer: keeper, batcher: roots.batcher, batch, joinConfidentialMint: mint,
       authorityFundingLamports: BigInt(config.authorityFundingLamports),
     })]), JOIN_COMPUTE_UNIT_LIMIT);
-    expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.status).toBe(BATCH_STATUS_REFUNDING);
+    expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.status).toBe(vault.BatchStatus.Refunding);
     expect((await account()).value).toBeNull();
     await sendTransaction(dappConfig, keeper, [await vault.getReclaimBatchAuthorityInstructionAsync({
       authority: keeper, batcher: roots.batcher, batch, batchAuthority, joinConfidentialMint: mint,
@@ -754,11 +751,11 @@ test.skipIf(!runsDemoScenarios)(
     });
     await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [quit]), JOIN_COMPUTE_UNIT_LIMIT);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
-    expect(await readAmount(joinStore, 'joined_amount___________________')).toBe(0n);
+    expect(await readAmount(joinStore, joinedAmountKey)).toBe(0n);
     // A retry cannot credit the original contribution twice.
     await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [quit]), JOIN_COMPUTE_UNIT_LIMIT);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
-    expect(await readAmount(joinStore, 'joined_amount___________________')).toBe(0n);
+    expect(await readAmount(joinStore, joinedAmountKey)).toBe(0n);
     console.log(`refund acceptance passed: batch=${batch}; joined=${amount}; restored exactly; join record retained until reset`);
   }, SCENARIO_TIMEOUT_MS,
 );

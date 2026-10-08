@@ -99,6 +99,7 @@ test.skipIf(upgradeEnv.network !== 'localnet' || !upgradeEnv.capabilities.protoc
     const directory = await mkdtemp(path.join(tmpdir(), 'solana-upgrade-'));
     const artifactsDir = path.join(REPO_ROOT, 'solana/target/deploy');
     const bootstrap = {
+      chainId: env.chainId,
       gateway: await readGatewayBootstrapInputs({ gatewayRpcUrl: env.gatewayRpcUrl }),
       ...bootstrapThresholdsForState(await readStackState()),
     };

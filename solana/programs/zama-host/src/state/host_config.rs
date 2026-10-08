@@ -56,10 +56,7 @@ pub struct HostConfig {
 }
 
 impl HostConfig {
-    /// Upper bound on registered coprocessor signers. A hard cap keeps the singleton's byte
-    /// layout pinned (the array serializes to `MAX_COPROCESSOR_SIGNERS * 20` bytes regardless of
-    /// how many signers are active) and bounds the per-attestation recovery cost.
-    pub const MAX_COPROCESSOR_SIGNERS: usize = 8;
+    pub const MAX_COPROCESSOR_SIGNERS: usize = crate::constants::MAX_COPROCESSOR_SIGNERS as usize;
     pub const SPACE: usize = 32
         + 8
         + 8

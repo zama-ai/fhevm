@@ -1,6 +1,7 @@
 import {
   createNoopSigner,
   fetchEncodedAccounts,
+  getAddressDecoder,
   type Address,
   type Instruction,
   type MaybeEncodedAccount,
@@ -19,6 +20,7 @@ import {
   getUserDecryptionDelegationSize,
   USER_DECRYPTION_DELEGATION_DISCRIMINATOR,
   type UserDecryptionDelegation,
+  WILDCARD_APP,
 } from '@fhevm/solana-zama-host';
 
 /**
@@ -32,9 +34,8 @@ export type SolanaZamaHostAddressConfig = {
 /** The application a delegation covers: the `(program, scope)` of the encrypted stores it reaches. */
 export type SolanaDelegationApplication = Pick<Readonly<DelegationRecordSeeds>, 'program' | 'scope'>;
 
-/** `0xff` × 32, the sentinel address of the wildcard row. */
-const WILDCARD_ADDRESS =
-  'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG' as Address<'JEKNVnkbo3jma5nREBBJCDoXFVeKkD56V3xKrvRmWxFG'>;
+/** The sentinel address of the wildcard row, zama-host's `WILDCARD_APP` (`0xff` × 32). */
+const WILDCARD_ADDRESS = getAddressDecoder().decode(WILDCARD_APP);
 
 /**
  * The application a wildcard delegation row carries: `0xff` × 32 in both the program and the scope

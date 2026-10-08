@@ -20,7 +20,9 @@ import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
 import { deployProgramArtifacts } from '../../../../solana/deploy/src/deploy-programs';
 import {
   COPROCESSOR_DB_CONTAINER,
+  DEFAULT_CHAIN_ID,
   REPO_ROOT,
+  SOLANA_HOST_CHAIN_ID,
   SOLANA_MERKLE_PROOF_PORT,
   SOLANA_MERKLE_DATABASE,
   SOLANA_MERKLE_DB_COMPONENT,
@@ -44,7 +46,6 @@ import { run, runStreaming } from '../utils/process';
 import { until } from '../utils/until';
 import {
   BRINGUP_KMS_CONTEXT_ID,
-  SOLANA_HOST_CHAIN_ID,
   readEvmKmsThresholds,
   readGatewayBootstrapInputs,
   readProtocolConfigAddress,
@@ -85,6 +86,7 @@ const deployPrograms = async (
     rpcUrl: VALIDATOR_RPC_URL,
     deployerKeypairPath,
     artifactsDir: ARTIFACTS_DIR,
+    chainId: SOLANA_HOST_CHAIN_ID,
     gateway,
     ...thresholds,
   });
@@ -223,7 +225,7 @@ const registerSolanaHostChain = async (parameters: {
   for (let index = 0; index < parameters.coprocessorCount; index += 1) {
     const psql = ['docker', 'exec', '-i', COPROCESSOR_DB_CONTAINER, 'psql', '-U', 'postgres', '-d', coprocessorDatabaseName(index)];
     await run(psql, { input: migration, allowFailure: true });
-    await run([...psql, '-c', registerSolanaCoprocessorSql(parameters.zamaHostId, '12345')]);
+    await run([...psql, '-c', registerSolanaCoprocessorSql(parameters.zamaHostId, DEFAULT_CHAIN_ID, SOLANA_HOST_CHAIN_ID)]);
     // zkproof-worker loads the host-chains cache once at startup (fhevm-engine-common
     // HostChainsCache), as fhevm-cli's registerExtraChainInCoprocessor does for an EVM chain.
     await restartZkproofWorker(index, 'after registering the Solana host chain');

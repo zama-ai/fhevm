@@ -6,6 +6,7 @@ import path from "node:path";
 
 import YAML from "yaml";
 
+import { isSolanaHostChainId } from "../../../../sdk/js-sdk/src/core/chains/hostChainId";
 import { PreflightError } from "../errors";
 import {
   DEFAULT_HOST_CHAIN_KEY,
@@ -250,7 +251,7 @@ const parseHostChains = (parsed: Record<string, unknown>, sourceLabel: string): 
           `${sourceLabel}: hostChains[${index}].type "${type}" must be one of: ${HOST_CHAIN_TYPES.join(", ")}`,
         );
       }
-      const isSolanaChainId = ((parsedChainId >> 56n) & 0xffn) === 0x01n;
+      const isSolanaChainId = isSolanaHostChainId(parsedChainId);
       if (type === "solana" ? !isSolanaChainId : isSolanaChainId) {
         throw new Error(`${chainIdLabel} "${rawChainId}" does not match host chain type "${type ?? "evm"}"`);
       }

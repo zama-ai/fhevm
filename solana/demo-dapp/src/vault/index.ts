@@ -12,6 +12,7 @@ export {
   getReclaimBatchAuthorityInstructionAsync,
 } from './internal/generated/confidentialBatcher/instructions/index.js';
 export { BatchDirection } from './internal/generated/confidentialBatcher/types/batchDirection.js';
+export { BatchStatus } from './internal/generated/confidentialBatcher/types/batchStatus.js';
 export { findJoinRecordPda } from './internal/generated/confidentialBatcher/pdas/index.js';
 export { getInitializeVaultInstructionAsync } from './internal/generated/demoVault/instructions/initializeVault.js';
 export {

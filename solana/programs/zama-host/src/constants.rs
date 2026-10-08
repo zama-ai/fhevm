@@ -1,5 +1,7 @@
 //! Shared constants, PDA seeds, and protocol domain separators.
 
+use anchor_lang::prelude::constant;
+
 /// Version byte written to every host protocol event.
 pub const EVENT_VERSION: u8 = 1;
 /// Localnet sentinel used by tests and helpers that do not receive host config.
@@ -21,7 +23,16 @@ pub const PAUSER_SEED: &[u8] = b"pauser";
 pub use zama_solana_acl::PERMIT_INVALIDATION_SEED;
 /// The application a wildcard user-decryption delegation row carries in both its program and its
 /// scope position — the shared crate's constant.
-pub use zama_solana_acl::WILDCARD_APP;
+#[constant]
+pub const WILDCARD_APP: [u8; 32] = zama_solana_acl::WILDCARD_APP;
+/// Upper bound on registered coprocessor signers. A hard cap keeps the `HostConfig` byte layout
+/// pinned (the array serializes to `MAX_COPROCESSOR_SIGNERS * 20` bytes regardless of how many
+/// signers are active) and bounds the per-attestation recovery cost.
+#[constant]
+pub const MAX_COPROCESSOR_SIGNERS: u8 = 8;
+/// Upper bound on KMS nodes per context (bounds the `KmsContext` account size).
+#[constant]
+pub const MAX_KMS_SIGNERS: u8 = 16;
 
 /// Maximum number of FHE operations accepted by one composed execution.
 ///

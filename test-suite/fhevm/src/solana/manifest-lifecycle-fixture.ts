@@ -4,8 +4,8 @@
 // second owner's new count.
 import { type Rpc, type Signature, type SolanaRpcApi, generateKeyPairSigner, getBase58Encoder } from '@solana/kit';
 
-import { SOLANA_HOST_CHAIN_ID } from '../../../../solana/deploy/src/constants';
 import { type Fixture, type ManifestFixturePhase, validateFixture } from '../commands/manifest-lifecycle';
+import { SOLANA_HOST_CHAIN_ID } from '../layout';
 import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
 import { createProvisioningContext } from './provision';
 import { incrementCounter, initializeCounter } from './specimens';

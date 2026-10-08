@@ -33,12 +33,16 @@ import { loadCoprocessorScenario, resolveScenarioFile } from '../scenario/resolv
 import { HCU_LIMITS } from '../../../../solana/deploy/src/constants';
 import type { HostDeployContext } from '../../../../solana/deploy/src/send';
 import { REPO_ROOT } from '../layout';
+import { solanaHostChainId } from '../../../../sdk/js-sdk/src/core/chains/hostChainId';
 
 const address20 = (byte: number): Uint8Array => new Uint8Array(20).fill(byte);
 // The program's unlimited sentinel, `u64::MAX`.
 const unlimited = 2n ** 64n - 1n;
 
 const kmsCorruptionThreshold = 1;
+
+// Not the localnet id, so a test passes only if bootstrap writes the id it is given.
+const chainId = solanaHostChainId(777n);
 
 const gateway: GatewayBootstrapInputs = {
   gatewayChainId: 55555n,
@@ -75,7 +79,7 @@ const fakeContext = async (
                       ? Buffer.from(
                           getHostConfigEncoder().encode({
                             admin: payer,
-                            chainId: 72057594037940281n,
+                            chainId,
                             gatewayChainId: gateway.gatewayChainId,
                             inputVerificationContract: gateway.inputVerificationContract,
                             decryptionContract: gateway.decryptionContract,
@@ -183,7 +187,7 @@ describe('bootstrapZamaHost', () => {
   test('fresh validator: initializes the host config with the HCU limits, then defines KMS context 1', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(false, payer.address);
-    await bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold });
+    await bootstrapZamaHost(context, { payer, chainId, gateway, kmsCorruptionThreshold });
 
     expect(sent).toHaveLength(2);
     expect(sent[0]).toHaveLength(3);
@@ -198,7 +202,7 @@ describe('bootstrapZamaHost', () => {
     const programData = await zamaHostProgramDataAddress();
     expect(initialize.accounts?.some((account) => account.address === programData)).toBe(true);
     const initializeData = getInitializeHostConfigInstructionDataDecoder().decode(initialize.data ?? new Uint8Array());
-    expect(initializeData.chainId).toBe(72057594037940281n);
+    expect(initializeData.chainId).toBe(chainId);
     expect(initializeData.gatewayChainId).toBe(55555n);
     expect(initializeData.coprocessorThreshold).toBe(1);
     expect(initializeData.grantDenyListEnabled).toBe(false);
@@ -216,7 +220,7 @@ describe('bootstrapZamaHost', () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(false, payer.address);
     const programAddress = (await generateKeyPairSigner()).address;
-    await bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold, programAddress });
+    await bootstrapZamaHost(context, { payer, chainId, gateway, kmsCorruptionThreshold, programAddress });
     const [givenNonce] = await findRandNoncePda({ programAddress });
     const [defaultNonce] = await findRandNoncePda();
     const accounts = sent[0][0].accounts!.map((account) => account.address);
@@ -235,7 +239,7 @@ describe('bootstrapZamaHost', () => {
   test('configured validator: skips initialize_host_config, still defines the context', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(true, payer.address);
-    await bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold });
+    await bootstrapZamaHost(context, { payer, chainId, gateway, kmsCorruptionThreshold });
 
     expect(sent).toHaveLength(1);
     const defineData = getDefineKmsContextInstructionDataDecoder().decode(sent[0][0].data ?? new Uint8Array());
@@ -248,20 +252,24 @@ describe('bootstrapZamaHost', () => {
     await expect(
       bootstrapZamaHost(context, {
         payer,
+        chainId,
         gateway: { ...gateway, kmsSigners: [address20(1)] },
         kmsCorruptionThreshold: 1,
       }),
     ).rejects.toThrow('the gateway has 1 registered');
   });
 
-  test('refuses a different gateway without submitting transactions', async () => {
+  test('refuses a different chain or gateway without submitting transactions', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(true, payer.address);
-    await expect(
-      bootstrapZamaHost(context, { payer, gateway: { ...gateway, gatewayChainId: 999n }, kmsCorruptionThreshold }),
-    ).rejects.toThrow(
-      'does not match',
-    );
+    for (const mismatch of [
+      { chainId: solanaHostChainId(778n), gateway },
+      { chainId, gateway: { ...gateway, gatewayChainId: 999n } },
+    ]) {
+      await expect(bootstrapZamaHost(context, { payer, ...mismatch, kmsCorruptionThreshold })).rejects.toThrow(
+        'does not match',
+      );
+    }
     expect(sent).toHaveLength(0);
   });
 
@@ -272,7 +280,7 @@ describe('bootstrapZamaHost', () => {
       { maxHcuPerTx: unlimited, maxHcuDepthPerTx: 5_000_000n, hcuBlockCapPerApp: unlimited },
     ]) {
       const { context, sent } = await fakeContext(true, payer.address, true, hcuLimits);
-      await bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold });
+      await bootstrapZamaHost(context, { payer, chainId, gateway, kmsCorruptionThreshold });
       expect(sent).toHaveLength(0);
     }
   });
@@ -284,7 +292,7 @@ describe('bootstrapZamaHost', () => {
       maxHcuDepthPerTx: unlimited,
       hcuBlockCapPerApp: unlimited,
     });
-    await expect(bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold })).rejects.toThrow(
+    await expect(bootstrapZamaHost(context, { payer, chainId, gateway, kmsCorruptionThreshold })).rejects.toThrow(
       'still has unlimited HCU limits (never bootstrapped)',
     );
     expect(sent).toHaveLength(0);
@@ -293,7 +301,7 @@ describe('bootstrapZamaHost', () => {
   test('already bootstrapped: skips both initialize_host_config and define_kms_context', async () => {
     const payer = await generateKeyPairSigner();
     const { context, sent } = await fakeContext(true, payer.address, true);
-    await bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold });
+    await bootstrapZamaHost(context, { payer, chainId, gateway, kmsCorruptionThreshold });
     expect(sent).toHaveLength(0);
   });
 });
@@ -302,6 +310,8 @@ test('first-deploy preflight rejects malformed inputs without sending initializa
   const payer = await generateKeyPairSigner();
   const { context, sent } = await fakeContext(false, payer.address);
   for (const invalid of [
+    { chainId: 12345n },
+    { chainId: solanaHostChainId(12345n) | (1n << 64n) },
     { coprocessorThreshold: 0 },
     { coprocessorThreshold: 2 },
     { coprocessorThreshold: 256 },
@@ -314,7 +324,7 @@ test('first-deploy preflight rejects malformed inputs without sending initializa
     { gateway: { ...gateway, coprocessorSigners: [address20(1), address20(1)] } },
   ]) {
     await expect(
-      bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold, validateOnly: true, ...invalid }),
+      bootstrapZamaHost(context, { payer, chainId, gateway, kmsCorruptionThreshold, validateOnly: true, ...invalid }),
     ).rejects.toThrow();
   }
   expect(sent).toHaveLength(0);
