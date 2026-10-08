@@ -15,7 +15,7 @@ use solana_sdk::{
 use zama_host as host;
 use zama_solana_test_kit::{
     anchor_ix, empty_system_account, funded_system_account, host_svm, serialized_account,
-    system_program_account,
+    system_program_account, u256_be,
 };
 
 struct Fixture {
@@ -712,7 +712,7 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
             .to_bytes(),
         unix_timestamp: svm.sysvars.clock.unix_timestamp,
     };
-    let handle = host::computed_eval_trivial_handle([7; 32], 5, &context);
+    let handle = host::computed_eval_trivial_handle(u256_be(7), 5, &context);
     let grant_to = if matches!(case, GrantConsumptionCase::WrongConsumer) {
         producer.state
     } else {
@@ -725,7 +725,7 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
         account_count: if grant_is_foreign { 2 } else { 1 },
         dictionary: vec![],
         steps: vec![host::FheExecuteStep::TrivialEncrypt {
-            plaintext: [7; 32],
+            plaintext: u256_be(7),
             fhe_type: 5,
         }],
         effects: if has_grant {
@@ -791,7 +791,7 @@ fn grant_then_consume(case: GrantConsumptionCase) -> TransactionResult {
         account_count: 1,
         dictionary: vec![
             if matches!(case, GrantConsumptionCase::UngrantedHandle) {
-                host::computed_eval_trivial_handle([8; 32], 5, &context)
+                host::computed_eval_trivial_handle(u256_be(8), 5, &context)
             } else {
                 handle
             },
@@ -962,7 +962,7 @@ fn result_journal_capacity_is_shared_across_calls_and_fails_atomically() {
                 // Repeated handles must consume occurrence capacity too.
                 steps: vec![
                     host::FheExecuteStep::TrivialEncrypt {
-                        plaintext: [7; 32],
+                        plaintext: u256_be(7),
                         fhe_type: 5
                     };
                     (count - start).min(host::MAX_FHE_EXECUTION_STEPS)
@@ -1030,7 +1030,7 @@ fn producer_reuses_its_result_across_calls_with_transaction_origin_and_depth() {
                     .to_bytes(),
                 unix_timestamp: svm.sysvars.clock.unix_timestamp,
             };
-            let first = host::computed_eval_trivial_handle([7; 32], 5, &context);
+            let first = host::computed_eval_trivial_handle(u256_be(7), 5, &context);
             let effect = |key_index| host::FheExecuteEffect {
                 result: host::ExecutionResultRef {
                     step_index: 0,
@@ -1051,7 +1051,7 @@ fn producer_reuses_its_result_across_calls_with_transaction_origin_and_depth() {
                 account_count: 1,
                 dictionary: if reload_slot { vec![[1; 32]] } else { vec![] },
                 steps: vec![host::FheExecuteStep::TrivialEncrypt {
-                    plaintext: [7; 32],
+                    plaintext: u256_be(7),
                     fhe_type: 5,
                 }],
                 effects: if reload_slot { vec![effect(0)] } else { vec![] },

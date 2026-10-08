@@ -277,7 +277,7 @@ pub(super) fn walk_steps<'info>(
                 plaintext,
                 fhe_type,
             } => {
-                assert_supported_fhe_type(*fhe_type)?;
+                assert_scalar_in_range(*plaintext, *fhe_type)?;
                 let result = handle_context.trivial_result(*plaintext, *fhe_type);
                 execution.accept_output(result, hcu::trivial_encrypt_hcu(*fhe_type)?, &[])?;
             }

@@ -181,7 +181,7 @@ pub enum FheExecutionError {
     /// `div`/`rem` require a plaintext scalar divisor (EVM `IsNotScalar`).
     #[msg("div and rem require a scalar divisor")]
     DivisorMustBeScalar,
-    /// `div`/`rem` divisor is zero once truncated to the operand type (EVM `DivisionByZero`).
+    /// `div`/`rem` divisor is zero (EVM `DivisionByZero`).
     #[msg("Division by zero")]
     DivisionByZero,
     #[msg("A dynamic account was supplied more than once")]

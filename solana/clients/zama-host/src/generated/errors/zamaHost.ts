@@ -156,11 +156,11 @@ export const ZAMA_HOST_ERROR__FHE_EXECUTE_ACCOUNT_COUNT_MISMATCH = 0x17b4; // 60
 export const ZAMA_HOST_ERROR__FHE_EXECUTE_DICTIONARY_ENTRY_UNREFERENCED = 0x17b5; // 6069
 /** HcuLimitZeroReserved: 0 is not a valid HCU limit; use u64::MAX for unlimited */
 export const ZAMA_HOST_ERROR__HCU_LIMIT_ZERO_RESERVED = 0x17b6; // 6070
-/** TransientAccountInvalid: invalid transient workspace account */
+/** TransientAccountInvalid: invalid transient store account */
 export const ZAMA_HOST_ERROR__TRANSIENT_ACCOUNT_INVALID = 0x17b7; // 6071
 /** TransientCloseMissing: matching final top-level transient_store close is required */
 export const ZAMA_HOST_ERROR__TRANSIENT_CLOSE_MISSING = 0x17b8; // 6072
-/** TransientCapacityExceeded: transient workspace grant capacity exceeded */
+/** TransientCapacityExceeded: transient store grant capacity exceeded */
 export const ZAMA_HOST_ERROR__TRANSIENT_CAPACITY_EXCEEDED = 0x17b9; // 6073
 /** EncryptedStoreCapacityExceeded: encrypted store slot capacity exceeded */
 export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_CAPACITY_EXCEEDED = 0x17ba; // 6074
@@ -182,6 +182,8 @@ export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c1; // 6081
 export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c2; // 6082
 /** DelegationScopeNotProgramAccount: delegation scope is not an account of the delegated program */
 export const ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c3; // 6083
+/** ScalarOutOfRange: scalar exceeds the maximum of its FHE type */
+export const ZAMA_HOST_ERROR__SCALAR_OUT_OF_RANGE = 0x17c4; // 6084
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ACL_WRITES_PAUSED
@@ -254,6 +256,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH
   | typeof ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE
   | typeof ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH
+  | typeof ZAMA_HOST_ERROR__SCALAR_OUT_OF_RANGE
   | typeof ZAMA_HOST_ERROR__SCOPE_DENIED
   | typeof ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS
   | typeof ZAMA_HOST_ERROR__TOO_MANY_KMS_SIGNERS
@@ -342,11 +345,12 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH]: `PDA creation target is invalid`,
     [ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE]: `previous bank hash is not available`,
     [ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH]: `encrypted value previous handle does not match the account`,
+    [ZAMA_HOST_ERROR__SCALAR_OUT_OF_RANGE]: `scalar exceeds the maximum of its FHE type`,
     [ZAMA_HOST_ERROR__SCOPE_DENIED]: `application scope is deny-listed`,
     [ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS]: `coprocessor signer set exceeds the maximum size`,
     [ZAMA_HOST_ERROR__TOO_MANY_KMS_SIGNERS]: `KMS context exceeds the maximum signer count`,
-    [ZAMA_HOST_ERROR__TRANSIENT_ACCOUNT_INVALID]: `invalid transient workspace account`,
-    [ZAMA_HOST_ERROR__TRANSIENT_CAPACITY_EXCEEDED]: `transient workspace grant capacity exceeded`,
+    [ZAMA_HOST_ERROR__TRANSIENT_ACCOUNT_INVALID]: `invalid transient store account`,
+    [ZAMA_HOST_ERROR__TRANSIENT_CAPACITY_EXCEEDED]: `transient store grant capacity exceeded`,
     [ZAMA_HOST_ERROR__TRANSIENT_CLOSE_MISSING]: `matching final top-level transient_store close is required`,
     [ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED]: `transient store must be opened for this transaction and closed last`,
     [ZAMA_HOST_ERROR__UNEXPECTED_REMAINING_ACCOUNTS]: `instruction has unexpected remaining accounts`,

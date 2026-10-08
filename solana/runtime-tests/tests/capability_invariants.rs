@@ -45,8 +45,8 @@ use zama_solana_test_kit::{
     anchor_ix, canonical_test_context_id, empty_system_account, encrypted_store_account,
     event_authority, funded_system_account, host_config_account, host_svm, kms_context_account,
     label, new_encrypted_store, pauser_record_account, program_data_account, program_owned_account,
-    readonly, readonly_signer, system_program_account, transaction::fhe_transaction, writable, Ctx,
-    HostConfigParams,
+    readonly, readonly_signer, system_program_account, transaction::fhe_transaction, u256_be,
+    writable, Ctx, HostConfigParams,
 };
 
 mod host_fixtures;
@@ -1097,7 +1097,7 @@ impl World {
                 account_count: 0,
                 dictionary: dictionary.into_entries(),
                 steps: vec![FheExecuteStep::TrivialEncrypt {
-                    plaintext: [7; 32],
+                    plaintext: u256_be(7),
                     fhe_type: 5,
                 }],
             },

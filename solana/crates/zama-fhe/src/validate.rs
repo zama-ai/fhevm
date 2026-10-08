@@ -3,9 +3,8 @@
 use anchor_lang::prelude::Pubkey;
 
 use zama_host::{
-    binary_output_type_ok, is_supported_fhe_type, is_supported_uint_fhe_type,
-    scalar_is_zero_for_type, unary_output_type_ok, FheBinaryOpCode, FheExecuteEffect,
-    FheExecuteOperand, FheExecuteStep, FheUnaryOpCode,
+    binary_output_type_ok, is_supported_fhe_type, is_supported_uint_fhe_type, unary_output_type_ok,
+    FheBinaryOpCode, FheExecuteEffect, FheExecuteOperand, FheExecuteStep, FheUnaryOpCode,
 };
 
 use crate::accounts::ExecutionAccountMeta;
@@ -272,14 +271,14 @@ where
                 return Err(FheExecutionError::UnsupportedFheType);
             }
         }
-        // Div/Rem: divisor must be a plaintext scalar (EVM `IsNotScalar`), non-zero after truncation.
+        // Div/Rem: divisor must be a non-zero plaintext scalar (EVM `IsNotScalar`, `DivisionByZero`).
         FheBinaryOpCode::Div | FheBinaryOpCode::Rem => {
             if lhs_type != output_fhe_type {
                 return Err(FheExecutionError::BinaryOperandTypeMismatch);
             }
             match &rhs.0 {
                 OperandKind::Scalar(value) => {
-                    if scalar_is_zero_for_type(*value, output_fhe_type) {
+                    if *value == [0; 32] {
                         return Err(FheExecutionError::DivisionByZero);
                     }
                 }
