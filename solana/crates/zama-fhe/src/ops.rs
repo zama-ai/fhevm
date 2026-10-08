@@ -12,8 +12,8 @@
 //! it is not a step.
 
 use zama_host::{
-    is_mul_div_fhe_type, max_reduction_operands, scalar_is_zero_for_type,
-    CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
+    is_mul_div_fhe_type, max_reduction_operands, CoprocessorInputAttestation, FheBinaryOpCode,
+    FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
 };
 
 use crate::acl::BoundedU64UpperBound;
@@ -556,9 +556,9 @@ impl<'id> FheExecutionBuilder<'id> {
         if !is_mul_div_fhe_type(fhe_type) {
             return Err(FheExecutionError::UnsupportedFheType);
         }
-        // Divisor must be non-zero once truncated to the operand type (EVM DivisionByZero parity).
+        // Divisor must be non-zero (EVM DivisionByZero parity).
         let divisor_bytes = divisor.bytes();
-        if scalar_is_zero_for_type(divisor_bytes, fhe_type) {
+        if divisor_bytes == [0; 32] {
             return Err(FheExecutionError::MulDivDivisorZero);
         }
         let step_index = self.commit_step(fhe_type, |lowering| {

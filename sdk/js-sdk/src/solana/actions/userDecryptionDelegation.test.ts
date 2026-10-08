@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AccountRole, address, generateKeyPairSigner, type Address, type TransactionSigner } from '@solana/kit';
-import { base58 } from '@scure/base';
+import {
+  AccountRole,
+  address,
+  type Address,
+  generateKeyPairSigner,
+  getAddressDecoder,
+  type TransactionSigner,
+} from '@solana/kit';
 
 import {
   SOLANA_WILDCARD_APP,
@@ -15,7 +21,7 @@ import type { SolanaRpc } from '../encryptedStore.js';
 import { findDelegationRecordPda, findHostConfigPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 
 function addr(fill: number): Address {
-  return address(base58.encode(new Uint8Array(32).fill(fill)));
+  return getAddressDecoder().decode(new Uint8Array(32).fill(fill));
 }
 
 function hex(bytes: Iterable<number>): string {

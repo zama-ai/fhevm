@@ -295,7 +295,7 @@ fn mature_updates_case(steps: usize, peak_count: u32, program: Pubkey) -> ProbeC
         }
         accounts.push((address, encrypted_store_account(&value)));
         update_steps.push(FheExecuteStep::TrivialEncrypt {
-            plaintext: [step_index as u8 + 1; 32],
+            plaintext: u256_be(step_index as u64 + 1),
             fhe_type: 5,
         });
         let mut effect = authority.store_output(
@@ -518,7 +518,7 @@ fn reduction_heavy_case(steps: usize, program: Pubkey) -> ProbeCase {
     );
     let mut steps_vec = Vec::with_capacity(steps);
     steps_vec.push(FheExecuteStep::TrivialEncrypt {
-        plaintext: [1; 32],
+        plaintext: u256_be(1),
         fhe_type: 5,
     });
     for step_index in 1..steps {

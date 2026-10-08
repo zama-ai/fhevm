@@ -267,10 +267,10 @@ macro_rules! composite_contract_tests {
         }
         mod trivial_encrypt {
             macro_rules! case {
-                ($name:ident, $ty:expr, $expected:expr) => {
+                ($name:ident, $ty:expr, $plaintext:expr) => {
                     #[test]
                     fn $name() {
-                        crate::run_trivial($ty, 37, $expected);
+                        crate::run_trivial($ty, $plaintext);
                     }
                 };
             }
@@ -331,19 +331,20 @@ macro_rules! composite_contract_tests {
                     mod $name {
                         #[test]
                         fn encrypted() {
-                            crate::run_mul_div($ty, false, 200, 400, 3, $expected);
+                            crate::run_mul_div($ty, false, 200, 100, 3, $expected);
                         }
                         #[test]
                         fn scalar() {
-                            crate::run_mul_div($ty, true, 200, 400, 3, $expected);
+                            crate::run_mul_div($ty, true, 200, 100, 3, $expected);
                         }
                     }
                 };
             }
-            cases!(u8, 2, 128);
-            cases!(u16, 3, 26_666);
-            cases!(u32, 4, 26_666);
-            cases!(u64, 5, 26_666);
+            // 200 * 100 / 3 = 6_666, which wraps to 10 in euint8.
+            cases!(u8, 2, 10);
+            cases!(u16, 3, 6_666);
+            cases!(u32, 4, 6_666);
+            cases!(u64, 5, 6_666);
         }
         mod rand {
             macro_rules! case {

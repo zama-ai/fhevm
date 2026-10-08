@@ -2826,7 +2826,7 @@
     {
       "code": 6071,
       "name": "TransientAccountInvalid",
-      "msg": "invalid transient workspace account"
+      "msg": "invalid transient store account"
     },
     {
       "code": 6072,
@@ -2836,7 +2836,7 @@
     {
       "code": 6073,
       "name": "TransientCapacityExceeded",
-      "msg": "transient workspace grant capacity exceeded"
+      "msg": "transient store grant capacity exceeded"
     },
     {
       "code": 6074,
@@ -2887,6 +2887,11 @@
       "code": 6083,
       "name": "DelegationScopeNotProgramAccount",
       "msg": "delegation scope is not an account of the delegated program"
+    },
+    {
+      "code": 6084,
+      "name": "ScalarOutOfRange",
+      "msg": "scalar exceeds the maximum of its FHE type"
     }
   ],
   "types": [

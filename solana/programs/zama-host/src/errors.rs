@@ -183,7 +183,7 @@ pub enum ZamaHostError {
     #[msg("fheDiv/fheRem divisor must be a plaintext scalar")]
     DivisorMustBeScalar,
 
-    /// `fheDiv`/`fheRem` divisor is zero once truncated to the operand type (EVM `DivisionByZero`).
+    /// `fheDiv`/`fheRem` divisor is zero (EVM `DivisionByZero`).
     #[msg("fheDiv/fheRem divisor must be non-zero")]
     DivisionByZero,
 
@@ -257,11 +257,11 @@ pub enum ZamaHostError {
     /// sentinel across every HCU knob, and a `0` limit would reject every execution.
     #[msg("0 is not a valid HCU limit; use u64::MAX for unlimited")]
     HcuLimitZeroReserved,
-    #[msg("invalid transient workspace account")]
+    #[msg("invalid transient store account")]
     TransientAccountInvalid,
     #[msg("matching final top-level transient_store close is required")]
     TransientCloseMissing,
-    #[msg("transient workspace grant capacity exceeded")]
+    #[msg("transient store grant capacity exceeded")]
     TransientCapacityExceeded,
     #[msg("encrypted store slot capacity exceeded")]
     EncryptedStoreCapacityExceeded,
@@ -294,4 +294,8 @@ pub enum ZamaHostError {
     /// it. The wildcard row is exempt.
     #[msg("delegation scope is not an account of the delegated program")]
     DelegationScopeNotProgramAccount,
+    /// A scalar operand or trivial-encrypt plaintext exceeds its FHE type's maximum (EVM
+    /// `ScalarOutOfRange`).
+    #[msg("scalar exceeds the maximum of its FHE type")]
+    ScalarOutOfRange,
 }

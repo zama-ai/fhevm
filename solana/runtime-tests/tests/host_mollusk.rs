@@ -34,7 +34,7 @@ use zama_solana_test_kit::{
     host_svm as mollusk, host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash,
     label, new_encrypted_store, new_encrypted_store_with_slot, paused_host_config,
     program_owned_account, rand_nonce_account, read_encrypted_store, readonly, readonly_signer,
-    serialized_account, signing, system_account, system_program_account, writable,
+    serialized_account, signing, system_account, system_program_account, u256_be, writable,
     HostConfigParams, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
 };
 
@@ -208,7 +208,7 @@ fn run_update(
     assert_eq!(value.authority, app.key());
     let mut dictionary = ExecutionDictionary::default();
     let steps = vec![FheExecuteStep::TrivialEncrypt {
-        plaintext: [plaintext_tag; 32],
+        plaintext: u256_be(plaintext_tag.into()),
         fhe_type: 5,
     }];
     let args = FheExecuteArgs {
@@ -361,7 +361,7 @@ fn create_case(
     extras: FheExecuteExtras,
 ) -> (Pubkey, Instruction, Vec<(Pubkey, Account)>) {
     let step = FheExecuteStep::TrivialEncrypt {
-        plaintext: [1; 32],
+        plaintext: u256_be(1),
         fhe_type: 5,
     };
     create_case_with_step(
@@ -704,7 +704,7 @@ fn mollusk_fhe_execute_rejects_stale_previous_leaf_count() {
         account_count: 0,
         dictionary: dictionary.into_entries(),
         steps: vec![FheExecuteStep::TrivialEncrypt {
-            plaintext: [7; 32],
+            plaintext: u256_be(7),
             fhe_type: 5,
         }],
     };
@@ -1450,7 +1450,7 @@ fn additional_authority_write_case(
     let mut effects = Vec::new();
     if write_own_state {
         steps.push(FheExecuteStep::TrivialEncrypt {
-            plaintext: [3; 32],
+            plaintext: u256_be(3),
             fhe_type: 5,
         });
         effects.push(app.stored_output(&mut dictionary, 0, "mine", &[payer], None, false));
@@ -1460,7 +1460,7 @@ fn additional_authority_write_case(
     foreign_output.result.step_index = steps.len() as u8;
     effects.push(foreign_output);
     steps.push(FheExecuteStep::TrivialEncrypt {
-        plaintext: [4; 32],
+        plaintext: u256_be(4),
         fhe_type: 5,
     });
     let (_, receiver_state) = new_encrypted_store(receiver.app(), receiver.key(), []);
@@ -1973,6 +1973,61 @@ fn mollusk_fhe_execute_creates_persistent_output_from_local_binary_add() {
         &mut expected_count,
     );
     assert_eq!(output.peaks, expected_peaks);
+}
+
+#[test]
+fn mollusk_fhe_execute_rejects_scalars_above_their_type() {
+    let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
+    let euint8 = |plaintext| FheExecuteStep::TrivialEncrypt {
+        plaintext: u256_be(plaintext),
+        fhe_type: 2,
+    };
+    let lhs = FheExecuteOperand::EarlierStep { producer_index: 0 };
+    let scalar = FheExecuteOperand::Scalar { value_index: 0 };
+    let binary = |op| FheExecuteStep::Binary {
+        op,
+        lhs: lhs.clone(),
+        rhs: scalar.clone(),
+        output_fhe_type: 2,
+    };
+    let mul_div = |divisor| FheExecuteStep::MulDiv {
+        factor1: lhs.clone(),
+        factor2: scalar.clone(),
+        divisor: u256_be(divisor),
+        output_fhe_type: 2,
+    };
+    let out_of_range = || custom_error(host::errors::ZamaHostError::ScalarOutOfRange);
+    // Each shape passes at the euint8 maximum and fails one above it: (dictionary scalar, steps).
+    for (accepted, rejected) in [
+        ((None, vec![euint8(0xff)]), (None, vec![euint8(0x100)])),
+        (
+            (Some(0xff), vec![euint8(1), binary(FheBinaryOpCode::Add)]),
+            (Some(0x101), vec![euint8(1), binary(FheBinaryOpCode::Add)]),
+        ),
+        (
+            (Some(0xff), vec![euint8(1), binary(FheBinaryOpCode::Div)]),
+            (Some(0x100), vec![euint8(1), binary(FheBinaryOpCode::Div)]),
+        ),
+        (
+            (Some(0xff), vec![euint8(1), mul_div(1)]),
+            (Some(0x100), vec![euint8(1), mul_div(1)]),
+        ),
+        (
+            (Some(1), vec![euint8(1), mul_div(0xff)]),
+            (Some(1), vec![euint8(1), mul_div(0x100)]),
+        ),
+    ] {
+        for ((scalar, steps), expected) in
+            [(accepted, Check::success()), (rejected, out_of_range())]
+        {
+            let dictionary = scalar.map(u256_be).into_iter().collect();
+            check_host_context(
+                &fixture.context,
+                &fixture.transient_steps_instruction(dictionary, steps),
+                &[expected],
+            );
+        }
+    }
 }
 
 #[test]
@@ -3697,7 +3752,7 @@ impl FheExecutionFixture {
     ) -> Instruction {
         self.input_free_instruction(
             vec![FheExecuteStep::TrivialEncrypt {
-                plaintext: [7; 32],
+                plaintext: u256_be(7),
                 fhe_type: 5,
             }],
             meter,
@@ -3708,6 +3763,29 @@ impl FheExecutionFixture {
 
     /// A trivial encryption plus a scalar add whose scalar is dictionary entry `value_index`.
     fn scalar_add_instruction(&self, dictionary: Vec<[u8; 32]>, value_index: u8) -> Instruction {
+        self.transient_steps_instruction(
+            dictionary,
+            vec![
+                FheExecuteStep::TrivialEncrypt {
+                    plaintext: u256_be(7),
+                    fhe_type: 5,
+                },
+                FheExecuteStep::Binary {
+                    op: FheBinaryOpCode::Add,
+                    lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
+                    rhs: FheExecuteOperand::Scalar { value_index },
+                    output_fhe_type: 5,
+                },
+            ],
+        )
+    }
+
+    /// `steps` with no effects, so every result stays transient.
+    fn transient_steps_instruction(
+        &self,
+        dictionary: Vec<[u8; 32]>,
+        steps: Vec<FheExecuteStep>,
+    ) -> Instruction {
         self.instruction(
             FheExecuteArgs {
                 execution_store_index: 0,
@@ -3715,18 +3793,7 @@ impl FheExecutionFixture {
                 returned_results: Vec::new(),
                 account_count: 0,
                 dictionary,
-                steps: vec![
-                    FheExecuteStep::TrivialEncrypt {
-                        plaintext: [7; 32],
-                        fhe_type: 5,
-                    },
-                    FheExecuteStep::Binary {
-                        op: FheBinaryOpCode::Add,
-                        lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
-                        rhs: FheExecuteOperand::Scalar { value_index },
-                        output_fhe_type: 5,
-                    },
-                ],
+                steps,
             },
             vec![readonly(self.balance_store)],
             None,
@@ -3767,7 +3834,7 @@ impl FheExecutionFixture {
         }
         let mut dictionary = ExecutionDictionary::default();
         let steps = vec![FheExecuteStep::TrivialEncrypt {
-            plaintext: [7; 32],
+            plaintext: u256_be(7),
             fhe_type: 5,
         }];
         let mut ix = anchor_ix(
@@ -4610,14 +4677,14 @@ fn mollusk_fhe_execute_rejects_a_dictionary_index_past_the_dictionary() {
     let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
     check_host_context(
         &fixture.context,
-        &fixture.scalar_add_instruction(vec![[1; 32]], 1),
+        &fixture.scalar_add_instruction(vec![u256_be(1)], 1),
         &[custom_error(
             host::errors::ZamaHostError::FheExecuteDictionaryIndexOutOfBounds,
         )],
     );
     check_host_context(
         &fixture.context,
-        &fixture.scalar_add_instruction(vec![[1; 32]], 0),
+        &fixture.scalar_add_instruction(vec![u256_be(1)], 0),
         &[Check::success()],
     );
 }
@@ -4627,7 +4694,7 @@ fn mollusk_fhe_execute_rejects_an_unreferenced_dictionary_entry() {
     let fixture = FheExecutionFixture::with_block_cap(u64::MAX);
     check_host_context(
         &fixture.context,
-        &fixture.scalar_add_instruction(vec![[1; 32], [2; 32]], 0),
+        &fixture.scalar_add_instruction(vec![u256_be(1), u256_be(2)], 0),
         &[custom_error(
             host::errors::ZamaHostError::FheExecuteDictionaryEntryUnreferenced,
         )],

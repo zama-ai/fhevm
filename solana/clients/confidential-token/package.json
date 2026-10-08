@@ -11,7 +11,13 @@
     "src"
   ],
   "dependencies": {
-    "@fhevm/solana-zama-host": "file:../zama-host",
+    "@fhevm/solana-zama-host": "file:../zama-host"
+  },
+  "peerDependencies": {
+    "@solana/kit": "^8.4.0",
+    "@solana/program-client-core": "^8.4.0"
+  },
+  "devDependencies": {
     "@solana/kit": "8.4.0",
     "@solana/program-client-core": "8.4.0"
   }

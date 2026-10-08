@@ -4,7 +4,7 @@
 // misaligned decode fails loudly instead of returning shifted fields.
 
 import { describe, expect, it, vi } from 'vitest';
-import { base58 } from '@scure/base';
+import { getBase58Decoder } from '@solana/kit';
 import { decodeSolanaEncryptedStore, fetchSolanaEncryptedStore, type SolanaRpc } from './encryptedStore.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -68,9 +68,9 @@ describe('decoding an EncryptedStore account', () => {
   it('returns every field of a well-formed account', () => {
     const state = decodeSolanaEncryptedStore(accountData({}), 'the fixture account');
 
-    expect(state.program).toBe(base58.encode(bytes32(0x11)));
-    expect(state.authority).toBe(base58.encode(bytes32(0x22)));
-    expect(state.scope).toBe(base58.encode(bytes32(0x33)));
+    expect(state.program).toBe(getBase58Decoder().decode(bytes32(0x11)));
+    expect(state.authority).toBe(getBase58Decoder().decode(bytes32(0x22)));
+    expect(state.scope).toBe(getBase58Decoder().decode(bytes32(0x33)));
     expect(state.slots).toEqual([{ key: bytes32(0x44), handle: bytes32(0x55) }]);
     expect(state.leafCount).toBe(3n);
     expect(state.peaks).toEqual([bytes32(0x71), bytes32(0x72)]);

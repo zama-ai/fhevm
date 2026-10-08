@@ -18,10 +18,11 @@ use anchor_lang::prelude::*;
 
 use crate::{
     assert_binary_operand_types, assert_is_in_operand_types, assert_mul_div_operand_types,
-    assert_sum_operand_types, assert_supported_fhe_type, assert_ternary_operand_types,
-    assert_unary_operand_type, assert_valid_bounded_rand_upper_bound, errors::ZamaHostError,
-    handle_fhe_type, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep,
-    FheTernaryOpCode, FheUnaryOpCode, MAX_INPUT_ATTESTATION_EXTRA_DATA,
+    assert_scalar_in_range, assert_sum_operand_types, assert_supported_fhe_type,
+    assert_ternary_operand_types, assert_unary_operand_type, assert_valid_bounded_rand_upper_bound,
+    errors::ZamaHostError, fhe_type_bit_width, fhe_type_max, handle_fhe_type, FheBinaryOpCode,
+    FheExecuteArgs, FheExecuteOperand, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
+    MAX_INPUT_ATTESTATION_EXTRA_DATA,
 };
 
 /// Errors only the cleartext build returns. Numbered apart from [`ZamaHostError`], whose codes
@@ -49,16 +50,15 @@ impl Value {
         let bits = if fhe_type == 0 {
             u128::from(bits != 0)
         } else {
-            bits & mask(fhe_type)?
+            bits & fhe_type_max(fhe_type)?
         };
         Ok(Self { fhe_type, bits })
     }
 
-    /// A big-endian 256-bit plaintext, as scalars and trivial encryptions carry it.
+    /// A big-endian 256-bit plaintext, as scalars and trivial encryptions carry it. Only its low
+    /// 128 bits are read: the host's range check refuses a value above its type before any
+    /// operation reads it.
     pub fn from_be_bytes(fhe_type: u8, bytes: [u8; 32]) -> Result<Self> {
-        if fhe_type == 0 {
-            return Self::new(0, u128::from(bytes.iter().any(|byte| *byte != 0)));
-        }
         Self::new(
             fhe_type,
             u128::from_be_bytes(bytes[16..].try_into().unwrap()),
@@ -72,30 +72,10 @@ impl Value {
     }
 }
 
-/// Width in bits of a shipped FHE type.
-fn bit_width(fhe_type: u8) -> Result<u32> {
-    match fhe_type {
-        0 => Ok(1),
-        2 => Ok(8),
-        3 => Ok(16),
-        4 => Ok(32),
-        5 => Ok(64),
-        6 => Ok(128),
-        _ => err!(ZamaHostError::UnsupportedFheType),
-    }
-}
-
 /// Bytes one value of `fhe_type` takes in an input attestation. At least two, so no encoding is
 /// production's one-byte `extra_data` (`0x00`); 16 `euint128` inputs still fill 256 bytes.
 fn value_len(fhe_type: u8) -> Result<usize> {
-    Ok(bit_width(fhe_type)?.div_ceil(8).max(2) as usize)
-}
-
-fn mask(fhe_type: u8) -> Result<u128> {
-    Ok(match bit_width(fhe_type)? {
-        128 => u128::MAX,
-        bits => (1u128 << bits) - 1,
-    })
+    Ok(fhe_type_bit_width(fhe_type)?.div_ceil(8).max(2) as usize)
 }
 
 /// Encodes the plaintexts of an input attestation's handles as its `extra_data`: one big-endian
@@ -128,7 +108,10 @@ fn decode_input_value(extra_data: &[u8], ct_handles: &[[u8; 32]], index: usize) 
         let mut be = [0u8; 16];
         be[16 - len..].copy_from_slice(bytes);
         let bits = u128::from_be_bytes(be);
-        require!(bits <= mask(fhe_type)?, CleartextError::InputMalformed);
+        require!(
+            bits <= fhe_type_max(fhe_type)?,
+            CleartextError::InputMalformed
+        );
         if position == index {
             selected = Some(Value::new(fhe_type, bits)?);
         }
@@ -227,21 +210,15 @@ pub fn evaluate_steps(
                 plaintext,
                 fhe_type,
             } => {
-                assert_supported_fhe_type(*fhe_type)?;
-                // A trivial bool reads only the last byte, as the coprocessor's
-                // `trivial_encrypt_be_bytes` does.
-                if *fhe_type == 0 {
-                    Value::new(0, u128::from(plaintext[31]))?
-                } else {
-                    Value::from_be_bytes(*fhe_type, *plaintext)?
-                }
+                assert_scalar_in_range(*plaintext, *fhe_type)?;
+                Value::from_be_bytes(*fhe_type, *plaintext)?
             }
             FheExecuteStep::Rand { fhe_type } => {
                 assert_supported_fhe_type(*fhe_type)?;
                 // Truncation, not `!= 0`, so a random bool is a fair bit.
                 Value::new(
                     *fhe_type,
-                    rand_bits(rand_seed(index as u16)?) & mask(*fhe_type)?,
+                    rand_bits(rand_seed(index as u16)?) & fhe_type_max(*fhe_type)?,
                 )?
             }
             FheExecuteStep::RandBounded {
@@ -268,7 +245,7 @@ pub fn evaluate_steps(
                 assert_unary_operand_type(*op, operand.validation_handle(), *output_fhe_type)?;
                 let bits = match op {
                     FheUnaryOpCode::Neg => operand.bits.wrapping_neg(),
-                    FheUnaryOpCode::Not => operand.bits ^ mask(*output_fhe_type)?,
+                    FheUnaryOpCode::Not => operand.bits ^ fhe_type_max(*output_fhe_type)?,
                     FheUnaryOpCode::Cast => operand.bits,
                 };
                 Value::new(*output_fhe_type, bits)?
@@ -337,7 +314,7 @@ pub fn evaluate_steps(
 }
 
 fn binary(op: FheBinaryOpCode, lhs: Value, rhs: Value, output_fhe_type: u8) -> Result<Value> {
-    let width = bit_width(lhs.fhe_type)?;
+    let width = fhe_type_bit_width(lhs.fhe_type)?;
     // Shift and rotate amounts wrap at the operand width, as tfhe-rs 1.7 does.
     let amount = || (rhs.bits % u128::from(width)) as u32;
     let bits = match op {
@@ -359,7 +336,7 @@ fn binary(op: FheBinaryOpCode, lhs: Value, rhs: Value, output_fhe_type: u8) -> R
             } else {
                 ((width - amount) % width, amount)
             };
-            let value = lhs.bits & mask(lhs.fhe_type)?;
+            let value = lhs.bits & fhe_type_max(lhs.fhe_type)?;
             match amount {
                 0 => value,
                 _ => (value << up) | (value >> down),
