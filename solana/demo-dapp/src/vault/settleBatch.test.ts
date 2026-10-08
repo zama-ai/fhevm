@@ -32,8 +32,10 @@ import {
 import { getSettleInstructionDataDecoder, parseSettleInstruction } from './internal/generated/confidentialBatcher/instructions/settle.js';
 import {
   CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
+  findDenyScopeRecordPda,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -203,6 +205,53 @@ describe('settleBatch', () => {
     const simulate = opts.rpc.simulateTransaction as unknown as ReturnType<typeof vi.fn>;
     const bytes = getBase64Encoder().encode(simulate.mock.calls[0]![0] as string);
     expect(bytes.length).toBeLessThanOrEqual(1232);
+  });
+
+  // The host witnesses stay out of the table: the meter has no client-side PDA finder, and all
+  // three as static keys still fit at 7 signatures.
+  it('fits 7 signatures with every host witness outside the table', async () => {
+    const { keeper, opts } = await options();
+    certificate.mockResolvedValue({
+      ...claim(cleartextHex(800n)),
+      signatures: Array.from({ length: 7 }, () => hex(new Uint8Array(65).fill(0x11))),
+    });
+    await settleBatch({ publicDecryptCertificate: certificate }, keeper, {
+      ...opts,
+      payoutMintHcuBlockMeter: addr(40),
+      payoutMintHcuTrustedAppRecord: addr(41),
+      denyListEnabled: true,
+    });
+    const simulate = opts.rpc.simulateTransaction as unknown as ReturnType<typeof vi.fn>;
+    const bytes = getBase64Encoder().encode(simulate.mock.calls[0]![0] as string);
+    expect(bytes.length).toBeLessThanOrEqual(1232);
+    const transaction = getTransactionDecoder().decode(bytes);
+    const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
+    expect(compiled.staticAccounts).toEqual(expect.arrayContaining([addr(40), addr(41)]));
+  });
+
+  // The settle instruction's accounts as submitted, read back through the batch's lookup table.
+  async function submittedSettleAccounts(total: bigint, denyListEnabled: boolean): Promise<Address[]> {
+    const { keeper, opts } = await options();
+    certificate.mockResolvedValue(claim(cleartextHex(total)));
+    await settleBatch({ publicDecryptCertificate: certificate }, keeper, { ...opts, denyListEnabled });
+    const simulate = opts.rpc.simulateTransaction as unknown as ReturnType<typeof vi.fn>;
+    const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(simulate.mock.calls[0]![0] as string));
+    const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
+    const provisioned = await deriveSettleLookupTableAddresses(opts.roots, await deriveBatchAddresses(opts.roots, 0n));
+    const message = decompileTransactionMessage(compiled, {
+      addressesByLookupTableAddress: { [opts.lookupTableAddress]: provisioned },
+    });
+    return Array.from(message.instructions[2]!.accounts ?? [], (account) => account.address);
+  }
+
+  it('appends, under the deny list, the payout mint deny record for the wrap, and none for a zero total', async () => {
+    const plain = await submittedSettleAccounts(800n, false);
+    const [payoutMintRecord] = await findDenyScopeRecordPda({
+      appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+      scope: roots().payoutConfidentialMint,
+    });
+    expect((await submittedSettleAccounts(800n, true)).slice(plain.length)).toEqual([payoutMintRecord]);
+    expect(await submittedSettleAccounts(0n, true)).toHaveLength(plain.length);
   });
 
   it('rejects an oversized certificate before simulation or send', async () => {

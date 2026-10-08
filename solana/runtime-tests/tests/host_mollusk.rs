@@ -31,11 +31,12 @@ use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
     coprocessor_signer_address, cost_snapshot, deny_scope_record_account, empty_system_account,
     encrypted_store_account, event_authority, funded_system_account, handle_for_chain,
-    host_svm as mollusk, host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash,
-    label, new_encrypted_store, new_encrypted_store_with_slot, paused_host_config,
-    program_owned_account, rand_nonce_account, read_encrypted_store, readonly, readonly_signer,
-    serialized_account, signing, system_account, system_program_account, u256_be, writable,
-    HostConfigParams, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
+    hcu_trusted_app_record_account, host_svm as mollusk,
+    host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
+    new_encrypted_store, new_encrypted_store_with_slot, paused_host_config, program_owned_account,
+    rand_nonce_account, read_encrypted_store, readonly, readonly_signer, serialized_account,
+    signing, system_account, system_program_account, u256_be, writable, HostConfigParams,
+    DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
 };
 
 mod host_fixtures;
@@ -2522,26 +2523,6 @@ fn set_hcu_app_trusted_ix_with_record(
 }
 
 // ---- HCU state account fixtures ----
-
-/// A program-owned trust record at the canonical `("hcu-trusted", program, scope)` PDA.
-fn hcu_trusted_app_record_account(app: AppScope, trusted: bool) -> (Pubkey, Account) {
-    let (key, bump) = host::hcu_trusted_app_address(app);
-    (
-        key,
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(host::HcuTrustedAppRecord {
-                program: app.program,
-                scope: app.scope,
-                trusted,
-                bump,
-            }),
-            owner: host::id(),
-            executable: false,
-            rent_epoch: 0,
-        },
-    )
-}
 
 /// A program-owned meter at the canonical `("hcu-block-meter", program, scope)` PDA, pre-loaded
 /// with `used_hcu` as of `last_seen_slot`.

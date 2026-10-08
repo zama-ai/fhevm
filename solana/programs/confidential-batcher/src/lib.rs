@@ -21,6 +21,14 @@
 //! This program evolves the earlier `confidential-deposit-app` reference: the
 //! app-driven join (one user signature propagating through the transfer CPI)
 //! is kept, and the rest of the batch lifecycle is built around it.
+//!
+//! Host levers. Every execution runs as one application: the token's executions as
+//! `(confidential-token, mint)`, the batcher's own as `(confidential-batcher, batch)`. For each
+//! application an instruction runs as, it takes an optional HCU block meter and trust record
+//! (`<application>_hcu_block_meter`, `<application>_hcu_trusted_app_record`), which a client
+//! supplies while the host's per-application block cap binds. While the host's deny list is on,
+//! the remaining accounts are the deny records of the applications each execution touches, one
+//! per application, execution by execution; each instruction documents its order.
 
 // Anchor macros generate framework-shaped code that trips rustc/Clippy checks.
 #![allow(unexpected_cfgs)]
@@ -111,8 +119,9 @@ pub mod confidential_batcher {
     /// the payer to the batch authority PDA, which pays the rent the token
     /// CPIs charge to the account owner. Unspent funding stays on the PDA until
     /// the batch is finished and `reclaim_batch_authority` returns it.
-    pub fn open_batch(
-        ctx: Context<OpenBatch>,
+    /// Deny records: `(token, join mint)`, then `(token, payout mint)`.
+    pub fn open_batch<'info>(
+        ctx: Context<'info, OpenBatch<'info>>,
         index: u64,
         authority_funding_lamports: u64,
     ) -> Result<()> {
@@ -124,6 +133,7 @@ pub mod confidential_batcher {
     /// into the batch's token account. The token returns the transferred handle and grants
     /// the JoinRecord Store access through transient store. The batcher adds it to the user's
     /// contribution slot (decryptable by the user). Repeated joins accumulate.
+    /// Deny records: `(token, join mint)`, then `(batcher, batch)`.
     pub fn join<'info>(
         ctx: Context<'info, Join<'info>>,
         amount_attestation: zama_host::CoprocessorInputAttestation,
@@ -135,6 +145,8 @@ pub mod confidential_batcher {
     /// transfers the user's exact
     /// recorded amount back from the batch account (all-or-nothing) and
     /// resets the joined encrypted store to zero.
+    /// Deny records: `(token, join mint)` and `(batcher, batch)` for the refund, then
+    /// `(batcher, batch)` again for the reset.
     pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         instructions::quit(ctx)
     }
@@ -142,7 +154,8 @@ pub mod confidential_batcher {
     /// Dispatches the batch once it is old enough: burns the batch account's
     /// full encrypted balance via `confidential_burn_from_value` and records
     /// the created-public burned handle the KMS will certify. Permissionless.
-    pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
+    /// Deny records: `(token, join mint)`.
+    pub fn dispatch<'info>(ctx: Context<'info, Dispatch<'info>>) -> Result<()> {
         instructions::dispatch(ctx)
     }
 
@@ -150,6 +163,7 @@ pub mod confidential_batcher {
     /// authority authorizes the operation. The burned total is restored to the batch token account
     /// and encrypted total supply, and the batch becomes refund-only so users can retrieve their
     /// recorded joins through `quit`.
+    /// Deny records: `(token, join mint)`.
     pub fn cancel_dispatch<'info>(
         ctx: Context<'info, CancelDispatch<'info>>,
         authority_funding_lamports: u64,
@@ -163,8 +177,9 @@ pub mod confidential_batcher {
     /// the received payout into confidential payout tokens, and records the
     /// batch's informational public rate. A zero-total batch is canceled
     /// instead. Permissionless.
-    pub fn settle(
-        ctx: Context<Settle>,
+    /// Deny records: `(token, payout mint)`, or none for a zero total, which runs no execution.
+    pub fn settle<'info>(
+        ctx: Context<'info, Settle<'info>>,
         cleartext_total: u64,
         signatures: Vec<[u8; 65]>,
         extra_data: Vec<u8>,
@@ -184,6 +199,7 @@ pub mod confidential_batcher {
     /// `encrypted(joined) x payout_received / total_joined` — then a
     /// confidential transfer of the resulting handle to the user's payout
     /// account. Permissionless pull — anyone can trigger a user's claim.
+    /// Deny records: `(batcher, batch)`, then `(token, payout mint)`.
     pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         instructions::claim(ctx)
     }

@@ -16,7 +16,8 @@
         "Cancels a dispatched burn when settlement cannot complete. The join mint's wrapper",
         "authority authorizes the operation. The burned total is restored to the batch token account",
         "and encrypted total supply, and the batch becomes refund-only so users can retrieve their",
-        "recorded joins through `quit`."
+        "recorded joins through `quit`.",
+        "Deny records: `(token, join mint)`."
       ],
       "discriminator": [
         199,
@@ -266,6 +267,23 @@
             "System program used by the token execution and optional authority funding."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "join_mint_hcu_block_meter",
+          "docs": [
+            "The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the",
+            "application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "join_mint_hcu_trusted_app_record",
+          "docs": [
+            "The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the",
+            "application is trusted."
+          ],
+          "optional": true
         }
       ],
       "args": [
@@ -282,7 +300,8 @@
         "batch — the exact proportional floor",
         "`encrypted(joined) x payout_received / total_joined` — then a",
         "confidential transfer of the resulting handle to the user's payout",
-        "account. Permissionless pull — anyone can trigger a user's claim."
+        "account. Permissionless pull — anyone can trigger a user's claim.",
+        "Deny records: `(batcher, batch)`, then `(token, payout mint)`."
       ],
       "discriminator": [
         62,
@@ -588,6 +607,40 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "batch_hcu_block_meter",
+          "docs": [
+            "The batch's HCU block meter for the batcher's own execution. Supplied while the block cap binds and the",
+            "application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "batch_hcu_trusted_app_record",
+          "docs": [
+            "The batch's HCU trust record for the batcher's own execution. Supplied while the block cap binds and the",
+            "application is trusted."
+          ],
+          "optional": true
+        },
+        {
+          "name": "payout_mint_hcu_block_meter",
+          "docs": [
+            "The payout mint's HCU block meter for the token CPI. Supplied while the block cap binds and the",
+            "application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "payout_mint_hcu_trusted_app_record",
+          "docs": [
+            "The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the",
+            "application is trusted."
+          ],
+          "optional": true
         }
       ],
       "args": []
@@ -693,7 +746,8 @@
       "docs": [
         "Dispatches the batch once it is old enough: burns the batch account's",
         "full encrypted balance via `confidential_burn_from_value` and records",
-        "the created-public burned handle the KMS will certify. Permissionless."
+        "the created-public burned handle the KMS will certify. Permissionless.",
+        "Deny records: `(token, join mint)`."
       ],
       "discriminator": [
         8,
@@ -952,6 +1006,23 @@
             "System program used for ACL account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "join_mint_hcu_block_meter",
+          "docs": [
+            "The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the",
+            "application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "join_mint_hcu_trusted_app_record",
+          "docs": [
+            "The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the",
+            "application is trusted."
+          ],
+          "optional": true
         }
       ],
       "args": []
@@ -1042,7 +1113,8 @@
         "transaction that CPIs the coprocessor-attested confidential transfer",
         "into the batch's token account. The token returns the transferred handle and grants",
         "the JoinRecord Store access through transient store. The batcher adds it to the user's",
-        "contribution slot (decryptable by the user). Repeated joins accumulate."
+        "contribution slot (decryptable by the user). Repeated joins accumulate.",
+        "Deny records: `(token, join mint)`, then `(batcher, batch)`."
       ],
       "discriminator": [
         206,
@@ -1350,6 +1422,40 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "join_mint_hcu_block_meter",
+          "docs": [
+            "The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the",
+            "application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "join_mint_hcu_trusted_app_record",
+          "docs": [
+            "The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the",
+            "application is trusted."
+          ],
+          "optional": true
+        },
+        {
+          "name": "batch_hcu_block_meter",
+          "docs": [
+            "The batch's HCU block meter for the batcher's own execution. Supplied while the block cap binds and the",
+            "application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "batch_hcu_trusted_app_record",
+          "docs": [
+            "The batch's HCU trust record for the batcher's own execution. Supplied while the block cap binds and the",
+            "application is trusted."
+          ],
+          "optional": true
         }
       ],
       "args": [
@@ -1374,7 +1480,8 @@
         "batcher is independent). `authority_funding_lamports` is moved from",
         "the payer to the batch authority PDA, which pays the rent the token",
         "CPIs charge to the account owner. Unspent funding stays on the PDA until",
-        "the batch is finished and `reclaim_batch_authority` returns it."
+        "the batch is finished and `reclaim_batch_authority` returns it.",
+        "Deny records: `(token, join mint)`, then `(token, payout mint)`."
       ],
       "discriminator": [
         103,
@@ -1764,6 +1871,40 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "join_mint_hcu_block_meter",
+          "docs": [
+            "The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the",
+            "application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "join_mint_hcu_trusted_app_record",
+          "docs": [
+            "The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the",
+            "application is trusted."
+          ],
+          "optional": true
+        },
+        {
+          "name": "payout_mint_hcu_block_meter",
+          "docs": [
+            "The payout mint's HCU block meter for the token CPI. Supplied while the block cap binds and the",
+            "application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "payout_mint_hcu_trusted_app_record",
+          "docs": [
+            "The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the",
+            "application is trusted."
+          ],
+          "optional": true
         }
       ],
       "args": [
@@ -1884,7 +2025,9 @@
         "Leaves a pending batch before dispatch, or a refunding batch after dispatch cancellation:",
         "transfers the user's exact",
         "recorded amount back from the batch account (all-or-nothing) and",
-        "resets the joined encrypted store to zero."
+        "resets the joined encrypted store to zero.",
+        "Deny records: `(token, join mint)` and `(batcher, batch)` for the refund, then",
+        "`(batcher, batch)` again for the reset."
       ],
       "discriminator": [
         191,
@@ -2192,6 +2335,40 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "join_mint_hcu_block_meter",
+          "docs": [
+            "The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the",
+            "application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "join_mint_hcu_trusted_app_record",
+          "docs": [
+            "The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the",
+            "application is trusted."
+          ],
+          "optional": true
+        },
+        {
+          "name": "batch_hcu_block_meter",
+          "docs": [
+            "The batch's HCU block meter for the batcher's own execution. Supplied while the block cap binds and the",
+            "application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "batch_hcu_trusted_app_record",
+          "docs": [
+            "The batch's HCU trust record for the batcher's own execution. Supplied while the block cap binds and the",
+            "application is trusted."
+          ],
+          "optional": true
         }
       ],
       "args": []
@@ -2291,7 +2468,8 @@
         "(deposit for deposit batchers, withdraw for redeem batchers), wraps",
         "the received payout into confidential payout tokens, and records the",
         "batch's informational public rate. A zero-total batch is canceled",
-        "instead. Permissionless."
+        "instead. Permissionless.",
+        "Deny records: `(token, payout mint)`, or none for a zero total, which runs no execution."
       ],
       "discriminator": [
         175,
@@ -2711,6 +2889,23 @@
             "System program used for account creation."
           ],
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "payout_mint_hcu_block_meter",
+          "docs": [
+            "The payout mint's HCU block meter for the token CPI. Supplied while the block cap binds and the",
+            "application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "payout_mint_hcu_trusted_app_record",
+          "docs": [
+            "The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the",
+            "application is trusted."
+          ],
+          "optional": true
         }
       ],
       "args": [
@@ -3041,6 +3236,11 @@
       "code": 6022,
       "name": "BatchIndexMismatch",
       "msg": "batch index does not match the next batch index"
+    },
+    {
+      "code": 6023,
+      "name": "DenyRecordsMismatch",
+      "msg": "remaining accounts do not match the deny records this instruction needs"
     }
   ],
   "types": [

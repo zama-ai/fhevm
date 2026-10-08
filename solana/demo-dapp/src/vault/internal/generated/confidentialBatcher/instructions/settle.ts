@@ -96,6 +96,8 @@ export type SettleInstruction<
   TAccountDemoVaultProgram extends string | AccountMeta<string> = 'DKuvkbkqo71fnbTsSNFzGCH1gT7FhKZU45bMqTSxxSFH',
   TAccountTokenProgram extends string | AccountMeta<string> = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
+  TAccountPayoutMintHcuBlockMeter extends string | AccountMeta<string> = string,
+  TAccountPayoutMintHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -176,6 +178,12 @@ export type SettleInstruction<
       TAccountDemoVaultProgram extends string ? ReadonlyAccount<TAccountDemoVaultProgram> : TAccountDemoVaultProgram,
       TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram,
       TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
+      TAccountPayoutMintHcuBlockMeter extends string
+        ? WritableAccount<TAccountPayoutMintHcuBlockMeter>
+        : TAccountPayoutMintHcuBlockMeter,
+      TAccountPayoutMintHcuTrustedAppRecord extends string
+        ? ReadonlyAccount<TAccountPayoutMintHcuTrustedAppRecord>
+        : TAccountPayoutMintHcuTrustedAppRecord,
       ...TRemainingAccounts,
     ]
   >;
@@ -258,6 +266,8 @@ export type SettleAsyncInput<
   TAccountDemoVaultProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays the batch authority funding. Anyone. */
   payer: TAccountPayer;
@@ -325,6 +335,16 @@ export type SettleAsyncInput<
   tokenProgram?: TAccountTokenProgram;
   /** System program used for account creation. */
   systemProgram?: TAccountSystemProgram;
+  /**
+   * The payout mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+   * application is not trusted.
+   */
+  payoutMintHcuBlockMeter?: TAccountPayoutMintHcuBlockMeter;
+  /**
+   * The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+   * application is trusted.
+   */
+  payoutMintHcuTrustedAppRecord?: TAccountPayoutMintHcuTrustedAppRecord;
   cleartextTotal: SettleInstructionDataArgs['cleartextTotal'];
   signatures: SettleInstructionDataArgs['signatures'];
   extraData: SettleInstructionDataArgs['extraData'];
@@ -367,6 +387,8 @@ export async function getSettleInstructionAsync<
   TAccountDemoVaultProgram extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput,
+  TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: SettleAsyncInput<
@@ -404,7 +426,9 @@ export async function getSettleInstructionAsync<
     TAccountConfidentialTokenProgram,
     TAccountDemoVaultProgram,
     TAccountTokenProgram,
-    TAccountSystemProgram
+    TAccountSystemProgram,
+    TAccountPayoutMintHcuBlockMeter,
+    TAccountPayoutMintHcuTrustedAppRecord
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -504,7 +528,15 @@ export async function getSettleInstructionAsync<
     >,
     ResolvedInstructionAccountMeta<TAccountDemoVaultProgram, InstructionAccountInputAddress<TAccountDemoVaultProgram>>,
     ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
+    >
   >
 > {
   // Program address.
@@ -678,6 +710,16 @@ export async function getSettleInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    payoutMintHcuBlockMeter: {
+      value: input.payoutMintHcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    payoutMintHcuTrustedAppRecord: {
+      value: input.payoutMintHcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -776,6 +818,8 @@ export async function getSettleInstructionAsync<
       getAccountMeta('demoVaultProgram', accounts.demoVaultProgram),
       getAccountMeta('tokenProgram', accounts.tokenProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
+      getAccountMeta('payoutMintHcuBlockMeter', accounts.payoutMintHcuBlockMeter),
+      getAccountMeta('payoutMintHcuTrustedAppRecord', accounts.payoutMintHcuTrustedAppRecord),
     ],
     data: getSettleInstructionDataEncoder().encode(args as SettleInstructionDataArgs),
     programAddress,
@@ -875,7 +919,15 @@ export async function getSettleInstructionAsync<
     >,
     ResolvedInstructionAccountMeta<TAccountDemoVaultProgram, InstructionAccountInputAddress<TAccountDemoVaultProgram>>,
     ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
+    >
   >);
 }
 
@@ -915,6 +967,8 @@ export type SettleInput<
   TAccountDemoVaultProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays the batch authority funding. Anyone. */
   payer: TAccountPayer;
@@ -982,6 +1036,16 @@ export type SettleInput<
   tokenProgram?: TAccountTokenProgram;
   /** System program used for account creation. */
   systemProgram?: TAccountSystemProgram;
+  /**
+   * The payout mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+   * application is not trusted.
+   */
+  payoutMintHcuBlockMeter?: TAccountPayoutMintHcuBlockMeter;
+  /**
+   * The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+   * application is trusted.
+   */
+  payoutMintHcuTrustedAppRecord?: TAccountPayoutMintHcuTrustedAppRecord;
   cleartextTotal: SettleInstructionDataArgs['cleartextTotal'];
   signatures: SettleInstructionDataArgs['signatures'];
   extraData: SettleInstructionDataArgs['extraData'];
@@ -1024,6 +1088,8 @@ export function getSettleInstruction<
   TAccountDemoVaultProgram extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput,
+  TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: SettleInput<
@@ -1061,7 +1127,9 @@ export function getSettleInstruction<
     TAccountConfidentialTokenProgram,
     TAccountDemoVaultProgram,
     TAccountTokenProgram,
-    TAccountSystemProgram
+    TAccountSystemProgram,
+    TAccountPayoutMintHcuBlockMeter,
+    TAccountPayoutMintHcuTrustedAppRecord
   >,
   config?: { programAddress?: TProgramAddress },
 ): SettleInstruction<
@@ -1157,7 +1225,15 @@ export function getSettleInstruction<
   >,
   ResolvedInstructionAccountMeta<TAccountDemoVaultProgram, InstructionAccountInputAddress<TAccountDemoVaultProgram>>,
   ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
-  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutMintHcuBlockMeter,
+    InstructionAccountInputAddress<TAccountPayoutMintHcuBlockMeter>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutMintHcuTrustedAppRecord,
+    InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
+  >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
@@ -1330,6 +1406,16 @@ export function getSettleInstruction<
       isSigner: false,
       isWritable: false,
     },
+    payoutMintHcuBlockMeter: {
+      value: input.payoutMintHcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    payoutMintHcuTrustedAppRecord: {
+      value: input.payoutMintHcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -1394,6 +1480,8 @@ export function getSettleInstruction<
       getAccountMeta('demoVaultProgram', accounts.demoVaultProgram),
       getAccountMeta('tokenProgram', accounts.tokenProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
+      getAccountMeta('payoutMintHcuBlockMeter', accounts.payoutMintHcuBlockMeter),
+      getAccountMeta('payoutMintHcuTrustedAppRecord', accounts.payoutMintHcuTrustedAppRecord),
     ],
     data: getSettleInstructionDataEncoder().encode(args as SettleInstructionDataArgs),
     programAddress,
@@ -1493,7 +1581,15 @@ export function getSettleInstruction<
     >,
     ResolvedInstructionAccountMeta<TAccountDemoVaultProgram, InstructionAccountInputAddress<TAccountDemoVaultProgram>>,
     ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
+    >
   >);
 }
 
@@ -1569,6 +1665,16 @@ export type ParsedSettleInstruction<
     tokenProgram: TAccountMetas[33];
     /** System program used for account creation. */
     systemProgram: TAccountMetas[34];
+    /**
+     * The payout mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+     * application is not trusted.
+     */
+    payoutMintHcuBlockMeter?: TAccountMetas[35] | undefined;
+    /**
+     * The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+     * application is trusted.
+     */
+    payoutMintHcuTrustedAppRecord?: TAccountMetas[36] | undefined;
   };
   data: SettleInstructionData;
 };
@@ -1576,10 +1682,10 @@ export type ParsedSettleInstruction<
 export function parseSettleInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedSettleInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 35) {
+  if (instruction.accounts.length < 37) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 35,
+      expectedAccountMetas: 37,
     });
   }
   let accountIndex = 0;
@@ -1587,6 +1693,10 @@ export function parseSettleInstruction<TProgram extends string, TAccountMetas ex
     const accountMeta = (instruction.accounts as TAccountMetas)[accountIndex]!;
     accountIndex += 1;
     return accountMeta;
+  };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS ? undefined : accountMeta;
   };
   return {
     programAddress: instruction.programAddress,
@@ -1626,6 +1736,8 @@ export function parseSettleInstruction<TProgram extends string, TAccountMetas ex
       demoVaultProgram: getNextAccount(),
       tokenProgram: getNextAccount(),
       systemProgram: getNextAccount(),
+      payoutMintHcuBlockMeter: getNextOptionalAccount(),
+      payoutMintHcuTrustedAppRecord: getNextOptionalAccount(),
     },
     data: getSettleInstructionDataDecoder().decode(instruction.data),
   };

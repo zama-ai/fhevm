@@ -16,7 +16,11 @@ import { base58 } from '@scure/base';
 import { bytesToHex, hexToBytes } from '@fhevm/sdk/base';
 import type { FhevmSolanaPublicDecryptClient } from '@fhevm/sdk/solana';
 import type { RelayerPublicDecryptOptions } from '@fhevm/sdk/types';
-import { getSettleInstructionAsync } from './internal/generated/confidentialBatcher/instructions/settle.js';
+import {
+  getSettleInstructionAsync,
+  type SettleAsyncInput,
+} from './internal/generated/confidentialBatcher/instructions/settle.js';
+import { tokenApp, withDenyRecords, type DenyListParameters } from './internal/denyRecords.js';
 import { fetchBatch } from './internal/generated/confidentialBatcher/accounts/batch.js';
 import { settleTotalFromCleartext } from './internal/cleartext.js';
 import { buildAndSignSettleTransaction } from './internal/settleMessage.js';
@@ -34,7 +38,8 @@ import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 const ZERO_HANDLE = new Uint8Array(32);
 
 /** What `settleBatch` needs beyond the certificate phase and the keeper signer. */
-export type SolanaVaultSettleOptions = {
+export type SolanaVaultSettleOptions = Pick<SettleAsyncInput, 'payoutMintHcuBlockMeter' | 'payoutMintHcuTrustedAppRecord'> &
+  DenyListParameters & {
   readonly rpc: Rpc<SolanaRpcApi>;
   readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   /** The batcher's demo topology; every settle account is derived from these. */
@@ -112,7 +117,7 @@ export async function settleBatch(
   }
 
   const transientStore = await prepareTransientStore({ payer: keeper, host: ZAMA_HOST_PROGRAM_ADDRESS });
-  const settleInstruction = await getSettleInstructionAsync({
+  const settleWithoutDenyRecords = await getSettleInstructionAsync({
     transientStore: transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     payer: keeper,
@@ -121,7 +126,14 @@ export async function settleBatch(
     signatures,
     extraData: hexToBytes(claim.extraData),
     authorityFundingLamports: options.authorityFundingLamports,
+    payoutMintHcuBlockMeter: options.payoutMintHcuBlockMeter,
+    payoutMintHcuTrustedAppRecord: options.payoutMintHcuTrustedAppRecord,
   });
+  const settleInstruction = await withDenyRecords(
+    settleWithoutDenyRecords,
+    options.denyListEnabled,
+    cleartextTotal === 0n ? [] : [tokenApp(roots.payoutConfidentialMint)],
+  );
 
   const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
   const transaction = await buildAndSignSettleTransaction({

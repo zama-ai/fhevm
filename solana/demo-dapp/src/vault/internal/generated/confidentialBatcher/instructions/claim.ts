@@ -76,6 +76,10 @@ export type ClaimInstruction<
   TAccountConfidentialTokenProgram extends string | AccountMeta<string> =
     'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL',
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
+  TAccountBatchHcuBlockMeter extends string | AccountMeta<string> = string,
+  TAccountBatchHcuTrustedAppRecord extends string | AccountMeta<string> = string,
+  TAccountPayoutMintHcuBlockMeter extends string | AccountMeta<string> = string,
+  TAccountPayoutMintHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -126,6 +130,18 @@ export type ClaimInstruction<
         ? ReadonlyAccount<TAccountConfidentialTokenProgram>
         : TAccountConfidentialTokenProgram,
       TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
+      TAccountBatchHcuBlockMeter extends string
+        ? WritableAccount<TAccountBatchHcuBlockMeter>
+        : TAccountBatchHcuBlockMeter,
+      TAccountBatchHcuTrustedAppRecord extends string
+        ? ReadonlyAccount<TAccountBatchHcuTrustedAppRecord>
+        : TAccountBatchHcuTrustedAppRecord,
+      TAccountPayoutMintHcuBlockMeter extends string
+        ? WritableAccount<TAccountPayoutMintHcuBlockMeter>
+        : TAccountPayoutMintHcuBlockMeter,
+      TAccountPayoutMintHcuTrustedAppRecord extends string
+        ? ReadonlyAccount<TAccountPayoutMintHcuTrustedAppRecord>
+        : TAccountPayoutMintHcuTrustedAppRecord,
       ...TRemainingAccounts,
     ]
   >;
@@ -173,6 +189,10 @@ export type ClaimAsyncInput<
   TAccountConfidentialTokenEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountConfidentialTokenProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays the claim encrypted store and transfer output rent. Anyone. */
   payer: TAccountPayer;
@@ -212,6 +232,26 @@ export type ClaimAsyncInput<
   confidentialTokenProgram?: TAccountConfidentialTokenProgram;
   /** System program used for account creation. */
   systemProgram?: TAccountSystemProgram;
+  /**
+   * The batch's HCU block meter for the batcher's own execution. Supplied while the block cap binds and the
+   * application is not trusted.
+   */
+  batchHcuBlockMeter?: TAccountBatchHcuBlockMeter;
+  /**
+   * The batch's HCU trust record for the batcher's own execution. Supplied while the block cap binds and the
+   * application is trusted.
+   */
+  batchHcuTrustedAppRecord?: TAccountBatchHcuTrustedAppRecord;
+  /**
+   * The payout mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+   * application is not trusted.
+   */
+  payoutMintHcuBlockMeter?: TAccountPayoutMintHcuBlockMeter;
+  /**
+   * The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+   * application is trusted.
+   */
+  payoutMintHcuTrustedAppRecord?: TAccountPayoutMintHcuTrustedAppRecord;
 };
 
 export async function getClaimInstructionAsync<
@@ -238,6 +278,10 @@ export async function getClaimInstructionAsync<
   TAccountConfidentialTokenEventAuthority extends InstructionAccountInput,
   TAccountConfidentialTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountBatchHcuBlockMeter extends InstructionAccountInput,
+  TAccountBatchHcuTrustedAppRecord extends InstructionAccountInput,
+  TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput,
+  TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: ClaimAsyncInput<
@@ -263,7 +307,11 @@ export async function getClaimInstructionAsync<
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
     TAccountConfidentialTokenProgram,
-    TAccountSystemProgram
+    TAccountSystemProgram,
+    TAccountBatchHcuBlockMeter,
+    TAccountBatchHcuTrustedAppRecord,
+    TAccountPayoutMintHcuBlockMeter,
+    TAccountPayoutMintHcuTrustedAppRecord
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -321,7 +369,23 @@ export async function getClaimInstructionAsync<
       TAccountConfidentialTokenProgram,
       InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
     >,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountBatchHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountBatchHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
+    >
   >
 > {
   // Program address.
@@ -435,6 +499,26 @@ export async function getClaimInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    batchHcuBlockMeter: {
+      value: input.batchHcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    batchHcuTrustedAppRecord: {
+      value: input.batchHcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    payoutMintHcuBlockMeter: {
+      value: input.payoutMintHcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    payoutMintHcuTrustedAppRecord: {
+      value: input.payoutMintHcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -503,6 +587,10 @@ export async function getClaimInstructionAsync<
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
       getAccountMeta('confidentialTokenProgram', accounts.confidentialTokenProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
+      getAccountMeta('batchHcuBlockMeter', accounts.batchHcuBlockMeter),
+      getAccountMeta('batchHcuTrustedAppRecord', accounts.batchHcuTrustedAppRecord),
+      getAccountMeta('payoutMintHcuBlockMeter', accounts.payoutMintHcuBlockMeter),
+      getAccountMeta('payoutMintHcuTrustedAppRecord', accounts.payoutMintHcuTrustedAppRecord),
     ],
     data: getClaimInstructionDataEncoder().encode({}),
     programAddress,
@@ -560,7 +648,23 @@ export async function getClaimInstructionAsync<
       TAccountConfidentialTokenProgram,
       InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
     >,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountBatchHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountBatchHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
+    >
   >);
 }
 
@@ -588,6 +692,10 @@ export type ClaimInput<
   TAccountConfidentialTokenEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountConfidentialTokenProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays the claim encrypted store and transfer output rent. Anyone. */
   payer: TAccountPayer;
@@ -627,6 +735,26 @@ export type ClaimInput<
   confidentialTokenProgram?: TAccountConfidentialTokenProgram;
   /** System program used for account creation. */
   systemProgram?: TAccountSystemProgram;
+  /**
+   * The batch's HCU block meter for the batcher's own execution. Supplied while the block cap binds and the
+   * application is not trusted.
+   */
+  batchHcuBlockMeter?: TAccountBatchHcuBlockMeter;
+  /**
+   * The batch's HCU trust record for the batcher's own execution. Supplied while the block cap binds and the
+   * application is trusted.
+   */
+  batchHcuTrustedAppRecord?: TAccountBatchHcuTrustedAppRecord;
+  /**
+   * The payout mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+   * application is not trusted.
+   */
+  payoutMintHcuBlockMeter?: TAccountPayoutMintHcuBlockMeter;
+  /**
+   * The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+   * application is trusted.
+   */
+  payoutMintHcuTrustedAppRecord?: TAccountPayoutMintHcuTrustedAppRecord;
 };
 
 export function getClaimInstruction<
@@ -653,6 +781,10 @@ export function getClaimInstruction<
   TAccountConfidentialTokenEventAuthority extends InstructionAccountInput,
   TAccountConfidentialTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountBatchHcuBlockMeter extends InstructionAccountInput,
+  TAccountBatchHcuTrustedAppRecord extends InstructionAccountInput,
+  TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput,
+  TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: ClaimInput<
@@ -678,7 +810,11 @@ export function getClaimInstruction<
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
     TAccountConfidentialTokenProgram,
-    TAccountSystemProgram
+    TAccountSystemProgram,
+    TAccountBatchHcuBlockMeter,
+    TAccountBatchHcuTrustedAppRecord,
+    TAccountPayoutMintHcuBlockMeter,
+    TAccountPayoutMintHcuTrustedAppRecord
   >,
   config?: { programAddress?: TProgramAddress },
 ): ClaimInstruction<
@@ -735,7 +871,23 @@ export function getClaimInstruction<
     TAccountConfidentialTokenProgram,
     InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
   >,
-  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+  ResolvedInstructionAccountMeta<
+    TAccountBatchHcuBlockMeter,
+    InstructionAccountInputAddress<TAccountBatchHcuBlockMeter>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBatchHcuTrustedAppRecord,
+    InstructionAccountInputAddress<TAccountBatchHcuTrustedAppRecord>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutMintHcuBlockMeter,
+    InstructionAccountInputAddress<TAccountPayoutMintHcuBlockMeter>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutMintHcuTrustedAppRecord,
+    InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
+  >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
@@ -848,6 +1000,26 @@ export function getClaimInstruction<
       isSigner: false,
       isWritable: false,
     },
+    batchHcuBlockMeter: {
+      value: input.batchHcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    batchHcuTrustedAppRecord: {
+      value: input.batchHcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    payoutMintHcuBlockMeter: {
+      value: input.payoutMintHcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    payoutMintHcuTrustedAppRecord: {
+      value: input.payoutMintHcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -889,6 +1061,10 @@ export function getClaimInstruction<
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
       getAccountMeta('confidentialTokenProgram', accounts.confidentialTokenProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
+      getAccountMeta('batchHcuBlockMeter', accounts.batchHcuBlockMeter),
+      getAccountMeta('batchHcuTrustedAppRecord', accounts.batchHcuTrustedAppRecord),
+      getAccountMeta('payoutMintHcuBlockMeter', accounts.payoutMintHcuBlockMeter),
+      getAccountMeta('payoutMintHcuTrustedAppRecord', accounts.payoutMintHcuTrustedAppRecord),
     ],
     data: getClaimInstructionDataEncoder().encode({}),
     programAddress,
@@ -946,7 +1122,23 @@ export function getClaimInstruction<
       TAccountConfidentialTokenProgram,
       InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
     >,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountBatchHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountBatchHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
+    >
   >);
 }
 
@@ -994,6 +1186,26 @@ export type ParsedClaimInstruction<
     confidentialTokenProgram: TAccountMetas[21];
     /** System program used for account creation. */
     systemProgram: TAccountMetas[22];
+    /**
+     * The batch's HCU block meter for the batcher's own execution. Supplied while the block cap binds and the
+     * application is not trusted.
+     */
+    batchHcuBlockMeter?: TAccountMetas[23] | undefined;
+    /**
+     * The batch's HCU trust record for the batcher's own execution. Supplied while the block cap binds and the
+     * application is trusted.
+     */
+    batchHcuTrustedAppRecord?: TAccountMetas[24] | undefined;
+    /**
+     * The payout mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+     * application is not trusted.
+     */
+    payoutMintHcuBlockMeter?: TAccountMetas[25] | undefined;
+    /**
+     * The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+     * application is trusted.
+     */
+    payoutMintHcuTrustedAppRecord?: TAccountMetas[26] | undefined;
   };
   data: ClaimInstructionData;
 };
@@ -1001,10 +1213,10 @@ export type ParsedClaimInstruction<
 export function parseClaimInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedClaimInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 23) {
+  if (instruction.accounts.length < 27) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 23,
+      expectedAccountMetas: 27,
     });
   }
   let accountIndex = 0;
@@ -1012,6 +1224,10 @@ export function parseClaimInstruction<TProgram extends string, TAccountMetas ext
     const accountMeta = (instruction.accounts as TAccountMetas)[accountIndex]!;
     accountIndex += 1;
     return accountMeta;
+  };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS ? undefined : accountMeta;
   };
   return {
     programAddress: instruction.programAddress,
@@ -1039,6 +1255,10 @@ export function parseClaimInstruction<TProgram extends string, TAccountMetas ext
       confidentialTokenEventAuthority: getNextAccount(),
       confidentialTokenProgram: getNextAccount(),
       systemProgram: getNextAccount(),
+      batchHcuBlockMeter: getNextOptionalAccount(),
+      batchHcuTrustedAppRecord: getNextOptionalAccount(),
+      payoutMintHcuBlockMeter: getNextOptionalAccount(),
+      payoutMintHcuTrustedAppRecord: getNextOptionalAccount(),
     },
     data: getClaimInstructionDataDecoder().decode(instruction.data),
   };

@@ -100,11 +100,29 @@ pub struct OpenBatch<'info> {
     pub token_program: Program<'info, Token>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
+    /// The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+    /// application is not trusted.
+    /// CHECK: validated by ZamaHost.
+    #[account(mut)]
+    pub join_mint_hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+    /// application is trusted.
+    /// CHECK: validated by ZamaHost.
+    pub join_mint_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+    /// The payout mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+    /// application is not trusted.
+    /// CHECK: validated by ZamaHost.
+    #[account(mut)]
+    pub payout_mint_hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+    /// application is trusted.
+    /// CHECK: validated by ZamaHost.
+    pub payout_mint_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
 /// Creates the batch and both of its confidential token accounts.
-pub fn open_batch(
-    ctx: Context<OpenBatch>,
+pub fn open_batch<'info>(
+    ctx: Context<'info, OpenBatch<'info>>,
     index: u64,
     authority_funding_lamports: u64,
 ) -> Result<()> {
@@ -160,42 +178,57 @@ pub fn open_batch(
     let batch_key = ctx.accounts.batch.key();
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.bumps.batch_authority);
     let authority_seeds = authority.seeds();
-    for (mint, token_account, balance_store) in [
+    let [join_deny_records, payout_deny_records] =
+        split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [1, 1])?;
+    for (mint, token_account, balance_store, records, hcu_block_meter, hcu_trusted_app_record) in [
         (
             &ctx.accounts.join_confidential_mint,
             &ctx.accounts.batch_join_token_account,
             &ctx.accounts.batch_join_balance_store,
+            join_deny_records,
+            &ctx.accounts.join_mint_hcu_block_meter,
+            &ctx.accounts.join_mint_hcu_trusted_app_record,
         ),
         (
             &ctx.accounts.payout_confidential_mint,
             &ctx.accounts.batch_payout_token_account,
             &ctx.accounts.batch_payout_balance_store,
+            payout_deny_records,
+            &ctx.accounts.payout_mint_hcu_block_meter,
+            &ctx.accounts.payout_mint_hcu_trusted_app_record,
         ),
     ] {
-        ct::cpi::initialize_token_account(CpiContext::new_with_signer(
-            ctx.accounts.confidential_token_program.key(),
-            ct::cpi::accounts::InitializeTokenAccount {
-                payer: ctx.accounts.batch_authority.to_account_info(),
-                owner: ctx.accounts.batch_authority.to_account_info(),
-                mint: mint.to_account_info(),
-                token_account: token_account.to_account_info(),
-                balance_encrypted_store: balance_store.to_account_info(),
-                zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-                transient_store: ctx.accounts.transient_store.to_account_info(),
-                instructions: ctx.accounts.instructions.to_account_info(),
-                zama_program: ctx.accounts.zama_program.to_account_info(),
-                host_config: ctx.accounts.host_config.to_account_info(),
-                system_program: ctx.accounts.system_program.to_account_info(),
-                hcu_block_meter: None,
-                hcu_trusted_app_record: None,
-                event_authority: ctx
-                    .accounts
-                    .confidential_token_event_authority
-                    .to_account_info(),
-                program: ctx.accounts.confidential_token_program.to_account_info(),
-            },
-            &[&authority_seeds],
-        ))?;
+        ct::cpi::initialize_token_account(
+            CpiContext::new_with_signer(
+                ctx.accounts.confidential_token_program.key(),
+                ct::cpi::accounts::InitializeTokenAccount {
+                    payer: ctx.accounts.batch_authority.to_account_info(),
+                    owner: ctx.accounts.batch_authority.to_account_info(),
+                    mint: mint.to_account_info(),
+                    token_account: token_account.to_account_info(),
+                    balance_encrypted_store: balance_store.to_account_info(),
+                    zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                    transient_store: ctx.accounts.transient_store.to_account_info(),
+                    instructions: ctx.accounts.instructions.to_account_info(),
+                    zama_program: ctx.accounts.zama_program.to_account_info(),
+                    host_config: ctx.accounts.host_config.to_account_info(),
+                    system_program: ctx.accounts.system_program.to_account_info(),
+                    hcu_block_meter: hcu_block_meter
+                        .as_ref()
+                        .map(|account| account.to_account_info()),
+                    hcu_trusted_app_record: hcu_trusted_app_record
+                        .as_ref()
+                        .map(|account| account.to_account_info()),
+                    event_authority: ctx
+                        .accounts
+                        .confidential_token_event_authority
+                        .to_account_info(),
+                    program: ctx.accounts.confidential_token_program.to_account_info(),
+                },
+                &[&authority_seeds],
+            )
+            .with_remaining_accounts(records.to_vec()),
+        )?;
     }
 
     let opened_slot = Clock::get()?.slot;

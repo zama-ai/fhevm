@@ -8,10 +8,17 @@ import {
   getCreateLookupTableInstruction,
 } from '@solana-program/address-lookup-table';
 import { getExtendLookupTableInstructions } from './internal/addressLookupTable.js';
+import { tokenApp, withDenyRecords, type DenyListParameters } from './internal/denyRecords.js';
 
-export type SolanaVaultOpenBatchParameters = {
-  /** Accounts, `index` + `authorityFundingLamports` for the batcher `open_batch` instruction. */
-  readonly openBatch: OpenBatchAsyncInput;
+export type SolanaVaultOpenBatchParameters = DenyListParameters & {
+  /**
+   * Accounts, `index` + `authorityFundingLamports` for the batcher `open_batch` instruction. The
+   * mints are plain addresses: the deny records are derived from them.
+   */
+  readonly openBatch: OpenBatchAsyncInput & {
+    readonly joinConfidentialMint: Address;
+    readonly payoutConfidentialMint: Address;
+  };
   /**
    * A recent, finalized slot used to derive the per-batch settle lookup table address. The table's
    * entries become usable from the NEXT slot, so a table created here is always usable by the later
@@ -47,7 +54,11 @@ export type SolanaVaultOpenBatchResult = {
  */
 export async function openBatch(parameters: SolanaVaultOpenBatchParameters): Promise<SolanaVaultOpenBatchResult> {
   const payer = parameters.openBatch.payer;
-  const openBatchInstruction = await getOpenBatchInstructionAsync(parameters.openBatch);
+  const openBatchInstruction = await withDenyRecords(
+    await getOpenBatchInstructionAsync(parameters.openBatch),
+    parameters.denyListEnabled,
+    [tokenApp(parameters.openBatch.joinConfidentialMint), tokenApp(parameters.openBatch.payoutConfidentialMint)],
+  );
   const lookupTablePda = await findAddressLookupTablePda({ authority: payer.address, recentSlot: parameters.recentSlot });
   const lookupTableAddress = lookupTablePda[0];
   const createInstruction = getCreateLookupTableInstruction({

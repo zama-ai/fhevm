@@ -35,7 +35,10 @@ use mollusk_svm::{
     Mollusk,
 };
 use solana_sdk::{
-    account::Account, instruction::Instruction, program_error::ProgramError, pubkey::Pubkey,
+    account::Account,
+    instruction::{AccountMeta, Instruction},
+    program_error::ProgramError,
+    pubkey::Pubkey,
     sysvar::SysvarId,
 };
 use std::collections::HashMap;
@@ -49,10 +52,10 @@ use zama_solana_test_kit::signing::{
 use zama_solana_test_kit::{
     anchor_error_check, anchor_ix, coprocessor_signer_address, cost_snapshot,
     deny_scope_record_account, encrypted_store_account, ensure_system_accounts, event_authority,
-    handle_for_chain, host_config_account, kms_context_account, new_encrypted_store,
-    paused_host_config, read_account, read_spl_amount, readonly, serialized_account,
-    spl_mint_account, spl_token_account, system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
-    DECIMALS,
+    handle_for_chain, hcu_trusted_app_record_account, host_config_account, kms_context_account,
+    new_encrypted_store, paused_host_config, read_account, read_spl_amount, readonly,
+    serialized_account, spl_mint_account, spl_token_account, system_account, Ctx, HostConfigParams,
+    BALANCE_FHE_TYPE, DECIMALS,
 };
 
 const KMS_CONTEXT_ID: [u8; 32] = {
@@ -75,7 +78,7 @@ fn mollusk() -> Mollusk {
     mollusk_with_host(zama_solana_test_kit::cleartext::HOST_PROGRAM)
 }
 
-/// The batcher stack over the production host build, for compute-cost snapshots.
+/// The batcher stack over the production host build.
 fn production_mollusk() -> Mollusk {
     mollusk_with_host("zama_host")
 }
@@ -94,6 +97,10 @@ fn mollusk_with_host(host_program: &str) -> Mollusk {
 }
 
 fn batcher_error(error: batcher::BatcherError) -> Check<'static> {
+    anchor_error_check(error as u32)
+}
+
+fn host_error(error: host::errors::ZamaHostError) -> Check<'static> {
     anchor_error_check(error as u32)
 }
 
@@ -307,7 +314,41 @@ impl BatchKeys {
     fn join_record(&self, user: Pubkey) -> Pubkey {
         batcher::join_record_address(self.batch, user).0
     }
+
+    /// The application the batcher's own executions for this batch run as.
+    fn app(&self) -> host::AppScope {
+        batch_app(self.batch)
+    }
 }
+
+fn batch_app(batch: Pubkey) -> host::AppScope {
+    host::AppScope {
+        program: batcher::id(),
+        scope: batch,
+    }
+}
+
+/// The host levers a fixture turns on. Its instruction builders then carry what an honest client
+/// supplies: the deny records of every execution while the deny list is on, and each
+/// application's block meter and trust record while the block cap binds.
+#[derive(Clone, Copy, Default)]
+struct HostLevers {
+    deny_list: bool,
+    block_cap: BlockCap,
+}
+
+#[derive(Clone, Copy, Default, PartialEq)]
+enum BlockCap {
+    #[default]
+    Unrestricted,
+    /// [`BINDING_BLOCK_CAP`], with every application the batcher runs as trusted.
+    Trusted,
+    /// [`BINDING_BLOCK_CAP`], with every application metered.
+    Metered,
+}
+
+/// A finite per-application block cap, above what one test spends in one slot.
+const BINDING_BLOCK_CAP: u64 = 100_000_000;
 
 struct BatcherFixture {
     direction: batcher::BatchDirection,
@@ -326,6 +367,7 @@ struct BatcherFixture {
     kms_context: Pubkey,
     alice: UserKeys,
     bob: UserKeys,
+    levers: HostLevers,
 }
 
 impl BatcherFixture {
@@ -407,6 +449,7 @@ impl BatcherFixture {
             kms_context: host::kms_context_address(KMS_CONTEXT_ID).0,
             alice,
             bob,
+            levers: HostLevers::default(),
         }
     }
 
@@ -473,7 +516,55 @@ impl BatcherFixture {
                 (&self.underlying_cmint, &self.shares_cmint),
                 20,
             ),
+            levers: self.levers,
         }
+    }
+
+    /// The application the join mint's token executions run as.
+    fn join_app(&self) -> host::AppScope {
+        token::token_app(self.join_mint().mint)
+    }
+
+    /// The application the payout mint's token executions run as.
+    fn payout_app(&self) -> host::AppScope {
+        token::token_app(self.payout_mint().mint)
+    }
+
+    /// The applications this fixture's first two batches run as.
+    fn apps(&self) -> [host::AppScope; 4] {
+        [
+            self.join_app(),
+            self.payout_app(),
+            batch_app(batcher::batch_address(self.batcher, 0).0),
+            batch_app(batcher::batch_address(self.batcher, 1).0),
+        ]
+    }
+
+    fn hcu_block_meter(&self, app: host::AppScope) -> Option<Pubkey> {
+        (self.levers.block_cap != BlockCap::Unrestricted)
+            .then(|| host::hcu_block_meter_address(app).0)
+    }
+
+    fn hcu_trusted_app_record(&self, app: host::AppScope) -> Option<Pubkey> {
+        (self.levers.block_cap != BlockCap::Unrestricted)
+            .then(|| host::hcu_trusted_app_address(app).0)
+    }
+
+    /// Appends, while the deny list is on, the deny records of each execution in order.
+    fn with_deny_records(
+        &self,
+        mut ix: Instruction,
+        executions: &[&[host::AppScope]],
+    ) -> Instruction {
+        if self.levers.deny_list {
+            ix.accounts.extend(
+                executions
+                    .iter()
+                    .flat_map(|apps| apps.iter())
+                    .map(|app| readonly(host::deny_scope_address(*app).0)),
+            );
+        }
+        ix
     }
 
     fn host_config_account(&self) -> Account {
@@ -482,6 +573,11 @@ impl BatcherFixture {
             // This suite mints `fromExternal` attestations, so it registers the kit's signing key
             // explicitly; the default signer set trusts nobody.
             coprocessor_signers: vec![coprocessor_signer_address()],
+            grant_deny_list_enabled: self.levers.deny_list,
+            hcu_block_cap_per_app: match self.levers.block_cap {
+                BlockCap::Unrestricted => u64::MAX,
+                BlockCap::Trusted | BlockCap::Metered => BINDING_BLOCK_CAP,
+            },
             ..HostConfigParams::new(self.payer)
         })
         .1
@@ -609,6 +705,29 @@ impl BatcherFixture {
                 accounts.insert(keys.balance_store, encrypted_store_account(&balance));
             }
         }
+        if self.levers.deny_list {
+            // Denying an unrelated application must not affect the batcher.
+            let unrelated = host::AppScope {
+                program: Pubkey::new_unique(),
+                scope: Pubkey::new_unique(),
+            };
+            for app in self.apps() {
+                let (record, account) = deny_scope_record_account(app, false);
+                accounts.insert(record, account);
+            }
+            let (record, account) = deny_scope_record_account(unrelated, true);
+            accounts.insert(record, account);
+        }
+        if self.levers.block_cap != BlockCap::Unrestricted {
+            for app in self.apps() {
+                accounts.insert(host::hcu_block_meter_address(app).0, system_account(0));
+                let (record, account) = match self.levers.block_cap {
+                    BlockCap::Trusted => hcu_trusted_app_record_account(app, true),
+                    _ => (host::hcu_trusted_app_address(app).0, system_account(0)),
+                };
+                accounts.insert(record, account);
+            }
+        }
         accounts
     }
 
@@ -665,7 +784,7 @@ fn open_batch_ix(
     keys: &BatchKeys,
     previous_batch: Option<Pubkey>,
 ) -> Instruction {
-    anchor_ix(
+    let ix = anchor_ix(
         batcher::id(),
         batcher::accounts::OpenBatch {
             transient_store: host::transient_store_address(fixture.payer).0,
@@ -692,12 +811,18 @@ fn open_batch_ix(
             confidential_token_program: token::id(),
             token_program: spl_token::id(),
             system_program: system_program::ID,
+            join_mint_hcu_block_meter: fixture.hcu_block_meter(fixture.join_app()),
+            join_mint_hcu_trusted_app_record: fixture.hcu_trusted_app_record(fixture.join_app()),
+            payout_mint_hcu_block_meter: fixture.hcu_block_meter(fixture.payout_app()),
+            payout_mint_hcu_trusted_app_record: fixture
+                .hcu_trusted_app_record(fixture.payout_app()),
         },
         batcher::instruction::OpenBatch {
             index: keys.index,
             authority_funding_lamports: AUTHORITY_FUNDING,
         },
-    )
+    );
+    fixture.with_deny_records(ix, &[&[fixture.join_app()], &[fixture.payout_app()]])
 }
 
 fn owner_ata(owner: Pubkey, underlying_mint: Pubkey) -> Pubkey {
@@ -711,7 +836,7 @@ fn join_ix(
     amount_attestation: host::CoprocessorInputAttestation,
 ) -> Instruction {
     let user_join = fixture.user_join(user);
-    anchor_ix(
+    let ix = anchor_ix(
         batcher::id(),
         batcher::accounts::Join {
             user: user.user,
@@ -740,14 +865,19 @@ fn join_ix(
             confidential_token_event_authority: event_authority(token::id()),
             confidential_token_program: token::id(),
             system_program: system_program::ID,
+            join_mint_hcu_block_meter: fixture.hcu_block_meter(fixture.join_app()),
+            join_mint_hcu_trusted_app_record: fixture.hcu_trusted_app_record(fixture.join_app()),
+            batch_hcu_block_meter: fixture.hcu_block_meter(keys.app()),
+            batch_hcu_trusted_app_record: fixture.hcu_trusted_app_record(keys.app()),
         },
         batcher::instruction::Join { amount_attestation },
-    )
+    );
+    fixture.with_deny_records(ix, &[&[fixture.join_app()], &[keys.app()]])
 }
 
 fn quit_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instruction {
     let user_join = fixture.user_join(user);
-    anchor_ix(
+    let ix = anchor_ix(
         batcher::id(),
         batcher::accounts::Quit {
             transient_store: host::transient_store_address(user.user).0,
@@ -776,13 +906,18 @@ fn quit_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instr
             confidential_token_event_authority: event_authority(token::id()),
             confidential_token_program: token::id(),
             system_program: system_program::ID,
+            join_mint_hcu_block_meter: fixture.hcu_block_meter(fixture.join_app()),
+            join_mint_hcu_trusted_app_record: fixture.hcu_trusted_app_record(fixture.join_app()),
+            batch_hcu_block_meter: fixture.hcu_block_meter(keys.app()),
+            batch_hcu_trusted_app_record: fixture.hcu_trusted_app_record(keys.app()),
         },
         batcher::instruction::Quit {},
-    )
+    );
+    fixture.with_deny_records(ix, &[&[fixture.join_app(), keys.app()], &[keys.app()]])
 }
 
 fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
-    anchor_ix(
+    let ix = anchor_ix(
         batcher::id(),
         batcher::accounts::Dispatch {
             transient_store: host::transient_store_address(fixture.payer).0,
@@ -808,13 +943,16 @@ fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
             confidential_token_event_authority: event_authority(token::id()),
             confidential_token_program: token::id(),
             system_program: system_program::ID,
+            join_mint_hcu_block_meter: fixture.hcu_block_meter(fixture.join_app()),
+            join_mint_hcu_trusted_app_record: fixture.hcu_trusted_app_record(fixture.join_app()),
         },
         batcher::instruction::Dispatch {},
-    )
+    );
+    fixture.with_deny_records(ix, &[&[fixture.join_app()]])
 }
 
 fn cancel_dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
-    anchor_ix(
+    let ix = anchor_ix(
         batcher::id(),
         batcher::accounts::CancelDispatch {
             transient_store: host::transient_store_address(fixture.payer).0,
@@ -835,11 +973,14 @@ fn cancel_dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction
             confidential_token_event_authority: event_authority(token::id()),
             confidential_token_program: token::id(),
             system_program: system_program::ID,
+            join_mint_hcu_block_meter: fixture.hcu_block_meter(fixture.join_app()),
+            join_mint_hcu_trusted_app_record: fixture.hcu_trusted_app_record(fixture.join_app()),
         },
         batcher::instruction::CancelDispatch {
             authority_funding_lamports: AUTHORITY_FUNDING,
         },
-    )
+    );
+    fixture.with_deny_records(ix, &[&[fixture.join_app()]])
 }
 
 fn settle_ix(
@@ -850,7 +991,7 @@ fn settle_ix(
     extra_data: Vec<u8>,
     pending_burn: Pubkey,
 ) -> Instruction {
-    anchor_ix(
+    let ix = anchor_ix(
         batcher::id(),
         batcher::accounts::Settle {
             transient_store: host::transient_store_address(fixture.payer).0,
@@ -888,6 +1029,9 @@ fn settle_ix(
             demo_vault_program: vault::id(),
             token_program: spl_token::id(),
             system_program: system_program::ID,
+            payout_mint_hcu_block_meter: fixture.hcu_block_meter(fixture.payout_app()),
+            payout_mint_hcu_trusted_app_record: fixture
+                .hcu_trusted_app_record(fixture.payout_app()),
         },
         batcher::instruction::Settle {
             cleartext_total,
@@ -895,12 +1039,15 @@ fn settle_ix(
             extra_data,
             authority_funding_lamports: AUTHORITY_FUNDING,
         },
-    )
+    );
+    let payout = [fixture.payout_app()];
+    let wrap: &[host::AppScope] = if cleartext_total == 0 { &[] } else { &payout };
+    fixture.with_deny_records(ix, &[wrap])
 }
 
 fn claim_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instruction {
     let user_payout = fixture.user_payout(user);
-    anchor_ix(
+    let ix = anchor_ix(
         batcher::id(),
         batcher::accounts::Claim {
             payer: fixture.payer,
@@ -929,9 +1076,15 @@ fn claim_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Inst
             confidential_token_event_authority: event_authority(token::id()),
             confidential_token_program: token::id(),
             system_program: system_program::ID,
+            batch_hcu_block_meter: fixture.hcu_block_meter(keys.app()),
+            batch_hcu_trusted_app_record: fixture.hcu_trusted_app_record(keys.app()),
+            payout_mint_hcu_block_meter: fixture.hcu_block_meter(fixture.payout_app()),
+            payout_mint_hcu_trusted_app_record: fixture
+                .hcu_trusted_app_record(fixture.payout_app()),
         },
         batcher::instruction::Claim {},
-    )
+    );
+    fixture.with_deny_records(ix, &[&[keys.app()], &[fixture.payout_app()]])
 }
 
 fn reclaim_batch_authority_ix(
@@ -1055,6 +1208,13 @@ fn run_join(
     let attestation = amount_attestation_for(amount_handle, amount, user.user, token::id());
     let ix = join_ix(fixture, keys, user, attestation);
     let result = check_batcher_instruction(context, &ix, &[Check::success()]);
+    assert_eq!(check_fhe_cpis(context, &result), 2);
+}
+
+/// Quits one user's join, checking the refund's and the reset's executions.
+fn run_quit(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) {
+    let result =
+        check_batcher_instruction(context, &quit_ix(fixture, keys, user), &[Check::success()]);
     assert_eq!(check_fhe_cpis(context, &result), 2);
 }
 
@@ -1532,22 +1692,6 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         999_700
     );
 
-    // Cancellation re-allows the batch authority on its restored balance, so under the host's
-    // deny policy it carries the join mint's deny witness like every other token execution.
-    let (deny_record, deny_record_account) =
-        deny_scope_record_account(token::token_app(fixture.join_mint().mint), false);
-    {
-        let mut store = context.account_store.borrow_mut();
-        store.insert(deny_record, deny_record_account);
-        let account = store
-            .get_mut(&fixture.host_config)
-            .expect("host config exists");
-        let mut config = host::HostConfig::try_deserialize(&mut account.data.as_slice())
-            .expect("host config deserializes");
-        config.grant_deny_list_enabled = true;
-        account.data = serialized_account(config);
-    }
-
     // A public watcher cannot front-run settlement by forcing the terminal refund path. Only the
     // join mint's wrapper authority may cancel the dispatch.
     let stranger = Pubkey::new_unique();
@@ -1556,7 +1700,6 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         .borrow_mut()
         .insert(stranger, system_account(5_000_000_000));
     let mut unauthorized_cancel = cancel_dispatch_ix(&fixture, &keys);
-    unauthorized_cancel.accounts.push(readonly(deny_record));
     unauthorized_cancel.accounts[0].pubkey = stranger;
     let transient_store = unauthorized_cancel
         .accounts
@@ -1588,8 +1731,7 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         999_700
     );
 
-    let mut cancel = cancel_dispatch_ix(&fixture, &keys);
-    cancel.accounts.push(readonly(deny_record));
+    let cancel = cancel_dispatch_ix(&fixture, &keys);
     let result = check_batcher_instruction(&context, &cancel, &[Check::success()]);
     assert_eq!(check_fhe_cpis(&context, &result), 1);
     let batch = read_batch(&context, keys.batch);
@@ -1643,19 +1785,6 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         ),
         &[batcher_error(batcher::BatcherError::BatchNotPending)],
     );
-
-    // The assertion above covers cancellation under deny policy. Restore the fixture policy before
-    // `quit`, whose transfer legitimately grants the user and is tested separately.
-    {
-        let mut store = context.account_store.borrow_mut();
-        let account = store
-            .get_mut(&fixture.host_config)
-            .expect("host config exists");
-        let mut config = host::HostConfig::try_deserialize(&mut account.data.as_slice())
-            .expect("host config deserializes");
-        config.grant_deny_list_enabled = false;
-        account.data = serialized_account(config);
-    }
 
     // Refunding is final for the authority's spending too: its funding goes back to the operator
     // before the refunds, which pay their own rent. The record still authorizes the quit, so it
@@ -2856,6 +2985,264 @@ fn cost_snapshot_batcher_redeem_lifecycle() {
     let fixture = BatcherFixture::fixed(batcher::BatchDirection::Redeem, 0x51);
     let context = production_mollusk().with_context(redeem_accounts(&fixture, 1_000, 1_000, 1_000));
     snapshot_lifecycle(&fixture, &context, "redeem_");
+}
+
+// ---------------------------------------------------------------------------
+// Host levers: the deny list and the per-application block cap
+// ---------------------------------------------------------------------------
+
+/// Runs every batcher flow on the production host under `levers`, each instruction carrying the
+/// witnesses an honest client supplies. Batch 0 takes two joins and a quit, then dispatches,
+/// settles and pays a claim. Batch 1 takes a join, dispatches, is canceled and refunds it through
+/// quit.
+fn run_every_flow(levers: HostLevers) -> (BatcherFixture, Ctx) {
+    let fixture = BatcherFixture {
+        levers,
+        ..BatcherFixture::new(batcher::BatchDirection::Deposit)
+    };
+    let context = production_mollusk().with_context(fixture.accounts(0, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.bob,
+        handle_for_chain(42, BALANCE_FHE_TYPE),
+        500,
+    );
+    run_quit(&context, &fixture, &keys, &fixture.bob);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    run_settle(&context, &fixture, &keys, burned_handle, 300);
+    run_claim(&context, &fixture, &keys, &fixture.alice);
+    assert!(read_join_record(&context, keys.join_record(fixture.alice.user)).claimed);
+
+    let next = BatchKeys::new(&fixture, 1);
+    ensure_open_batch_accounts(&context, &fixture, &next);
+    check_batcher_instruction(
+        &context,
+        &open_batch_ix(&fixture, &next, Some(keys.batch)),
+        &[Check::success()],
+    );
+    run_join(
+        &context,
+        &fixture,
+        &next,
+        &fixture.alice,
+        handle_for_chain(43, BALANCE_FHE_TYPE),
+        200,
+    );
+    run_dispatch(&context, &fixture, &next);
+    let result = check_batcher_instruction(
+        &context,
+        &cancel_dispatch_ix(&fixture, &next),
+        &[Check::success()],
+    );
+    assert_eq!(check_fhe_cpis(&context, &result), 1);
+    run_quit(&context, &fixture, &next, &fixture.alice);
+    (fixture, context)
+}
+
+fn read_hcu_block_meter(context: &Ctx, app: host::AppScope) -> Option<host::HcuBlockMeter> {
+    let store = context.account_store.borrow();
+    let account = store.get(&host::hcu_block_meter_address(app).0)?;
+    (account.owner == host::id()).then(|| {
+        host::HcuBlockMeter::try_deserialize(&mut account.data.as_slice())
+            .expect("block meter deserializes")
+    })
+}
+
+/// Denying one application never stops another: with the deny list on and an unrelated
+/// application denied, every batcher flow succeeds, quit and claim included.
+#[test]
+fn mollusk_every_flow_runs_with_the_deny_list_on() {
+    run_every_flow(HostLevers {
+        deny_list: true,
+        ..HostLevers::default()
+    });
+}
+
+/// Under a binding block cap, trusted applications bypass their meters.
+#[test]
+fn mollusk_every_flow_runs_under_a_binding_block_cap_when_trusted() {
+    let (fixture, context) = run_every_flow(HostLevers {
+        block_cap: BlockCap::Trusted,
+        ..HostLevers::default()
+    });
+    for app in fixture.apps() {
+        assert!(read_hcu_block_meter(&context, app).is_none());
+    }
+}
+
+/// Under a binding block cap, each metered application pays into its own meter.
+#[test]
+fn mollusk_every_flow_runs_under_a_binding_block_cap_when_metered() {
+    let (fixture, context) = run_every_flow(HostLevers {
+        block_cap: BlockCap::Metered,
+        ..HostLevers::default()
+    });
+    for app in fixture.apps() {
+        let meter = read_hcu_block_meter(&context, app).expect("the execution created the meter");
+        assert_eq!((meter.program, meter.scope), (app.program, app.scope));
+        assert!(meter.used_hcu > 0);
+    }
+}
+
+/// Checks that `exit`, an exit whose own execution runs as the batch, fails with the error of the
+/// layer that checks a missing or wrong witness, and that denying the batch itself still stops it.
+/// It leaves the batch allowed again.
+fn assert_exit_rejects_missing_or_wrong_witnesses(
+    context: &Ctx,
+    fixture: &BatcherFixture,
+    keys: &BatchKeys,
+    exit: &Instruction,
+) {
+    let replace = |from: Pubkey, to: AccountMeta| {
+        let mut ix = exit.clone();
+        let meta = ix
+            .accounts
+            .iter_mut()
+            .rev()
+            .find(|meta| meta.pubkey == from)
+            .expect("the exit carries the witness");
+        *meta = to;
+        ix
+    };
+
+    let mut missing_deny_record = exit.clone();
+    missing_deny_record.accounts.pop();
+    check_batcher_instruction(
+        context,
+        &missing_deny_record,
+        &[batcher_error(batcher::BatcherError::DenyRecordsMismatch)],
+    );
+    let wrong_deny_record = replace(
+        host::deny_scope_address(keys.app()).0,
+        readonly(host::deny_scope_address(fixture.join_app()).0),
+    );
+    check_batcher_instruction(
+        context,
+        &wrong_deny_record,
+        &[host_error(host::errors::ZamaHostError::DenyRecordMissing)],
+    );
+    // Anchor encodes an absent optional account as the program id.
+    let batch_meter = host::hcu_block_meter_address(keys.app()).0;
+    let missing_meter = replace(batch_meter, readonly(batcher::id()));
+    check_batcher_instruction(
+        context,
+        &missing_meter,
+        &[host_error(
+            host::errors::ZamaHostError::HcuBlockMeterMissing,
+        )],
+    );
+    let wrong_meter = replace(
+        batch_meter,
+        AccountMeta::new(host::hcu_block_meter_address(fixture.join_app()).0, false),
+    );
+    check_batcher_instruction(
+        context,
+        &wrong_meter,
+        &[host_error(
+            host::errors::ZamaHostError::HcuBlockMeterMismatch,
+        )],
+    );
+
+    let (record, denied) = deny_scope_record_account(keys.app(), true);
+    context.account_store.borrow_mut().insert(record, denied);
+    check_batcher_instruction(
+        context,
+        exit,
+        &[host_error(host::errors::ZamaHostError::ScopeDenied)],
+    );
+    let (record, allowed) = deny_scope_record_account(keys.app(), false);
+    context.account_store.borrow_mut().insert(record, allowed);
+}
+
+/// A batch with Alice joined, under the deny list and a metered binding cap.
+fn witnessed_batch_with_alice() -> (BatcherFixture, Ctx, BatchKeys) {
+    let fixture = BatcherFixture {
+        levers: HostLevers {
+            deny_list: true,
+            block_cap: BlockCap::Metered,
+        },
+        ..BatcherFixture::new(batcher::BatchDirection::Deposit)
+    };
+    let context = production_mollusk().with_context(fixture.accounts(0, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+    (fixture, context, keys)
+}
+
+/// A zero-total settle cancels before the wrap, so under the deny list it takes no deny records.
+#[test]
+fn mollusk_zero_total_settle_takes_no_deny_records() {
+    let fixture = BatcherFixture {
+        levers: HostLevers {
+            deny_list: true,
+            ..HostLevers::default()
+        },
+        ..BatcherFixture::new(batcher::BatchDirection::Deposit)
+    };
+    let context = production_mollusk().with_context(fixture.accounts(0, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 0);
+    let pending_burn = keys.pending_burn(fixture.join_mint().mint);
+    let mut extra_record = settle_ix(&fixture, &keys, 0, signatures, extra_data, pending_burn);
+    extra_record
+        .accounts
+        .push(readonly(host::deny_scope_address(fixture.payout_app()).0));
+    check_batcher_instruction(
+        &context,
+        &extra_record,
+        &[batcher_error(batcher::BatcherError::DenyRecordsMismatch)],
+    );
+
+    run_settle(&context, &fixture, &keys, burned_handle, 0);
+    assert_eq!(
+        read_batch(&context, keys.batch).status,
+        batcher::BatchStatus::Canceled
+    );
+}
+
+#[test]
+fn mollusk_quit_rejects_missing_or_wrong_witnesses() {
+    let (fixture, context, keys) = witnessed_batch_with_alice();
+    let quit = quit_ix(&fixture, &keys, &fixture.alice);
+    assert_exit_rejects_missing_or_wrong_witnesses(&context, &fixture, &keys, &quit);
+    run_quit(&context, &fixture, &keys, &fixture.alice);
+}
+
+#[test]
+fn mollusk_claim_rejects_missing_or_wrong_witnesses() {
+    let (fixture, context, keys) = witnessed_batch_with_alice();
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    run_settle(&context, &fixture, &keys, burned_handle, 300);
+    ensure_system_accounts(
+        &context,
+        &[
+            owner_ata(keys.batch_authority, fixture.payout_mint().underlying_mint),
+            owner_ata(fixture.alice.user, fixture.payout_mint().underlying_mint),
+        ],
+    );
+    let claim = claim_ix(&fixture, &keys, &fixture.alice);
+    assert_exit_rejects_missing_or_wrong_witnesses(&context, &fixture, &keys, &claim);
+    run_claim(&context, &fixture, &keys, &fixture.alice);
 }
 
 // ---------------------------------------------------------------------------
