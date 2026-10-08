@@ -231,10 +231,9 @@ export const startSupervisorControl = async ({
   await ensurePrivateSocketDirectory(socketDirectory);
   await prepareSocketPath(socketPath, bootId, isExactOwner);
 
-  // Bun's server.stop() unlinks the path it bound by name, whatever is there by then. The server
-  // binds a private name and the socket is hard-linked into place, so stop() never removes a
-  // replacement socket at socketPath. The name stays short because socket paths are capped near
-  // 104 bytes.
+  // Bun's server.stop() can unlink the path it bound by name, whatever is there by then. The server
+  // binds a private name that is hard-linked into place, so stop() never removes a replacement
+  // socket at socketPath. The name stays short: socket paths are capped near 104 bytes.
   const bindPath = path.join(
     socketDirectory,
     `.bind-${crypto.randomUUID().slice(0, 8)}`,
@@ -301,13 +300,13 @@ export const startSupervisorControl = async ({
       socketIno: socket.ino,
     };
     await fs.chmod(bindPath, 0o600);
-    // link() fails with EEXIST if a socket appeared at socketPath after prepareSocketPath.
+    // link() fails with EEXIST if anything appeared at socketPath after prepareSocketPath.
     await fs.link(bindPath, socketPath);
     await fs.rm(bindPath);
     await writeSocketOwner(socketPath, socketOwner);
   } catch (error) {
     await server.stop(true);
-    // Some Bun releases (1.3.6, for one) leave the bound path in place on stop().
+    // Not every Bun release unlinks the bound path on stop().
     await fs.rm(bindPath, { force: true });
     if (socketOwner !== undefined) {
       await removeExactSocket(socketPath, socketOwner);
