@@ -103,7 +103,7 @@ for dir in "${SCAN_DIRS[@]}"; do
       continue
     fi
     check_file "$file"
-  done < <(find "$full_dir" -name '*.ts' -not -name '*.d.ts' -print0)
+  done < <(find "$full_dir" -name node_modules -prune -o -name '*.ts' -not -name '*.d.ts' -print0)
 done
 
 if [[ $violations -gt 0 ]]; then
