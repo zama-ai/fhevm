@@ -61,7 +61,8 @@
  *
  * On a scenario with a Solana host (`solana-five-party-swap-threshold-kms`), the Solana leg
  * (`../solana/kms-context-switch`) defines each activated context on zama-host, checks the Solana
- * decrypts after the first switch, and destroys the baseline context there after step 3.
+ * decrypts after the first switch and after the node swap, and destroys the baseline context there
+ * after step 3.
  */
 import { PreflightError } from "../errors";
 import { castBool, castCall, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
@@ -650,7 +651,7 @@ export const runKmsContextSwitchProfile = async (
     baseline, false,
   );
   await solana?.mirrorContext(afterSwitch.contextId);
-  await solana?.checkSwitch(afterSwitch.contextId);
+  await solana?.checkDecrypts(afterSwitch.contextId);
 
   // 2) Same-committee key resharing (NewKmsEpoch). Then probes the new epoch ID activates.
   console.log("[kms-context-switch] broadcasting defineNewEpochForCurrentKmsContext (NewKmsEpoch)…");
@@ -721,6 +722,7 @@ export const runKmsContextSwitchProfile = async (
     recovered, true,
   );
   await solana?.mirrorContext(afterSwap.contextId);
+  await solana?.checkDecrypts(afterSwap.contextId);
 
   // 5b) Prove the promoted spare actually holds a working reshared key.
   await proveSpareInQuorum(state, runDecryption);

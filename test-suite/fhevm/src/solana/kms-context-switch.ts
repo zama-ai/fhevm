@@ -48,10 +48,16 @@ const hex = (bytes: Uint8Array): `0x${string}` => `0x${Buffer.from(bytes).toStri
 const contextIdBytes = (contextId: bigint): Uint8Array => hexToBytes(bytes32HexFromId(contextId));
 
 export type SolanaKmsContextLeg = {
-  /** Defines `contextId`, just activated on the EVM host, on zama-host with the same committee. */
+  /**
+   * Defines `contextId`, just activated on the EVM host, on zama-host with the committee the gateway
+   * registered for it.
+   */
   readonly mirrorContext: (contextId: bigint) => Promise<void>;
-  /** Step 1: values written before the switch decrypt under `contextId`, which zama-host accepts. */
-  readonly checkSwitch: (contextId: bigint) => Promise<void>;
+  /**
+   * Steps 1 and 5: values written at the baseline decrypt under `contextId`. zama-host accepts the
+   * certificate its committee signs, and the holder user-decrypts the balance.
+   */
+  readonly checkDecrypts: (contextId: bigint) => Promise<void>;
   /**
    * Step 3: destroys the baseline context on zama-host. Its certificate from before the switch is
    * then refused, and a certificate of `currentContextId` is still accepted.
@@ -137,7 +143,17 @@ export const prepareSolanaKmsContextLeg = async (
 
   const baselineCertificate = await certifySupply(baselineContextId);
   await discloseCertifiedHandle(context, { payer: holder.signer, certificate: baselineCertificate });
-  console.log(`[kms-context-switch] solana: baseline context ${baselineContextId} certified and disclosed the total supply`);
+  // An id that was never defined, so the refusal comes from the ordering rule and not from the
+  // existing context account.
+  await expectProgramError(
+    'define a KMS context id below the current one',
+    ZAMA_HOST_ERROR__NON_INCREASING_KMS_CONTEXT_ID,
+    async () => defineContext(baselineContextId - 1n, await gatewaySigners(baselineContextId)),
+  );
+  console.log(
+    `[kms-context-switch] solana: baseline context ${baselineContextId} certified and disclosed the total supply, ` +
+      'and a lower context id was refused',
+  );
 
   return {
     mirrorContext: async (contextId) => {
@@ -147,7 +163,7 @@ export const prepareSolanaKmsContextLeg = async (
       console.log(`[kms-context-switch] solana: defined context ${contextId} (${signers.length} signers)`);
     },
 
-    checkSwitch: async (contextId) => {
+    checkDecrypts: async (contextId) => {
       const certificate = await certifySupply(contextId);
       await discloseCertifiedHandle(context, { payer: holder.signer, certificate });
       await userDecryptExpect(await decryptConfig(contextId), {
@@ -156,16 +172,9 @@ export const prepareSolanaKmsContextLeg = async (
         secretKey: hex(holder.bytes.subarray(0, 32)),
         expected: WRAP_AMOUNT,
       });
-      // An id that was never defined, so the refusal comes from the ordering rule and not from
-      // the existing context account.
-      await expectProgramError(
-        'define a KMS context id below the current one',
-        ZAMA_HOST_ERROR__NON_INCREASING_KMS_CONTEXT_ID,
-        async () => defineContext(baselineContextId - 1n, await gatewaySigners(contextId)),
-      );
       console.log(
-        `[kms-context-switch] solana: context ${contextId} certified the pre-switch supply, the holder ` +
-          'user-decrypted the pre-switch balance, and a lower context id was refused',
+        `[kms-context-switch] solana: context ${contextId} certified the baseline supply and the holder ` +
+          'user-decrypted the baseline balance',
       );
     },
 
