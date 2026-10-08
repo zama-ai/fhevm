@@ -239,8 +239,8 @@ jobs:
         with:
           node-version: 24
 
-      # tsc follows the `@sdk-src`/`@demo-dapp` path aliases into the SDK and dapp sources, so
-      # both of their own dependency graphs must exist for their types to resolve.
+      # tsc reads the SDK's sources (a `file:` dependency) and the dapp's (the `@demo-dapp/*` path
+      # alias), so both of their own dependency graphs must exist for their types to resolve.
       - name: Install the SDK's own dependency graph (tsc resolves SDK sources)
         run: npm ci --prefix sdk/js-sdk
 

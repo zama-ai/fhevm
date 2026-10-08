@@ -5,9 +5,7 @@ name: solana-e2e
 # (input ZK + on-chain secp256k1 bind -> compute -> public-decrypt -> PURE-SDK user-decrypt, no
 # kms checkout), the delegated user-decrypt, the confidential-transfer arc, the token vertical
 # (wrap -> burn -> seal -> certified decrypt -> redeem -> disclose) with its adversarial
-# context-mismatch tail, the deposit arc and the load smoke. Every assertion is typed — the
-# retired full-vertical.sh label greps (and the checker that policed them) have no successor
-# because the failure mode is structurally gone.
+# context-mismatch tail, the deposit arc and the load smoke.
 #
 # Computation ingestion is Yellowstone off-chain reconstruction: the host listener feeds the
 # coprocessor from gRPC, and the Merkle indexer recomputes every allow leaf from the same
@@ -205,12 +203,11 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-      # The deposit-arc scenario drives the demo dapp's vault module from bun, and the vault reaches
-      # into SDK *sources* (`@sdk-src`) for internals the published package deliberately does not
-      # export (fhevm-internal#1859 §6d). Source resolution starts at sdk/js-sdk/, so the SDK's own
-      # runtime dependencies have to exist there or at the repo root. Since #3492 the consumer graph
-      # under test-suite/fhevm serves the SDK through a live symlink into those same sources, so the
-      # import check below needs this tree too — the install has to come first.
+      # The deposit-arc scenario drives the demo dapp's vault module from bun. The dapp, like the
+      # consumer graph under test-suite/fhevm, takes `@fhevm/sdk` as a `file:` dependency on the
+      # SDK's sources (sdk/js-sdk/src), so resolution starts at sdk/js-sdk/ and the SDK's own runtime
+      # dependencies have to exist there or at the repo root. The import check below needs this tree
+      # too, so the install has to come first.
       #
       # After the bring-up, not before: with no node_modules anywhere, bun installs test-suite/fhevm's
       # own graph on demand, and creating a root tree first suppresses that — an earlier attempt at
@@ -240,9 +237,7 @@ jobs:
       - name: Run the Solana e2e scenario suite (SDK-driven, against the up stack)
         if: ${{ env.TEST_PROFILE == '' }}
         # The lifecycle-owned stack is still up. These bun:test scenarios drive product arcs through
-        # @fhevm/sdk Solana actions only; the confidential-transfer arc (encrypt input ->
-        # submitInputProof -> confidentialTransfer -> current user-decrypt) was moved here from
-        # full-vertical.sh's [sdk-transfer] phase. See solana/docs/TESTING.md ("Scenario layer").
+        # @fhevm/sdk Solana actions only. See solana/docs/TESTING.md ("Scenario layer").
         working-directory: test-suite/fhevm
         env:
           # Second gate on the same requirement: the bring-up above already refuses without the
