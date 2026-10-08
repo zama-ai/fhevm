@@ -2,6 +2,11 @@ import { describe, expect, test } from 'vitest';
 import type { UiWalletAccount } from '@wallet-standard/react';
 import type { Wallet, WalletAccount } from '@wallet-standard/base';
 import { SolanaSignOffchainMessage } from '@solana/wallet-standard-features';
+import {
+  SOLANA_ERROR__FAILED_TO_SIGN_TRANSACTION,
+  SOLANA_ERROR__TRANSACTION__FAILED_WHEN_SIMULATING_TO_ESTIMATE_RESOURCE_LIMITS,
+  SolanaError,
+} from '@solana/kit';
 import { getOrCreateUiWalletAccountForStandardWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
 import { solanaPermitWalletFromSecretKey } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
@@ -51,11 +56,9 @@ const validResponse = {
     batchers: {
       deposit: {
         batcher: '11111111111111111111111111111111',
-        lookupTable: '11111111111111111111111111111111',
       },
       redeem: {
         batcher: '11111111111111111111111111111111',
-        lookupTable: '11111111111111111111111111111111',
       },
     },
     personas: {
@@ -238,6 +241,20 @@ describe('Wallet Standard boundary', () => {
         'transaction',
       ),
     ).toBe('TransientStoreNotOpened: transient store must be opened for this transaction and closed last');
+  });
+
+  // The shape joinBatch.test.ts pins for a failed estimate: Kit's sign error, logs on its cause.
+  test('decodes host logs carried by the cause of a failed signing', () => {
+    const estimate = new SolanaError(SOLANA_ERROR__TRANSACTION__FAILED_WHEN_SIMULATING_TO_ESTIMATE_RESOURCE_LIMITS, {
+      logs: [
+        'Program log: AnchorError caused by account: transient_store. Error Code: TransientStoreNotOpened. Error Number: 6076. Error Message: transient store must be opened for this transaction and closed last.',
+        `Program ${ZAMA_HOST_PROGRAM_ADDRESS} failed: custom program error: 0x17bc`,
+      ],
+    } as never);
+    const signing = new SolanaError(SOLANA_ERROR__FAILED_TO_SIGN_TRANSACTION, { cause: estimate, causeMessage: '' } as never);
+    expect(describeWalletError(signing, 'transaction')).toBe(
+      'TransientStoreNotOpened: transient store must be opened for this transaction and closed last',
+    );
   });
 
   test('leaves a token OwnerMismatch as the original diagnostic', () => {

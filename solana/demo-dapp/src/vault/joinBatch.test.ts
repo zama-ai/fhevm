@@ -4,23 +4,24 @@ import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { toSolanaZkProof } from '@fhevm/sdk/solana';
 import { bytesToHex } from '@fhevm/sdk/base';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendAndConfirm = vi.hoisted(() => vi.fn());
 vi.mock('@solana/kit', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@solana/kit')>()),
   sendAndConfirmTransactionFactory: () => sendAndConfirm,
 }));
-
 import {
   address,
   decompileTransactionMessage,
   generateKeyPairSigner,
-  getBase64Encoder,
   getCompiledTransactionMessageDecoder,
-  getProgramDerivedAddress,
-  getTransactionDecoder,
+  getSignatureFromTransaction,
+  isSolanaError,
+  SOLANA_ERROR__FAILED_TO_SIGN_TRANSACTION,
+  SOLANA_ERROR__TRANSACTION__FAILED_WHEN_SIMULATING_TO_ESTIMATE_RESOURCE_LIMITS,
   type Address,
+  type Transaction,
   type TransactionPartialSigner,
   type TransactionSigner,
 } from '@solana/kit';
@@ -28,14 +29,10 @@ import { base58 } from '@scure/base';
 
 import { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
 import { getJoinInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/join.js';
-import {
-  CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
-  findDenyScopeRecordPda,
-  getCloseTransientStoreInstructionDataDecoder,
-  ZAMA_HOST_PROGRAM_ADDRESS,
-} from '@fhevm/solana-zama-host';
+import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import { encodedSize, TEST_BLOCKHASH, testDemoClient } from '../testDemoClient';
 
 const CHAIN_ID = 72057594037940281n;
 const CANONICAL_ACL = bytesToHex(base58.decode(ZAMA_HOST_PROGRAM_ADDRESS));
@@ -48,14 +45,10 @@ function signer(a: Address): TransactionSigner {
   return { address: a, signTransactions: async () => [] } as unknown as TransactionSigner;
 }
 
-const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
-const pda = async (programAddress: Address, seeds: Uint8Array[]): Promise<Address> =>
-  (await getProgramDerivedAddress({ programAddress, seeds }))[0];
-
 function proof(
   owner: Address,
   contract: Address,
-  overrides: { acl?: Bytes32Hex; chainId?: bigint; bits?: readonly EncryptionBits[] } = {},
+  overrides: { acl?: Bytes32Hex; chainId?: bigint; bits?: readonly EncryptionBits[]; signatures?: number } = {},
 ): SolanaInputProof {
   const local = toSolanaZkProof({
     chainId: overrides.chainId ?? CHAIN_ID,
@@ -71,25 +64,20 @@ function proof(
     aclContractAddress: local.aclContractAddress,
     contractAddress: local.contractAddress,
     userAddress: local.userAddress,
-    signatures: [SIGNATURE as never],
+    signatures: Array.from({ length: overrides.signatures ?? 1 }, () => SIGNATURE as never),
     extraData: '0x00' as never,
   };
 }
 
 async function parameters(overrides: Partial<SolanaVaultJoinParameters> = {}): Promise<SolanaVaultJoinParameters> {
-  const joinConfidentialMint = key(2);
   const user = signer(key(1));
-  const inputProof = proof(user.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
   return {
-    rpc: {} as SolanaVaultJoinParameters['rpc'],
-    rpcSubscriptions: {} as SolanaVaultJoinParameters['rpcSubscriptions'],
-    inputProof,
+    inputProof: proof(user.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
     inputIndex: 0,
     user,
-    payer: signer(key(3)),
     batcher: key(4),
     batch: key(5),
-    joinConfidentialMint,
+    joinConfidentialMint: key(2),
     joinUnderlyingMint: key(11),
     tokenProgram: TOKEN_PROGRAM_ADDRESS,
     ...overrides,
@@ -98,76 +86,56 @@ async function parameters(overrides: Partial<SolanaVaultJoinParameters> = {}): P
 
 const context = { solanaChain: { id: CHAIN_ID } as never, aclProgramAddress: CANONICAL_ACL as never };
 
-async function sendableParameters(onTransactionSigned: NonNullable<SolanaVaultJoinParameters['onTransactionSigned']>) {
+/** A user who also pays and signs for real, with the demo client over a scripted RPC. */
+async function sendable(overrides: Partial<SolanaVaultJoinParameters> = {}, signatures = 1) {
   const user = await generateKeyPairSigner();
-  const joinConfidentialMint = key(2);
-  const inputProof = proof(user.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
-  const simulate = vi.fn().mockReturnValue({ send: vi.fn().mockResolvedValue({ value: { err: null } }) });
-  const params = await parameters({
-    user,
-    payer: user,
-    joinConfidentialMint,
-    inputProof,
-    rpc: {
-      getLatestBlockhash: vi.fn().mockReturnValue({
-        send: vi.fn().mockResolvedValue({ value: { blockhash: key(20), lastValidBlockHeight: 1_000n } }),
-      }),
-      simulateTransaction: simulate,
-    } as unknown as SolanaVaultJoinParameters['rpc'],
-    onTransactionSigned,
-  });
-  return { inputProof, params, simulate };
+  const inputProof = proof(user.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, { signatures });
+  return { inputProof, ...testDemoClient(user), params: await parameters({ user, inputProof, ...overrides }) };
+}
+
+/** The last transaction handed to Kit's send-and-confirm. */
+const sent = (): Transaction => sendAndConfirm.mock.lastCall![0] as Transaction;
+
+function messageOf(transaction: Transaction) {
+  return decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(transaction.messageBytes));
 }
 
 describe('joinBatch (attested arm)', () => {
   beforeEach(() => sendAndConfirm.mockReset().mockResolvedValue(undefined));
+  afterEach(() => vi.restoreAllMocks());
 
-  it('builds, simulates, sends, and encodes the coprocessor attestation into the join instruction', async () => {
+  it('journals the signed transaction before sending it, and encodes the attestation into the join', async () => {
     let finishJournal!: () => void;
     const journal = new Promise<void>((resolve) => {
       finishJournal = resolve;
     });
     const onTransactionSigned = vi.fn(() => journal);
-    const { inputProof, params, simulate } = await sendableParameters(onTransactionSigned);
+    const { client, inputProof, params, rpcMethods } = await sendable({ onTransactionSigned });
 
-    const pending = joinBatch(context, params);
+    const pending = joinBatch(context, client, params);
     await vi.waitFor(() => expect(onTransactionSigned).toHaveBeenCalledOnce());
     expect(sendAndConfirm).not.toHaveBeenCalled();
     finishJournal();
-    await expect(pending).resolves.toEqual(expect.any(String));
+    const signature = await pending;
     expect(sendAndConfirm).toHaveBeenCalledOnce();
-    expect(simulate).toHaveBeenCalledTimes(2);
-    expect(simulate.mock.calls[0]![1]).toMatchObject({ sigVerify: false });
-    expect(simulate.mock.calls[1]![1]).toMatchObject({ sigVerify: true });
-    expect(onTransactionSigned).toHaveBeenCalledWith({
-      signature: expect.any(String),
-      blockhash: key(20),
-      lastValidBlockHeight: 1_000n,
-    });
-    expect(simulate.mock.invocationCallOrder[1]).toBeLessThan(onTransactionSigned.mock.invocationCallOrder[0]!);
-    expect(onTransactionSigned.mock.invocationCallOrder[0]).toBeLessThan(sendAndConfirm.mock.invocationCallOrder[0]!);
+    const transaction = sent();
+    // Kit's own preflight is skipped because the estimate already simulated; the wait is at finalized (DD-070).
+    expect(sendAndConfirm).toHaveBeenCalledWith(transaction, { commitment: 'finalized', skipPreflight: true });
+    expect(getSignatureFromTransaction(transaction)).toBe(signature);
+    expect(onTransactionSigned).toHaveBeenCalledWith({ signature, blockhash: TEST_BLOCKHASH, lastValidBlockHeight: 1_000n });
+    // One simulation, Kit's resource estimate, before signing.
+    expect(rpcMethods).toEqual(['getLatestBlockhash', 'simulateTransaction']);
 
-    const wire = simulate.mock.calls[0]![0] as string;
-    const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
-    const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
-    const message = decompileTransactionMessage(compiled);
-    // The host validates this transaction shape from the instructions sysvar: close_transientStore must
-    // be final and must name the exact transient store opened before join plus its recorded payer refund.
-    expect(message.instructions).toHaveLength(4);
-    const close = message.instructions[3]!;
-    const transientStore = await pda(ZAMA_HOST_PROGRAM_ADDRESS, [utf8('transient'), base58.decode(params.payer.address)]);
-    expect(close.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
-    expect(Array.from(close.accounts ?? [], (account) => account.address)).toEqual([
-      address('Sysvar1nstructions1111111111111111111111111'),
-      transientStore,
-      params.payer.address,
+    // open_transient_store, join, close_transient_store. v1 carries the compute limit in the
+    // message, so there is no compute-budget instruction.
+    const message = messageOf(transaction);
+    expect(message.version).toBe(1);
+    expect([...message.instructions].map((instruction) => instruction.programAddress)).toEqual([
+      ZAMA_HOST_PROGRAM_ADDRESS,
+      CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
+      ZAMA_HOST_PROGRAM_ADDRESS,
     ]);
-    expect(Array.from(getCloseTransientStoreInstructionDataDecoder().decode(close.data!).discriminator)).toEqual(
-      Array.from(CLOSE_TRANSIENT_STORE_DISCRIMINATOR),
-    );
-
-    // [0] = compute limit, [1] = open_transientStore, [2] = join, [3] = close_transientStore.
-    const data = getJoinInstructionDataDecoder().decode(message.instructions[2]!.data!);
+    const data = getJoinInstructionDataDecoder().decode(message.instructions[1]!.data!);
     expect(data.handleIndex).toBe(0);
     expect(data.contractChainId).toBe(CHAIN_ID);
     expect(Array.from(data.inputHandle)).toEqual(Array.from(inputProof.handles[0]!.bytes32));
@@ -176,82 +144,69 @@ describe('joinBatch (attested arm)', () => {
 
   it('appends, under the deny list, the join mint then the batch deny record', async () => {
     const submittedJoinAccounts = async (denyListEnabled: boolean): Promise<Address[]> => {
-      const { params, simulate } = await sendableParameters(vi.fn());
-      await joinBatch(context, { ...params, denyListEnabled });
-      const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(simulate.mock.calls[0]![0] as string));
-      const message = decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(transaction.messageBytes));
-      return Array.from(message.instructions[2]!.accounts ?? [], (account) => account.address);
+      const { client, params } = await sendable({ denyListEnabled });
+      await joinBatch(context, client, params);
+      const join = messageOf(sent()).instructions[1]!;
+      return Array.from(join.accounts ?? [], (account) => account.address);
     };
     const plain = await submittedJoinAccounts(false);
-    const { params } = await sendableParameters(vi.fn());
+    const params = await parameters();
     const [joinMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: params.joinConfidentialMint });
     const [batchRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, scope: params.batch });
     // The attested transfer runs as the join mint; the contribution runs as the batch.
     expect((await submittedJoinAccounts(true)).slice(plain.length)).toEqual([joinMintRecord, batchRecord]);
   });
 
-  // One coprocessor signature leaves room for one lever's witnesses: 1229 bytes with the deny
-  // records, 1227 with two HCU accounts. Both levers at once need 1293 bytes, which waits for v1
-  // transactions (fhevm-internal#2111).
-  it.each([
-    ['the deny list', { denyListEnabled: true }],
-    ['a binding block cap, metered', { joinMintHcuBlockMeter: key(30), batchHcuBlockMeter: key(31) }],
-    ['a binding block cap, trusted', { joinMintHcuTrustedAppRecord: key(32), batchHcuTrustedAppRecord: key(33) }],
-  ])('fits under %s', async (_lever, witnesses) => {
-    const { params } = await sendableParameters(vi.fn());
-    await expect(joinBatch(context, { ...params, ...witnesses })).resolves.toEqual(expect.any(String));
+  // The largest join: the host's maximum coprocessor threshold (MAX_COPROCESSOR_SIGNERS = 8) with
+  // the deny records and both HCU witnesses of each app. A v1 transaction is at most 4,096 bytes
+  // and 64 account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
+  it('fits one v1 transaction at the maximum coprocessor threshold with every witness', async () => {
+    const { client, params } = await sendable(
+      {
+        denyListEnabled: true,
+        joinMintHcuBlockMeter: key(30),
+        joinMintHcuTrustedAppRecord: key(31),
+        batchHcuBlockMeter: key(32),
+        batchHcuTrustedAppRecord: key(33),
+      },
+      8,
+    );
+    await joinBatch(context, client, params);
+    const size = encodedSize(sent());
+    expect(size.version).toBe(1);
+    expect(size.bytes).toBeLessThanOrEqual(4096);
+    expect(size.addresses).toBeLessThanOrEqual(64);
   });
 
   it('does not submit when persistent transaction journaling fails', async () => {
-    const { params } = await sendableParameters(async () => {
-      throw new Error('journal unavailable');
+    const { client, params } = await sendable({
+      onTransactionSigned: async () => {
+        throw new Error('journal unavailable');
+      },
     });
-    await expect(joinBatch(context, params)).rejects.toThrow('journal unavailable');
+    await expect(joinBatch(context, client, params)).rejects.toThrow('journal unavailable');
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 
-  it('does not request persistent submission after unsigned preflight fails', async () => {
+  it('neither signs, journals nor sends when the estimate simulation fails', async () => {
+    const user = (await generateKeyPairSigner()) as TransactionPartialSigner;
+    const signTransactions = vi.fn(user.signTransactions.bind(user));
+    const tracked = { address: user.address, signTransactions } as TransactionSigner;
     const onTransactionSigned = vi.fn();
-    const { params, simulate } = await sendableParameters(onTransactionSigned);
-    // generateKeyPairSigner returns a partial signer; narrow so signTransactions resolves.
-    const originalSigner = params.user as TransactionPartialSigner;
-    const signTransactions = vi.fn(originalSigner.signTransactions.bind(originalSigner));
-    const trackedSigner = { address: originalSigner.address, signTransactions } as TransactionSigner;
-    const trackedParams = { ...params, user: trackedSigner, payer: trackedSigner };
-    simulate.mockReturnValueOnce({
-      send: vi.fn().mockResolvedValue({
-        value: {
-          err: { InstructionError: [1, { Custom: 6_001n }] },
-          logs: ['Program log: rejected'],
-        },
-      }),
+    const { client, failNextSimulation } = testDemoClient(tracked);
+    failNextSimulation({ err: { InstructionError: [1, { Custom: 6_001 }] }, logs: ['Program log: rejected'] });
+    const params = await parameters({
+      user: tracked,
+      inputProof: proof(tracked.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
+      onTransactionSigned,
     });
 
-    await expect(joinBatch(context, trackedParams)).rejects.toThrow(
-      'join simulation failed: {"InstructionError":[1,{"Custom":"6001"}]}',
-    );
-    expect(simulate).toHaveBeenCalledOnce();
+    const error = await joinBatch(context, client, params).catch((caught: unknown) => caught);
+    expect(isSolanaError(error, SOLANA_ERROR__FAILED_TO_SIGN_TRANSACTION)).toBe(true);
+    const cause = (error as Error).cause;
+    expect(isSolanaError(cause, SOLANA_ERROR__TRANSACTION__FAILED_WHEN_SIMULATING_TO_ESTIMATE_RESOURCE_LIMITS)).toBe(true);
+    expect(cause).toMatchObject({ context: { logs: ['Program log: rejected'] } });
     expect(signTransactions).not.toHaveBeenCalled();
-    expect(onTransactionSigned).not.toHaveBeenCalled();
-    expect(sendAndConfirm).not.toHaveBeenCalled();
-  });
-
-  it('does not journal or submit after signed simulation fails', async () => {
-    const onTransactionSigned = vi.fn();
-    const { params, simulate } = await sendableParameters(onTransactionSigned);
-    simulate.mockReturnValueOnce({ send: vi.fn().mockResolvedValue({ value: { err: null } }) }).mockReturnValueOnce({
-      send: vi.fn().mockResolvedValue({
-        value: {
-          err: { InstructionError: [1, 'InvalidAccountData'] },
-          logs: ['Program log: signed transaction rejected'],
-        },
-      }),
-    });
-
-    await expect(joinBatch(context, params)).rejects.toThrow(
-      'join simulation failed: {"InstructionError":[1,"InvalidAccountData"]}',
-    );
-    expect(simulate).toHaveBeenCalledTimes(2);
     expect(onTransactionSigned).not.toHaveBeenCalled();
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
@@ -261,10 +216,7 @@ describe('joinBatch (attested arm)', () => {
       'a non-u64 input',
       async () => {
         const p = await parameters();
-        const bad = proof(p.user.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, {
-          bits: [8],
-        });
-        return { ...p, inputProof: bad };
+        return { ...p, inputProof: proof(p.user.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, { bits: [8] }) };
       },
       'must be euint64',
     ],
@@ -282,16 +234,9 @@ describe('joinBatch (attested arm)', () => {
       'must be 65 bytes',
     ],
   ])('rejects %s before any RPC call', async (_name, mutate, message) => {
-    const getLatestBlockhash = vi.fn();
-    const simulateTransaction = vi.fn();
-    const base = await mutate();
-    const params = {
-      ...base,
-      rpc: { getLatestBlockhash, simulateTransaction } as unknown as SolanaVaultJoinParameters['rpc'],
-    };
-    await expect(joinBatch(context, params)).rejects.toThrow(message);
-    expect(getLatestBlockhash).not.toHaveBeenCalled();
-    expect(simulateTransaction).not.toHaveBeenCalled();
+    const { client, rpcMethods } = testDemoClient(signer(key(3)));
+    await expect(joinBatch(context, client, await mutate())).rejects.toThrow(message);
+    expect(rpcMethods).toEqual([]);
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 });

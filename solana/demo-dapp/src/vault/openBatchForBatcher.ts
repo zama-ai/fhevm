@@ -4,11 +4,11 @@ import {
   findEventAuthorityPda as findTokenEventAuthorityPda,
 } from '@fhevm/confidential-token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
-import type { TransactionSigner } from '@solana/kit';
-import { openBatch, type SolanaVaultOpenBatchResult } from './openBatch.js';
+import type { Instruction, TransactionSigner } from '@solana/kit';
+import { openBatch } from './openBatch.js';
 import type { DenyListParameters } from './internal/denyRecords.js';
 import type { OpenBatchAsyncInput } from './internal/generated/confidentialBatcher/instructions/openBatch.js';
-import { deriveBatchAddresses, deriveSettleLookupTableAddresses, type VaultDemoRoots } from './derive.js';
+import { deriveBatchAddresses, type VaultDemoRoots } from './derive.js';
 
 export type SolanaVaultOpenBatchForBatcherParameters = Pick<
   OpenBatchAsyncInput,
@@ -23,10 +23,8 @@ export type SolanaVaultOpenBatchForBatcherParameters = Pick<
   readonly roots: VaultDemoRoots;
   /** Zero-based index of the batch to open. The first `open_batch` on a fresh batcher opens index 0. */
   readonly batchIndex: bigint;
-  /** Pays batch-account rent and the batch authority funding; doubles as the lookup-table authority. */
+  /** Pays batch-account rent and the batch authority funding. */
   readonly payer: TransactionSigner;
-  /** Recent finalized slot used to derive the settle lookup table (see {@link openBatch}). */
-  readonly recentSlot: bigint;
   /** Lamports the batch authority is funded with to pay its owner-charged rent during the batch. */
   readonly authorityFundingLamports: number | bigint;
 };
@@ -35,13 +33,10 @@ export type SolanaVaultOpenBatchForBatcherParameters = Pick<
  * Opens one batch on a batcher from its {@link VaultDemoRoots} — the single call the demo seeder makes
  * per batcher. It derives every one of `open_batch`'s accounts (batch, the batch's join/payout
  * token accounts and their balance encrypted stores, and the two
- * Anchor event authorities) from the roots and the batch index, assembles the settle lookup-table
- * address set, and delegates to {@link openBatch} for the create/extend instructions. The seeder never
- * hand-rolls these accounts; the risky derivation stays here on the tested SDK surface.
+ * Anchor event authorities) from the roots and the batch index, and delegates to {@link openBatch}.
+ * The seeder never hand-rolls these accounts; the risky derivation stays here on the tested SDK surface.
  */
-export async function openBatchForBatcher(
-  parameters: SolanaVaultOpenBatchForBatcherParameters,
-): Promise<SolanaVaultOpenBatchResult> {
+export async function openBatchForBatcher(parameters: SolanaVaultOpenBatchForBatcherParameters): Promise<Instruction> {
   const { roots, batchIndex, payer } = parameters;
   const batch = await deriveBatchAddresses(roots, batchIndex);
   // The first batch has no predecessor; a later batch must name the immediately preceding one.
@@ -71,7 +66,5 @@ export async function openBatchForBatcher(
       payoutMintHcuTrustedAppRecord: parameters.payoutMintHcuTrustedAppRecord,
     },
     denyListEnabled: parameters.denyListEnabled,
-    recentSlot: parameters.recentSlot,
-    settleLookupTableAddresses: await deriveSettleLookupTableAddresses(roots, batch),
   });
 }

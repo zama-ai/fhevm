@@ -11,9 +11,6 @@ import {
   getOrCreateConfidentialTokenAccountInstruction,
 } from './initializeTokenAccount.js';
 import { buildWrapUsdcInstruction } from './wrapUsdc.js';
-import { openBatchForBatcher } from './openBatchForBatcher.js';
-import type { VaultDemoRoots } from './derive.js';
-import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { INITIALIZE_MINT_DISCRIMINATOR, getInitializeMintInstructionDataDecoder, INITIALIZE_TOKEN_ACCOUNT_DISCRIMINATOR, getInitializeTokenAccountInstructionDataDecoder, WRAP_USDC_DISCRIMINATOR, getWrapUsdcInstructionDataDecoder, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 function addr(fill: number): Address {
@@ -91,37 +88,5 @@ describe('vault provisioning builders', () => {
     const decoded = getWrapUsdcInstructionDataDecoder().decode(instruction.data!);
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(WRAP_USDC_DISCRIMINATOR));
     expect(decoded.amount).toBe(1_000_000n);
-  });
-
-  it('openBatchForBatcher: assembles the [open_batch, create_alt, ...extend_alt chunks] set from roots', async () => {
-    const roots: VaultDemoRoots = {
-      batcherProgram: addr(10),
-      tokenProgram: addr(11),
-      vaultProgram: addr(12),
-      hostProgram: addr(13),
-      batcher: addr(14),
-      vault: addr(15),
-      joinConfidentialMint: addr(16),
-      payoutConfidentialMint: addr(17),
-      joinUnderlyingMint: addr(18),
-      payoutUnderlyingMint: addr(19),
-      kmsContext: addr(21),
-    };
-    const result = await openBatchForBatcher({
-      transientStore: await prepareTransientStore({ payer: signer(addr(1)), host: ZAMA_HOST_PROGRAM_ADDRESS }),
-      roots,
-      batchIndex: 0n,
-      payer: signer(addr(1)),
-      recentSlot: 100n,
-      authorityFundingLamports: 100_000_000n,
-    });
-    // open_batch + create_lookup_table + the wire-limit-chunked extends (27 addresses -> 20 + 7),
-    // in submission order.
-    expect(result.instructions).toHaveLength(4);
-    // The first (open_batch) targets the batcher program; the ALT pair targets the ALT program.
-    expect(result.instructions[0]!.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
-    // Pin the current table size so account-set growth requires an intentional test update. The
-    // address contents and pending-burn membership are covered in derive.test.ts.
-    expect(result.lookupTableAddresses.length).toBe(27);
   });
 });

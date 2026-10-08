@@ -4,7 +4,7 @@ import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { toSolanaZkProof } from '@fhevm/sdk/solana';
 import { asBytes32Hex, asBytes65Hex, bytesToHex } from '@fhevm/sdk/base';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendAndConfirm = vi.hoisted(() => vi.fn());
 vi.mock('@solana/kit', async (importOriginal) => ({
@@ -17,10 +17,9 @@ import {
   address,
   decompileTransactionMessage,
   generateKeyPairSigner,
-  getBase64Encoder,
   getCompiledTransactionMessageDecoder,
-  getTransactionDecoder,
   type Address,
+  type Transaction,
   type TransactionSigner,
 } from '@solana/kit';
 import { base58 } from '@scure/base';
@@ -28,6 +27,7 @@ import { base58 } from '@scure/base';
 import { confidentialTransfer, type SolanaConfidentialTransferParameters } from './confidentialTransfer.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import { testDemoClient } from '../../testDemoClient';
 
 const CHAIN_ID = 72057594037940281n;
 const ACL = `0x${'11'.repeat(32)}` as Bytes32Hex;
@@ -75,12 +75,9 @@ async function parameters(overrides: Partial<SolanaConfidentialTransferParameter
   const owner = signer(key(1));
   const inputProof = proof(owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
   return {
-    rpc: {} as SolanaConfidentialTransferParameters['rpc'],
-    rpcSubscriptions: {} as SolanaConfidentialTransferParameters['rpcSubscriptions'],
     inputProof,
     inputIndex: 0,
     owner,
-    feePayer: signer(key(3)),
     mint,
     underlyingMint: key(9),
     tokenProgram: TOKEN_PROGRAM_ADDRESS,
@@ -95,12 +92,16 @@ async function parameters(overrides: Partial<SolanaConfidentialTransferParameter
 
 const context = { solanaChain: { id: CHAIN_ID } as never, aclProgramAddress: CANONICAL_ACL };
 
+/** A client whose fee payer never signs: for inputs rejected before any RPC call. */
+const idleClient = () => testDemoClient(signer(key(3)));
+
 describe('confidentialTransfer attestation binding', () => {
   beforeEach(() => sendAndConfirm.mockReset().mockResolvedValue(undefined));
+  afterEach(() => vi.restoreAllMocks());
 
   it('rejects malformed submitted handles before RPC', async () => {
     const params = await parameters();
-    await expect(confidentialTransfer(context, {
+    await expect(confidentialTransfer(context, idleClient().client, {
       ...params,
       inputProof: { ...params.inputProof, handles: ['0x44' as never] },
     })).rejects.toThrow();
@@ -178,19 +179,16 @@ describe('confidentialTransfer attestation binding', () => {
       message === 'does not match the client chain'
         ? { ...context, solanaChain: { id: CHAIN_ID + 1n } as never }
         : context;
-    await expect(confidentialTransfer(actionContext, params)).rejects.toThrow(message);
+    await expect(confidentialTransfer(actionContext, idleClient().client, params)).rejects.toThrow(message);
   });
 
-  it.each(['distinct', 'same'])('simulates, sends, and confirms with %s owner and fee-payer signers', async (mode) => {
+  it.each(['distinct', 'same'])('sends one v1 FHE transaction with %s owner and fee-payer signers', async (mode) => {
     const owner = await generateKeyPairSigner();
     const feePayer = mode === 'same' ? owner : await generateKeyPairSigner();
-    const mint = key(2);
-    const inputProof = proof(owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
-    const simulate = vi.fn().mockReturnValue({ send: vi.fn().mockResolvedValue({ value: { err: null } }) });
+    const { client, rpcMethods } = testDemoClient(feePayer);
     const params = await parameters({
       owner,
-      feePayer,
-      mint,
+      mint: key(2),
       fromAccount: key(4),
       toAccount: mode === 'same' ? key(4) : key(5),
       fromStore: key(6),
@@ -198,34 +196,20 @@ describe('confidentialTransfer attestation binding', () => {
       hcuBlockMeter: key(8),
       hcuTrustedAppRecord: key(9),
       ...(mode === 'same' ? {} : { denyRecords: [key(10), key(11)] }),
-      inputProof,
-      rpc: {
-        getLatestBlockhash: vi.fn().mockReturnValue({
-          send: vi.fn().mockResolvedValue({ value: { blockhash: key(20), lastValidBlockHeight: 1_000n } }),
-        }),
-        simulateTransaction: simulate,
-      } as unknown as SolanaConfidentialTransferParameters['rpc'],
+      inputProof: proof(owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
     });
 
-    await expect(confidentialTransfer(context, params)).resolves.toEqual(expect.any(String));
-    expect(simulate).toHaveBeenCalledWith(expect.any(String), {
-      commitment: 'finalized',
-      encoding: 'base64',
-      sigVerify: true,
-    });
-    expect(sendAndConfirm).toHaveBeenCalledWith(expect.any(Object), {
-      commitment: 'finalized',
-      skipPreflight: true,
-    });
-    const wire = simulate.mock.calls[0]![0] as string;
-    const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
-    const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
-    const message = decompileTransactionMessage(compiled);
-    expect(message.instructions).toHaveLength(4);
-    // SetComputeUnitLimit(800_000): discriminator 2 + u32 LE — the action's limit since #3377.
-    expect([...message.instructions[0]!.data!]).toEqual([2, 0, 53, 12, 0]);
+    await expect(confidentialTransfer(context, client, params)).resolves.toEqual(expect.any(String));
+    expect(rpcMethods).toEqual(['getLatestBlockhash', 'simulateTransaction']);
+    expect(sendAndConfirm).toHaveBeenCalledOnce();
+    const transaction = sendAndConfirm.mock.lastCall![0] as Transaction;
+    expect(Object.keys(transaction.signatures).sort()).toEqual([...new Set([owner.address, feePayer.address])].sort());
+    const message = decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(transaction.messageBytes));
+    expect(message.version).toBe(1);
+    // open_transient_store, confidential_transfer, close_transient_store.
+    expect(message.instructions).toHaveLength(3);
     if (mode === 'distinct') {
-      expect(message.instructions[2]!.accounts?.slice(-2)).toEqual([
+      expect(message.instructions[1]!.accounts?.slice(-2)).toEqual([
         { address: key(10), role: AccountRole.READONLY },
         { address: key(11), role: AccountRole.READONLY },
       ]);
@@ -240,17 +224,17 @@ describe('confidentialTransfer attestation binding', () => {
       tokenProgram: TOKEN_PROGRAM_ADDRESS,
       mint: params.underlyingMint,
     });
-    expect(message.instructions[2]!.accounts?.[3]).toEqual({
+    expect(message.instructions[1]!.accounts?.[3]).toEqual({
       address: params.underlyingMint,
       role: AccountRole.READONLY,
     });
-    expect(message.instructions[2]!.accounts?.[4]).toEqual({ address: fromAta, role: AccountRole.READONLY });
-    expect(message.instructions[2]!.accounts?.[5]).toEqual({ address: toAta, role: AccountRole.READONLY });
+    expect(message.instructions[1]!.accounts?.[4]).toEqual({ address: fromAta, role: AccountRole.READONLY });
+    expect(message.instructions[1]!.accounts?.[5]).toEqual({ address: toAta, role: AccountRole.READONLY });
     // The HCU pair sits after the system program: owner, payer, mint, underlying mint, two freeze
     // ATAs, two token accounts, two balance values, transferred value, zama event authority, zama
     // program, host config, system program — then the meter and the trust witness.
-    expect(message.instructions[2]!.accounts?.[16]).toEqual({ address: key(8), role: AccountRole.WRITABLE });
-    expect(message.instructions[2]!.accounts?.[17]).toEqual({ address: key(9), role: AccountRole.READONLY });
+    expect(message.instructions[1]!.accounts?.[16]).toEqual({ address: key(8), role: AccountRole.WRITABLE });
+    expect(message.instructions[1]!.accounts?.[17]).toEqual({ address: key(9), role: AccountRole.READONLY });
   });
 
   it('rejects deny records on the program self-transfer no-op path', async () => {
@@ -259,17 +243,14 @@ describe('confidentialTransfer attestation binding', () => {
       toStore: key(6),
       denyRecords: [key(10), key(11)],
     });
-    await expect(confidentialTransfer(context, params)).rejects.toThrow('self-transfers cannot include deny records');
+    await expect(confidentialTransfer(context, idleClient().client, params)).rejects.toThrow('self-transfers cannot include deny records');
   });
 
   it.each(['0x44', `0x${'44'.repeat(66)}`])(
     'rejects a malformed attestation signature before RPC',
     async (signature) => {
-      const getLatestBlockhash = vi.fn();
-      const simulateTransaction = vi.fn();
-      const defaults = await parameters({
-        rpc: { getLatestBlockhash, simulateTransaction } as unknown as SolanaConfidentialTransferParameters['rpc'],
-      });
+      const { client, rpcMethods } = idleClient();
+      const defaults = await parameters();
       const params = {
         ...defaults,
         inputProof: {
@@ -278,33 +259,19 @@ describe('confidentialTransfer attestation binding', () => {
         },
       };
 
-      await expect(confidentialTransfer(context, params)).rejects.toThrow('input proof signature[0] must be 65 bytes');
-      expect(getLatestBlockhash).not.toHaveBeenCalled();
-      expect(simulateTransaction).not.toHaveBeenCalled();
+      await expect(confidentialTransfer(context, client, params)).rejects.toThrow('input proof signature[0] must be 65 bytes');
+      expect(rpcMethods).toEqual([]);
       expect(sendAndConfirm).not.toHaveBeenCalled();
     },
   );
 
-  it('does not send a transaction whose simulation fails', async () => {
+  it('does not send a transaction whose estimate simulation fails', async () => {
     const owner = await generateKeyPairSigner();
-    const mint = key(2);
-    const inputProof = proof(owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
-    const params = await parameters({
-      owner,
-      feePayer: owner,
-      mint,
-      inputProof,
-      rpc: {
-        getLatestBlockhash: vi.fn().mockReturnValue({
-          send: vi.fn().mockResolvedValue({ value: { blockhash: key(20), lastValidBlockHeight: 1_000n } }),
-        }),
-        simulateTransaction: vi.fn().mockReturnValue({
-          send: vi.fn().mockResolvedValue({ value: { err: { InstructionError: [1, 'Custom'] } } }),
-        }),
-      } as unknown as SolanaConfidentialTransferParameters['rpc'],
-    });
+    const { client, failNextSimulation } = testDemoClient(owner);
+    failNextSimulation({ err: { InstructionError: [1, { Custom: 6_000 }] } });
+    const params = await parameters({ owner, inputProof: proof(owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS) });
 
-    await expect(confidentialTransfer(context, params)).rejects.toThrow('simulation failed');
+    await expect(confidentialTransfer(context, client, params)).rejects.toThrow('estimate its resource limits');
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 
@@ -312,7 +279,7 @@ describe('confidentialTransfer attestation binding', () => {
     const alternateHost = key(12);
     const alternateAcl = asBytes32Hex(bytesToHex(base58.decode(alternateHost)));
     const params = await parameters();
-    await expect(confidentialTransfer({ ...context, aclProgramAddress: alternateAcl }, params)).rejects.toThrow(
+    await expect(confidentialTransfer({ ...context, aclProgramAddress: alternateAcl }, idleClient().client, params)).rejects.toThrow(
       'does not match the host compiled into confidential-token',
     );
     expect(sendAndConfirm).not.toHaveBeenCalled();

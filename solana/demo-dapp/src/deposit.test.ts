@@ -28,8 +28,8 @@ const config = {
     payoutConfidential: root,
   },
   batchers: {
-    deposit: { batcher: root, lookupTable: root },
-    redeem: { batcher: root, lookupTable: root },
+    deposit: { batcher: root },
+    redeem: { batcher: root },
   },
 } as DemoConfig;
 const session = {

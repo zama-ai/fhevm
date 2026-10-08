@@ -7,8 +7,6 @@ import {
   type ExtendedClient,
   type Instruction,
   type SequentialInstructionPlan,
-  type SuccessfulSingleTransactionPlanResult,
-  type TransactionPlanResultContext,
   type TransactionSigner,
 } from '@solana/kit';
 
@@ -93,21 +91,22 @@ function fheTransactionPlan(
 
 type TransactionConfig = Parameters<ClientWithTransactionSending['sendTransaction']>[1];
 
-/** What `transientStoreTransactions` adds to a Kit client. */
-export type TransientStoreTransactions<
-  TSigned extends TransactionPlanResultContext,
-  TSent extends TransactionPlanResultContext,
-> = {
+/** The Kit client `transientStoreTransactions` extends: single-transaction sign and send. */
+export type FheTransactionClient = Pick<ClientWithTransactionSigning, 'signTransaction'> &
+  Pick<ClientWithTransactionSending, 'sendTransaction'>;
+
+/** What `transientStoreTransactions` adds to a Kit client; each method returns what the client's own does. */
+export type TransientStoreTransactions<TClient extends FheTransactionClient> = {
   readonly signFheTransaction: (
     transientStore: TransientStore,
     instructions: readonly Instruction[],
     config?: TransactionConfig,
-  ) => Promise<SuccessfulSingleTransactionPlanResult<TSigned>>;
+  ) => ReturnType<TClient['signTransaction']>;
   readonly sendFheTransaction: (
     transientStore: TransientStore,
     instructions: readonly Instruction[],
     config?: TransactionConfig,
-  ) => Promise<SuccessfulSingleTransactionPlanResult<TSent>>;
+  ) => ReturnType<TClient['sendTransaction']>;
 };
 
 /**
@@ -116,19 +115,22 @@ export type TransientStoreTransactions<
  * A sandwich that does not fit one transaction fails at planning, before anything is signed.
  */
 export function transientStoreTransactions() {
-  return <TSigned extends TransactionPlanResultContext, TSent extends TransactionPlanResultContext, T extends object>(
-    client: T & ClientWithTransactionSigning<TSigned> & ClientWithTransactionSending<TSent>,
-  ): ExtendedClient<T, TransientStoreTransactions<TSigned, TSent>> =>
-    extendClient<T, TransientStoreTransactions<TSigned, TSent>>(client, {
-      signFheTransaction: async (
-        transientStore: TransientStore,
-        instructions: readonly Instruction[],
-        config?: TransactionConfig,
-      ) => await client.signTransaction(fheTransactionPlan(transientStore, instructions), config),
-      sendFheTransaction: async (
-        transientStore: TransientStore,
-        instructions: readonly Instruction[],
-        config?: TransactionConfig,
-      ) => await client.sendTransaction(fheTransactionPlan(transientStore, instructions), config),
+  return <T extends FheTransactionClient>(client: T): ExtendedClient<T, TransientStoreTransactions<T>> => {
+    // Planning runs inside the promise, so an invalid body rejects like every other send failure.
+    const planned = (
+      transientStore: TransientStore,
+      instructions: readonly Instruction[],
+    ): Promise<SequentialInstructionPlan> =>
+      Promise.resolve().then(() => fheTransactionPlan(transientStore, instructions));
+    return extendClient<T, TransientStoreTransactions<T>>(client, {
+      signFheTransaction: (transientStore, instructions, config) =>
+        planned(transientStore, instructions).then((plan) => client.signTransaction(plan, config)) as ReturnType<
+          T['signTransaction']
+        >,
+      sendFheTransaction: (transientStore, instructions, config) =>
+        planned(transientStore, instructions).then((plan) => client.sendTransaction(plan, config)) as ReturnType<
+          T['sendTransaction']
+        >,
     });
+  };
 }

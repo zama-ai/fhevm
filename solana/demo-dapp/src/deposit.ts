@@ -1,22 +1,10 @@
 import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
-import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
+import { prepareTransientStore, type TransientStore } from '@fhevm/sdk/solana';
 import {
   address,
-  appendTransactionMessageInstructions,
-  assertIsFullySignedTransaction,
-  assertIsTransactionWithBlockhashLifetime,
-  assertIsTransactionWithinSizeLimit,
-  compileTransaction,
-  createSolanaRpcSubscriptions,
-  createTransactionMessage,
   getAddressEncoder,
   getSignatureFromTransaction,
-  sendAndConfirmTransactionFactory,
-  setTransactionMessageComputeUnitLimit,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
   type Address,
   type Instruction,
   type Signature,
@@ -33,11 +21,11 @@ import {
 } from './vault/index.js';
 
 import type { BatchPosition, BatchTarget } from './batchTypes';
+import { createDemoClient } from './demoClient';
 import type { DemoSession } from './demoSession';
 import { loadDemoEncryptionKey } from './encryptionKey';
 import { recordTransactionEvidence } from './evidenceStore';
 import { hasConfidentialBalanceAccount, readClaimedUsdcHandle } from './revealShares';
-import { simulateSignedTransactionLocally, simulateUnsignedTransactionLocally } from './transactionSimulation';
 import { vaultRoots } from './vaultRoots';
 
 export type DepositStage = 'preparing' | 'shielding' | 'proving' | 'joining' | 'joined';
@@ -55,8 +43,6 @@ export const assertDepositSourceHandle = (expectedSourceHandle: string | undefin
 type Bytes32Hex = Parameters<typeof joinBatch>[0]['aclProgramAddress'];
 
 const USDC_DECIMALS = 6;
-const SHIELD_COMPUTE_UNIT_LIMIT = 1_200_000;
-const JOIN_COMPUTE_UNIT_LIMIT = 800_000;
 
 const addressEncoder = getAddressEncoder();
 
@@ -271,8 +257,7 @@ export async function depositToVault(
   const { config, signer } = session;
   const amountBaseUnits = usdcToBaseUnits(amount);
   const rpc = createFinalizedRpc(config.rpcUrl);
-  const rpcSubscriptions = createSolanaRpcSubscriptions(config.wsUrl);
-  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
+  const client = createDemoClient(config, signer);
   const roots = depositRoots(session);
   const saved = readActiveDeposit(session);
   if (
@@ -307,32 +292,21 @@ export async function depositToVault(
   }
 
   const send = async (
+    transientStore: TransientStore,
     instructions: readonly Instruction[],
-    computeUnitLimit: number,
-    beforeSend?: (journal: Omit<ShieldJournal, 'amountBaseUnits' | 'state'>) => void,
+    beforeSend: (journal: Omit<ShieldJournal, 'amountBaseUnits' | 'state'>) => void,
   ): Promise<Signature> => {
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
-    const base = setTransactionMessageFeePayerSigner(signer, createTransactionMessage({ version: 0 }));
-    const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
-    const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
-    const message = appendTransactionMessageInstructions(instructions, withComputeLimit);
     session.assertActive();
-    await simulateUnsignedTransactionLocally(rpc, compileTransaction(message), 'Shield transaction');
+    const signed = await client.signFheTransaction(transientStore, instructions);
     session.assertActive();
-    const transaction = await signTransactionMessageWithSigners(message);
-    session.assertActive();
-    assertIsFullySignedTransaction(transaction);
-    assertIsTransactionWithBlockhashLifetime(transaction);
-    assertIsTransactionWithinSizeLimit(transaction);
-    await simulateSignedTransactionLocally(rpc, transaction, 'Signed shield transaction');
-    session.assertActive();
+    const { message, transaction } = signed.context;
     const signature = getSignatureFromTransaction(transaction);
-    beforeSend?.({
+    beforeSend({
       signature,
-      blockhash: latestBlockhash.blockhash,
-      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight.toString(),
+      blockhash: message.lifetimeConstraint.blockhash,
+      lastValidBlockHeight: message.lifetimeConstraint.lastValidBlockHeight.toString(),
     });
-    await sendAndConfirm(transaction, { commitment: 'finalized', skipPreflight: true });
+    await client.sendSignedTransaction(transaction);
     return signature;
   };
 
@@ -391,7 +365,7 @@ export async function depositToVault(
 
     onStage('shielding');
     let submittedJournal: ShieldJournal | undefined;
-    const shieldSignature = await send(appendTransientStoreInstructions(transientStore, shieldInstructions), SHIELD_COMPUTE_UNIT_LIMIT, (submitted) => {
+    const shieldSignature = await send(transientStore, shieldInstructions, (submitted) => {
       submittedJournal = {
         ...submitted,
         amountBaseUnits: amountBaseUnits.toString(),
@@ -436,19 +410,16 @@ export async function depositToVault(
   let joinSignature: Signature | undefined;
   await joinBatch(
     { solanaChain: chain, aclProgramAddress: config.aclProgram as Bytes32Hex },
+    client,
     {
-      rpc,
-      rpcSubscriptions,
       inputProof,
       inputIndex: 0,
       user: signer,
-      payer: signer,
       batcher: roots.batcher,
       batch: batch.addresses.batch,
       joinConfidentialMint: roots.joinConfidentialMint,
       joinUnderlyingMint: roots.joinUnderlyingMint,
       tokenProgram: TOKEN_PROGRAM_ADDRESS,
-      computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
       onTransactionSigned: (transaction) => {
         session.assertActive();
         joinSignature = transaction.signature;

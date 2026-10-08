@@ -95,7 +95,12 @@ function identifiedZamaHostErrorCopy(error: unknown): string | undefined {
 function diagnosticText(error: unknown): string {
   if (typeof error === 'string') return error;
   if (error == null || typeof error !== 'object') return '';
-  const record = error as { readonly message?: unknown; readonly logs?: unknown; readonly context?: unknown };
+  const record = error as {
+    readonly message?: unknown;
+    readonly logs?: unknown;
+    readonly context?: unknown;
+    readonly cause?: unknown;
+  };
   const parts: string[] = [];
   if (typeof record.message === 'string') parts.push(record.message);
   if (Array.isArray(record.logs)) {
@@ -107,6 +112,8 @@ function diagnosticText(error: unknown): string {
       parts.push(logs.filter((line): line is string => typeof line === 'string').join('\n'));
     }
   }
+  // Kit's single-transaction sign wraps a failed estimate simulation, whose logs stay on the cause.
+  if (record.cause !== undefined) parts.push(diagnosticText(record.cause));
   return parts.join('\n');
 }
 

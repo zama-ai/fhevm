@@ -2,12 +2,14 @@ import {
   assertIsSendableTransaction,
   assertIsTransactionWithBlockhashLifetime,
   extendClient,
+  getSignatureFromTransaction,
   pipe,
   sendAndConfirmTransactionFactory,
   type ClientWithPayer,
   type ClientWithRpc,
   type ClientWithRpcSubscriptions,
   type ClientWithTransactionSending,
+  type Signature,
   type SolanaRpcApi,
   type SolanaRpcSubscriptionsApi,
   type Transaction,
@@ -17,6 +19,9 @@ import {
   rpcTransactionPlanSigningExecutor,
   type RpcSignContext,
 } from '@solana/kit-plugin-rpc';
+
+/** A sent transaction's context: the signing context, with the fee payer's signature always present. */
+export type FinalizedSendContext = RpcSignContext & { readonly signature: Signature };
 
 /**
  * Plans every transaction as version 1 with Kit's stock planner, signs it with the stock signing
@@ -45,13 +50,13 @@ export function finalizedTransactionSending() {
       assertIsTransactionWithBlockhashLifetime(transaction);
       await sendAndConfirm(transaction, { commitment: 'finalized', skipPreflight: true });
     };
-    const sendTransaction: ClientWithTransactionSending<RpcSignContext>['sendTransaction'] = async (
+    const sendTransaction: ClientWithTransactionSending<FinalizedSendContext>['sendTransaction'] = async (
       input,
       config,
     ) => {
       const result = await signing.signTransaction(input, config);
       await sendSignedTransaction(result.context.transaction);
-      return result;
+      return { ...result, context: { ...result.context, signature: getSignatureFromTransaction(result.context.transaction) } };
     };
     return extendClient(signing, { sendSignedTransaction, sendTransaction });
   };

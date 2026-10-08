@@ -15,27 +15,19 @@ import {
   address,
   decompileTransactionMessage,
   generateKeyPairSigner,
-  getBase64Encoder,
   getCompiledTransactionMessageDecoder,
-  getTransactionDecoder,
   type Address,
+  type Transaction,
 } from '@solana/kit';
 import { base58 } from '@scure/base';
 
 import { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
-import {
-  deriveBatchAddresses,
-  deriveSettleAccounts,
-  deriveSettleLookupTableAddresses,
-  type VaultDemoRoots,
-} from './derive.js';
+import { deriveBatchAddresses, type VaultDemoRoots } from './derive.js';
 import { getSettleInstructionDataDecoder, parseSettleInstruction } from './internal/generated/confidentialBatcher/instructions/settle.js';
-import {
-  CLOSE_TRANSIENT_STORE_DISCRIMINATOR,
-  findDenyScopeRecordPda,
-  ZAMA_HOST_PROGRAM_ADDRESS,
-} from '@fhevm/solana-zama-host';
+import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
+import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import { encodedSize, testDemoClient } from '../testDemoClient';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -71,39 +63,35 @@ function roots(): VaultDemoRoots {
   };
 }
 
-function claim(cleartext: string) {
+function claim(cleartext: string, signatures = 1) {
   return {
     handle: `0x${hex(BURNED_HANDLE)}`,
     abiEncodedCleartext: cleartext,
-    signatures: [hex(new Uint8Array(65).fill(0x11))],
+    signatures: Array.from({ length: signatures }, () => hex(new Uint8Array(65).fill(0x11))),
     extraData: '0x00',
   };
 }
 
-async function options(overrides: { burnedHandle?: Uint8Array } = {}): Promise<{
-  keeper: Awaited<ReturnType<typeof generateKeyPairSigner>>;
-  opts: SolanaVaultSettleOptions;
-}> {
-  const keeper = await generateKeyPairSigner();
-  const burnedHandle = overrides.burnedHandle ?? BURNED_HANDLE;
+async function setup(overrides: { burnedHandle?: Uint8Array } = {}) {
   const addresses = await deriveBatchAddresses(roots(), 0n);
-
-  getCurrentBatch.mockResolvedValue({ index: 0n, addresses, state: { burnedTotalHandle: burnedHandle } });
-
+  getCurrentBatch.mockResolvedValue({
+    index: 0n,
+    addresses,
+    state: { burnedTotalHandle: overrides.burnedHandle ?? BURNED_HANDLE },
+  });
   const opts: SolanaVaultSettleOptions = {
-    rpc: {
-      getLatestBlockhash: vi.fn().mockReturnValue({
-        send: vi.fn().mockResolvedValue({ value: { blockhash: addr(250), lastValidBlockHeight: 1_000n } }),
-      }),
-      simulateTransaction: vi.fn().mockReturnValue({ send: vi.fn().mockResolvedValue({ value: { err: null } }) }),
-    } as unknown as SolanaVaultSettleOptions['rpc'],
-    rpcSubscriptions: {} as SolanaVaultSettleOptions['rpcSubscriptions'],
     roots: roots(),
     contextId: new Uint8Array(32),
-    lookupTableAddress: addr(200),
     authorityFundingLamports: 5_000_000n,
   };
-  return { keeper, opts };
+  return { ...testDemoClient(await generateKeyPairSigner()), opts, addresses };
+}
+
+/** The last transaction handed to Kit's send-and-confirm. */
+const sent = (): Transaction => sendAndConfirm.mock.lastCall![0] as Transaction;
+
+function messageOf(transaction: Transaction) {
+  return decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(transaction.messageBytes));
 }
 
 describe('settleBatch', () => {
@@ -112,136 +100,69 @@ describe('settleBatch', () => {
     certificate.mockReset();
     getCurrentBatch.mockReset();
   });
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => vi.restoreAllMocks());
 
-  it('resolves the current batch and builds an ALT-aware v0 settle with pending_burn in the table', async () => {
+  it('settles the current batch with its certificate as one v1 FHE transaction', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
-    const { keeper, opts } = await options();
-    await expect(settleBatch({ publicDecryptCertificate: certificate }, keeper, opts)).resolves.toEqual(expect.any(String));
+    const { client, opts, addresses } = await setup();
+    const signature = await settleBatch({ publicDecryptCertificate: certificate }, client, opts);
 
     // The batch was resolved from chain state, not supplied.
     expect(getCurrentBatch).toHaveBeenCalledTimes(1);
     // The certificate names the handle and the account, nothing else: no proof travels.
     expect(certificate).toHaveBeenCalledTimes(1);
-    const batchAddresses = await deriveBatchAddresses(opts.roots, 0n);
     expect(certificate.mock.calls[0]![0]).toEqual({
       handle: `0x${hex(BURNED_HANDLE)}`,
       contextId: opts.contextId,
-      encryptedStore: base58.decode(batchAddresses.batchBurnedAmountStore),
+      encryptedStore: base58.decode(addresses.batchBurnedAmountStore),
       options: undefined,
     });
 
-    const simulate = opts.rpc.simulateTransaction as unknown as ReturnType<typeof vi.fn>;
-    const wire = simulate.mock.calls[0]![0] as string;
-    expect(getBase64Encoder().encode(wire).length).toBeLessThanOrEqual(1232);
-
-    const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
-    const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
-    if (compiled.version !== 0) throw new Error('Expected an ALT-aware v0 transaction');
-
-    // The v0 message references the batch's lookup table, and every derivable settle account moved
-    // into it.
-    const lookups =
-      (
-        compiled as {
-          addressTableLookups?: { lookupTableAddress: Address; writableIndexes: number[]; readonlyIndexes: number[] }[];
-        }
-      ).addressTableLookups ?? [];
-    expect(lookups).toHaveLength(1);
-    expect(lookups[0]!.lookupTableAddress).toBe(opts.lookupTableAddress);
-
-    // The compiled message must reference every address in the provisioned list exactly once.
-    // Provisioning and settlement share the same derivation helper, so this assertion checks lookup
-    // index coverage; derive.test.ts separately pins the helper's field set and ordering.
-    const provisioned = await deriveSettleLookupTableAddresses(opts.roots, batchAddresses);
-    const usedIndexes = [...lookups[0]!.writableIndexes, ...lookups[0]!.readonlyIndexes];
-    expect(Math.max(...usedIndexes)).toBeLessThan(provisioned.length);
-    expect(new Set(usedIndexes.map((index) => provisioned[index]!))).toEqual(new Set(provisioned));
-
-    // pending_burn rides in the ALT; only the fee payer (plus program /
-    // event authorities outside the provisioned list) stays static.
-    const accounts = await deriveSettleAccounts(opts.roots, batchAddresses);
-    const staticAccounts = compiled.staticAccounts as readonly Address[];
-    expect(staticAccounts[0]).toBe(keeper.address); // fee payer is always static account 0
-    expect(staticAccounts).not.toContain(accounts.pendingBurn);
-    expect(provisioned).toContain(accounts.pendingBurn);
-    // The static set is closed at 10: the fee payer, transient store, instructions sysvar,
-    // compute-budget program and fixed program IDs. Pinning the count makes
-    // growth a deliberate edit with a fresh look at the 1232-byte budget.
-    expect(staticAccounts).toHaveLength(10);
-    // And nothing is paid for twice: an address provisioned into the table must not also sit in
-    // the static set.
-    expect(staticAccounts.filter((address) => provisioned.includes(address))).toEqual([]);
-
-    // The certified 32-byte cleartext was decoded to the u64 settle argument. instructions[0] is the
-    // prepended SetComputeUnitLimit; the open is instructions[1] and settle is instructions[2].
-    const compiledInstructions = compiled.instructions;
-    expect(compiledInstructions).toHaveLength(4);
-    expect(compiledInstructions.at(-1)!.data).toEqual(CLOSE_TRANSIENT_STORE_DISCRIMINATOR);
-    expect(staticAccounts[compiledInstructions.at(-1)!.programAddressIndex]).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
-    const message = decompileTransactionMessage(compiled, {
-      addressesByLookupTableAddress: { [opts.lookupTableAddress]: provisioned },
-    });
-    const open = message.instructions[1]!;
-    const settle = message.instructions[2]!;
-    const close = message.instructions[3]!;
-    const parsed = parseSettleInstruction({ ...settle, accounts: settle.accounts!, data: settle.data! });
-    expect(open.accounts?.[1]?.address).toBe(parsed.accounts.transientStore.address);
-    expect(close.accounts?.[1]?.address).toBe(parsed.accounts.transientStore.address);
-    expect(parsed.accounts.instructions.address).toBe(address('Sysvar1nstructions1111111111111111111111111'));
-    expect(open.accounts?.[2]?.address).toBe(parsed.accounts.instructions.address);
-    expect(close.accounts?.[0]?.address).toBe(parsed.accounts.instructions.address);
-    const data = getSettleInstructionDataDecoder().decode(compiledInstructions[2]!.data!);
-    expect(data.cleartextTotal).toBe(800n);
+    expect(sendAndConfirm).toHaveBeenCalledOnce();
+    const transaction = sent();
+    expect(Object.keys(transaction.signatures)[0]).toBe(client.payer.address);
+    expect(signature).toEqual(expect.any(String));
+    const message = messageOf(transaction);
+    expect(message.version).toBe(1);
+    const [open, settle, close] = message.instructions;
+    expect([...message.instructions].map((instruction) => instruction.programAddress)).toEqual([
+      ZAMA_HOST_PROGRAM_ADDRESS,
+      CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
+      ZAMA_HOST_PROGRAM_ADDRESS,
+    ]);
+    const parsed = parseSettleInstruction({ ...settle!, accounts: settle!.accounts!, data: settle!.data! });
+    expect(parsed.accounts.batch.address).toBe(addresses.batch);
+    expect(open!.accounts?.[1]?.address).toBe(parsed.accounts.transientStore.address);
+    expect(close!.accounts?.[1]?.address).toBe(parsed.accounts.transientStore.address);
+    // The certified 32-byte cleartext was decoded to the u64 settle argument.
+    expect(getSettleInstructionDataDecoder().decode(settle!.data!).cleartextTotal).toBe(800n);
   });
 
-  it.each([{ threshold: 1 }, { threshold: 7 }])('fits $threshold signatures with the provisioned table', async ({ threshold }) => {
-    const { keeper, opts } = await options();
-    certificate.mockResolvedValue({
-      ...claim(cleartextHex(800n)),
-      signatures: Array.from({ length: threshold }, () => hex(new Uint8Array(65).fill(0x11))),
-    });
-    await settleBatch({ publicDecryptCertificate: certificate }, keeper, opts);
-    const simulate = opts.rpc.simulateTransaction as unknown as ReturnType<typeof vi.fn>;
-    const bytes = getBase64Encoder().encode(simulate.mock.calls[0]![0] as string);
-    expect(bytes.length).toBeLessThanOrEqual(1232);
-  });
-
-  // The host witnesses stay out of the table: the meter has no client-side PDA finder, and all
-  // three as static keys still fit at 7 signatures.
-  it('fits 7 signatures with every host witness outside the table', async () => {
-    const { keeper, opts } = await options();
-    certificate.mockResolvedValue({
-      ...claim(cleartextHex(800n)),
-      signatures: Array.from({ length: 7 }, () => hex(new Uint8Array(65).fill(0x11))),
-    });
-    await settleBatch({ publicDecryptCertificate: certificate }, keeper, {
+  // The largest settle: a certificate at the host's maximum KMS threshold (MAX_KMS_SIGNERS = 16)
+  // with the deny record and both HCU witnesses. A v1 transaction is at most 4,096 bytes and 64
+  // account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
+  it('fits one v1 transaction at the maximum KMS threshold with every witness', async () => {
+    certificate.mockResolvedValue(claim(cleartextHex(800n), 16));
+    const { client, opts } = await setup();
+    await settleBatch({ publicDecryptCertificate: certificate }, client, {
       ...opts,
       payoutMintHcuBlockMeter: addr(40),
       payoutMintHcuTrustedAppRecord: addr(41),
       denyListEnabled: true,
     });
-    const simulate = opts.rpc.simulateTransaction as unknown as ReturnType<typeof vi.fn>;
-    const bytes = getBase64Encoder().encode(simulate.mock.calls[0]![0] as string);
-    expect(bytes.length).toBeLessThanOrEqual(1232);
-    const transaction = getTransactionDecoder().decode(bytes);
-    const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
-    expect(compiled.staticAccounts).toEqual(expect.arrayContaining([addr(40), addr(41)]));
+    const size = encodedSize(sent());
+    expect(size.version).toBe(1);
+    expect(size.bytes).toBeLessThanOrEqual(4096);
+    expect(size.addresses).toBeLessThanOrEqual(64);
   });
 
-  // The settle instruction's accounts as submitted, read back through the batch's lookup table.
+  // The settle instruction's accounts as submitted.
   async function submittedSettleAccounts(total: bigint, denyListEnabled: boolean): Promise<Address[]> {
-    const { keeper, opts } = await options();
     certificate.mockResolvedValue(claim(cleartextHex(total)));
-    await settleBatch({ publicDecryptCertificate: certificate }, keeper, { ...opts, denyListEnabled });
-    const simulate = opts.rpc.simulateTransaction as unknown as ReturnType<typeof vi.fn>;
-    const transaction = getTransactionDecoder().decode(getBase64Encoder().encode(simulate.mock.calls[0]![0] as string));
-    const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
-    const provisioned = await deriveSettleLookupTableAddresses(opts.roots, await deriveBatchAddresses(opts.roots, 0n));
-    const message = decompileTransactionMessage(compiled, {
-      addressesByLookupTableAddress: { [opts.lookupTableAddress]: provisioned },
-    });
-    return Array.from(message.instructions[2]!.accounts ?? [], (account) => account.address);
+    const { client, opts } = await setup();
+    await settleBatch({ publicDecryptCertificate: certificate }, client, { ...opts, denyListEnabled });
+    const settle = messageOf(sent()).instructions[1]!;
+    return Array.from(settle.accounts ?? [], (account) => account.address);
   }
 
   it('appends, under the deny list, the payout mint deny record for the wrap, and none for a zero total', async () => {
@@ -254,30 +175,20 @@ describe('settleBatch', () => {
     expect(await submittedSettleAccounts(0n, true)).toHaveLength(plain.length);
   });
 
-  it('rejects an oversized certificate before simulation or send', async () => {
-    const { keeper, opts } = await options();
-    certificate.mockResolvedValue({
-      ...claim(cleartextHex(800n)),
-      signatures: Array.from({ length: 16 }, () => hex(new Uint8Array(65).fill(0x11))),
-    });
-    await expect(settleBatch({ publicDecryptCertificate: certificate }, keeper, opts)).rejects.toThrow('exceeds limit of 1232 bytes');
-    expect(opts.rpc.simulateTransaction).not.toHaveBeenCalled();
-    expect(sendAndConfirm).not.toHaveBeenCalled();
-  });
-
   it('rejects a batch that has not been dispatched (zero burned handle) before any phase', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
-    const { keeper, opts } = await options({ burnedHandle: new Uint8Array(32) });
-    await expect(settleBatch({ publicDecryptCertificate: certificate }, keeper, opts)).rejects.toThrow('no burned total handle');
+    const { client, opts, rpcMethods } = await setup({ burnedHandle: new Uint8Array(32) });
+    await expect(settleBatch({ publicDecryptCertificate: certificate }, client, opts)).rejects.toThrow('no burned total handle');
     expect(certificate).not.toHaveBeenCalled();
+    expect(rpcMethods).toEqual([]);
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 
   it('rejects a certified total that does not fit u64 before touching the RPC or sending', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(1n, 0x01))); // a high byte set
-    const { keeper, opts } = await options();
-    await expect(settleBatch({ publicDecryptCertificate: certificate }, keeper, opts)).rejects.toThrow('exceeds u64');
-    expect(opts.rpc.simulateTransaction).not.toHaveBeenCalled();
+    const { client, opts, rpcMethods } = await setup();
+    await expect(settleBatch({ publicDecryptCertificate: certificate }, client, opts)).rejects.toThrow('exceeds u64');
+    expect(rpcMethods).toEqual([]);
     expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 });

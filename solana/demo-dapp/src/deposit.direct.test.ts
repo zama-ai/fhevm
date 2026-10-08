@@ -19,6 +19,9 @@ const mocks = vi.hoisted(() => ({
 const rpc = {
   getLatestBlockhash: vi.fn(() => ({ send: async () => ({ value: { blockhash: "11111111111111111111111111111111" as Blockhash, lastValidBlockHeight: 1_000n } }) })),
   getAccountInfo: vi.fn(() => ({ send: vi.fn().mockResolvedValue({ value: null }) })),
+  simulateTransaction: vi.fn(() => ({
+    send: async () => ({ value: { err: null, logs: [], unitsConsumed: 200_000n, loadedAccountsDataSize: 100_000 } }),
+  })),
 };
 
 vi.mock('@fhevm/solana-zama-host', async (importOriginal) => ({
@@ -62,10 +65,6 @@ vi.mock('./encryptionKey', () => ({
 }));
 vi.mock('./evidenceStore', () => ({ recordTransactionEvidence: vi.fn() }));
 vi.mock('./revealShares', () => ({ readClaimedUsdcHandle: mocks.readHandle }));
-vi.mock('./transactionSimulation', () => ({
-  simulateSignedTransactionLocally: vi.fn(),
-  simulateUnsignedTransactionLocally: vi.fn(),
-}));
 vi.mock('./vaultRoots', () => ({
   vaultRoots: () => ({
     batcher: '11111111111111111111111111111111',
@@ -153,8 +152,9 @@ describe('public USDC deposit', () => {
     expect(mocks.send).toHaveBeenCalledOnce();
     const sent = mocks.send.mock.calls[0]![0];
     const message = decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(sent.messageBytes));
-    // The first instruction sets the CU budget. All FHE work shares one exact lifecycle.
-    const body = message.instructions.slice(1);
+    // All FHE work shares one exact lifecycle; v1 carries the compute limit in the message.
+    expect(message.version).toBe(1);
+    const body = [...message.instructions];
     expect([...body[0]!.data!]).toEqual([...OPEN_TRANSIENT_STORE_DISCRIMINATOR]);
     expect(body.slice(1, -1).map(ix => [...ix.data!])).toEqual(initialize ? [[1], [2]] : [[2]]);
     expect([...body.at(-1)!.data!]).toEqual([...CLOSE_TRANSIENT_STORE_DISCRIMINATOR]);

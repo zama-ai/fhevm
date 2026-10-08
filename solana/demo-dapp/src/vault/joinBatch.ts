@@ -1,32 +1,12 @@
 import { findAssociatedTokenPda } from '@solana-program/token';
 import { findEventAuthorityPda } from '@fhevm/solana-zama-host';
-import {
-  INSTRUCTIONS_SYSVAR_ADDRESS,
-  appendTransientStoreInstructions,
-  prepareTransientStore,
-} from '@fhevm/sdk/solana';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore } from '@fhevm/sdk/solana';
 import {
   address,
-  assertIsFullySignedTransaction,
-  assertIsTransactionWithBlockhashLifetime,
-  assertIsTransactionWithinSizeLimit,
-  compileTransaction,
-  createTransactionMessage,
-  getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
-  pipe,
-  sendAndConfirmTransactionFactory,
-  setTransactionMessageComputeUnitLimit,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
   type Address,
   type Blockhash,
-  type Rpc,
-  type RpcSubscriptions,
   type Signature,
-  type SolanaRpcApi,
-  type SolanaRpcSubscriptionsApi,
   type TransactionSigner,
 } from '@solana/kit';
 import { base58 } from '@scure/base';
@@ -43,6 +23,7 @@ import { batchApp, tokenApp, withDenyRecords, type DenyListParameters } from './
 import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/pdas/index.js';
 import { joinStoreAddress, tokenStoreAddress } from './internal/encryptedStores.js';
 import { findTokenAccountPda, ZAMA_HOST_PROGRAM_ADDRESS, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import type { DemoClient } from '../demoClient';
 
 /**
  * Joins a batch with a coprocessor-attested confidential amount of the batcher's join token. This
@@ -59,15 +40,11 @@ export type SolanaVaultJoinParameters = Pick<
   'joinMintHcuBlockMeter' | 'joinMintHcuTrustedAppRecord' | 'batchHcuBlockMeter' | 'batchHcuTrustedAppRecord'
 > &
   DenyListParameters & {
-  readonly rpc: Rpc<SolanaRpcApi>;
-  readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   readonly inputProof: SolanaInputProof;
 
   readonly inputIndex: number;
   /** Joining user; the transfer authority over their confidential balance. */
   readonly user: TransactionSigner;
-  /** Pays JoinRecord/state growth and refundable transientStore rent. */
-  readonly payer: TransactionSigner;
   readonly batcher: Address;
   readonly batch: Address;
   /** Confidential mint the batcher joins with (`batcher.join_confidential_mint`). */
@@ -76,8 +53,7 @@ export type SolanaVaultJoinParameters = Pick<
   readonly joinUnderlyingMint: Address;
   /** Token program that owns `joinUnderlyingMint` (`Tokenkeg` or Token-2022). */
   readonly tokenProgram: Address;
-  readonly computeUnitLimit?: number | undefined;
-  /** Called after successful simulation and immediately before submission, for persistent recovery journals. */
+  /** Called after signing (which simulates first) and immediately before submission, for persistent recovery journals. */
   readonly onTransactionSigned?:
     | ((transaction: {
         readonly signature: Signature;
@@ -87,21 +63,10 @@ export type SolanaVaultJoinParameters = Pick<
     | undefined;
 };
 
-const assertJoinSimulationSucceeded = (simulation: {
-  readonly err: unknown;
-  readonly logs?: readonly string[] | null;
-}): void => {
-  if (simulation.err === null) return;
-  const err = JSON.stringify(simulation.err, (_key, value: unknown) =>
-    typeof value === 'bigint' ? value.toString() : value,
-  );
-  const logs = simulation.logs?.join('\n') ?? '';
-  throw new Error(logs.length > 0 ? `join simulation failed: ${err}\n${logs}` : `join simulation failed: ${err}`);
-};
-
-/** Builds, simulates, sends, and confirms one batch join. */
+/** Builds, signs, sends, and confirms one batch join; `client.payer` pays JoinRecord growth and transientStore rent. */
 export async function joinBatch(
   fhevm: { readonly solanaChain: FhevmSolanaChain; readonly aclProgramAddress: Bytes32Hex },
+  client: DemoClient,
   parameters: SolanaVaultJoinParameters,
 ): Promise<Signature> {
   const { inputProof, inputIndex, user, joinConfidentialMint } = parameters;
@@ -139,10 +104,10 @@ export async function joinBatch(
   const userTokenAccount = (await findTokenAccountPda({ mint: joinConfidentialMint, owner: user.address }))[0];
   const batchJoinTokenAccount = (await findTokenAccountPda({ mint: joinConfidentialMint, owner: batchAuthority }))[0];
   const joinStore = await joinStoreAddress(parameters.batch, user.address);
-  const transientStore = await prepareTransientStore({ payer: parameters.payer, host: zamaHostProgramAddress });
+  const transientStore = await prepareTransientStore({ payer: client.payer, host: zamaHostProgramAddress });
   const joinInstruction = await getJoinInstructionAsync({
     user,
-    payer: parameters.payer,
+    payer: client.payer,
     batcher: parameters.batcher,
     batch: parameters.batch,
     joinConfidentialMint,
@@ -183,42 +148,14 @@ export async function joinBatch(
     batchApp(parameters.batch),
   ]);
 
-  const { value: latestBlockhash } = await parameters.rpc.getLatestBlockhash().send();
-  const message = pipe(
-    createTransactionMessage({ version: 0 }),
-    (m) => setTransactionMessageFeePayerSigner(parameters.payer, m),
-    (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
-    (m) => setTransactionMessageComputeUnitLimit(parameters.computeUnitLimit ?? 400_000, m),
-    (m) => appendTransientStoreInstructions(transientStore, [instruction], m),
-  );
-  const unsignedTransaction = compileTransaction(message);
-  assertIsTransactionWithinSizeLimit(unsignedTransaction);
-  const unsignedWireTransaction = getBase64EncodedWireTransaction(unsignedTransaction);
-  const preflight = await parameters.rpc
-    .simulateTransaction(unsignedWireTransaction, { commitment: 'finalized', encoding: 'base64', sigVerify: false })
-    .send();
-  assertJoinSimulationSucceeded(preflight.value);
-  const transaction = await signTransactionMessageWithSigners(message);
-  assertIsFullySignedTransaction(transaction);
-  assertIsTransactionWithBlockhashLifetime(transaction);
-  assertIsTransactionWithinSizeLimit(transaction);
-  const wireTransaction = getBase64EncodedWireTransaction(transaction);
-  const simulation = await parameters.rpc
-    .simulateTransaction(wireTransaction, { commitment: 'finalized', encoding: 'base64', sigVerify: true })
-    .send();
-  assertJoinSimulationSucceeded(simulation.value);
+  const signed = await client.signFheTransaction(transientStore, [instruction]);
+  const { message, transaction } = signed.context;
   const signature = getSignatureFromTransaction(transaction);
   await parameters.onTransactionSigned?.({
     signature,
-    blockhash: latestBlockhash.blockhash,
-    lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+    blockhash: message.lifetimeConstraint.blockhash,
+    lastValidBlockHeight: message.lifetimeConstraint.lastValidBlockHeight,
   });
-  await sendAndConfirmTransactionFactory({ rpc: parameters.rpc, rpcSubscriptions: parameters.rpcSubscriptions })(
-    transaction,
-    {
-      commitment: 'finalized',
-      skipPreflight: true,
-    },
-  );
+  await client.sendSignedTransaction(transaction);
   return signature;
 }

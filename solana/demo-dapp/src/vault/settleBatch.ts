@@ -1,16 +1,5 @@
-import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
-import {
-  getBase64EncodedWireTransaction,
-  getSignatureFromTransaction,
-  sendAndConfirmTransactionFactory,
-  type Address,
-  type Rpc,
-  type RpcSubscriptions,
-  type Signature,
-  type SolanaRpcApi,
-  type SolanaRpcSubscriptionsApi,
-  type TransactionSigner,
-} from '@solana/kit';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore } from '@fhevm/sdk/solana';
+import type { Signature } from '@solana/kit';
 import { base58 } from '@scure/base';
 
 import { bytesToHex, hexToBytes } from '@fhevm/sdk/base';
@@ -23,55 +12,39 @@ import {
 import { tokenApp, withDenyRecords, type DenyListParameters } from './internal/denyRecords.js';
 import { fetchBatch } from './internal/generated/confidentialBatcher/accounts/batch.js';
 import { settleTotalFromCleartext } from './internal/cleartext.js';
-import { buildAndSignSettleTransaction } from './internal/settleMessage.js';
-import {
-  deriveBatchAddresses,
-  deriveSettleAccounts,
-  settleAccountsToLookupTableAddresses,
-  type BatchAddresses,
-  type VaultDemoRoots,
-} from './derive.js';
+import { deriveBatchAddresses, deriveSettleAccounts, type BatchAddresses, type VaultDemoRoots } from './derive.js';
 import { getCurrentBatch } from './reads.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import type { DemoClient } from '../demoClient';
 // The token client pins the host program it was compiled against; the vault module targets that pair.
 
 const ZERO_HANDLE = new Uint8Array(32);
 
-/** What `settleBatch` needs beyond the certificate phase and the keeper signer. */
+/** What `settleBatch` needs beyond the certificate phase and the keeper's client. */
 export type SolanaVaultSettleOptions = Pick<SettleAsyncInput, 'payoutMintHcuBlockMeter' | 'payoutMintHcuTrustedAppRecord'> &
   DenyListParameters & {
-  readonly rpc: Rpc<SolanaRpcApi>;
-  readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   /** The batcher's demo topology; every settle account is derived from these. */
   readonly roots: VaultDemoRoots;
   /** Which batch to settle; defaults to the batcher's current (most-recently-opened) batch. */
   readonly batchIndex?: bigint | undefined;
   /** 32-byte context id the certificate commits to (the host's current KMS context). */
   readonly contextId: Uint8Array;
-  /**
-   * The settle Address Lookup Table's address. It is created OFF-CHAIN at `open_batch` (the batcher
-   * program creates no ALT — verified against `open_batch.rs`), so it is neither a PDA nor stored on
-   * `Batcher`/`Batch`; it must be supplied. Its contents are derived, not supplied
-   * ({@link settleAccountsToLookupTableAddresses}).
-   */
-  readonly lookupTableAddress: Address;
   readonly authorityFundingLamports: bigint;
-  readonly computeUnitLimit?: number | undefined;
   /** Bounds and observes the relayer/KMS certificate request independently of the on-chain send. */
   readonly certificateOptions?: RelayerPublicDecryptOptions | undefined;
 };
 
 /**
  * Settles the batch's pinned burn handle with a KMS certificate. The settle program checks the
- * certificate against the burned handle pinned in the batch's `PendingBurn`.
- * The resulting settle instruction uses the batch's lookup table to fit the transaction packet.
+ * certificate against the burned handle pinned in the batch's `PendingBurn`. `keeper.payer` pays.
  */
 export async function settleBatch(
   client: Pick<FhevmSolanaPublicDecryptClient, 'publicDecryptCertificate'>,
-  keeper: TransactionSigner,
+  keeper: DemoClient,
   options: SolanaVaultSettleOptions,
 ): Promise<Signature> {
-  const { rpc, roots } = options;
+  const { roots } = options;
+  const { rpc } = keeper;
 
   // Resolve the batch and its created-public burned handle from chain state.
   let addresses: BatchAddresses;
@@ -107,20 +80,11 @@ export async function settleBatch(
     return bytes;
   });
 
-  // Provisioning and settlement use the same ordered account list, including the event
-  // authorities and batch PDAs that the generated instruction can also derive.
-  const lookupTableAddresses = settleAccountsToLookupTableAddresses(accounts);
-  if (!lookupTableAddresses.includes(accounts.pendingBurn)) {
-    throw new Error(
-      `settle lookup table must contain pending_burn (${accounts.pendingBurn}); it is known at open_batch`,
-    );
-  }
-
-  const transientStore = await prepareTransientStore({ payer: keeper, host: ZAMA_HOST_PROGRAM_ADDRESS });
+  const transientStore = await prepareTransientStore({ payer: keeper.payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
   const settleWithoutDenyRecords = await getSettleInstructionAsync({
     transientStore: transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
-    payer: keeper,
+    payer: keeper.payer,
     ...accounts,
     cleartextTotal,
     signatures,
@@ -135,30 +99,5 @@ export async function settleBatch(
     cleartextTotal === 0n ? [] : [tokenApp(roots.payoutConfidentialMint)],
   );
 
-  const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
-  const transaction = await buildAndSignSettleTransaction({
-    instructions: appendTransientStoreInstructions(transientStore, [settleInstruction]),
-    feePayer: keeper,
-    latestBlockhash,
-    computeUnitLimit: options.computeUnitLimit ?? 1_000_000,
-    lookupTableAddress: options.lookupTableAddress,
-    lookupTableAddresses,
-  });
-
-  const wireTransaction = getBase64EncodedWireTransaction(transaction);
-  const simulation = await rpc
-    .simulateTransaction(wireTransaction, { commitment: 'finalized', encoding: 'base64', sigVerify: true })
-    .send();
-  if (simulation.value.err !== null) {
-    const err = JSON.stringify(simulation.value.err, (_key, value: unknown) =>
-      typeof value === 'bigint' ? value.toString() : value,
-    );
-    const logs = simulation.value.logs?.join('\n') ?? '';
-    throw new Error(logs.length > 0 ? `settle simulation failed: ${err}\n${logs}` : `settle simulation failed: ${err}`);
-  }
-  await sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions: options.rpcSubscriptions })(transaction, {
-    commitment: 'finalized',
-    skipPreflight: true,
-  });
-  return getSignatureFromTransaction(transaction);
+  return (await keeper.sendFheTransaction(transientStore, [settleInstruction])).context.signature;
 }
