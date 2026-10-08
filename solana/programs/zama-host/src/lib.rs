@@ -30,7 +30,7 @@ pub mod encode;
 pub mod errors;
 /// The one event-CPI emitter; every event this program emits goes through it.
 pub(crate) mod event_cpi;
-/// Emitted protocol events (admin and config lifecycle plus the two compute events).
+/// Emitted protocol events (admin and config lifecycle plus the compute event).
 pub mod events;
 /// Instruction account contexts and handlers.
 pub mod instructions;
@@ -87,7 +87,7 @@ pub mod zama_host {
         instructions::initialize_host_config(ctx, args)
     }
 
-    /// Defines a new KMS context (mirror of `ProtocolConfig.defineNewKmsContext`).
+    /// Defines a new KMS context (mirror of `ProtocolConfig.mirrorKmsContextAndEpoch`).
     pub fn define_kms_context(
         ctx: Context<DefineKmsContext>,
         context_id: [u8; 32],

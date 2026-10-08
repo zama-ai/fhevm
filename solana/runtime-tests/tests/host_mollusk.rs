@@ -3424,6 +3424,55 @@ fn mollusk_define_kms_context_rejects_zero_signer() {
     );
 }
 
+#[test]
+fn mollusk_define_kms_context_requires_an_increasing_id() {
+    let admin = Pubkey::new_unique();
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
+    // EVM-shaped ids carry the `0x07` tag in the high byte; the order is the whole 32-byte
+    // big-endian integer, so a carry into a higher byte still increases and a lower tag never does.
+    let tagged = |low: u16| {
+        let mut id = [0u8; 32];
+        id[0] = 0x07;
+        id[30..].copy_from_slice(&low.to_be_bytes());
+        id
+    };
+    let mut below_tag = [0xFF; 32];
+    below_tag[0] = 0x06;
+    let non_increasing = || custom_error(host::errors::ZamaHostError::NonIncreasingKmsContextId);
+    let steps = [
+        (canonical_test_context_id(0), non_increasing()),
+        (canonical_test_context_id(5), Check::success()),
+        (canonical_test_context_id(3), non_increasing()),
+        (canonical_test_context_id(6), Check::success()),
+        (tagged(0x00FF), Check::success()),
+        (tagged(0x0100), Check::success()),
+        (below_tag, non_increasing()),
+    ];
+    let mut accounts = vec![(host_config, account)];
+    accounts.extend(
+        steps
+            .iter()
+            .map(|(id, _)| (host::kms_context_address(*id).0, system_account(0))),
+    );
+    let context = mollusk_execute_context(admin, accounts);
+    for (id, expected) in steps {
+        check_host_context(
+            &context,
+            &define_kms_context_ix(
+                admin,
+                host_config,
+                id,
+                vec![[0xAA; 20]],
+                default_kms_thresholds(),
+            ),
+            &[expected],
+        );
+    }
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.current_kms_context_id, tagged(0x0100));
+}
+
 // ---------------------------------------------------------------------------
 // FheExecutionFixture: a persistent-output execution for block-cap enforcement
 // ---------------------------------------------------------------------------

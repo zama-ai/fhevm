@@ -331,10 +331,6 @@ pub struct CoprocessorInputAttestation {
 /// Operand source for a composed fhe_execute operation.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq, Eq)]
 pub enum FheExecuteOperand {
-    /// A value read out of persistent ACL state: a canonical `EncryptedStore` account in
-    /// `remaining_accounts` whose current handle matches the interned one. Admission is the
-    /// signature of the value's authority, found among the execution's signers.
-
     /// Compact reference to an earlier result, authorized by the execution Store in transient store.
     EarlierStep {
         /// Producer operation index.
@@ -357,14 +353,23 @@ pub enum FheExecuteOperand {
         // is unchanged.
         attestation: Box<CoprocessorInputAttestation>,
     },
-
+    /// A value read out of persistent ACL state: a canonical `EncryptedStore` account in
+    /// `remaining_accounts` whose current handle matches the interned one. Admission is the
+    /// signature of the value's authority, found among the execution's signers.
     StoreSlot {
+        /// Dictionary index of the handle the slot must currently hold.
         handle_index: u8,
+        /// Index of the `EncryptedStore` among the execution's accounts.
         store_index: u8,
+        /// Dictionary index of the slot key.
         key_index: u8,
     },
+    /// A result an earlier `fhe_execute` in this transaction granted to a consumer store, read
+    /// from the transient store.
     TransientResult {
+        /// Dictionary index of the granted handle.
         handle_index: u8,
+        /// Index of the consumer `EncryptedStore` the grant names, among the execution's accounts.
         consumer_store_index: u8,
     },
 }

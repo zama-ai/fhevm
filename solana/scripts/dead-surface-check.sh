@@ -437,8 +437,8 @@ if run_check 1; then
       [ -n "$variant" ] || continue
       # Anchored on the enum and on both boundaries. The bare `::Variant` form let a same-named
       # variant of another program's enum vouch for this one (`ZamaHostError::InvalidKmsContext`
-      # kept `ConfidentialTokenError::InvalidKmsContext` alive), and `::InvalidKmsContext` must not
-      # be kept alive by `::InvalidKmsContextId` either.
+      # kept `ConfidentialTokenError::InvalidKmsContext` alive), and `::Foo` must not be kept alive by
+      # `::FooBar` either.
       pattern="(^|[^A-Za-z0-9_])${enum}::${variant}([^A-Za-z0-9_]|$)"
       hits=$(( $(index_refs "$pattern" "$file") + $(grep -cE "$pattern" <<< "$own_lines" || true) ))
       if [ "$hits" -eq 0 ]; then

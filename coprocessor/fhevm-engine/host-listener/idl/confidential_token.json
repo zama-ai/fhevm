@@ -5297,7 +5297,8 @@
           {
             "name": "context_id",
             "docs": [
-              "Opaque 32-byte context id (mirrors EVM `kmsContextId`). All-zero is reserved (none defined)."
+              "32-byte context id (EVM `kmsContextId`), ordered as a big-endian integer; each new id is above",
+              "the current one, so it is never all-zero."
             ],
             "type": {
               "array": [
@@ -5407,8 +5408,8 @@
           {
             "name": "verified_inputs",
             "docs": [
-              "`fhe_execute` steps that consume a coprocessor-attested input (Gateway",
-              "`InputVerification` pause)."
+              "`fhe_execute` steps that consume a coprocessor-attested input (no EVM counterpart:",
+              "`InputVerifier` cannot be paused, DD-058)."
             ],
             "type": "bool"
           },

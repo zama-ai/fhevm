@@ -1,9 +1,8 @@
-//! Public sealing of a current State slot.
+//! Public sealing of a current Store slot.
 
 use super::common::*;
 use crate::{errors::ZamaHostError, state::*};
 use anchor_lang::prelude::*;
-use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
 
 #[derive(Accounts)]
 pub struct MakeStoreHandlePublic<'info> {
@@ -79,28 +78,4 @@ fn map_mmr_append_error(error: zama_solana_acl::AclError) -> anchor_lang::error:
         }
         _ => error!(ZamaHostError::EncryptedStoreMmrInconsistent),
     }
-}
-
-/// Reallocs the account and tops up rent when `target_space` grows past the
-/// account's current data length. Never shrinks — the leaf count is monotonic.
-pub(super) fn grow_account_if_needed<'info>(
-    payer: &AccountInfo<'info>,
-    account: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    target_space: usize,
-) -> Result<()> {
-    if account.data_len() >= target_space {
-        return Ok(());
-    }
-    let rent = Rent::get()?.minimum_balance(target_space);
-    if account.lamports() < rent {
-        let top_up = rent - account.lamports();
-        invoke_signed(
-            &system_instruction::transfer(payer.key, account.key, top_up),
-            &[payer.clone(), account.clone(), system_program.clone()],
-            &[],
-        )?;
-    }
-    account.resize(target_space)?;
-    Ok(())
 }

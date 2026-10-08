@@ -46,13 +46,18 @@ export type FheExecuteOperand =
     }
   | {
       __kind: 'StoreSlot';
+      /** Dictionary index of the handle the slot must currently hold. */
       handleIndex: number;
+      /** Index of the `EncryptedStore` among the execution's accounts. */
       storeIndex: number;
+      /** Dictionary index of the slot key. */
       keyIndex: number;
     }
   | {
       __kind: 'TransientResult';
+      /** Dictionary index of the granted handle. */
       handleIndex: number;
+      /** Index of the consumer `EncryptedStore` the grant names, among the execution's accounts. */
       consumerStoreIndex: number;
     };
 
@@ -74,13 +79,18 @@ export type FheExecuteOperandArgs =
     }
   | {
       __kind: 'StoreSlot';
+      /** Dictionary index of the handle the slot must currently hold. */
       handleIndex: number;
+      /** Index of the `EncryptedStore` among the execution's accounts. */
       storeIndex: number;
+      /** Dictionary index of the slot key. */
       keyIndex: number;
     }
   | {
       __kind: 'TransientResult';
+      /** Dictionary index of the granted handle. */
       handleIndex: number;
+      /** Index of the consumer `EncryptedStore` the grant names, among the execution's accounts. */
       consumerStoreIndex: number;
     };
 

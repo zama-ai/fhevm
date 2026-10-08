@@ -28,8 +28,8 @@ export type PauseFlags = {
    */
   execution: boolean;
   /**
-   * `fhe_execute` steps that consume a coprocessor-attested input (Gateway
-   * `InputVerification` pause).
+   * `fhe_execute` steps that consume a coprocessor-attested input (no EVM counterpart:
+   * `InputVerifier` cannot be paused, DD-058).
    */
   verifiedInputs: boolean;
   /**

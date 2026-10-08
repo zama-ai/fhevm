@@ -1,8 +1,10 @@
-//! Defines a new KMS context (Solana mirror of `ProtocolConfig.defineNewKmsContext`).
+//! Defines a new KMS context (Solana mirror of `ProtocolConfig.mirrorKmsContextAndEpoch`).
 //!
 //! Creates the `KmsContext` PDA for `context_id`, records the KMS node signer set +
-//! thresholds, and sets `HostConfig.current_kms_context_id`. PDA `init` uniqueness is
-//! the uniqueness check; there is no local `current + 1`. Admin-gated in the PoC.
+//! thresholds, and sets `HostConfig.current_kms_context_id`. As on EVM, each new id must be above
+//! the current one, so the current context never moves back and no id is defined twice. A used id
+//! already fails in the `init` of its PDA, before this check.
+//! Admin-gated in the PoC.
 
 use anchor_lang::prelude::*;
 
@@ -47,7 +49,11 @@ pub fn define_kms_context(
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_admin(&ctx.accounts.host_config, &ctx.accounts.admin)?;
-    require!(context_id != [0u8; 32], ZamaHostError::InvalidKmsContextId);
+    // `[u8; 32]` compares lexicographically, which is EVM's big-endian `uint256` order.
+    require!(
+        context_id > ctx.accounts.host_config.current_kms_context_id,
+        ZamaHostError::NonIncreasingKmsContextId
+    );
     assert_evm_signer_set(
         &signers,
         KmsContext::MAX_SIGNERS,

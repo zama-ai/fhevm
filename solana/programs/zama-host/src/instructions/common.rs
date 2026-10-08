@@ -411,6 +411,29 @@ pub(super) fn write_account<T: AccountSerialize>(info: &AccountInfo, account: &T
     Ok(())
 }
 
+/// Reallocs the account and tops up rent from `payer` when `target_space` grows past the
+/// account's current data length. Never shrinks.
+pub(super) fn grow_account_if_needed<'info>(
+    payer: &AccountInfo<'info>,
+    account: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+    target_space: usize,
+) -> Result<()> {
+    if account.data_len() >= target_space {
+        return Ok(());
+    }
+    let rent = Rent::get()?.minimum_balance(target_space);
+    if account.lamports() < rent {
+        let top_up = rent - account.lamports();
+        invoke(
+            &system_instruction::transfer(payer.key, account.key, top_up),
+            &[payer.clone(), account.clone(), system_program.clone()],
+        )?;
+    }
+    account.resize(target_space)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

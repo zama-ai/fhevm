@@ -10,7 +10,6 @@ use anchor_lang::prelude::*;
 
 use super::common::*;
 use super::input_verification::verify_input_attestation;
-use super::store_history::grow_account_if_needed;
 use crate::{
     errors::ZamaHostError,
     events::{FheExecuteRandomSeed, FheExecutedEvent},
@@ -428,14 +427,15 @@ fn boundary_mask(operands: &[ResolvedOperand]) -> Result<[u8; 32]> {
 mod tests {
     use super::*;
 
-    /// Doc-sync guard (the `resource_bounds_match_liveness_doc` pattern): EVM_PARITY.md's
-    /// FHEVMExecutor row quotes `MAX_FHE_EXECUTION_STEPS=32`; a change here must update that row in
-    /// the same PR.
     #[test]
-    fn batch_ops_bound_matches_evm_parity_doc() {
-        assert_eq!(
-            MAX_FHE_EXECUTION_STEPS, 32,
-            "EVM_PARITY.md FHEVMExecutor row"
+    fn evm_parity_doc_quotes_the_step_ceiling() {
+        let row = include_str!("../../../../docs/EVM_PARITY.md")
+            .lines()
+            .find(|line| line.starts_with("| FHE expression evaluation"))
+            .expect("EVM_PARITY.md has the FHE expression evaluation row");
+        assert!(
+            row.contains(&format!("At most {MAX_FHE_EXECUTION_STEPS} steps")),
+            "{row}"
         );
     }
 }

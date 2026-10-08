@@ -38,8 +38,8 @@ export const ZAMA_HOST_ERROR__EMPTY_KMS_CONTEXT = 0x1779; // 6009
 export const ZAMA_HOST_ERROR__TOO_MANY_KMS_SIGNERS = 0x177a; // 6010
 /** InvalidKmsThreshold: KMS context threshold is invalid */
 export const ZAMA_HOST_ERROR__INVALID_KMS_THRESHOLD = 0x177b; // 6011
-/** InvalidKmsContextId: KMS context id must not be the all-zero id */
-export const ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT_ID = 0x177c; // 6012
+/** NonIncreasingKmsContextId: KMS context id must be above the current one */
+export const ZAMA_HOST_ERROR__NON_INCREASING_KMS_CONTEXT_ID = 0x177c; // 6012
 /** CurrentKmsContextCannotBeDestroyed: current KMS context cannot be destroyed */
 export const ZAMA_HOST_ERROR__CURRENT_KMS_CONTEXT_CANNOT_BE_DESTROYED = 0x177d; // 6013
 /** InvalidInputHandleVersion: input handle version is unsupported */
@@ -245,12 +245,12 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__INVALID_INPUT_HANDLE_VERSION
   | typeof ZAMA_HOST_ERROR__INVALID_KMS_CERTIFICATE
   | typeof ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT
-  | typeof ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT_ID
   | typeof ZAMA_HOST_ERROR__INVALID_KMS_THRESHOLD
   | typeof ZAMA_HOST_ERROR__INVALID_RANDOM_UPPER_BOUND
   | typeof ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION
   | typeof ZAMA_HOST_ERROR__MALFORMED_INPUT_ATTESTATION
   | typeof ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO
+  | typeof ZAMA_HOST_ERROR__NON_INCREASING_KMS_CONTEXT_ID
   | typeof ZAMA_HOST_ERROR__NOT_DELEGATED_YET
   | typeof ZAMA_HOST_ERROR__NOT_PAUSER
   | typeof ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH
@@ -334,12 +334,12 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__INVALID_INPUT_HANDLE_VERSION]: `input handle version is unsupported`,
     [ZAMA_HOST_ERROR__INVALID_KMS_CERTIFICATE]: `KMS public-decrypt certificate is invalid`,
     [ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT]: `KMS context is destroyed or does not match the certificate's committed context`,
-    [ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT_ID]: `KMS context id must not be the all-zero id`,
     [ZAMA_HOST_ERROR__INVALID_KMS_THRESHOLD]: `KMS context threshold is invalid`,
     [ZAMA_HOST_ERROR__INVALID_RANDOM_UPPER_BOUND]: `bounded random upper bound is invalid`,
     [ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION]: `invalid execution return selection`,
     [ZAMA_HOST_ERROR__MALFORMED_INPUT_ATTESTATION]: `input attestation payload is malformed`,
     [ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO]: `fheMulDiv divisor must be non-zero`,
+    [ZAMA_HOST_ERROR__NON_INCREASING_KMS_CONTEXT_ID]: `KMS context id must be above the current one`,
     [ZAMA_HOST_ERROR__NOT_DELEGATED_YET]: `delegation is not granted`,
     [ZAMA_HOST_ERROR__NOT_PAUSER]: `signer is not an enabled pauser`,
     [ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH]: `PDA creation target is invalid`,

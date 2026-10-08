@@ -76,11 +76,10 @@ impl HostConfig {
         + 8
         + 1;
 
-    /// Active coprocessor signer set (the first `coprocessor_signer_count` entries).
-    /// Count is write-validated (`≤ MAX`); clamp defends a corrupted singleton without panicking.
+    /// Active coprocessor signer set: the first `coprocessor_signer_count` entries.
+    /// `validate_and_pack_coprocessor_signers` bounds the count on every write.
     pub fn active_coprocessor_signers(&self) -> &[[u8; 20]] {
-        let count = (self.coprocessor_signer_count as usize).min(Self::MAX_COPROCESSOR_SIGNERS);
-        &self.coprocessor_signers[..count]
+        &self.coprocessor_signers[..self.coprocessor_signer_count as usize]
     }
 }
 
@@ -108,8 +107,8 @@ pub struct PauseFlags {
     /// `fhe_execute`, with the allows, transient grants and public releases it writes (EVM ACL
     /// pause, which stops execution through `allowTransient`).
     pub execution: bool,
-    /// `fhe_execute` steps that consume a coprocessor-attested input (Gateway
-    /// `InputVerification` pause).
+    /// `fhe_execute` steps that consume a coprocessor-attested input (no EVM counterpart:
+    /// `InputVerifier` cannot be paused, DD-058).
     pub verified_inputs: bool,
     /// ACL writes outside an execution: Store creation, `make_store_handle_public` and
     /// user-decryption delegation (EVM ACL pause).
