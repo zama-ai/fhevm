@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*) FILTER (WHERE s3_migration_failure_count = 0) AS \"pending!\",\n               COUNT(*) FILTER (WHERE s3_migration_failure_count > 0) AS \"failed!\"\n          FROM ciphertext_digest\n         WHERE (s3_format_version = $1 OR s3_format_version IS NULL)\n           AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "failed!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int2"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "cfc9b9d31e81bee4639a3690b7c4cfb8a023c761ce0bc254195653b346bc3c27"
+}
