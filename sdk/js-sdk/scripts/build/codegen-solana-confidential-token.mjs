@@ -6,10 +6,8 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -483,7 +481,7 @@ for (const target of targets) {
   await codama.accept(
     renderVisitor(temporaryRoot, {
       generatedFolder: 'generated',
-      kitImportStrategy: 'rootOnly',
+      importExtension: 'js',
       syncPackageJson: false,
       linkOverrides: { pdas: foreignPdaLinks, definedTypes: foreignTypeLinks },
       dependencyMap: { zamaHost: '@fhevm/solana-zama-host' },
@@ -508,8 +506,6 @@ for (const target of targets) {
   rmSync(`${temporaryGeneratedPath}/programs`, { force: true, recursive: true });
   rmSync(`${temporaryGeneratedPath}/index.ts`, { force: true });
 
-  // The SDK builds with NodeNext. Codama renders extensionless relative imports, so make its
-  // deterministic output executable without hand-editing generated files.
   // Recovery needs the canonical signing seeds.
   const seedEncoderFiles = new Set(
     target.idlPath === idlUrl('confidential_token.json')
@@ -523,9 +519,7 @@ for (const target of targets) {
   for (const entry of readdirSync(temporaryGeneratedPath, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
     const file = `${entry.parentPath}/${entry.name}`;
-    let source = readFileSync(file, 'utf8')
-      .replace(/(['"])\.\.\/programs\1/g, '$1../programAddress$1')
-      .replaceAll('@solana/kit/program-client-core', '@solana/program-client-core');
+    let source = readFileSync(file, 'utf8').replace(/(['"])\.\.\/programs\/index\.js\1/g, '$1../programAddress.js$1');
     if (file.includes('/pdas/') && seedEncoderFiles.has(entry.name)) {
       let renderedSeedEncoder = false;
       source = source.replace(
@@ -543,20 +537,7 @@ for (const target of targets) {
       if (!renderedSeedEncoder) throw new Error(`Cannot render PDA seed encoder: ${file}`);
       seedEncoderFiles.delete(entry.name);
     }
-    writeFileSync(
-      file,
-      await format(
-        source.replace(
-          /(from\s+['"]|export\s+\*\s+from\s+['"])(\.{1,2}(?:\/[^'"]+)?)(['"])/g,
-          (_, prefix, specifier, suffix) => {
-            const targetPath = resolve(dirname(file), specifier);
-            const extension = existsSync(targetPath) && statSync(targetPath).isDirectory() ? '/index.js' : '.js';
-            return `${prefix}${specifier}${extension}${suffix}`;
-          },
-        ),
-        { ...prettierOptions, parser: 'typescript' },
-      ),
-    );
+    writeFileSync(file, await format(source, { ...prettierOptions, parser: 'typescript' }));
   }
   if (seedEncoderFiles.size > 0) {
     throw new Error(`Missing PDA seed encoder files: ${[...seedEncoderFiles].join(', ')}`);
