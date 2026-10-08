@@ -17,6 +17,8 @@ import {
   SOLANA_MERKLE_POSTGRES_PORT,
   SOLANA_VALIDATOR_RPC_PORT,
 } from "../src/layout";
+import { kmsCoreImageRepository } from "../src/compat/compat";
+import { CORE_PLATFORM } from "../src/generate/kms-core";
 import { solanaImages } from "../src/solana/images";
 import { run, runStreaming } from "../src/utils/process";
 import {
@@ -125,8 +127,9 @@ export const demoReservedPorts = (observability = false): readonly number[] => [
   ]),
 ];
 const PROCESS_NAMES = ["validator", "listener", "indexer", "proofServer", "operator", "dapp"] as const;
-// The core runs the INSECURE image as only the insecure build allows no `[threshold.tls]` config.
-const CORE_IMAGE = `ghcr.io/zama-ai/kms/core-service-insecure:${solanaImages.CORE_VERSION}`;
+// Every kms-core in the threshold cluster runs this image, pinned to CORE_PLATFORM.
+const CORE_IMAGE = `${kmsCoreImageRepository(solanaImages.CORE_VERSION)}:${solanaImages.CORE_VERSION}`;
+const CORE_ARCHITECTURE = CORE_PLATFORM.slice("linux/".length);
 const REQUIRED_KEYPAIRS = [
   ...["alice", "bob", "keeper", "mint-authority"].map((name) =>
     path.join(
@@ -824,11 +827,7 @@ const doctorEnvironmentSnapshot =
     };
   };
 
-export const doctorEnvironmentErrors = (
-  snapshot: DoctorEnvironmentSnapshot,
-  platform: NodeJS.Platform = process.platform,
-  architecture = process.arch,
-): string[] => {
+export const doctorEnvironmentErrors = (snapshot: DoctorEnvironmentSnapshot): string[] => {
   const errors: string[] = [];
   if (snapshot.docker === undefined) {
     errors.push(`Docker daemon unavailable: ${snapshot.dockerError}`);
@@ -862,20 +861,10 @@ export const doctorEnvironmentErrors = (
   ) {
     errors.push(`Docker Buildx unavailable: ${snapshot.dockerBuildxError}`);
   }
-  const requiredCoreArchitecture =
-    platform === "darwin" && architecture === "arm64"
-      ? "amd64"
-      : architecture === "x64"
-        ? "amd64"
-        : architecture;
   if (snapshot.coreManifestError !== undefined) {
     errors.push(`cannot inspect ${CORE_IMAGE}: ${snapshot.coreManifestError}`);
-  } else if (
-    !snapshot.coreManifestArchitectures.includes(requiredCoreArchitecture)
-  ) {
-    errors.push(
-      `${CORE_IMAGE} has no linux/${requiredCoreArchitecture} manifest`,
-    );
+  } else if (!snapshot.coreManifestArchitectures.includes(CORE_ARCHITECTURE)) {
+    errors.push(`${CORE_IMAGE} has no ${CORE_PLATFORM} manifest`);
   }
   if (!snapshot.runtimeWritable) {
     errors.push(`demo runtime parent is not writable: ${DEMO_RUNTIME_DIR}`);
@@ -917,9 +906,7 @@ export const doctorDemo = async ({
     `[doctor] ${CORE_IMAGE} architectures=${environment.coreManifestArchitectures.join(",") || "unavailable"}`,
   );
   console.log(
-    process.platform === "darwin" && process.arch === "arm64"
-      ? "[doctor] kms-core cluster=linux/amd64 (Docker Desktop emulation is exercised by up); all other services remain native"
-      : `[doctor] kms-core cluster=linux/amd64${process.arch === "x64" ? "" : " (emulated)"}; all other services remain native`,
+    `[doctor] kms-core cluster=${CORE_PLATFORM}${process.arch === "x64" ? "" : " (emulated)"}; all other services remain native`,
   );
   if (errors.length === 0) console.log("[doctor] ready");
   for (const error of errors) console.error(`[doctor] ${error}`);

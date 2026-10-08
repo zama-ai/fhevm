@@ -1112,8 +1112,6 @@ describe("Apple Silicon compose policy", () => {
           missingKeypairs: ["/repo/missing.json"],
           runtimeWritable: false,
         },
-        "darwin",
-        "arm64",
       ),
     ).toEqual([
       "Docker has 2 CPUs; the demo requires at least 4",
@@ -1138,14 +1136,15 @@ describe("Apple Silicon compose policy", () => {
       missingKeypairs: [],
       runtimeWritable: true,
     };
-    expect(doctorEnvironmentErrors(snapshot, "darwin", "arm64")).toEqual([
+    // Every host, linux/arm64 included, runs the cores as linux/amd64.
+    expect(doctorEnvironmentErrors(snapshot)).toEqual([
       "Docker Compose unavailable: compose is not a docker command",
       "Docker Buildx unavailable: buildx is not a docker command",
     ]);
-    expect(doctorEnvironmentErrors(snapshot, "linux", "arm64")).toEqual([
+    expect(doctorEnvironmentErrors({ ...snapshot, coreManifestArchitectures: ["arm64"] })).toEqual([
       "Docker Compose unavailable: compose is not a docker command",
       "Docker Buildx unavailable: buildx is not a docker command",
-      expect.stringContaining("has no linux/arm64 manifest"),
+      expect.stringContaining("has no linux/amd64 manifest"),
     ]);
   });
 });

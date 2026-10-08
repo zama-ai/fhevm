@@ -227,7 +227,7 @@ const genKeysCommand = (topology: ResolvedKmsTopology, opts: KmsRenderOptions) =
  */
 // The KMS core image is published amd64-only at every tag; pin the platform so the generated cores
 // run (emulated) on arm64 hosts.
-const CORE_PLATFORM = "linux/amd64";
+export const CORE_PLATFORM = "linux/amd64";
 
 export const buildKmsThresholdOverride = (
   topology: ResolvedKmsTopology,
