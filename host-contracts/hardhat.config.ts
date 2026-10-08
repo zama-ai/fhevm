@@ -105,7 +105,7 @@ const chainIds = {
   sepolia: 11155111,
   hoodi: 560048,
   polygonAmoy: 80002,
-  bscTestnet: 97,
+  bnbTestnet: 97,
   mainnet: 1,
   polygon: 137,
   bnb: 56,
@@ -155,7 +155,7 @@ const config: HardhatUserConfig = {
     sepolia: getChainConfig('sepolia'),
     hoodi: getChainConfig('hoodi'),
     polygonAmoy: getChainConfig('polygonAmoy'),
-    bscTestnet: getChainConfig('bscTestnet'),
+    bnbTestnet: getChainConfig('bnbTestnet'),
     mainnet: getChainConfig('mainnet'),
     polygon: getChainConfig('polygon'),
     bnb: getChainConfig('bnb'),
@@ -187,6 +187,17 @@ const config: HardhatUserConfig = {
   },
   etherscan: {
     apiKey: process.env.ETHERSCAN_API_KEY!,
+    // Chains hardhat-verify does not ship a built-in config for.
+    customChains: [
+      {
+        network: 'hoodi',
+        chainId: chainIds.hoodi,
+        urls: {
+          apiURL: process.env.HOODI_ETHERSCAN_API_URL!,
+          browserURL: process.env.HOODI_ETHERSCAN_BROWSER_URL!,
+        },
+      },
+    ],
   },
   warnings: {
     '*': {
