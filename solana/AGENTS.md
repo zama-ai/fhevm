@@ -1,7 +1,8 @@
 # Agent Guidance
 
-Two rules apply to every Solana code path: the programs, `solana/`, the SDK's `src/solana`, the
-Solana parts of the test suite, and the Solana adapters in the off-chain services.
+`CONSTITUTION.md` holds the rules every Solana change follows, across every Solana code path: the
+programs, `solana/`, the SDK's `src/solana`, the Solana parts of the test suite, and the Solana
+adapters in the off-chain services. This file details two of them.
 
 ## Pre-production: no backward compatibility
 
