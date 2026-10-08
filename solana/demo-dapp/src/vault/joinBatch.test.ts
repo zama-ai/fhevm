@@ -13,9 +13,7 @@ vi.mock('@solana/kit', async (importOriginal) => ({
 }));
 import {
   address,
-  decompileTransactionMessage,
   generateKeyPairSigner,
-  getCompiledTransactionMessageDecoder,
   getSignatureFromTransaction,
   isSolanaError,
   SOLANA_ERROR__FAILED_TO_SIGN_TRANSACTION,
@@ -32,7 +30,7 @@ import { getJoinInstructionDataDecoder } from './internal/generated/confidential
 import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
-import { encodedSize, TEST_BLOCKHASH, testDemoClient } from '../testDemoClient';
+import { encodedSize, TEST_BLOCKHASH, messageOf, testDemoClient } from '../testDemoClient';
 
 const CHAIN_ID = 72057594037940281n;
 const CANONICAL_ACL = bytesToHex(base58.decode(ZAMA_HOST_PROGRAM_ADDRESS));
@@ -96,9 +94,6 @@ async function sendable(overrides: Partial<SolanaVaultJoinParameters> = {}, sign
 /** The last transaction handed to Kit's send-and-confirm. */
 const sent = (): Transaction => sendAndConfirm.mock.lastCall![0] as Transaction;
 
-function messageOf(transaction: Transaction) {
-  return decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(transaction.messageBytes));
-}
 
 describe('joinBatch (attested arm)', () => {
   beforeEach(() => sendAndConfirm.mockReset().mockResolvedValue(undefined));

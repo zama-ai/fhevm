@@ -639,11 +639,13 @@ asks the next coprocessor as soon as one answers without a proof, fails or refus
 request another can serve, or hold it longer than that delay. Authorization was
 never its to give (#30).
 
-**48. [HOLDS]** Clients send every transaction as version 1 (at most 4,096
-bytes and 64 account keys). Settle at the host's largest KMS threshold and join
-at its largest coprocessor threshold, each with every deny and HCU witness, fit
-one, and that settle stays within the compute a transaction may request. Pinned
-by `fits one v1 transaction at the maximum KMS threshold with every witness`
+**48. [HOLDS]** The demo, the deployer and the test suite send every
+transaction as version 1 (at most 4,096 bytes and 64 account keys); only the
+Squads test harness still executes outside that client. Settle at the host's
+largest KMS threshold and join at its largest coprocessor threshold, each with
+every deny and HCU witness, fit one, and that settle stays within the compute a
+transaction may request. Pinned by
+`fits one v1 transaction at the maximum KMS threshold with every witness`
 (`solana/demo-dapp/src/vault/settleBatch.test.ts`), `fits one v1 transaction at
 the maximum coprocessor threshold with every witness` (`joinBatch.test.ts`) and
 `mollusk_settle_at_the_largest_kms_certificate_fits_the_compute_budget`.

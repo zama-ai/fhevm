@@ -15,9 +15,7 @@ vi.mock('@solana/kit', async (importOriginal) => ({
 import {
   AccountRole,
   address,
-  decompileTransactionMessage,
   generateKeyPairSigner,
-  getCompiledTransactionMessageDecoder,
   type Address,
   type Transaction,
   type TransactionSigner,
@@ -27,7 +25,7 @@ import { base58 } from '@scure/base';
 import { confidentialTransfer, type SolanaConfidentialTransferParameters } from './confidentialTransfer.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
-import { testDemoClient } from '../../testDemoClient';
+import { messageOf, testDemoClient } from '../../testDemoClient';
 
 const CHAIN_ID = 72057594037940281n;
 const ACL = `0x${'11'.repeat(32)}` as Bytes32Hex;
@@ -204,7 +202,7 @@ describe('confidentialTransfer attestation binding', () => {
     expect(sendAndConfirm).toHaveBeenCalledOnce();
     const transaction = sendAndConfirm.mock.lastCall![0] as Transaction;
     expect(Object.keys(transaction.signatures).sort()).toEqual([...new Set([owner.address, feePayer.address])].sort());
-    const message = decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(transaction.messageBytes));
+    const message = messageOf(transaction);
     expect(message.version).toBe(1);
     // open_transient_store, confidential_transfer, close_transient_store.
     expect(message.instructions).toHaveLength(3);

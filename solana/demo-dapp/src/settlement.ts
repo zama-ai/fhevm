@@ -139,14 +139,14 @@ export const settleVaultBatch = async (
     return null;
   if (batch.state.status !== BatchStatus.Dispatched) throw new Error('Dispatch the batch before settlement');
 
-  const keeper = createDemoClient(session.config, session.keeper);
+  const keeperClient = createDemoClient(session.config, session.keeper);
   setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: session.relayerApiKey } });
   const chain = defineFhevmSolanaChain({
     id: BigInt(session.config.chainId),
     fhevm: { relayerUrl: session.config.relayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
   });
   const publicDecryptClient = createFhevmPublicDecryptClient({ chain, rpc });
-  const signature = await settleBatch(publicDecryptClient, keeper, {
+  const signature = await settleBatch(publicDecryptClient, keeperClient, {
     roots,
     batchIndex: position.batchIndex,
     contextId: asBytes32BigEndian(session.config.userDecryptContextId),
@@ -157,7 +157,7 @@ export const settleVaultBatch = async (
   // funding back. A failure here is a rent-hygiene miss, never a settlement failure, and not a
   // permanent one: the reclaim pass in prepareNextBatch drains any authority whose batch is finished.
   try {
-    await keeper.sendTransaction([
+    await keeperClient.sendTransaction([
       await getReclaimBatchAuthorityInstructionAsync({
         authority: session.keeper,
         batcher: roots.batcher,

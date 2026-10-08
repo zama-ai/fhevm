@@ -13,9 +13,7 @@ vi.mock('./reads.js', () => ({ getCurrentBatch }));
 
 import {
   address,
-  decompileTransactionMessage,
   generateKeyPairSigner,
-  getCompiledTransactionMessageDecoder,
   type Address,
   type Transaction,
 } from '@solana/kit';
@@ -27,7 +25,7 @@ import { getSettleInstructionDataDecoder, parseSettleInstruction } from './inter
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
-import { encodedSize, testDemoClient } from '../testDemoClient';
+import { encodedSize, messageOf, testDemoClient } from '../testDemoClient';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -90,9 +88,6 @@ async function setup(overrides: { burnedHandle?: Uint8Array } = {}) {
 /** The last transaction handed to Kit's send-and-confirm. */
 const sent = (): Transaction => sendAndConfirm.mock.lastCall![0] as Transaction;
 
-function messageOf(transaction: Transaction) {
-  return decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(transaction.messageBytes));
-}
 
 describe('settleBatch', () => {
   beforeEach(() => {

@@ -256,8 +256,8 @@ export async function depositToVault(
   session.assertActive();
   const { config, signer } = session;
   const amountBaseUnits = usdcToBaseUnits(amount);
-  const rpc = createFinalizedRpc(config.rpcUrl);
   const client = createDemoClient(config, signer);
+  const { rpc } = client;
   const roots = depositRoots(session);
   const saved = readActiveDeposit(session);
   if (

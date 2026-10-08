@@ -188,7 +188,9 @@ describe('transientStoreTransactions', () => {
       'signFheTransaction',
       'sendFheTransaction',
     ]);
-    // @ts-expect-error The body is a list of instructions, never a composed `InstructionPlan`.
-    await expect(client.sendFheTransaction(transientStore, sequentialInstructionPlan([body(1)]))).rejects.toThrow();
+    // Never called: the assertion is the type error.
+    void (() =>
+      // @ts-expect-error The body is a list of instructions, never a composed `InstructionPlan`.
+      client.sendFheTransaction(transientStore, sequentialInstructionPlan([body(1)])));
   });
 });

@@ -76,8 +76,8 @@ function isTransientStoreLifecycleInstruction(host: Address, instruction: Instru
 }
 
 // zama-host requires the close to be the transaction's last instruction. Single-transaction sign and
-// send refuse a sandwich the planner had to split, and nothing else can join it. Non-divisible marks
-// it atomic for any executor that does split one.
+// send refuse a sandwich the planner had to split, and no instruction can be added after the close.
+// Non-divisible keeps it whole for an executor that splits other plans.
 function fheTransactionPlan(
   transientStore: TransientStore,
   instructions: readonly Instruction[],
@@ -116,21 +116,18 @@ export type TransientStoreTransactions<TClient extends FheTransactionClient> = {
  */
 export function transientStoreTransactions() {
   return <T extends FheTransactionClient>(client: T): ExtendedClient<T, TransientStoreTransactions<T>> => {
-    // Planning runs inside the promise, so an invalid body rejects like every other send failure.
-    const planned = (
-      transientStore: TransientStore,
-      instructions: readonly Instruction[],
-    ): Promise<SequentialInstructionPlan> =>
-      Promise.resolve().then(() => fheTransactionPlan(transientStore, instructions));
+    // Async, so an invalid body rejects like every other send failure instead of throwing.
     return extendClient<T, TransientStoreTransactions<T>>(client, {
-      signFheTransaction: (transientStore, instructions, config) =>
-        planned(transientStore, instructions).then((sandwich) => client.signTransaction(sandwich, config)) as ReturnType<
-          T['signTransaction']
-        >,
-      sendFheTransaction: (transientStore, instructions, config) =>
-        planned(transientStore, instructions).then((sandwich) => client.sendTransaction(sandwich, config)) as ReturnType<
-          T['sendTransaction']
-        >,
+      signFheTransaction: (async (transientStore, instructions, config) =>
+        client.signTransaction(
+          fheTransactionPlan(transientStore, instructions),
+          config,
+        )) as TransientStoreTransactions<T>['signFheTransaction'],
+      sendFheTransaction: (async (transientStore, instructions, config) =>
+        client.sendTransaction(
+          fheTransactionPlan(transientStore, instructions),
+          config,
+        )) as TransientStoreTransactions<T>['sendFheTransaction'],
     });
   };
 }

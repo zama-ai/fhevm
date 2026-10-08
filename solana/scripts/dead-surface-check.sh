@@ -741,7 +741,7 @@ if run_check 3; then
   check_alias 'Fhe*Event — the per-op value types are decoded op records' all \
     'FheExecutedEvent' -E '\bFhe[A-Za-z0-9]*Event\b'
   # "lookup table" is banned for the interning dictionary. The Solana Address Lookup Table keeps its
-  # name and is very often written as a bare "lookup table" ("the settle lookup table"), so a bare
+  # name and is often written as a bare "lookup table" ("loaded from a lookup table"), so a bare
   # match cannot be the rule. The old exception list went the other way and waved through any line
   # containing `batch`, `settle`, `slot`, or `addresses` — which is exactly the phrasing the check
   # exists to catch. The rule is now what it should always have been: a lookup table OF handles, keys,

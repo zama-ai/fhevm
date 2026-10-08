@@ -1,5 +1,6 @@
 /** Public API surface: the demo's tests, which drive the demo client over a scripted RPC. */
 import {
+  decompileTransactionMessage,
   getCompiledTransactionMessageDecoder,
   getTransactionEncoder,
   type Blockhash,
@@ -42,6 +43,11 @@ export function testDemoClient(feePayer: TransactionSigner) {
     /** The next simulation (Kit's resource estimate) fails with `err`. */
     failNextSimulation: (simulation: Simulation) => void simulations.push(simulation),
   };
+}
+
+/** The message a signed transaction carries, decompiled. */
+export function messageOf(transaction: Transaction) {
+  return decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(transaction.messageBytes));
 }
 
 /** The version, wire size and account-key count of a signed transaction, as Kit encodes it. */

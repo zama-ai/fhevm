@@ -36,15 +36,15 @@ export type SolanaVaultSettleOptions = Pick<SettleAsyncInput, 'payoutMintHcuBloc
 
 /**
  * Settles the batch's pinned burn handle with a KMS certificate. The settle program checks the
- * certificate against the burned handle pinned in the batch's `PendingBurn`. `keeper.payer` pays.
+ * certificate against the burned handle pinned in the batch's `PendingBurn`. `keeperClient.payer` pays.
  */
 export async function settleBatch(
   client: Pick<FhevmSolanaPublicDecryptClient, 'publicDecryptCertificate'>,
-  keeper: DemoClient,
+  keeperClient: DemoClient,
   options: SolanaVaultSettleOptions,
 ): Promise<Signature> {
   const { roots } = options;
-  const { rpc } = keeper;
+  const { rpc } = keeperClient;
 
   // Resolve the batch and its created-public burned handle from chain state.
   let addresses: BatchAddresses;
@@ -80,11 +80,11 @@ export async function settleBatch(
     return bytes;
   });
 
-  const transientStore = await prepareTransientStore({ payer: keeper.payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
+  const transientStore = await prepareTransientStore({ payer: keeperClient.payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
   const settleWithoutDenyRecords = await getSettleInstructionAsync({
     transientStore: transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
-    payer: keeper.payer,
+    payer: keeperClient.payer,
     ...accounts,
     cleartextTotal,
     signatures,
@@ -99,5 +99,5 @@ export async function settleBatch(
     cleartextTotal === 0n ? [] : [tokenApp(roots.payoutConfidentialMint)],
   );
 
-  return (await keeper.sendFheTransaction(transientStore, [settleInstruction])).context.signature;
+  return (await keeperClient.sendFheTransaction(transientStore, [settleInstruction])).context.signature;
 }

@@ -22,7 +22,6 @@ export {
   type SolanaVaultHarvestParameters,
   type SolanaVaultMetrics,
 } from './harvest.js';
-export { openBatch, type SolanaVaultOpenBatchParameters } from './openBatch.js';
 
 // One-time provisioning builders the demo seeder drives (fhevm-internal#1760). Each derives its
 // encrypted store/event PDAs internally so the seeder passes semantic roots, never hand-rolled accounts.
