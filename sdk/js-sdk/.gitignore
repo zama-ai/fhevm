@@ -23,7 +23,15 @@ e2e/servers/cdn/libs/relayer-sdk-js
 
 # Logs
 logs
+log
 *.log
+
+# BrowserStack SDK generated artifacts (bake in a machine-specific absolute
+# path and, for browserstackSetupConfig.json, plaintext credentials —
+# regenerated on every `bstack:*` run, never meant to be committed)
+browserstackSetupConfig.json
+playwright-browserstack-sdk.config.ts
+browserstack.err
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
