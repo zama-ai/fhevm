@@ -1,21 +1,23 @@
-// Single source of truth for the test topology: which slots exist, the foundry
-// profile / anvil port / chain id behind each, and the key file each one serves.
-//
-// Everything downstream derives from this — anvil specs (orchestration), gateway
-// config (relayer + rpc proxy), and (later) the per-slot viem chain defs — so the
-// matrix stays consistent and adding a slot is a one-line change.
-//
-// foundry profile -> on-chain ACL version -> resolved TFHE/key version:
-//   v12 -> protocol 0.12 -> tfhe 1.5.4
-//   v13 -> protocol 0.13 -> tfhe 1.6.1
-//
-// The two anvils deploy from DIFFERENT deployer mnemonics so their FHEVM stacks
-// land at DIFFERENT addresses (the SDK resolves/caches the protocol version per
-// contract address — shared addresses across chains collide). v12 uses
-// FIRST_ANVIL_MNEMONIC; v13 uses the deploy's default mnemonic (so its committed
-// addresses file is regenerated identically and stays clean). Each slot's
-// addresses are derived here and served at `/<slot>/config` so the browser never
-// hardcodes them.
+/**
+ * Single source of truth for the test topology: which slots exist, the foundry
+ * profile / anvil port / chain id behind each, and the key file each one serves.
+ *
+ * Everything downstream derives from this — anvil specs (orchestration), gateway
+ * config (relayer + rpc proxy), and (later) the per-slot viem chain defs — so the
+ * matrix stays consistent and adding a slot is a one-line change.
+ *
+ * foundry profile -> on-chain ACL version -> resolved TFHE/key version:
+ *   v12 -> protocol 0.12 -> tfhe 1.5.4
+ *   v13 -> protocol 0.13 -> tfhe 1.6.1
+ *
+ * The two anvils deploy from DIFFERENT deployer mnemonics so their FHEVM stacks
+ * land at DIFFERENT addresses (the SDK resolves/caches the protocol version per
+ * contract address — shared addresses across chains collide). v12 uses
+ * FIRST_ANVIL_MNEMONIC; v13 uses the deploy's default mnemonic (so its committed
+ * addresses file is regenerated identically and stays clean). Each slot's
+ * addresses are derived here and served at `/<slot>/config` so the browser never
+ * hardcodes them.
+ */
 
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -1,7 +1,9 @@
-// Standalone HTTP gateway server. Wraps the Node adapter in an http.Server so
-// platforms can run it as a separate process (or in-process) and proxy to it
-// same-origin (Next rewrites, a Vite proxy, etc.) — instead of bundling the
-// gateway core into a framework, which collides with NodeNext `.js` extensions.
+/**
+ * Standalone HTTP gateway server. Wraps the Node adapter in an http.Server so
+ * platforms can run it as a separate process (or in-process) and proxy to it
+ * same-origin (Next rewrites, a Vite proxy, etc.) — instead of bundling the
+ * gateway core into a framework, which collides with NodeNext `.js` extensions.
+ */
 
 import { type Server, createServer } from 'node:http';
 import { type GatewayConfig } from './gateway.js';

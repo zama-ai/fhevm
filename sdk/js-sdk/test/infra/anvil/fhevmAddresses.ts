@@ -1,13 +1,15 @@
-// Derives the FHEVM host-contract addresses a cleartext deploy produces, purely
-// from (deployer mnemonic, account index). The deploy creates each contract via
-// CREATE from the deployer at a fixed nonce (see the derivation comment in
-// contracts/scripts/v*/DeployCleartextFHEVMHost.s.sol), so address = f(deployer,
-// nonce). This lets the gateway serve each slot's addresses without parsing the
-// deploy's generated Solidity (which we restore post-deploy) — the single source
-// of truth is the same (mnemonic, index) the deploy itself uses.
-//
-// Verified: deriveFhevmHostAddresses(DEFAULT_DEPLOYER_MNEMONIC, 5).acl ===
-// 0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D (matches the committed file).
+/**
+ * Derives the FHEVM host-contract addresses a cleartext deploy produces, purely
+ * from (deployer mnemonic, account index). The deploy creates each contract via
+ * CREATE from the deployer at a fixed nonce (see the derivation comment in
+ * contracts/scripts/v<version>/DeployCleartextFHEVMHost.s.sol), so address = f(deployer,
+ * nonce). This lets the gateway serve each slot's addresses without parsing the
+ * deploy's generated Solidity (which we restore post-deploy) — the single source
+ * of truth is the same (mnemonic, index) the deploy itself uses.
+ *
+ * Verified: deriveFhevmHostAddresses(DEFAULT_DEPLOYER_MNEMONIC, 5).acl ===
+ * 0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D (matches the committed file).
+ */
 
 import { getContractAddress } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';

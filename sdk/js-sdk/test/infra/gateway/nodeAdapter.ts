@@ -1,6 +1,8 @@
-// Node adapter for the gateway — a connect-style middleware usable by both Vite
-// (`server.middlewares.use`) and a plain `http.Server`. The Next platform uses a
-// separate Web `Request`/`Response` adapter; both call the same `handleGateway`.
+/**
+ * Node adapter for the gateway — a connect-style middleware usable by both Vite
+ * (`server.middlewares.use`) and a plain `http.Server`. The Next platform uses a
+ * separate Web `Request`/`Response` adapter; both call the same `handleGateway`.
+ */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { type GatewayConfig, handleGateway } from './gateway.js';
