@@ -101,16 +101,19 @@ describe("demo supervisor control", () => {
     }
   });
 
-  test("recovers an unchanged same-user socket left by a stopped supervisor", async () => {
+  test("recovers an unchanged same-user socket left by a dead supervisor", async () => {
     const directory = await fs.mkdtemp(
       path.join(os.tmpdir(), "demo-supervisor-control-"),
     );
     temporaryDirectories.push(directory);
     const socketPath = path.join(directory, "supervisor.sock");
+    // Linked under socketPath, the socket outlives its server, as a dead supervisor's does.
+    const staleBind = path.join(directory, "stale.sock");
     const stale = Bun.serve({
-      unix: socketPath,
-      fetch: () => Response.json({ bootId: "stale" }),
+      unix: staleBind,
+      fetch: () => new Response("stale"),
     });
+    await fs.link(staleBind, socketPath);
     await stale.stop(true);
     const bootId = "123e4567-e89b-42d3-a456-426614174000";
     const staleSocket = await fs.lstat(socketPath);
@@ -173,6 +176,58 @@ describe("demo supervisor control", () => {
 
     await replacement.stop(true);
     await fs.rm(socketPath, { force: true });
+  });
+
+  test("refuses and keeps a socket that appears at the path during startup", async () => {
+    const directory = await fs.mkdtemp(
+      path.join(os.tmpdir(), "demo-supervisor-control-"),
+    );
+    temporaryDirectories.push(directory);
+    const socketPath = path.join(directory, "supervisor.sock");
+    const bootId = "123e4567-e89b-42d3-a456-426614174000";
+    // An owner record without a socket makes startup ask isExactOwner, which then
+    // publishes a foreign socket at socketPath before the supervisor binds.
+    await fs.writeFile(
+      `${socketPath}.owner.json`,
+      JSON.stringify({
+        version: 1,
+        bootId,
+        pid: 99,
+        identity: "dead:99",
+        socketDev: 1,
+        socketIno: 1,
+      }),
+      { mode: 0o600 },
+    );
+    const foreignBind = path.join(directory, "foreign.sock");
+    let foreign: ReturnType<typeof Bun.serve> | undefined;
+    try {
+      await expect(
+        startSupervisorControl({
+          socketPath,
+          bootId,
+          owner: { pid: 42, identity: "supervisor:42" },
+          isExactOwner: async () => {
+            foreign = Bun.serve({
+              unix: foreignBind,
+              fetch: () => new Response("foreign"),
+            });
+            await fs.link(foreignBind, socketPath);
+            await fs.rm(foreignBind);
+            return false;
+          },
+          onReseed: async () => ({
+            bootId,
+            launchUrl: "http://127.0.0.1:5173/",
+          }),
+        }),
+      ).rejects.toThrow("EEXIST");
+      const reply = await fetch("http://localhost/", { unix: socketPath });
+      expect(await reply.text()).toBe("foreign");
+      expect(await fs.readdir(directory)).toEqual(["supervisor.sock"]);
+    } finally {
+      await foreign?.stop(true);
+    }
   });
 
   test("bounds declared and streamed request bodies before parsing", async () => {

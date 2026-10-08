@@ -231,8 +231,15 @@ export const startSupervisorControl = async ({
   await ensurePrivateSocketDirectory(socketDirectory);
   await prepareSocketPath(socketPath, bootId, isExactOwner);
 
+  // Bun's server.stop() can unlink the path it bound by name, whatever is there by then. The server
+  // binds a private name that is hard-linked into place, so stop() never removes a replacement
+  // socket at socketPath. The name stays short: socket paths are capped near 104 bytes.
+  const bindPath = path.join(
+    socketDirectory,
+    `.bind-${crypto.randomUUID().slice(0, 8)}`,
+  );
   const server = Bun.serve({
-    unix: socketPath,
+    unix: bindPath,
     async fetch(request) {
       if (
         request.method === "GET" &&
@@ -280,7 +287,7 @@ export const startSupervisorControl = async ({
 
   let socketOwner: SupervisorSocketOwner | undefined;
   try {
-    const socket = await fs.lstat(socketPath);
+    const socket = await fs.lstat(bindPath);
     if (!socket.isSocket() || socket.uid !== currentUserId()) {
       throw new Error(`supervisor control path is not an owned socket`);
     }
@@ -292,10 +299,15 @@ export const startSupervisorControl = async ({
       socketDev: socket.dev,
       socketIno: socket.ino,
     };
-    await fs.chmod(socketPath, 0o600);
+    await fs.chmod(bindPath, 0o600);
+    // link() fails with EEXIST if anything appeared at socketPath after prepareSocketPath.
+    await fs.link(bindPath, socketPath);
+    await fs.rm(bindPath);
     await writeSocketOwner(socketPath, socketOwner);
   } catch (error) {
     await server.stop(true);
+    // Not every Bun release unlinks the bound path on stop().
+    await fs.rm(bindPath, { force: true });
     if (socketOwner !== undefined) {
       await removeExactSocket(socketPath, socketOwner);
     }
