@@ -46,9 +46,9 @@
       "note": "per stack frame"
     },
     "solana/transaction_bytes": {
-      "value": 1232,
+      "value": 4096,
       "extendable": false,
-      "note": "IPv6-MTU packet limit; address lookup tables compress account keys, not instruction data"
+      "note": "version 1 transaction limit (SIMD-0385), which also allows at most 64 account keys; clients send every transaction as version 1"
     },
     "zama/max_fhe_execution_steps": {
       "value": 32,
