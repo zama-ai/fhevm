@@ -13,8 +13,9 @@
 import type { SolanaPermitWallet } from './channel.js';
 import type { WalletAccount } from '@wallet-standard/base';
 import type { SolanaSignOffchainMessageInput, SolanaSignOffchainMessageOutput } from '@solana/wallet-standard-features';
-import { base58 } from '@scure/base';
+import { getAddressDecoder } from '@solana/kit';
 import { ed25519 } from '@noble/curves/ed25519.js';
+import { unsafeBytesEquals } from '../../core/base/bytes.js';
 import { compileSolanaPermitEnvelope } from './envelope.js';
 import { SOLANA_OFFCHAIN_MESSAGE_VERSION, SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE } from './channel.js';
 
@@ -35,7 +36,7 @@ export function solanaPermitWalletFromSecretKey(secretKey: Uint8Array): SolanaPe
   // A full Wallet Standard account: the key is what signing reads, the rest is the account's own
   // paperwork — its base58 address, the chains a Solana key serves on, the one feature it backs.
   const account: WalletAccount = {
-    address: base58.encode(publicKey),
+    address: getAddressDecoder().decode(publicKey),
     publicKey,
     chains: ['solana:mainnet', 'solana:devnet', 'solana:testnet', 'solana:localnet'],
     features: [SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE],
@@ -60,11 +61,11 @@ export function solanaPermitWalletFromSecretKey(secretKey: Uint8Array): SolanaPe
     if (messageVersion !== SOLANA_OFFCHAIN_MESSAGE_VERSION) {
       throw new Error(`this wallet signs offchain message version ${SOLANA_OFFCHAIN_MESSAGE_VERSION} only`);
     }
-    if (!bytesEqual(requested.publicKey, publicKey)) {
+    if (!unsafeBytesEquals(requested.publicKey, publicKey)) {
       throw new Error('this wallet does not hold the requested account');
     }
     const [soleSigner] = requiredSigners;
-    if (requiredSigners.length !== 1 || soleSigner === undefined || !bytesEqual(soleSigner, publicKey)) {
+    if (requiredSigners.length !== 1 || soleSigner === undefined || !unsafeBytesEquals(soleSigner, publicKey)) {
       throw new Error('this wallet signs single-signer envelopes over its own key only');
     }
     const envelope = compileSolanaPermitEnvelope(publicKey, message);
@@ -86,24 +87,6 @@ export function solanaPermitWalletFromSecretKey(secretKey: Uint8Array): SolanaPe
       },
     },
   };
-}
-
-/**
- * Plain byte equality over public keys, mutable or read-only; nothing here is secret.
- *
- * @param a - One key.
- * @param b - The other.
- */
-function bytesEqual(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  for (let index = 0; index < a.length; index += 1) {
-    if (a[index] !== b[index]) {
-      return false;
-    }
-  }
-  return true;
 }
 
 /**

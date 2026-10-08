@@ -2,13 +2,13 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
   AccountRole,
-  address,
-  lamports,
   type Address,
+  address,
+  getAddressDecoder,
+  lamports,
   type MaybeEncodedAccount,
   type ProgramDerivedAddressBump,
 } from '@solana/kit';
-import { base58 } from '@scure/base';
 
 import {
   buildRevokePermitsInstruction,
@@ -18,7 +18,7 @@ import {
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 
 function addr(fill: number): Address {
-  return address(base58.encode(new Uint8Array(32).fill(fill)));
+  return getAddressDecoder().decode(new Uint8Array(32).fill(fill));
 }
 
 function hex(bytes: Iterable<number>): string {

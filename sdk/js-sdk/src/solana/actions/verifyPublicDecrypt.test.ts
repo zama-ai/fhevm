@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { address, type Address } from '@solana/kit';
-import { base58 } from '@scure/base';
+import { type Address, getAddressDecoder } from '@solana/kit';
 
 import type { SolanaPublicDecryptCertificateClaim } from './publicDecryptCertificate.js';
 import { buildVerifyPublicDecryptInstruction, verifyPublicDecryptArgsFromClaim } from './verifyPublicDecrypt.js';
 import { getVerifyPublicDecryptInstructionDataDecoder } from '@fhevm/solana-zama-host';
 
 function addr(fill: number): Address {
-  return address(base58.encode(new Uint8Array(32).fill(fill)));
+  return getAddressDecoder().decode(new Uint8Array(32).fill(fill));
 }
 
 const handleBytes = new Uint8Array(32).fill(0xab);

@@ -19,9 +19,11 @@
 // rather than a rule someone has to remember when appending a line.
 
 import type { SolanaPermitFields } from './types.js';
-import { base58 } from '@scure/base';
+import { getBase58Decoder } from '@solana/kit';
 import { transportKeyFingerprint } from './fingerprint.js';
 import { PERMIT_IDENTITY_LEN, PERMIT_KMS_ROUTING_VERSION, isPermissivePermit } from './types.js';
+
+const base58 = getBase58Decoder();
 
 /** First line: names the protocol and the version of this text form. */
 export const PERMIT_TEXT_HEADER = 'Zama fhevm Solana user-decrypt permit v2';
@@ -39,12 +41,12 @@ export function renderSolanaPermitText(fields: SolanaPermitFields): string {
     PERMIT_TEXT_HEADER,
     // Base58, Bitcoin alphabet: the encoding every Solana identity is displayed in, so the text
     // shows a signer the same string their explorer and their wallet do.
-    `User: ${base58.encode(fields.userAddress)}`,
-    `Verifying program: ${base58.encode(fields.verifyingProgramId)}`,
+    `User: ${base58.decode(fields.userAddress)}`,
+    `Verifying program: ${base58.decode(fields.verifyingProgramId)}`,
     `Chain id: ${fields.chainId}`,
     // The key itself does not fit a wallet screen, so the text commits to a digest of it —
     // recomputed here from the full key, never taken as an input.
-    `Transport key (SHAKE-256): ${base58.encode(transportKeyFingerprint(fields.transportKey))}`,
+    `Transport key (SHAKE-256): ${base58.decode(transportKeyFingerprint(fields.transportKey))}`,
   ];
 
   // The routing lines belong to the routing version, which is why they are produced by the switch
@@ -55,8 +57,8 @@ export function renderSolanaPermitText(fields: SolanaPermitFields): string {
     // device that stops being vacuous the moment a second version joins the union.
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     case PERMIT_KMS_ROUTING_VERSION:
-      lines.push(`KMS context: ${base58.encode(fields.kmsRouting.kmsContextId)}`);
-      lines.push(`KMS epoch: ${base58.encode(fields.kmsRouting.kmsEpochId)}`);
+      lines.push(`KMS context: ${base58.decode(fields.kmsRouting.kmsContextId)}`);
+      lines.push(`KMS epoch: ${base58.decode(fields.kmsRouting.kmsEpochId)}`);
       break;
   }
 
@@ -69,7 +71,7 @@ export function renderSolanaPermitText(fields: SolanaPermitFields): string {
     for (const scope of fields.allowedScopes) {
       const program = scope.subarray(0, PERMIT_IDENTITY_LEN);
       const declared = scope.subarray(PERMIT_IDENTITY_LEN);
-      lines.push(`- ${base58.encode(program)}/${base58.encode(declared)}`);
+      lines.push(`- ${base58.decode(program)}/${base58.decode(declared)}`);
     }
   }
 

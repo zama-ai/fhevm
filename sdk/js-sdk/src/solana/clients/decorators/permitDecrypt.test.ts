@@ -1,4 +1,10 @@
-import { address, getAddressEncoder, getProgramDerivedAddress, type Address } from '@solana/kit';
+import {
+  type Address,
+  getAddressDecoder,
+  getAddressEncoder,
+  getBase58Decoder,
+  getProgramDerivedAddress,
+} from '@solana/kit';
 import type { SolanaRpc } from '../../encryptedStore.js';
 import { RelayerAbortError } from '../../../core/errors/RelayerAbortError.js';
 // The permit-path actions, assembled onto the client.
@@ -13,7 +19,6 @@ import { RelayerAbortError } from '../../../core/errors/RelayerAbortError.js';
 import type { FhevmSolanaChain } from '../../../core/types/fhevmSolanaChain.js';
 import { RelayerTimeoutError } from '../../../core/errors/RelayerTimeoutError.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { base58 } from '@scure/base';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { asBytes32Hex, hexToBytes32 } from '../../../core/base/bytes.js';
 import { PERMIT_TRANSPORT_KEY_LEN, SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE } from '../../permit/index.js';
@@ -29,9 +34,9 @@ import { initTkmsModule } from '../../../core/modules/decrypt/module/init-p.js';
 const PROGRAM_ID = asBytes32Hex(`0x${'22'.repeat(32)}`);
 const CONTEXT_ID = asBytes32Hex(`0x${'33'.repeat(32)}`);
 const EPOCH_ID = asBytes32Hex(`0x${'44'.repeat(32)}`);
-const APP_PROGRAM = address(base58.encode(new Uint8Array(32).fill(0x01)));
-const MINT_A = address(base58.encode(new Uint8Array(32).fill(0x0a)));
-const MINT_B = address(base58.encode(new Uint8Array(32).fill(0x0b)));
+const APP_PROGRAM = getAddressDecoder().decode(new Uint8Array(32).fill(0x01));
+const MINT_A = getAddressDecoder().decode(new Uint8Array(32).fill(0x0a));
+const MINT_B = getAddressDecoder().decode(new Uint8Array(32).fill(0x0b));
 
 const chain = {
   id: 72057594037940281n,
@@ -58,7 +63,7 @@ const USER_SEED = new Uint8Array(32).fill(0x07);
 const USER_PUBKEY = ed25519.getPublicKey(USER_SEED);
 /** The full Wallet Standard account the conforming wallet below selects. */
 const USER_ACCOUNT = {
-  address: base58.encode(USER_PUBKEY),
+  address: getBase58Decoder().decode(USER_PUBKEY),
   publicKey: USER_PUBKEY,
   chains: ['solana:localnet'],
   features: [SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE],
@@ -186,7 +191,7 @@ describe('signing a permit through the client', () => {
   it.each([
     ['a donated PDA', '11111111111111111111111111111111', 0, true],
     ['a System account with data', '11111111111111111111111111111111', 1, false],
-    ['an empty initialized host account', base58.encode(hexToBytes32(PROGRAM_ID)), 0, false],
+    ['an empty initialized host account', getBase58Decoder().decode(hexToBytes32(PROGRAM_ID)), 0, false],
   ] as const)('handles %s according to host initialization rules', async (_label, owner, size, valid) => {
     const { wallet } = conformingWallet();
     vi.spyOn(rpc, 'getAccountInfo').mockReturnValueOnce({
@@ -212,7 +217,7 @@ describe('signing a permit through the client', () => {
     const { wallet } = conformingWallet();
 
     const [pda, bump] = await getProgramDerivedAddress({
-      programAddress: base58.encode(hexToBytes32(PROGRAM_ID)) as never,
+      programAddress: getAddressDecoder().decode(hexToBytes32(PROGRAM_ID)),
       seeds: [new TextEncoder().encode('permit-invalidation'), USER_PUBKEY],
     });
     const data = new Uint8Array(49);
@@ -224,7 +229,7 @@ describe('signing a permit through the client', () => {
       send: async () => ({
         value: {
           data: [Buffer.from(data).toString('base64'), 'base64'],
-          owner: base58.encode(hexToBytes32(PROGRAM_ID)),
+          owner: getBase58Decoder().decode(hexToBytes32(PROGRAM_ID)),
           executable: false,
           lamports: 1n,
           space: 49n,

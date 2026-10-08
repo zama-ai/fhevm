@@ -22,6 +22,7 @@ import {
   type SolanaOffchainMessageVersion,
   type SolanaSignOffchainMessageFeature,
 } from '@solana/wallet-standard-features';
+import { unsafeBytesEquals } from '../../core/base/bytes.js';
 import { SolanaPermitError } from './errors.js';
 import { buildSolanaPermitEnvelope, verifySolanaPermitSignature } from './envelope.js';
 import { renderSolanaPermitText } from './render.js';
@@ -132,7 +133,7 @@ export async function signSolanaPermit(
   // Before the wallet is asked anything: a wallet holding another key would produce a genuine
   // signature the verification below rejects, at the cost of a signing prompt the user answered
   // for nothing.
-  if (!bytesEqual(wallet.account.publicKey, fields.userAddress)) {
+  if (!unsafeBytesEquals(wallet.account.publicKey, fields.userAddress)) {
     throw new SolanaPermitChannelError({ reason: 'signer-mismatch' });
   }
 
@@ -160,7 +161,7 @@ export async function signSolanaPermit(
   // they must be the envelope reconstructed here — the same reconstruction every other verifier
   // runs. A wallet whose signature is genuine over different bytes is refused by this rule, not
   // trusted for having signed something.
-  if (!bytesEqual(result.signedOffchainMessage, buildSolanaPermitEnvelope(fields))) {
+  if (!unsafeBytesEquals(result.signedOffchainMessage, buildSolanaPermitEnvelope(fields))) {
     throw new SolanaPermitError({ code: 'SignatureMismatch' });
   }
 
@@ -192,23 +193,4 @@ function isSignOffchainMessageFeature(feature: unknown): feature is SignOffchain
   }
   const versions = (feature as { readonly supportedMessageVersions?: unknown }).supportedMessageVersions;
   return Array.isArray(versions) && versions.includes(SOLANA_OFFCHAIN_MESSAGE_VERSION);
-}
-
-/**
- * Plain byte equality, over either mutable or read-only byte arrays. Nothing here is secret from
- * the caller — every compared value is public — so there is no constant-time obligation.
- *
- * @param a - One byte string.
- * @param b - The other.
- */
-function bytesEqual(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  for (let index = 0; index < a.length; index += 1) {
-    if (a[index] !== b[index]) {
-      return false;
-    }
-  }
-  return true;
 }

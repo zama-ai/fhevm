@@ -165,8 +165,12 @@ HTTP/poll timeout budget. Its signal also cancels account reads; RPC timeouts re
 the native transport's policy.
 
 The generated zama-host instruction builders, codecs and PDA finders live in the
-`@fhevm/solana-zama-host` package (`solana/clients/zama-host`). The SDK depends on
-it and does not re-export it. Applications and the demo import it directly rather
+`@fhevm/solana-zama-host` package (`solana/clients/zama-host`). The SDK takes it
+as an optional peer and does not re-export it. A Solana app installs the Solana
+peers itself: `@fhevm/solana-zama-host`, `@solana/kit`,
+`@solana/wallet-standard-features` and `@wallet-standard/base` for
+`@fhevm/sdk/solana`, plus `@solana/sysvars` for `@fhevm/sdk/solana/cleartext`. An
+EVM-only app installs none of them. Applications and the demo import zama-host directly rather
 than SDK source paths or internal runtime actions. Permit signing and user
 decryption are reached through the client actions; the permit encoding, request
 builder and retry runner are internal.
