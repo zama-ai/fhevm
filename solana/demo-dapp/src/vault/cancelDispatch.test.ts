@@ -80,12 +80,15 @@ describe('buildCancelDispatchInstruction', () => {
       await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [utf8('__event_authority')]),
       CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
       SYSTEM_PROGRAM_ADDRESS,
+      // The optional HCU accounts, absent: Anchor reads the program id as None.
+      CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
+      CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
     ];
 
     expect(instruction.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
     expect(instruction.accounts!.map((account) => account.address)).toEqual(expected);
     expect(instruction.accounts!.map((account) => account.role)).toEqual([
-      3, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0,
+      3, 0, 1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0,
     ]);
 
     const decoded = getCancelDispatchInstructionDataDecoder().decode(instruction.data!);

@@ -59,6 +59,41 @@ pub(crate) fn fund_batch_authority<'info>(
     )
 }
 
+/// Splits an instruction's remaining accounts into the deny records of each of its FHE executions,
+/// in execution order. While the host's deny list is on, execution `i` takes `counts[i]` records:
+/// one per application it touches, in first-occurrence order. While it is off, there are none.
+/// The token and the host check each record against its application.
+pub(crate) fn split_deny_records<'a, 'info, const N: usize>(
+    host_config: &zama_host::HostConfig,
+    remaining_accounts: &'a [AccountInfo<'info>],
+    counts: [usize; N],
+) -> Result<[&'a [AccountInfo<'info>]; N]> {
+    let counts = if host_config.grant_deny_list_enabled {
+        counts
+    } else {
+        [0; N]
+    };
+    require_eq!(
+        remaining_accounts.len(),
+        counts.iter().sum::<usize>(),
+        BatcherError::DenyRecordsMismatch
+    );
+    let mut rest = remaining_accounts;
+    Ok(counts.map(|count| {
+        let (records, tail) = rest.split_at(count);
+        rest = tail;
+        records
+    }))
+}
+
+/// Forwards an optional HCU block meter or trust record into a CPI unchanged. The host checks it
+/// against the application the execution runs as.
+pub(crate) fn forward<'info>(
+    account: &Option<UncheckedAccount<'info>>,
+) -> Option<AccountInfo<'info>> {
+    account.as_ref().map(|account| account.to_account_info())
+}
+
 /// Signer-seed bytes for a batch authority PDA.
 pub(crate) struct BatchAuthoritySeeds {
     batch: Pubkey,

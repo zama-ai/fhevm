@@ -64,10 +64,19 @@ pub struct Dispatch<'info> {
     pub confidential_token_program: Program<'info, ConfidentialToken>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
+    /// The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+    /// application is not trusted.
+    /// CHECK: validated by ZamaHost.
+    #[account(mut)]
+    pub join_mint_hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+    /// application is trusted.
+    /// CHECK: validated by ZamaHost.
+    pub join_mint_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
 /// Burns the batch's full balance and records the burned handle to settle.
-pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
+pub fn dispatch<'info>(ctx: Context<'info, Dispatch<'info>>) -> Result<()> {
     require!(
         ctx.accounts.batch.status == BatchStatus::Pending,
         BatcherError::BatchNotPending
@@ -102,6 +111,8 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
         ct::pending_burn_address(mint_key, ctx.accounts.batch_join_token_account.key()).0,
         BatcherError::DerivedAccountMismatch
     );
+    let [burn_deny_records] =
+        split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [1])?;
     ct::cpi::confidential_burn_from_value(
         CpiContext::new_with_signer(
             ctx.accounts.confidential_token_program.key(),
@@ -124,8 +135,8 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
-                hcu_block_meter: None,
-                hcu_trusted_app_record: None,
+                hcu_block_meter: forward(&ctx.accounts.join_mint_hcu_block_meter),
+                hcu_trusted_app_record: forward(&ctx.accounts.join_mint_hcu_trusted_app_record),
                 event_authority: ctx
                     .accounts
                     .confidential_token_event_authority
@@ -133,7 +144,8 @@ pub fn dispatch(ctx: Context<Dispatch>) -> Result<()> {
                 program: ctx.accounts.confidential_token_program.to_account_info(),
             },
             &[&authority_seeds],
-        ),
+        )
+        .with_remaining_accounts(burn_deny_records.to_vec()),
         ct::balance_key(),
     )?;
 

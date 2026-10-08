@@ -7,10 +7,18 @@ import {
 } from '@fhevm/confidential-token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
-import { getCancelDispatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/cancelDispatch.js';
+import {
+  getCancelDispatchInstructionAsync,
+  type CancelDispatchAsyncInput,
+} from './internal/generated/confidentialBatcher/instructions/cancelDispatch.js';
+import { tokenApp, withDenyRecords, type DenyListParameters } from './internal/denyRecords.js';
 import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/pdas/index.js';
 
-export type SolanaVaultCancelDispatchParameters = {
+export type SolanaVaultCancelDispatchParameters = Pick<
+  CancelDispatchAsyncInput,
+  'joinMintHcuBlockMeter' | 'joinMintHcuTrustedAppRecord'
+> &
+  DenyListParameters & {
   readonly transientStore: TransientStore;
   /** Join-mint wrapper authority; also pays optional batch-authority funding. */
   readonly payer: TransactionSigner;
@@ -28,7 +36,7 @@ export async function buildCancelDispatchInstruction(
   const [batchAuthority] = await findBatchAuthorityPda({ batch: parameters.batch });
   const batchJoinTokenAccount = (await findTokenAccountPda({ mint, owner: batchAuthority }))[0];
   const totalSupplyAuthority = (await findTotalSupplyAuthorityPda({ mint }))[0];
-  return getCancelDispatchInstructionAsync({
+  const instruction = await getCancelDispatchInstructionAsync({
     transientStore: parameters.transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     payer: parameters.payer,
@@ -43,5 +51,8 @@ export async function buildCancelDispatchInstruction(
     pendingBurn: (await findPendingBurnPda({ mint, tokenAccount: batchJoinTokenAccount }))[0],
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
     authorityFundingLamports: parameters.authorityFundingLamports ?? 0n,
+    joinMintHcuBlockMeter: parameters.joinMintHcuBlockMeter,
+    joinMintHcuTrustedAppRecord: parameters.joinMintHcuTrustedAppRecord,
   });
+  return withDenyRecords(instruction, parameters.denyListEnabled, [tokenApp(mint)]);
 }

@@ -100,6 +100,9 @@ describe('buildDispatchBatchInstruction', () => {
       await pda(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, [utf8('__event_authority')]),
       CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
       SYSTEM_PROGRAM_ADDRESS,
+      // The optional HCU accounts, absent: Anchor reads the program id as None.
+      CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
+      CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
     ];
     expect(instruction.accounts!.map((a) => a.address)).toEqual(expected);
 

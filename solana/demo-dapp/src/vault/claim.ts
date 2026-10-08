@@ -5,7 +5,11 @@ import {
 import { findAssociatedTokenPda } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
-import { getClaimInstructionAsync } from './internal/generated/confidentialBatcher/instructions/claim.js';
+import {
+  getClaimInstructionAsync,
+  type ClaimAsyncInput,
+} from './internal/generated/confidentialBatcher/instructions/claim.js';
+import { batchApp, tokenApp, withDenyRecords, type DenyListParameters } from './internal/denyRecords.js';
 import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/pdas/index.js';
 import { joinStoreAddress, tokenStoreAddress } from './internal/encryptedStores.js';
 
@@ -14,7 +18,11 @@ import { joinStoreAddress, tokenStoreAddress } from './internal/encryptedStores.
  * and forwards the supplied transient store. The user need not sign: the recipient is fixed by the JoinRecord.
  * The user's payout token account must already exist.
  */
-export type SolanaVaultClaimParameters = {
+export type SolanaVaultClaimParameters = Pick<
+  ClaimAsyncInput,
+  'batchHcuBlockMeter' | 'batchHcuTrustedAppRecord' | 'payoutMintHcuBlockMeter' | 'payoutMintHcuTrustedAppRecord'
+> &
+  DenyListParameters & {
   readonly transientStore: TransientStore;
   /** Pays State growth. The transient store payer may be a different sponsor. */
   readonly payer: TransactionSigner;
@@ -69,6 +77,13 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
     batchPayoutBalanceStore: await tokenStoreAddress(payoutConfidentialMint, batchPayoutTokenAccount),
     userPayoutBalanceStore: await tokenStoreAddress(payoutConfidentialMint, userPayoutTokenAccount),
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
+    batchHcuBlockMeter: parameters.batchHcuBlockMeter,
+    batchHcuTrustedAppRecord: parameters.batchHcuTrustedAppRecord,
+    payoutMintHcuBlockMeter: parameters.payoutMintHcuBlockMeter,
+    payoutMintHcuTrustedAppRecord: parameters.payoutMintHcuTrustedAppRecord,
   });
-  return instruction;
+  return withDenyRecords(instruction, parameters.denyListEnabled, [
+    batchApp(parameters.batch),
+    tokenApp(payoutConfidentialMint),
+  ]);
 }

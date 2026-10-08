@@ -16,11 +16,6 @@
 //! intermediate `joined * payout_received < 2^128` stays inside the
 //! coprocessor's widened MulDiv, and the result is at most `payout_received`,
 //! so it fits euint64. `total_joined > 0` because zero-total batches cancel.
-//!
-//! The execution and transfer assume `grant_deny_list_enabled = false` and no
-//! binding HCU cap: `hcu_block_meter` and `hcu_trusted_app_record` are
-//! hardcoded `None` (the PoC host fixtures never enable them), and deny-list
-//! records ride in as the (empty) remaining accounts.
 
 use super::*;
 
@@ -93,6 +88,24 @@ pub struct Claim<'info> {
     pub confidential_token_program: Program<'info, ConfidentialToken>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
+    /// The batch's HCU block meter for the batcher's own execution. Supplied while the block cap binds and the
+    /// application is not trusted.
+    /// CHECK: validated by ZamaHost.
+    #[account(mut)]
+    pub batch_hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// The batch's HCU trust record for the batcher's own execution. Supplied while the block cap binds and the
+    /// application is trusted.
+    /// CHECK: validated by ZamaHost.
+    pub batch_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+    /// The payout mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+    /// application is not trusted.
+    /// CHECK: validated by ZamaHost.
+    #[account(mut)]
+    pub payout_mint_hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+    /// application is trusted.
+    /// CHECK: validated by ZamaHost.
+    pub payout_mint_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
 /// Computes the user's encrypted payout amount and transfers it to them.
@@ -132,6 +145,8 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         BatcherError::DerivedAccountMismatch
     );
 
+    let [claim_deny_records, transfer_deny_records] =
+        split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [1, 1])?;
     let account = fhe::read_state(&ctx.accounts.join_store)?;
     let state = zama_fhe::Store::new(&account);
     let joined = state.get::<zama_fhe::Uint<64>>(joined_amount_key())?;
@@ -161,7 +176,9 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         instructions: ctx.accounts.instructions.to_account_info(),
         program: ctx.accounts.zama_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
-        deny_records: ctx.remaining_accounts,
+        deny_records: claim_deny_records,
+        hcu_block_meter: forward(&ctx.accounts.batch_hcu_block_meter),
+        hcu_trusted_app_record: forward(&ctx.accounts.batch_hcu_trusted_app_record),
     }
     .invoke(
         execution,
@@ -172,6 +189,28 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
     )?;
 
     // Phase 2: transfer the freshly computed claim handle to the user.
+    pay_claim(&ctx, claim_handle, &authority_seeds, transfer_deny_records)?;
+
+    ctx.accounts.join_record.claimed = true;
+
+    emit!(PayoutClaimed {
+        version: APP_EVENT_VERSION,
+        batch: batch_key,
+        user,
+        claim_store: ctx.accounts.join_store.key(),
+        claim_handle,
+    });
+    Ok(())
+}
+
+// Keep CPI account assembly in a separate SBF function; Claim also builds the MulDiv execution.
+#[inline(never)]
+fn pay_claim<'info>(
+    ctx: &Context<'info, Claim<'info>>,
+    claim_handle: [u8; 32],
+    authority_seeds: &[&[u8]],
+    deny_records: &[AccountInfo<'info>],
+) -> Result<()> {
     ct::cpi::confidential_transfer_from_value(
         CpiContext::new_with_signer(
             ctx.accounts.confidential_token_program.key(),
@@ -195,29 +234,19 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
-                hcu_block_meter: None,
-                hcu_trusted_app_record: None,
+                hcu_block_meter: forward(&ctx.accounts.payout_mint_hcu_block_meter),
+                hcu_trusted_app_record: forward(&ctx.accounts.payout_mint_hcu_trusted_app_record),
                 event_authority: ctx
                     .accounts
                     .confidential_token_event_authority
                     .to_account_info(),
                 program: ctx.accounts.confidential_token_program.to_account_info(),
             },
-            &[&authority_seeds],
-        ),
+            &[authority_seeds],
+        )
+        .with_remaining_accounts(deny_records.to_vec()),
         ct::TransferInput::Grant {
             handle: claim_handle,
         },
-    )?;
-
-    ctx.accounts.join_record.claimed = true;
-
-    emit!(PayoutClaimed {
-        version: APP_EVENT_VERSION,
-        batch: batch_key,
-        user,
-        claim_store: ctx.accounts.join_store.key(),
-        claim_handle,
-    });
-    Ok(())
+    )
 }

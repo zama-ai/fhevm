@@ -172,6 +172,18 @@ describe('joinBatch (attested arm)', () => {
     expect(data.signatures).toHaveLength(1);
   });
 
+  // One coprocessor signature leaves room for one lever's witnesses: 1229 bytes with the deny
+  // records, 1227 with two HCU accounts. Both levers at once need 1293 bytes, which waits for v1
+  // transactions (fhevm-internal#2111).
+  it.each([
+    ['the deny list', { denyListEnabled: true }],
+    ['a binding block cap, metered', { joinMintHcuBlockMeter: key(30), batchHcuBlockMeter: key(31) }],
+    ['a binding block cap, trusted', { joinMintHcuTrustedAppRecord: key(32), batchHcuTrustedAppRecord: key(33) }],
+  ])('fits under %s', async (_lever, witnesses) => {
+    const { params } = await sendableParameters(vi.fn());
+    await expect(joinBatch(context, { ...params, ...witnesses })).resolves.toEqual(expect.any(String));
+  });
+
   it('does not submit when persistent transaction journaling fails', async () => {
     const { params } = await sendableParameters(async () => {
       throw new Error('journal unavailable');

@@ -205,6 +205,28 @@ describe('settleBatch', () => {
     expect(bytes.length).toBeLessThanOrEqual(1232);
   });
 
+  // The host witnesses stay out of the table: the meter has no client-side PDA finder, and all
+  // three as static keys still fit at 7 signatures.
+  it('fits 7 signatures with every host witness outside the table', async () => {
+    const { keeper, opts } = await options();
+    certificate.mockResolvedValue({
+      ...claim(cleartextHex(800n)),
+      signatures: Array.from({ length: 7 }, () => hex(new Uint8Array(65).fill(0x11))),
+    });
+    await settleBatch({ publicDecryptCertificate: certificate }, keeper, {
+      ...opts,
+      payoutMintHcuBlockMeter: addr(40),
+      payoutMintHcuTrustedAppRecord: addr(41),
+      denyListEnabled: true,
+    });
+    const simulate = opts.rpc.simulateTransaction as unknown as ReturnType<typeof vi.fn>;
+    const bytes = getBase64Encoder().encode(simulate.mock.calls[0]![0] as string);
+    expect(bytes.length).toBeLessThanOrEqual(1232);
+    const transaction = getTransactionDecoder().decode(bytes);
+    const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
+    expect(compiled.staticAccounts).toEqual(expect.arrayContaining([addr(40), addr(41)]));
+  });
+
   it('rejects an oversized certificate before simulation or send', async () => {
     const { keeper, opts } = await options();
     certificate.mockResolvedValue({

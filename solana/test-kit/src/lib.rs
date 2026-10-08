@@ -380,6 +380,7 @@ pub struct HostConfigParams {
     pub current_kms_context_id: [u8; 32],
     pub paused: host::PauseFlags,
     pub grant_deny_list_enabled: bool,
+    pub hcu_block_cap_per_app: u64,
 }
 
 /// The fixture's default coprocessor signer: a dead address no test key can produce. A config
@@ -406,6 +407,7 @@ impl HostConfigParams {
             current_kms_context_id: [0u8; 32],
             paused: host::PauseFlags::default(),
             grant_deny_list_enabled: false,
+            hcu_block_cap_per_app: u64::MAX,
         }
     }
 }
@@ -431,7 +433,7 @@ pub fn host_config_account(params: &HostConfigParams) -> (Pubkey, Account) {
                 grant_deny_list_enabled: params.grant_deny_list_enabled,
                 max_hcu_per_tx: u64::MAX,
                 max_hcu_depth_per_tx: u64::MAX,
-                hcu_block_cap_per_app: u64::MAX,
+                hcu_block_cap_per_app: params.hcu_block_cap_per_app,
                 bump,
             }),
             owner: host::id(),
@@ -535,6 +537,26 @@ pub fn deny_scope_record_account(app: host::AppScope, denied: bool) -> (Pubkey, 
                 program: app.program,
                 scope: app.scope,
                 denied,
+                bump,
+            }),
+            owner: host::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    )
+}
+
+/// Builds an `HcuTrustedAppRecord` account for one application at its canonical PDA.
+pub fn hcu_trusted_app_record_account(app: host::AppScope, trusted: bool) -> (Pubkey, Account) {
+    let (record, bump) = host::hcu_trusted_app_address(app);
+    (
+        record,
+        Account {
+            lamports: 1_000_000_000,
+            data: serialized_account(host::HcuTrustedAppRecord {
+                program: app.program,
+                scope: app.scope,
+                trusted,
                 bump,
             }),
             owner: host::id(),

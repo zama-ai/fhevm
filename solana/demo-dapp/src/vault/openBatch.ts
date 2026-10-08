@@ -8,8 +8,9 @@ import {
   getCreateLookupTableInstruction,
 } from '@solana-program/address-lookup-table';
 import { getExtendLookupTableInstructions } from './internal/addressLookupTable.js';
+import { tokenApp, withDenyRecords, type DenyListParameters } from './internal/denyRecords.js';
 
-export type SolanaVaultOpenBatchParameters = {
+export type SolanaVaultOpenBatchParameters = DenyListParameters & {
   /** Accounts, `index` + `authorityFundingLamports` for the batcher `open_batch` instruction. */
   readonly openBatch: OpenBatchAsyncInput;
   /**
@@ -47,7 +48,11 @@ export type SolanaVaultOpenBatchResult = {
  */
 export async function openBatch(parameters: SolanaVaultOpenBatchParameters): Promise<SolanaVaultOpenBatchResult> {
   const payer = parameters.openBatch.payer;
-  const openBatchInstruction = await getOpenBatchInstructionAsync(parameters.openBatch);
+  const openBatchInstruction = await withDenyRecords(
+    await getOpenBatchInstructionAsync(parameters.openBatch),
+    parameters.denyListEnabled,
+    [tokenApp(parameters.openBatch.joinConfidentialMint), tokenApp(parameters.openBatch.payoutConfidentialMint)],
+  );
   const lookupTablePda = await findAddressLookupTablePda({ authority: payer.address, recentSlot: parameters.recentSlot });
   const lookupTableAddress = lookupTablePda[0];
   const createInstruction = getCreateLookupTableInstruction({

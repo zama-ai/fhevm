@@ -22,11 +22,6 @@
 //! A zero-total batch cancels after phase 1: the certificate still proves the
 //! total (so cancellation is trustless), and the division never happens.
 //!
-//! The wrap and rate phases assume `grant_deny_list_enabled = false` and no
-//! binding HCU cap: every token/host CPI passes `deny_scope_records`,
-//! `hcu_block_meter`, and `hcu_trusted_app_record` as hardcoded `None` (the
-//! PoC host fixtures never enable them).
-//!
 //! Deposit batches below one share's worth revert with `ZeroShares`; settlement rolls back
 //! atomically and leaves the batch Dispatched. Retrying at the same or higher price cannot
 //! succeed. The join mint authority can call `cancel_dispatch`, restoring the burn and opening
@@ -148,12 +143,21 @@ pub struct Settle<'info> {
     pub token_program: Program<'info, Token>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
+    /// The payout mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+    /// application is not trusted.
+    /// CHECK: validated by ZamaHost.
+    #[account(mut)]
+    pub payout_mint_hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+    /// application is trusted.
+    /// CHECK: validated by ZamaHost.
+    pub payout_mint_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
 /// Redeems, moves the total through the vault, wraps, and records the rate —
 /// or cancels on zero total.
-pub fn settle(
-    ctx: Context<Settle>,
+pub fn settle<'info>(
+    ctx: Context<'info, Settle<'info>>,
     cleartext_total: u64,
     signatures: Vec<[u8; 65]>,
     extra_data: Vec<u8>,
@@ -190,6 +194,8 @@ pub fn settle(
     );
     let batch_key = ctx.accounts.batch.key();
     let burned_total_handle = ctx.accounts.batch.burned_total_handle;
+    let [wrap_deny_records] =
+        split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [1])?;
 
     fund_batch_authority(
         &ctx.accounts.payer,
@@ -337,8 +343,8 @@ pub fn settle(
                 host_config: ctx.accounts.host_config.to_account_info(),
                 token_program: ctx.accounts.token_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
-                hcu_block_meter: None,
-                hcu_trusted_app_record: None,
+                hcu_block_meter: forward(&ctx.accounts.payout_mint_hcu_block_meter),
+                hcu_trusted_app_record: forward(&ctx.accounts.payout_mint_hcu_trusted_app_record),
                 event_authority: ctx
                     .accounts
                     .confidential_token_event_authority
@@ -346,7 +352,8 @@ pub fn settle(
                 program: ctx.accounts.confidential_token_program.to_account_info(),
             },
             &[&authority_seeds],
-        ),
+        )
+        .with_remaining_accounts(wrap_deny_records.to_vec()),
         payout_received,
     )?;
 

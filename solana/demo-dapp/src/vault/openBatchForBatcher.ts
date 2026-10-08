@@ -6,9 +6,18 @@ import {
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { TransactionSigner } from '@solana/kit';
 import { openBatch, type SolanaVaultOpenBatchResult } from './openBatch.js';
+import type { DenyListParameters } from './internal/denyRecords.js';
+import type { OpenBatchAsyncInput } from './internal/generated/confidentialBatcher/instructions/openBatch.js';
 import { deriveBatchAddresses, deriveSettleLookupTableAddresses, type VaultDemoRoots } from './derive.js';
 
-export type SolanaVaultOpenBatchForBatcherParameters = {
+export type SolanaVaultOpenBatchForBatcherParameters = Pick<
+  OpenBatchAsyncInput,
+  | 'joinMintHcuBlockMeter'
+  | 'joinMintHcuTrustedAppRecord'
+  | 'payoutMintHcuBlockMeter'
+  | 'payoutMintHcuTrustedAppRecord'
+> &
+  DenyListParameters & {
   readonly transientStore: TransientStore;
   /** The batcher's immutable topology (from the demo-config projection). */
   readonly roots: VaultDemoRoots;
@@ -56,7 +65,12 @@ export async function openBatchForBatcher(
       payoutUnderlyingMint: roots.payoutUnderlyingMint,
       confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
       authorityFundingLamports: parameters.authorityFundingLamports,
+      joinMintHcuBlockMeter: parameters.joinMintHcuBlockMeter,
+      joinMintHcuTrustedAppRecord: parameters.joinMintHcuTrustedAppRecord,
+      payoutMintHcuBlockMeter: parameters.payoutMintHcuBlockMeter,
+      payoutMintHcuTrustedAppRecord: parameters.payoutMintHcuTrustedAppRecord,
     },
+    denyListEnabled: parameters.denyListEnabled,
     recentSlot: parameters.recentSlot,
     settleLookupTableAddresses: await deriveSettleLookupTableAddresses(roots, batch),
   });

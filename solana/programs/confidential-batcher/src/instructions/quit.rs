@@ -78,6 +78,24 @@ pub struct Quit<'info> {
     pub confidential_token_program: Program<'info, ConfidentialToken>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
+    /// The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+    /// application is not trusted.
+    /// CHECK: validated by ZamaHost.
+    #[account(mut)]
+    pub join_mint_hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+    /// application is trusted.
+    /// CHECK: validated by ZamaHost.
+    pub join_mint_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+    /// The batch's HCU block meter for the batcher's own execution. Supplied while the block cap binds and the
+    /// application is not trusted.
+    /// CHECK: validated by ZamaHost.
+    #[account(mut)]
+    pub batch_hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// The batch's HCU trust record for the batcher's own execution. Supplied while the block cap binds and the
+    /// application is trusted.
+    /// CHECK: validated by ZamaHost.
+    pub batch_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
 /// Refunds the exact recorded amount and resets the joined encrypted store to zero.
@@ -124,6 +142,9 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     let authority_seeds = authority.seeds();
     let bump = [ctx.accounts.join_record.bump];
     let record_seeds: &[&[u8]] = &[JOIN_RECORD_SEED, batch_key.as_ref(), user.as_ref(), &bump];
+    // The refund reads the join store, so its token execution also touches the batch application.
+    let [refund_deny_records, reset_deny_records] =
+        split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [2, 1])?;
     ct::cpi::confidential_transfer_from_value(
         CpiContext::new_with_signer(
             ctx.accounts.confidential_token_program.key(),
@@ -147,8 +168,8 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 host_config: ctx.accounts.host_config.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
-                hcu_block_meter: None,
-                hcu_trusted_app_record: None,
+                hcu_block_meter: forward(&ctx.accounts.join_mint_hcu_block_meter),
+                hcu_trusted_app_record: forward(&ctx.accounts.join_mint_hcu_trusted_app_record),
                 event_authority: ctx
                     .accounts
                     .confidential_token_event_authority
@@ -156,7 +177,8 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
                 program: ctx.accounts.confidential_token_program.to_account_info(),
             },
             &[&authority_seeds, record_seeds],
-        ),
+        )
+        .with_remaining_accounts(refund_deny_records.to_vec()),
         ct::TransferInput::Slot {
             key: joined_amount_key(),
         },
@@ -184,7 +206,9 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         instructions: ctx.accounts.instructions.to_account_info(),
         program: ctx.accounts.zama_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
-        deny_records: ctx.remaining_accounts,
+        deny_records: reset_deny_records,
+        hcu_block_meter: forward(&ctx.accounts.batch_hcu_block_meter),
+        hcu_trusted_app_record: forward(&ctx.accounts.batch_hcu_trusted_app_record),
     }
     .invoke(execution, vec![ctx.accounts.join_store.to_account_info()])?;
 

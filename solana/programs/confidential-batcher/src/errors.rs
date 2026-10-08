@@ -77,4 +77,7 @@ pub enum BatcherError {
     /// The supplied index must open the next batch.
     #[msg("batch index does not match the next batch index")]
     BatchIndexMismatch,
+    /// The remaining accounts must be exactly the deny records the instruction's executions need.
+    #[msg("remaining accounts do not match the deny records this instruction needs")]
+    DenyRecordsMismatch,
 }

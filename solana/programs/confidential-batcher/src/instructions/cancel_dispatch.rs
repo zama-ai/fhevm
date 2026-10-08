@@ -57,6 +57,15 @@ pub struct CancelDispatch<'info> {
     pub confidential_token_program: Program<'info, ConfidentialToken>,
     /// System program used by the token execution and optional authority funding.
     pub system_program: Program<'info, System>,
+    /// The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
+    /// application is not trusted.
+    /// CHECK: validated by ZamaHost.
+    #[account(mut)]
+    pub join_mint_hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
+    /// application is trusted.
+    /// CHECK: validated by ZamaHost.
+    pub join_mint_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
 /// Restores the dispatched burn and moves the batch into its refund-only state.
@@ -102,6 +111,8 @@ pub fn cancel_dispatch<'info>(
 
     let authority = BatchAuthoritySeeds::new(batch, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
+    let [cancel_deny_records] =
+        split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [1])?;
     ct::cpi::cancel_pending_burn(
         CpiContext::new_with_signer(
             ctx.accounts.confidential_token_program.key(),
@@ -119,8 +130,8 @@ pub fn cancel_dispatch<'info>(
                 instructions: ctx.accounts.instructions.to_account_info(),
                 zama_program: ctx.accounts.zama_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
-                hcu_block_meter: None,
-                hcu_trusted_app_record: None,
+                hcu_block_meter: forward(&ctx.accounts.join_mint_hcu_block_meter),
+                hcu_trusted_app_record: forward(&ctx.accounts.join_mint_hcu_trusted_app_record),
                 event_authority: ctx
                     .accounts
                     .confidential_token_event_authority
@@ -129,9 +140,7 @@ pub fn cancel_dispatch<'info>(
             },
             &[&authority_seeds],
         )
-        // The join mint's deny record while the host's deny list is on: the restore re-allows
-        // the batch authority on its balance, so the token needs the witness.
-        .with_remaining_accounts(ctx.remaining_accounts.to_vec()),
+        .with_remaining_accounts(cancel_deny_records.to_vec()),
     )?;
 
     ctx.accounts.batch.status = BatchStatus::Refunding;
