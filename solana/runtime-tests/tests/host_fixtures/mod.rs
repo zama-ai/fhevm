@@ -18,7 +18,7 @@ use zama_host::{
 use zama_solana_test_kit::{
     anchor_ix, empty_system_account, encrypted_store_account, event_authority,
     funded_system_account, host_svm, label, new_encrypted_store, readonly, system_program_account,
-    writable, HostConfigParams,
+    u256_be, writable, HostConfigParams,
 };
 
 /// Seed tag of the fixture value authorities: `PDA("value-authority", seed_key)` of the program.
@@ -290,7 +290,7 @@ pub fn store_outputs_execution(
             effects.push(output);
         }
         steps.push(FheExecuteStep::TrivialEncrypt {
-            plaintext: [(step_index + 1) as u8; 32],
+            plaintext: u256_be((step_index + 1) as u64),
             fhe_type: 5,
         });
     }

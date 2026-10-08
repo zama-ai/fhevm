@@ -181,6 +181,13 @@ fn typed_handle(tag: u8, fhe_type: u8) -> [u8; 32] {
     handle
 }
 
+/// A big-endian plaintext scalar.
+fn be_u128(value: u128) -> [u8; 32] {
+    let mut bytes = [0u8; 32];
+    bytes[16..].copy_from_slice(&value.to_be_bytes());
+    bytes
+}
+
 /// Asserts the operand-validation result failed with the given Anchor error code.
 fn assert_error(result: Result<()>, expected: ZamaHostError) {
     let code = match result.unwrap_err() {
@@ -251,10 +258,10 @@ fn assert_is_in_operand_types_enforces_uniform_declared_type() {
 fn assert_mul_div_operand_types_matches_evm_bounds() {
     let factor1 = typed_handle(1, 5);
     let factor2 = typed_handle(2, 5);
-    let nonzero_divisor = typed_handle(9, 0);
+    let nonzero_divisor = be_u128(9);
     // Encrypted factor2 of the same type, and a scalar factor2 (handle ignored), are both accepted.
     assert!(assert_mul_div_operand_types(factor1, factor2, false, nonzero_divisor, 5).is_ok());
-    assert!(assert_mul_div_operand_types(factor1, [0u8; 32], true, nonzero_divisor, 5).is_ok());
+    assert!(assert_mul_div_operand_types(factor1, be_u128(2), true, nonzero_divisor, 5).is_ok());
     // Uint128 output is rejected — EVM and the coprocessor cap mulDiv at Uint64.
     assert_error(
         assert_mul_div_operand_types(
@@ -277,7 +284,7 @@ fn assert_mul_div_operand_types_matches_evm_bounds() {
     );
     // A zero plaintext divisor is rejected (EVM DivisionByZero parity).
     assert_error(
-        assert_mul_div_operand_types(factor1, factor2, true, [0u8; 32], 5),
+        assert_mul_div_operand_types(factor1, be_u128(2), true, [0u8; 32], 5),
         ZamaHostError::MulDivDivisorZero,
     );
 }
@@ -377,7 +384,7 @@ fn assert_binary_operand_types_matches_evm_supported_sets() {
 #[test]
 fn assert_binary_div_rem_require_nonzero_scalar_divisor() {
     let lhs = typed_handle(1, 5); // euint64
-    let nonzero_scalar = typed_handle(9, 0);
+    let nonzero_scalar = be_u128(9);
     // A non-zero scalar divisor is accepted for both Div and Rem.
     assert!(
         assert_binary_operand_types(FheBinaryOpCode::Div, lhs, nonzero_scalar, true, 5).is_ok()
@@ -395,30 +402,81 @@ fn assert_binary_div_rem_require_nonzero_scalar_divisor() {
         assert_binary_operand_types(FheBinaryOpCode::Rem, lhs, [0u8; 32], true, 5),
         ZamaHostError::DivisionByZero,
     );
-    // A divisor nonzero only above the euint8 width truncates to zero -> rejected.
-    let mut high_only = [0u8; 32];
-    high_only[30] = 0x01;
+    // 0x0100 on euint8 is out of range, not a truncated zero (EVM `ScalarOutOfRange`).
     assert_error(
-        assert_binary_operand_types(FheBinaryOpCode::Div, typed_handle(1, 2), high_only, true, 2),
-        ZamaHostError::DivisionByZero,
+        assert_binary_operand_types(
+            FheBinaryOpCode::Div,
+            typed_handle(1, 2),
+            be_u128(0x100),
+            true,
+            2,
+        ),
+        ZamaHostError::ScalarOutOfRange,
     );
 }
 
 #[test]
-fn assert_mul_div_rejects_width_truncated_zero_divisor() {
+fn assert_binary_rejects_scalars_above_the_operand_type() {
+    let euint8 = typed_handle(1, 2);
+    assert!(
+        assert_binary_operand_types(FheBinaryOpCode::Add, euint8, be_u128(0xff), true, 2).is_ok()
+    );
+    assert_error(
+        assert_binary_operand_types(FheBinaryOpCode::Add, euint8, be_u128(0x101), true, 2),
+        ZamaHostError::ScalarOutOfRange,
+    );
+    // A comparison checks the scalar against its operand type, not its ebool result.
+    assert!(
+        assert_binary_operand_types(FheBinaryOpCode::Lt, euint8, be_u128(0xff), true, 0).is_ok()
+    );
+    assert_error(
+        assert_binary_operand_types(FheBinaryOpCode::Lt, euint8, be_u128(0x100), true, 0),
+        ZamaHostError::ScalarOutOfRange,
+    );
+}
+
+#[test]
+fn scalar_range_follows_each_fhe_type_maximum() {
+    for (fhe_type, max) in [
+        (0, 1),
+        (2, u128::from(u8::MAX)),
+        (3, u128::from(u16::MAX)),
+        (4, u128::from(u32::MAX)),
+        (5, u128::from(u64::MAX)),
+    ] {
+        assert!(
+            assert_scalar_in_range(be_u128(max), fhe_type).is_ok(),
+            "type {fhe_type} max"
+        );
+        assert!(
+            assert_scalar_in_range(be_u128(max + 1), fhe_type).is_err(),
+            "type {fhe_type} max + 1"
+        );
+    }
+    assert!(assert_scalar_in_range(be_u128(u128::MAX), 6).is_ok());
+    let mut above_u128 = [0u8; 32];
+    above_u128[15] = 1;
+    assert!(assert_scalar_in_range(above_u128, 6).is_err());
+    assert_error(
+        assert_scalar_in_range(be_u128(0), 1),
+        ZamaHostError::UnsupportedFheType,
+    );
+}
+
+#[test]
+fn assert_mul_div_rejects_out_of_range_scalars() {
     let factor1 = typed_handle(1, 2); // euint8
     let factor2 = typed_handle(2, 2);
-    // Divisor nonzero only above the u8 width truncates to zero -> rejected (EVM parity).
-    let mut high_only = [0u8; 32];
-    high_only[30] = 0x01;
+    // 0x0100 on euint8 is out of range for the divisor and for a scalar factor2 (EVM parity).
     assert_error(
-        assert_mul_div_operand_types(factor1, factor2, false, high_only, 2),
-        ZamaHostError::MulDivDivisorZero,
+        assert_mul_div_operand_types(factor1, factor2, false, be_u128(0x100), 2),
+        ZamaHostError::ScalarOutOfRange,
     );
-    // A low-byte-nonzero divisor is accepted.
-    let mut low = [0u8; 32];
-    low[31] = 0x01;
-    assert!(assert_mul_div_operand_types(factor1, factor2, false, low, 2).is_ok());
+    assert_error(
+        assert_mul_div_operand_types(factor1, be_u128(0x100), true, be_u128(1), 2),
+        ZamaHostError::ScalarOutOfRange,
+    );
+    assert!(assert_mul_div_operand_types(factor1, be_u128(0xff), true, be_u128(0xff), 2).is_ok());
 }
 
 #[test]

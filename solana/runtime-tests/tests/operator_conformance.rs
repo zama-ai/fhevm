@@ -95,14 +95,14 @@ fn run_ternary(fhe_type: u8, if_true: u64, if_false: u64, expected: u64) {
     );
 }
 
-fn run_trivial(fhe_type: u8, plaintext: u64, expected: u64) {
+fn run_trivial(fhe_type: u8, plaintext: u64) {
     let execution = args(vec![FheExecuteStep::TrivialEncrypt {
         plaintext: be(plaintext),
         fhe_type,
     }]);
     assert_eq!(
         evaluate(&execution, &ClearInputs::new()).unwrap(),
-        vec![value(fhe_type, expected)]
+        vec![value(fhe_type, plaintext)]
     );
 }
 
@@ -218,53 +218,8 @@ mod edges {
         run_binary(FheBinaryOpCode::Le, 5, true, 10, 9, 0, 0);
     }
     #[test]
-    fn binary_add_u8_scalar_truncates_high_bytes() {
-        let input = handle(1, 2);
-        let mut high_only = [0; 32];
-        high_only[0] = 1;
-        let execution = args(vec![binary(
-            FheBinaryOpCode::Add,
-            persistent(input),
-            scalar(high_only),
-            2,
-        )]);
-        assert_eq!(
-            evaluate(&execution, &HashMap::from([(input, plain(7))])).unwrap(),
-            vec![value(2, 7)]
-        );
-    }
-    #[test]
     fn sum_u8_wraps() {
         run_sum(2, 250, 10, 4);
-    }
-    #[test]
-    fn bool_trivial_uses_low_byte_only() {
-        let mut high_only = [0; 32];
-        high_only[0] = 1;
-        let execution = args(vec![FheExecuteStep::TrivialEncrypt {
-            plaintext: high_only,
-            fhe_type: 0,
-        }]);
-        assert_eq!(
-            evaluate(&execution, &ClearInputs::new()).unwrap(),
-            vec![value(0, 0)]
-        );
-    }
-    #[test]
-    fn binary_eq_bool_scalar_high_byte_is_nonzero() {
-        let encrypted_false = handle(1, 0);
-        let mut high_only = [0; 32];
-        high_only[0] = 1;
-        let execution = args(vec![binary(
-            FheBinaryOpCode::Eq,
-            persistent(encrypted_false),
-            scalar(high_only),
-            0,
-        )]);
-        assert_eq!(
-            evaluate(&execution, &HashMap::from([(encrypted_false, plain(0))])).unwrap(),
-            vec![value(0, 0)]
-        );
     }
     #[test]
     fn ternary_false_selects_false_branch() {
@@ -407,35 +362,61 @@ mod rejected {
             }
         }
         #[test]
-        fn rem_u8_scalar_zero_after_width_truncation() {
+        fn rem_u8_rejects_scalar_above_u8() {
             let lhs = handle(1, 2);
-            let mut high_only = [0; 32];
-            high_only[0] = 1;
             expect_error(
                 args(vec![binary(
                     FheBinaryOpCode::Rem,
                     persistent(lhs),
-                    scalar(high_only),
+                    scalar(be(0x100)),
                     2,
                 )]),
                 HashMap::from([(lhs, plain(8))]),
-                "DivisionByZero",
+                "ScalarOutOfRange",
             );
         }
         #[test]
-        fn div_u8_scalar_zero_after_width_truncation() {
+        fn add_u8_rejects_scalar_with_a_high_byte() {
             let lhs = handle(1, 2);
             let mut high_only = [0; 32];
             high_only[0] = 1;
             expect_error(
                 args(vec![binary(
-                    FheBinaryOpCode::Div,
+                    FheBinaryOpCode::Add,
                     persistent(lhs),
                     scalar(high_only),
                     2,
                 )]),
+                HashMap::from([(lhs, plain(7))]),
+                "ScalarOutOfRange",
+            );
+        }
+        #[test]
+        fn eq_bool_rejects_scalar_above_one() {
+            let lhs = handle(1, 0);
+            expect_error(
+                args(vec![binary(
+                    FheBinaryOpCode::Eq,
+                    persistent(lhs),
+                    scalar(be(2)),
+                    0,
+                )]),
+                HashMap::from([(lhs, plain(0))]),
+                "ScalarOutOfRange",
+            );
+        }
+        #[test]
+        fn div_u8_rejects_scalar_above_u8() {
+            let lhs = handle(1, 2);
+            expect_error(
+                args(vec![binary(
+                    FheBinaryOpCode::Div,
+                    persistent(lhs),
+                    scalar(be(0x100)),
+                    2,
+                )]),
                 HashMap::from([(lhs, plain(8))]),
-                "DivisionByZero",
+                "ScalarOutOfRange",
             );
         }
         #[test]
@@ -495,6 +476,30 @@ mod rejected {
     }
     mod composite {
         use super::*;
+        #[test]
+        fn trivial_encrypt_bool_rejects_plaintext_above_one() {
+            let mut high_only = [0; 32];
+            high_only[0] = 1;
+            expect_error(
+                args(vec![FheExecuteStep::TrivialEncrypt {
+                    plaintext: high_only,
+                    fhe_type: 0,
+                }]),
+                ClearInputs::new(),
+                "ScalarOutOfRange",
+            );
+        }
+        #[test]
+        fn trivial_encrypt_u8_rejects_plaintext_above_u8() {
+            expect_error(
+                args(vec![FheExecuteStep::TrivialEncrypt {
+                    plaintext: be(0x100),
+                    fhe_type: 2,
+                }]),
+                ClearInputs::new(),
+                "ScalarOutOfRange",
+            );
+        }
         #[test]
         fn trivial_encrypt_unknown_type() {
             expect_error(
@@ -597,19 +602,17 @@ mod rejected {
             );
         }
         #[test]
-        fn mul_div_rejects_zero_divisor_after_truncation() {
+        fn mul_div_rejects_divisor_above_u8() {
             let u8_input = handle(1, 2);
-            let mut high_only = [0; 32];
-            high_only[0] = 1;
             expect_error(
                 args(vec![mul_div_step(
                     persistent(u8_input),
                     scalar(be(2)),
-                    high_only,
+                    be(0x100),
                     2,
                 )]),
                 HashMap::from([(u8_input, plain(2))]),
-                "MulDivDivisorZero",
+                "ScalarOutOfRange",
             );
         }
         #[test]

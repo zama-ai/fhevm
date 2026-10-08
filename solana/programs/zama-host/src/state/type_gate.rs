@@ -78,17 +78,14 @@ pub fn assert_binary_operand_types(
                 ZamaHostError::UnsupportedFheType
             );
         }
-        // Div/Rem: divisor must be a plaintext scalar (EVM `IsNotScalar`), non-zero after truncation.
+        // Div/Rem: divisor must be a non-zero plaintext scalar (EVM `IsNotScalar`, `DivisionByZero`).
         FheBinaryOpCode::Div | FheBinaryOpCode::Rem => {
             require!(
                 lhs_type == output_fhe_type,
                 ZamaHostError::BinaryOperandTypeMismatch
             );
             require!(scalar, ZamaHostError::DivisorMustBeScalar);
-            require!(
-                !scalar_is_zero_for_type(rhs, lhs_type),
-                ZamaHostError::DivisionByZero
-            );
+            require!(rhs != [0; 32], ZamaHostError::DivisionByZero);
         }
         // Remaining ops: the operand type must equal the (op-gated) output type.
         FheBinaryOpCode::Add
@@ -109,7 +106,9 @@ pub fn assert_binary_operand_types(
             );
         }
     }
-    if !scalar {
+    if scalar {
+        assert_scalar_in_range(rhs, lhs_type)?;
+    } else {
         require!(
             handle_fhe_type(rhs) == lhs_type,
             ZamaHostError::BinaryOperandTypeMismatch
@@ -256,17 +255,16 @@ pub fn assert_mul_div_operand_types(
         handle_fhe_type(factor1) == output_fhe_type,
         ZamaHostError::BinaryOperandTypeMismatch
     );
-    if !factor2_scalar {
+    if factor2_scalar {
+        assert_scalar_in_range(factor2, output_fhe_type)?;
+    } else {
         require!(
             handle_fhe_type(factor2) == output_fhe_type,
             ZamaHostError::BinaryOperandTypeMismatch
         );
     }
-    // Divisor must be non-zero once truncated to the operand type (EVM parity).
-    require!(
-        !scalar_is_zero_for_type(divisor, output_fhe_type),
-        ZamaHostError::MulDivDivisorZero
-    );
+    assert_scalar_in_range(divisor, output_fhe_type)?;
+    require!(divisor != [0; 32], ZamaHostError::MulDivDivisorZero);
     Ok(())
 }
 
@@ -301,17 +299,36 @@ pub fn is_mul_div_fhe_type(fhe_type: u8) -> bool {
     matches!(fhe_type, 2..=5)
 }
 
-/// Whether a big-endian scalar is zero once truncated to `fhe_type`'s width (EVM `_isScalarZeroForType`).
-pub fn scalar_is_zero_for_type(scalar: [u8; 32], fhe_type: u8) -> bool {
-    let width = match fhe_type {
-        2 => 1,  // Uint8
-        3 => 2,  // Uint16
-        4 => 4,  // Uint32
-        5 => 8,  // Uint64
-        6 => 16, // Uint128
-        _ => 32, // unreachable: the output-type gate ran first; scan the whole buffer
-    };
-    scalar[32 - width..].iter().all(|byte| *byte == 0)
+/// Width in bits of a shipped FHE type.
+pub(crate) fn fhe_type_bit_width(fhe_type: u8) -> Result<u32> {
+    match fhe_type {
+        0 => Ok(1),
+        2 => Ok(8),
+        3 => Ok(16),
+        4 => Ok(32),
+        5 => Ok(64),
+        6 => Ok(128),
+        _ => err!(ZamaHostError::UnsupportedFheType),
+    }
+}
+
+/// Largest plaintext of a shipped FHE type: 1 for ebool, the unsigned maximum for euint8..euint128.
+pub(crate) fn fhe_type_max(fhe_type: u8) -> Result<u128> {
+    Ok(match fhe_type_bit_width(fhe_type)? {
+        128 => u128::MAX,
+        bits => (1u128 << bits) - 1,
+    })
+}
+
+/// Refuses a big-endian scalar operand or trivial-encrypt plaintext above `fhe_type`'s maximum: 1 for
+/// ebool, the unsigned maximum for euint8..euint128 (EVM `FHEVMExecutor._checkScalarRange`). An
+/// unsupported type is refused with `UnsupportedFheType` (EVM `UnsupportedType`).
+pub(crate) fn assert_scalar_in_range(scalar: [u8; 32], fhe_type: u8) -> Result<()> {
+    let max = fhe_type_max(fhe_type)?;
+    let high = u128::from_be_bytes(scalar[..16].try_into().unwrap());
+    let low = u128::from_be_bytes(scalar[16..].try_into().unwrap());
+    require!(high == 0 && low <= max, ZamaHostError::ScalarOutOfRange);
+    Ok(())
 }
 
 /// Coprocessor FheSum/FheIsIn max operand count: 100 for narrow types (Uint8..Uint32), 60 for wider.
