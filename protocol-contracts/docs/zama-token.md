@@ -6,7 +6,7 @@ The Zama protocol uses to $ZAMA token as its utility token to pay for protocol o
 
 | Resource | Link |
 | --- | --- |
-| Deployed addresses | [Addresses directory](addresses/README.md) |
+| Deployed addresses | [Addresses directory](https://github.com/zama-ai/protocol-registry) |
 | ZamaERC20 source | [ZamaERC20.sol](https://github.com/zama-ai/fhevm/blob/main/protocol-contracts/contracts/token/contracts/ZamaERC20.sol) |
 | ZamaOFT source | [ZamaOFT.sol](https://github.com/zama-ai/fhevm/blob/main/protocol-contracts/contracts/token/contracts/ZamaOFT.sol) |
 | ZamaOFTAdapter source | [ZamaOFTAdapter.sol](https://github.com/zama-ai/fhevm/blob/main/protocol-contracts/contracts/token/contracts/ZamaOFTAdapter.sol) |
@@ -67,7 +67,7 @@ Ownership of each OFT contract is detailed in [Governance](governance.md).
 
 On Solana, the token (SPL) and the bridge logic are split into different accounts. The token logic (used by exchanges and wallets) corresponds to the mint address, while the bridging logic and the LayerZero specific configuration are mainly inside the program and store addresses.
 
-All Solana OFT addresses can be found in the [Solana mainnet addresses](addresses/mainnet/solana.md).
+All Solana OFT addresses can be found in the [Solana mainnet addresses](https://github.com/zama-ai/protocol-registry).
 
 ### Hyperliquid
 
@@ -92,7 +92,7 @@ To streamline the double-bridging process, a composer contract is deployed on Hy
 Before bridging to HyperCore, users should ensure they have activated their account on HyperCore as a prerequisite. This could be done for instance via the [Hyperliquid UI](https://app.hyperliquid.xyz/trade) and depositing 10 USDC to their address via the official Arbitrum bridge. Another method is by letting another already active account send them 1 USDC via the Hyperliquid UI (be aware that this amount will be burned).
 {% endhint %}
 
-All HyperEVM contract addresses (OFT + composer) can be found in the [HyperEVM mainnet addresses](addresses/mainnet/hyper_evm.md).
+All HyperEVM contract addresses (OFT + composer) can be found in the [HyperEVM mainnet addresses](https://github.com/zama-ai/protocol-registry).
 
 ## Bridges
 

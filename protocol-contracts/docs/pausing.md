@@ -6,7 +6,7 @@ Circuit breakers are deployed on all chains involved with the Zama protocol. Any
 
 | Resource | Link |
 | --- | --- |
-| Deployed addresses | [Addresses directory](addresses/README.md) |
+| Deployed addresses | [Addresses directory](https://github.com/zama-ai/protocol-registry) |
 | Source code | [PauserSetWrapper.sol](https://github.com/zama-ai/fhevm/blob/main/protocol-contracts/contracts/pauserSetWrapper/contracts/PauserSetWrapper.sol) |
 
 ## Structure

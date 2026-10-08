@@ -29,7 +29,7 @@
 | RPC URL for `<NETWORK>` | Infura / Alchemy / internal node / public endpoint |
 | `ETHERSCAN_API_KEY` | Etherscan dashboard (only for optional source verification) |
 | `ZAMA_TOKEN_ADDRESS` | Existing ZAMA token address, or deploy a mock (Phase 1) |
-| `DAO_ADDRESS`, `SETUP_MULTISIG` | [Addresses directory](../addresses/README.md) for the target chain |
+| `DAO_ADDRESS`, `SETUP_MULTISIG` | [Addresses directory](https://github.com/zama-ai/protocol-registry) for the target chain |
 | Native gas token | Fund `PROTOCOL_DEPLOYER_ADDRESS` before starting |
 
 ---

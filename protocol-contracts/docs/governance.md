@@ -6,7 +6,7 @@ Governance in the Zama protocol covers operation and adjustment of the protocol,
 
 | Resource | Link |
 | --- | --- |
-| Deployed addresses | [Addresses directory](addresses/README.md) |
+| Deployed addresses | [Addresses directory](https://github.com/zama-ai/protocol-registry) |
 | `GovernanceOAppSender` source | [GovernanceOAppSender.sol](https://github.com/zama-ai/fhevm/blob/main/protocol-contracts/contracts/governance/contracts/GovernanceOAppSender.sol) |
 | `GovernanceOAppReceiver` source | [GovernanceOAppReceiver.sol](https://github.com/zama-ai/fhevm/blob/main/protocol-contracts/contracts/governance/contracts/GovernanceOAppReceiver.sol) |
 
