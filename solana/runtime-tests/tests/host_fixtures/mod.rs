@@ -1,7 +1,5 @@
-//! Fixtures shared by the host test binaries: `host_mollusk.rs` (behavior),
-//! `host_admin_mollusk.rs` (admin setters), `user_decryption_delegation_mollusk.rs`
-//! (delegation), and `fhe_execute_boundary.rs` (the capacity instrument). Each binary compiles this module into itself, so a helper used by only one of
-//! them is expected.
+//! Fixtures shared by the host test binaries that declare `mod host_fixtures;`. Each binary
+//! compiles this module into itself, so a helper used by only one of them is expected.
 #![allow(dead_code)]
 
 use anchor_lang::prelude::system_program;
@@ -226,20 +224,20 @@ pub fn fhe_execute_ix_with_extras(
     ix
 }
 
-pub struct CreatedPublicBatch {
+pub struct StoreOutputsExecution {
     pub instruction: Instruction,
     pub accounts: Vec<(Pubkey, Account)>,
     pub outputs: Vec<(u16, Pubkey)>,
 }
 
-pub fn created_public_batch(
+pub fn public_store_outputs_execution(
     step_count: usize,
-    created_public_steps: &[usize],
-) -> CreatedPublicBatch {
+    output_steps: &[usize],
+) -> StoreOutputsExecution {
     let payer = Pubkey::new_unique();
-    persistent_creates_batch(
+    store_outputs_execution(
         step_count,
-        created_public_steps,
+        output_steps,
         payer,
         sole_store_authority(Pubkey::new_unique()),
         true,
@@ -247,22 +245,22 @@ pub fn created_public_batch(
     )
 }
 
-/// [`created_public_batch`] with caller-fixed keys (for boundary sweeps recorded in the cost
+/// [`public_store_outputs_execution`] with caller-fixed keys (for boundary sweeps recorded in the cost
 /// snapshot: PDA bump searches are part of measured compute, so recorded profiles need stable
-/// keys), a caller-chosen `make_public` — `false` gives the plain persistent create, the shape
+/// keys), a caller-chosen `make_public` — `false` gives the private Store output, the shape
 /// `zama-fhe`'s `heap_budget/` measures on the app side — and the keys every output allows.
-pub fn persistent_creates_batch(
+pub fn store_outputs_execution(
     step_count: usize,
-    created_public_steps: &[usize],
+    output_steps: &[usize],
     payer: Pubkey,
     authority: StoreAuthority,
     make_public: bool,
     allows: &[Pubkey],
-) -> CreatedPublicBatch {
+) -> StoreOutputsExecution {
     let (host_config, host_config_account) = host_config_account(payer);
     let scope = fixture_scope();
     let (state_address, state) = new_encrypted_store(authority.app(scope), authority.key, []);
-    let output_metas = vec![if created_public_steps.is_empty() {
+    let output_metas = vec![if output_steps.is_empty() {
         readonly(state_address)
     } else {
         writable(state_address)
@@ -275,7 +273,7 @@ pub fn persistent_creates_batch(
     let mut dictionary = ExecutionDictionary::default();
 
     for step_index in 0..step_count {
-        if created_public_steps.contains(&step_index) {
+        if output_steps.contains(&step_index) {
             let output_label = label(&format!("created-public-{step_index}"));
             outputs.push((step_index as u16, state_address));
             let mut output = authority.store_output(
@@ -319,7 +317,7 @@ pub fn persistent_creates_batch(
         (event_authority(host::id()), Account::default()),
     ];
     accounts.extend(output_accounts);
-    CreatedPublicBatch {
+    StoreOutputsExecution {
         instruction,
         accounts,
         outputs,

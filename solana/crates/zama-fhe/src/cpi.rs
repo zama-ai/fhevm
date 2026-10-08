@@ -11,9 +11,6 @@ use anchor_lang::{
 };
 
 #[cfg(feature = "cpi")]
-use anchor_lang::prelude::Pubkey;
-
-#[cfg(feature = "cpi")]
 use crate::accounts::ResolvedExecutionAccounts;
 #[cfg(feature = "cpi")]
 use crate::execution::FheExecution;
@@ -53,40 +50,15 @@ pub struct ExecutionCpiAccounts<'info> {
     pub program: AccountInfo<'info>,
 }
 
-#[cfg(feature = "cpi")]
-pub(crate) trait ExecutionAccountResolver<'info> {
-    fn resolve_execution_account(&self, pubkey: Pubkey) -> Option<AccountInfo<'info>>;
-}
-
-#[cfg(feature = "cpi")]
-impl<'info> ExecutionAccountResolver<'info> for ResolvedExecutionAccounts<'info> {
-    fn resolve_execution_account(&self, pubkey: Pubkey) -> Option<AccountInfo<'info>> {
-        self.resolve(pubkey)
-    }
-}
-
 /// Invokes `zama-host::fhe_execute` with accounts pre-resolved from a [`FheExecution`].
 /// App-facing surface: [`FheExecution::invoke`].
 #[cfg(feature = "cpi")]
-pub(crate) fn invoke_execution_signed_resolved<'info>(
+pub(crate) fn invoke_execution_signed<'info>(
     execution: &mut FheExecution,
     accounts: ExecutionCpiAccounts<'info>,
     resolved_accounts: &ResolvedExecutionAccounts<'info>,
     signer_seeds: &[&[&[u8]]],
 ) -> anchor_lang::prelude::Result<()> {
-    invoke_execution_signed_with_resolver(execution, accounts, resolved_accounts, signer_seeds)
-}
-
-#[cfg(feature = "cpi")]
-fn invoke_execution_signed_with_resolver<'info, R>(
-    execution: &mut FheExecution,
-    accounts: ExecutionCpiAccounts<'info>,
-    resolver: &R,
-    signer_seeds: &[&[&[u8]]],
-) -> anchor_lang::prelude::Result<()>
-where
-    R: ExecutionAccountResolver<'info> + ?Sized,
-{
     if accounts.program.key() != zama_host::ID {
         return Err(
             anchor_lang::error::Error::from(FheExecutionError::HostProgramMismatch)
@@ -113,8 +85,12 @@ where
         event_authority: accounts.event_authority,
         program: accounts.program,
     };
-    let (account_metas, account_infos) =
-        fhe_execute_account_tables(&fixed_accounts, execution, resolver, &deny_scope_records)?;
+    let (account_metas, account_infos) = fhe_execute_account_tables(
+        &fixed_accounts,
+        execution,
+        resolved_accounts,
+        &deny_scope_records,
+    )?;
 
     // The execution self-describes its `remaining_accounts` length (DD-033). The deny-record
     // witnesses are appended per transaction, so the final count is only known here — stamped in
@@ -140,23 +116,20 @@ where
 /// invoke measurement runs this function under a counting allocator, so the model and this
 /// assembly cannot drift apart silently.
 #[cfg(feature = "cpi")]
-pub(crate) fn fhe_execute_account_tables<'info, R>(
+pub(crate) fn fhe_execute_account_tables<'info>(
     fixed_accounts: &zama_host::cpi::accounts::FheExecute<'info>,
     execution: &FheExecution,
-    resolver: &R,
+    resolved_accounts: &ResolvedExecutionAccounts<'info>,
     deny_scope_records: &[AccountInfo<'info>],
-) -> anchor_lang::prelude::Result<(Vec<AccountMeta>, Vec<AccountInfo<'info>>)>
-where
-    R: ExecutionAccountResolver<'info> + ?Sized,
-{
+) -> anchor_lang::prelude::Result<(Vec<AccountMeta>, Vec<AccountInfo<'info>>)> {
     let mut account_metas = fixed_accounts.to_account_metas(None);
     let mut account_infos = fixed_accounts.to_account_infos();
     let dynamic_tail = execution.remaining_accounts.len() + deny_scope_records.len();
     account_metas.reserve_exact(dynamic_tail);
     account_infos.reserve_exact(dynamic_tail);
     for required in &execution.remaining_accounts {
-        let account = resolver
-            .resolve_execution_account(required.pubkey)
+        let account = resolved_accounts
+            .resolve(required.pubkey)
             .ok_or(FheExecutionError::MissingDynamicAccount)?;
         let meta = if required.is_writable {
             AccountMeta::new(required.pubkey, required.is_signer)

@@ -40,9 +40,9 @@ use zama_solana_test_kit::{
 
 mod host_fixtures;
 use host_fixtures::{
-    check_host_context, check_host_instruction, created_public_batch, fhe_execute_ix,
-    fhe_execute_ix_with_extras, fixture_scope, host_config_account, host_config_account_with_flags,
-    mollusk_execute_context, read_host_config, sole_store_authority, store_authority,
+    check_host_context, check_host_instruction, fhe_execute_ix, fhe_execute_ix_with_extras,
+    fixture_scope, host_config_account, host_config_account_with_flags, mollusk_execute_context,
+    public_store_outputs_execution, read_host_config, sole_store_authority, store_authority,
     FheExecuteExtras, StoreAuthority,
 };
 
@@ -443,7 +443,7 @@ fn mollusk_fhe_execute_fails_closed_without_previous_bank_hash() {
 
 #[test]
 fn mollusk_fhe_execute_returns_selected_handles_in_order_with_repeats() {
-    let mut fixture = created_public_batch(3, &[0, 1, 2]);
+    let mut fixture = public_store_outputs_execution(3, &[0, 1, 2]);
     let mut args = FheExecuteArgs::deserialize(&mut &fixture.instruction.data[8..]).unwrap();
     let mut svm = mollusk();
     svm.add_program(&delegator_vault::ID, "delegator_vault");
@@ -499,7 +499,7 @@ fn mollusk_fhe_execute_returns_selected_handles_in_order_with_repeats() {
 
 #[test]
 fn mollusk_fhe_execute_rejects_invalid_return_selection_before_execution() {
-    let mut fixture = created_public_batch(2, &[0, 1]);
+    let mut fixture = public_store_outputs_execution(2, &[0, 1]);
     let mut args = FheExecuteArgs::deserialize(&mut &fixture.instruction.data[8..]).unwrap();
     let first = host::ExecutionResultRef {
         step_index: 0,
@@ -2129,7 +2129,7 @@ fn expected_public_output_peaks(
 
 #[test]
 fn mollusk_fhe_execute_seals_each_public_output_leaves_in_step_order() {
-    let execution = created_public_batch(3, &[0, 2]);
+    let execution = public_store_outputs_execution(3, &[0, 2]);
     let payer = execution.instruction.accounts[0].pubkey;
     let result = check_host_instruction(
         &mollusk(),
@@ -2145,7 +2145,7 @@ fn mollusk_fhe_execute_seals_each_public_output_leaves_in_step_order() {
 
 #[test]
 fn mollusk_fhe_execute_wrong_event_authority_fails_without_output() {
-    let mut execution = created_public_batch(1, &[0]);
+    let mut execution = public_store_outputs_execution(1, &[0]);
     let wrong_event_authority = Pubkey::new_unique();
     let event_authority_meta = execution
         .instruction
@@ -2176,7 +2176,7 @@ fn mollusk_fhe_execute_wrong_event_authority_fails_without_output() {
 
 #[test]
 fn mollusk_transaction_later_failure_rolls_back_created_public_output() {
-    let mut execution = created_public_batch(1, &[0]);
+    let mut execution = public_store_outputs_execution(1, &[0]);
     let payer = execution.instruction.accounts[0].pubkey;
     execution.accounts.push((
         host::transient_store_address(payer).0,

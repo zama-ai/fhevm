@@ -7,7 +7,7 @@
 //! anything back:
 //!
 //! 1. **Building** the execution — lowering interns into the builder's own tables.
-//! 2. **Invoking** it — `invoke_execution_signed_resolved` stamps the final account count into the
+//! 2. **Invoking** it — `invoke_execution_signed` stamps the final account count into the
 //!    args in place, serializes the whole packet once into a right-sized buffer, resolves the
 //!    dynamic accounts, and assembles the CPI account tables.
 //!
@@ -24,10 +24,10 @@
 //! depth.
 //!
 //! What is measured is a *matrix of buildable shapes*, not one worst case, because the builder's
-//! typed ceilings shape what can exist at all: the instruction-trace check caps persistent
-//! creates at twenty, and the CPI packet check caps attestation-heavy executions well below the
-//! step cap. Every shape the builder admits must fit — that is the claim the single step ceiling
-//! rests on — and the fit test below asserts it for each row of the matrix.
+//! typed ceilings shape what can exist at all: the step ceiling bounds every shape, and the
+//! build-heap budget caps attestation-heavy executions well below it. Every shape the builder admits
+//! must fit — that is the claim the single step ceiling rests on — and the fit test below asserts
+//! it for each row of the matrix.
 //!
 //! Counted on the host rather than under SBF because the quantity that regresses — bytes
 //! requested per step — is the same in both places, and here it can be attributed to a phase.

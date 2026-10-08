@@ -6,7 +6,7 @@
   },
   "measurements": {
     "claim": {
-      "compute_units": 218564,
+      "compute_units": 218502,
       "unique_accounts": 24,
       "instruction_data_bytes": 8,
       "cpi_instructions": 9,
@@ -30,7 +30,7 @@
       "max_cpi_instruction_data_bytes": 342
     },
     "join": {
-      "compute_units": 301550,
+      "compute_units": 301487,
       "unique_accounts": 23,
       "instruction_data_bytes": 223,
       "cpi_instructions": 12,
@@ -54,7 +54,7 @@
       "max_cpi_instruction_data_bytes": 12
     },
     "redeem_claim": {
-      "compute_units": 229065,
+      "compute_units": 229003,
       "unique_accounts": 24,
       "instruction_data_bytes": 8,
       "cpi_instructions": 9,
@@ -78,7 +78,7 @@
       "max_cpi_instruction_data_bytes": 342
     },
     "redeem_join": {
-      "compute_units": 286551,
+      "compute_units": 286488,
       "unique_accounts": 23,
       "instruction_data_bytes": 223,
       "cpi_instructions": 12,

@@ -87,7 +87,7 @@ fn the_tally_never_crosses_the_budget_even_transiently() {
         },
     );
 
-    // Allow-heavy creates: every output interns eight fresh keys, driving the dictionary and
+    // Allow-heavy new-slot outputs: every output interns eight fresh keys, driving the dictionary and
     // account tables through their doublings — and the rejections are ignored, as a buggy app
     // would, so the ratchet past the first rejection is probed too.
     let (input, outputs) = persist_shape_data(PersistKind::Create, MAX_FHE_EXECUTION_STEPS, 8);
