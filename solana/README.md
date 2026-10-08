@@ -118,7 +118,6 @@ crates/zama-fhe                 Program-facing SDK: typed execution builder (`Fh
 crates/zama-solana-acl          The shared ACL crate: account layout, decode, MMR verification,
                                 authorization functions. Compiled into the program AND the KMS
                                 connector, so both sides run identical code.
-crates/solana-ed25519-instruction  Ed25519 instruction-sysvar helpers.
 test-kit                        The fixture library every Rust test imports: Mollusk boot,
                                 account fixtures, mock KMS signing, plaintext reads of the
                                 cleartext host build.

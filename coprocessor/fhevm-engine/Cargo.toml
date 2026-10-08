@@ -95,7 +95,6 @@ time = "0.3.47"
 tokio = { version = "1.45.0", features = ["full"] }
 tokio-util = "0.7.15"
 tonic = { version = "0.14.0", features = ["server"] }
-tonic-prost = "0.14.0"
 tonic-prost-build = "0.14.0"
 tracing = "0.1.41"
 tracing-opentelemetry = "0.30.0"

@@ -32,9 +32,7 @@ kms-grpc.workspace = true
 prometheus.workspace = true
 rand.workspace = true
 reqwest.workspace = true
-ring.workspace = true
 serde.workspace = true
-serde_bytes.workspace = true
 serde_json.workspace = true
 sha3.workspace = true
 solana-rpc-client.workspace = true
@@ -60,9 +58,9 @@ ciphertext-attestation = { workspace = true, features = ["test-utils"] }
 connector-utils = { workspace = true, features = ["tests"] }
 mocktail.workspace = true
 prost.workspace = true
+ring.workspace = true
 rstest.workspace = true
 serial_test.workspace = true
-sha2.workspace = true
 testcontainers.workspace = true
 # Paused time for the hedging tests.
 tokio = { workspace = true, features = ["test-util"] }

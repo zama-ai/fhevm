@@ -89,7 +89,6 @@ rustls = { version = "=0.23.45", default-features = false, features = [
     "aws-lc-rs",
 ] }
 ciborium = "=0.2.2"
-serde_bytes = "=0.11.19"
 serde = { version = "=1.0.229", default-features = false, features = [
     "derive",
     "std",

@@ -1023,7 +1023,6 @@ dependencies = [
  "demo-vault",
  "program-environment",
  "serde_json",
- "solana-sha256-hasher",
  "zama-fhe",
  "zama-host",
 ]
@@ -1036,12 +1035,8 @@ dependencies = [
  "anchor-spl",
  "program-environment",
  "serde_json",
- "solana-ed25519-instruction",
- "solana-instructions-sysvar",
- "solana-sha256-hasher",
  "zama-fhe",
  "zama-host",
- "zama-solana-acl",
 ]
 
 [[package]]
@@ -3237,10 +3232,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "solana-ed25519-instruction"
-version = "0.1.0"
-
-[[package]]
 name = "solana-ed25519-program"
 version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5085,7 +5076,6 @@ version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "zama-host",
- "zama-solana-acl",
 ]
 
 [[package]]
@@ -5093,17 +5083,14 @@ name = "zama-host"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
- "borsh",
  "bytemuck",
  "k256",
  "program-environment",
  "serde_json",
  "sha2 0.10.9",
- "solana-ed25519-instruction",
  "solana-instructions-sysvar",
  "solana-keccak-hasher",
  "solana-secp256k1-recover",
- "solana-sha256-hasher",
  "solana-sysvar",
  "zama-solana-acl",
 ]
@@ -5179,7 +5166,6 @@ dependencies = [
  "solana-packet 3.0.0",
  "solana-program",
  "solana-sdk",
- "zama-fhe",
  "zama-host",
  "zama-solana-acl",
  "zama-solana-test-kit",
