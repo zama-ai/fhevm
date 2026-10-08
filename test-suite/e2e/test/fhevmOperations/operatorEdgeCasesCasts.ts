@@ -3,7 +3,7 @@ import { assert } from 'chai';
 import { SHIFT_CASES, WIDTHS, decryptBatch, useOperatorEdgeCaseFixture } from './operatorEdgeCases';
 
 describe('FHEVM manual operations - cast edge cases', function () {
-  useOperatorEdgeCaseFixture();
+  useOperatorEdgeCaseFixture(107);
 
   const MODULUS_256 = 1n << 256n;
   [0n, MODULUS_256 - 1n].forEach((operand) => {

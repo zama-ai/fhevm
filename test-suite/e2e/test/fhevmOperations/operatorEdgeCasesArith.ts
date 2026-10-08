@@ -3,7 +3,7 @@ import { assert } from 'chai';
 import { NARROW_CASES, decryptBatch, useOperatorEdgeCaseFixture } from './operatorEdgeCases';
 
 describe('FHEVM manual operations - arithmetic edge cases', function () {
-  useOperatorEdgeCaseFixture();
+  useOperatorEdgeCaseFixture(106);
 
   NARROW_CASES.forEach(({ bits, valueType }) => {
     const modulus = 1n << bits;
