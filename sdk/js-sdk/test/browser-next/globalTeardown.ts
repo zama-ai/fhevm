@@ -1,5 +1,7 @@
-// Playwright globalTeardown: close the gateway server and stop the anvils
-// spawned in globalSetup (reused anvils are left running).
+/**
+ * Playwright globalTeardown: close the gateway server and stop the anvils
+ * spawned in globalSetup (reused anvils are left running).
+ */
 
 import { stopAnvils } from '../infra/anvil/anvils.js';
 import { closeGatewayServer } from '../infra/gateway/server.js';

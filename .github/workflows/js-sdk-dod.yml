@@ -154,7 +154,9 @@ jobs:
   localstack:
     name: dod localstack ${{ matrix.name }}
     if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
-    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/extras=s3-cache
+    # The full stack (images + generated FHE key material) exhausts the default
+    # runner volume during bootstrap ("no space left on device"), so ask for more.
+    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/volume=80gb/extras=s3-cache
     timeout-minutes: 60
     permissions:
       contents: "read" # checkout the repository

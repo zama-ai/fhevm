@@ -1,5 +1,3 @@
-////////////////////////////////////////////////////////////////////////////////
-
 import type { WithDecrypt } from '../types/coreFhevmRuntime.js';
 import type { Handle } from '../types/encryptedTypes-p.js';
 import type { FhevmChain } from '../types/fhevmChain.js';

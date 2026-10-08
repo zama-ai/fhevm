@@ -1,8 +1,10 @@
-// Shared harness for the browser smoke / robustness tests.
-//
-// Centralizes the runtime config, module init + readiness assertions, dummy
-// chains, key loading/caching, encryption, and the DOM logging harness, so each
-// test page stays small and focused on the behavior it exercises.
+/**
+ * Shared harness for the browser smoke / robustness tests.
+ *
+ * Centralizes the runtime config, module init + readiness assertions, dummy
+ * chains, key loading/caching, encryption, and the DOM logging harness, so each
+ * test page stays small and focused on the behavior it exercises.
+ */
 
 import type { TfheVersion } from '../../../src/wasm/tfhe/loadTfheLib.js';
 import type { TkmsVersion } from '../../../src/wasm/tkms/loadKmsLib.js';
