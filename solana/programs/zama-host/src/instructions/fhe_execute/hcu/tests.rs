@@ -333,7 +333,7 @@ fn rand_hcu_unknown_fails_closed() {
 
 #[test]
 fn cost_rows_are_representative_and_evm_ordered() {
-    // Assert RELATIONSHIPS, not magnitudes, so calibration can change numbers freely.
+    // The orderings EVM's cost table implies; `evm_parity.rs` pins the magnitudes to `HCULimit.sol`.
     assert_eq!(
         binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap(),
         binary_op_hcu(FheBinaryOpCode::Sub, EU64, false).unwrap()
@@ -418,18 +418,6 @@ fn cost_accessors_are_deterministic() {
         trivial_encrypt_hcu(EU64).unwrap(),
         trivial_encrypt_hcu(EU64).unwrap()
     );
-}
-
-// ---- u64::MAX = unlimited ----
-
-#[test]
-fn enforce_le_zero_limit_is_noop() {
-    assert!(enforce_le(
-        u64::MAX - 1,
-        u64::MAX,
-        ZamaHostError::HcuTransactionLimitExceeded
-    )
-    .is_ok());
 }
 
 #[test]

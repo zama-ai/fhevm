@@ -53,7 +53,10 @@ export function getKmsContextDiscriminatorBytes(): ReadonlyUint8Array {
 
 export type KmsContext = {
   discriminator: ReadonlyUint8Array;
-  /** Opaque 32-byte context id (mirrors EVM `kmsContextId`). All-zero is reserved (none defined). */
+  /**
+   * 32-byte context id (EVM `kmsContextId`), ordered as a big-endian integer; each new id is above
+   * the current one. All-zero means none is defined.
+   */
   contextId: ReadonlyUint8Array;
   /** KMS node signer EVM addresses authorized to sign certs in this context. */
   signers: Array<ReadonlyUint8Array>;
@@ -66,7 +69,10 @@ export type KmsContext = {
 };
 
 export type KmsContextArgs = {
-  /** Opaque 32-byte context id (mirrors EVM `kmsContextId`). All-zero is reserved (none defined). */
+  /**
+   * 32-byte context id (EVM `kmsContextId`), ordered as a big-endian integer; each new id is above
+   * the current one. All-zero means none is defined.
+   */
   contextId: ReadonlyUint8Array;
   /** KMS node signer EVM addresses authorized to sign certs in this context. */
   signers: Array<ReadonlyUint8Array>;

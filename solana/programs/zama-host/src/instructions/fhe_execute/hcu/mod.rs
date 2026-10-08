@@ -254,7 +254,7 @@ pub(super) fn is_in_hcu(fhe_type: u8, set_len: usize) -> Result<u64> {
 }
 
 pub(super) fn enforce_le(used: u64, limit: u64, err: ZamaHostError) -> Result<()> {
-    if limit != u64::MAX && used > limit {
+    if used > limit {
         return Err(error!(err));
     }
     Ok(())

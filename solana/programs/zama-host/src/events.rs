@@ -14,10 +14,11 @@
 //!   event bytes; what the event CPI buys is that a reader sees the change, not that it may trust it.
 //! - **Not emitted at all.** Everything else, which is most of it: per-step compute shapes and
 //!   operands (they live in `records.rs` as decoded op records), `EncryptedStore` ACL mutations (indexers rebuild MMR
-//!   leaves through the shared `zama_solana_acl` crate), and user-decryption delegation. The listener
-//!   reconstructs these from instruction data over Yellowstone, which is the normal path for anything
-//!   reconstructible. Delegating is a user ability rather than administration, which is why its event
-//!   is gone; INVARIANTS #27 records the separate fact that nothing off-chain consumes delegation yet.
+//!   leaves through the shared `zama_solana_acl` crate). The listener reconstructs these from
+//!   instruction data over Yellowstone, which is the normal path for anything reconstructible.
+//!   User-decryption delegation has no event either: delegating is a user ability rather than
+//!   administration, and the KMS connector reads the delegation record from account state
+//!   (INVARIANTS #27).
 
 use anchor_lang::prelude::*;
 

@@ -3424,6 +3424,40 @@ fn mollusk_define_kms_context_rejects_zero_signer() {
     );
 }
 
+#[test]
+fn mollusk_define_kms_context_requires_an_increasing_id() {
+    let admin = Pubkey::new_unique();
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
+    let mut accounts = vec![(host_config, account)];
+    accounts.extend([0, 3, 5, 6].map(|n| {
+        let address = host::kms_context_address(canonical_test_context_id(n)).0;
+        (address, system_account(0))
+    }));
+    let context = mollusk_execute_context(admin, accounts);
+    let non_increasing = || custom_error(host::errors::ZamaHostError::NonIncreasingKmsContextId);
+    for (n, expected) in [
+        (0, non_increasing()),
+        (5, Check::success()),
+        (3, non_increasing()),
+        (6, Check::success()),
+    ] {
+        check_host_context(
+            &context,
+            &define_kms_context_ix(
+                admin,
+                host_config,
+                canonical_test_context_id(n),
+                vec![[0xAA; 20]],
+                default_kms_thresholds(),
+            ),
+            &[expected],
+        );
+    }
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.current_kms_context_id, canonical_test_context_id(6));
+}
+
 // ---------------------------------------------------------------------------
 // FheExecutionFixture: a persistent-output execution for block-cap enforcement
 // ---------------------------------------------------------------------------

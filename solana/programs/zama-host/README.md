@@ -20,7 +20,6 @@ EncryptedStore
   Creation proves that authority is a PDA of program. Subsequent access validates the canonical
   address and required signer. Slot keys select handles within the store; they are not PDA seeds.
   Each private allow seals a HistoricalAccessLeaf; public decryption seals a PublicDecryptLeaf.
-  The seed literal remains "encrypted-state" so the naming change preserves existing addresses.
 
 TransientStore
   PDA("transient", payer)

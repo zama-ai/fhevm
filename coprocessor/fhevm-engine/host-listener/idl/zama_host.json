@@ -169,7 +169,7 @@
     {
       "name": "define_kms_context",
       "docs": [
-        "Defines a new KMS context (mirror of `ProtocolConfig.defineNewKmsContext`)."
+        "Defines a new KMS context (mirror of `ProtocolConfig.mirrorKmsContextAndEpoch`)."
       ],
       "discriminator": [
         102,
@@ -2530,8 +2530,8 @@
     },
     {
       "code": 6012,
-      "name": "InvalidKmsContextId",
-      "msg": "KMS context id must not be the all-zero id"
+      "name": "NonIncreasingKmsContextId",
+      "msg": "KMS context id must be above the current one"
     },
     {
       "code": 6013,
@@ -3461,14 +3461,23 @@
             "fields": [
               {
                 "name": "handle_index",
+                "docs": [
+                  "Dictionary index of the handle the slot must currently hold."
+                ],
                 "type": "u8"
               },
               {
                 "name": "store_index",
+                "docs": [
+                  "Index of the `EncryptedStore` among the execution's accounts."
+                ],
                 "type": "u8"
               },
               {
                 "name": "key_index",
+                "docs": [
+                  "Dictionary index of the slot key."
+                ],
                 "type": "u8"
               }
             ]
@@ -3478,10 +3487,16 @@
             "fields": [
               {
                 "name": "handle_index",
+                "docs": [
+                  "Dictionary index of the granted handle."
+                ],
                 "type": "u8"
               },
               {
                 "name": "consumer_store_index",
+                "docs": [
+                  "Index of the consumer `EncryptedStore` the grant names, among the execution's accounts."
+                ],
                 "type": "u8"
               }
             ]
@@ -4349,7 +4364,8 @@
           {
             "name": "context_id",
             "docs": [
-              "Opaque 32-byte context id (mirrors EVM `kmsContextId`). All-zero is reserved (none defined)."
+              "32-byte context id (EVM `kmsContextId`), ordered as a big-endian integer; each new id is above",
+              "the current one. All-zero means none is defined."
             ],
             "type": {
               "array": [
@@ -4547,8 +4563,8 @@
           {
             "name": "verified_inputs",
             "docs": [
-              "`fhe_execute` steps that consume a coprocessor-attested input (Gateway",
-              "`InputVerification` pause)."
+              "`fhe_execute` steps that consume a coprocessor-attested input (no EVM counterpart:",
+              "`InputVerifier` cannot be paused, DD-058)."
             ],
             "type": "bool"
           },
