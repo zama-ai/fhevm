@@ -136,6 +136,23 @@ metadata:
 spec:
   restartPolicy: Never
   activeDeadlineSeconds: 600
+  # Pin onto zws-pool, the same general-purpose nodepool the in-cluster
+  # Postgres, Redis and listener releases use.
+  #
+  # This is not a preference, it is the only way this pod reliably gets a core.
+  # It requests one, and every Karpenter nodepool on the cluster is tainted
+  # with its own name. Karpenter provisions only from pools whose taint a pod
+  # tolerates, so tolerating none means no node is ever created for this one
+  # and it is confined to whatever untainted capacity happens to be idle. The
+  # sibling preview pods get away with that by requesting nothing at all; this
+  # one sits Pending until the wait below times out.
+  nodeSelector:
+    karpenter.sh/nodepool: zws-pool
+  tolerations:
+    - key: "karpenter.sh/nodepool"
+      operator: "Equal"
+      value: "zws-pool"
+      effect: "NoSchedule"
   imagePullSecrets:
     - name: registry-credentials
   containers:
