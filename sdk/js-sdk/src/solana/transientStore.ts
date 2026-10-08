@@ -77,7 +77,7 @@ function isTransientStoreLifecycleInstruction(host: Address, instruction: Instru
 
 // zama-host requires the close to be the transaction's last instruction. Single-transaction sign and
 // send refuse a sandwich the planner had to split, and no instruction can be added after the close.
-// Non-divisible keeps it whole for an executor that splits other plans.
+// Non-divisible keeps it whole even when other instructions are split across transactions.
 function fheTransactionPlan(
   transientStore: TransientStore,
   instructions: readonly Instruction[],
