@@ -149,7 +149,7 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
         split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [1, 1])?;
     let account = fhe::read_state(&ctx.accounts.join_store)?;
     let state = zama_fhe::Store::new(&account);
-    let joined = state.get::<zama_fhe::Uint<64>>(joined_amount_key())?;
+    let joined = state.get::<zama_fhe::Uint<64>>(JOINED_AMOUNT_KEY)?;
     let payout_state = fhe::read_state(&ctx.accounts.batch_payout_balance_store)?;
     let output = state
         .result()

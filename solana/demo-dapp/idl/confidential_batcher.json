@@ -4320,5 +4320,20 @@
         ]
       }
     }
+  ],
+  "constants": [
+    {
+      "name": "JOINED_AMOUNT_KEY",
+      "docs": [
+        "Join-store key of the user's encrypted joined amount."
+      ],
+      "type": {
+        "array": [
+          "u8",
+          32
+        ]
+      },
+      "value": "[106, 111, 105, 110, 101, 100, 95, 97, 109, 111, 117, 110, 116, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95, 95]"
+    }
   ]
 }

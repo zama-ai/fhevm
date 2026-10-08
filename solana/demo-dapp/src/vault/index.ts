@@ -13,6 +13,7 @@ export {
 } from './internal/generated/confidentialBatcher/instructions/index.js';
 export { BatchDirection } from './internal/generated/confidentialBatcher/types/batchDirection.js';
 export { BatchStatus } from './internal/generated/confidentialBatcher/types/batchStatus.js';
+export { JOINED_AMOUNT_KEY } from './internal/generated/confidentialBatcher/constants.js';
 export { findJoinRecordPda } from './internal/generated/confidentialBatcher/pdas/index.js';
 export { getInitializeVaultInstructionAsync } from './internal/generated/demoVault/instructions/initializeVault.js';
 export {

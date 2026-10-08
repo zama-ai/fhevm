@@ -1335,7 +1335,7 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
         store_u64(
             &context,
             keys.pending_join_value(fixture.alice.user),
-            batcher::joined_amount_key()
+            batcher::JOINED_AMOUNT_KEY
         ),
         300
     );
@@ -1343,7 +1343,7 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
         store_u64(
             &context,
             keys.pending_join_value(fixture.bob.user),
-            batcher::joined_amount_key()
+            batcher::JOINED_AMOUNT_KEY
         ),
         500
     );
@@ -1557,7 +1557,7 @@ fn mollusk_single_user_batch_reveals_that_users_amount() {
         store_u64(
             &context,
             keys.pending_join_value(fixture.alice.user),
-            batcher::joined_amount_key()
+            batcher::JOINED_AMOUNT_KEY
         )
     );
 
@@ -1604,7 +1604,7 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
     );
     let pending = keys.pending_join_value(fixture.alice.user);
     assert_eq!(
-        store_u64(&context, pending, batcher::joined_amount_key()),
+        store_u64(&context, pending, batcher::JOINED_AMOUNT_KEY),
         350
     );
     assert_eq!(
@@ -1620,10 +1620,7 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
     let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
     assert_eq!(check_fhe_cpis(&context, &result), 2);
-    assert_eq!(
-        store_u64(&context, pending, batcher::joined_amount_key()),
-        0
-    );
+    assert_eq!(store_u64(&context, pending, batcher::JOINED_AMOUNT_KEY), 0);
     assert_eq!(
         store_u64(
             &context,
@@ -1646,10 +1643,7 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
         handle_for_chain(43, BALANCE_FHE_TYPE),
         40,
     );
-    assert_eq!(
-        store_u64(&context, pending, batcher::joined_amount_key()),
-        40
-    );
+    assert_eq!(store_u64(&context, pending, batcher::JOINED_AMOUNT_KEY), 40);
     assert_eq!(
         store_u64(&context, keys.join_balance_store, token::balance_key()),
         40
@@ -1815,7 +1809,7 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         store_u64(
             &context,
             keys.pending_join_value(fixture.alice.user),
-            batcher::joined_amount_key()
+            batcher::JOINED_AMOUNT_KEY
         ),
         0
     );
@@ -2152,7 +2146,7 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
     );
     let pending = keys.pending_join_value(fixture.alice.user);
     assert_eq!(
-        store_u64(&context, pending, batcher::joined_amount_key()),
+        store_u64(&context, pending, batcher::JOINED_AMOUNT_KEY),
         350
     );
     assert_eq!(
@@ -2168,10 +2162,7 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
     let quit = quit_ix(&fixture, &keys, &fixture.alice);
     let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
     assert_eq!(check_fhe_cpis(&context, &result), 2);
-    assert_eq!(
-        store_u64(&context, pending, batcher::joined_amount_key()),
-        0
-    );
+    assert_eq!(store_u64(&context, pending, batcher::JOINED_AMOUNT_KEY), 0);
     assert_eq!(
         store_u64(
             &context,
@@ -2194,10 +2185,7 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
         handle_for_chain(43, BALANCE_FHE_TYPE),
         40,
     );
-    assert_eq!(
-        store_u64(&context, pending, batcher::joined_amount_key()),
-        40
-    );
+    assert_eq!(store_u64(&context, pending, batcher::JOINED_AMOUNT_KEY), 40);
     assert_eq!(
         store_u64(&context, keys.join_balance_store, token::balance_key()),
         40
@@ -2238,7 +2226,7 @@ fn mollusk_quit_rejects_refund_destination_that_is_not_the_users_account() {
         &[batcher_error(batcher::BatcherError::DerivedAccountMismatch)],
     );
     assert_eq!(
-        store_u64(&context, pending, batcher::joined_amount_key()),
+        store_u64(&context, pending, batcher::JOINED_AMOUNT_KEY),
         100
     );
     assert_eq!(
@@ -2308,7 +2296,7 @@ fn mollusk_claim_after_quit_pays_zero() {
         store_u64(
             &context,
             keys.pending_join_value(fixture.alice.user),
-            batcher::joined_amount_key()
+            batcher::JOINED_AMOUNT_KEY
         ),
         0
     );

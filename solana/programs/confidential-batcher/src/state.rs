@@ -6,7 +6,6 @@
 use anchor_lang::prelude::*;
 
 use crate::constants::*;
-use crate::errors::BatcherError;
 
 /// Which way through the vault a batcher instance moves value. Direction lives
 /// on the `Batcher` config — one instance per direction, mirroring the EVM's
@@ -159,8 +158,9 @@ pub fn batch_payout_underlying_address(batch: Pubkey) -> (Pubkey, u8) {
 /// display number. `total_joined` must be non-zero (zero-total batches cancel
 /// instead).
 pub fn payout_rate(payout_received: u64, total_joined: u64) -> Result<u64> {
-    require!(total_joined > 0, BatcherError::InvalidFheExecution);
-    let rate = (payout_received as u128) * (RATE_SCALE as u128) / (total_joined as u128);
+    let rate = ((payout_received as u128) * (RATE_SCALE as u128))
+        .checked_div(total_joined as u128)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
     Ok(u64::try_from(rate).unwrap_or(u64::MAX))
 }
 
@@ -168,9 +168,9 @@ pub fn join_store_id(batch: Pubkey, record: Pubkey) -> zama_fhe::StoreId {
     zama_fhe::StoreId::new(crate::ID, record, batch)
 }
 
-pub fn joined_amount_key() -> [u8; 32] {
-    *b"joined_amount___________________"
-}
+/// Join-store key of the user's encrypted joined amount.
+#[constant]
+pub const JOINED_AMOUNT_KEY: [u8; 32] = *b"joined_amount___________________";
 
 #[cfg(test)]
 mod tests {
@@ -180,12 +180,6 @@ mod tests {
     /// `joined * payout_received / total_joined`.
     fn claim_payout(joined: u64, payout_received: u64, total_joined: u64) -> u64 {
         ((joined as u128) * (payout_received as u128) / (total_joined as u128)) as u64
-    }
-
-    /// The replaced double-rounding claim math (`joined * rate / RATE_SCALE`
-    /// on a floored rate), kept only to prove the exact division strands less.
-    fn claim_payout_via_rate(joined: u64, rate: u64) -> u64 {
-        ((joined as u128) * (rate as u128) / (RATE_SCALE as u128)) as u64
     }
 
     #[test]
@@ -215,9 +209,8 @@ mod tests {
 
     #[test]
     fn claims_never_exceed_received_payout() {
-        // Adversarially rounded batches, including the u64-scale case where
-        // the old rate-based double rounding stranded ~6.1e9 raw units:
-        // sum(floor(joined_i * payout / total)) <= floor(payout) always.
+        // Adversarially rounded batches, including the u64-scale case of
+        // fhevm-internal#1774: sum(floor(joined_i * payout / total)) <= payout.
         let cases: &[(&[u64], u64)] = &[
             (&[300, 500], 799),
             (&[1, 1, 1], 2),
@@ -239,32 +232,6 @@ mod tests {
                 "distributed {distributed} > payout {payout} for joins {joins:?}"
             );
         }
-    }
-
-    #[test]
-    fn exact_division_strands_less_than_the_rate_would() {
-        // The fhevm-internal#1774 case: at u64 scale the floored rate loses
-        // precision that every claim then re-multiplies. Exact proportional
-        // division recovers those units.
-        let joins = [u64::MAX / 2, u64::MAX / 2 - 100];
-        let payout = u64::MAX / 3;
-        let total: u64 = joins.iter().sum();
-        let rate = payout_rate(payout, total).unwrap();
-        let via_rate: u128 = joins
-            .iter()
-            .map(|j| claim_payout_via_rate(*j, rate) as u128)
-            .sum();
-        let exact: u128 = joins
-            .iter()
-            .map(|j| claim_payout(*j, payout, total) as u128)
-            .sum();
-        let stranded_via_rate = payout as u128 - via_rate;
-        let stranded_exact = payout as u128 - exact;
-        // The historical measurement: 6_148_914_726 raw units stranded by the
-        // double rounding; exact division strands at most one unit per claim.
-        assert_eq!(stranded_via_rate, 6_148_914_726);
-        assert!(stranded_exact <= joins.len() as u128);
-        assert!(stranded_exact < stranded_via_rate);
     }
 
     #[test]

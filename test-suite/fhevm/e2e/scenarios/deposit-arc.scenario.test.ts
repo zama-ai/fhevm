@@ -672,8 +672,6 @@ test.skipIf(!runsDemoScenarios)(
     const permit = await decrypt.signPermit({ wallet: solanaPermitWalletFromSecretKey(aliceBytes), durationSeconds: 3600n });
     const userTokenAccount = (await findTokenAccountPda({ mint, owner: alice.address }))[0];
     const userBalanceStore = await vault.tokenStoreAddress(mint, userTokenAccount);
-    // The batcher's `joined_amount_key()`. The demo batcher does not publish it as an IDL constant.
-    const joinedAmountKey = new TextEncoder().encode('joined_amount___________________');
     const readAmount = async (store: Address, key: Uint8Array = BALANCE_KEY): Promise<bigint> => {
       const state = await decrypt.fetchEncryptedStore(store);
       const handle = encryptedStoreHandle(state, key);
@@ -702,7 +700,7 @@ test.skipIf(!runsDemoScenarios)(
     expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.joinCount).toBe(1n);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin - amount);
     const joinStore = await vault.joinStoreAddress(batch, alice.address);
-    expect(await readAmount(joinStore, joinedAmountKey)).toBe(amount);
+    expect(await readAmount(joinStore, vault.JOINED_AMOUNT_KEY)).toBe(amount);
     const batcher = await vault.getBatcher(rpc, roots.batcher);
     await until(async () => (await rpc.getSlot().send()) >=
       current.state.openedSlot + batcher.minBatchAgeSlots, { description: 'refund batch dispatch age', timeoutMs: 120_000 });
@@ -751,11 +749,11 @@ test.skipIf(!runsDemoScenarios)(
     });
     await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [quit]), JOIN_COMPUTE_UNIT_LIMIT);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
-    expect(await readAmount(joinStore, joinedAmountKey)).toBe(0n);
+    expect(await readAmount(joinStore, vault.JOINED_AMOUNT_KEY)).toBe(0n);
     // A retry cannot credit the original contribution twice.
     await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [quit]), JOIN_COMPUTE_UNIT_LIMIT);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
-    expect(await readAmount(joinStore, joinedAmountKey)).toBe(0n);
+    expect(await readAmount(joinStore, vault.JOINED_AMOUNT_KEY)).toBe(0n);
     console.log(`refund acceptance passed: batch=${batch}; joined=${amount}; restored exactly; join record retained until reset`);
   }, SCENARIO_TIMEOUT_MS,
 );

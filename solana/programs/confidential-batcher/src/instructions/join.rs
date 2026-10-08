@@ -147,20 +147,15 @@ pub fn join<'info>(
     }
     let [transfer_deny_records, contribution_deny_records] =
         split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [1, 1])?;
-    let transferred = transfer_to_batch(
-        &ctx,
-        amount_attestation,
-        authority_seeds,
-        transfer_deny_records,
-    )?;
+    let transferred = transfer_to_batch(&ctx, amount_attestation, transfer_deny_records)?;
     let account = fhe::read_state(&ctx.accounts.join_store)?;
     let state = zama_fhe::Store::new(&account);
     let amount = state.granted::<zama_fhe::Uint<64>>(transferred)?;
     let previous = account
-        .get(&joined_amount_key())
-        .map(|_| state.get::<zama_fhe::Uint<64>>(joined_amount_key()))
+        .get(&JOINED_AMOUNT_KEY)
+        .map(|_| state.get::<zama_fhe::Uint<64>>(JOINED_AMOUNT_KEY))
         .transpose()?;
-    let output = state.set(joined_amount_key()).allow(user);
+    let output = state.set(JOINED_AMOUNT_KEY).allow(user);
     let execution = zama_fhe::FheExecution::build_returning(state.id(), |builder| {
         let joined = match previous {
             Some(previous) => builder.add(previous, amount)?,
@@ -218,11 +213,10 @@ pub fn join<'info>(
 fn transfer_to_batch<'info>(
     ctx: &Context<Join<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
-    authority_seeds: &[&[u8]],
     deny_records: &[AccountInfo<'info>],
 ) -> Result<[u8; 32]> {
     ct::cpi::confidential_transfer(
-        CpiContext::new_with_signer(
+        CpiContext::new(
             ctx.accounts.confidential_token_program.key(),
             ct::cpi::accounts::ConfidentialTransfer {
                 owner: ctx.accounts.user.to_account_info(),
@@ -259,7 +253,6 @@ fn transfer_to_batch<'info>(
                     .to_account_info(),
                 program: ctx.accounts.confidential_token_program.to_account_info(),
             },
-            &[authority_seeds],
         )
         .with_remaining_accounts(deny_records.to_vec()),
         amount_attestation,
