@@ -14,7 +14,7 @@
 import type { SolanaUserDecryptRejection } from './failure.js';
 import type { SolanaUserDecryptHandleEntry, SolanaUserDecryptRequestJson } from './request.js';
 import type { SolanaSignedPermit } from '../permit/index.js';
-import { SOLANA_USER_DECRYPT_RETRY_SECONDS, classifySolanaUserDecryptRejection } from './failure.js';
+import { classifySolanaUserDecryptRejection } from './failure.js';
 import { buildSolanaUserDecryptRequest } from './request.js';
 
 /** What the transport got back: an answer, or a reason there is none. */
@@ -40,6 +40,9 @@ export interface SolanaUserDecryptClock {
 
 /** How many submissions one call may make before it reports the last rejection. */
 export const SOLANA_USER_DECRYPT_DEFAULT_ATTEMPTS = 4;
+
+/** The wait before the first resubmission; the session doubles it with each attempt made. */
+export const SOLANA_USER_DECRYPT_RETRY_SECONDS = 2;
 
 /** A run that ended without an answer. */
 export class SolanaUserDecryptRunError extends Error {

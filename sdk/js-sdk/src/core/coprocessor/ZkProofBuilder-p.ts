@@ -22,6 +22,7 @@ import { isUint64 } from '../base/uint.js';
 import { asBytesHex } from '../base/bytes.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
 import { buildInputProofMetaData, isEvmHostChainId, isSolanaHostChainId } from './buildInputProofMetaData-p.js';
+import { chainTypeByte } from '../chains/utilsSolana.js';
 import { toSolanaZkProof } from './SolanaZkProof-p.js';
 import { createTypedValue, TypedValueArrayBuilder } from '../base/typedValue.js';
 import { toZkProof } from './ZkProof-p.js';
@@ -164,7 +165,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
     }
     if (!isEvmHostChainId(chainId)) {
       throw new ZkProofError({
-        message: 'build() requires an EVM host chain (type byte 0x00)',
+        message: `build() requires an EVM host chain (type byte 0x00), got 0x${chainTypeByte(BigInt(chainId)).toString(16).padStart(2, '0')}`,
       });
     }
 

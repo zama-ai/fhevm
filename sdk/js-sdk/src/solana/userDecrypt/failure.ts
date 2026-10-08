@@ -27,9 +27,6 @@ export type SolanaUserDecryptRejection =
  */
 export type SolanaUserDecryptRecovery = 'retry-unchanged' | 'give-up';
 
-/** The wait before the first resubmission; the session doubles it with each attempt made. */
-export const SOLANA_USER_DECRYPT_RETRY_SECONDS = 2;
-
 /**
  * The action each relayer label implies.
  *

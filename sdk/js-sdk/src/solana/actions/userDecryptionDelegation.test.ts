@@ -370,11 +370,16 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
     expect(rows.wildcard).toBeNull();
   });
 
-  it('throws when the RPC answers fewer accounts than the two rows requested', async () => {
+  it.each([
+    ['fewer', [null]],
+    ['more', [null, null, null]],
+  ])('throws when the RPC answers %s accounts than the two rows requested', async (_, value) => {
     const rpc = {
-      getMultipleAccounts: () => ({ send: () => Promise.resolve({ context: { slot: 0n }, value: [null] }) }),
+      getMultipleAccounts: () => ({ send: () => Promise.resolve({ context: { slot: 0n }, value }) }),
     } as unknown as SolanaRpc;
-    await expect(fetchSolanaUserDecryptionDelegation(rpc, tuple, HOST)).rejects.toThrow('fewer accounts');
+    await expect(fetchSolanaUserDecryptionDelegation(rpc, tuple, HOST)).rejects.toThrow(
+      `getMultipleAccounts returned ${value.length} accounts for the two delegation rows`,
+    );
   });
 
   // Anyone can create a system account at the canonical address by transferring lamports to it;

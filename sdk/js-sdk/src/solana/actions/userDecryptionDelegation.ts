@@ -272,11 +272,10 @@ export async function fetchSolanaUserDecryptionDelegation(
     findDelegationRecordPda(wildcardTuple, { programAddress }),
   ]);
   // One RPC call, so both rows reflect one slot: two calls could straddle a revoke.
-  const [exactAccount, wildcardAccount] = await fetchEncodedAccounts(rpc, [exactPda[0], wildcardPda[0]], {
-    commitment: 'finalized',
-  });
-  if (exactAccount === undefined || wildcardAccount === undefined) {
-    throw new Error('getMultipleAccounts answered fewer accounts than the two delegation rows requested');
+  const accounts = await fetchEncodedAccounts(rpc, [exactPda[0], wildcardPda[0]], { commitment: 'finalized' });
+  const [exactAccount, wildcardAccount] = accounts;
+  if (accounts.length !== 2 || exactAccount === undefined || wildcardAccount === undefined) {
+    throw new Error(`getMultipleAccounts returned ${accounts.length} accounts for the two delegation rows`);
   }
   const rowOrNull = (
     account: MaybeEncodedAccount,

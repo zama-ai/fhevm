@@ -155,7 +155,7 @@ describe('a rejection nothing repairs', () => {
 describe('a request the Connector left unanswered', () => {
   // The leaf the Connector asked the coprocessors for may not have been indexed yet when it asked.
   // The request itself is right, so the same bytes are submitted again after a wait.
-  it('is submitted again unchanged, under the same signature, after the default wait', async () => {
+  it('is submitted again unchanged, under the same signature, after the retry wait', async () => {
     const { submit, transport } = scriptedTransport([rejectedWith({ kind: 'unanswered' }), answered]);
     const { clock, delay } = recordingClock();
     const permit = signedPermit();
