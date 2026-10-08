@@ -9,9 +9,10 @@ import {
   type SolanaRpcApi,
   type TransactionSigner,
 } from '@solana/kit';
-import { rpcConnection, rpcTransactionPlanner, rpcTransactionPlanSigningExecutor } from '@solana/kit-plugin-rpc';
+import { rpcConnection } from '@solana/kit-plugin-rpc';
 import { payer as feePayer } from '@solana/kit-plugin-signer';
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
+import { v1TransactionSigning } from '@fhevm/solana-zama-host/client';
 
 const CONFIRM_TIMEOUT_MS = 60_000;
 const CONFIRM_INTERVAL_MS = 400;
@@ -30,13 +31,10 @@ export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): H
     rpc,
     async sendTransaction(payer, instructions) {
       signal?.throwIfAborted();
-      // Kit's stock planner and signer: a version 1 transaction whose compute and loaded-data limits
-      // come from a simulation.
       const { context: signed } = await createClient()
         .use(feePayer(payer))
         .use(rpcConnection<SolanaRpcApi>(rpc))
-        .use(rpcTransactionPlanner({ version: 1 }))
-        .use(rpcTransactionPlanSigningExecutor())
+        .use(v1TransactionSigning())
         .signTransaction([...instructions], { abortSignal: signal });
       const signature = getSignatureFromTransaction(signed.transaction);
       signal?.throwIfAborted();

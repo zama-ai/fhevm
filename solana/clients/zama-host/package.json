@@ -31,16 +31,21 @@
   },
   "peerDependencies": {
     "@solana/kit": "^8.4.0",
+    "@solana/kit-plugin-instruction-plan": "^0.19.0",
     "@solana/program-client-core": "^8.4.0",
     "@solana/kit-plugin-rpc": "^0.19.0"
   },
   "peerDependenciesMeta": {
+    "@solana/kit-plugin-instruction-plan": {
+      "optional": true
+    },
     "@solana/kit-plugin-rpc": {
       "optional": true
     }
   },
   "devDependencies": {
     "@solana/kit": "8.4.0",
+    "@solana/kit-plugin-instruction-plan": "0.19.0",
     "@solana/kit-plugin-rpc": "0.19.0",
     "@solana/program-client-core": "8.4.0",
     "@types/node": "22.20.1",
