@@ -159,6 +159,28 @@ fn first_revocation_creates_the_account_and_records_the_clock() {
     assert_eq!(watermark_of(&created.data), REVOCATION_TIME as u64);
 }
 
+/// Anyone can send lamports to a user's watermark address before the user first revokes. That
+/// donation must not block the revocation: the record is still created, topped up to rent.
+#[test]
+fn first_revocation_creates_the_account_at_an_address_prefunded_below_rent() {
+    let user = Pubkey::new_unique();
+    let (invalidation, _) = host::permit_invalidation_address(user);
+
+    let result = mollusk_at(REVOCATION_TIME).process_and_validate_instruction(
+        &revoke_ix(user, invalidation),
+        &[
+            (user, funded_wallet()),
+            (invalidation, zama_solana_test_kit::system_account(1)),
+            (system_program::ID, system_program_account()),
+        ],
+        &[Check::success()],
+    );
+
+    let created = result.get_account(&invalidation).expect("account");
+    assert_eq!(created.owner, host::id());
+    assert_eq!(watermark_of(&created.data), REVOCATION_TIME as u64);
+}
+
 /// The stored record names the user it belongs to, so a decoded account can be checked
 /// against the address it came from rather than trusted.
 #[test]
@@ -426,7 +448,7 @@ fn revocation_rejects_an_account_owned_by_another_program() {
         ],
         &[Check::err(
             anchor_lang::solana_program::program_error::ProgramError::Custom(
-                host::ZamaHostError::PermitInvalidationAccountInvalid.into(),
+                anchor_lang::error::ErrorCode::AccountOwnedByWrongProgram as u32,
             ),
         )],
     );
@@ -437,14 +459,22 @@ fn revocation_rejects_an_account_owned_by_another_program() {
 /// foreign record) and too long (a different account type that happens to live here).
 #[test]
 fn revocation_rejects_an_account_of_the_wrong_size() {
+    use anchor_lang::error::ErrorCode;
+
     let user = Pubkey::new_unique();
     let (invalidation, canonical) = existing_watermark_account(user, 1_000);
 
-    for length in [
-        0usize,
-        8,
-        8 + PermitInvalidation::SPACE - 1,
-        8 + PermitInvalidation::SPACE + 1,
+    for (length, error) in [
+        (0usize, ErrorCode::AccountDiscriminatorNotFound),
+        (8, ErrorCode::AccountDidNotDeserialize),
+        (
+            8 + PermitInvalidation::SPACE - 1,
+            ErrorCode::AccountDidNotDeserialize,
+        ),
+        (
+            8 + PermitInvalidation::SPACE + 1,
+            ErrorCode::ConstraintSpace,
+        ),
     ] {
         let mut account = canonical.clone();
         account.data.resize(length, 0);
@@ -457,9 +487,7 @@ fn revocation_rejects_an_account_of_the_wrong_size() {
                 (system_program::ID, system_program_account()),
             ],
             &[Check::err(
-                anchor_lang::solana_program::program_error::ProgramError::Custom(
-                    host::ZamaHostError::PermitInvalidationAccountInvalid.into(),
-                ),
+                anchor_lang::solana_program::program_error::ProgramError::Custom(error as u32),
             )],
         );
     }
@@ -483,43 +511,7 @@ fn revocation_rejects_an_account_with_a_foreign_discriminator() {
         ],
         &[Check::err(
             anchor_lang::solana_program::program_error::ProgramError::Custom(
-                host::ZamaHostError::PermitInvalidationAccountInvalid.into(),
-            ),
-        )],
-    );
-}
-
-/// A record whose stored user disagrees with the signer is rejected, even at the
-/// canonical address for that signer. The address and the contents must agree; if they
-/// cannot, the account was not written by this instruction.
-#[test]
-fn revocation_rejects_a_record_naming_another_user() {
-    let user = Pubkey::new_unique();
-    let (invalidation, _) = host::permit_invalidation_address(user);
-    let (_, bump) = host::permit_invalidation_address(user);
-
-    let account = Account {
-        lamports: 1_000_000_000,
-        data: serialized(PermitInvalidation {
-            user: Pubkey::new_unique(), // somebody else
-            invalidation_watermark: 1_000,
-            bump,
-        }),
-        owner: host::id(),
-        executable: false,
-        rent_epoch: 0,
-    };
-
-    mollusk_at(REVOCATION_TIME).process_and_validate_instruction(
-        &revoke_ix(user, invalidation),
-        &[
-            (user, funded_wallet()),
-            (invalidation, account),
-            (system_program::ID, system_program_account()),
-        ],
-        &[Check::err(
-            anchor_lang::solana_program::program_error::ProgramError::Custom(
-                host::ZamaHostError::PermitInvalidationAccountInvalid.into(),
+                anchor_lang::error::ErrorCode::AccountDiscriminatorMismatch as u32,
             ),
         )],
     );

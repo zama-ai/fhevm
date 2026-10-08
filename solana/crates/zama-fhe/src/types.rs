@@ -18,7 +18,7 @@ impl FheType {
     pub const UINT64: Self = Self(5);
     pub const UINT128: Self = Self(6);
 
-    pub(crate) const fn byte(self) -> u8 {
+    pub const fn byte(self) -> u8 {
         self.0
     }
 

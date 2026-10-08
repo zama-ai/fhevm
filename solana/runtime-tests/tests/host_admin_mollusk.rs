@@ -331,6 +331,15 @@ fn paused(context: &Ctx, host_config: Pubkey) -> host::PauseFlags {
         .paused
 }
 
+fn pauser_record(context: &Ctx, pauser: Pubkey) -> host::PauserRecord {
+    let store = context.account_store.borrow();
+    let account = &store[&host::pauser_address(pauser).0];
+    <host::PauserRecord as anchor_lang::AccountDeserialize>::try_deserialize(
+        &mut account.data.as_slice(),
+    )
+    .expect("pauser record")
+}
+
 const EXECUTION: host::PauseFlags = host::PauseFlags {
     execution: true,
     verified_inputs: false,
@@ -343,27 +352,99 @@ fn mollusk_admin_grants_and_withdraws_a_pauser() {
     let pauser = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
-    let record = |context: &Ctx| {
-        let store = context.account_store.borrow();
-        let account = &store[&host::pauser_address(pauser).0];
-        <host::PauserRecord as anchor_lang::AccountDeserialize>::try_deserialize(
-            &mut account.data.as_slice(),
-        )
-        .expect("pauser record")
-    };
-
     context.process_and_validate_instruction(
         &set_pauser_ix(admin, host_config, pauser, true),
         &[Check::success()],
     );
-    assert!(record(&context).enabled);
-    assert_eq!(record(&context).pauser, pauser);
+    assert!(pauser_record(&context, pauser).enabled);
+    assert_eq!(pauser_record(&context, pauser).pauser, pauser);
 
     context.process_and_validate_instruction(
         &set_pauser_ix(admin, host_config, pauser, false),
         &[Check::success()],
     );
-    assert!(!record(&context).enabled);
+    assert!(!pauser_record(&context, pauser).enabled);
+}
+
+#[test]
+fn mollusk_set_pauser_rejects_another_pausers_record() {
+    let admin = Pubkey::new_unique();
+    let pauser = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+
+    let mut ix = set_pauser_ix(admin, host_config, pauser, true);
+    let record_meta = ix
+        .accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == host::pauser_address(pauser).0)
+        .expect("record account");
+    record_meta.pubkey = host::pauser_address(Pubkey::new_unique()).0;
+    context.process_and_validate_instruction(
+        &ix,
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::ConstraintSeeds,
+        )],
+    );
+}
+
+#[test]
+fn mollusk_set_pauser_creates_its_record_at_an_address_prefunded_below_rent() {
+    // A lamport sent to the record address before it exists must not block the admin.
+    let admin = Pubkey::new_unique();
+    let pauser = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(
+        admin,
+        vec![
+            (host_config, account),
+            (pauser, funded_system_account()),
+            (host::pauser_address(pauser).0, system_account(1)),
+        ],
+    );
+
+    context.process_and_validate_instruction(
+        &set_pauser_ix(admin, host_config, pauser, true),
+        &[Check::success()],
+    );
+    context.process_and_validate_instruction(
+        &pause_ix(pauser, host_config, EXECUTION),
+        &[Check::success()],
+    );
+    assert_eq!(paused(&context, host_config), EXECUTION);
+}
+
+#[test]
+fn mollusk_withdrawing_an_absent_pauser_writes_a_disabled_record() {
+    // Withdrawing a key that was never a pauser changes nothing, but the record is created anyway.
+    // It must name its pauser and grant nothing, and the next real grant must still apply.
+    let admin = Pubkey::new_unique();
+    let pauser = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(
+        admin,
+        vec![(host_config, account), (pauser, funded_system_account())],
+    );
+    context.process_and_validate_instruction(
+        &set_pauser_ix(admin, host_config, pauser, false),
+        &[Check::success()],
+    );
+    let record = pauser_record(&context, pauser);
+    assert_eq!((record.pauser, record.enabled), (pauser, false));
+    context.process_and_validate_instruction(
+        &pause_ix(pauser, host_config, EXECUTION),
+        &[custom_error(ZamaHostError::NotPauser)],
+    );
+
+    context.process_and_validate_instruction(
+        &set_pauser_ix(admin, host_config, pauser, true),
+        &[Check::success()],
+    );
+    context.process_and_validate_instruction(
+        &pause_ix(pauser, host_config, EXECUTION),
+        &[Check::success()],
+    );
+    assert_eq!(paused(&context, host_config), EXECUTION);
 }
 
 #[test]

@@ -251,8 +251,8 @@ pub(super) fn check_scope_not_denied_info(
 
 /// True when a PDA slot is still uninitialized: system-owned and empty. A system-owned empty
 /// account can never be executable, so that combination fails closed with `error`. Shared by
-/// deny records, HCU witnesses, and permit watermarks — each caller supplies the error that
-/// names its own account.
+/// the deny-record and HCU-witness readers — each caller supplies the error that names its own
+/// account.
 pub(super) fn is_uninitialized_pda_account(
     info: &AccountInfo,
     error: ZamaHostError,

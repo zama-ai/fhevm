@@ -1968,8 +1968,7 @@ Rejected alternatives:
 Consequences: `PauseFlags` is three bytes of `HostConfig` (`HostConfig::SPACE` 311). The host
 listener decodes `HostConfig` with the program's type. The KMS connector reads no pause flag, so user
 decryption pauses at the gateway alone, as on EVM. The pause errors are `ExecutionPaused`,
-`VerifiedInputsPaused`, `AclWritesPaused`, `NotPauser`, `PauserRecordMismatch` and
-`WalletPauseThroughCpi`.
+`VerifiedInputsPaused`, `AclWritesPaused`, `NotPauser` and `WalletPauseThroughCpi`.
 
 ## DD-059: The listener catches up from an archive when the stream cannot replay
 

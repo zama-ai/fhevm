@@ -97,7 +97,10 @@ export type RevokePermitsAsyncInput<
 > = {
   /** The user revoking their permits, and the payer for the watermark account. */
   user: TransactionSigner<TAccountUser>;
-  /** then created if absent. */
+  /**
+   * The user's watermark, created on first revocation. The address is derived from the
+   * signer, so another user's watermark is never at this address.
+   */
   invalidation?: Address<TAccountInvalidation>;
   /** System program, used when the watermark account has to be created. */
   systemProgram?: Address<TAccountSystemProgram>;
@@ -158,7 +161,10 @@ export type RevokePermitsInput<
 > = {
   /** The user revoking their permits, and the payer for the watermark account. */
   user: TransactionSigner<TAccountUser>;
-  /** then created if absent. */
+  /**
+   * The user's watermark, created on first revocation. The address is derived from the
+   * signer, so another user's watermark is never at this address.
+   */
   invalidation: Address<TAccountInvalidation>;
   /** System program, used when the watermark account has to be created. */
   systemProgram?: Address<TAccountSystemProgram>;
@@ -209,7 +215,10 @@ export type ParsedRevokePermitsInstruction<
   accounts: {
     /** The user revoking their permits, and the payer for the watermark account. */
     user: TAccountMetas[0];
-    /** then created if absent. */
+    /**
+     * The user's watermark, created on first revocation. The address is derived from the
+     * signer, so another user's watermark is never at this address.
+     */
     invalidation: TAccountMetas[1];
     /** System program, used when the watermark account has to be created. */
     systemProgram: TAccountMetas[2];

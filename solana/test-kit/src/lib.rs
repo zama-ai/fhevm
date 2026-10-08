@@ -53,7 +53,7 @@ pub const INPUT_VERIFICATION_CONTRACT: [u8; 20] = [0xCDu8; 20];
 /// EVM address of the fixtures' `Decryption` contract (KMS cert domain separator).
 pub const DECRYPTION_CONTRACT: [u8; 20] = [0xDEu8; 20];
 /// FHE type tag of a `euint64` balance — the type every amount fixture uses.
-pub const BALANCE_FHE_TYPE: u8 = 5;
+pub const BALANCE_FHE_TYPE: u8 = zama_fhe::FheType::UINT64.byte();
 /// Decimals of every fixture SPL mint.
 pub const DECIMALS: u8 = 6;
 

@@ -32,7 +32,12 @@ use mollusk_svm::result::types::TransactionResult;
 use proptest::prelude::*;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::{Config, TestRunner};
-use solana_sdk::{account::Account, instruction::Instruction, pubkey::Pubkey};
+use solana_sdk::{
+    account::Account,
+    instruction::Instruction,
+    pubkey::Pubkey,
+    signature::{Keypair, Signer},
+};
 use zama_host::encode::ExecutionDictionary;
 use zama_host::{self as host, AppScope, FheExecuteArgs, FheExecuteStep};
 use zama_solana_test_kit::cleartext;
@@ -439,7 +444,9 @@ enum Build {
 
 impl World {
     fn new(build: Build) -> Self {
-        let wallets = std::array::from_fn(|index| Pubkey::new_from_array([0x10 + index as u8; 32]));
+        // Wallets are keypair keys: a delegate must be one, because it signs its requests.
+        let wallets =
+            std::array::from_fn(|index| Keypair::new_from_array([0x10 + index as u8; 32]).pubkey());
         // Two authorities of the first program and one of the second.
         let authorities = std::array::from_fn(|index| {
             store_authority(
