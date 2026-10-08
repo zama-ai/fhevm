@@ -16,7 +16,6 @@ import {
   getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU32Decoder,
@@ -35,7 +34,14 @@ import {
   type ReadonlyAccount,
   type ReadonlyUint8Array,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
+} from '@solana/program-client-core';
+import { findHostConfigPda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const VERIFY_PUBLIC_DECRYPT_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -110,19 +116,19 @@ export function getVerifyPublicDecryptInstructionDataCodec(): Codec<
 }
 
 export type VerifyPublicDecryptAsyncInput<
-  TAccountHostConfig extends string = string,
-  TAccountKmsContext extends string = string,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /**
    * Canonical singleton host config: source of the current KMS context id and the gateway
    * EIP-712 domain (chain id + `Decryption` verifying contract).
    */
-  hostConfig?: Address<TAccountHostConfig>;
+  hostConfig?: TAccountHostConfig;
   /**
    * KMS context PDA; must be the canonical PDA for the id the certificate commits to in its
    * signed `extra_data`, and must not be destroyed. Verified in the handler.
    */
-  kmsContext: Address<TAccountKmsContext>;
+  kmsContext: TAccountKmsContext;
   handle: VerifyPublicDecryptInstructionDataArgs['handle'];
   cleartext: VerifyPublicDecryptInstructionDataArgs['cleartext'];
   signatures: VerifyPublicDecryptInstructionDataArgs['signatures'];
@@ -130,20 +136,37 @@ export type VerifyPublicDecryptAsyncInput<
 };
 
 export async function getVerifyPublicDecryptInstructionAsync<
-  TAccountHostConfig extends string,
-  TAccountKmsContext extends string,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
   input: VerifyPublicDecryptAsyncInput<TAccountHostConfig, TAccountKmsContext>,
   config?: { programAddress?: TProgramAddress },
-): Promise<VerifyPublicDecryptInstruction<TProgramAddress, TAccountHostConfig, TAccountKmsContext>> {
+): Promise<
+  VerifyPublicDecryptInstruction<
+    TProgramAddress,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>
+  >
+> {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    kmsContext: { value: input.kmsContext ?? null, isWritable: false },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    kmsContext: {
+      value: input.kmsContext ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -152,34 +175,34 @@ export async function getVerifyPublicDecryptInstructionAsync<
 
   // Resolve default values.
   if (!accounts.hostConfig.value) {
-    accounts.hostConfig.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
-    });
+    accounts.hostConfig.value = await findHostConfigPda({ programAddress });
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [getAccountMeta('hostConfig', accounts.hostConfig), getAccountMeta('kmsContext', accounts.kmsContext)],
     data: getVerifyPublicDecryptInstructionDataEncoder().encode(args as VerifyPublicDecryptInstructionDataArgs),
     programAddress,
-  } as VerifyPublicDecryptInstruction<TProgramAddress, TAccountHostConfig, TAccountKmsContext>);
+  } as VerifyPublicDecryptInstruction<
+    TProgramAddress,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>
+  >);
 }
 
 export type VerifyPublicDecryptInput<
-  TAccountHostConfig extends string = string,
-  TAccountKmsContext extends string = string,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /**
    * Canonical singleton host config: source of the current KMS context id and the gateway
    * EIP-712 domain (chain id + `Decryption` verifying contract).
    */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig: TAccountHostConfig;
   /**
    * KMS context PDA; must be the canonical PDA for the id the certificate commits to in its
    * signed `extra_data`, and must not be destroyed. Verified in the handler.
    */
-  kmsContext: Address<TAccountKmsContext>;
+  kmsContext: TAccountKmsContext;
   handle: VerifyPublicDecryptInstructionDataArgs['handle'];
   cleartext: VerifyPublicDecryptInstructionDataArgs['cleartext'];
   signatures: VerifyPublicDecryptInstructionDataArgs['signatures'];
@@ -187,32 +210,50 @@ export type VerifyPublicDecryptInput<
 };
 
 export function getVerifyPublicDecryptInstruction<
-  TAccountHostConfig extends string,
-  TAccountKmsContext extends string,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
   input: VerifyPublicDecryptInput<TAccountHostConfig, TAccountKmsContext>,
   config?: { programAddress?: TProgramAddress },
-): VerifyPublicDecryptInstruction<TProgramAddress, TAccountHostConfig, TAccountKmsContext> {
+): VerifyPublicDecryptInstruction<
+  TProgramAddress,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>
+> {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    kmsContext: { value: input.kmsContext ?? null, isWritable: false },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    kmsContext: {
+      value: input.kmsContext ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
   // Original args.
   const args = { ...input };
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [getAccountMeta('hostConfig', accounts.hostConfig), getAccountMeta('kmsContext', accounts.kmsContext)],
     data: getVerifyPublicDecryptInstructionDataEncoder().encode(args as VerifyPublicDecryptInstructionDataArgs),
     programAddress,
-  } as VerifyPublicDecryptInstruction<TProgramAddress, TAccountHostConfig, TAccountKmsContext>);
+  } as VerifyPublicDecryptInstruction<
+    TProgramAddress,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>
+  >);
 }
 
 export type ParsedVerifyPublicDecryptInstruction<

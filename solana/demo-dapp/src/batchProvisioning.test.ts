@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { address, type Address } from '@solana/kit';
+import { address, createNoopSigner, type Address } from '@solana/kit';
 import {
   ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,
   getAddressLookupTableEncoder,
@@ -78,7 +78,7 @@ const config = {
   batchers: { deposit: { batcher: 'batcher-1', lookupTable: 'table-batch-0' }, redeem: { batcher: 'batcher-2', lookupTable: 'table-redeem-0' } },
 } as never;
 
-const keeper = { address: '5bV6jUfhDHCQVA1WfKBUnXUsboJgoKgkzkKcxr3joew5' } as never;
+const keeper = createNoopSigner(address('5bV6jUfhDHCQVA1WfKBUnXUsboJgoKgkzkKcxr3joew5'));
 
 const lookupTableAccount = (deactivationSlot: bigint, addresses: Address[] = []) => {
   const bytes = getAddressLookupTableEncoder().encode({

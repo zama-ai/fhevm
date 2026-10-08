@@ -1,9 +1,9 @@
 import { snakeCase } from 'codama';
 
-// The JS renderer omits constant nodes. Use their types and Anchor's original value strings:
-// nodes-from-anchor parses wide integers through Number, which loses precision before rendering.
-// It draws no events either, so each IDL event's discriminator renders here, named like the
-// account discriminators Codama renders.
+// Constants render here, not through the JS renderer: nodes-from-anchor turns an array constant
+// such as a [u8; 32] key into a string value and parses wide integers through Number, so each
+// constant takes its node's type and Anchor's original value string. Each IDL event's
+// discriminator renders here too, named like the account discriminators Codama renders.
 export function renderProgramConstants(constants, anchorConstants, anchorEvents) {
   if (constants.length !== anchorConstants.length) throw new Error('Anchor constant nodes are missing');
   const declarations = constants.map((constant, index) => {

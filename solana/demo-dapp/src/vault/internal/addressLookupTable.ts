@@ -1,5 +1,5 @@
-import type { Address, Instruction, TransactionSigner } from '@solana/kit';
-import { getExtendLookupTableInstruction } from '@solana-program/address-lookup-table';
+import type { Address, Instruction } from '@solana/kit';
+import { getExtendLookupTableInstruction, type ExtendLookupTableInput } from '@solana-program/address-lookup-table';
 
 /** The demo pairs the first extend with create; 20 addresses leave room for that transaction. */
 export const MAX_EXTEND_ADDRESSES_PER_TRANSACTION = 20;
@@ -12,8 +12,8 @@ export const MAX_EXTEND_ADDRESSES_PER_TRANSACTION = 20;
  */
 export function getExtendLookupTableInstructions(input: {
   readonly lookupTable: Address;
-  readonly authority: TransactionSigner;
-  readonly payer: TransactionSigner;
+  readonly authority: ExtendLookupTableInput['authority'];
+  readonly payer: ExtendLookupTableInput['payer'];
   readonly addresses: readonly Address[];
 }): Instruction[] {
   const instructions: Instruction[] = [];

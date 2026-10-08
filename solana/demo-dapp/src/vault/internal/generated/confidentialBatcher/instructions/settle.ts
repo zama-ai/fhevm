@@ -13,12 +13,10 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getAddressEncoder,
   getArrayDecoder,
   getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU32Decoder,
@@ -39,15 +37,19 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
 import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
   type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
+import { findBatchAuthorityPda, findBatchJoinUnderlyingPda, findBatchPayoutUnderlyingPda } from '../pdas/index.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const SETTLE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([175, 42, 185, 87, 144, 131, 102, 212]);
@@ -221,108 +223,108 @@ export function getSettleInstructionDataCodec(): Codec<SettleInstructionDataArgs
 }
 
 export type SettleAsyncInput<
-  TAccountPayer extends string = string,
-  TAccountBatcher extends string = string,
-  TAccountBatch extends string = string,
-  TAccountBatchAuthority extends string = string,
-  TAccountJoinConfidentialMint extends string = string,
-  TAccountBatchJoinTokenAccount extends string = string,
-  TAccountJoinUnderlyingMint extends string = string,
-  TAccountJoinMintVaultUnderlying extends string = string,
-  TAccountJoinMintVaultAuthority extends string = string,
-  TAccountBatchJoinUnderlying extends string = string,
-  TAccountBatchBurnedAmountStore extends string = string,
-  TAccountPendingBurn extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountKmsContext extends string = string,
-  TAccountVault extends string = string,
-  TAccountVaultAuthority extends string = string,
-  TAccountVaultTokenAccount extends string = string,
-  TAccountBatchPayoutUnderlying extends string = string,
-  TAccountPayoutConfidentialMint extends string = string,
-  TAccountPayoutUnderlyingMint extends string = string,
-  TAccountBatchPayoutTokenAccount extends string = string,
-  TAccountPayoutMintVaultUnderlying extends string = string,
-  TAccountPayoutMintVaultAuthority extends string = string,
-  TAccountPayoutTotalSupplyAuthority extends string = string,
-  TAccountBatchPayoutBalanceStore extends string = string,
-  TAccountPayoutTotalSupplyStore extends string = string,
-  TAccountZamaEventAuthority extends string = string,
-  TAccountTransientStore extends string = string,
-  TAccountInstructions extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountConfidentialTokenEventAuthority extends string = string,
-  TAccountConfidentialTokenProgram extends string = string,
-  TAccountDemoVaultProgram extends string = string,
-  TAccountTokenProgram extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountBatcher extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatch extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinConfidentialMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchJoinTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinMintVaultUnderlying extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinMintVaultAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchJoinUnderlying extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchBurnedAmountStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPendingBurn extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVault extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVaultAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVaultTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchPayoutUnderlying extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutConfidentialMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchPayoutTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintVaultUnderlying extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintVaultAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchPayoutBalanceStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountConfidentialTokenEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountConfidentialTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountDemoVaultProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays the batch authority funding. Anyone. */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /** Batcher config (carries the direction). */
-  batcher: Address<TAccountBatcher>;
+  batcher: TAccountBatcher;
   /** The dispatched batch being settled. */
-  batch: Address<TAccountBatch>;
+  batch: TAccountBatch;
   /**
    * depositor/withdrawer, and wrap owner via invoke_signed. Receives
    * funding for the rent the wrap execution (and any other owner-charged CPIs)
    * charge to the owner; redemption closes the already-open pending burn.
    */
-  batchAuthority?: Address<TAccountBatchAuthority>;
+  batchAuthority?: TAccountBatchAuthority;
   /** Confidential mint the batch total was burned on. */
-  joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
-  batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
+  joinConfidentialMint: TAccountJoinConfidentialMint;
+  batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
   /**
    * SPL mint the join confidential mint wraps (vault underlying for deposit
    * batchers, vault shares for redeem batchers). Mutable because it is the
    * vault share mint on the redeem direction (phase 2 burns from it).
    */
-  joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
+  joinUnderlyingMint: TAccountJoinUnderlyingMint;
   /** by the token CPI. */
-  joinMintVaultUnderlying: Address<TAccountJoinMintVaultUnderlying>;
-  joinMintVaultAuthority: Address<TAccountJoinMintVaultAuthority>;
+  joinMintVaultUnderlying: TAccountJoinMintVaultUnderlying;
+  joinMintVaultAuthority: TAccountJoinMintVaultAuthority;
   /** Batch's plain SPL account receiving the redeemed batch total. */
-  batchJoinUnderlying?: Address<TAccountBatchJoinUnderlying>;
-  batchBurnedAmountStore: Address<TAccountBatchBurnedAmountStore>;
-  pendingBurn: Address<TAccountPendingBurn>;
-  hostConfig?: Address<TAccountHostConfig>;
+  batchJoinUnderlying?: TAccountBatchJoinUnderlying;
+  batchBurnedAmountStore: TAccountBatchBurnedAmountStore;
+  pendingBurn: TAccountPendingBurn;
+  hostConfig?: TAccountHostConfig;
   /** verifier CPI. */
-  kmsContext: Address<TAccountKmsContext>;
+  kmsContext: TAccountKmsContext;
   /** Public vault the batcher fronts. */
-  vault: Address<TAccountVault>;
-  vaultAuthority: Address<TAccountVaultAuthority>;
-  vaultTokenAccount: Address<TAccountVaultTokenAccount>;
+  vault: TAccountVault;
+  vaultAuthority: TAccountVaultAuthority;
+  vaultTokenAccount: TAccountVaultTokenAccount;
   /** Batch's plain SPL account receiving the vault phase's output. */
-  batchPayoutUnderlying?: Address<TAccountBatchPayoutUnderlying>;
+  batchPayoutUnderlying?: TAccountBatchPayoutUnderlying;
   /** Confidential mint claims pay out in. */
-  payoutConfidentialMint: Address<TAccountPayoutConfidentialMint>;
+  payoutConfidentialMint: TAccountPayoutConfidentialMint;
   /**
    * SPL mint the payout confidential mint wraps (vault shares for deposit
    * batchers, vault underlying for redeem batchers). Mutable because it is
    * the vault share mint on the deposit direction (phase 2 mints to it).
    */
-  payoutUnderlyingMint: Address<TAccountPayoutUnderlyingMint>;
-  batchPayoutTokenAccount: Address<TAccountBatchPayoutTokenAccount>;
+  payoutUnderlyingMint: TAccountPayoutUnderlyingMint;
+  batchPayoutTokenAccount: TAccountBatchPayoutTokenAccount;
   /** by the token CPI. */
-  payoutMintVaultUnderlying: Address<TAccountPayoutMintVaultUnderlying>;
-  payoutMintVaultAuthority: Address<TAccountPayoutMintVaultAuthority>;
-  payoutTotalSupplyAuthority: Address<TAccountPayoutTotalSupplyAuthority>;
-  batchPayoutBalanceStore: Address<TAccountBatchPayoutBalanceStore>;
-  payoutTotalSupplyStore: Address<TAccountPayoutTotalSupplyStore>;
-  zamaEventAuthority?: Address<TAccountZamaEventAuthority>;
-  transientStore: Address<TAccountTransientStore>;
-  instructions: Address<TAccountInstructions>;
+  payoutMintVaultUnderlying: TAccountPayoutMintVaultUnderlying;
+  payoutMintVaultAuthority: TAccountPayoutMintVaultAuthority;
+  payoutTotalSupplyAuthority: TAccountPayoutTotalSupplyAuthority;
+  batchPayoutBalanceStore: TAccountBatchPayoutBalanceStore;
+  payoutTotalSupplyStore: TAccountPayoutTotalSupplyStore;
+  zamaEventAuthority?: TAccountZamaEventAuthority;
+  transientStore: TAccountTransientStore;
+  instructions: TAccountInstructions;
   /** ZamaHost program (FHE compute + ACL). */
-  zamaProgram?: Address<TAccountZamaProgram>;
-  confidentialTokenEventAuthority: Address<TAccountConfidentialTokenEventAuthority>;
+  zamaProgram?: TAccountZamaProgram;
+  confidentialTokenEventAuthority: TAccountConfidentialTokenEventAuthority;
   /** confidential-token program composed via CPI. */
-  confidentialTokenProgram?: Address<TAccountConfidentialTokenProgram>;
+  confidentialTokenProgram?: TAccountConfidentialTokenProgram;
   /** demo-vault program composed via CPI. */
-  demoVaultProgram?: Address<TAccountDemoVaultProgram>;
+  demoVaultProgram?: TAccountDemoVaultProgram;
   /** SPL token program. */
-  tokenProgram?: Address<TAccountTokenProgram>;
+  tokenProgram?: TAccountTokenProgram;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
   cleartextTotal: SettleInstructionDataArgs['cleartextTotal'];
   signatures: SettleInstructionDataArgs['signatures'];
   extraData: SettleInstructionDataArgs['extraData'];
@@ -330,41 +332,41 @@ export type SettleAsyncInput<
 };
 
 export async function getSettleInstructionAsync<
-  TAccountPayer extends string,
-  TAccountBatcher extends string,
-  TAccountBatch extends string,
-  TAccountBatchAuthority extends string,
-  TAccountJoinConfidentialMint extends string,
-  TAccountBatchJoinTokenAccount extends string,
-  TAccountJoinUnderlyingMint extends string,
-  TAccountJoinMintVaultUnderlying extends string,
-  TAccountJoinMintVaultAuthority extends string,
-  TAccountBatchJoinUnderlying extends string,
-  TAccountBatchBurnedAmountStore extends string,
-  TAccountPendingBurn extends string,
-  TAccountHostConfig extends string,
-  TAccountKmsContext extends string,
-  TAccountVault extends string,
-  TAccountVaultAuthority extends string,
-  TAccountVaultTokenAccount extends string,
-  TAccountBatchPayoutUnderlying extends string,
-  TAccountPayoutConfidentialMint extends string,
-  TAccountPayoutUnderlyingMint extends string,
-  TAccountBatchPayoutTokenAccount extends string,
-  TAccountPayoutMintVaultUnderlying extends string,
-  TAccountPayoutMintVaultAuthority extends string,
-  TAccountPayoutTotalSupplyAuthority extends string,
-  TAccountBatchPayoutBalanceStore extends string,
-  TAccountPayoutTotalSupplyStore extends string,
-  TAccountZamaEventAuthority extends string,
-  TAccountTransientStore extends string,
-  TAccountInstructions extends string,
-  TAccountZamaProgram extends string,
-  TAccountConfidentialTokenEventAuthority extends string,
-  TAccountConfidentialTokenProgram extends string,
-  TAccountDemoVaultProgram extends string,
-  TAccountTokenProgram extends string,
-  TAccountSystemProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountBatcher extends InstructionAccountInput,
+  TAccountBatch extends InstructionAccountInput,
+  TAccountBatchAuthority extends InstructionAccountInput,
+  TAccountJoinConfidentialMint extends InstructionAccountInput,
+  TAccountBatchJoinTokenAccount extends InstructionAccountInput,
+  TAccountJoinUnderlyingMint extends InstructionAccountInput,
+  TAccountJoinMintVaultUnderlying extends InstructionAccountInput,
+  TAccountJoinMintVaultAuthority extends InstructionAccountInput,
+  TAccountBatchJoinUnderlying extends InstructionAccountInput,
+  TAccountBatchBurnedAmountStore extends InstructionAccountInput,
+  TAccountPendingBurn extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput,
+  TAccountVault extends InstructionAccountInput,
+  TAccountVaultAuthority extends InstructionAccountInput,
+  TAccountVaultTokenAccount extends InstructionAccountInput,
+  TAccountBatchPayoutUnderlying extends InstructionAccountInput,
+  TAccountPayoutConfidentialMint extends InstructionAccountInput,
+  TAccountPayoutUnderlyingMint extends InstructionAccountInput,
+  TAccountBatchPayoutTokenAccount extends InstructionAccountInput,
+  TAccountPayoutMintVaultUnderlying extends InstructionAccountInput,
+  TAccountPayoutMintVaultAuthority extends InstructionAccountInput,
+  TAccountPayoutTotalSupplyAuthority extends InstructionAccountInput,
+  TAccountBatchPayoutBalanceStore extends InstructionAccountInput,
+  TAccountPayoutTotalSupplyStore extends InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountConfidentialTokenEventAuthority extends InstructionAccountInput,
+  TAccountConfidentialTokenProgram extends InstructionAccountInput,
+  TAccountDemoVaultProgram extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: SettleAsyncInput<
@@ -408,146 +410,274 @@ export async function getSettleInstructionAsync<
 ): Promise<
   SettleInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountBatcher,
-    TAccountBatch,
-    TAccountBatchAuthority,
-    TAccountJoinConfidentialMint,
-    TAccountBatchJoinTokenAccount,
-    TAccountJoinUnderlyingMint,
-    TAccountJoinMintVaultUnderlying,
-    TAccountJoinMintVaultAuthority,
-    TAccountBatchJoinUnderlying,
-    TAccountBatchBurnedAmountStore,
-    TAccountPendingBurn,
-    TAccountHostConfig,
-    TAccountKmsContext,
-    TAccountVault,
-    TAccountVaultAuthority,
-    TAccountVaultTokenAccount,
-    TAccountBatchPayoutUnderlying,
-    TAccountPayoutConfidentialMint,
-    TAccountPayoutUnderlyingMint,
-    TAccountBatchPayoutTokenAccount,
-    TAccountPayoutMintVaultUnderlying,
-    TAccountPayoutMintVaultAuthority,
-    TAccountPayoutTotalSupplyAuthority,
-    TAccountBatchPayoutBalanceStore,
-    TAccountPayoutTotalSupplyStore,
-    TAccountZamaEventAuthority,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaProgram,
-    TAccountConfidentialTokenEventAuthority,
-    TAccountConfidentialTokenProgram,
-    TAccountDemoVaultProgram,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
+    ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
+    ResolvedInstructionAccountMeta<TAccountBatchAuthority, InstructionAccountInputAddress<TAccountBatchAuthority>>,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinConfidentialMint,
+      InstructionAccountInputAddress<TAccountJoinConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchJoinTokenAccount,
+      InstructionAccountInputAddress<TAccountBatchJoinTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinUnderlyingMint,
+      InstructionAccountInputAddress<TAccountJoinUnderlyingMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintVaultUnderlying,
+      InstructionAccountInputAddress<TAccountJoinMintVaultUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintVaultAuthority,
+      InstructionAccountInputAddress<TAccountJoinMintVaultAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchJoinUnderlying,
+      InstructionAccountInputAddress<TAccountBatchJoinUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchBurnedAmountStore,
+      InstructionAccountInputAddress<TAccountBatchBurnedAmountStore>
+    >,
+    ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+    ResolvedInstructionAccountMeta<TAccountVault, InstructionAccountInputAddress<TAccountVault>>,
+    ResolvedInstructionAccountMeta<TAccountVaultAuthority, InstructionAccountInputAddress<TAccountVaultAuthority>>,
+    ResolvedInstructionAccountMeta<
+      TAccountVaultTokenAccount,
+      InstructionAccountInputAddress<TAccountVaultTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchPayoutUnderlying,
+      InstructionAccountInputAddress<TAccountBatchPayoutUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutConfidentialMint,
+      InstructionAccountInputAddress<TAccountPayoutConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutUnderlyingMint,
+      InstructionAccountInputAddress<TAccountPayoutUnderlyingMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchPayoutTokenAccount,
+      InstructionAccountInputAddress<TAccountBatchPayoutTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintVaultUnderlying,
+      InstructionAccountInputAddress<TAccountPayoutMintVaultUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintVaultAuthority,
+      InstructionAccountInputAddress<TAccountPayoutMintVaultAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountPayoutTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchPayoutBalanceStore,
+      InstructionAccountInputAddress<TAccountBatchPayoutBalanceStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutTotalSupplyStore,
+      InstructionAccountInputAddress<TAccountPayoutTotalSupplyStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountConfidentialTokenEventAuthority,
+      InstructionAccountInputAddress<TAccountConfidentialTokenEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountConfidentialTokenProgram,
+      InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
+    >,
+    ResolvedInstructionAccountMeta<TAccountDemoVaultProgram, InstructionAccountInputAddress<TAccountDemoVaultProgram>>,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    batcher: { value: input.batcher ?? null, isWritable: false },
-    batch: { value: input.batch ?? null, isWritable: true },
-    batchAuthority: { value: input.batchAuthority ?? null, isWritable: true },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    batcher: {
+      value: input.batcher ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    batch: { value: input.batch ?? null, isSigner: false, isWritable: true },
+    batchAuthority: {
+      value: input.batchAuthority ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     joinConfidentialMint: {
       value: input.joinConfidentialMint ?? null,
+      isSigner: false,
       isWritable: false,
     },
     batchJoinTokenAccount: {
       value: input.batchJoinTokenAccount ?? null,
+      isSigner: false,
       isWritable: false,
     },
     joinUnderlyingMint: {
       value: input.joinUnderlyingMint ?? null,
+      isSigner: false,
       isWritable: true,
     },
     joinMintVaultUnderlying: {
       value: input.joinMintVaultUnderlying ?? null,
+      isSigner: false,
       isWritable: true,
     },
     joinMintVaultAuthority: {
       value: input.joinMintVaultAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     batchJoinUnderlying: {
       value: input.batchJoinUnderlying ?? null,
+      isSigner: false,
       isWritable: true,
     },
     batchBurnedAmountStore: {
       value: input.batchBurnedAmountStore ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    kmsContext: { value: input.kmsContext ?? null, isWritable: false },
-    vault: { value: input.vault ?? null, isWritable: false },
-    vaultAuthority: { value: input.vaultAuthority ?? null, isWritable: false },
+    pendingBurn: {
+      value: input.pendingBurn ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    kmsContext: {
+      value: input.kmsContext ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    vault: { value: input.vault ?? null, isSigner: false, isWritable: false },
+    vaultAuthority: {
+      value: input.vaultAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     vaultTokenAccount: {
       value: input.vaultTokenAccount ?? null,
+      isSigner: false,
       isWritable: true,
     },
     batchPayoutUnderlying: {
       value: input.batchPayoutUnderlying ?? null,
+      isSigner: false,
       isWritable: true,
     },
     payoutConfidentialMint: {
       value: input.payoutConfidentialMint ?? null,
+      isSigner: false,
       isWritable: true,
     },
     payoutUnderlyingMint: {
       value: input.payoutUnderlyingMint ?? null,
+      isSigner: false,
       isWritable: true,
     },
     batchPayoutTokenAccount: {
       value: input.batchPayoutTokenAccount ?? null,
+      isSigner: false,
       isWritable: true,
     },
     payoutMintVaultUnderlying: {
       value: input.payoutMintVaultUnderlying ?? null,
+      isSigner: false,
       isWritable: true,
     },
     payoutMintVaultAuthority: {
       value: input.payoutMintVaultAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     payoutTotalSupplyAuthority: {
       value: input.payoutTotalSupplyAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     batchPayoutBalanceStore: {
       value: input.batchPayoutBalanceStore ?? null,
+      isSigner: false,
       isWritable: true,
     },
     payoutTotalSupplyStore: {
       value: input.payoutTotalSupplyStore ?? null,
+      isSigner: false,
       isWritable: true,
     },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    transientStore: { value: input.transientStore ?? null, isWritable: true },
-    instructions: { value: input.instructions ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
+    transientStore: {
+      value: input.transientStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    instructions: {
+      value: input.instructions ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     confidentialTokenEventAuthority: {
       value: input.confidentialTokenEventAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     confidentialTokenProgram: {
       value: input.confidentialTokenProgram ?? null,
+      isSigner: false,
       isWritable: false,
     },
     demoVaultProgram: {
       value: input.demoVaultProgram ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -556,28 +686,20 @@ export async function getSettleInstructionAsync<
 
   // Resolve default values.
   if (!accounts.batchAuthority.value) {
-    accounts.batchAuthority.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([98, 97, 116, 99, 104, 45, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
-        ),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('batch', accounts.batch.value)),
-      ],
-    });
+    accounts.batchAuthority.value = await findBatchAuthorityPda(
+      {
+        batch: getAddressFromResolvedInstructionAccount('batch', accounts.batch.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.batchJoinUnderlying.value) {
-    accounts.batchJoinUnderlying.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([
-            98, 97, 116, 99, 104, 45, 106, 111, 105, 110, 45, 117, 110, 100, 101, 114, 108, 121, 105, 110, 103,
-          ]),
-        ),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('batch', accounts.batch.value)),
-      ],
-    });
+    accounts.batchJoinUnderlying.value = await findBatchJoinUnderlyingPda(
+      {
+        batch: getAddressFromResolvedInstructionAccount('batch', accounts.batch.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
@@ -589,17 +711,12 @@ export async function getSettleInstructionAsync<
     });
   }
   if (!accounts.batchPayoutUnderlying.value) {
-    accounts.batchPayoutUnderlying.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([
-            98, 97, 116, 99, 104, 45, 112, 97, 121, 111, 117, 116, 45, 117, 110, 100, 101, 114, 108, 121, 105, 110, 103,
-          ]),
-        ),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('batch', accounts.batch.value)),
-      ],
-    });
+    accounts.batchPayoutUnderlying.value = await findBatchPayoutUnderlyingPda(
+      {
+        batch: getAddressFromResolvedInstructionAccount('batch', accounts.batch.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.zamaEventAuthority.value) {
     accounts.zamaEventAuthority.value = await findEventAuthorityPda({
@@ -622,7 +739,6 @@ export async function getSettleInstructionAsync<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -665,147 +781,207 @@ export async function getSettleInstructionAsync<
     programAddress,
   } as SettleInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountBatcher,
-    TAccountBatch,
-    TAccountBatchAuthority,
-    TAccountJoinConfidentialMint,
-    TAccountBatchJoinTokenAccount,
-    TAccountJoinUnderlyingMint,
-    TAccountJoinMintVaultUnderlying,
-    TAccountJoinMintVaultAuthority,
-    TAccountBatchJoinUnderlying,
-    TAccountBatchBurnedAmountStore,
-    TAccountPendingBurn,
-    TAccountHostConfig,
-    TAccountKmsContext,
-    TAccountVault,
-    TAccountVaultAuthority,
-    TAccountVaultTokenAccount,
-    TAccountBatchPayoutUnderlying,
-    TAccountPayoutConfidentialMint,
-    TAccountPayoutUnderlyingMint,
-    TAccountBatchPayoutTokenAccount,
-    TAccountPayoutMintVaultUnderlying,
-    TAccountPayoutMintVaultAuthority,
-    TAccountPayoutTotalSupplyAuthority,
-    TAccountBatchPayoutBalanceStore,
-    TAccountPayoutTotalSupplyStore,
-    TAccountZamaEventAuthority,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaProgram,
-    TAccountConfidentialTokenEventAuthority,
-    TAccountConfidentialTokenProgram,
-    TAccountDemoVaultProgram,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
+    ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
+    ResolvedInstructionAccountMeta<TAccountBatchAuthority, InstructionAccountInputAddress<TAccountBatchAuthority>>,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinConfidentialMint,
+      InstructionAccountInputAddress<TAccountJoinConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchJoinTokenAccount,
+      InstructionAccountInputAddress<TAccountBatchJoinTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinUnderlyingMint,
+      InstructionAccountInputAddress<TAccountJoinUnderlyingMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintVaultUnderlying,
+      InstructionAccountInputAddress<TAccountJoinMintVaultUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintVaultAuthority,
+      InstructionAccountInputAddress<TAccountJoinMintVaultAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchJoinUnderlying,
+      InstructionAccountInputAddress<TAccountBatchJoinUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchBurnedAmountStore,
+      InstructionAccountInputAddress<TAccountBatchBurnedAmountStore>
+    >,
+    ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+    ResolvedInstructionAccountMeta<TAccountVault, InstructionAccountInputAddress<TAccountVault>>,
+    ResolvedInstructionAccountMeta<TAccountVaultAuthority, InstructionAccountInputAddress<TAccountVaultAuthority>>,
+    ResolvedInstructionAccountMeta<
+      TAccountVaultTokenAccount,
+      InstructionAccountInputAddress<TAccountVaultTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchPayoutUnderlying,
+      InstructionAccountInputAddress<TAccountBatchPayoutUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutConfidentialMint,
+      InstructionAccountInputAddress<TAccountPayoutConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutUnderlyingMint,
+      InstructionAccountInputAddress<TAccountPayoutUnderlyingMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchPayoutTokenAccount,
+      InstructionAccountInputAddress<TAccountBatchPayoutTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintVaultUnderlying,
+      InstructionAccountInputAddress<TAccountPayoutMintVaultUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintVaultAuthority,
+      InstructionAccountInputAddress<TAccountPayoutMintVaultAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountPayoutTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchPayoutBalanceStore,
+      InstructionAccountInputAddress<TAccountBatchPayoutBalanceStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutTotalSupplyStore,
+      InstructionAccountInputAddress<TAccountPayoutTotalSupplyStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountConfidentialTokenEventAuthority,
+      InstructionAccountInputAddress<TAccountConfidentialTokenEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountConfidentialTokenProgram,
+      InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
+    >,
+    ResolvedInstructionAccountMeta<TAccountDemoVaultProgram, InstructionAccountInputAddress<TAccountDemoVaultProgram>>,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 
 export type SettleInput<
-  TAccountPayer extends string = string,
-  TAccountBatcher extends string = string,
-  TAccountBatch extends string = string,
-  TAccountBatchAuthority extends string = string,
-  TAccountJoinConfidentialMint extends string = string,
-  TAccountBatchJoinTokenAccount extends string = string,
-  TAccountJoinUnderlyingMint extends string = string,
-  TAccountJoinMintVaultUnderlying extends string = string,
-  TAccountJoinMintVaultAuthority extends string = string,
-  TAccountBatchJoinUnderlying extends string = string,
-  TAccountBatchBurnedAmountStore extends string = string,
-  TAccountPendingBurn extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountKmsContext extends string = string,
-  TAccountVault extends string = string,
-  TAccountVaultAuthority extends string = string,
-  TAccountVaultTokenAccount extends string = string,
-  TAccountBatchPayoutUnderlying extends string = string,
-  TAccountPayoutConfidentialMint extends string = string,
-  TAccountPayoutUnderlyingMint extends string = string,
-  TAccountBatchPayoutTokenAccount extends string = string,
-  TAccountPayoutMintVaultUnderlying extends string = string,
-  TAccountPayoutMintVaultAuthority extends string = string,
-  TAccountPayoutTotalSupplyAuthority extends string = string,
-  TAccountBatchPayoutBalanceStore extends string = string,
-  TAccountPayoutTotalSupplyStore extends string = string,
-  TAccountZamaEventAuthority extends string = string,
-  TAccountTransientStore extends string = string,
-  TAccountInstructions extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountConfidentialTokenEventAuthority extends string = string,
-  TAccountConfidentialTokenProgram extends string = string,
-  TAccountDemoVaultProgram extends string = string,
-  TAccountTokenProgram extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountBatcher extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatch extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinConfidentialMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchJoinTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinMintVaultUnderlying extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinMintVaultAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchJoinUnderlying extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchBurnedAmountStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPendingBurn extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVault extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVaultAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVaultTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchPayoutUnderlying extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutConfidentialMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchPayoutTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintVaultUnderlying extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintVaultAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchPayoutBalanceStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountConfidentialTokenEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountConfidentialTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountDemoVaultProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays the batch authority funding. Anyone. */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /** Batcher config (carries the direction). */
-  batcher: Address<TAccountBatcher>;
+  batcher: TAccountBatcher;
   /** The dispatched batch being settled. */
-  batch: Address<TAccountBatch>;
+  batch: TAccountBatch;
   /**
    * depositor/withdrawer, and wrap owner via invoke_signed. Receives
    * funding for the rent the wrap execution (and any other owner-charged CPIs)
    * charge to the owner; redemption closes the already-open pending burn.
    */
-  batchAuthority: Address<TAccountBatchAuthority>;
+  batchAuthority: TAccountBatchAuthority;
   /** Confidential mint the batch total was burned on. */
-  joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
-  batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
+  joinConfidentialMint: TAccountJoinConfidentialMint;
+  batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
   /**
    * SPL mint the join confidential mint wraps (vault underlying for deposit
    * batchers, vault shares for redeem batchers). Mutable because it is the
    * vault share mint on the redeem direction (phase 2 burns from it).
    */
-  joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
+  joinUnderlyingMint: TAccountJoinUnderlyingMint;
   /** by the token CPI. */
-  joinMintVaultUnderlying: Address<TAccountJoinMintVaultUnderlying>;
-  joinMintVaultAuthority: Address<TAccountJoinMintVaultAuthority>;
+  joinMintVaultUnderlying: TAccountJoinMintVaultUnderlying;
+  joinMintVaultAuthority: TAccountJoinMintVaultAuthority;
   /** Batch's plain SPL account receiving the redeemed batch total. */
-  batchJoinUnderlying: Address<TAccountBatchJoinUnderlying>;
-  batchBurnedAmountStore: Address<TAccountBatchBurnedAmountStore>;
-  pendingBurn: Address<TAccountPendingBurn>;
-  hostConfig: Address<TAccountHostConfig>;
+  batchJoinUnderlying: TAccountBatchJoinUnderlying;
+  batchBurnedAmountStore: TAccountBatchBurnedAmountStore;
+  pendingBurn: TAccountPendingBurn;
+  hostConfig: TAccountHostConfig;
   /** verifier CPI. */
-  kmsContext: Address<TAccountKmsContext>;
+  kmsContext: TAccountKmsContext;
   /** Public vault the batcher fronts. */
-  vault: Address<TAccountVault>;
-  vaultAuthority: Address<TAccountVaultAuthority>;
-  vaultTokenAccount: Address<TAccountVaultTokenAccount>;
+  vault: TAccountVault;
+  vaultAuthority: TAccountVaultAuthority;
+  vaultTokenAccount: TAccountVaultTokenAccount;
   /** Batch's plain SPL account receiving the vault phase's output. */
-  batchPayoutUnderlying: Address<TAccountBatchPayoutUnderlying>;
+  batchPayoutUnderlying: TAccountBatchPayoutUnderlying;
   /** Confidential mint claims pay out in. */
-  payoutConfidentialMint: Address<TAccountPayoutConfidentialMint>;
+  payoutConfidentialMint: TAccountPayoutConfidentialMint;
   /**
    * SPL mint the payout confidential mint wraps (vault shares for deposit
    * batchers, vault underlying for redeem batchers). Mutable because it is
    * the vault share mint on the deposit direction (phase 2 mints to it).
    */
-  payoutUnderlyingMint: Address<TAccountPayoutUnderlyingMint>;
-  batchPayoutTokenAccount: Address<TAccountBatchPayoutTokenAccount>;
+  payoutUnderlyingMint: TAccountPayoutUnderlyingMint;
+  batchPayoutTokenAccount: TAccountBatchPayoutTokenAccount;
   /** by the token CPI. */
-  payoutMintVaultUnderlying: Address<TAccountPayoutMintVaultUnderlying>;
-  payoutMintVaultAuthority: Address<TAccountPayoutMintVaultAuthority>;
-  payoutTotalSupplyAuthority: Address<TAccountPayoutTotalSupplyAuthority>;
-  batchPayoutBalanceStore: Address<TAccountBatchPayoutBalanceStore>;
-  payoutTotalSupplyStore: Address<TAccountPayoutTotalSupplyStore>;
-  zamaEventAuthority: Address<TAccountZamaEventAuthority>;
-  transientStore: Address<TAccountTransientStore>;
-  instructions: Address<TAccountInstructions>;
+  payoutMintVaultUnderlying: TAccountPayoutMintVaultUnderlying;
+  payoutMintVaultAuthority: TAccountPayoutMintVaultAuthority;
+  payoutTotalSupplyAuthority: TAccountPayoutTotalSupplyAuthority;
+  batchPayoutBalanceStore: TAccountBatchPayoutBalanceStore;
+  payoutTotalSupplyStore: TAccountPayoutTotalSupplyStore;
+  zamaEventAuthority: TAccountZamaEventAuthority;
+  transientStore: TAccountTransientStore;
+  instructions: TAccountInstructions;
   /** ZamaHost program (FHE compute + ACL). */
-  zamaProgram?: Address<TAccountZamaProgram>;
-  confidentialTokenEventAuthority: Address<TAccountConfidentialTokenEventAuthority>;
+  zamaProgram?: TAccountZamaProgram;
+  confidentialTokenEventAuthority: TAccountConfidentialTokenEventAuthority;
   /** confidential-token program composed via CPI. */
-  confidentialTokenProgram?: Address<TAccountConfidentialTokenProgram>;
+  confidentialTokenProgram?: TAccountConfidentialTokenProgram;
   /** demo-vault program composed via CPI. */
-  demoVaultProgram?: Address<TAccountDemoVaultProgram>;
+  demoVaultProgram?: TAccountDemoVaultProgram;
   /** SPL token program. */
-  tokenProgram?: Address<TAccountTokenProgram>;
+  tokenProgram?: TAccountTokenProgram;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
   cleartextTotal: SettleInstructionDataArgs['cleartextTotal'];
   signatures: SettleInstructionDataArgs['signatures'];
   extraData: SettleInstructionDataArgs['extraData'];
@@ -813,41 +989,41 @@ export type SettleInput<
 };
 
 export function getSettleInstruction<
-  TAccountPayer extends string,
-  TAccountBatcher extends string,
-  TAccountBatch extends string,
-  TAccountBatchAuthority extends string,
-  TAccountJoinConfidentialMint extends string,
-  TAccountBatchJoinTokenAccount extends string,
-  TAccountJoinUnderlyingMint extends string,
-  TAccountJoinMintVaultUnderlying extends string,
-  TAccountJoinMintVaultAuthority extends string,
-  TAccountBatchJoinUnderlying extends string,
-  TAccountBatchBurnedAmountStore extends string,
-  TAccountPendingBurn extends string,
-  TAccountHostConfig extends string,
-  TAccountKmsContext extends string,
-  TAccountVault extends string,
-  TAccountVaultAuthority extends string,
-  TAccountVaultTokenAccount extends string,
-  TAccountBatchPayoutUnderlying extends string,
-  TAccountPayoutConfidentialMint extends string,
-  TAccountPayoutUnderlyingMint extends string,
-  TAccountBatchPayoutTokenAccount extends string,
-  TAccountPayoutMintVaultUnderlying extends string,
-  TAccountPayoutMintVaultAuthority extends string,
-  TAccountPayoutTotalSupplyAuthority extends string,
-  TAccountBatchPayoutBalanceStore extends string,
-  TAccountPayoutTotalSupplyStore extends string,
-  TAccountZamaEventAuthority extends string,
-  TAccountTransientStore extends string,
-  TAccountInstructions extends string,
-  TAccountZamaProgram extends string,
-  TAccountConfidentialTokenEventAuthority extends string,
-  TAccountConfidentialTokenProgram extends string,
-  TAccountDemoVaultProgram extends string,
-  TAccountTokenProgram extends string,
-  TAccountSystemProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountBatcher extends InstructionAccountInput,
+  TAccountBatch extends InstructionAccountInput,
+  TAccountBatchAuthority extends InstructionAccountInput,
+  TAccountJoinConfidentialMint extends InstructionAccountInput,
+  TAccountBatchJoinTokenAccount extends InstructionAccountInput,
+  TAccountJoinUnderlyingMint extends InstructionAccountInput,
+  TAccountJoinMintVaultUnderlying extends InstructionAccountInput,
+  TAccountJoinMintVaultAuthority extends InstructionAccountInput,
+  TAccountBatchJoinUnderlying extends InstructionAccountInput,
+  TAccountBatchBurnedAmountStore extends InstructionAccountInput,
+  TAccountPendingBurn extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput,
+  TAccountVault extends InstructionAccountInput,
+  TAccountVaultAuthority extends InstructionAccountInput,
+  TAccountVaultTokenAccount extends InstructionAccountInput,
+  TAccountBatchPayoutUnderlying extends InstructionAccountInput,
+  TAccountPayoutConfidentialMint extends InstructionAccountInput,
+  TAccountPayoutUnderlyingMint extends InstructionAccountInput,
+  TAccountBatchPayoutTokenAccount extends InstructionAccountInput,
+  TAccountPayoutMintVaultUnderlying extends InstructionAccountInput,
+  TAccountPayoutMintVaultAuthority extends InstructionAccountInput,
+  TAccountPayoutTotalSupplyAuthority extends InstructionAccountInput,
+  TAccountBatchPayoutBalanceStore extends InstructionAccountInput,
+  TAccountPayoutTotalSupplyStore extends InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountConfidentialTokenEventAuthority extends InstructionAccountInput,
+  TAccountConfidentialTokenProgram extends InstructionAccountInput,
+  TAccountDemoVaultProgram extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: SettleInput<
@@ -890,145 +1066,270 @@ export function getSettleInstruction<
   config?: { programAddress?: TProgramAddress },
 ): SettleInstruction<
   TProgramAddress,
-  TAccountPayer,
-  TAccountBatcher,
-  TAccountBatch,
-  TAccountBatchAuthority,
-  TAccountJoinConfidentialMint,
-  TAccountBatchJoinTokenAccount,
-  TAccountJoinUnderlyingMint,
-  TAccountJoinMintVaultUnderlying,
-  TAccountJoinMintVaultAuthority,
-  TAccountBatchJoinUnderlying,
-  TAccountBatchBurnedAmountStore,
-  TAccountPendingBurn,
-  TAccountHostConfig,
-  TAccountKmsContext,
-  TAccountVault,
-  TAccountVaultAuthority,
-  TAccountVaultTokenAccount,
-  TAccountBatchPayoutUnderlying,
-  TAccountPayoutConfidentialMint,
-  TAccountPayoutUnderlyingMint,
-  TAccountBatchPayoutTokenAccount,
-  TAccountPayoutMintVaultUnderlying,
-  TAccountPayoutMintVaultAuthority,
-  TAccountPayoutTotalSupplyAuthority,
-  TAccountBatchPayoutBalanceStore,
-  TAccountPayoutTotalSupplyStore,
-  TAccountZamaEventAuthority,
-  TAccountTransientStore,
-  TAccountInstructions,
-  TAccountZamaProgram,
-  TAccountConfidentialTokenEventAuthority,
-  TAccountConfidentialTokenProgram,
-  TAccountDemoVaultProgram,
-  TAccountTokenProgram,
-  TAccountSystemProgram
+  ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+  ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
+  ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
+  ResolvedInstructionAccountMeta<TAccountBatchAuthority, InstructionAccountInputAddress<TAccountBatchAuthority>>,
+  ResolvedInstructionAccountMeta<
+    TAccountJoinConfidentialMint,
+    InstructionAccountInputAddress<TAccountJoinConfidentialMint>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBatchJoinTokenAccount,
+    InstructionAccountInputAddress<TAccountBatchJoinTokenAccount>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountJoinUnderlyingMint,
+    InstructionAccountInputAddress<TAccountJoinUnderlyingMint>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountJoinMintVaultUnderlying,
+    InstructionAccountInputAddress<TAccountJoinMintVaultUnderlying>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountJoinMintVaultAuthority,
+    InstructionAccountInputAddress<TAccountJoinMintVaultAuthority>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBatchJoinUnderlying,
+    InstructionAccountInputAddress<TAccountBatchJoinUnderlying>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBatchBurnedAmountStore,
+    InstructionAccountInputAddress<TAccountBatchBurnedAmountStore>
+  >,
+  ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+  ResolvedInstructionAccountMeta<TAccountVault, InstructionAccountInputAddress<TAccountVault>>,
+  ResolvedInstructionAccountMeta<TAccountVaultAuthority, InstructionAccountInputAddress<TAccountVaultAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountVaultTokenAccount, InstructionAccountInputAddress<TAccountVaultTokenAccount>>,
+  ResolvedInstructionAccountMeta<
+    TAccountBatchPayoutUnderlying,
+    InstructionAccountInputAddress<TAccountBatchPayoutUnderlying>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutConfidentialMint,
+    InstructionAccountInputAddress<TAccountPayoutConfidentialMint>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutUnderlyingMint,
+    InstructionAccountInputAddress<TAccountPayoutUnderlyingMint>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBatchPayoutTokenAccount,
+    InstructionAccountInputAddress<TAccountBatchPayoutTokenAccount>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutMintVaultUnderlying,
+    InstructionAccountInputAddress<TAccountPayoutMintVaultUnderlying>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutMintVaultAuthority,
+    InstructionAccountInputAddress<TAccountPayoutMintVaultAuthority>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutTotalSupplyAuthority,
+    InstructionAccountInputAddress<TAccountPayoutTotalSupplyAuthority>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountBatchPayoutBalanceStore,
+    InstructionAccountInputAddress<TAccountBatchPayoutBalanceStore>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutTotalSupplyStore,
+    InstructionAccountInputAddress<TAccountPayoutTotalSupplyStore>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountZamaEventAuthority,
+    InstructionAccountInputAddress<TAccountZamaEventAuthority>
+  >,
+  ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+  ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+  ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+  ResolvedInstructionAccountMeta<
+    TAccountConfidentialTokenEventAuthority,
+    InstructionAccountInputAddress<TAccountConfidentialTokenEventAuthority>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountConfidentialTokenProgram,
+    InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
+  >,
+  ResolvedInstructionAccountMeta<TAccountDemoVaultProgram, InstructionAccountInputAddress<TAccountDemoVaultProgram>>,
+  ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    batcher: { value: input.batcher ?? null, isWritable: false },
-    batch: { value: input.batch ?? null, isWritable: true },
-    batchAuthority: { value: input.batchAuthority ?? null, isWritable: true },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    batcher: {
+      value: input.batcher ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    batch: { value: input.batch ?? null, isSigner: false, isWritable: true },
+    batchAuthority: {
+      value: input.batchAuthority ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     joinConfidentialMint: {
       value: input.joinConfidentialMint ?? null,
+      isSigner: false,
       isWritable: false,
     },
     batchJoinTokenAccount: {
       value: input.batchJoinTokenAccount ?? null,
+      isSigner: false,
       isWritable: false,
     },
     joinUnderlyingMint: {
       value: input.joinUnderlyingMint ?? null,
+      isSigner: false,
       isWritable: true,
     },
     joinMintVaultUnderlying: {
       value: input.joinMintVaultUnderlying ?? null,
+      isSigner: false,
       isWritable: true,
     },
     joinMintVaultAuthority: {
       value: input.joinMintVaultAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     batchJoinUnderlying: {
       value: input.batchJoinUnderlying ?? null,
+      isSigner: false,
       isWritable: true,
     },
     batchBurnedAmountStore: {
       value: input.batchBurnedAmountStore ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    kmsContext: { value: input.kmsContext ?? null, isWritable: false },
-    vault: { value: input.vault ?? null, isWritable: false },
-    vaultAuthority: { value: input.vaultAuthority ?? null, isWritable: false },
+    pendingBurn: {
+      value: input.pendingBurn ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    kmsContext: {
+      value: input.kmsContext ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    vault: { value: input.vault ?? null, isSigner: false, isWritable: false },
+    vaultAuthority: {
+      value: input.vaultAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     vaultTokenAccount: {
       value: input.vaultTokenAccount ?? null,
+      isSigner: false,
       isWritable: true,
     },
     batchPayoutUnderlying: {
       value: input.batchPayoutUnderlying ?? null,
+      isSigner: false,
       isWritable: true,
     },
     payoutConfidentialMint: {
       value: input.payoutConfidentialMint ?? null,
+      isSigner: false,
       isWritable: true,
     },
     payoutUnderlyingMint: {
       value: input.payoutUnderlyingMint ?? null,
+      isSigner: false,
       isWritable: true,
     },
     batchPayoutTokenAccount: {
       value: input.batchPayoutTokenAccount ?? null,
+      isSigner: false,
       isWritable: true,
     },
     payoutMintVaultUnderlying: {
       value: input.payoutMintVaultUnderlying ?? null,
+      isSigner: false,
       isWritable: true,
     },
     payoutMintVaultAuthority: {
       value: input.payoutMintVaultAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     payoutTotalSupplyAuthority: {
       value: input.payoutTotalSupplyAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     batchPayoutBalanceStore: {
       value: input.batchPayoutBalanceStore ?? null,
+      isSigner: false,
       isWritable: true,
     },
     payoutTotalSupplyStore: {
       value: input.payoutTotalSupplyStore ?? null,
+      isSigner: false,
       isWritable: true,
     },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    transientStore: { value: input.transientStore ?? null, isWritable: true },
-    instructions: { value: input.instructions ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
+    transientStore: {
+      value: input.transientStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    instructions: {
+      value: input.instructions ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     confidentialTokenEventAuthority: {
       value: input.confidentialTokenEventAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     confidentialTokenProgram: {
       value: input.confidentialTokenProgram ?? null,
+      isSigner: false,
       isWritable: false,
     },
     demoVaultProgram: {
       value: input.demoVaultProgram ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -1056,7 +1357,6 @@ export function getSettleInstruction<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -1099,41 +1399,101 @@ export function getSettleInstruction<
     programAddress,
   } as SettleInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountBatcher,
-    TAccountBatch,
-    TAccountBatchAuthority,
-    TAccountJoinConfidentialMint,
-    TAccountBatchJoinTokenAccount,
-    TAccountJoinUnderlyingMint,
-    TAccountJoinMintVaultUnderlying,
-    TAccountJoinMintVaultAuthority,
-    TAccountBatchJoinUnderlying,
-    TAccountBatchBurnedAmountStore,
-    TAccountPendingBurn,
-    TAccountHostConfig,
-    TAccountKmsContext,
-    TAccountVault,
-    TAccountVaultAuthority,
-    TAccountVaultTokenAccount,
-    TAccountBatchPayoutUnderlying,
-    TAccountPayoutConfidentialMint,
-    TAccountPayoutUnderlyingMint,
-    TAccountBatchPayoutTokenAccount,
-    TAccountPayoutMintVaultUnderlying,
-    TAccountPayoutMintVaultAuthority,
-    TAccountPayoutTotalSupplyAuthority,
-    TAccountBatchPayoutBalanceStore,
-    TAccountPayoutTotalSupplyStore,
-    TAccountZamaEventAuthority,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaProgram,
-    TAccountConfidentialTokenEventAuthority,
-    TAccountConfidentialTokenProgram,
-    TAccountDemoVaultProgram,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
+    ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
+    ResolvedInstructionAccountMeta<TAccountBatchAuthority, InstructionAccountInputAddress<TAccountBatchAuthority>>,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinConfidentialMint,
+      InstructionAccountInputAddress<TAccountJoinConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchJoinTokenAccount,
+      InstructionAccountInputAddress<TAccountBatchJoinTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinUnderlyingMint,
+      InstructionAccountInputAddress<TAccountJoinUnderlyingMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintVaultUnderlying,
+      InstructionAccountInputAddress<TAccountJoinMintVaultUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintVaultAuthority,
+      InstructionAccountInputAddress<TAccountJoinMintVaultAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchJoinUnderlying,
+      InstructionAccountInputAddress<TAccountBatchJoinUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchBurnedAmountStore,
+      InstructionAccountInputAddress<TAccountBatchBurnedAmountStore>
+    >,
+    ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+    ResolvedInstructionAccountMeta<TAccountVault, InstructionAccountInputAddress<TAccountVault>>,
+    ResolvedInstructionAccountMeta<TAccountVaultAuthority, InstructionAccountInputAddress<TAccountVaultAuthority>>,
+    ResolvedInstructionAccountMeta<
+      TAccountVaultTokenAccount,
+      InstructionAccountInputAddress<TAccountVaultTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchPayoutUnderlying,
+      InstructionAccountInputAddress<TAccountBatchPayoutUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutConfidentialMint,
+      InstructionAccountInputAddress<TAccountPayoutConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutUnderlyingMint,
+      InstructionAccountInputAddress<TAccountPayoutUnderlyingMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchPayoutTokenAccount,
+      InstructionAccountInputAddress<TAccountBatchPayoutTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintVaultUnderlying,
+      InstructionAccountInputAddress<TAccountPayoutMintVaultUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintVaultAuthority,
+      InstructionAccountInputAddress<TAccountPayoutMintVaultAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountPayoutTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchPayoutBalanceStore,
+      InstructionAccountInputAddress<TAccountBatchPayoutBalanceStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutTotalSupplyStore,
+      InstructionAccountInputAddress<TAccountPayoutTotalSupplyStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountConfidentialTokenEventAuthority,
+      InstructionAccountInputAddress<TAccountConfidentialTokenEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountConfidentialTokenProgram,
+      InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
+    >,
+    ResolvedInstructionAccountMeta<TAccountDemoVaultProgram, InstructionAccountInputAddress<TAccountDemoVaultProgram>>,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 

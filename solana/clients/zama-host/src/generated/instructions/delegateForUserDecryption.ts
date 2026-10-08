@@ -14,7 +14,6 @@ import {
   getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
@@ -34,7 +33,6 @@ import {
   type ReadonlyAccount,
   type ReadonlySignerAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
@@ -42,8 +40,13 @@ import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
   getNonNullResolvedInstructionInput,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
   type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
+import { findDelegationRecordPda, findHostConfigPda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const DELEGATE_FOR_USER_DECRYPTION_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -129,37 +132,37 @@ export function getDelegateForUserDecryptionInstructionDataCodec(): FixedSizeCod
 }
 
 export type DelegateForUserDecryptionAsyncInput<
-  TAccountPayer extends string = string,
-  TAccountDelegator extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountScope extends string = string,
-  TAccountDelegationRecord extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountDelegator extends InstructionSignerInput = InstructionSignerInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountScope extends InstructionAccountInput = InstructionAccountInput,
+  TAccountDelegationRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays rent if the delegation PDA must be created. */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /** User granting delegated decrypt rights. */
-  delegator: TransactionSigner<TAccountDelegator>;
+  delegator: TAccountDelegator;
   /** Singleton config PDA. */
-  hostConfig?: Address<TAccountHostConfig>;
+  hostConfig?: TAccountHostConfig;
   /** The application's scope: an account `program` owns, or the wildcard sentinel. */
-  scope: Address<TAccountScope>;
+  scope: TAccountScope;
   /** The `delegator → delegate` record for the application, created on first grant. */
-  delegationRecord?: Address<TAccountDelegationRecord>;
+  delegationRecord?: TAccountDelegationRecord;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
   delegate: DelegateForUserDecryptionInstructionDataArgs['delegate'];
   program: DelegateForUserDecryptionInstructionDataArgs['program'];
   expiresAt: DelegateForUserDecryptionInstructionDataArgs['expiresAt'];
 };
 
 export async function getDelegateForUserDecryptionInstructionAsync<
-  TAccountPayer extends string,
-  TAccountDelegator extends string,
-  TAccountHostConfig extends string,
-  TAccountScope extends string,
-  TAccountDelegationRecord extends string,
-  TAccountSystemProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountDelegator extends InstructionSignerInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountScope extends InstructionAccountInput,
+  TAccountDelegationRecord extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
   input: DelegateForUserDecryptionAsyncInput<
@@ -174,28 +177,44 @@ export async function getDelegateForUserDecryptionInstructionAsync<
 ): Promise<
   DelegateForUserDecryptionInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountDelegator,
-    TAccountHostConfig,
-    TAccountScope,
-    TAccountDelegationRecord,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountDelegator, InstructionAccountInputAddress<TAccountDelegator>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountScope, InstructionAccountInputAddress<TAccountScope>>,
+    ResolvedInstructionAccountMeta<TAccountDelegationRecord, InstructionAccountInputAddress<TAccountDelegationRecord>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    delegator: { value: input.delegator ?? null, isWritable: false },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    scope: { value: input.scope ?? null, isWritable: false },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    delegator: {
+      value: input.delegator ?? null,
+      isSigner: true,
+      isWritable: false,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    scope: { value: input.scope ?? null, isSigner: false, isWritable: false },
     delegationRecord: {
       value: input.delegationRecord ?? null,
+      isSigner: false,
       isWritable: true,
     },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -204,33 +223,23 @@ export async function getDelegateForUserDecryptionInstructionAsync<
 
   // Resolve default values.
   if (!accounts.hostConfig.value) {
-    accounts.hostConfig.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
-    });
+    accounts.hostConfig.value = await findHostConfigPda({ programAddress });
   }
   if (!accounts.delegationRecord.value) {
-    accounts.delegationRecord.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([
-            117, 115, 101, 114, 45, 100, 101, 99, 114, 121, 112, 116, 105, 111, 110, 45, 100, 101, 108, 101, 103, 97,
-            116, 105, 111, 110,
-          ]),
-        ),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('delegator', accounts.delegator.value)),
-        getAddressEncoder().encode(getNonNullResolvedInstructionInput('delegate', args.delegate)),
-        getAddressEncoder().encode(getNonNullResolvedInstructionInput('program', args.program)),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('scope', accounts.scope.value)),
-      ],
-    });
+    accounts.delegationRecord.value = await findDelegationRecordPda(
+      {
+        delegator: getAddressFromResolvedInstructionAccount('delegator', accounts.delegator.value),
+        delegate: getNonNullResolvedInstructionInput('delegate', args.delegate),
+        program: getNonNullResolvedInstructionInput('program', args.program),
+        scope: getAddressFromResolvedInstructionAccount('scope', accounts.scope.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -246,47 +255,47 @@ export async function getDelegateForUserDecryptionInstructionAsync<
     programAddress,
   } as DelegateForUserDecryptionInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountDelegator,
-    TAccountHostConfig,
-    TAccountScope,
-    TAccountDelegationRecord,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountDelegator, InstructionAccountInputAddress<TAccountDelegator>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountScope, InstructionAccountInputAddress<TAccountScope>>,
+    ResolvedInstructionAccountMeta<TAccountDelegationRecord, InstructionAccountInputAddress<TAccountDelegationRecord>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 
 export type DelegateForUserDecryptionInput<
-  TAccountPayer extends string = string,
-  TAccountDelegator extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountScope extends string = string,
-  TAccountDelegationRecord extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountDelegator extends InstructionSignerInput = InstructionSignerInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountScope extends InstructionAccountInput = InstructionAccountInput,
+  TAccountDelegationRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays rent if the delegation PDA must be created. */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /** User granting delegated decrypt rights. */
-  delegator: TransactionSigner<TAccountDelegator>;
+  delegator: TAccountDelegator;
   /** Singleton config PDA. */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig: TAccountHostConfig;
   /** The application's scope: an account `program` owns, or the wildcard sentinel. */
-  scope: Address<TAccountScope>;
+  scope: TAccountScope;
   /** The `delegator → delegate` record for the application, created on first grant. */
-  delegationRecord: Address<TAccountDelegationRecord>;
+  delegationRecord: TAccountDelegationRecord;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
   delegate: DelegateForUserDecryptionInstructionDataArgs['delegate'];
   program: DelegateForUserDecryptionInstructionDataArgs['program'];
   expiresAt: DelegateForUserDecryptionInstructionDataArgs['expiresAt'];
 };
 
 export function getDelegateForUserDecryptionInstruction<
-  TAccountPayer extends string,
-  TAccountDelegator extends string,
-  TAccountHostConfig extends string,
-  TAccountScope extends string,
-  TAccountDelegationRecord extends string,
-  TAccountSystemProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountDelegator extends InstructionSignerInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountScope extends InstructionAccountInput,
+  TAccountDelegationRecord extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
   input: DelegateForUserDecryptionInput<
@@ -300,27 +309,43 @@ export function getDelegateForUserDecryptionInstruction<
   config?: { programAddress?: TProgramAddress },
 ): DelegateForUserDecryptionInstruction<
   TProgramAddress,
-  TAccountPayer,
-  TAccountDelegator,
-  TAccountHostConfig,
-  TAccountScope,
-  TAccountDelegationRecord,
-  TAccountSystemProgram
+  ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+  ResolvedInstructionAccountMeta<TAccountDelegator, InstructionAccountInputAddress<TAccountDelegator>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountScope, InstructionAccountInputAddress<TAccountScope>>,
+  ResolvedInstructionAccountMeta<TAccountDelegationRecord, InstructionAccountInputAddress<TAccountDelegationRecord>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    delegator: { value: input.delegator ?? null, isWritable: false },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    scope: { value: input.scope ?? null, isWritable: false },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    delegator: {
+      value: input.delegator ?? null,
+      isSigner: true,
+      isWritable: false,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    scope: { value: input.scope ?? null, isSigner: false, isWritable: false },
     delegationRecord: {
       value: input.delegationRecord ?? null,
+      isSigner: false,
       isWritable: true,
     },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -332,7 +357,6 @@ export function getDelegateForUserDecryptionInstruction<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -348,12 +372,12 @@ export function getDelegateForUserDecryptionInstruction<
     programAddress,
   } as DelegateForUserDecryptionInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountDelegator,
-    TAccountHostConfig,
-    TAccountScope,
-    TAccountDelegationRecord,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountDelegator, InstructionAccountInputAddress<TAccountDelegator>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountScope, InstructionAccountInputAddress<TAccountScope>>,
+    ResolvedInstructionAccountMeta<TAccountDelegationRecord, InstructionAccountInputAddress<TAccountDelegationRecord>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 

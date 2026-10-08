@@ -13,12 +13,10 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getAddressEncoder,
   getArrayDecoder,
   getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU32Decoder,
@@ -42,15 +40,19 @@ import {
   type ReadonlyAccount,
   type ReadonlySignerAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
 import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
   type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
+import { findBatchAuthorityPda, findJoinRecordPda } from '../pdas/index.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const JOIN_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([206, 55, 2, 106, 113, 220, 17, 163]);
@@ -214,68 +216,68 @@ export function getJoinInstructionDataCodec(): Codec<JoinInstructionDataArgs, Jo
 }
 
 export type JoinAsyncInput<
-  TAccountUser extends string = string,
-  TAccountPayer extends string = string,
-  TAccountBatcher extends string = string,
-  TAccountBatch extends string = string,
-  TAccountBatchAuthority extends string = string,
-  TAccountJoinRecord extends string = string,
-  TAccountJoinConfidentialMint extends string = string,
-  TAccountJoinUnderlyingMint extends string = string,
-  TAccountUserAta extends string = string,
-  TAccountBatchAuthorityAta extends string = string,
-  TAccountUserTokenAccount extends string = string,
-  TAccountBatchJoinTokenAccount extends string = string,
-  TAccountUserBalanceStore extends string = string,
-  TAccountBatchBalanceStore extends string = string,
-  TAccountJoinStore extends string = string,
-  TAccountTransientStore extends string = string,
-  TAccountInstructions extends string = string,
-  TAccountZamaEventAuthority extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountConfidentialTokenEventAuthority extends string = string,
-  TAccountConfidentialTokenProgram extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountUser extends InstructionSignerInput = InstructionSignerInput,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountBatcher extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatch extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinConfidentialMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountUserAta extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchAuthorityAta extends InstructionAccountInput = InstructionAccountInput,
+  TAccountUserTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchJoinTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountUserBalanceStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchBalanceStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountConfidentialTokenEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountConfidentialTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Joining user; transfer authority over their confidential balance. */
-  user: TransactionSigner<TAccountUser>;
+  user: TAccountUser;
   /**
    * Pays join-record rent, transfer output rent, and the batcher execution's
    * ACL rent.
    */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /** Batcher config. */
-  batcher: Address<TAccountBatcher>;
+  batcher: TAccountBatcher;
   /** The pending batch being joined. */
-  batch: Address<TAccountBatch>;
+  batch: TAccountBatch;
   /** Owns the batch's destination token account. */
-  batchAuthority?: Address<TAccountBatchAuthority>;
+  batchAuthority?: TAccountBatchAuthority;
   /** The user's join record for this batch; created on first join and controls its contribution Store. */
-  joinRecord?: Address<TAccountJoinRecord>;
+  joinRecord?: TAccountJoinRecord;
   /** Confidential mint users join batches with. */
-  joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
-  joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
-  userAta: Address<TAccountUserAta>;
-  batchAuthorityAta: Address<TAccountBatchAuthorityAta>;
+  joinConfidentialMint: TAccountJoinConfidentialMint;
+  joinUnderlyingMint: TAccountJoinUnderlyingMint;
+  userAta: TAccountUserAta;
+  batchAuthorityAta: TAccountBatchAuthorityAta;
   /** by the token CPI. */
-  userTokenAccount: Address<TAccountUserTokenAccount>;
+  userTokenAccount: TAccountUserTokenAccount;
   /** validated by the token CPI and pinned below. */
-  batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  userBalanceStore: Address<TAccountUserBalanceStore>;
-  batchBalanceStore: Address<TAccountBatchBalanceStore>;
-  joinStore: Address<TAccountJoinStore>;
-  transientStore: Address<TAccountTransientStore>;
-  instructions: Address<TAccountInstructions>;
-  zamaEventAuthority?: Address<TAccountZamaEventAuthority>;
+  batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
+  userBalanceStore: TAccountUserBalanceStore;
+  batchBalanceStore: TAccountBatchBalanceStore;
+  joinStore: TAccountJoinStore;
+  transientStore: TAccountTransientStore;
+  instructions: TAccountInstructions;
+  zamaEventAuthority?: TAccountZamaEventAuthority;
   /** ZamaHost program (FHE compute + ACL). */
-  zamaProgram?: Address<TAccountZamaProgram>;
-  hostConfig?: Address<TAccountHostConfig>;
-  confidentialTokenEventAuthority: Address<TAccountConfidentialTokenEventAuthority>;
+  zamaProgram?: TAccountZamaProgram;
+  hostConfig?: TAccountHostConfig;
+  confidentialTokenEventAuthority: TAccountConfidentialTokenEventAuthority;
   /** confidential-token program composed via CPI. */
-  confidentialTokenProgram?: Address<TAccountConfidentialTokenProgram>;
+  confidentialTokenProgram?: TAccountConfidentialTokenProgram;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
   inputHandle: JoinInstructionDataArgs['inputHandle'];
   ctHandles: JoinInstructionDataArgs['ctHandles'];
   handleIndex: JoinInstructionDataArgs['handleIndex'];
@@ -287,29 +289,29 @@ export type JoinAsyncInput<
 };
 
 export async function getJoinInstructionAsync<
-  TAccountUser extends string,
-  TAccountPayer extends string,
-  TAccountBatcher extends string,
-  TAccountBatch extends string,
-  TAccountBatchAuthority extends string,
-  TAccountJoinRecord extends string,
-  TAccountJoinConfidentialMint extends string,
-  TAccountJoinUnderlyingMint extends string,
-  TAccountUserAta extends string,
-  TAccountBatchAuthorityAta extends string,
-  TAccountUserTokenAccount extends string,
-  TAccountBatchJoinTokenAccount extends string,
-  TAccountUserBalanceStore extends string,
-  TAccountBatchBalanceStore extends string,
-  TAccountJoinStore extends string,
-  TAccountTransientStore extends string,
-  TAccountInstructions extends string,
-  TAccountZamaEventAuthority extends string,
-  TAccountZamaProgram extends string,
-  TAccountHostConfig extends string,
-  TAccountConfidentialTokenEventAuthority extends string,
-  TAccountConfidentialTokenProgram extends string,
-  TAccountSystemProgram extends string,
+  TAccountUser extends InstructionSignerInput,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountBatcher extends InstructionAccountInput,
+  TAccountBatch extends InstructionAccountInput,
+  TAccountBatchAuthority extends InstructionAccountInput,
+  TAccountJoinRecord extends InstructionAccountInput,
+  TAccountJoinConfidentialMint extends InstructionAccountInput,
+  TAccountJoinUnderlyingMint extends InstructionAccountInput,
+  TAccountUserAta extends InstructionAccountInput,
+  TAccountBatchAuthorityAta extends InstructionAccountInput,
+  TAccountUserTokenAccount extends InstructionAccountInput,
+  TAccountBatchJoinTokenAccount extends InstructionAccountInput,
+  TAccountUserBalanceStore extends InstructionAccountInput,
+  TAccountBatchBalanceStore extends InstructionAccountInput,
+  TAccountJoinStore extends InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountConfidentialTokenEventAuthority extends InstructionAccountInput,
+  TAccountConfidentialTokenProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: JoinAsyncInput<
@@ -341,89 +343,166 @@ export async function getJoinInstructionAsync<
 ): Promise<
   JoinInstruction<
     TProgramAddress,
-    TAccountUser,
-    TAccountPayer,
-    TAccountBatcher,
-    TAccountBatch,
-    TAccountBatchAuthority,
-    TAccountJoinRecord,
-    TAccountJoinConfidentialMint,
-    TAccountJoinUnderlyingMint,
-    TAccountUserAta,
-    TAccountBatchAuthorityAta,
-    TAccountUserTokenAccount,
-    TAccountBatchJoinTokenAccount,
-    TAccountUserBalanceStore,
-    TAccountBatchBalanceStore,
-    TAccountJoinStore,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaEventAuthority,
-    TAccountZamaProgram,
-    TAccountHostConfig,
-    TAccountConfidentialTokenEventAuthority,
-    TAccountConfidentialTokenProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountUser, InstructionAccountInputAddress<TAccountUser>>,
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
+    ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
+    ResolvedInstructionAccountMeta<TAccountBatchAuthority, InstructionAccountInputAddress<TAccountBatchAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountJoinRecord, InstructionAccountInputAddress<TAccountJoinRecord>>,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinConfidentialMint,
+      InstructionAccountInputAddress<TAccountJoinConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinUnderlyingMint,
+      InstructionAccountInputAddress<TAccountJoinUnderlyingMint>
+    >,
+    ResolvedInstructionAccountMeta<TAccountUserAta, InstructionAccountInputAddress<TAccountUserAta>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchAuthorityAta,
+      InstructionAccountInputAddress<TAccountBatchAuthorityAta>
+    >,
+    ResolvedInstructionAccountMeta<TAccountUserTokenAccount, InstructionAccountInputAddress<TAccountUserTokenAccount>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchJoinTokenAccount,
+      InstructionAccountInputAddress<TAccountBatchJoinTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<TAccountUserBalanceStore, InstructionAccountInputAddress<TAccountUserBalanceStore>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchBalanceStore,
+      InstructionAccountInputAddress<TAccountBatchBalanceStore>
+    >,
+    ResolvedInstructionAccountMeta<TAccountJoinStore, InstructionAccountInputAddress<TAccountJoinStore>>,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<
+      TAccountConfidentialTokenEventAuthority,
+      InstructionAccountInputAddress<TAccountConfidentialTokenEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountConfidentialTokenProgram,
+      InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
+    >,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    user: { value: input.user ?? null, isWritable: false },
-    payer: { value: input.payer ?? null, isWritable: true },
-    batcher: { value: input.batcher ?? null, isWritable: false },
-    batch: { value: input.batch ?? null, isWritable: true },
-    batchAuthority: { value: input.batchAuthority ?? null, isWritable: false },
-    joinRecord: { value: input.joinRecord ?? null, isWritable: true },
+    user: { value: input.user ?? null, isSigner: true, isWritable: false },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    batcher: {
+      value: input.batcher ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    batch: { value: input.batch ?? null, isSigner: false, isWritable: true },
+    batchAuthority: {
+      value: input.batchAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    joinRecord: {
+      value: input.joinRecord ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     joinConfidentialMint: {
       value: input.joinConfidentialMint ?? null,
+      isSigner: false,
       isWritable: false,
     },
     joinUnderlyingMint: {
       value: input.joinUnderlyingMint ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    userAta: { value: input.userAta ?? null, isWritable: false },
+    userAta: {
+      value: input.userAta ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     batchAuthorityAta: {
       value: input.batchAuthorityAta ?? null,
+      isSigner: false,
       isWritable: false,
     },
     userTokenAccount: {
       value: input.userTokenAccount ?? null,
+      isSigner: false,
       isWritable: true,
     },
     batchJoinTokenAccount: {
       value: input.batchJoinTokenAccount ?? null,
+      isSigner: false,
       isWritable: true,
     },
     userBalanceStore: {
       value: input.userBalanceStore ?? null,
+      isSigner: false,
       isWritable: true,
     },
     batchBalanceStore: {
       value: input.batchBalanceStore ?? null,
+      isSigner: false,
       isWritable: true,
     },
-    joinStore: { value: input.joinStore ?? null, isWritable: true },
-    transientStore: { value: input.transientStore ?? null, isWritable: true },
-    instructions: { value: input.instructions ?? null, isWritable: false },
-    zamaEventAuthority: {
-      value: input.zamaEventAuthority ?? null,
+    joinStore: {
+      value: input.joinStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    transientStore: {
+      value: input.transientStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    instructions: {
+      value: input.instructions ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
+    zamaEventAuthority: {
+      value: input.zamaEventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     confidentialTokenEventAuthority: {
       value: input.confidentialTokenEventAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     confidentialTokenProgram: {
       value: input.confidentialTokenProgram ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -432,25 +511,21 @@ export async function getJoinInstructionAsync<
 
   // Resolve default values.
   if (!accounts.batchAuthority.value) {
-    accounts.batchAuthority.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([98, 97, 116, 99, 104, 45, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
-        ),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('batch', accounts.batch.value)),
-      ],
-    });
+    accounts.batchAuthority.value = await findBatchAuthorityPda(
+      {
+        batch: getAddressFromResolvedInstructionAccount('batch', accounts.batch.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.joinRecord.value) {
-    accounts.joinRecord.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(new Uint8Array([106, 111, 105, 110, 45, 114, 101, 99, 111, 114, 100])),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('batch', accounts.batch.value)),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('user', accounts.user.value)),
-      ],
-    });
+    accounts.joinRecord.value = await findJoinRecordPda(
+      {
+        batch: getAddressFromResolvedInstructionAccount('batch', accounts.batch.value),
+        user: getAddressFromResolvedInstructionAccount('user', accounts.user.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
@@ -474,7 +549,6 @@ export async function getJoinInstructionAsync<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('user', accounts.user),
@@ -505,95 +579,119 @@ export async function getJoinInstructionAsync<
     programAddress,
   } as JoinInstruction<
     TProgramAddress,
-    TAccountUser,
-    TAccountPayer,
-    TAccountBatcher,
-    TAccountBatch,
-    TAccountBatchAuthority,
-    TAccountJoinRecord,
-    TAccountJoinConfidentialMint,
-    TAccountJoinUnderlyingMint,
-    TAccountUserAta,
-    TAccountBatchAuthorityAta,
-    TAccountUserTokenAccount,
-    TAccountBatchJoinTokenAccount,
-    TAccountUserBalanceStore,
-    TAccountBatchBalanceStore,
-    TAccountJoinStore,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaEventAuthority,
-    TAccountZamaProgram,
-    TAccountHostConfig,
-    TAccountConfidentialTokenEventAuthority,
-    TAccountConfidentialTokenProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountUser, InstructionAccountInputAddress<TAccountUser>>,
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
+    ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
+    ResolvedInstructionAccountMeta<TAccountBatchAuthority, InstructionAccountInputAddress<TAccountBatchAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountJoinRecord, InstructionAccountInputAddress<TAccountJoinRecord>>,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinConfidentialMint,
+      InstructionAccountInputAddress<TAccountJoinConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinUnderlyingMint,
+      InstructionAccountInputAddress<TAccountJoinUnderlyingMint>
+    >,
+    ResolvedInstructionAccountMeta<TAccountUserAta, InstructionAccountInputAddress<TAccountUserAta>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchAuthorityAta,
+      InstructionAccountInputAddress<TAccountBatchAuthorityAta>
+    >,
+    ResolvedInstructionAccountMeta<TAccountUserTokenAccount, InstructionAccountInputAddress<TAccountUserTokenAccount>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchJoinTokenAccount,
+      InstructionAccountInputAddress<TAccountBatchJoinTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<TAccountUserBalanceStore, InstructionAccountInputAddress<TAccountUserBalanceStore>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchBalanceStore,
+      InstructionAccountInputAddress<TAccountBatchBalanceStore>
+    >,
+    ResolvedInstructionAccountMeta<TAccountJoinStore, InstructionAccountInputAddress<TAccountJoinStore>>,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<
+      TAccountConfidentialTokenEventAuthority,
+      InstructionAccountInputAddress<TAccountConfidentialTokenEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountConfidentialTokenProgram,
+      InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
+    >,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 
 export type JoinInput<
-  TAccountUser extends string = string,
-  TAccountPayer extends string = string,
-  TAccountBatcher extends string = string,
-  TAccountBatch extends string = string,
-  TAccountBatchAuthority extends string = string,
-  TAccountJoinRecord extends string = string,
-  TAccountJoinConfidentialMint extends string = string,
-  TAccountJoinUnderlyingMint extends string = string,
-  TAccountUserAta extends string = string,
-  TAccountBatchAuthorityAta extends string = string,
-  TAccountUserTokenAccount extends string = string,
-  TAccountBatchJoinTokenAccount extends string = string,
-  TAccountUserBalanceStore extends string = string,
-  TAccountBatchBalanceStore extends string = string,
-  TAccountJoinStore extends string = string,
-  TAccountTransientStore extends string = string,
-  TAccountInstructions extends string = string,
-  TAccountZamaEventAuthority extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountConfidentialTokenEventAuthority extends string = string,
-  TAccountConfidentialTokenProgram extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountUser extends InstructionSignerInput = InstructionSignerInput,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountBatcher extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatch extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinConfidentialMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountUserAta extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchAuthorityAta extends InstructionAccountInput = InstructionAccountInput,
+  TAccountUserTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchJoinTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountUserBalanceStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBatchBalanceStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountConfidentialTokenEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountConfidentialTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Joining user; transfer authority over their confidential balance. */
-  user: TransactionSigner<TAccountUser>;
+  user: TAccountUser;
   /**
    * Pays join-record rent, transfer output rent, and the batcher execution's
    * ACL rent.
    */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /** Batcher config. */
-  batcher: Address<TAccountBatcher>;
+  batcher: TAccountBatcher;
   /** The pending batch being joined. */
-  batch: Address<TAccountBatch>;
+  batch: TAccountBatch;
   /** Owns the batch's destination token account. */
-  batchAuthority: Address<TAccountBatchAuthority>;
+  batchAuthority: TAccountBatchAuthority;
   /** The user's join record for this batch; created on first join and controls its contribution Store. */
-  joinRecord: Address<TAccountJoinRecord>;
+  joinRecord: TAccountJoinRecord;
   /** Confidential mint users join batches with. */
-  joinConfidentialMint: Address<TAccountJoinConfidentialMint>;
-  joinUnderlyingMint: Address<TAccountJoinUnderlyingMint>;
-  userAta: Address<TAccountUserAta>;
-  batchAuthorityAta: Address<TAccountBatchAuthorityAta>;
+  joinConfidentialMint: TAccountJoinConfidentialMint;
+  joinUnderlyingMint: TAccountJoinUnderlyingMint;
+  userAta: TAccountUserAta;
+  batchAuthorityAta: TAccountBatchAuthorityAta;
   /** by the token CPI. */
-  userTokenAccount: Address<TAccountUserTokenAccount>;
+  userTokenAccount: TAccountUserTokenAccount;
   /** validated by the token CPI and pinned below. */
-  batchJoinTokenAccount: Address<TAccountBatchJoinTokenAccount>;
-  userBalanceStore: Address<TAccountUserBalanceStore>;
-  batchBalanceStore: Address<TAccountBatchBalanceStore>;
-  joinStore: Address<TAccountJoinStore>;
-  transientStore: Address<TAccountTransientStore>;
-  instructions: Address<TAccountInstructions>;
-  zamaEventAuthority: Address<TAccountZamaEventAuthority>;
+  batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
+  userBalanceStore: TAccountUserBalanceStore;
+  batchBalanceStore: TAccountBatchBalanceStore;
+  joinStore: TAccountJoinStore;
+  transientStore: TAccountTransientStore;
+  instructions: TAccountInstructions;
+  zamaEventAuthority: TAccountZamaEventAuthority;
   /** ZamaHost program (FHE compute + ACL). */
-  zamaProgram?: Address<TAccountZamaProgram>;
-  hostConfig: Address<TAccountHostConfig>;
-  confidentialTokenEventAuthority: Address<TAccountConfidentialTokenEventAuthority>;
+  zamaProgram?: TAccountZamaProgram;
+  hostConfig: TAccountHostConfig;
+  confidentialTokenEventAuthority: TAccountConfidentialTokenEventAuthority;
   /** confidential-token program composed via CPI. */
-  confidentialTokenProgram?: Address<TAccountConfidentialTokenProgram>;
+  confidentialTokenProgram?: TAccountConfidentialTokenProgram;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
   inputHandle: JoinInstructionDataArgs['inputHandle'];
   ctHandles: JoinInstructionDataArgs['ctHandles'];
   handleIndex: JoinInstructionDataArgs['handleIndex'];
@@ -605,29 +703,29 @@ export type JoinInput<
 };
 
 export function getJoinInstruction<
-  TAccountUser extends string,
-  TAccountPayer extends string,
-  TAccountBatcher extends string,
-  TAccountBatch extends string,
-  TAccountBatchAuthority extends string,
-  TAccountJoinRecord extends string,
-  TAccountJoinConfidentialMint extends string,
-  TAccountJoinUnderlyingMint extends string,
-  TAccountUserAta extends string,
-  TAccountBatchAuthorityAta extends string,
-  TAccountUserTokenAccount extends string,
-  TAccountBatchJoinTokenAccount extends string,
-  TAccountUserBalanceStore extends string,
-  TAccountBatchBalanceStore extends string,
-  TAccountJoinStore extends string,
-  TAccountTransientStore extends string,
-  TAccountInstructions extends string,
-  TAccountZamaEventAuthority extends string,
-  TAccountZamaProgram extends string,
-  TAccountHostConfig extends string,
-  TAccountConfidentialTokenEventAuthority extends string,
-  TAccountConfidentialTokenProgram extends string,
-  TAccountSystemProgram extends string,
+  TAccountUser extends InstructionSignerInput,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountBatcher extends InstructionAccountInput,
+  TAccountBatch extends InstructionAccountInput,
+  TAccountBatchAuthority extends InstructionAccountInput,
+  TAccountJoinRecord extends InstructionAccountInput,
+  TAccountJoinConfidentialMint extends InstructionAccountInput,
+  TAccountJoinUnderlyingMint extends InstructionAccountInput,
+  TAccountUserAta extends InstructionAccountInput,
+  TAccountBatchAuthorityAta extends InstructionAccountInput,
+  TAccountUserTokenAccount extends InstructionAccountInput,
+  TAccountBatchJoinTokenAccount extends InstructionAccountInput,
+  TAccountUserBalanceStore extends InstructionAccountInput,
+  TAccountBatchBalanceStore extends InstructionAccountInput,
+  TAccountJoinStore extends InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountConfidentialTokenEventAuthority extends InstructionAccountInput,
+  TAccountConfidentialTokenProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: JoinInput<
@@ -658,88 +756,159 @@ export function getJoinInstruction<
   config?: { programAddress?: TProgramAddress },
 ): JoinInstruction<
   TProgramAddress,
-  TAccountUser,
-  TAccountPayer,
-  TAccountBatcher,
-  TAccountBatch,
-  TAccountBatchAuthority,
-  TAccountJoinRecord,
-  TAccountJoinConfidentialMint,
-  TAccountJoinUnderlyingMint,
-  TAccountUserAta,
-  TAccountBatchAuthorityAta,
-  TAccountUserTokenAccount,
-  TAccountBatchJoinTokenAccount,
-  TAccountUserBalanceStore,
-  TAccountBatchBalanceStore,
-  TAccountJoinStore,
-  TAccountTransientStore,
-  TAccountInstructions,
-  TAccountZamaEventAuthority,
-  TAccountZamaProgram,
-  TAccountHostConfig,
-  TAccountConfidentialTokenEventAuthority,
-  TAccountConfidentialTokenProgram,
-  TAccountSystemProgram
+  ResolvedInstructionAccountMeta<TAccountUser, InstructionAccountInputAddress<TAccountUser>>,
+  ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+  ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
+  ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
+  ResolvedInstructionAccountMeta<TAccountBatchAuthority, InstructionAccountInputAddress<TAccountBatchAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountJoinRecord, InstructionAccountInputAddress<TAccountJoinRecord>>,
+  ResolvedInstructionAccountMeta<
+    TAccountJoinConfidentialMint,
+    InstructionAccountInputAddress<TAccountJoinConfidentialMint>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountJoinUnderlyingMint,
+    InstructionAccountInputAddress<TAccountJoinUnderlyingMint>
+  >,
+  ResolvedInstructionAccountMeta<TAccountUserAta, InstructionAccountInputAddress<TAccountUserAta>>,
+  ResolvedInstructionAccountMeta<TAccountBatchAuthorityAta, InstructionAccountInputAddress<TAccountBatchAuthorityAta>>,
+  ResolvedInstructionAccountMeta<TAccountUserTokenAccount, InstructionAccountInputAddress<TAccountUserTokenAccount>>,
+  ResolvedInstructionAccountMeta<
+    TAccountBatchJoinTokenAccount,
+    InstructionAccountInputAddress<TAccountBatchJoinTokenAccount>
+  >,
+  ResolvedInstructionAccountMeta<TAccountUserBalanceStore, InstructionAccountInputAddress<TAccountUserBalanceStore>>,
+  ResolvedInstructionAccountMeta<TAccountBatchBalanceStore, InstructionAccountInputAddress<TAccountBatchBalanceStore>>,
+  ResolvedInstructionAccountMeta<TAccountJoinStore, InstructionAccountInputAddress<TAccountJoinStore>>,
+  ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+  ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+  ResolvedInstructionAccountMeta<
+    TAccountZamaEventAuthority,
+    InstructionAccountInputAddress<TAccountZamaEventAuthority>
+  >,
+  ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<
+    TAccountConfidentialTokenEventAuthority,
+    InstructionAccountInputAddress<TAccountConfidentialTokenEventAuthority>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountConfidentialTokenProgram,
+    InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
+  >,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    user: { value: input.user ?? null, isWritable: false },
-    payer: { value: input.payer ?? null, isWritable: true },
-    batcher: { value: input.batcher ?? null, isWritable: false },
-    batch: { value: input.batch ?? null, isWritable: true },
-    batchAuthority: { value: input.batchAuthority ?? null, isWritable: false },
-    joinRecord: { value: input.joinRecord ?? null, isWritable: true },
+    user: { value: input.user ?? null, isSigner: true, isWritable: false },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    batcher: {
+      value: input.batcher ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    batch: { value: input.batch ?? null, isSigner: false, isWritable: true },
+    batchAuthority: {
+      value: input.batchAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    joinRecord: {
+      value: input.joinRecord ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     joinConfidentialMint: {
       value: input.joinConfidentialMint ?? null,
+      isSigner: false,
       isWritable: false,
     },
     joinUnderlyingMint: {
       value: input.joinUnderlyingMint ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    userAta: { value: input.userAta ?? null, isWritable: false },
+    userAta: {
+      value: input.userAta ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     batchAuthorityAta: {
       value: input.batchAuthorityAta ?? null,
+      isSigner: false,
       isWritable: false,
     },
     userTokenAccount: {
       value: input.userTokenAccount ?? null,
+      isSigner: false,
       isWritable: true,
     },
     batchJoinTokenAccount: {
       value: input.batchJoinTokenAccount ?? null,
+      isSigner: false,
       isWritable: true,
     },
     userBalanceStore: {
       value: input.userBalanceStore ?? null,
+      isSigner: false,
       isWritable: true,
     },
     batchBalanceStore: {
       value: input.batchBalanceStore ?? null,
+      isSigner: false,
       isWritable: true,
     },
-    joinStore: { value: input.joinStore ?? null, isWritable: true },
-    transientStore: { value: input.transientStore ?? null, isWritable: true },
-    instructions: { value: input.instructions ?? null, isWritable: false },
-    zamaEventAuthority: {
-      value: input.zamaEventAuthority ?? null,
+    joinStore: {
+      value: input.joinStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    transientStore: {
+      value: input.transientStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    instructions: {
+      value: input.instructions ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
+    zamaEventAuthority: {
+      value: input.zamaEventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     confidentialTokenEventAuthority: {
       value: input.confidentialTokenEventAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     confidentialTokenProgram: {
       value: input.confidentialTokenProgram ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -759,7 +928,6 @@ export function getJoinInstruction<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('user', accounts.user),
@@ -790,29 +958,53 @@ export function getJoinInstruction<
     programAddress,
   } as JoinInstruction<
     TProgramAddress,
-    TAccountUser,
-    TAccountPayer,
-    TAccountBatcher,
-    TAccountBatch,
-    TAccountBatchAuthority,
-    TAccountJoinRecord,
-    TAccountJoinConfidentialMint,
-    TAccountJoinUnderlyingMint,
-    TAccountUserAta,
-    TAccountBatchAuthorityAta,
-    TAccountUserTokenAccount,
-    TAccountBatchJoinTokenAccount,
-    TAccountUserBalanceStore,
-    TAccountBatchBalanceStore,
-    TAccountJoinStore,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaEventAuthority,
-    TAccountZamaProgram,
-    TAccountHostConfig,
-    TAccountConfidentialTokenEventAuthority,
-    TAccountConfidentialTokenProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountUser, InstructionAccountInputAddress<TAccountUser>>,
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
+    ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
+    ResolvedInstructionAccountMeta<TAccountBatchAuthority, InstructionAccountInputAddress<TAccountBatchAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountJoinRecord, InstructionAccountInputAddress<TAccountJoinRecord>>,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinConfidentialMint,
+      InstructionAccountInputAddress<TAccountJoinConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinUnderlyingMint,
+      InstructionAccountInputAddress<TAccountJoinUnderlyingMint>
+    >,
+    ResolvedInstructionAccountMeta<TAccountUserAta, InstructionAccountInputAddress<TAccountUserAta>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchAuthorityAta,
+      InstructionAccountInputAddress<TAccountBatchAuthorityAta>
+    >,
+    ResolvedInstructionAccountMeta<TAccountUserTokenAccount, InstructionAccountInputAddress<TAccountUserTokenAccount>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchJoinTokenAccount,
+      InstructionAccountInputAddress<TAccountBatchJoinTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<TAccountUserBalanceStore, InstructionAccountInputAddress<TAccountUserBalanceStore>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBatchBalanceStore,
+      InstructionAccountInputAddress<TAccountBatchBalanceStore>
+    >,
+    ResolvedInstructionAccountMeta<TAccountJoinStore, InstructionAccountInputAddress<TAccountJoinStore>>,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<
+      TAccountConfidentialTokenEventAuthority,
+      InstructionAccountInputAddress<TAccountConfidentialTokenEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountConfidentialTokenProgram,
+      InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
+    >,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 

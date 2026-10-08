@@ -6,10 +6,8 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -151,7 +149,8 @@ const targets = [
         'resultGrant',
         'slotWrite',
       ]),
-      // Rendered as defined types, discriminator included: the JS renderer draws no events.
+      // Rendered as defined types plus a discriminator constant, the names the SDK's leafRecord
+      // decodes with; the renderer's own event pages would name them FheExecutedEventEvent.
       events: new Set(['fheExecutedEvent']),
       // The generated builders default their host_config and rand_nonce accounts to these
       // same-program PDAs; the SDK and the deployment derive hostConfig and kmsContext directly.
@@ -375,7 +374,9 @@ for (const target of targets) {
   // Host types render once, in `@fhevm/solana-zama-host`; a linked app client imports them from there.
   const foreignTypeLinks = target.linkHostPdas
     ? Object.fromEntries(
-        program.definedTypes.filter(({ name }) => hostTypeNames.has(name)).map(({ name }) => [name, 'zamaHost']),
+        (program.definedTypes ?? [])
+          .filter(({ name }) => hostTypeNames.has(name))
+          .map(({ name }) => [name, 'zamaHost']),
       )
     : {};
   for (const name of Object.keys(foreignTypeLinks)) {
@@ -386,7 +387,7 @@ for (const target of targets) {
   const keep = target.keep;
   if (keep) {
     for (const [kind, names] of Object.entries(keep)) {
-      const present = new Set(program[kind].map((node) => node.name));
+      const present = new Set((program[kind] ?? []).map((node) => node.name));
       for (const name of names) {
         if (!present.has(name)) throw new Error(`Required Codama ${kind} node is missing: ${name}`);
       }
@@ -402,7 +403,7 @@ for (const target of targets) {
           ...program.accounts
             .filter(({ name }) => !(keep.accounts ?? new Set()).has(name))
             .map(({ name }) => `[accountNode]${name}`),
-          ...program.definedTypes
+          ...(program.definedTypes ?? [])
             .filter(({ name }) => !keep.definedTypes.has(name))
             .map(({ name }) => `[definedTypeNode]${name}`),
           ...program.pdas.filter(({ name }) => keep.pdas && !keep.pdas.has(name)).map(({ name }) => `[pdaNode]${name}`),
@@ -414,13 +415,13 @@ for (const target of targets) {
     ...(program.constants ?? []).map(({ name }) => `[constantNode]${name}`),
   ];
   codama.update(deleteNodesVisitor(selectors));
-  const keptEvents = program.events.filter(({ name }) => keep?.events?.has(name));
+  const keptEvents = (program.events ?? []).filter(({ name }) => keep?.events?.has(name));
   if (keptEvents.length > 0) {
     codama.update(
       updateProgramsVisitor({
         [program.name]: {
           definedTypes: [
-            ...codama.getRoot().program.definedTypes,
+            ...(codama.getRoot().program.definedTypes ?? []),
             ...keptEvents.map(({ name, docs, data }) => definedTypeNode({ name, docs, type: data })),
           ],
         },
@@ -447,40 +448,11 @@ for (const target of targets) {
       ),
     );
   }
-  // Codama's linked PDA resolver drops the instruction's programAddress override.
-  // Inline same-program PDA definitions while preserving their argument seed bindings.
-  // PDAs are matched by name. Confidential-token defines its own `eventAuthority`, so its linked host
-  // `eventAuthority` would be rebound to the token program; the other targets define no host PDA name.
-  if (
-    [
-      idlUrl('zama_host.json'),
-      demoIdlUrl('confidential_batcher.json'),
-      demoIdlUrl('demo_vault.json'),
-      specimenIdlUrl('dep-chain', 'dep_chain.json'),
-      specimenIdlUrl('encrypted-counter', 'encrypted_counter.json'),
-    ].includes(target.idlPath)
-  ) {
-    const updates = Object.fromEntries(
-      codama.getRoot().program.instructions.map(({ name, accounts }) => [
-        name,
-        {
-          accounts: Object.fromEntries(
-            accounts.flatMap(({ name, defaultValue }) => {
-              if (defaultValue?.kind !== 'pdaValueNode') return [];
-              const pda = program.pdas.find(({ name }) => name === defaultValue.pda.name);
-              return pda === undefined ? [] : [[name, { defaultValue: { ...defaultValue, pda } }]];
-            }),
-          ),
-        },
-      ]),
-    );
-    codama.update(updateInstructionsVisitor(updates));
-  }
 
   await codama.accept(
     renderVisitor(temporaryRoot, {
       generatedFolder: 'generated',
-      kitImportStrategy: 'rootOnly',
+      importExtension: 'js',
       syncPackageJson: false,
       linkOverrides: { pdas: foreignPdaLinks, definedTypes: foreignTypeLinks },
       dependencyMap: { zamaHost: '@fhevm/solana-zama-host' },
@@ -494,7 +466,7 @@ for (const target of targets) {
   writeFileSync(`${temporaryGeneratedPath}/programAddress.ts`, target.programAddress(program, anchorIdl));
   writeFileSync(
     `${temporaryGeneratedPath}/constants.ts`,
-    renderProgramConstants(program.constants, anchorIdl.constants ?? [], anchorIdl.events ?? []),
+    renderProgramConstants(program.constants ?? [], anchorIdl.constants ?? [], anchorIdl.events ?? []),
   );
   if (target.errorTable) {
     writeFileSync(
@@ -505,8 +477,6 @@ for (const target of targets) {
   rmSync(`${temporaryGeneratedPath}/programs`, { force: true, recursive: true });
   rmSync(`${temporaryGeneratedPath}/index.ts`, { force: true });
 
-  // The SDK builds with NodeNext. Codama renders extensionless relative imports, so make its
-  // deterministic output executable without hand-editing generated files.
   // Recovery needs the canonical signing seeds.
   const seedEncoderFiles = new Set(
     target.idlPath === idlUrl('confidential_token.json')
@@ -520,9 +490,7 @@ for (const target of targets) {
   for (const entry of readdirSync(temporaryGeneratedPath, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile() || !entry.name.endsWith('.ts')) continue;
     const file = `${entry.parentPath}/${entry.name}`;
-    let source = readFileSync(file, 'utf8')
-      .replace(/(['"])\.\.\/programs\1/g, '$1../programAddress$1')
-      .replaceAll('@solana/kit/program-client-core', '@solana/program-client-core');
+    let source = readFileSync(file, 'utf8').replace(/(['"])\.\.\/programs\/index\.js\1/g, '$1../programAddress.js$1');
     if (file.includes('/pdas/') && seedEncoderFiles.has(entry.name)) {
       let renderedSeedEncoder = false;
       source = source.replace(
@@ -540,20 +508,7 @@ for (const target of targets) {
       if (!renderedSeedEncoder) throw new Error(`Cannot render PDA seed encoder: ${file}`);
       seedEncoderFiles.delete(entry.name);
     }
-    writeFileSync(
-      file,
-      await format(
-        source.replace(
-          /(from\s+['"]|export\s+\*\s+from\s+['"])(\.{1,2}(?:\/[^'"]+)?)(['"])/g,
-          (_, prefix, specifier, suffix) => {
-            const targetPath = resolve(dirname(file), specifier);
-            const extension = existsSync(targetPath) && statSync(targetPath).isDirectory() ? '/index.js' : '.js';
-            return `${prefix}${specifier}${extension}${suffix}`;
-          },
-        ),
-        { ...prettierOptions, parser: 'typescript' },
-      ),
-    );
+    writeFileSync(file, await format(source, { ...prettierOptions, parser: 'typescript' }));
   }
   if (seedEncoderFiles.size > 0) {
     throw new Error(`Missing PDA seed encoder files: ${[...seedEncoderFiles].join(', ')}`);

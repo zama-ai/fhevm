@@ -30,14 +30,17 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
 import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
   type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
 import { findTotalSupplyAuthorityPda } from '../pdas/index.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
@@ -128,73 +131,73 @@ export function getInitializeMintInstructionDataCodec(): FixedSizeCodec<
 }
 
 export type InitializeMintAsyncInput<
-  TAccountAuthority extends string = string,
-  TAccountMint extends string = string,
-  TAccountUnderlyingMint extends string = string,
-  TAccountTokenProgram extends string = string,
-  TAccountTotalSupplyAuthority extends string = string,
-  TAccountTotalSupplyEncryptedStore extends string = string,
-  TAccountZamaEventAuthority extends string = string,
-  TAccountTransientStore extends string = string,
-  TAccountInstructions extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountSystemProgram extends string = string,
-  TAccountHcuBlockMeter extends string = string,
-  TAccountHcuTrustedAppRecord extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
+  TAccountMint extends InstructionSignerInput = InstructionSignerInput,
+  TAccountUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTotalSupplyEncryptedStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Mint authority and rent payer. */
-  authority: TransactionSigner<TAccountAuthority>;
+  authority: TAccountAuthority;
   /** Confidential mint account created by this instruction. */
-  mint: TransactionSigner<TAccountMint>;
+  mint: TAccountMint;
   /** Underlying SPL mint wrapped by this confidential mint. */
-  underlyingMint: Address<TAccountUnderlyingMint>;
+  underlyingMint: TAccountUnderlyingMint;
   /** Classic Token or Token-2022 program owning `underlying_mint`. */
-  tokenProgram?: Address<TAccountTokenProgram>;
-  totalSupplyAuthority?: Address<TAccountTotalSupplyAuthority>;
-  totalSupplyEncryptedStore: Address<TAccountTotalSupplyEncryptedStore>;
-  zamaEventAuthority?: Address<TAccountZamaEventAuthority>;
-  transientStore: Address<TAccountTransientStore>;
-  instructions: Address<TAccountInstructions>;
+  tokenProgram?: TAccountTokenProgram;
+  totalSupplyAuthority?: TAccountTotalSupplyAuthority;
+  totalSupplyEncryptedStore: TAccountTotalSupplyEncryptedStore;
+  zamaEventAuthority?: TAccountZamaEventAuthority;
+  transientStore: TAccountTransientStore;
+  instructions: TAccountInstructions;
   /** ZamaHost program used to create the initial total-supply handle. */
-  zamaProgram?: Address<TAccountZamaProgram>;
+  zamaProgram?: TAccountZamaProgram;
   /** ZamaHost config used for handle derivation. */
-  hostConfig?: Address<TAccountHostConfig>;
+  hostConfig?: TAccountHostConfig;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
   /**
    * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
    */
-  hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
+  hcuBlockMeter?: TAccountHcuBlockMeter;
   /**
    * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
    * means the mint is metered.
    */
-  hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
-  eventAuthority?: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  hcuTrustedAppRecord?: TAccountHcuTrustedAppRecord;
+  eventAuthority?: TAccountEventAuthority;
+  program?: TAccountProgram;
 };
 
 export async function getInitializeMintInstructionAsync<
-  TAccountAuthority extends string,
-  TAccountMint extends string,
-  TAccountUnderlyingMint extends string,
-  TAccountTokenProgram extends string,
-  TAccountTotalSupplyAuthority extends string,
-  TAccountTotalSupplyEncryptedStore extends string,
-  TAccountZamaEventAuthority extends string,
-  TAccountTransientStore extends string,
-  TAccountInstructions extends string,
-  TAccountZamaProgram extends string,
-  TAccountHostConfig extends string,
-  TAccountSystemProgram extends string,
-  TAccountHcuBlockMeter extends string,
-  TAccountHcuTrustedAppRecord extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountAuthority extends InstructionSignerInput,
+  TAccountMint extends InstructionSignerInput,
+  TAccountUnderlyingMint extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
+  TAccountTotalSupplyAuthority extends InstructionAccountInput,
+  TAccountTotalSupplyEncryptedStore extends InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountHcuBlockMeter extends InstructionAccountInput,
+  TAccountHcuTrustedAppRecord extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: InitializeMintAsyncInput<
@@ -219,57 +222,120 @@ export async function getInitializeMintInstructionAsync<
 ): Promise<
   InitializeMintInstruction<
     TProgramAddress,
-    TAccountAuthority,
-    TAccountMint,
-    TAccountUnderlyingMint,
-    TAccountTokenProgram,
-    TAccountTotalSupplyAuthority,
-    TAccountTotalSupplyEncryptedStore,
-    TAccountZamaEventAuthority,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaProgram,
-    TAccountHostConfig,
-    TAccountSystemProgram,
-    TAccountHcuBlockMeter,
-    TAccountHcuTrustedAppRecord,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountTotalSupplyEncryptedStore,
+      InstructionAccountInputAddress<TAccountTotalSupplyEncryptedStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
+    ResolvedInstructionAccountMeta<
+      TAccountHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    authority: { value: input.authority ?? null, isWritable: true },
-    mint: { value: input.mint ?? null, isWritable: true },
-    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
-    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    authority: {
+      value: input.authority ?? null,
+      isSigner: true,
+      isWritable: true,
+    },
+    mint: { value: input.mint ?? null, isSigner: true, isWritable: true },
+    underlyingMint: {
+      value: input.underlyingMint ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     totalSupplyAuthority: {
       value: input.totalSupplyAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     totalSupplyEncryptedStore: {
       value: input.totalSupplyEncryptedStore ?? null,
+      isSigner: false,
       isWritable: true,
     },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    transientStore: { value: input.transientStore ?? null, isWritable: true },
-    instructions: { value: input.instructions ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
-    hcuBlockMeter: { value: input.hcuBlockMeter ?? null, isWritable: true },
+    transientStore: {
+      value: input.transientStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    instructions: {
+      value: input.instructions ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hcuBlockMeter: {
+      value: input.hcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     hcuTrustedAppRecord: {
       value: input.hcuTrustedAppRecord ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -279,9 +345,12 @@ export async function getInitializeMintInstructionAsync<
       'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
   }
   if (!accounts.totalSupplyAuthority.value) {
-    accounts.totalSupplyAuthority.value = await findTotalSupplyAuthorityPda({
-      mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
-    });
+    accounts.totalSupplyAuthority.value = await findTotalSupplyAuthorityPda(
+      {
+        mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
@@ -315,7 +384,6 @@ export async function getInitializeMintInstructionAsync<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('authority', accounts.authority),
@@ -339,93 +407,105 @@ export async function getInitializeMintInstructionAsync<
     programAddress,
   } as InitializeMintInstruction<
     TProgramAddress,
-    TAccountAuthority,
-    TAccountMint,
-    TAccountUnderlyingMint,
-    TAccountTokenProgram,
-    TAccountTotalSupplyAuthority,
-    TAccountTotalSupplyEncryptedStore,
-    TAccountZamaEventAuthority,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaProgram,
-    TAccountHostConfig,
-    TAccountSystemProgram,
-    TAccountHcuBlockMeter,
-    TAccountHcuTrustedAppRecord,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountTotalSupplyEncryptedStore,
+      InstructionAccountInputAddress<TAccountTotalSupplyEncryptedStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
+    ResolvedInstructionAccountMeta<
+      TAccountHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 
 export type InitializeMintInput<
-  TAccountAuthority extends string = string,
-  TAccountMint extends string = string,
-  TAccountUnderlyingMint extends string = string,
-  TAccountTokenProgram extends string = string,
-  TAccountTotalSupplyAuthority extends string = string,
-  TAccountTotalSupplyEncryptedStore extends string = string,
-  TAccountZamaEventAuthority extends string = string,
-  TAccountTransientStore extends string = string,
-  TAccountInstructions extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountSystemProgram extends string = string,
-  TAccountHcuBlockMeter extends string = string,
-  TAccountHcuTrustedAppRecord extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
+  TAccountMint extends InstructionSignerInput = InstructionSignerInput,
+  TAccountUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTotalSupplyEncryptedStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Mint authority and rent payer. */
-  authority: TransactionSigner<TAccountAuthority>;
+  authority: TAccountAuthority;
   /** Confidential mint account created by this instruction. */
-  mint: TransactionSigner<TAccountMint>;
+  mint: TAccountMint;
   /** Underlying SPL mint wrapped by this confidential mint. */
-  underlyingMint: Address<TAccountUnderlyingMint>;
+  underlyingMint: TAccountUnderlyingMint;
   /** Classic Token or Token-2022 program owning `underlying_mint`. */
-  tokenProgram?: Address<TAccountTokenProgram>;
-  totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
-  totalSupplyEncryptedStore: Address<TAccountTotalSupplyEncryptedStore>;
-  zamaEventAuthority: Address<TAccountZamaEventAuthority>;
-  transientStore: Address<TAccountTransientStore>;
-  instructions: Address<TAccountInstructions>;
+  tokenProgram?: TAccountTokenProgram;
+  totalSupplyAuthority: TAccountTotalSupplyAuthority;
+  totalSupplyEncryptedStore: TAccountTotalSupplyEncryptedStore;
+  zamaEventAuthority: TAccountZamaEventAuthority;
+  transientStore: TAccountTransientStore;
+  instructions: TAccountInstructions;
   /** ZamaHost program used to create the initial total-supply handle. */
-  zamaProgram?: Address<TAccountZamaProgram>;
+  zamaProgram?: TAccountZamaProgram;
   /** ZamaHost config used for handle derivation. */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig: TAccountHostConfig;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
   /**
    * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
    */
-  hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
+  hcuBlockMeter?: TAccountHcuBlockMeter;
   /**
    * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
    * means the mint is metered.
    */
-  hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
-  eventAuthority: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  hcuTrustedAppRecord?: TAccountHcuTrustedAppRecord;
+  eventAuthority: TAccountEventAuthority;
+  program?: TAccountProgram;
 };
 
 export function getInitializeMintInstruction<
-  TAccountAuthority extends string,
-  TAccountMint extends string,
-  TAccountUnderlyingMint extends string,
-  TAccountTokenProgram extends string,
-  TAccountTotalSupplyAuthority extends string,
-  TAccountTotalSupplyEncryptedStore extends string,
-  TAccountZamaEventAuthority extends string,
-  TAccountTransientStore extends string,
-  TAccountInstructions extends string,
-  TAccountZamaProgram extends string,
-  TAccountHostConfig extends string,
-  TAccountSystemProgram extends string,
-  TAccountHcuBlockMeter extends string,
-  TAccountHcuTrustedAppRecord extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountAuthority extends InstructionSignerInput,
+  TAccountMint extends InstructionSignerInput,
+  TAccountUnderlyingMint extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
+  TAccountTotalSupplyAuthority extends InstructionAccountInput,
+  TAccountTotalSupplyEncryptedStore extends InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountHcuBlockMeter extends InstructionAccountInput,
+  TAccountHcuTrustedAppRecord extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: InitializeMintInput<
@@ -449,56 +529,119 @@ export function getInitializeMintInstruction<
   config?: { programAddress?: TProgramAddress },
 ): InitializeMintInstruction<
   TProgramAddress,
-  TAccountAuthority,
-  TAccountMint,
-  TAccountUnderlyingMint,
-  TAccountTokenProgram,
-  TAccountTotalSupplyAuthority,
-  TAccountTotalSupplyEncryptedStore,
-  TAccountZamaEventAuthority,
-  TAccountTransientStore,
-  TAccountInstructions,
-  TAccountZamaProgram,
-  TAccountHostConfig,
-  TAccountSystemProgram,
-  TAccountHcuBlockMeter,
-  TAccountHcuTrustedAppRecord,
-  TAccountEventAuthority,
-  TAccountProgram
+  ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+  ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+  ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+  ResolvedInstructionAccountMeta<
+    TAccountTotalSupplyAuthority,
+    InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountTotalSupplyEncryptedStore,
+    InstructionAccountInputAddress<TAccountTotalSupplyEncryptedStore>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountZamaEventAuthority,
+    InstructionAccountInputAddress<TAccountZamaEventAuthority>
+  >,
+  ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+  ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+  ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+  ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
+  ResolvedInstructionAccountMeta<
+    TAccountHcuTrustedAppRecord,
+    InstructionAccountInputAddress<TAccountHcuTrustedAppRecord>
+  >,
+  ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    authority: { value: input.authority ?? null, isWritable: true },
-    mint: { value: input.mint ?? null, isWritable: true },
-    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
-    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
+    authority: {
+      value: input.authority ?? null,
+      isSigner: true,
+      isWritable: true,
+    },
+    mint: { value: input.mint ?? null, isSigner: true, isWritable: true },
+    underlyingMint: {
+      value: input.underlyingMint ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     totalSupplyAuthority: {
       value: input.totalSupplyAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
     totalSupplyEncryptedStore: {
       value: input.totalSupplyEncryptedStore ?? null,
+      isSigner: false,
       isWritable: true,
     },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    transientStore: { value: input.transientStore ?? null, isWritable: true },
-    instructions: { value: input.instructions ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
-    hcuBlockMeter: { value: input.hcuBlockMeter ?? null, isWritable: true },
+    transientStore: {
+      value: input.transientStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    instructions: {
+      value: input.instructions ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hcuBlockMeter: {
+      value: input.hcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     hcuTrustedAppRecord: {
       value: input.hcuTrustedAppRecord ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -519,7 +662,6 @@ export function getInitializeMintInstruction<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('authority', accounts.authority),
@@ -543,22 +685,34 @@ export function getInitializeMintInstruction<
     programAddress,
   } as InitializeMintInstruction<
     TProgramAddress,
-    TAccountAuthority,
-    TAccountMint,
-    TAccountUnderlyingMint,
-    TAccountTokenProgram,
-    TAccountTotalSupplyAuthority,
-    TAccountTotalSupplyEncryptedStore,
-    TAccountZamaEventAuthority,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaProgram,
-    TAccountHostConfig,
-    TAccountSystemProgram,
-    TAccountHcuBlockMeter,
-    TAccountHcuTrustedAppRecord,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<
+      TAccountTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountTotalSupplyEncryptedStore,
+      InstructionAccountInputAddress<TAccountTotalSupplyEncryptedStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
+    ResolvedInstructionAccountMeta<
+      TAccountHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 

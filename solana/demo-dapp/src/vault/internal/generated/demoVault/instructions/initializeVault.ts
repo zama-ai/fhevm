@@ -10,10 +10,8 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -30,15 +28,19 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
 import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
   type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
+import { findShareMintPda, findVaultAuthorityPda, findVaultTokenAccountPda } from '../pdas/index.js';
 import { DEMO_VAULT_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const INITIALIZE_VAULT_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([48, 191, 163, 44, 71, 129, 63, 164]);
@@ -103,45 +105,45 @@ export function getInitializeVaultInstructionDataCodec(): FixedSizeCodec<
 }
 
 export type InitializeVaultAsyncInput<
-  TAccountPayer extends string = string,
-  TAccountVault extends string = string,
-  TAccountUnderlyingMint extends string = string,
-  TAccountVaultAuthority extends string = string,
-  TAccountShareMint extends string = string,
-  TAccountVaultTokenAccount extends string = string,
-  TAccountTokenProgram extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountVault extends InstructionSignerInput = InstructionSignerInput,
+  TAccountUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVaultAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountShareMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVaultTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Rent payer and the account that submits the initialization. */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /** Vault state account, created here. A fresh keypair signs its own creation. */
-  vault: TransactionSigner<TAccountVault>;
+  vault: TAccountVault;
   /** Underlying SPL mint the vault accepts. */
-  underlyingMint: Address<TAccountUnderlyingMint>;
+  underlyingMint: TAccountUnderlyingMint;
   /** signing authority, never deserialized. */
-  vaultAuthority?: Address<TAccountVaultAuthority>;
+  vaultAuthority?: TAccountVaultAuthority;
   /**
    * Share mint created here, with the same decimals as the underlying and the
    * vault authority PDA as its mint authority.
    */
-  shareMint?: Address<TAccountShareMint>;
+  shareMint?: TAccountShareMint;
   /** Vault token account created here, owned by the vault authority PDA. */
-  vaultTokenAccount?: Address<TAccountVaultTokenAccount>;
+  vaultTokenAccount?: TAccountVaultTokenAccount;
   /** SPL token program. */
-  tokenProgram?: Address<TAccountTokenProgram>;
+  tokenProgram?: TAccountTokenProgram;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
 };
 
 export async function getInitializeVaultInstructionAsync<
-  TAccountPayer extends string,
-  TAccountVault extends string,
-  TAccountUnderlyingMint extends string,
-  TAccountVaultAuthority extends string,
-  TAccountShareMint extends string,
-  TAccountVaultTokenAccount extends string,
-  TAccountTokenProgram extends string,
-  TAccountSystemProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountVault extends InstructionSignerInput,
+  TAccountUnderlyingMint extends InstructionAccountInput,
+  TAccountVaultAuthority extends InstructionAccountInput,
+  TAccountShareMint extends InstructionAccountInput,
+  TAccountVaultTokenAccount extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof DEMO_VAULT_PROGRAM_ADDRESS,
 >(
   input: InitializeVaultAsyncInput<
@@ -158,62 +160,86 @@ export async function getInitializeVaultInstructionAsync<
 ): Promise<
   InitializeVaultInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountVault,
-    TAccountUnderlyingMint,
-    TAccountVaultAuthority,
-    TAccountShareMint,
-    TAccountVaultTokenAccount,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountVault, InstructionAccountInputAddress<TAccountVault>>,
+    ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+    ResolvedInstructionAccountMeta<TAccountVaultAuthority, InstructionAccountInputAddress<TAccountVaultAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountShareMint, InstructionAccountInputAddress<TAccountShareMint>>,
+    ResolvedInstructionAccountMeta<
+      TAccountVaultTokenAccount,
+      InstructionAccountInputAddress<TAccountVaultTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? DEMO_VAULT_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    vault: { value: input.vault ?? null, isWritable: true },
-    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
-    vaultAuthority: { value: input.vaultAuthority ?? null, isWritable: false },
-    shareMint: { value: input.shareMint ?? null, isWritable: true },
-    vaultTokenAccount: {
-      value: input.vaultTokenAccount ?? null,
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    vault: { value: input.vault ?? null, isSigner: true, isWritable: true },
+    underlyingMint: {
+      value: input.underlyingMint ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    vaultAuthority: {
+      value: input.vaultAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    shareMint: {
+      value: input.shareMint ?? null,
+      isSigner: false,
       isWritable: true,
     },
-    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    vaultTokenAccount: {
+      value: input.vaultTokenAccount ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
   // Resolve default values.
   if (!accounts.vaultAuthority.value) {
-    accounts.vaultAuthority.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(new Uint8Array([97, 117, 116, 104, 111, 114, 105, 116, 121])),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('vault', accounts.vault.value)),
-      ],
-    });
+    accounts.vaultAuthority.value = await findVaultAuthorityPda(
+      {
+        vault: getAddressFromResolvedInstructionAccount('vault', accounts.vault.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.shareMint.value) {
-    accounts.shareMint.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(new Uint8Array([115, 104, 97, 114, 101, 115])),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('vault', accounts.vault.value)),
-      ],
-    });
+    accounts.shareMint.value = await findShareMintPda(
+      {
+        vault: getAddressFromResolvedInstructionAccount('vault', accounts.vault.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.vaultTokenAccount.value) {
-    accounts.vaultTokenAccount.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(new Uint8Array([117, 110, 100, 101, 114, 108, 121, 105, 110, 103])),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('vault', accounts.vault.value)),
-      ],
-    });
+    accounts.vaultTokenAccount.value = await findVaultTokenAccountPda(
+      {
+        vault: getAddressFromResolvedInstructionAccount('vault', accounts.vault.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
@@ -223,7 +249,6 @@ export async function getInitializeVaultInstructionAsync<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -239,57 +264,60 @@ export async function getInitializeVaultInstructionAsync<
     programAddress,
   } as InitializeVaultInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountVault,
-    TAccountUnderlyingMint,
-    TAccountVaultAuthority,
-    TAccountShareMint,
-    TAccountVaultTokenAccount,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountVault, InstructionAccountInputAddress<TAccountVault>>,
+    ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+    ResolvedInstructionAccountMeta<TAccountVaultAuthority, InstructionAccountInputAddress<TAccountVaultAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountShareMint, InstructionAccountInputAddress<TAccountShareMint>>,
+    ResolvedInstructionAccountMeta<
+      TAccountVaultTokenAccount,
+      InstructionAccountInputAddress<TAccountVaultTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 
 export type InitializeVaultInput<
-  TAccountPayer extends string = string,
-  TAccountVault extends string = string,
-  TAccountUnderlyingMint extends string = string,
-  TAccountVaultAuthority extends string = string,
-  TAccountShareMint extends string = string,
-  TAccountVaultTokenAccount extends string = string,
-  TAccountTokenProgram extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountVault extends InstructionSignerInput = InstructionSignerInput,
+  TAccountUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVaultAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountShareMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVaultTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Rent payer and the account that submits the initialization. */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /** Vault state account, created here. A fresh keypair signs its own creation. */
-  vault: TransactionSigner<TAccountVault>;
+  vault: TAccountVault;
   /** Underlying SPL mint the vault accepts. */
-  underlyingMint: Address<TAccountUnderlyingMint>;
+  underlyingMint: TAccountUnderlyingMint;
   /** signing authority, never deserialized. */
-  vaultAuthority: Address<TAccountVaultAuthority>;
+  vaultAuthority: TAccountVaultAuthority;
   /**
    * Share mint created here, with the same decimals as the underlying and the
    * vault authority PDA as its mint authority.
    */
-  shareMint: Address<TAccountShareMint>;
+  shareMint: TAccountShareMint;
   /** Vault token account created here, owned by the vault authority PDA. */
-  vaultTokenAccount: Address<TAccountVaultTokenAccount>;
+  vaultTokenAccount: TAccountVaultTokenAccount;
   /** SPL token program. */
-  tokenProgram?: Address<TAccountTokenProgram>;
+  tokenProgram?: TAccountTokenProgram;
   /** System program used for account creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
 };
 
 export function getInitializeVaultInstruction<
-  TAccountPayer extends string,
-  TAccountVault extends string,
-  TAccountUnderlyingMint extends string,
-  TAccountVaultAuthority extends string,
-  TAccountShareMint extends string,
-  TAccountVaultTokenAccount extends string,
-  TAccountTokenProgram extends string,
-  TAccountSystemProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountVault extends InstructionSignerInput,
+  TAccountUnderlyingMint extends InstructionAccountInput,
+  TAccountVaultAuthority extends InstructionAccountInput,
+  TAccountShareMint extends InstructionAccountInput,
+  TAccountVaultTokenAccount extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof DEMO_VAULT_PROGRAM_ADDRESS,
 >(
   input: InitializeVaultInput<
@@ -305,31 +333,55 @@ export function getInitializeVaultInstruction<
   config?: { programAddress?: TProgramAddress },
 ): InitializeVaultInstruction<
   TProgramAddress,
-  TAccountPayer,
-  TAccountVault,
-  TAccountUnderlyingMint,
-  TAccountVaultAuthority,
-  TAccountShareMint,
-  TAccountVaultTokenAccount,
-  TAccountTokenProgram,
-  TAccountSystemProgram
+  ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+  ResolvedInstructionAccountMeta<TAccountVault, InstructionAccountInputAddress<TAccountVault>>,
+  ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+  ResolvedInstructionAccountMeta<TAccountVaultAuthority, InstructionAccountInputAddress<TAccountVaultAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountShareMint, InstructionAccountInputAddress<TAccountShareMint>>,
+  ResolvedInstructionAccountMeta<TAccountVaultTokenAccount, InstructionAccountInputAddress<TAccountVaultTokenAccount>>,
+  ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? DEMO_VAULT_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    vault: { value: input.vault ?? null, isWritable: true },
-    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
-    vaultAuthority: { value: input.vaultAuthority ?? null, isWritable: false },
-    shareMint: { value: input.shareMint ?? null, isWritable: true },
-    vaultTokenAccount: {
-      value: input.vaultTokenAccount ?? null,
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    vault: { value: input.vault ?? null, isSigner: true, isWritable: true },
+    underlyingMint: {
+      value: input.underlyingMint ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    vaultAuthority: {
+      value: input.vaultAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    shareMint: {
+      value: input.shareMint ?? null,
+      isSigner: false,
       isWritable: true,
     },
-    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    vaultTokenAccount: {
+      value: input.vaultTokenAccount ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -342,7 +394,6 @@ export function getInitializeVaultInstruction<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -358,14 +409,17 @@ export function getInitializeVaultInstruction<
     programAddress,
   } as InitializeVaultInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountVault,
-    TAccountUnderlyingMint,
-    TAccountVaultAuthority,
-    TAccountShareMint,
-    TAccountVaultTokenAccount,
-    TAccountTokenProgram,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountVault, InstructionAccountInputAddress<TAccountVault>>,
+    ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+    ResolvedInstructionAccountMeta<TAccountVaultAuthority, InstructionAccountInputAddress<TAccountVaultAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountShareMint, InstructionAccountInputAddress<TAccountShareMint>>,
+    ResolvedInstructionAccountMeta<
+      TAccountVaultTokenAccount,
+      InstructionAccountInputAddress<TAccountVaultTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 
