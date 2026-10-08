@@ -9,4 +9,5 @@
 export * from './encryptedStore.js';
 export * from './hostConfig.js';
 export * from './kmsContext.js';
+export * from './permitInvalidation.js';
 export * from './userDecryptionDelegation.js';

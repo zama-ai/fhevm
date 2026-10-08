@@ -40,9 +40,9 @@ use zama_solana_test_kit::{
 
 mod host_fixtures;
 use host_fixtures::{
-    check_host_context, check_host_instruction, created_public_batch, fhe_execute_ix,
-    fhe_execute_ix_with_extras, fixture_scope, host_config_account, host_config_account_with_flags,
-    mollusk_execute_context, read_host_config, sole_store_authority, store_authority,
+    check_host_context, check_host_instruction, fhe_execute_ix, fhe_execute_ix_with_extras,
+    fixture_scope, host_config_account, host_config_account_with_flags, mollusk_execute_context,
+    public_store_outputs_execution, read_host_config, sole_store_authority, store_authority,
     FheExecuteExtras, StoreAuthority,
 };
 
@@ -443,7 +443,7 @@ fn mollusk_fhe_execute_fails_closed_without_previous_bank_hash() {
 
 #[test]
 fn mollusk_fhe_execute_returns_selected_handles_in_order_with_repeats() {
-    let mut fixture = created_public_batch(3, &[0, 1, 2]);
+    let mut fixture = public_store_outputs_execution(3, &[0, 1, 2]);
     let mut args = FheExecuteArgs::deserialize(&mut &fixture.instruction.data[8..]).unwrap();
     let mut svm = mollusk();
     svm.add_program(&delegator_vault::ID, "delegator_vault");
@@ -499,7 +499,7 @@ fn mollusk_fhe_execute_returns_selected_handles_in_order_with_repeats() {
 
 #[test]
 fn mollusk_fhe_execute_rejects_invalid_return_selection_before_execution() {
-    let mut fixture = created_public_batch(2, &[0, 1]);
+    let mut fixture = public_store_outputs_execution(2, &[0, 1]);
     let mut args = FheExecuteArgs::deserialize(&mut &fixture.instruction.data[8..]).unwrap();
     let first = host::ExecutionResultRef {
         step_index: 0,
@@ -2129,7 +2129,7 @@ fn expected_public_output_peaks(
 
 #[test]
 fn mollusk_fhe_execute_seals_each_public_output_leaves_in_step_order() {
-    let execution = created_public_batch(3, &[0, 2]);
+    let execution = public_store_outputs_execution(3, &[0, 2]);
     let payer = execution.instruction.accounts[0].pubkey;
     let result = check_host_instruction(
         &mollusk(),
@@ -2145,7 +2145,7 @@ fn mollusk_fhe_execute_seals_each_public_output_leaves_in_step_order() {
 
 #[test]
 fn mollusk_fhe_execute_wrong_event_authority_fails_without_output() {
-    let mut execution = created_public_batch(1, &[0]);
+    let mut execution = public_store_outputs_execution(1, &[0]);
     let wrong_event_authority = Pubkey::new_unique();
     let event_authority_meta = execution
         .instruction
@@ -2176,7 +2176,7 @@ fn mollusk_fhe_execute_wrong_event_authority_fails_without_output() {
 
 #[test]
 fn mollusk_transaction_later_failure_rolls_back_created_public_output() {
-    let mut execution = created_public_batch(1, &[0]);
+    let mut execution = public_store_outputs_execution(1, &[0]);
     let payer = execution.instruction.accounts[0].pubkey;
     execution.accounts.push((
         host::transient_store_address(payer).0,
@@ -2654,6 +2654,108 @@ fn mollusk_set_deny_scope_creates_record_and_emits_event() {
 }
 
 #[test]
+fn mollusk_set_deny_scope_rejects_wrong_record_pda() {
+    let admin = Pubkey::new_unique();
+    let app = unique_app();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+    let deny_record = host::deny_scope_address(app).0;
+
+    // A record derived for another application is the wrong PDA for `app`.
+    let mut ix = set_deny_scope_ix(admin, admin, host_config, app, true);
+    let record_meta = ix
+        .accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == deny_record)
+        .expect("record account");
+    record_meta.pubkey = host::deny_scope_address(unique_app()).0;
+    check_host_context(
+        &context,
+        &ix,
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::ConstraintSeeds,
+        )],
+    );
+    assert!(read_deny_scope_record(&context, deny_record).is_none());
+}
+
+#[test]
+fn mollusk_set_deny_scope_creates_its_record_at_an_address_prefunded_below_rent() {
+    // A lamport sent to the record address before it exists must not block the admin.
+    let admin = Pubkey::new_unique();
+    let app = unique_app();
+    let (host_config, account) = host_config_account(admin);
+    let deny_record = host::deny_scope_address(app).0;
+    let context = mollusk_execute_context(
+        admin,
+        vec![(host_config, account), (deny_record, system_account(1))],
+    );
+
+    check_host_context(
+        &context,
+        &set_deny_scope_ix(admin, admin, host_config, app, true),
+        &[Check::success()],
+    );
+    assert!(
+        read_deny_scope_record(&context, deny_record)
+            .expect("deny record")
+            .denied
+    );
+}
+
+#[test]
+fn mollusk_set_deny_scope_admitting_an_absent_application_writes_an_admitted_record() {
+    // Admitting an application without a record changes nothing, but the record is created anyway.
+    // It must name its application, so fhe_execute's deny check accepts it as the witness, and the
+    // next real change must still apply and be announced.
+    let admin = Pubkey::new_unique();
+    let app = App::new();
+    let (host_config, account) = deny_enabled_host_config_account(admin);
+    let deny_record = host::deny_scope_address(app.app()).0;
+    let context = mollusk_execute_context(admin, vec![(host_config, account.clone())]);
+
+    let result = check_host_context(
+        &context,
+        &set_deny_scope_ix(admin, admin, host_config, app.app(), false),
+        &[Check::success()],
+    );
+    assert!(emitted_events::<host::DenyScopeUpdatedEvent>(&result).is_empty());
+    let record = read_deny_scope_record(&context, deny_record).expect("deny record");
+    assert_eq!(
+        (record.program, record.scope, record.denied),
+        (app.app().program, app.app().scope, false)
+    );
+
+    let record_account = context.account_store.borrow()[&deny_record].clone();
+    let (_, ix, mut accounts) = create_case(
+        admin,
+        &app,
+        host_config,
+        account,
+        "admitted",
+        &[admin],
+        FheExecuteExtras {
+            deny_scope_record: Some(deny_record),
+            rand_nonce: None,
+        },
+    );
+    accounts.push((deny_record, record_account));
+    check_host_instruction(&mollusk(), &ix, &accounts, &[Check::success()]);
+
+    let result = check_host_context(
+        &context,
+        &set_deny_scope_ix(admin, admin, host_config, app.app(), true),
+        &[Check::success()],
+    );
+    assert!(sole_emitted_event::<host::DenyScopeUpdatedEvent>(&result).denied);
+    assert!(
+        read_deny_scope_record(&context, deny_record)
+            .expect("deny record")
+            .denied
+    );
+}
+
+#[test]
 fn mollusk_destroy_kms_context_rejects_current() {
     let admin = Pubkey::new_unique();
     let (host_config, host_config_account) = host_config_with_context(admin, KMS_CONTEXT_ID);
@@ -2984,6 +3086,78 @@ fn mollusk_set_hcu_app_trusted_rejects_wrong_record_pda() {
         )],
     );
     assert!(read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0).is_none());
+}
+
+#[test]
+fn mollusk_set_hcu_app_trusted_creates_its_record_at_an_address_prefunded_below_rent() {
+    // A lamport sent to the record address before it exists must not block the admin.
+    let admin = Pubkey::new_unique();
+    let app = unique_app();
+    let (host_config, account) = host_config_account(admin);
+    let record = host::hcu_trusted_app_address(app).0;
+    let context = mollusk_execute_context(
+        admin,
+        vec![(host_config, account), (record, system_account(1))],
+    );
+
+    check_host_context(
+        &context,
+        &set_hcu_app_trusted_ix(admin, admin, host_config, app, true),
+        &[Check::success()],
+    );
+    assert!(
+        read_hcu_trusted_app_record(&context, record)
+            .expect("record")
+            .trusted
+    );
+}
+
+#[test]
+fn mollusk_set_hcu_app_trusted_untrusting_an_absent_application_writes_a_metered_record() {
+    // Untrusting an application without a record changes nothing, but the record is created
+    // anyway. It must name its application, so the block cap reads it and still meters the
+    // application, and the next real change must still apply and be announced.
+    let admin = Pubkey::new_unique();
+    let fixture = FheExecutionFixture::with_block_cap(0);
+    let app = fixture.block_cap_app();
+    let record = host::hcu_trusted_app_address(app).0;
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+
+    let result = check_host_context(
+        &context,
+        &set_hcu_app_trusted_ix(admin, admin, host_config, app, false),
+        &[Check::success()],
+    );
+    assert!(emitted_events::<host::HcuAppTrustUpdatedEvent>(&result).is_empty());
+    let created = read_hcu_trusted_app_record(&context, record).expect("record");
+    assert_eq!(
+        (created.program, created.scope, created.trusted),
+        (app.program, app.scope, false)
+    );
+
+    // At cap 0 an untrusted application is banned; the created record does not trust it.
+    fixture.seed_account(record, context.account_store.borrow()[&record].clone());
+    let result = check_host_context(
+        &fixture.context,
+        &fixture.block_cap_instruction(None, Some(record)),
+        &[custom_error(
+            host::errors::ZamaHostError::HcuBlockLimitExceeded,
+        )],
+    );
+    fixture.assert_no_output(&result);
+
+    let result = check_host_context(
+        &context,
+        &set_hcu_app_trusted_ix(admin, admin, host_config, app, true),
+        &[Check::success()],
+    );
+    assert!(sole_emitted_event::<host::HcuAppTrustUpdatedEvent>(&result).trusted);
+    assert!(
+        read_hcu_trusted_app_record(&context, record)
+            .expect("record")
+            .trusted
+    );
 }
 
 #[test]

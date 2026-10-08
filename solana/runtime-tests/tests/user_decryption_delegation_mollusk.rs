@@ -158,7 +158,7 @@ fn scope_account(app: AppScope) -> (Pubkey, Account) {
 
 fn actors() -> Actors {
     let delegator = Keypair::new().pubkey();
-    let delegate = Pubkey::new_unique();
+    let delegate = Keypair::new().pubkey();
     let app = app();
     let (record_key, record_bump) =
         host::user_decryption_delegation_address(delegator, delegate, app);
@@ -385,8 +385,8 @@ fn a_grant_refuses_a_record_address_owned_by_a_foreign_program() {
             EXPIRES_AT,
         ),
         &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::PdaCreationMismatch,
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::AccountOwnedByWrongProgram,
         )],
     );
 }
@@ -397,7 +397,7 @@ fn a_grant_refuses_a_record_address_owned_by_a_foreign_program() {
 #[test]
 fn a_wildcard_grant_is_legal_and_writes_the_record() {
     let delegator = Keypair::new().pubkey();
-    let delegate = Pubkey::new_unique();
+    let delegate = Keypair::new().pubkey();
     let (record_key, _) =
         host::user_decryption_delegation_address(delegator, delegate, AppScope::WILDCARD);
     let payer = Pubkey::new_unique();
@@ -568,6 +568,32 @@ fn a_grant_to_the_wildcard_sentinel_is_rejected() {
             actors.delegator,
             record_key,
             wildcard,
+            actors.app,
+            EXPIRES_AT,
+        ),
+        &accounts,
+        &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
+    );
+}
+
+/// A delegate decrypts by signing a request off chain, so it must be a keypair's key. A PDA
+/// delegate could never use the grant.
+#[test]
+fn a_grant_to_a_program_derived_address_is_rejected() {
+    let actors = actors();
+    let (pda, _) = Pubkey::find_program_address(&[b"vault"], &actors.app.program);
+    assert!(!pda.is_on_curve());
+    let (record_key, _) =
+        host::user_decryption_delegation_address(actors.delegator, pda, actors.app);
+    let mut accounts = grant_accounts(&actors, empty_system_account(), false);
+    accounts[3].0 = record_key;
+
+    mollusk().process_and_validate_instruction(
+        &grant_ix(
+            actors.payer,
+            actors.delegator,
+            record_key,
+            pda,
             actors.app,
             EXPIRES_AT,
         ),
@@ -910,31 +936,6 @@ fn a_counter_at_the_maximum_cannot_be_regranted() {
     );
 }
 
-/// A record at the canonical address whose own fields name another tuple is refused. Only
-/// the program writes program-owned bytes, so nothing an attacker can arrange — but a record
-/// that disagrees with its address is corruption, and overwriting it would destroy the
-/// evidence.
-#[test]
-fn an_existing_record_naming_another_tuple_is_rejected() {
-    let actors = actors();
-    let mut existing = live_record(&actors);
-    existing.delegate = Pubkey::new_unique();
-    let accounts = grant_accounts(&actors, record_account(&existing), false);
-
-    mollusk().process_and_validate_instruction(
-        &grant_ix(
-            actors.payer,
-            actors.delegator,
-            actors.record_key,
-            actors.delegate,
-            actors.app,
-            EXPIRES_AT + 100,
-        ),
-        &accounts,
-        &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
-    );
-}
-
 /// A program-owned account of the wrong size at the record address is not a delegation
 /// record, whatever its first bytes say.
 #[test]
@@ -954,30 +955,8 @@ fn an_existing_record_of_the_wrong_size_is_rejected() {
             EXPIRES_AT + 100,
         ),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
-    );
-}
-
-/// A stored bump other than the canonical one is not this record.
-#[test]
-fn an_existing_record_with_a_non_canonical_bump_is_rejected() {
-    let actors = actors();
-    let mut existing = live_record(&actors);
-    existing.bump = actors.record_bump.wrapping_sub(1);
-    let accounts = grant_accounts(&actors, record_account(&existing), false);
-
-    mollusk().process_and_validate_instruction(
-        &grant_ix(
-            actors.payer,
-            actors.delegator,
-            actors.record_key,
-            actors.delegate,
-            actors.app,
-            EXPIRES_AT + 100,
-        ),
-        &accounts,
-        &[custom_error(
-            host::errors::ZamaHostError::DelegationPdaMismatch,
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::AccountDidNotDeserialize,
         )],
     );
 }
@@ -1272,7 +1251,7 @@ struct VaultActors {
 fn vault_actors() -> VaultActors {
     let executor = Pubkey::new_unique();
     let (vault_pda, _) = vault::vault_address(executor);
-    let delegate = Pubkey::new_unique();
+    let delegate = Keypair::new().pubkey();
     let app = app();
     let (record_key, _) = host::user_decryption_delegation_address(vault_pda, delegate, app);
     VaultActors {
@@ -1588,7 +1567,7 @@ fn sdk_fixture_permit_invalidation_address_and_revoke_permits_bytes() {
 #[test]
 fn cost_snapshot_delegate_for_user_decryption() {
     let delegator = Keypair::new_from_array([0x41; 32]).pubkey();
-    let delegate = Pubkey::new_from_array([0x43; 32]);
+    let delegate = Keypair::new_from_array([0x43; 32]).pubkey();
     let app = AppScope {
         program: Pubkey::new_from_array([0x44; 32]),
         scope: Pubkey::new_from_array([0x45; 32]),

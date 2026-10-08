@@ -41,14 +41,12 @@ mod tests {
     /// The eight bytes an off-chain reader has to look for, pinned as literals *and* as the
     /// preimage they are derived from.
     ///
-    /// This account is taken as an unchecked account by the only instruction that touches
-    /// it, so the framework never registers its layout anywhere a consumer can read. The
-    /// consumer that will decode it does so without the framework, computing these bytes
-    /// itself — which is why asserting them against the framework's own derivation would
-    /// prove nothing: both sides would move together. The literal is what a foreign
-    /// implementation can be compared against, and the preimage says where it comes from,
-    /// so renaming the account or changing the derivation fails here rather than in the
-    /// component that reads the account by hand.
+    /// The KMS worker decodes this account without the framework, through
+    /// `zama-solana-acl`, matching these bytes by hand — so asserting them against the
+    /// framework's own derivation would prove nothing: both sides would move together. The
+    /// literal is what a foreign implementation can be compared against, and the preimage
+    /// says where it comes from, so renaming the account or changing the derivation fails
+    /// here rather than in the component that reads the account by hand.
     #[test]
     fn discriminator_is_the_hash_of_the_account_name() {
         assert_eq!(

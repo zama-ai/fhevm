@@ -1,3 +1,7 @@
+//! Mollusk-based runtime tests for the host's transaction transient store: its open and close
+//! lifecycle within one transaction, the transient result grants executions pass through it, and
+//! the per-transaction limits and result journal it carries.
+
 use anchor_lang::prelude::Instructions;
 use anchor_lang::solana_program::program_error::ProgramError;
 use anchor_lang::{AccountDeserialize, InstructionData};
@@ -202,7 +206,7 @@ fn nested_transient_store_close_rolls_back_the_whole_transaction() {
 }
 
 #[test]
-fn active_workspace_cannot_be_reopened() {
+fn active_transient_store_cannot_be_reopened() {
     let fixture = Fixture::new(0);
     let result = host_svm().process_transaction_instructions(
         &[fixture.open(), fixture.open(), fixture.close()],

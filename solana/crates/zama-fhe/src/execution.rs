@@ -114,7 +114,6 @@ impl FheExecution {
         }])?;
         Ok(ReturningFheExecution {
             execution,
-            return_index: 0,
             marker: std::marker::PhantomData,
         })
     }
@@ -212,12 +211,7 @@ impl FheExecution {
         resolved_accounts: &ResolvedExecutionAccounts<'info>,
         signer_seeds: &[&[&[u8]]],
     ) -> anchor_lang::prelude::Result<()> {
-        crate::cpi::invoke_execution_signed_resolved(
-            &mut self,
-            accounts,
-            resolved_accounts,
-            signer_seeds,
-        )
+        crate::cpi::invoke_execution_signed(&mut self, accounts, resolved_accounts, signer_seeds)
     }
 }
 
@@ -306,7 +300,6 @@ mod tests {
 /// An execution paired with the produced value its caller wants returned.
 pub struct ReturningFheExecution<T> {
     execution: FheExecution,
-    return_index: u8,
     marker: std::marker::PhantomData<T>,
 }
 
@@ -322,27 +315,23 @@ impl<T> ReturningFheExecution<T> {
         resolved: &ResolvedExecutionAccounts<'info>,
         signer_seeds: &[&[&[u8]]],
     ) -> anchor_lang::prelude::Result<[u8; 32]> {
-        let count = self.execution.args.returned_results.len();
         self.execution.invoke(accounts, resolved, signer_seeds)?;
         let data = anchor_lang::solana_program::program::get_return_data();
-        select_returned_handle(data, count, self.return_index).ok_or_else(|| {
+        returned_handle(data).ok_or_else(|| {
             anchor_lang::solana_program::program_error::ProgramError::InvalidInstructionData.into()
         })
     }
 }
 
 #[cfg(any(feature = "cpi", test))]
-fn select_returned_handle(
-    data: Option<(Pubkey, Vec<u8>)>,
-    count: usize,
-    index: u8,
-) -> Option<[u8; 32]> {
+/// The one handle a returning execution asks zama-host for: exactly 32 bytes of zama-host's
+/// return data.
+fn returned_handle(data: Option<(Pubkey, Vec<u8>)>) -> Option<[u8; 32]> {
     let (program, data) = data?;
-    if program != zama_host::ID || data.len() != count.checked_mul(32)? {
+    if program != zama_host::ID {
         return None;
     }
-    let start = usize::from(index).checked_mul(32)?;
-    data.get(start..start.checked_add(32)?)?.try_into().ok()
+    data.try_into().ok()
 }
 
 #[cfg(test)]
@@ -372,28 +361,13 @@ mod returning_tests {
                 output_index: 0
             }]
         );
-        assert_eq!(execution.return_index, 0);
         let data = vec![2; 32];
         assert_eq!(
-            select_returned_handle(
-                Some((zama_host::ID, data.clone())),
-                1,
-                execution.return_index
-            ),
+            returned_handle(Some((zama_host::ID, data.clone()))),
             Some([2; 32])
         );
-        assert_eq!(
-            select_returned_handle(Some((Pubkey::new_unique(), data.clone())), 1, 0),
-            None
-        );
-        assert_eq!(
-            select_returned_handle(Some((zama_host::ID, data.clone())), 2, 0),
-            None
-        );
-        assert_eq!(
-            select_returned_handle(Some((zama_host::ID, data)), 1, 1),
-            None
-        );
-        assert_eq!(select_returned_handle(None, 1, 0), None);
+        assert_eq!(returned_handle(Some((Pubkey::new_unique(), data))), None);
+        assert_eq!(returned_handle(Some((zama_host::ID, vec![2; 64]))), None);
+        assert_eq!(returned_handle(None), None);
     }
 }

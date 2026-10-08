@@ -138,7 +138,7 @@ fn dummy_attestation(input_handle: [u8; 32], contract: Pubkey) -> CoprocessorInp
 }
 
 #[test]
-fn batch_build_runs_closure_and_finishes_batch() {
+fn build_runs_closure_and_finishes() {
     let primary_authority = Pubkey::new_unique();
     let input_key = test_store_slot(primary_authority, 1);
     let input_acl = input_key.address();
@@ -207,7 +207,7 @@ fn store_slot_reads_remain_snapshot_reads_after_declaring_an_effect() {
 }
 
 #[test]
-fn batch_build_lowers_verified_input_operand() {
+fn build_lowers_verified_input_operand() {
     let primary_authority = Pubkey::new_unique();
     let output_key = test_store_slot(primary_authority, 7);
     let output_acl = output_key.address();
@@ -270,7 +270,7 @@ fn verified_input_rejects_type_mismatch() {
 }
 
 #[test]
-fn batch_build_propagates_closure_and_finish_errors() {
+fn build_propagates_closure_and_finish_errors() {
     let primary_authority = Pubkey::new_unique();
     let error = match FheExecution::build(execution_authority(primary_authority), |builder| {
         builder.binary_op(
@@ -614,7 +614,7 @@ fn resolve_accounts_requires_the_cpi_authority_witness() {
 }
 
 #[test]
-fn lowers_mixed_batch_to_stable_remaining_account_indices() {
+fn lowers_mixed_execution_to_stable_remaining_account_indices() {
     let primary_authority = Pubkey::new_unique();
     let balance_key = test_store_slot(primary_authority, 1);
     let amount_key = test_store_slot(primary_authority, 2);
@@ -786,7 +786,7 @@ fn lowers_explicit_output_authority_witness() {
 
 #[cfg(feature = "cpi")]
 #[test]
-fn resolve_accounts_orders_and_validates_batch_requirements() {
+fn resolve_accounts_orders_and_validates_execution_requirements() {
     let primary_authority = Pubkey::new_unique();
     let input_key = test_store_slot(primary_authority, 1);
     let input_acl = input_key.address();
@@ -1024,7 +1024,7 @@ fn resolve_accounts_rejects_known_accounts_in_wrong_bucket() {
 }
 
 #[test]
-fn lowers_create_steps() {
+fn lowers_trivial_encrypt_and_rand_steps() {
     let primary_authority = Pubkey::new_unique();
     let output_key = test_store_slot(primary_authority, 7);
     let output_acl = output_key.address();

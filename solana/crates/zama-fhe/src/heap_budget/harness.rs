@@ -102,7 +102,7 @@ where
     let build_bytes = counted_bytes() - before_build;
     let cost = execution.cost();
 
-    // Exactly what `invoke_execution_signed_resolved` does with the built execution: stamp the
+    // Exactly what `invoke_execution_signed` does with the built execution: stamp the
     // final account count in place and serialize the packet once into a right-sized buffer.
     let before_packet = counted_bytes();
     execution.args.account_count =

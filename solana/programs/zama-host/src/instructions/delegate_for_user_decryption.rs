@@ -21,9 +21,15 @@ pub struct DelegateForUserDecryption<'info> {
     /// The application's scope: an account `program` owns, or the wildcard sentinel.
     /// CHECK: only its key and owner are read; the owner is checked against `program`.
     pub scope: UncheckedAccount<'info>,
-    /// CHECK: created or overwritten after canonical delegation PDA validation.
-    #[account(mut, seeds = [DELEGATION_SEED, delegator.key().as_ref(), delegate.as_ref(), program.as_ref(), scope.key().as_ref()], bump)]
-    pub delegation_record: UncheckedAccount<'info>,
+    /// The `delegator → delegate` record for the application, created on first grant.
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = 8 + UserDecryptionDelegation::SPACE,
+        seeds = [DELEGATION_SEED, delegator.key().as_ref(), delegate.as_ref(), program.as_ref(), scope.key().as_ref()],
+        bump,
+    )]
+    pub delegation_record: Account<'info, UserDecryptionDelegation>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
 }
@@ -55,6 +61,8 @@ pub fn delegate_for_user_decryption(
         delegate.to_bytes() != WILDCARD_APP,
         ZamaHostError::InvalidDelegation
     );
+    // A delegate decrypts by signing a request off chain; a PDA has no key to sign it with.
+    require!(delegate.is_on_curve(), ZamaHostError::InvalidDelegation);
     // The sentinel fills the whole application or none of it.
     require!(
         (program.to_bytes() == WILDCARD_APP) == (scope.to_bytes() == WILDCARD_APP),
@@ -73,90 +81,34 @@ pub fn delegate_for_user_decryption(
         );
     }
 
-    let bump = ctx.bumps.delegation_record;
-    let info = ctx.accounts.delegation_record.to_account_info();
-    let current = read_existing_delegation(&info, bump)?;
-    let (delegator_bytes, delegate_bytes, program_bytes, scope_bytes) = (
-        delegator.to_bytes(),
-        delegate.to_bytes(),
-        program.to_bytes(),
-        scope.to_bytes(),
-    );
-    let [seed, delegator_seed, delegate_seed, program_seed, scope_seed] =
-        zama_solana_acl::delegation_seeds(
-            &delegator_bytes,
-            &delegate_bytes,
-            &program_bytes,
-            &scope_bytes,
+    // A record created by this call is zeroed; every written record has `delegation_counter >= 1`
+    // (a revoke keeps the record and raises the counter).
+    let record = &mut ctx.accounts.delegation_record;
+    let delegation_counter = if record.delegation_counter == 0 {
+        1
+    } else {
+        require!(
+            record.last_update_slot < clock.slot,
+            ZamaHostError::DelegationUpdatedInCurrentSlot
         );
-    create_pda_if_needed(
-        &ctx.accounts.payer.to_account_info(),
-        &info,
-        &ctx.accounts.system_program.to_account_info(),
-        8 + UserDecryptionDelegation::SPACE,
-        &[
-            seed,
-            delegator_seed,
-            delegate_seed,
-            program_seed,
-            scope_seed,
-            &[bump],
-        ],
-    )?;
-    let delegation_counter = match current {
-        Some(record) => {
-            require!(
-                record.delegator == delegator
-                    && record.delegate == delegate
-                    && record.program == program
-                    && record.scope == scope,
-                ZamaHostError::InvalidDelegation
-            );
-            require!(
-                record.last_update_slot < clock.slot,
-                ZamaHostError::DelegationUpdatedInCurrentSlot
-            );
-            require!(
-                record.expires_at != expires_at,
-                ZamaHostError::InvalidDelegation
-            );
-            record
-                .delegation_counter
-                .checked_add(1)
-                .ok_or(ZamaHostError::InvalidDelegation)?
-        }
-        None => 1,
+        require!(
+            record.expires_at != expires_at,
+            ZamaHostError::InvalidDelegation
+        );
+        record
+            .delegation_counter
+            .checked_add(1)
+            .ok_or(ZamaHostError::InvalidDelegation)?
     };
-    write_account(
-        &info,
-        &UserDecryptionDelegation {
-            delegator,
-            delegate,
-            program,
-            scope,
-            expires_at,
-            delegation_counter,
-            last_update_slot: clock.slot,
-            bump,
-        },
-    )?;
+    record.set_inner(UserDecryptionDelegation {
+        delegator,
+        delegate,
+        program,
+        scope,
+        expires_at,
+        delegation_counter,
+        last_update_slot: clock.slot,
+        bump: ctx.bumps.delegation_record,
+    });
     Ok(())
-}
-
-fn read_existing_delegation(
-    info: &AccountInfo,
-    bump: u8,
-) -> Result<Option<UserDecryptionDelegation>> {
-    if info.owner != &crate::ID {
-        return Ok(None);
-    }
-    require!(
-        info.data_len() == 8 + UserDecryptionDelegation::SPACE,
-        ZamaHostError::InvalidDelegation
-    );
-    let data = info.try_borrow_data()?;
-    let mut data_slice: &[u8] = &data;
-    let record = UserDecryptionDelegation::try_deserialize(&mut data_slice)?;
-    require!(record.bump == bump, ZamaHostError::DelegationPdaMismatch);
-    Ok(Some(record))
 }

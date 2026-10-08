@@ -51,7 +51,7 @@ fn allow_all(output: StoreOutput, keys: impl Iterator<Item = Pubkey>) -> StoreOu
     keys.fold(output, StoreOutput::allow)
 }
 
-/// Whether a persist-heavy shape's outputs create their accounts or update existing ones.
+/// Whether a persist-heavy shape's Store outputs write new slots or replace existing ones.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PersistKind {
     Create,
@@ -249,7 +249,7 @@ pub(crate) fn reduction_shape(
 }
 
 /// A chain that mixes every tallied table in one build: adds, a mid-chain sum and set
-/// membership, and one persistent create at the end.
+/// membership, and one Store output at the end.
 pub(crate) fn mixed_ops_shape(
 ) -> impl for<'id> FnOnce(&mut FheExecutionBuilder<'id>) -> crate::Result<()> {
     let (input, outputs) = persist_shape_data(PersistKind::Create, 1, 2);

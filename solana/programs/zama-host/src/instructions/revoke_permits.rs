@@ -25,10 +25,16 @@ pub struct RevokePermits<'info> {
     /// The user revoking their permits, and the payer for the watermark account.
     #[account(mut)]
     pub user: Signer<'info>,
-    /// CHECK: validated manually against the canonical watermark address for `user`,
-    /// then created if absent.
-    #[account(mut, seeds = [PERMIT_INVALIDATION_SEED, user.key().as_ref()], bump)]
-    pub invalidation: UncheckedAccount<'info>,
+    /// The user's watermark, created on first revocation. The address is derived from the
+    /// signer, so another user's watermark is never at this address.
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = 8 + PermitInvalidation::SPACE,
+        seeds = [PERMIT_INVALIDATION_SEED, user.key().as_ref()],
+        bump,
+    )]
+    pub invalidation: Account<'info, PermitInvalidation>,
     /// System program, used when the watermark account has to be created.
     pub system_program: Program<'info, System>,
 }
@@ -37,9 +43,6 @@ pub struct RevokePermits<'info> {
 pub fn revoke_permits(ctx: Context<RevokePermits>) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
 
-    let user = ctx.accounts.user.key();
-    let invalidation = ctx.accounts.invalidation.to_account_info();
-
     // The clock is refused rather than coerced when it reads before the epoch. The
     // watermark is unsigned seconds, so a cast would land near the top of the range and
     // permanently kill every permit this user will ever sign — an unrecoverable state
@@ -47,81 +50,13 @@ pub fn revoke_permits(ctx: Context<RevokePermits>) -> Result<()> {
     let now = u64::try_from(Clock::get()?.unix_timestamp)
         .map_err(|_| error!(ZamaHostError::ClockBeforeEpoch))?;
 
-    // The address is derived from the signer, which is what keys the watermark to an
-    // identity: an account belonging to anyone else is simply not at this address, so
-    // "move somebody else's watermark" has nowhere to land.
-    let bump = ctx.bumps.invalidation;
-
-    let previous_watermark = if is_uninitialized_pda_account(
-        &invalidation,
-        ZamaHostError::PermitInvalidationAccountInvalid,
-    )? {
-        create_pda_if_needed(
-            &ctx.accounts.user.to_account_info(),
-            &invalidation,
-            &ctx.accounts.system_program.to_account_info(),
-            8 + PermitInvalidation::SPACE,
-            &[PERMIT_INVALIDATION_SEED, user.as_ref(), &[bump]],
-        )?;
-        // An absent account is a watermark of zero — the same reading the verifier does,
-        // stated in the one place that creates the account.
-        0
-    } else {
-        stored_watermark(&invalidation, user, bump)?
-    };
-
-    write_account(
-        &invalidation,
-        &PermitInvalidation {
-            user,
-            // Monotonic by construction: the recorded value is a maximum, so a slot whose
-            // clock lags cannot resurrect permits this user already killed.
-            invalidation_watermark: previous_watermark.max(now),
-            bump,
-        },
-    )
-}
-
-/// Reads the watermark out of an existing record, refusing anything this instruction did
-/// not write.
-///
-/// Four ways an account at the canonical address can fail to be that record: another
-/// program owns it, it is the wrong size, it carries another record type's discriminator,
-/// or it names a different user. The last one is why the record stores its user at all —
-/// the contents are checked against the address rather than trusted because the address
-/// looked right.
-fn stored_watermark(invalidation: &AccountInfo, user: Pubkey, bump: u8) -> Result<u64> {
-    require_keys_eq!(
-        *invalidation.owner,
-        crate::ID,
-        ZamaHostError::PermitInvalidationAccountInvalid
-    );
-    require!(
-        !invalidation.executable,
-        ZamaHostError::PermitInvalidationAccountInvalid
-    );
-    // Exact size, both directions: a shorter account is a truncated or foreign record, and
-    // a longer one is a different account type that happens to live here. Neither is
-    // reinterpreted.
-    require!(
-        invalidation.data_len() == 8 + PermitInvalidation::SPACE,
-        ZamaHostError::PermitInvalidationAccountInvalid
-    );
-
-    let data = invalidation.try_borrow_data()?;
-    let mut cursor: &[u8] = &data;
-    let record = PermitInvalidation::try_deserialize(&mut cursor)
-        .map_err(|_| error!(ZamaHostError::PermitInvalidationAccountInvalid))?;
-
-    require_keys_eq!(
-        record.user,
-        user,
-        ZamaHostError::PermitInvalidationAccountInvalid
-    );
-    require!(
-        record.bump == bump,
-        ZamaHostError::PermitInvalidationPdaMismatch
-    );
-
-    Ok(record.invalidation_watermark)
+    // A record created by this call is zeroed, which is the watermark an absent account reads as.
+    let user = ctx.accounts.user.key();
+    let invalidation = &mut ctx.accounts.invalidation;
+    invalidation.user = user;
+    invalidation.bump = ctx.bumps.invalidation;
+    // Monotonic by construction: the recorded value is a maximum, so a slot whose
+    // clock lags cannot resurrect permits this user already killed.
+    invalidation.invalidation_watermark = invalidation.invalidation_watermark.max(now);
+    Ok(())
 }

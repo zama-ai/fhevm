@@ -3,7 +3,7 @@
 //! One byte-level implementation for every off-chain reader of the record — the KMS connector's
 //! authoritative check and the relayer's advisory pre-check decode the same bytes through this
 //! module, so the two cannot drift on the layout or on what "live" means. Off-chain readers also
-//! share the PDA finder; on-chain programs use [`delegation_seeds`] without a Solana dependency.
+//! share the PDA finder.
 //!
 //! The layout mirrors `zama-host`'s `UserDecryptionDelegation` (a fixed 161-byte account:
 //! 8-byte Anchor discriminator + 153-byte body) and is pinned against the program's own

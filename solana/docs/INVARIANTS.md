@@ -163,7 +163,7 @@ A failed transaction rolls back all writes. Decrypt permission remains a separat
 In the batcher, each JoinRecord controls its participant's contribution Store, scoped to the batch.
 Pinned by `mollusk_fhe_execute_rejects_read_of_a_value_whose_authority_did_not_sign`,
 `producer_reuses_its_result_across_calls_with_transaction_origin_and_depth`,
-`transient_result_rejects_missing_grants_and_wrong_handle_or_consumer`, `active_workspace_cannot_be_reopened`,
+`transient_result_rejects_missing_grants_and_wrong_handle_or_consumer`, `active_transient_store_cannot_be_reopened`,
 `result_journal_capacity_is_shared_across_calls_and_fails_atomically`,
 `transient_store_cannot_close_before_the_final_instruction` and
 `transient_store_is_created_and_closed_atomically_including_prefunded_addresses`.

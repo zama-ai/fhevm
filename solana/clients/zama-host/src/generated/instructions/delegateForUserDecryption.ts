@@ -144,6 +144,7 @@ export type DelegateForUserDecryptionAsyncInput<
   hostConfig?: Address<TAccountHostConfig>;
   /** The application's scope: an account `program` owns, or the wildcard sentinel. */
   scope: Address<TAccountScope>;
+  /** The `delegator → delegate` record for the application, created on first grant. */
   delegationRecord?: Address<TAccountDelegationRecord>;
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
@@ -270,6 +271,7 @@ export type DelegateForUserDecryptionInput<
   hostConfig: Address<TAccountHostConfig>;
   /** The application's scope: an account `program` owns, or the wildcard sentinel. */
   scope: Address<TAccountScope>;
+  /** The `delegator → delegate` record for the application, created on first grant. */
   delegationRecord: Address<TAccountDelegationRecord>;
   /** System program used for account creation. */
   systemProgram?: Address<TAccountSystemProgram>;
@@ -369,6 +371,7 @@ export type ParsedDelegateForUserDecryptionInstruction<
     hostConfig: TAccountMetas[2];
     /** The application's scope: an account `program` owns, or the wildcard sentinel. */
     scope: TAccountMetas[3];
+    /** The `delegator → delegate` record for the application, created on first grant. */
     delegationRecord: TAccountMetas[4];
     /** System program used for account creation. */
     systemProgram: TAccountMetas[5];

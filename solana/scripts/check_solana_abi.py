@@ -114,6 +114,50 @@ def idl_spec_errors(root: pathlib.Path, which: str) -> list[str]:
     return errors
 
 
+HOST_ACCOUNT_SOURCES = "programs/zama-host/src"
+
+# Codama renders a decoder only for an account the IDL lists, and Anchor lists an account type only
+# when an instruction takes it as a typed account. Every zama-host `#[account]` type must therefore
+# reach the IDL, or a client has to decode it by hand.
+HOST_ACCOUNTS_OUTSIDE_IDL = {
+    "HcuBlockMeter": (
+        "its PDA comes from the execution's Store in remaining_accounts, which Anchor seeds "
+        "cannot name, and fhe_execute creates it only in the metering band for untrusted apps"
+    ),
+}
+
+ACCOUNT_TYPE = re.compile(
+    r"^[ \t]*#\[account(?:\(.*\))?\][ \t]*\n(?:[ \t]*(?:#\[.*\]|//.*)\n)*[ \t]*pub(?:\(\w+\))? struct (\w+)",
+    re.M,
+)
+
+
+def idl_account_errors(root: pathlib.Path, which: str) -> list[str]:
+    """Check that every zama-host account type is in the IDL `accounts`, on the `which` side."""
+    path = (root / PROGRAMS["zama_host"][which]).resolve()
+    if not path.exists():
+        # Absent files are reported by the caller, which knows why it wanted this one.
+        return []
+    in_idl = {account["name"] for account in load_json(path)["accounts"]}
+    declared = {
+        name
+        for source in sorted((root / HOST_ACCOUNT_SOURCES).rglob("*.rs"))
+        for name in ACCOUNT_TYPE.findall(source.read_text())
+    }
+    errors = [
+        f"zama_host: #[account] {name} is not in the IDL accounts of {path}. Take it as a typed "
+        "account in the instruction that creates it, or add it to HOST_ACCOUNTS_OUTSIDE_IDL "
+        "with the reason Anchor cannot declare it"
+        for name in sorted(declared - in_idl - HOST_ACCOUNTS_OUTSIDE_IDL.keys())
+    ]
+    errors += [
+        f"zama_host: HOST_ACCOUNTS_OUTSIDE_IDL names {name}, which is not an #[account] type "
+        "outside the IDL; remove the exemption"
+        for name in sorted(HOST_ACCOUNTS_OUTSIDE_IDL.keys() - (declared - in_idl))
+    ]
+    return errors
+
+
 def vendored_idls() -> dict[str, dict[str, Any]]:
     """Every IDL whose committed copy must equal the build output.
 
@@ -144,11 +188,10 @@ PINNED_SCHEMAS = [
     ("zama_host", "type", "ExecutionResultRef", True),
     ("zama_host", "instruction_args", "initialize_host_config", True),
     ("zama_host", "instruction_args", "fhe_execute", True),
-    # `EncryptedValue` and `DenyScopeRecord` are absent here on purpose: Anchor emits only the
-    # accounts an instruction types, and the host reads both through `UncheckedAccount`. Their
-    # layouts are pinned where they are produced instead: `zama-solana-acl`'s codec tests and
-    # `shared_crate_decoder_reads_what_the_program_serializes` for the value, the host's own
-    # `state` tests for the deny record.
+    # `EncryptedValue` is absent here on purpose: Anchor emits only the accounts an instruction
+    # types, and the host reads it through `UncheckedAccount`. Its layout is pinned where it is
+    # produced instead: `zama-solana-acl`'s codec tests and
+    # `shared_crate_decoder_reads_what_the_program_serializes`.
     ("zama_host", "account", "RandNonce", True),
     ("zama_host", "instruction_args", "define_kms_context", True),
     ("zama_host", "instruction_args", "delegate_for_user_decryption", True),
@@ -215,7 +258,7 @@ def main() -> int:
         # Before copying anything: a sync is the one moment an IDL format bump can pass
         # through unnoticed, and refusing it here leaves the tree untouched rather than
         # half-updated.
-        spec_errors = idl_spec_errors(root, "target_idl")
+        spec_errors = idl_spec_errors(root, "target_idl") + idl_account_errors(root, "target_idl")
         if spec_errors:
             for error in spec_errors:
                 print(f"error: {error}", file=sys.stderr)
@@ -235,7 +278,7 @@ def main() -> int:
         print(f"wrote {manifest_path}")
         return 0
 
-    errors: list[str] = idl_spec_errors(root, "vendored_idl")
+    errors: list[str] = idl_spec_errors(root, "vendored_idl") + idl_account_errors(root, "vendored_idl")
     for program, spec in vendored_build_outputs().items():
         target = root / spec["target_idl"]
         vendored = (root / spec["vendored_idl"]).resolve()
