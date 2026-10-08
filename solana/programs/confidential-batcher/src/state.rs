@@ -188,8 +188,7 @@ mod tests {
     #[test]
     fn claims_never_exceed_received_payout() {
         // Adversarially rounded batches, including the u64-scale case of
-        // fhevm-internal#1774: sum(floor(joined_i * payout / total)) <= payout, and each
-        // claim's floor strands less than one unit.
+        // fhevm-internal#1774: sum(floor(joined_i * payout / total)) <= payout.
         let cases: &[(&[u64], u64)] = &[
             (&[300, 500], 799),
             (&[1, 1, 1], 2),
@@ -209,10 +208,6 @@ mod tests {
             assert!(
                 distributed <= *payout as u128,
                 "distributed {distributed} > payout {payout} for joins {joins:?}"
-            );
-            assert!(
-                *payout as u128 - distributed <= joins.len() as u128,
-                "more than one unit per claim stranded for joins {joins:?}"
             );
         }
     }

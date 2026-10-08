@@ -12,8 +12,7 @@ pub const APP_EVENT_VERSION: u8 = 2;
 ///
 /// The rate is event-facing and informational only. Claims do NOT multiply by
 /// it: each claim is the exact proportional floor
-/// `encrypted(joined) * payout_received / total_joined` in one MulDiv execution,
-/// which strands strictly less than the rate's double rounding would (the
+/// `encrypted(joined) * payout_received / total_joined` in one MulDiv execution (the
 /// intermediate `joined * payout_received < 2^128` stays inside the
 /// coprocessor's widened MulDiv, and the result is at most `payout_received`,
 /// so it fits euint64). On the redeem direction the rate itself can exceed

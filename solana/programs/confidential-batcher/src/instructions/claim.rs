@@ -10,9 +10,8 @@
 //!
 //! Rounding guarantees delivery: every claim floors its exact share of the
 //! aggregate, so the sum of all claims never exceeds the wrapped payout and
-//! the all-or-zero transfer always moves the full claim. Exact division (not
-//! the informational `payout_rate`) avoids the double rounding that stranded
-//! up to `RATE_SCALE`-scale dust per batch at u64 amounts. The MulDiv's
+//! the all-or-zero transfer always moves the full claim. Claims use exact
+//! division, not the informational `payout_rate`. The MulDiv's
 //! intermediate `joined * payout_received < 2^128` stays inside the
 //! coprocessor's widened MulDiv, and the result is at most `payout_received`,
 //! so it fits euint64. `total_joined > 0` because zero-total batches cancel.
