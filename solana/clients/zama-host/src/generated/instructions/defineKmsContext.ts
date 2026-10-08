@@ -43,6 +43,7 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
+import { findHostConfigPda, findKmsContextPda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 import {
   getKmsThresholdsDecoder,
@@ -219,19 +220,15 @@ export async function getDefineKmsContextInstructionAsync<
 
   // Resolve default values.
   if (!accounts.hostConfig.value) {
-    accounts.hostConfig.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
-    });
+    accounts.hostConfig.value = await findHostConfigPda({ programAddress });
   }
   if (!accounts.kmsContext.value) {
-    accounts.kmsContext.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(new Uint8Array([107, 109, 115, 45, 99, 111, 110, 116, 101, 120, 116])),
-        fixEncoderSize(getBytesEncoder(), 32).encode(getNonNullResolvedInstructionInput('contextId', args.contextId)),
-      ],
-    });
+    accounts.kmsContext.value = await findKmsContextPda(
+      {
+        contextId: getNonNullResolvedInstructionInput('contextId', args.contextId),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;

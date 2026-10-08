@@ -11,10 +11,8 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -43,6 +41,7 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
+import { findChainAuthorityPda, findChainPda } from '../pdas/index.js';
 import { DEP_CHAIN_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const INITIALIZE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([175, 175, 109, 31, 13, 152, 155, 237]);
@@ -231,24 +230,20 @@ export async function getInitializeInstructionAsync<
 
   // Resolve default values.
   if (!accounts.chain.value) {
-    accounts.chain.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(new Uint8Array([100, 101, 112, 45, 99, 104, 97, 105, 110])),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('owner', accounts.owner.value)),
-      ],
-    });
+    accounts.chain.value = await findChainPda(
+      {
+        owner: getAddressFromResolvedInstructionAccount('owner', accounts.owner.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.chainAuthority.value) {
-    accounts.chainAuthority.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([99, 104, 97, 105, 110, 45, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
-        ),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('chain', accounts.chain.value)),
-      ],
-    });
+    accounts.chainAuthority.value = await findChainAuthorityPda(
+      {
+        chain: getAddressFromResolvedInstructionAccount('chain', accounts.chain.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =

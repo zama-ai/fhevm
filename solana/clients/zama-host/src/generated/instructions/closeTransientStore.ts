@@ -10,10 +10,8 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -39,6 +37,7 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
+import { findTransientStorePda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const CLOSE_TRANSIENT_STORE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -144,13 +143,12 @@ export async function getCloseTransientStoreInstructionAsync<
       'Sysvar1nstructions1111111111111111111111111' as Address<'Sysvar1nstructions1111111111111111111111111'>;
   }
   if (!accounts.transientStore.value) {
-    accounts.transientStore.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(new Uint8Array([116, 114, 97, 110, 115, 105, 101, 110, 116])),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('payer', accounts.payer.value)),
-      ],
-    });
+    accounts.transientStore.value = await findTransientStorePda(
+      {
+        payer: getAddressFromResolvedInstructionAccount('payer', accounts.payer.value),
+      },
+      { programAddress },
+    );
   }
 
   return Object.freeze({

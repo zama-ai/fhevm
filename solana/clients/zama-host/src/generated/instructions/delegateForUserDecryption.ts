@@ -14,7 +14,6 @@ import {
   getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
@@ -47,6 +46,7 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
+import { findDelegationRecordPda, findHostConfigPda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const DELEGATE_FOR_USER_DECRYPTION_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -223,27 +223,18 @@ export async function getDelegateForUserDecryptionInstructionAsync<
 
   // Resolve default values.
   if (!accounts.hostConfig.value) {
-    accounts.hostConfig.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
-    });
+    accounts.hostConfig.value = await findHostConfigPda({ programAddress });
   }
   if (!accounts.delegationRecord.value) {
-    accounts.delegationRecord.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([
-            117, 115, 101, 114, 45, 100, 101, 99, 114, 121, 112, 116, 105, 111, 110, 45, 100, 101, 108, 101, 103, 97,
-            116, 105, 111, 110,
-          ]),
-        ),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('delegator', accounts.delegator.value)),
-        getAddressEncoder().encode(getNonNullResolvedInstructionInput('delegate', args.delegate)),
-        getAddressEncoder().encode(getNonNullResolvedInstructionInput('program', args.program)),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('scope', accounts.scope.value)),
-      ],
-    });
+    accounts.delegationRecord.value = await findDelegationRecordPda(
+      {
+        delegator: getAddressFromResolvedInstructionAccount('delegator', accounts.delegator.value),
+        delegate: getNonNullResolvedInstructionInput('delegate', args.delegate),
+        program: getNonNullResolvedInstructionInput('program', args.program),
+        scope: getAddressFromResolvedInstructionAccount('scope', accounts.scope.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;

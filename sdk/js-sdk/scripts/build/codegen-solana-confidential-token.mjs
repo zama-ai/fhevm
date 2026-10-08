@@ -448,35 +448,6 @@ for (const target of targets) {
       ),
     );
   }
-  // Codama's linked PDA resolver drops the instruction's programAddress override.
-  // Inline same-program PDA definitions while preserving their argument seed bindings.
-  // PDAs are matched by name. Confidential-token defines its own `eventAuthority`, so its linked host
-  // `eventAuthority` would be rebound to the token program; the other targets define no host PDA name.
-  if (
-    [
-      idlUrl('zama_host.json'),
-      demoIdlUrl('confidential_batcher.json'),
-      demoIdlUrl('demo_vault.json'),
-      specimenIdlUrl('dep-chain', 'dep_chain.json'),
-      specimenIdlUrl('encrypted-counter', 'encrypted_counter.json'),
-    ].includes(target.idlPath)
-  ) {
-    const updates = Object.fromEntries(
-      codama.getRoot().program.instructions.map(({ name, accounts }) => [
-        name,
-        {
-          accounts: Object.fromEntries(
-            accounts.flatMap(({ name, defaultValue }) => {
-              if (defaultValue?.kind !== 'pdaValueNode') return [];
-              const pda = program.pdas.find(({ name }) => name === defaultValue.pda.name);
-              return pda === undefined ? [] : [[name, { defaultValue: { ...defaultValue, pda } }]];
-            }),
-          ),
-        },
-      ]),
-    );
-    codama.update(updateInstructionsVisitor(updates));
-  }
 
   await codama.accept(
     renderVisitor(temporaryRoot, {

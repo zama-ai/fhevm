@@ -49,6 +49,7 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
+import { findHostConfigPda, findRandNoncePda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const INITIALIZE_HOST_CONFIG_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -300,16 +301,10 @@ export async function getInitializeHostConfigInstructionAsync<
 
   // Resolve default values.
   if (!accounts.hostConfig.value) {
-    accounts.hostConfig.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
-    });
+    accounts.hostConfig.value = await findHostConfigPda({ programAddress });
   }
   if (!accounts.randNonce.value) {
-    accounts.randNonce.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [getBytesEncoder().encode(new Uint8Array([114, 97, 110, 100, 45, 110, 111, 110, 99, 101]))],
-    });
+    accounts.randNonce.value = await findRandNoncePda({ programAddress });
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;

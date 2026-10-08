@@ -10,10 +10,8 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -42,6 +40,7 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
+import { findInvalidationPda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const REVOKE_PERMITS_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([51, 25, 89, 125, 125, 90, 200, 130]);
@@ -149,15 +148,12 @@ export async function getRevokePermitsInstructionAsync<
 
   // Resolve default values.
   if (!accounts.invalidation.value) {
-    accounts.invalidation.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([112, 101, 114, 109, 105, 116, 45, 105, 110, 118, 97, 108, 105, 100, 97, 116, 105, 111, 110]),
-        ),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('user', accounts.user.value)),
-      ],
-    });
+    accounts.invalidation.value = await findInvalidationPda(
+      {
+        user: getAddressFromResolvedInstructionAccount('user', accounts.user.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;

@@ -11,10 +11,8 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
@@ -43,6 +41,7 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
+import { findCounterAuthorityPda, findCounterPda } from '../pdas/index.js';
 import { ENCRYPTED_COUNTER_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const INITIALIZE_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([175, 175, 109, 31, 13, 152, 155, 237]);
@@ -235,24 +234,20 @@ export async function getInitializeInstructionAsync<
 
   // Resolve default values.
   if (!accounts.counter.value) {
-    accounts.counter.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(new Uint8Array([99, 111, 117, 110, 116, 101, 114])),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('owner', accounts.owner.value)),
-      ],
-    });
+    accounts.counter.value = await findCounterPda(
+      {
+        owner: getAddressFromResolvedInstructionAccount('owner', accounts.owner.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.counterAuthority.value) {
-    accounts.counterAuthority.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [
-        getBytesEncoder().encode(
-          new Uint8Array([99, 111, 117, 110, 116, 101, 114, 45, 97, 117, 116, 104, 111, 114, 105, 116, 121]),
-        ),
-        getAddressEncoder().encode(getAddressFromResolvedInstructionAccount('counter', accounts.counter.value)),
-      ],
-    });
+    accounts.counterAuthority.value = await findCounterAuthorityPda(
+      {
+        counter: getAddressFromResolvedInstructionAccount('counter', accounts.counter.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
