@@ -123,8 +123,8 @@ export const readStackState = async (): Promise<State> => {
 
 /**
  * The deployer and fee-payer wallet, which is also the HostConfig admin: airdrop, program deploy,
- * the bootstrap and later admin instructions all sign with it. It is passed explicitly everywhere,
- * so this setup never depends on or mutates the developer's global `solana config` (URL or
+ * the bootstrap and later admin instructions all sign with it. Every caller passes it explicitly,
+ * so the side stack never depends on or mutates the developer's global `solana config` (URL or
  * keypair). Same override the demo deployer honors (deploy-demo-programs.sh).
  */
 export const solanaDeployerKeypairPath = (): string =>

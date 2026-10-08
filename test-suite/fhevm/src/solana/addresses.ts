@@ -11,7 +11,6 @@ import { type ContractFunctionName, createPublicClient, http, parseAbi } from "v
 import {
   evmAddressBytes,
   readGatewayBootstrapInputs as readGatewayBootstrapInputsFromAddresses,
-  readGatewayKmsSignersForContext as readGatewayKmsSignersForContextFromAddress,
   type GatewayBootstrapInputs,
 } from "../../../../solana/deploy/src/gateway";
 import { DEFAULT_HOST_CHAIN_KEY, gatewayAddressesPath, hostChainAddressesPath } from "../layout";
@@ -106,22 +105,17 @@ export const readProtocolConfigAddress = async (addressesPath?: string): Promise
   return protocolConfig;
 };
 
-/** One contract address from the fhevm-cli gateway address artifact. */
-const gatewayAddressReader = async (addressesPath?: string) => {
-  const addresses = await readEnvFile(addressesPath ?? gatewayAddressesPath);
-  return (name: string): string => {
-    const value = addresses[name];
-    if (!value) throw new Error(`missing ${name} in the gateway address artifact`);
-    return value;
-  };
-};
-
 export const readGatewayBootstrapInputs = async (parameters: {
   readonly gatewayRpcUrl: string;
   /** Override for tests; defaults to the fhevm-cli state layout. */
   readonly addressesPath?: string;
 }): Promise<GatewayBootstrapInputs> => {
-  const required = await gatewayAddressReader(parameters.addressesPath);
+  const addresses = await readEnvFile(parameters.addressesPath ?? gatewayAddressesPath);
+  const required = (name: string): string => {
+    const value = addresses[name];
+    if (!value) throw new Error(`missing ${name} in the gateway address artifact`);
+    return value;
+  };
   return readGatewayBootstrapInputsFromAddresses({
     gatewayRpcUrl: parameters.gatewayRpcUrl,
     gatewayConfigAddress: required("GATEWAY_CONFIG_ADDRESS"),
@@ -130,14 +124,9 @@ export const readGatewayBootstrapInputs = async (parameters: {
   });
 };
 
-/** The KMS signer set the gateway registered for `contextId`. */
-export const readGatewayKmsSignersForContext = async (
-  parameters: { readonly gatewayRpcUrl: string },
-  contextId: bigint,
-): Promise<Uint8Array[]> => {
-  const required = await gatewayAddressReader();
-  return readGatewayKmsSignersForContextFromAddress(
-    { gatewayRpcUrl: parameters.gatewayRpcUrl, gatewayConfigAddress: required("GATEWAY_CONFIG_ADDRESS") },
-    contextId,
-  );
+/** The gateway's `GatewayConfig`, from the fhevm-cli address artifact. */
+export const readGatewayConfigAddress = async (): Promise<string> => {
+  const gatewayConfig = (await readEnvFile(gatewayAddressesPath))["GATEWAY_CONFIG_ADDRESS"];
+  if (!gatewayConfig) throw new Error("missing GATEWAY_CONFIG_ADDRESS in the gateway address artifact");
+  return gatewayConfig;
 };

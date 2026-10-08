@@ -6,6 +6,7 @@
 // destroy (the destroyed context's certificate is refused, and the current context still serves).
 import { address } from '@solana/kit';
 
+import { hexToBytes } from '@fhevm/sdk/base';
 import { TOTAL_SUPPLY_KEY } from '@fhevm/confidential-token';
 import {
   ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT,
@@ -15,13 +16,13 @@ import {
 } from '@fhevm/solana-zama-host';
 
 import { defineKmsContextInstruction } from '../../../../solana/deploy/src/bootstrap';
+import { readGatewayKmsSignersForContext } from '../../../../solana/deploy/src/gateway';
 import { SOLANA_ACL_PROGRAM } from '../layout';
 import type { State } from '../types';
-import { bytes32HexFromId, readGatewayKmsSignersForContext } from './addresses';
-import { assertKmsThresholdsMatchEvmHost, solanaDeployerKeypairPath } from './deploy';
+import { bytes32HexFromId, readGatewayConfigAddress } from './addresses';
+import { assertKmsThresholdsMatchEvmHost, bootstrapThresholdsForState, solanaDeployerKeypairPath } from './deploy';
 import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
 import { type FheVerticalConfig, certifiedPublicDecrypt, currentHandle, userDecryptExpect } from './fhe-vertical';
-import { sdkVerifyModule } from './lazy-modules';
 import { expectProgramError } from './program-error';
 import {
   createConfidentialMint,
@@ -44,7 +45,7 @@ const HOLDER_SOL = 5;
 
 const hex = (bytes: Uint8Array): `0x${string}` => `0x${Buffer.from(bytes).toString('hex')}`;
 /** A KMS context id as zama-host stores it: the EVM uint256, 32 bytes big-endian. */
-const contextIdBytes = (contextId: bigint): Uint8Array => Buffer.from(bytes32HexFromId(contextId).slice(2), 'hex');
+const contextIdBytes = (contextId: bigint): Uint8Array => hexToBytes(bytes32HexFromId(contextId));
 
 export type SolanaKmsContextLeg = {
   /** Defines `contextId`, just activated on the EVM host, on zama-host with the same committee. */
@@ -52,10 +53,10 @@ export type SolanaKmsContextLeg = {
   /** Step 1: values written before the switch decrypt under `contextId`, which zama-host accepts. */
   readonly checkSwitch: (contextId: bigint) => Promise<void>;
   /**
-   * Step 3: destroys `destroyedContextId` on zama-host. Its certificate from before the switch is
+   * Step 3: destroys the baseline context on zama-host. Its certificate from before the switch is
    * then refused, and a certificate of `currentContextId` is still accepted.
    */
-  readonly destroyContext: (destroyedContextId: bigint, currentContextId: bigint) => Promise<void>;
+  readonly destroyBaseline: (currentContextId: bigint) => Promise<void>;
 };
 
 /**
@@ -94,6 +95,8 @@ export const prepareSolanaKmsContextLeg = async (
   const chainId = await readHostChainId(context);
   const decryptConfig = async (publicDecryptContextId: bigint): Promise<FheVerticalConfig> => {
     const trust = await readDecryptTrustInputs({ gatewayRpcUrl: endpoints.gatewayRpc, hostRpcUrl: endpoints.hostRpc });
+    // The certificate names the context the host must verify it against. The permit names the
+    // pair the EVM ProtocolConfig has active, which the KMS Connector checks.
     return {
       rpcUrl: endpoints.validatorRpc,
       relayerUrl: endpoints.relayer,
@@ -109,28 +112,26 @@ export const prepareSolanaKmsContextLeg = async (
     };
   };
 
-  /** Certifies the total supply under `contextId` and checks the certificate names that context. */
+  /** Certifies the total supply under `contextId`: the certificate names that context. */
   const certifySupply = async (contextId: bigint) => {
     const { cleartext, certificate } = await certifiedPublicDecrypt(await decryptConfig(contextId), {
       encryptedStore: supplyStore,
       handle: supplyHandle,
     });
     if (cleartext !== WRAP_AMOUNT) throw new Error(`Solana total supply decrypted to ${cleartext}, expected ${WRAP_AMOUNT}`);
-    const { solanaPublicDecryptContextId } = await sdkVerifyModule();
-    const named = BigInt(hex(solanaPublicDecryptContextId(certificate)));
-    if (named !== contextId) throw new Error(`the certificate names context ${named}, expected ${contextId}`);
     return certificate;
   };
 
+  const gatewayConfigAddress = await readGatewayConfigAddress();
   const gatewaySigners = (contextId: bigint) =>
-    readGatewayKmsSignersForContext({ gatewayRpcUrl: endpoints.gatewayRpc }, contextId);
+    readGatewayKmsSignersForContext({ gatewayRpcUrl: endpoints.gatewayRpc, gatewayConfigAddress }, contextId);
   const defineContext = async (contextId: bigint, signers: readonly Uint8Array[]) =>
     context.sendTransaction(admin, [
       await defineKmsContextInstruction({
         admin,
         contextId: contextIdBytes(contextId),
         signers,
-        kmsCorruptionThreshold: state.scenario.kms.threshold,
+        kmsCorruptionThreshold: bootstrapThresholdsForState(state).kmsCorruptionThreshold,
       }),
     ]);
 
@@ -168,12 +169,12 @@ export const prepareSolanaKmsContextLeg = async (
       );
     },
 
-    destroyContext: async (destroyedContextId, currentContextId) => {
+    destroyBaseline: async (currentContextId) => {
       await context.sendTransaction(admin, [
-        await getDestroyKmsContextInstructionAsync({ admin, contextId: contextIdBytes(destroyedContextId) }),
+        await getDestroyKmsContextInstructionAsync({ admin, contextId: contextIdBytes(baselineContextId) }),
       ]);
       await expectProgramError(
-        `disclose a certificate of destroyed context ${destroyedContextId}`,
+        `disclose a certificate of destroyed context ${baselineContextId}`,
         ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT,
         () => discloseCertifiedHandle(context, { payer: holder.signer, certificate: baselineCertificate }),
       );
@@ -182,7 +183,7 @@ export const prepareSolanaKmsContextLeg = async (
         certificate: await certifySupply(currentContextId),
       });
       console.log(
-        `[kms-context-switch] solana: destroyed context ${destroyedContextId}; its certificate was refused ` +
+        `[kms-context-switch] solana: destroyed context ${baselineContextId}; its certificate was refused ` +
           `and context ${currentContextId} still certifies`,
       );
     },

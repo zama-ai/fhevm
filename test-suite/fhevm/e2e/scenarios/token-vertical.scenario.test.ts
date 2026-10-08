@@ -169,7 +169,8 @@ describe("solana confidential-token consume vertical", () => {
         () => context.sendTransaction(wallet.signer, [liveContextInstruction]),
       );
       // The account of the context the certificate names does not exist, so the token program
-      // refuses it before any host CPI.
+      // refuses it before any host CPI. The certificate names the bring-up context, so the flipped
+      // id is below it, and define_kms_context only accepts ids above the current one.
       await expectProgramError(
         "SECURITY: the account of a context that was never defined",
         ANCHOR_ACCOUNT_NOT_INITIALIZED,

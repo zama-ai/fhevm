@@ -69,7 +69,7 @@ import { stepComposeTask } from "../flow/runtime-compose";
 import { columnQuery, checkConnectorsDbColumn } from "../kms-connector-db";
 import { castSend, getEventTopic, callContractAndExpectRevert, keccakTopic, loadHostOwner, type Owner } from "../kms-onchain";
 import { kmsTxSenderName, reconstructionThreshold } from "../kms-party";
-import type { SolanaKmsContextLeg } from "../solana/kms-context-switch";
+import type { prepareSolanaKmsContextLeg } from "../solana/kms-context-switch";
 import type { State } from "../types";
 import {
   type DecryptionRunner,
@@ -618,7 +618,7 @@ export const runKmsContextSwitchProfile = async (
   state: State,
   runDecryption: DecryptionRunner,
   runSmoke: SmokeRunner,
-  prepareSolanaLeg?: (baselineContextId: bigint) => Promise<SolanaKmsContextLeg>,
+  prepareSolanaLeg?: typeof prepareSolanaKmsContextLeg,
 ) => {
   // The node-swap step needs a spare core, and the swap env files only exist when the cluster has
   // one — on a spare-less cluster the profile would only fail later, at the swap broadcast.
@@ -641,7 +641,7 @@ export const runKmsContextSwitchProfile = async (
 
   // Baseline app smoke first, so a later failure is attributable to the transition it follows.
   await runSmoke("kms-context-switch: input-proof at baseline (before any switch)");
-  const solana = await prepareSolanaLeg?.(baseline.contextId);
+  const solana = await prepareSolanaLeg?.(state, baseline.contextId);
 
   // 1) Same-committee context switch (NewKmsContext).
   const afterSwitch = await switchKmsContext(
@@ -687,7 +687,7 @@ export const runKmsContextSwitchProfile = async (
     runDecryption,
     runSmoke,
   );
-  await solana?.destroyContext(baseline.contextId, afterEpoch.contextId);
+  await solana?.destroyBaseline(afterEpoch.contextId);
 
   // 4a) A context switch must still work after a destroy. The connector reads the previous
   //     key/CRS material via getCrsMaterials, which resolves the context that material was

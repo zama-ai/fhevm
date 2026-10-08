@@ -2088,10 +2088,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     if (name === "kms-context-switch") {
       // A scenario with a Solana host also runs the Solana leg; the EVM host runs it alone otherwise.
       const solanaHost = hostChainsForState(state).some((chain) => chain.type === "solana");
-      const { prepareSolanaKmsContextLeg } = solanaHost ? await import("../solana/kms-context-switch") : {};
       return runKmsContextSwitchProfile(
         state, runUserDecryption, runInputProofSmoke,
-        prepareSolanaKmsContextLeg && ((baselineContextId) => prepareSolanaKmsContextLeg(state, baselineContextId)),
+        solanaHost ? (await import("../solana/kms-context-switch")).prepareSolanaKmsContextLeg : undefined,
       );
     }
     if (name === "blue-green") {
