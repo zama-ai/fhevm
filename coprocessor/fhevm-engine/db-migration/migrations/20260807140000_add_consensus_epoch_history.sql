@@ -2,7 +2,7 @@
 -- Green resolves its independent copy through `"gcs-<version>",public`.
 -- The GCS copy is merged into public at cutover.
 --
--- Genesis is `legacy`. Later identifiers are `{version}/block_{n}` from the
+-- Genesis is `legacy`. Later identifiers are `{consensus_version}/block_{n}` from the
 -- finalized CoprocessorUpgradeProposed log, not a shared counter and not
 -- gwStartBlock. The log is only ingested on
 -- CANONICAL_PROTOCOL_CONFIG_CHAIN_ID, so the chain id is omitted.
@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS consensus_epoch_history
     proposal_id BYTEA NULL CHECK (proposal_id IS NULL OR OCTET_LENGTH(proposal_id) = 32),
     proposal_block BIGINT NULL CHECK (proposal_block IS NULL OR proposal_block >= 0),
     stack_version TEXT NULL,
+    -- Protocol version the epoch upgrades to: the live versioning.consensus_version
+    -- plus one when the proposal was ingested. Binaries compare it with their
+    -- compiled CONSENSUS_PROTOCOL_VERSION and refuse an epoch without it;
+    -- `legacy` predates it.
+    consensus_version BIGINT NULL,
     outcome TEXT NOT NULL CHECK (outcome IN ('initial', 'pending', 'succeeded', 'failed')),
     allocated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at TIMESTAMPTZ NULL,

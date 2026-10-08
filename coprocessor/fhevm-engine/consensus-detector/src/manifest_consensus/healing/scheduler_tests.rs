@@ -1453,11 +1453,10 @@ async fn parked_epoch_takes_no_attestation_target() {
     seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
     let body = vec![3u8; 8];
     let id = insert_healable_from(&pool, 6, None, &body, false).await;
-    sqlx::query(
+    sqlx::query(&format!(
         "INSERT INTO consensus_epoch_history
-             (consensus_epoch, proposal_id, proposal_block, stack_version, outcome)
-         VALUES ('v1/block_3', $1, 3, 'test-green', 'pending')",
-    )
+             (consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome)
+         VALUES ('v1/block_3', $1, 3, 'test-green', {}, 'pending')", fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION))
     .bind(bytes(0x91))
     .execute(&pool)
     .await
