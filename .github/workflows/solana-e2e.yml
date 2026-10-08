@@ -60,7 +60,7 @@ jobs:
     # Status-check consumers: this check was named solana-e2e/scenarios-reconstruct (and before
     # that solana-e2e/full-vertical-reconstruct) while an emit/RPC ingestion arm still existed.
     name: solana-e2e/scenarios
-    runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/volume=160gb
+    runs-on: runs-on=${{ github.run_id }}/runner=32cpu-linux-x64/spot=false/volume=160gb
     # The e2e lane's own history: median successful runs ~50-53 min, observed successful tail up
     # to 72 min (run 29830123609). The demo phase adds ~2 min on the already-built stack. The
     # owned-boot status gate before reseed fails fast if an e2e phase degraded the stack. 120
