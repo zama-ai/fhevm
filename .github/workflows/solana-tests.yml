@@ -177,10 +177,10 @@ jobs:
           DEAD_SURFACE_ONLY_CHECK: ''
         run: bash scripts/dead-surface-check.sh --self-test
 
-  # The vault module (batch provisioning, settle composition, the address-lookup-table lifecycle)
-  # lives in the demo dapp, and its unit tests run nowhere else: js-sdk-tests is scoped to PRs
-  # against main/devex, and solana-e2e only builds the dapp. Without this job a regression in
-  # settle composition or ALT encoding surfaces first as a live e2e failure.
+  # The vault module (batch provisioning, settle composition, the transaction size checks) lives in
+  # the demo dapp, and its unit tests run nowhere else: js-sdk-tests is scoped to PRs against
+  # main/devex, and solana-e2e only builds the dapp. Without this job a regression in settle
+  # composition or transaction size surfaces first as a live e2e failure.
   demo-dapp:
     name: solana-tests/demo-dapp
     needs: check-changes

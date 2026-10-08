@@ -47,8 +47,6 @@ const statePaths = (root: string) => {
     solanaDemoConfigPath: path.join(solanaRuntimeDir, "demo-config.json"),
     /** Lifecycle-owned demo boots: manifest, lock, one directory per boot id. */
     SOLANA_DEMO_DIR: path.join(solanaRuntimeDir, "demo"),
-    /** Settle lookup tables the keeper opened per batch, until their rent is reclaimed. */
-    solanaBatchLookupTablesPath: path.join(solanaRuntimeDir, "batch-lookup-tables.json"),
     /** Written by the deposit-arc smoke on success; `demo:smoke` requires it back. */
     solanaDemoSmokeMarkerPath: path.join(solanaRuntimeDir, "demo-smoke-ran"),
     /** The cleartext stack's ledger, log and deployer wallet (`src/solana/cleartext-stack.ts`). */
@@ -72,7 +70,6 @@ export let gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
 export let SOLANA_RUNTIME_DIR = currentStatePaths.SOLANA_RUNTIME_DIR;
 export let solanaDemoConfigPath = currentStatePaths.solanaDemoConfigPath;
 export let SOLANA_DEMO_DIR = currentStatePaths.SOLANA_DEMO_DIR;
-export let solanaBatchLookupTablesPath = currentStatePaths.solanaBatchLookupTablesPath;
 export let solanaDemoSmokeMarkerPath = currentStatePaths.solanaDemoSmokeMarkerPath;
 export let SOLANA_CLEARTEXT_DIR = currentStatePaths.SOLANA_CLEARTEXT_DIR;
 export let solanaCleartextDeployerPath = currentStatePaths.solanaCleartextDeployerPath;
@@ -99,7 +96,6 @@ export const setStateDir = (root = process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_
   SOLANA_RUNTIME_DIR = currentStatePaths.SOLANA_RUNTIME_DIR;
   solanaDemoConfigPath = currentStatePaths.solanaDemoConfigPath;
   SOLANA_DEMO_DIR = currentStatePaths.SOLANA_DEMO_DIR;
-  solanaBatchLookupTablesPath = currentStatePaths.solanaBatchLookupTablesPath;
   solanaDemoSmokeMarkerPath = currentStatePaths.solanaDemoSmokeMarkerPath;
   SOLANA_CLEARTEXT_DIR = currentStatePaths.SOLANA_CLEARTEXT_DIR;
   solanaCleartextDeployerPath = currentStatePaths.solanaCleartextDeployerPath;

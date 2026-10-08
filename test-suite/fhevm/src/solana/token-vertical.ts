@@ -1,8 +1,4 @@
-import {
-  INSTRUCTIONS_SYSVAR_ADDRESS,
-  appendTransientStoreInstructions,
-  prepareTransientStore,
-} from "@fhevm/sdk/solana";
+import { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore } from "@fhevm/sdk/solana";
 // token-vertical — the typed confidential-token consume arc the token scenario drives:
 // burn (attested external amount) -> seal -> KMS-certified public decrypt -> redeem + disclose.
 //
@@ -76,8 +72,7 @@ export const totalSupplyStore = async (mint: Address): Promise<Address> => {
  * Burns an attested external amount from `owner`'s confidential balance (`confidential_burn`).
  * The attestation binds (user = owner, contract = the confidential-token program) — the token
  * requires exactly that contract identity for transfer/burn amounts. Five FHE steps in one
- * instruction: raised CU limit, a 256 KiB heap frame, and no preflight (SlotHashes entropy is
- * only populated in real execution), exactly the shape the retired live-client sent.
+ * instruction.
  */
 export const confidentialBurn = async (
   context: SolanaProvisioningContext,
@@ -110,9 +105,7 @@ export const confidentialBurn = async (
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     amountAttestation: params.amountAttestation,
   });
-  await context.sendTransaction(params.owner, appendTransientStoreInstructions(transientStore, [instruction]), {
-    skipPreflight: true,
-  });
+  await (await context.client(params.owner)).sendFheTransaction(transientStore, [instruction]);
 };
 
 /**
@@ -158,7 +151,7 @@ export const redeemBurnedAmount = async (
     signatures: [...args.signatures],
     extraData: args.extraData,
   });
-  await context.sendTransaction(params.owner, [instruction]);
+  await (await context.client(params.owner)).sendTransaction([instruction]);
 };
 
 /**
@@ -171,7 +164,7 @@ export const sealBurnedAmountHandle = async (
   params: { readonly owner: TransactionSigner; readonly mint: Address; readonly handle: Uint8Array },
 ): Promise<void> => {
   const target = await confidentialBurnTarget(params.mint, params.owner.address);
-  await context.sendTransaction(params.owner, [
+  await (await context.client(params.owner)).sendTransaction([
     await getMakeTokenAccountHandlePublicInstructionAsync({
       payer: params.owner,
       owner: params.owner,
@@ -189,7 +182,7 @@ export const sealTotalSupplyHandle = async (
   context: SolanaProvisioningContext,
   params: { readonly authority: TransactionSigner; readonly mint: Address; readonly handle: Uint8Array },
 ): Promise<void> => {
-  await context.sendTransaction(params.authority, [
+  await (await context.client(params.authority)).sendTransaction([
     await getMakeTotalSupplyHandlePublicInstructionAsync({
       payer: params.authority,
       authority: params.authority,
@@ -216,5 +209,5 @@ export const discloseCertifiedHandle = async (
     { kmsContext: await kmsContextAddress() },
     params.certificate,
   );
-  await context.sendTransaction(params.payer, [instruction]);
+  await (await context.client(params.payer)).sendTransaction([instruction]);
 };

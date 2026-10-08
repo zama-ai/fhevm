@@ -11,7 +11,6 @@ import { asBytes32Hex } from '@fhevm/sdk/base';
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
 import {
-  appendTransientStoreInstructions,
   createFhevmDecryptClient,
   createFhevmEncryptClient,
   createFhevmPublicDecryptClient,
@@ -27,24 +26,8 @@ import {
 // check each transition; the final KMS/WASM decrypt checks the encrypted payout amount.
 
 import fs from "node:fs/promises";
-import path from "node:path";
 import { describe, expect, test } from "bun:test";
-import {
-  appendTransactionMessageInstructions,
-  assertIsTransactionWithBlockhashLifetime,
-  createKeyPairSignerFromBytes,
-  createSolanaRpcSubscriptions,
-  createTransactionMessage,
-  getAddressEncoder,
-  sendAndConfirmTransactionFactory,
-  setTransactionMessageComputeUnitLimit,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
-  type Address,
-  type Instruction,
-  type TransactionSigner,
-} from "@solana/kit";
+import { createKeyPairSignerFromBytes, getAddressEncoder, type Address, type TransactionSigner } from "@solana/kit";
 import { loadPersonas, until } from "../harness";
 import { withHostReachableFetch } from "../../src/utils/fs";
 import { waitForSnsCommit } from "../../src/solana/sns";
@@ -54,7 +37,8 @@ import { targetsCleartext } from "../../src/solana/target";
 import { depositRoots, resolveDemoConfigPath, type VaultDemoRoots } from "../../demo/config";
 import { readDemoAuthorization } from "../../demo/lifecycle";
 import { demoKeypairs, loadDemoEnv } from "../../demo/loadDemoEnv";
-import { lookupTableForBatch, prepareNextBatch } from "@demo-dapp/batchProvisioning";
+import { prepareNextBatch } from "@demo-dapp/batchProvisioning";
+import { createDemoClient } from "@demo-dapp/demoClient";
 import { parseRuntimeDemoConfig } from "@demo-dapp/demoConfig";
 
 // A live batcher arc waits on slot age + SNS commit + settle certificate + the decrypt roundtrip.
@@ -72,21 +56,6 @@ const USDC_DECIMALS = 6;
 // USDC the persona wraps. The workflow passes DEMO_DEPOSIT_AMOUNT (fresh per run avoids PDA reuse);
 // default matches the faucet's default drip.
 const DEPOSIT_USDC = Number(process.env.DEMO_DEPOSIT_AMOUNT ?? "1000");
-// The confidential-token instructions emit FHE-handle CPIs; the default 200k CU ceiling is too low.
-const WRAP_COMPUTE_UNIT_LIMIT = 600_000;
-// join measures ~353k CU under mollusk (solana/runtime-tests/cost-snapshots/batcher_mollusk.json),
-// but live runs of the confidential-transfer CPI alone were observed above 400k against a ~330k
-// mollusk baseline (~1.2x live/mollusk — the reason the SDK's confidentialTransfer action uses
-// 800k), and join is that CPI plus batcher evaluation. Match the SDK's 800k; headroom is free.
-const JOIN_COMPUTE_UNIT_LIMIT = 800_000;
-// dispatch measures ~304k CU under mollusk (batcher_mollusk.json `dispatch`); the same ~1.2x
-// live/mollusk factor observed on the transfer CPI puts it near ~365k, so 600k is ample headroom.
-const DISPATCH_COMPUTE_UNIT_LIMIT = 600_000;
-// claim measures ~311k CU under mollusk (batcher_mollusk.json `claim`); the same ~1.2x factor puts
-// it near ~373k, so 600k is ample headroom.
-const CLAIM_COMPUTE_UNIT_LIMIT = 600_000;
-// reclaim_batch_authority and close_join_record measure ~6.7k and ~4.6k CU under mollusk.
-const RENT_HYGIENE_COMPUTE_UNIT_LIMIT = 50_000;
 // Bound for the user-decrypt relayer roundtrip: the SDK's default request timeout is one hour
 // (RelayerAsyncRequest), which would let a stuck decrypt eat the whole scenario budget silently.
 const DECRYPT_ROUNDTRIP_TIMEOUT_MS = 180_000;
@@ -191,25 +160,9 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       }
 
       const rpc = createFinalizedRpc(env.rpcUrl);
-      const rpcSubscriptions = createSolanaRpcSubscriptions(env.wsUrl);
-      const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
-
-      /** Signs `instructions` with `payer` (fee payer) plus any account-embedded signers, then confirms. */
-      const send = async (
-        payer: TransactionSigner,
-        instructions: readonly Instruction[],
-        computeUnitLimit: number = WRAP_COMPUTE_UNIT_LIMIT,
-      ): Promise<void> => {
-        const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
-        const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
-        const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
-        const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
-        const message = appendTransactionMessageInstructions(instructions, withComputeLimit);
-        const signedTransaction = await signTransactionMessageWithSigners(message);
-        assertIsTransactionWithBlockhashLifetime(signedTransaction);
-        await sendAndConfirm(signedTransaction, { commitment: "finalized", preflightCommitment: "finalized" });
-      };
-
+      // The demo's own clients: every transaction version 1, each wait at finalized.
+      const aliceClient = createDemoClient(env, alice);
+      const keeperClient = createDemoClient(env, keeper);
 
       const aliceTransientStore = await prepareTransientStore({ payer: alice, host: config.programs.host });
       // Step 2: create alice's confidential token accounts — cUSDC (join mint) for the wrap, and
@@ -226,7 +179,8 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         if (existing.value === null) missingTokenAccountMints.push(mint);
       }
       if (missingTokenAccountMints.length > 0) {
-        await send(alice, appendTransientStoreInstructions(aliceTransientStore, 
+        await aliceClient.sendFheTransaction(
+          aliceTransientStore,
           await Promise.all(missingTokenAccountMints.map((mint) =>
             vault.buildInitializeTokenAccountInstruction({
               transientStore: aliceTransientStore,
@@ -235,13 +189,13 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
               mint,
             }),
           )),
-        ));
+        );
       }
 
       // Step 3: wrap the funded mock USDC into alice's confidential cUSDC balance. wrap_usdc escrows a
       // PUBLIC amount and needs no input proof, which is why it wires cheaply here.
       const wrapBaseUnits = BigInt(Math.round(DEPOSIT_USDC * 10 ** USDC_DECIMALS));
-      await send(alice, appendTransientStoreInstructions(aliceTransientStore, [
+      await aliceClient.sendFheTransaction(aliceTransientStore, [
         await vault.buildWrapUsdcInstruction({
           transientStore: aliceTransientStore,
           owner: alice,
@@ -250,13 +204,13 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
           tokenProgram: TOKEN_PROGRAM_ADDRESS,
           amount: wrapBaseUnits,
         }),
-      ]));
+      ]);
 
       // Step 4: on-chain assertion for the wrap phase. Read alice's cUSDC confidential token account
       // back and assert it now exists and is owned by the confidential-token program — the concrete
       // state the join phase consumes next. This is the wrap phase's real state check, beyond "did not
       // revert".
-      // Read at the commitment `send` waited for.
+      // Read at the commitment the client waited for.
       const aliceCusdc = (await findTokenAccountPda({ mint: config.mints.joinConfidential, owner: alice.address }))[0];
       const account = await rpc.getAccountInfo(aliceCusdc, { encoding: "base64" }).send();
       expect(account.value).not.toBeNull();
@@ -266,15 +220,13 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // must still be Pending (the seeder opens batch 0 that way). Fail here with a reason instead
       // of an opaque on-chain BatchNotPending revert. A fresh seed leaves batch 0 Pending; on a
       // persistent cluster the previous run settled its batch, so the keeper opens the next one the
-      // way the demo page does (the dapp's batch provisioning, which also stands up its settle
-      // lookup table). A Dispatched batch is left alone: it is mid-settlement and an operator
+      // way the demo page does (the dapp's batch provisioning). A Dispatched batch is left alone: it is mid-settlement and an operator
       // settles it (demo page or /api/demo-operator) before the arc can run again.
       const roots = depositRoots(config);
       const dappConfig = parseRuntimeDemoConfig(
         JSON.parse(await fs.readFile(resolveDemoConfigPath(), "utf8")) as unknown,
         authorization.bootId,
       );
-      const batchRegistryPath = path.resolve(import.meta.dir, "../../../../.fhevm/runtime/solana-demo-batch-alts.json");
       const currentBatch = await vault.getCurrentBatch(rpc, roots);
       if (currentBatch.state.status === vault.BatchStatus.Dispatched) {
         throw new Error(
@@ -284,7 +236,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       }
       if (currentBatch.state.status !== vault.BatchStatus.Pending) {
         console.log(`deposit-arc: batch ${currentBatch.index} is finished (status ${currentBatch.state.status}); opening the next one...`);
-        await prepareNextBatch(dappConfig, keeper, "deposit", batchRegistryPath);
+        await prepareNextBatch(dappConfig, keeper, "deposit");
       }
       const batchBeforeJoin = await vault.getCurrentBatch(rpc, roots);
       if (batchBeforeJoin.state.status !== vault.BatchStatus.Pending) {
@@ -293,12 +245,6 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
             `status ${batchBeforeJoin.state.status} != Pending(${vault.BatchStatus.Pending})`,
         );
       }
-      const settleLookupTable = await lookupTableForBatch(
-        dappConfig,
-        "deposit",
-        { batchIndex: batchBeforeJoin.index, batch: batchBeforeJoin.addresses.batch },
-        batchRegistryPath,
-      );
 
       // SDK client setup + the derivations the join, dispatch and settle phases share. All of this is
       // pure/local (no network), so it sits OUTSIDE the fetch patch below — dispatch and settle run
@@ -329,25 +275,22 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
           values: [{ type: "uint64", value: wrapBaseUnits }],
         });
 
-        // Step 7: join. joinBatch simulates, sends, and confirms; it derives every encrypted value account and
+        // Step 7: join. joinBatch signs, sends, and confirms; it derives every encrypted value account and
         // authority account internally from the semantic roots passed here — nothing comes from an
         // address dump. Alice pays her own join rent.
         console.log(`deposit-arc join: calling joinBatch on batch ${batchBeforeJoin.index} (${batch})...`);
         await vault.joinBatch(
           { solanaChain: chain, aclProgramAddress: asBytes32Hex(config.aclProgram) },
+          aliceClient,
           {
-            rpc,
-            rpcSubscriptions,
             inputProof: inputProof as never,
             inputIndex: 0,
             user: alice,
-            payer: alice,
             batcher: roots.batcher,
             batch,
             joinConfidentialMint: joinMint,
             joinUnderlyingMint: roots.joinUnderlyingMint,
             tokenProgram: TOKEN_PROGRAM_ADDRESS,
-            computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
           },
         );
 
@@ -394,21 +337,17 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // against dispatch.rs), so nothing comes from an address dump.
       console.log(`deposit-arc dispatch: keeper dispatching batch ${batchBeforeJoin.index} (${batch})...`);
       const keeperTransientStore = await prepareTransientStore({ payer: keeper, host: config.programs.host });
-      await send(
-        keeper,
-        appendTransientStoreInstructions(keeperTransientStore, [
-          await vault.buildDispatchBatchInstruction({
-            transientStore: keeperTransientStore,
-            payer: keeper,
-            batcher: roots.batcher,
-            batch,
-            joinConfidentialMint: joinMint,
-            joinUnderlyingMint: roots.joinUnderlyingMint,
-            tokenProgram: TOKEN_PROGRAM_ADDRESS,
-          }),
-        ]),
-        DISPATCH_COMPUTE_UNIT_LIMIT,
-      );
+      await keeperClient.sendFheTransaction(keeperTransientStore, [
+        await vault.buildDispatchBatchInstruction({
+          transientStore: keeperTransientStore,
+          payer: keeper,
+          batcher: roots.batcher,
+          batch,
+          joinConfidentialMint: joinMint,
+          joinUnderlyingMint: roots.joinUnderlyingMint,
+          tokenProgram: TOKEN_PROGRAM_ADDRESS,
+        }),
+      ]);
 
       // Step 11: on-chain assertions for the dispatch phase. The burn records a created-public burned
       // total handle on the batch; settle refuses a zero handle, so assert both the status flip and
@@ -434,18 +373,15 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       await waitForSnsCommit(burnedHandleHex, env.coprocessorDbPsql);
 
       // Step 13: settle. One SDK call fetches the KMS burn certificate (its runtime consumes the
-      // auth config already set before the join) and sends the on-chain settle as a v0
-      // transaction against the seeded lookup table. The keeper signs;
+      // auth config already set before the join) and sends the on-chain settle as one version 1
+      // transaction. The keeper signs;
       // authorityFundingLamports must suffice to cover the rent settle's CPIs charge to this
       // batch's authority — the seed recorded the open_batch value as a known-good amount.
       console.log("deposit-arc settle: calling settleBatch (KMS certificate + on-chain settle)...");
       const publicDecryptClient = createFhevmPublicDecryptClient({ chain, rpc });
-      await vault.settleBatch(publicDecryptClient, keeper, {
-        rpc,
-        rpcSubscriptions,
+      await vault.settleBatch(publicDecryptClient, keeperClient, {
         roots,
         contextId: asBytes32BigEndian(config.userDecryptContextId),
-        lookupTableAddress: settleLookupTable,
         authorityFundingLamports: BigInt(config.authorityFundingLamports),
       });
 
@@ -480,19 +416,15 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       console.log("deposit-arc settle: keeper reclaiming the batch authority's unspent funding...");
       const authorityFundingLeft = (await rpc.getBalance(batchAuthority).send()).value;
       expect(authorityFundingLeft > 0n).toBe(true);
-      await send(
-        keeper,
-        [
-          await vault.getReclaimBatchAuthorityInstructionAsync({
-            authority: keeper,
-            batcher: roots.batcher,
-            batch,
-            batchAuthority,
-            joinConfidentialMint: roots.joinConfidentialMint,
-          }),
-        ],
-        RENT_HYGIENE_COMPUTE_UNIT_LIMIT,
-      );
+      await keeperClient.sendTransaction([
+        await vault.getReclaimBatchAuthorityInstructionAsync({
+          authority: keeper,
+          batcher: roots.batcher,
+          batch,
+          batchAuthority,
+          joinConfidentialMint: roots.joinConfidentialMint,
+        }),
+      ]);
       expect((await rpc.getBalance(batchAuthority).send()).value === 0n).toBe(true);
 
 
@@ -544,26 +476,22 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       };
       const payoutBalanceBefore = await decryptPayoutBalance();
       console.log(`deposit-arc claim: alice claiming her payout from batch ${batchBeforeJoin.index} (${batch})...`);
-      await send(
-        alice,
-        appendTransientStoreInstructions(aliceTransientStore, [
-          await vault.buildClaimInstruction({
-            transientStore: aliceTransientStore,
-            payer: alice,
-            user: alice.address,
-            batcher: roots.batcher,
-            batch,
-            payoutConfidentialMint: payoutMint,
-            payoutUnderlyingMint: roots.payoutUnderlyingMint,
-            tokenProgram: TOKEN_PROGRAM_ADDRESS,
-          }),
-        ]),
-        CLAIM_COMPUTE_UNIT_LIMIT,
-      );
+      await aliceClient.sendFheTransaction(aliceTransientStore, [
+        await vault.buildClaimInstruction({
+          transientStore: aliceTransientStore,
+          payer: alice,
+          user: alice.address,
+          batcher: roots.batcher,
+          batch,
+          payoutConfidentialMint: payoutMint,
+          payoutUnderlyingMint: roots.payoutUnderlyingMint,
+          tokenProgram: TOKEN_PROGRAM_ADDRESS,
+        }),
+      ]);
 
       // The claimed flag and credited payout balance must both be committed.
       console.log("deposit-arc claim: asserting claimed flag + claim encrypted value account on-chain...");
-      // `send` waits for `finalized`; read the record at that commitment.
+      // The client waits for `finalized`; read the record at that commitment.
       const joinRecordAfterClaim = await vault.getJoinRecord(
         rpc,
         (await vault.findJoinRecordPda({ batch: batch, user: alice.address }))[0],
@@ -593,7 +521,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // and gets its rent back. The joined-amount encrypted store stays (its ACL grants are hers).
       console.log("deposit-arc close: alice closing her spent join record...");
       const joinRecordAddress = (await vault.findJoinRecordPda({ batch: batch, user: alice.address }))[0];
-      await send(alice, [await vault.getCloseJoinRecordInstructionAsync({ user: alice, batch })], RENT_HYGIENE_COMPUTE_UNIT_LIMIT);
+      await aliceClient.sendTransaction([await vault.getCloseJoinRecordInstructionAsync({ user: alice, batch })]);
       const closedRecord = await rpc.getAccountInfo(joinRecordAddress).send();
       expect(closedRecord.value).toBeNull();
 
@@ -614,9 +542,7 @@ test.skipIf(!runsDemoScenarios)(
   async () => {
     const { env, config } = await loadDemoEnv();
     const authorization = await readDemoAuthorization();
-    const { sendTransaction } = await import('@demo-dapp/sendTransaction');
     const { dispatchVaultBatch } = await import('@demo-dapp/settlement');
-    const { solanaBatchLookupTablesPath } = await import('../../src/layout');
     const aliceBytes = Uint8Array.from(JSON.parse(await fs.readFile(demoKeypairs(env).alice, 'utf8')));
     const alice = await createKeyPairSignerFromBytes(aliceBytes);
     const keeper = await loadSigner(demoKeypairs(env).keeper);
@@ -627,11 +553,12 @@ test.skipIf(!runsDemoScenarios)(
     );
     const dappConfig = await readConfig();
     const rpc = createFinalizedRpc(env.rpcUrl);
-    const rpcSubscriptions = createSolanaRpcSubscriptions(env.wsUrl);
+    const aliceClient = createDemoClient(env, alice);
+    const keeperClient = createDemoClient(env, keeper);
     const roots = depositRoots(config);
     const personas = await loadPersonas(env, { alice: demoKeypairs(env).alice, keeper: demoKeypairs(env).keeper });
     await personas.fund(personas.roles.keeper!, 0.2);
-    await prepareNextBatch(dappConfig, keeper, 'deposit', solanaBatchLookupTablesPath);
+    await prepareNextBatch(dappConfig, keeper, 'deposit');
     const current = await vault.getCurrentBatch(rpc, roots);
     expect(current.state.status).toBe(vault.BatchStatus.Pending);
     // Never cancel another participant's work, including an earlier failed run.
@@ -652,11 +579,11 @@ test.skipIf(!runsDemoScenarios)(
     const init = await vault.getOrCreateConfidentialTokenAccountInstruction(rpc, {
       transientStore, payer: alice, owner: alice.address, mint,
     });
-    if (init) await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [init]), WRAP_COMPUTE_UNIT_LIMIT);
-    await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [await vault.buildWrapUsdcInstruction({
+    if (init) await aliceClient.sendFheTransaction(transientStore, [init]);
+    await aliceClient.sendFheTransaction(transientStore, [await vault.buildWrapUsdcInstruction({
       transientStore, owner: alice, mint, underlyingMint: roots.joinUnderlyingMint,
       tokenProgram: TOKEN_PROGRAM_ADDRESS, amount,
-    })]), WRAP_COMPUTE_UNIT_LIMIT);
+    })]);
     setFhevmRuntimeConfig({ auth: relayerAuth() });
     const chain = defineFhevmSolanaChain({ id: BigInt(config.chainId), fhevm: {
       relayerUrl: env.relayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } },
@@ -691,10 +618,10 @@ test.skipIf(!runsDemoScenarios)(
         contractAddress: addressToBytes32Hex(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
         userAddress: addressToBytes32Hex(alice.address), values: [{ type: 'uint64', value: amount }],
       });
-      await vault.joinBatch({ solanaChain: chain, aclProgramAddress: asBytes32Hex(config.aclProgram) }, {
-        rpc, rpcSubscriptions, inputProof: inputProof as never, inputIndex: 0, user: alice, payer: alice,
+      await vault.joinBatch({ solanaChain: chain, aclProgramAddress: asBytes32Hex(config.aclProgram) }, aliceClient, {
+        inputProof: inputProof as never, inputIndex: 0, user: alice,
         batcher: roots.batcher, batch, joinConfidentialMint: mint, joinUnderlyingMint: roots.joinUnderlyingMint,
-        tokenProgram: TOKEN_PROGRAM_ADDRESS, computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
+        tokenProgram: TOKEN_PROGRAM_ADDRESS,
       });
     });
     expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.joinCount).toBe(1n);
@@ -721,15 +648,15 @@ test.skipIf(!runsDemoScenarios)(
     expect(await dispatchVaultBatch(await session(), position, 'deposit')).toBeNull();
     expect((await account()).value).toEqual(pendingBefore);
     const keeperTransientStore = await prepareTransientStore({ payer: keeper, host: config.programs.host });
-    await sendTransaction(dappConfig, keeper, appendTransientStoreInstructions(keeperTransientStore, [await vault.buildCancelDispatchInstruction({
+    await keeperClient.sendFheTransaction(keeperTransientStore, [await vault.buildCancelDispatchInstruction({
       transientStore: keeperTransientStore, payer: keeper, batcher: roots.batcher, batch, joinConfidentialMint: mint,
       authorityFundingLamports: BigInt(config.authorityFundingLamports),
-    })]), JOIN_COMPUTE_UNIT_LIMIT);
+    })]);
     expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.status).toBe(vault.BatchStatus.Refunding);
     expect((await account()).value).toBeNull();
-    await sendTransaction(dappConfig, keeper, [await vault.getReclaimBatchAuthorityInstructionAsync({
+    await keeperClient.sendTransaction([await vault.getReclaimBatchAuthorityInstructionAsync({
       authority: keeper, batcher: roots.batcher, batch, batchAuthority, joinConfidentialMint: mint,
-    })], RENT_HYGIENE_COMPUTE_UNIT_LIMIT);
+    })]);
     expect((await rpc.getBalance(batchAuthority).send()).value === 0n).toBe(true);
     const quit = await vault.buildQuitInstruction({
       transientStore, user: alice, payer: alice, batcher: roots.batcher, batch,
@@ -747,11 +674,11 @@ test.skipIf(!runsDemoScenarios)(
       batchJoinTokenAccount, userTokenAccount, batchBalanceStore: await vault.tokenStoreAddress(mint, batchJoinTokenAccount),
       userBalanceStore, joinStore, confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
     });
-    await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [quit]), JOIN_COMPUTE_UNIT_LIMIT);
+    await aliceClient.sendFheTransaction(transientStore, [quit]);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
     expect(await readAmount(joinStore, vault.JOINED_AMOUNT_KEY)).toBe(0n);
     // A retry cannot credit the original contribution twice.
-    await sendTransaction(dappConfig, alice, appendTransientStoreInstructions(transientStore, [quit]), JOIN_COMPUTE_UNIT_LIMIT);
+    await aliceClient.sendFheTransaction(transientStore, [quit]);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
     expect(await readAmount(joinStore, vault.JOINED_AMOUNT_KEY)).toBe(0n);
     console.log(`refund acceptance passed: batch=${batch}; joined=${amount}; restored exactly; join record retained until reset`);

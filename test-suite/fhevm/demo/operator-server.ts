@@ -13,20 +13,7 @@
 
 import fs from "node:fs/promises";
 
-import {
-  address,
-  appendTransactionMessageInstructions,
-  assertIsTransactionWithBlockhashLifetime,
-  createKeyPairSignerFromBytes,
-  createSolanaRpcSubscriptions,
-  createTransactionMessage,
-  getSignatureFromTransaction,
-  sendAndConfirmTransactionFactory,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
-  type Address,
-} from "@solana/kit";
+import { address, createKeyPairSignerFromBytes, type Address } from "@solana/kit";
 import {
   findAssociatedTokenPda,
   TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
@@ -34,14 +21,14 @@ import {
   getMintToInstruction,
 } from "@solana-program/token";
 
-import { lookupTableForBatch, prepareNextBatch } from "@demo-dapp/batchProvisioning";
+import { prepareNextBatch } from "@demo-dapp/batchProvisioning";
 import { claimBatchPayout } from "@demo-dapp/claim";
+import { createDemoClient } from "@demo-dapp/demoClient";
 import { parseRuntimeDemoConfig } from "@demo-dapp/demoConfig";
 import { harvestDemoVault, readDemoVaultMetrics, type UnderlyingMinter } from "@demo-dapp/harvestOperator";
 import { dispatchVaultBatch, settleVaultBatch, type DemoOperatorSession } from "@demo-dapp/settlement";
 import { openProvisioning } from "../e2e/harness/solana/provisioning";
-import { DEMO_OPERATOR_PORT, solanaBatchLookupTablesPath } from "../src/layout";
-import { createFinalizedRpc } from '@fhevm/solana-zama-host';
+import { DEMO_OPERATOR_PORT } from "../src/layout";
 import { LOCAL_SOLANA_ENDPOINTS } from "../src/solana/endpoints";
 import { readDemoAllowedOriginFromEnv, readDemoAuthorizationFromEnv } from "./authorization";
 import { resolveDemoConfigPath } from "./config";
@@ -60,10 +47,8 @@ const buildUsdcMinter = async (options: {
   readonly mint: Address;
   readonly mintAuthorityKeypairPath: string;
 }): Promise<UnderlyingMinter> => {
-  const rpc = createFinalizedRpc(options.rpcUrl);
-  const rpcSubscriptions = createSolanaRpcSubscriptions(options.wsUrl);
-  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
   const authority = await loadSigner(options.mintAuthorityKeypairPath);
+  const client = createDemoClient(options, authority);
 
   return async (recipient: Address, baseUnits: bigint): Promise<string> => {
     const [ata] = await findAssociatedTokenPda({
@@ -71,22 +56,11 @@ const buildUsdcMinter = async (options: {
       tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
       mint: options.mint,
     });
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
-    const base = setTransactionMessageFeePayerSigner(authority, createTransactionMessage({ version: 0 }));
-    const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
-    const message = appendTransactionMessageInstructions(
-      [
-        getCreateAssociatedTokenIdempotentInstruction({ payer: authority, ata, owner: recipient, mint: options.mint }),
-        getMintToInstruction({ mint: options.mint, token: ata, mintAuthority: authority, amount: baseUnits }),
-      ],
-      withLifetime,
-    );
-    const signedTransaction = await signTransactionMessageWithSigners(message);
-    // The message was given a blockhash lifetime above; narrow the signed tx so the blockhash-based
-    // send factory accepts it (kit's signer returns the generic lifetime union).
-    assertIsTransactionWithBlockhashLifetime(signedTransaction);
-    await sendAndConfirm(signedTransaction, { commitment: "finalized", preflightCommitment: "finalized" });
-    return getSignatureFromTransaction(signedTransaction);
+    const { context } = await client.sendTransaction([
+      getCreateAssociatedTokenIdempotentInstruction({ payer: authority, ata, owner: recipient, mint: options.mint }),
+      getMintToInstruction({ mint: options.mint, token: ata, mintAuthority: authority, amount: baseUnits }),
+    ]);
+    return context.signature;
   };
 };
 
@@ -174,15 +148,14 @@ const main = async (): Promise<void> => {
       vaultMetrics: async () => readDemoVaultMetrics((await session()).config),
       prepareBatch: async (direction) => {
         const { config } = await session();
-        return prepareNextBatch(config, keeper, direction, solanaBatchLookupTablesPath);
+        return prepareNextBatch(config, keeper, direction);
       },
       runOperator: async (request) => {
         const current = await session();
         const { position, direction } = request;
         if (request.action === "claim") return claimBatchPayout(current, position, direction, request.user);
         if (request.action === "dispatch") return dispatchVaultBatch(current, position, direction);
-        const lookupTable = await lookupTableForBatch(current.config, direction, position, solanaBatchLookupTablesPath);
-        return settleVaultBatch(current, position, direction, lookupTable);
+        return settleVaultBatch(current, position, direction);
       },
       harvest: async () => harvestDemoVault((await session()).config, keeper, mintUsdc),
     },

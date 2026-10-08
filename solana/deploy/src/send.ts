@@ -1,20 +1,16 @@
 // The deployer only needs HTTP RPC; Yellowstone is configured separately for the listener.
 // Poll confirmation so deployment does not also require a WebSocket subscription endpoint.
 import {
+  createClient,
+  getSignatureFromTransaction,
   type Instruction,
   type Signature,
   type Rpc,
   type SolanaRpcApi,
   type TransactionSigner,
-  appendTransactionMessageInstructions,
-  assertIsTransactionWithBlockhashLifetime,
-  createTransactionMessage,
-  getBase64EncodedWireTransaction,
-  getSignatureFromTransaction,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
 } from '@solana/kit';
+import { rpcConnection, rpcTransactionPlanner, rpcTransactionPlanSigningExecutor } from '@solana/kit-plugin-rpc';
+import { payer as feePayer } from '@solana/kit-plugin-signer';
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 
 const CONFIRM_TIMEOUT_MS = 60_000;
@@ -34,21 +30,19 @@ export const createHostDeployContext = (rpcUrl: string, signal?: AbortSignal): H
     rpc,
     async sendTransaction(payer, instructions) {
       signal?.throwIfAborted();
-      const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
-      const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
-      const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
-      const message = appendTransactionMessageInstructions([...instructions], withLifetime);
-      const signedTransaction = await signTransactionMessageWithSigners(message);
-      assertIsTransactionWithBlockhashLifetime(signedTransaction);
-      const signature = getSignatureFromTransaction(signedTransaction);
+      // Kit's stock planner and signer: a version 1 transaction whose compute and loaded-data limits
+      // come from a simulation.
+      const { context: signed } = await createClient()
+        .use(feePayer(payer))
+        .use(rpcConnection<SolanaRpcApi>(rpc))
+        .use(rpcTransactionPlanner({ version: 1 }))
+        .use(rpcTransactionPlanSigningExecutor())
+        .signTransaction([...instructions], { abortSignal: signal });
+      const signature = getSignatureFromTransaction(signed.transaction);
       signal?.throwIfAborted();
-      await context.beforeSubmit?.(signature, latestBlockhash.lastValidBlockHeight);
-      await rpc
-        .sendTransaction(getBase64EncodedWireTransaction(signedTransaction), {
-          encoding: 'base64',
-          preflightCommitment: 'finalized',
-        })
-        .send();
+      await context.beforeSubmit?.(signature, signed.message.lifetimeConstraint.lastValidBlockHeight);
+      // The signing step already simulated the transaction.
+      await rpc.sendTransaction(signed.transactionBase64, { encoding: 'base64', skipPreflight: true }).send();
       const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
       for (;;) {
         const { value } = await rpc.getSignatureStatuses([signature]).send();

@@ -1,4 +1,10 @@
-import { createClient, createSolanaRpcSubscriptions, type SolanaRpcApi, type TransactionSigner } from '@solana/kit';
+import {
+  createClient,
+  createSolanaRpcSubscriptions,
+  type SolanaRpcApi,
+  type SolanaRpcSubscriptionsApi,
+  type TransactionSigner,
+} from '@solana/kit';
 import { rpcConnection, rpcSubscriptionsConnection } from '@solana/kit-plugin-rpc';
 import { payer } from '@solana/kit-plugin-signer';
 import { transientStoreTransactions } from '@fhevm/sdk/solana';
@@ -12,7 +18,7 @@ export const createDemoClient = (config: Pick<DemoConfig, 'rpcUrl' | 'wsUrl'>, f
   createClient()
     .use(payer(feePayer))
     .use(rpcConnection<SolanaRpcApi>(createFinalizedRpc(config.rpcUrl)))
-    .use(rpcSubscriptionsConnection(createSolanaRpcSubscriptions(config.wsUrl)))
+    .use(rpcSubscriptionsConnection<SolanaRpcSubscriptionsApi>(createSolanaRpcSubscriptions(config.wsUrl)))
     .use(finalizedTransactionSending())
     .use(transientStoreTransactions());
 

@@ -34,7 +34,7 @@ import {
   type Address,
 } from "@solana/kit";
 import {
-  appendTransientStoreInstructions,
+  INSTRUCTIONS_SYSVAR_ADDRESS,
   buildDelegateForUserDecryptionInstruction,
   buildRevokeDelegationForUserDecryptionInstruction,
   createFhevmDecryptClient,
@@ -47,6 +47,7 @@ import {
   solanaPermitWalletFromSecretKey,
   type SolanaDecryptTrust,
 } from "@fhevm/sdk/solana";
+import { getCloseTransientStoreInstruction, getOpenTransientStoreInstruction } from "@fhevm/solana-zama-host";
 
 import { relayerAuth } from "../../src/layout";
 import { currentHandle, userDecryptExpect } from "../../src/solana/fhe-vertical";
@@ -156,7 +157,7 @@ describe("solana delegated user-decrypt", () => {
         ...value.application,
         expiresAt: (await hostUnixTime(setup)) + EXPIRY_SECONDS_AHEAD,
       });
-      await context.sendTransaction(wallet.signer, [grant]);
+      await (await context.client(wallet.signer)).sendTransaction([grant]);
       const grantSlot = await context.rpc.getSlot().send();
 
       // The rows the connector will read, checked the way a dapp would before paying for a job.
@@ -235,7 +236,7 @@ describe("solana delegated user-decrypt", () => {
         delegate: delegate.signer.address,
         ...value.application,
       });
-      await context.sendTransaction(wallet.signer, [revoke]);
+      await (await context.client(wallet.signer)).sendTransaction([revoke]);
       const revokedRows = await fetchSolanaUserDecryptionDelegation(context.rpc, {
         delegator: wallet.signer.address,
         delegate: delegate.signer.address,
@@ -298,8 +299,14 @@ describe("solana delegated user-decrypt", () => {
 
       // These proposals name member[0] as transient store sponsor, so its signature is required at execution.
       // The vault still authenticates its own State by CPI.
-      const transientStore = await prepareTransientStore({ payer: createNoopSigner(members[0]!.publicKey.toBase58() as Address), host: hostProgram, });
-      const [open, close] = appendTransientStoreInstructions(transientStore, []).map(toWeb3Instruction);
+      const sponsor = createNoopSigner(members[0]!.publicKey.toBase58() as Address);
+      const transientStore = await prepareTransientStore({ payer: sponsor, host: hostProgram });
+      // Squads executes outside the Kit client until fhevm-internal#2111 item 5, so the sandwich is built here.
+      const lifecycle = { transientStore: transientStore.address, instructions: INSTRUCTIONS_SYSVAR_ADDRESS };
+      const open = toWeb3Instruction(getOpenTransientStoreInstruction({ payer: sponsor, ...lifecycle }, { programAddress: hostProgram }));
+      const close = toWeb3Instruction(
+        getCloseTransientStoreInstruction({ ...lifecycle, payer: sponsor.address }, { programAddress: hostProgram }),
+      );
       // The DAO's value: the vault's own counter at 42, written through two approved proposals.
       for (const instruction of [
         await buildInitializeCounterInstruction(vaultSigner, transientStore),
@@ -308,7 +315,7 @@ describe("solana delegated user-decrypt", () => {
         const index = await proposeThroughSquad(connection, squad, members[0]!, instruction);
         await approveProposal(connection, squad, members[0]!, index);
         await approveProposal(connection, squad, members[1]!, index);
-        await executeVaultTransaction(connection, squad, members[0]!, index, (ix) => [open!, ix, close!]);
+        await executeVaultTransaction(connection, squad, members[0]!, index, (ix) => [open, ix, close]);
       }
       const value = await counterValue(vaultAddress);
       const handle = await currentHandle(context, value.encryptedStore, value.key);

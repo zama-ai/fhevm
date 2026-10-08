@@ -13,7 +13,6 @@ import {
   address,
   createKeyPairSignerFromBytes,
   getAddressDecoder,
-  isSome,
   type Address,
   type Instruction,
   type TransactionSigner,
@@ -27,12 +26,6 @@ import {
   getTokenDecoder,
   getTokenSize,
 } from '@solana-program/token';
-import {
-  ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS as ALT,
-  getAddressLookupTableDecoder,
-  getDeactivateLookupTableInstruction,
-  getCloseLookupTableInstruction,
-} from '@solana-program/address-lookup-table';
 import { uploadBufferBytes } from './deploy-programs';
 import { programDataAddressFor } from './bootstrap';
 import { deployedProgramIds, type SolanaEnvironment } from './environment';
@@ -104,7 +97,6 @@ export async function recoverPreview(
   const before = (await context.rpc.getBalance(payer.address).send()).value;
   const inventory = [];
   const finishedBatches = new Set<string>();
-  const liveBatches = new Set<string>();
   for (const [name, program] of Object.entries(fundingOnly ? {} : programs)) {
     for (const item of await context.rpc
       .getProgramAccounts(program, { encoding: 'base64' })
@@ -121,11 +113,8 @@ export async function recoverPreview(
   for (const item of inventory) {
     const bytes = Buffer.from(item.data, 'base64');
     if (item.name === 'confidential_batcher' && bytes.subarray(0, 8).equals(Buffer.from(BATCH_DISCRIMINATOR))) {
-      const batch = getBatchDecoder().decode(bytes);
-      ([BatchStatus.Settled, BatchStatus.Canceled, BatchStatus.Refunding].includes(batch.status)
-        ? finishedBatches
-        : liveBatches
-      ).add(item.address);
+      const { status } = getBatchDecoder().decode(bytes);
+      if ([BatchStatus.Settled, BatchStatus.Canceled, BatchStatus.Refunding].includes(status)) finishedBatches.add(item.address);
     }
   }
   await writeFile(path.join(directory, 'inventory.json'), JSON.stringify(inventory, null, 2), { mode: 0o600 });
@@ -303,7 +292,6 @@ export async function recoverPreview(
       }
     }
   }
-  const pendingTables = new Map<Address, TransactionSigner>();
   for (const wallet of fundingOnly ? [] : wallets.values()) {
     const tokens = await context.rpc
       .getTokenAccountsByOwner(wallet.address, { programId: TOKEN }, { encoding: 'base64' })
@@ -323,56 +311,6 @@ export async function recoverPreview(
         await send(getBurnInstruction({ account: token.pubkey, mint, authority: wallet, amount }));
       await send(getCloseAccountInstruction({ account: token.pubkey, destination: payer.address, owner: wallet }));
     }
-    {
-      const tables = await context.rpc
-        .getProgramAccounts(ALT, {
-          encoding: 'base64',
-          // LookupTableMeta.authority's address starts at byte 22; the client exposes no field offsets.
-          filters: [{ memcmp: { offset: 22n, bytes: wallet.address, encoding: 'base58' } }],
-        })
-        .send();
-      for (const table of tables) {
-        const { authority, addresses: members, deactivationSlot } = getAddressLookupTableDecoder().decode(
-          Buffer.from(table.account.data[0], 'base64'),
-        );
-        if (!isSome(authority) || authority.value !== wallet.address) continue;
-        const finished = members.some((a) => finishedBatches.has(a)) && !members.some((a) => liveBatches.has(a));
-        if (!reset && !finished && deactivationSlot === 0xffffffffffffffffn) {
-          retained.push({
-            address: table.pubkey,
-            lamports: table.account.lamports.toString(),
-            reason: 'active lookup table; retained until batch completion or reset',
-          });
-          continue;
-        }
-        if (deactivationSlot === 0xffffffffffffffffn)
-          await send(getDeactivateLookupTableInstruction({ address: table.pubkey, authority: wallet }));
-        pendingTables.set(table.pubkey, wallet);
-      }
-    }
-  }
-  // Start every cooldown before waiting, including tables owned by different wallets.
-  const tableDeadline = Date.now() + 10 * 60_000;
-  while (pendingTables.size > 0) {
-    const finalizedSlot = await context.rpc.getSlot().send();
-    for (const [table, wallet] of pendingTables) {
-      const info = (
-        await context.rpc.getAccountInfo(table, { encoding: 'base64' }).send()
-      ).value;
-      if (!info) {
-        pendingTables.delete(table);
-        continue;
-      }
-      const { deactivationSlot: deactivated } = getAddressLookupTableDecoder().decode(Buffer.from(info.data[0], 'base64'));
-      if (finalizedSlot > deactivated + 513n) {
-        await send(getCloseLookupTableInstruction({ address: table, authority: wallet, recipient: payer.address }));
-        pendingTables.delete(table);
-      }
-    }
-    if (pendingTables.size === 0) break;
-    if (Date.now() > tableDeadline)
-      throw new Error(`${pendingTables.size} lookup tables still cooling down; retry recovery`);
-    await sleep(5_000);
   }
   // Recover interrupted uploads; these are loader Buffer accounts, never ProgramData.
   {

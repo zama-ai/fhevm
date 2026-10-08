@@ -117,9 +117,8 @@ exact boot's token file.
 
 All demo state lives under the fhevm layout root (`FHEVM_STATE_DIR`, default `.fhevm`), in
 `runtime/solana/`: the published config `demo-config.json`, lifecycle boots under `demo/` (manifest,
-lock, one directory per boot with its logs), the keeper's settle lookup tables in
-`batch-lookup-tables.json` and the smoke marker. Only the validator ledger stays under `/tmp`, because
-the validator needs a short path. Point `FHEVM_STATE_DIR` elsewhere (a preview deployment's state dir,
+lock, one directory per boot with its logs) and the smoke marker. Only the validator ledger stays
+under `/tmp`, because the validator needs a short path. Point `FHEVM_STATE_DIR` elsewhere (a preview deployment's state dir,
 a test's temp dir) and every producer and consumer follows.
 
 On Apple Silicon, the KMS containers (`kms-core-gen-keys`, the four cores and `kms-core-init`) run

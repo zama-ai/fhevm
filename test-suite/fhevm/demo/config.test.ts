@@ -42,8 +42,8 @@ const sampleConfig = (): SolanaDemoConfig => ({
     payoutConfidential: address(addr(13)),
   },
   batchers: {
-    deposit: { batcher: address(addr(2)), lookupTable: address(addr(200)) },
-    redeem: { batcher: address(addr(3)), lookupTable: address(addr(201)) },
+    deposit: { batcher: address(addr(2)) },
+    redeem: { batcher: address(addr(3)) },
   },
   mintAuthority: address(addr(50)),
   personas: { keeper: address(addr(60)), alice: address(addr(61)), bob: address(addr(62)) },

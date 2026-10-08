@@ -10,27 +10,16 @@
 
 import fs from 'node:fs/promises';
 import {
-  appendTransactionMessageInstructions,
-  assertIsTransactionWithBlockhashLifetime,
   createKeyPairSignerFromBytes,
-  createSolanaRpcSubscriptions,
-  createTransactionMessage,
   fetchEncodedAccount,
-  getSignatureFromTransaction,
   generateKeyPairSigner,
   lamports,
-  sendAndConfirmTransactionFactory,
-  setTransactionMessageComputeUnitLimit,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
   type Address,
-  type Instruction,
   type Rpc,
-  type Signature,
   type SolanaRpcApi,
   type TransactionSigner,
 } from '@solana/kit';
+import type { DemoClient } from '@demo-dapp/demoClient';
 import { getCreateAccountInstruction, getTransferSolInstruction } from '@solana-program/system';
 import {
   findAssociatedTokenPda,
@@ -51,15 +40,11 @@ import {
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
 import { buildVaultUnderlyingEscrowAtaInstruction } from './spl';
-import { vaultModule, sdkVerifyModule } from './lazy-modules';
+import { demoClientModule, vaultModule, sdkVerifyModule } from './lazy-modules';
 
 // The vault/SDK loaders live in lazy-modules.ts — see there for why they must stay dynamic
 // imports (the offline `bun test src` run has no SDK dependency graph to resolve).
 
-// Every provisioning transaction requests the validator's per-transaction CU ceiling: wrap_usdc
-// runs several FHE steps in one instruction and needs ~1.4M CU (the same limit the retired
-// live-client requested); the cheaper steps are simply unaffected by the higher ceiling.
-const PROVISIONING_COMPUTE_UNIT_LIMIT = 1_400_000;
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, findTokenAccountPda, BALANCE_KEY as BALANCE_LABEL } from '@fhevm/confidential-token';
 
@@ -69,26 +54,10 @@ const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
 /** BPF upgradeable loader `ProgramData` PDA for zama-host (`[program_id]` under the loader). */
 export const zamaHostProgramDataAddress = (): Promise<Address> => programDataAddressFor(ZAMA_HOST_PROGRAM_ADDRESS);
 
-export type SendTransactionOptions = {
-  /**
-   * Skip the RPC preflight simulation. Sends that CPI `fhe_execute` need this: the result-handle
-   * entropy reads the SlotHashes sysvar via `sol_get_sysvar`, which real execution populates but
-   * preflight simulation may not (the retired live-client carried the same flag).
-   */
-  readonly skipPreflight?: boolean;
-};
-
 export type SolanaProvisioningContext = {
   readonly rpc: Rpc<SolanaRpcApi>;
-  /**
-   * Signs `instructions` with `payer` plus any account-embedded signers, sends, waits until the
-   * transaction is finalized, and resolves its signature.
-   */
-  sendTransaction(
-    payer: TransactionSigner,
-    instructions: readonly Instruction[],
-    options?: SendTransactionOptions,
-  ): Promise<Signature>;
+  /** The demo's client for `payer`: it sends every transaction as version 1 and waits at finalized. */
+  client(payer: TransactionSigner): Promise<DemoClient>;
   /**
    * Brings `recipient` to at least `sol` SOL and waits for the confirmation: a validator airdrop of
    * the full amount when the context has no funder, otherwise a System transfer of the shortfall
@@ -106,13 +75,11 @@ export type SolanaProvisioningContext = {
 
 /**
  * Base fee of a one-signature transaction; a sweep leaves exactly this much to pay for itself.
- * Holds while `sendAndConfirmSigned` sets no compute-unit price: a priority fee would need
- * `getFeeForMessage` here instead.
+ * Holds while the client sets no priority fee: one would need `getFeeForMessage` here instead.
  */
 const TRANSACTION_FEE_LAMPORTS = 5_000n;
 
 export type ProvisioningContextOptions = {
-  readonly computeUnitLimit?: number;
   /** The wallet `fundSol` transfers from. Absent, `fundSol` airdrops (local validators only). */
   readonly funder?: TransactionSigner;
 };
@@ -125,35 +92,18 @@ export const loadKeypairSigner = async (keypairPath: string): Promise<Transactio
 
 const solToLamports = (sol: number): bigint => BigInt(Math.round(sol * Number(LAMPORTS_PER_SOL)));
 
-/** Binds RPC endpoints into the send/confirm/fund closures every provisioning step shares. */
+/** Binds RPC endpoints into the client and fund closures every provisioning step shares. */
 export const createProvisioningContext = (
   rpcUrl: string,
   wsUrl: string,
   contextOptions: ProvisioningContextOptions = {},
 ): SolanaProvisioningContext => {
-  const computeUnitLimit = contextOptions.computeUnitLimit ?? PROVISIONING_COMPUTE_UNIT_LIMIT;
   const rpc = createFinalizedRpc(rpcUrl);
-  const rpcSubscriptions = createSolanaRpcSubscriptions(wsUrl);
-  const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc, rpcSubscriptions });
-  const sendAndConfirmSigned = async (
-    payer: TransactionSigner,
-    instructions: readonly Instruction[],
-    options: SendTransactionOptions = {},
-  ): Promise<Signature> => {
-    const { value: latestBlockhash } = await rpc.getLatestBlockhash().send();
-    const base = setTransactionMessageFeePayerSigner(payer, createTransactionMessage({ version: 0 }));
-    const withLifetime = setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, base);
-    const withComputeLimit = setTransactionMessageComputeUnitLimit(computeUnitLimit, withLifetime);
-    const message = appendTransactionMessageInstructions(instructions, withComputeLimit);
-    const signedTransaction = await signTransactionMessageWithSigners(message);
-    assertIsTransactionWithBlockhashLifetime(signedTransaction);
-    await sendAndConfirm(signedTransaction, {
-      commitment: 'finalized',
-      ...(options.skipPreflight ? { skipPreflight: true } : { preflightCommitment: 'finalized' }),
-    });
-    return getSignatureFromTransaction(signedTransaction);
-  };
-  const sendTransaction: SolanaProvisioningContext['sendTransaction'] = sendAndConfirmSigned;
+  const client: SolanaProvisioningContext['client'] = async (payer) =>
+    (await demoClientModule()).createDemoClient({ rpcUrl, wsUrl }, payer);
+  const transferSol = async (payer: TransactionSigner, source: TransactionSigner, destination: Address, amount: bigint) =>
+    (await (await client(payer)).sendTransaction([getTransferSolInstruction({ source, destination, amount })])).context
+      .signature;
   const fundSol: SolanaProvisioningContext['fundSol'] = async (recipient, sol) => {
     const amount = solToLamports(sol);
     const funder = contextOptions.funder;
@@ -161,7 +111,7 @@ export const createProvisioningContext = (
       const { value: balance } = await rpc.getBalance(recipient).send();
       if (balance >= amount) return null;
       const shortfall = amount - balance;
-      return sendAndConfirmSigned(funder, [getTransferSolInstruction({ source: funder, destination: recipient, amount: shortfall })]);
+      return transferSol(funder, funder, recipient, shortfall);
     }
     const signature = await rpc.requestAirdrop(recipient, lamports(amount), { commitment: 'finalized' }).send();
     const deadline = Date.now() + 30_000;
@@ -180,9 +130,9 @@ export const createProvisioningContext = (
     const payer = contextOptions.funder ?? from;
     const amount = payer.address === from.address ? balance - TRANSACTION_FEE_LAMPORTS : balance;
     if (amount <= 0n) return null;
-    return sendAndConfirmSigned(payer, [getTransferSolInstruction({ source: from, destination: to, amount })]);
+    return transferSol(payer, from, to, amount);
   };
-  return { rpc, sendTransaction, fundSol, sweepSol };
+  return { rpc, client, fundSol, sweepSol };
 };
 
 export type GeneratedKeypair = {
@@ -215,7 +165,7 @@ export const createSplMint = async (
 ): Promise<Address> => {
   const mint = await generateKeyPairSigner();
   const rent = await context.rpc.getMinimumBalanceForRentExemption(BigInt(getMintSize())).send();
-  await context.sendTransaction(params.authority, [
+  await (await context.client(params.authority)).sendTransaction([
     getCreateAccountInstruction({
       payer: params.authority,
       newAccount: mint,
@@ -247,7 +197,7 @@ export const mintSplTo = async (
     tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
     mint: params.mint,
   });
-  await context.sendTransaction(params.authority, [
+  await (await context.client(params.authority)).sendTransaction([
     getCreateAssociatedTokenIdempotentInstruction({ payer: params.authority, ata, owner: params.recipient, mint: params.mint }),
     getMintToInstruction({
       mint: params.mint,
@@ -270,23 +220,24 @@ export const createConfidentialMint = async (
 ): Promise<Address> => {
   const vault = await vaultModule();
   const mint = await generateKeyPairSigner();
-  const { appendTransientStoreInstructions, prepareTransientStore } = await sdkVerifyModule();
+  const { prepareTransientStore } = await sdkVerifyModule();
+  const authority = await context.client(params.authority);
   const transientStore = await prepareTransientStore({ payer: params.authority, host: ZAMA_HOST_PROGRAM_ADDRESS });
-  await context.sendTransaction(params.authority, appendTransientStoreInstructions(transientStore, [
+  await authority.sendFheTransaction(transientStore, [
     await vault.buildInitializeMintInstruction({
       transientStore: transientStore,
       authority: params.authority,
       mint,
       underlyingMint: params.underlyingMint,
     }),
-  ]));
+  ]);
   const escrow = await buildVaultUnderlyingEscrowAtaInstruction({
     payer: params.authority,
     tokenProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     confidentialMint: mint.address,
     underlyingMint: params.underlyingMint,
   });
-  await context.sendTransaction(params.authority, [escrow.instruction]);
+  await authority.sendTransaction([escrow.instruction]);
   return mint.address;
 };
 
@@ -296,7 +247,7 @@ export const initializeConfidentialTokenAccount = async (
   params: { readonly payer: TransactionSigner; readonly owner: Address; readonly mint: Address },
 ): Promise<void> => {
   const vault = await vaultModule();
-  const { appendTransientStoreInstructions, prepareTransientStore } = await sdkVerifyModule();
+  const { prepareTransientStore } = await sdkVerifyModule();
   const transientStore = await prepareTransientStore({ payer: params.payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
   const instruction = await vault.getOrCreateConfidentialTokenAccountInstruction(context.rpc, {
     transientStore: transientStore,
@@ -304,7 +255,7 @@ export const initializeConfidentialTokenAccount = async (
     owner: params.owner,
     mint: params.mint,
   });
-  if (instruction) await context.sendTransaction(params.payer, appendTransientStoreInstructions(transientStore, [instruction]));
+  if (instruction) await (await context.client(params.payer)).sendFheTransaction(transientStore, [instruction]);
 };
 
 /** Escrows a public `amount` of the underlying and rotates it into `owner`'s confidential balance. */
@@ -318,9 +269,9 @@ export const wrapUnderlying = async (
   },
 ): Promise<void> => {
   const vault = await vaultModule();
-  const { appendTransientStoreInstructions, prepareTransientStore } = await sdkVerifyModule();
+  const { prepareTransientStore } = await sdkVerifyModule();
   const transientStore = await prepareTransientStore({ payer: params.owner, host: ZAMA_HOST_PROGRAM_ADDRESS });
-  await context.sendTransaction(params.owner, appendTransientStoreInstructions(transientStore, [
+  await (await context.client(params.owner)).sendFheTransaction(transientStore, [
     await vault.buildWrapUsdcInstruction({
       transientStore: transientStore,
       owner: params.owner,
@@ -329,7 +280,7 @@ export const wrapUnderlying = async (
       tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
       amount: params.amount,
     }),
-  ]));
+  ]);
 };
 
 /**

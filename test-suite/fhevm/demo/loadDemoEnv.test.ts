@@ -36,8 +36,8 @@ const sampleConfig = (): SolanaDemoConfig => ({
     payoutConfidential: addr(13),
   } as SolanaDemoConfig["mints"],
   batchers: {
-    deposit: { batcher: addr(2), lookupTable: addr(200) },
-    redeem: { batcher: addr(3), lookupTable: addr(201) },
+    deposit: { batcher: addr(2) },
+    redeem: { batcher: addr(3) },
   } as SolanaDemoConfig["batchers"],
   mintAuthority: addr(50) as SolanaDemoConfig["mintAuthority"],
   personas: { keeper: addr(60), alice: addr(61), bob: addr(62) } as SolanaDemoConfig["personas"],
