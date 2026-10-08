@@ -68,9 +68,17 @@ pub const GCS_GATE_RECHECK: Duration = Duration::from_millis(1000);
 /// keep the released value through cutover (`UpgradeAuthorized`/`LIVE`), pause on
 /// any other state — including a fresh re-proposal (`UpgradeActivated`) that races
 /// in after a rollback, so the worker never runs before the new `DryRunStarted`.
+///
+/// `UpgradeAuthorized` and `LIVE` are only reached through `DryRunStarted`, so a
+/// worker that missed that window (restarted, or lost the NOTIFY during a dry run
+/// shorter than the fallback poll) is released there too: cutover waits for the
+/// dry-run probe's ct128, which only a released sns-worker can produce.
 fn host_gate_value(state: &str, start_block: Option<i64>, current: i64) -> i64 {
     match state {
         "DryRunStarted" => start_block.unwrap_or(current),
+        "UpgradeAuthorized" | "LIVE" if current == GCS_NOT_ACTIVATED => {
+            start_block.unwrap_or(current)
+        }
         "UpgradeAuthorized" | "LIVE" => current,
         _ => GCS_NOT_ACTIVATED,
     }
@@ -302,5 +310,25 @@ mod tests {
             host_gate_value("UpgradeActivated", Some(200), 100),
             GCS_NOT_ACTIVATED
         );
+    }
+
+    /// A worker that never saw `DryRunStarted` (restarted, or lost the NOTIFY during a
+    /// short dry run) is released once it finds the row authorized or live; one already
+    /// released keeps its value.
+    #[test]
+    fn host_gate_releases_a_worker_that_missed_the_dry_run() {
+        for state in ["UpgradeAuthorized", "LIVE"] {
+            assert_eq!(
+                host_gate_value(state, Some(200), GCS_NOT_ACTIVATED),
+                200,
+                "{state}"
+            );
+            assert_eq!(host_gate_value(state, Some(300), 200), 200, "{state}");
+            assert_eq!(
+                host_gate_value(state, None, GCS_NOT_ACTIVATED),
+                GCS_NOT_ACTIVATED,
+                "{state}"
+            );
+        }
     }
 }
