@@ -4558,13 +4558,17 @@ async fn upload_transaction_graph_results<'a>(
                 (Vec<_>, (Vec<_>, Vec<_>)),
             ) = cts_to_insert.into_iter().unzip();
             let cts_inserted = sqlx::query!(
-                "INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type)
-                 SELECT * FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[])
+                "INSERT INTO ciphertexts(handle, ciphertext, ciphertext_version, ciphertext_type, consensus_version)
+                 SELECT handle, ciphertext, ciphertext_version, ciphertext_type, $5
+                 FROM UNNEST($1::BYTEA[], $2::BYTEA[], $3::SMALLINT[], $4::SMALLINT[])
+                     AS t(handle, ciphertext, ciphertext_version, ciphertext_type)
                  ON CONFLICT (handle, ciphertext_version) DO NOTHING",
                 &handles,
                 &ciphertexts,
                 &ciphertext_versions,
                 &ciphertext_types,
+                i16::try_from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION)
+                    .expect("CONSENSUS_PROTOCOL_VERSION fits in i16"),
             )
             .execute(trx.as_mut())
             .await.map_err(|err| {
