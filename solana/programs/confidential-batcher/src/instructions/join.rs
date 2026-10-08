@@ -26,7 +26,7 @@ pub struct Join<'info> {
     #[account(
         init_if_needed,
         payer = payer,
-        space = 8 + JoinRecord::SPACE,
+        space = 8 + JoinRecord::INIT_SPACE,
         seeds = [JOIN_RECORD_SEED, batch.key().as_ref(), user.key().as_ref()],
         bump,
     )]
@@ -125,9 +125,10 @@ pub fn join<'info>(
         id.address(),
         BatcherError::DerivedAccountMismatch
     );
-    let bump = [ctx.bumps.join_record];
-    let authority_seeds: &[&[u8]] = &[JOIN_RECORD_SEED, batch_key.as_ref(), user.as_ref(), &bump];
     if ctx.accounts.join_store.owner == &System::id() {
+        let bump = [ctx.bumps.join_record];
+        let authority_seeds: &[&[u8]] =
+            &[JOIN_RECORD_SEED, batch_key.as_ref(), user.as_ref(), &bump];
         zama_host::cpi::create_encrypted_store(
             CpiContext::new_with_signer(
                 ctx.accounts.zama_program.key(),

@@ -40,11 +40,6 @@ pub struct Batcher {
     pub next_batch_index: u64,
 }
 
-impl Batcher {
-    /// Serialized size of the account body, excluding the Anchor discriminator.
-    pub const SPACE: usize = 1 + 32 + 32 + 32 + 8 + 8;
-}
-
 /// Lifecycle of a batch.
 #[derive(AnchorSerialize, AnchorDeserialize, InitSpace, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum BatchStatus {
@@ -91,11 +86,6 @@ pub struct Batch {
     pub payout_rate: u64,
 }
 
-impl Batch {
-    /// Serialized size of the account body, excluding the Anchor discriminator.
-    pub const SPACE: usize = 32 + 8 + 1 + 8 + 8 + 1 + 1 + 32 + 8 + 8 + 8;
-}
-
 /// Per-(batch, user) join record. The encrypted amount itself lives in the batcher-owned
 /// `EncryptedStore` account at `joined_encrypted_store`: the user may decrypt their pending
 /// amount, and the batch authority computes refunds and claims from it by signature.
@@ -110,11 +100,6 @@ pub struct JoinRecord {
     pub claimed: bool,
     /// PDA bump for `(batch, user)`.
     pub bump: u8,
-}
-
-impl JoinRecord {
-    /// Serialized size of the account body, excluding the Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 1 + 1;
 }
 
 /// Returns the batch PDA for a batcher and index.
@@ -183,13 +168,6 @@ mod tests {
     }
 
     #[test]
-    fn manual_space_matches_derived_init_space() {
-        assert_eq!(Batcher::SPACE, Batcher::INIT_SPACE);
-        assert_eq!(Batch::SPACE, Batch::INIT_SPACE);
-        assert_eq!(JoinRecord::SPACE, JoinRecord::INIT_SPACE);
-    }
-
-    #[test]
     fn one_to_one_payout_rate_is_the_scale() {
         assert_eq!(payout_rate(1_000, 1_000).unwrap(), RATE_SCALE);
     }
@@ -210,7 +188,8 @@ mod tests {
     #[test]
     fn claims_never_exceed_received_payout() {
         // Adversarially rounded batches, including the u64-scale case of
-        // fhevm-internal#1774: sum(floor(joined_i * payout / total)) <= payout.
+        // fhevm-internal#1774: sum(floor(joined_i * payout / total)) <= payout, and each
+        // claim's floor strands less than one unit.
         let cases: &[(&[u64], u64)] = &[
             (&[300, 500], 799),
             (&[1, 1, 1], 2),
@@ -230,6 +209,10 @@ mod tests {
             assert!(
                 distributed <= *payout as u128,
                 "distributed {distributed} > payout {payout} for joins {joins:?}"
+            );
+            assert!(
+                *payout as u128 - distributed <= joins.len() as u128,
+                "more than one unit per claim stranded for joins {joins:?}"
             );
         }
     }
