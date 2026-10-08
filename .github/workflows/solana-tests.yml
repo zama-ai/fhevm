@@ -296,6 +296,7 @@ jobs:
           bun run check
           bun test src
           bun run test:e2e:harness
+          bun test demo/lifecycle.test.ts
 
   # The e2e scenarios against the cleartext stack: one validator running the cleartext host build,
   # no relayer, coprocessor or KMS (solana/docs/TESTING.md, "The cleartext target").

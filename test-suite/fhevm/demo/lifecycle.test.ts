@@ -23,7 +23,6 @@ import {
   collisionErrors,
   DEMO_REQUIRED_COMMANDS,
   demoReservedPorts,
-  buildxInspectPlatforms,
   doctorEnvironmentErrors,
   demoComposeProject,
   demoLaunchUrl,
@@ -33,10 +32,12 @@ import {
   existingBootAction,
   isDemoDappApiResponseHealthy,
   isExactOwnedProcess,
+  kmsCoreClusterLine,
   observabilityComposeCommand,
   observabilityModeMatches,
   ownedContainer,
   ownedProcessBaseEnv,
+  parseDaemonBuilder,
   parseDemoOptions,
   prometheusTargetsReady,
   readLifecycleLockState,
@@ -1099,6 +1100,13 @@ describe("demo lifecycle ownership primitives", () => {
 });
 
 describe("Apple Silicon compose policy", () => {
+  const arm64Daemon = {
+    docker: { cpus: 8, memoryBytes: 16 * 1024 ** 3, osType: "linux", architecture: "aarch64" },
+    coreManifestArchitectures: ["amd64"],
+    missingKeypairs: [],
+    runtimeWritable: true,
+  };
+
   test("doctor requires Docker resources, keypairs, writability, and the emulated image manifest", () => {
     expect(
       doctorEnvironmentErrors(
@@ -1142,23 +1150,17 @@ describe("Apple Silicon compose policy", () => {
     // Every host, linux/arm64 included, runs the cores as linux/amd64.
     expect(doctorEnvironmentErrors(snapshot)).toEqual([
       "Docker Compose unavailable: compose is not a docker command",
-      "Docker Buildx unavailable: buildx is not a docker command",
+      "Docker Buildx cannot check amd64 emulation: buildx is not a docker command",
     ]);
     expect(doctorEnvironmentErrors({ ...snapshot, coreManifestArchitectures: ["arm64"] })).toEqual([
       "Docker Compose unavailable: compose is not a docker command",
-      "Docker Buildx unavailable: buildx is not a docker command",
+      "Docker Buildx cannot check amd64 emulation: buildx is not a docker command",
       expect.stringContaining("has no linux/amd64 manifest"),
     ]);
   });
 
   test("doctor requires amd64 emulation on an arm64 daemon", () => {
-    const snapshot = {
-      docker: { cpus: 8, memoryBytes: 16 * 1024 ** 3, osType: "linux", architecture: "aarch64" },
-      builderPlatforms: ["linux/arm64", "linux/arm/v7"],
-      coreManifestArchitectures: ["amd64"],
-      missingKeypairs: [],
-      runtimeWritable: true,
-    };
+    const snapshot = { ...arm64Daemon, builderPlatforms: ["linux/arm64", "linux/arm/v7"] };
     expect(doctorEnvironmentErrors(snapshot)).toEqual([
       expect.stringContaining("Docker cannot run linux/amd64 containers (builder platforms: linux/arm64, linux/arm/v7)"),
     ]);
@@ -1173,21 +1175,70 @@ describe("Apple Silicon compose policy", () => {
     ).toEqual([]);
   });
 
-  test("reads every builder node's platforms from docker buildx inspect", () => {
+  test("reads the platforms of the daemon's docker-driver builder", () => {
     expect(
-      buildxInspectPlatforms(
-        [
+      parseDaemonBuilder({
+        code: 0,
+        stdout: [
           "Name:          desktop-linux",
           "Driver:        docker",
+          "",
           "Nodes:",
           "Name:             desktop-linux",
           "Status:           running",
           "Platforms:        linux/arm64, linux/amd64*, linux/amd64/v2, linux/riscv64",
-          "Name:             second",
-          "Platforms:        linux/arm64",
         ].join("\n"),
-      ),
-    ).toEqual(["linux/arm64", "linux/amd64", "linux/amd64/v2", "linux/riscv64"]);
-    expect(buildxInspectPlatforms("Name: x\nError: context deadline exceeded")).toEqual([]);
+        stderr: "",
+      }),
+    ).toEqual({ builderPlatforms: ["linux/arm64", "linux/amd64", "linux/amd64/v2", "linux/riscv64"] });
+  });
+
+  test("does not trust platforms listed by a builder other than the daemon's own", () => {
+    // A remote or multi-node builder can list linux/amd64 while the local arm64 daemon has no emulation.
+    const builder = parseDaemonBuilder({
+      code: 0,
+      stdout: [
+        "Name:          cloud",
+        "Driver:        remote",
+        "",
+        "Nodes:",
+        "Name:             cloud0",
+        "Platforms:        linux/amd64",
+      ].join("\n"),
+      stderr: "",
+    });
+    expect(doctorEnvironmentErrors({ ...arm64Daemon, ...builder })).toEqual([
+      "Docker Buildx cannot check amd64 emulation: the builder uses the remote driver, not the daemon's docker driver",
+    ]);
+  });
+
+  test("reports a broken builder, which docker buildx inspect prints with exit code 0", () => {
+    // Shape of buildx v0.36.0-desktop.1 output against a Docker Desktop engine that does not answer.
+    const deadline = 'Get "http://%2Fvar%2Frun%2Fdocker.sock/_ping": context deadline exceeded';
+    const broken = parseDaemonBuilder({
+      code: 0,
+      stdout: ["Name:          desktop-linux", "Driver:        ", `Error:         ${deadline}`].join("\n"),
+      stderr: "",
+    });
+    expect(doctorEnvironmentErrors({ ...arm64Daemon, ...broken })).toEqual([
+      `Docker Buildx cannot check amd64 emulation: ${deadline}`,
+    ]);
+    const missing = parseDaemonBuilder({
+      code: 1,
+      stdout: "",
+      stderr: "docker: 'buildx' is not a docker command.\n",
+    });
+    expect(doctorEnvironmentErrors({ ...arm64Daemon, ...missing })).toEqual([
+      "Docker Buildx cannot check amd64 emulation: docker: 'buildx' is not a docker command.",
+    ]);
+  });
+
+  test("labels the cores emulated from the daemon's architecture, not the host's", () => {
+    expect(kmsCoreClusterLine(arm64Daemon.docker)).toBe(
+      "kms-core cluster=linux/amd64 (emulated); all other services remain native",
+    );
+    expect(kmsCoreClusterLine({ ...arm64Daemon.docker, architecture: "x86_64" })).toBe(
+      "kms-core cluster=linux/amd64; all other services remain native",
+    );
   });
 });

@@ -206,7 +206,7 @@ export type DoctorEnvironmentSnapshot = {
   readonly dockerError?: string;
   readonly dockerComposeError?: string;
   readonly dockerBuildxError?: string;
-  /** Platforms the default Buildx builder can run, including emulated ones. */
+  /** Platforms the daemon's own Buildx builder can run, including emulated ones. */
   readonly builderPlatforms: readonly string[];
   readonly coreManifestArchitectures: readonly string[];
   readonly coreManifestError?: string;
@@ -727,17 +727,56 @@ const collectManifestArchitectures = (value: unknown): string[] => {
   ];
 };
 
-/** Parses the `Platforms:` lines of `docker buildx inspect` (one per builder node; `*` marks a configured platform). */
-export const buildxInspectPlatforms = (output: string): string[] => [
-  ...new Set(
-    output
+/**
+ * Reads `docker buildx inspect <context>`, which resolves to the daemon's own `docker`-driver
+ * builder unless a stored builder of another driver has the context's name. Only the `docker`
+ * driver reports what this daemon can run. The command exits 0 when the builder is broken and
+ * prints the failure on an `Error:` line.
+ */
+export const parseDaemonBuilder = (inspect: {
+  readonly code: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}): Pick<DoctorEnvironmentSnapshot, "builderPlatforms" | "dockerBuildxError"> => {
+  if (inspect.code !== 0) {
+    return {
+      builderPlatforms: [],
+      dockerBuildxError:
+        (inspect.stderr || inspect.stdout).trim() || "Docker Buildx plugin is unavailable",
+    };
+  }
+  const field = (name: string): string | undefined =>
+    inspect.stdout
       .split("\n")
-      .filter((line) => line.trimStart().startsWith("Platforms:"))
-      .flatMap((line) => line.slice(line.indexOf(":") + 1).split(","))
+      .find((line) => line.startsWith(`${name}:`))
+      ?.slice(name.length + 1)
+      .trim();
+  const error = field("Error");
+  if (error) return { builderPlatforms: [], dockerBuildxError: error };
+  const driver = field("Driver");
+  if (driver !== "docker") {
+    return {
+      builderPlatforms: [],
+      dockerBuildxError: `the builder uses the ${driver || "unknown"} driver, not the daemon's docker driver`,
+    };
+  }
+  return {
+    // `*` marks a platform configured on the builder rather than detected.
+    builderPlatforms: (field("Platforms") ?? "")
+      .split(",")
       .map((platform) => platform.trim().replace(/\*$/, ""))
       .filter((platform) => platform !== ""),
-  ),
-];
+  };
+};
+
+/** `docker info` reports an amd64 daemon as `x86_64`; any other daemon runs the cores under emulation. */
+const daemonEmulatesCore = (architecture: string): boolean =>
+  architecture !== "x86_64" && architecture !== CORE_ARCHITECTURE;
+
+export const kmsCoreClusterLine = (docker: DoctorEnvironmentSnapshot["docker"]): string => {
+  const emulated = docker !== undefined && daemonEmulatesCore(docker.architecture);
+  return `kms-core cluster=${CORE_PLATFORM}${emulated ? " (emulated)" : ""}; all other services remain native`;
+};
 
 const doctorEnvironmentSnapshot =
   async (): Promise<DoctorEnvironmentSnapshot> => {
@@ -753,7 +792,11 @@ const doctorEnvironmentSnapshot =
           { allowFailure: true },
         ),
         run(["docker", "compose", "version"], { allowFailure: true }),
-        run(["docker", "buildx", "inspect"], { allowFailure: true }),
+        run(["docker", "context", "show"], { allowFailure: true }).then((context) =>
+          context.code === 0
+            ? run(["docker", "buildx", "inspect", context.stdout.trim()], { allowFailure: true })
+            : context,
+        ),
         run(["docker", "manifest", "inspect", "--verbose", CORE_IMAGE], {
           allowFailure: true,
         }).then(async (manifest) => {
@@ -823,13 +866,7 @@ const doctorEnvironmentSnapshot =
           ? undefined
           : (dockerCompose.stderr || dockerCompose.stdout).trim() ||
             "Docker Compose plugin is unavailable",
-      dockerBuildxError:
-        dockerBuildx.code === 0
-          ? undefined
-          : (dockerBuildx.stderr || dockerBuildx.stdout).trim() ||
-            "Docker Buildx plugin is unavailable",
-      builderPlatforms:
-        dockerBuildx.code === 0 ? buildxInspectPlatforms(dockerBuildx.stdout) : [],
+      ...parseDaemonBuilder(dockerBuildx),
       coreManifestArchitectures: [...new Set(manifestArchitectures)],
       coreManifestError: manifestError,
       missingKeypairs: keypairs
@@ -869,10 +906,10 @@ export const doctorEnvironmentErrors = (snapshot: DoctorEnvironmentSnapshot): st
   if (snapshot.dockerComposeError !== undefined) {
     errors.push(`Docker Compose unavailable: ${snapshot.dockerComposeError}`);
   }
-  // An arm64 daemon runs the amd64-only kms-core image only through emulation (Rosetta or QEMU binfmt).
-  if (snapshot.docker?.architecture === "arm64" || snapshot.docker?.architecture === "aarch64") {
+  // Emulation is Rosetta or QEMU binfmt, which the daemon's builder lists as linux/amd64.
+  if (snapshot.docker !== undefined && daemonEmulatesCore(snapshot.docker.architecture)) {
     if (snapshot.dockerBuildxError !== undefined) {
-      errors.push(`Docker Buildx unavailable: ${snapshot.dockerBuildxError}`);
+      errors.push(`Docker Buildx cannot check amd64 emulation: ${snapshot.dockerBuildxError}`);
     } else if (!snapshot.builderPlatforms.includes(CORE_PLATFORM)) {
       errors.push(
         `Docker cannot run ${CORE_PLATFORM} containers (builder platforms: ${snapshot.builderPlatforms.join(", ") || "none"}); enable amd64 emulation (Docker Desktop: Rosetta or QEMU; Linux: install binfmt/QEMU)`,
@@ -923,9 +960,7 @@ export const doctorDemo = async ({
   console.log(
     `[doctor] ${CORE_IMAGE} architectures=${environment.coreManifestArchitectures.join(",") || "unavailable"}`,
   );
-  console.log(
-    `[doctor] kms-core cluster=${CORE_PLATFORM}${process.arch === "x64" ? "" : " (emulated)"}; all other services remain native`,
-  );
+  console.log(`[doctor] ${kmsCoreClusterLine(environment.docker)}`);
   if (errors.length === 0) console.log("[doctor] ready");
   for (const error of errors) console.error(`[doctor] ${error}`);
   return { manifest, errors };
