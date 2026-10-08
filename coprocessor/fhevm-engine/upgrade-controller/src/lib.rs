@@ -979,16 +979,24 @@ async fn transition_to_dry_run_started(
 /// this check is intentionally proposal-wide, not filtered by chain_id,
 /// mirroring `prune_gcs_verify_proofs_before_start`.
 ///
-/// Three conditions, all against the Gateway-block domain:
+/// Four conditions, all against the Gateway-block domain:
 ///   1. Green's own watermark: `gcs.gw_listener_last_block.last_block_num >=
 ///      gw_start_block`. Reads the GCS schema explicitly (not `public`), since
 ///      the green gw-listener tails the Gateway into the GCS schema from
 ///      startup. A missing watermark row reads as `-1`, so this is not
 ///      vacuously true before the GCS gw-listener has written any progress.
-///   2. Blue's watermark: `public.gw_listener_last_block.last_block_num >=
+///   2. The gw-listener's window-alignment latch: every in-progress GCS row has
+///      `gw_window_rewound = TRUE` (`BOOL_AND`; no rows reads as FALSE). The
+///      watermark alone cannot tell "scanned through gw_start_block" from
+///      "jumped past it": a proposal that activates mid-tick — after the
+///      listener's top-of-tick alignment check but before its watermark write —
+///      satisfies check 1 with the window start never scanned. The latch is
+///      written only in (or after) the listener's alignment transaction, so it
+///      closes that race.
+///   3. Blue's watermark: `public.gw_listener_last_block.last_block_num >=
 ///      gw_start_block`. Without this, an unobserved-by-blue block would make
-///      check 3 vacuously true (nothing seen yet != nothing pending).
-///   3. No pre-window proof is still pending: no `public.verify_proofs` row
+///      check 4 vacuously true (nothing seen yet != nothing pending).
+///   4. No pre-window proof is still pending: no `public.verify_proofs` row
 ///      with `block_number < gw_start_block` has `verified IS NULL`. Blue's
 ///      zkproof-worker must have resolved every proof below the snapshot
 ///      point before the dry run's re-randomization strategy activates at
@@ -1006,6 +1014,11 @@ async fn check_gw_dry_run_ready(
               WHERE dummy_id = true),
              -1
            ) >= $1
+           AND COALESCE(
+             (SELECT BOOL_AND(gw_window_rewound) FROM upgrade_state
+               WHERE stack_role = 'GCS' AND status = 'in_progress'),
+             FALSE
+           )
            AND COALESCE(
              (SELECT last_block_num FROM public.gw_listener_last_block
               WHERE dummy_id = true),
@@ -4868,11 +4881,14 @@ mod tests {
 
         let (_instance, pool) = test_pool().await;
         seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        // gw_window_rewound = TRUE: check_gw_dry_run_ready also requires the
+        // gw-listener's window-alignment latch, or the gate never re-arms.
         sqlx::query(
             "UPDATE upgrade_state
                 SET host_consensus_reached = FALSE,
                     gw_consensus_reached = FALSE,
-                    gw_dry_run_started = FALSE
+                    gw_dry_run_started = FALSE,
+                    gw_window_rewound = TRUE
               WHERE stack_role = 'GCS'",
         )
         .execute(&pool)
