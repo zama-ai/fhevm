@@ -56,3 +56,10 @@ persistence:
     create: false
 scUpgrade:
   enabled: false
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"

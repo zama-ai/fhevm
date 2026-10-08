@@ -278,14 +278,32 @@ curl -sk -H "Authorization: Bearer fhevm-e2e-kms-connector-api-key" https://loca
 
 ## KMS context switch
 
-On a preview that already finished keygen, broadcast a same-committee context
-switch. The overlays set network, RPC, chain id, and deployer. The command
-fills the party env (the same keys as gitops `eth-sc-define-new-kms-context`
-and `gw-sc-update-kms-context`) from the live contract releases, replaces each
-CA certificate with the PEM in that party's public vault, sets the node URL and
-MPC identity to the peer service the TLS certificate names, and sets the software
-version and PCRs from the running `kms-core-1`. It then bumps the gateway context id to the next
-ProtocolConfig allocation id. It does not wipe KMS key storage.
+On a preview that already finished keygen, replace one dead party and then
+broadcast a same-committee context switch. Neither command is part of
+`preview-env-deploy`. The contract Jobs tolerate
+`karpenter.sh/nodepool=zws-pool`.
+
+Replace party `<id>` with a new core named `<name>`. The party id stays in
+`kmsPeers.id`. `<name>` is the release, the pod, and the vault prefix only.
+Party 1 with name 5 becomes pod `kms-core-5-core-1` and prefix `PUB-p5`. The
+script points that party's CA fetch at `PUB-p<name>`, strips the peer list so
+the server boots with `peers: None`, and points that party's connector at the
+new pod. Leave every other party running. Do not helm-upgrade the new release
+afterwards.
+
+```bash
+NAMESPACE=<namespace> \
+  bash ci/preview-env/scripts/deploy/prepare-kms-core-replacement.sh 1 5
+```
+
+The switch script keeps each party id and uses the Running pod
+`kms-core-<name>-core-<id>`. A replacement uses the CA, signer, and storage
+prefix from `PUB-p<name>`. Set `KMS_CORE_NAMES=1=5,4=6` when more than one
+Running pod matches a party. It fills the party env from the live contract
+releases, then broadcasts
+`defineNewKmsContextAndEpoch` and bumps the gateway context id to the next
+ProtocolConfig allocation id. It does not wipe KMS key storage and does not
+destroy the active context.
 
 The first host deploy (`wire-contracts-values.sh`) registers that same material
 from the public vault and the enclave image. A switch replays the previous
@@ -293,12 +311,34 @@ context, so a preview whose first context used the placeholder certificate
 needs a new preview rather than another switch.
 
 ```bash
-NAMESPACE=<namespace> bash ci/preview-env/scripts/deploy/kms-context-switch.sh
+CONTRACTS_CHART="$PWD/contracts" NAMESPACE=<namespace> \
+  bash ci/preview-env/scripts/deploy/kms-context-switch.sh
 ```
 
-Run it from a checkout of the ref that deployed the namespace. The jobs return
-when the host and gateway transactions are mined; the cores then confirm the
-new context and activate its epoch.
+Run it from a checkout of the ref that deployed the namespace. Pull the
+contracts chart first when the preview pinned `contracts_chart_version`. The
+jobs return when the host and gateway transactions are mined. With the replaced
+party scaled to 0, the reshare then waits out the charged rounds (hours) before
+the new context activates. `Still waiting to receive from party` is expected
+for that whole wait. Extend the dispatch lifetime so the namespace is still
+there when it finishes.
+
+## Epoch rotation
+
+Same context, new epoch. `rotate-epoch.sh` broadcasts
+`defineNewEpochForCurrentKmsContext` with the live host-contracts network and
+deployer, then watches that preview's host chain until every signer has
+confirmed, `ActivateEpoch` is in, and the epoch id has moved. The context id
+stays the same. It then runs the idle test-suite user and public decrypt
+(`test user input uint64`), or `DECRYPT_CMD` when that is set.
+
+```bash
+CONTRACTS_CHART="$PWD/contracts" NAMESPACE=<namespace> \
+  bash ci/preview-env/scripts/deploy/rotate-epoch.sh
+```
+
+The Helm release stays installed with its Job Complete. The next run
+uninstalls it before broadcasting again.
 
 ## Destroy an environment
 

@@ -1,14 +1,22 @@
 #!/usr/bin/env bash
 # Same-committee KMS context switch on an already deployed preview namespace.
 # Copies the live host-contracts and gateway-contracts committee, then replaces
-# KMS_NODE_CA_CERT_<i> from each party's public-vault PEM, the node URL and MPC
-# identity with the peer service the TLS certificate names, and
-# KMS_SOFTWARE_VERSION and KMS_PCR_VALUES from the running kms-core-1 image
-# and its trusted-release PCRs. Broadcasts defineNewKmsContextAndEpoch, then
-# updateKmsContext with the printed next id.
+# KMS_NODE_CA_CERT_<i> from each party's public-vault PEM, KMS_SIGNER_ADDRESS_<i>
+# from the newest VerfAddress object, the node URL and MPC identity with the
+# peer service the TLS certificate names, and KMS_SOFTWARE_VERSION and
+# KMS_PCR_VALUES from a running core image and its trusted-release PCRs.
+# Each party id keeps its committee slot. The live core is the Running pod
+# kms-core-<name>-core-<party id>. When <name> differs from the party id, that
+# core is a replacement: its CA, signer, and storage prefix are PUB-p<name>.
+# KMS_CORE_NAMES=1=5,4=6 picks those names. A party omitted from that list uses
+# the single Running pod for its id, or fails when several are Running.
+# Broadcasts defineNewKmsContextAndEpoch, then updateKmsContext with the printed
+# next id. The signer must be the verification key the core loaded: a regenerated
+# key does not match the address stored on the previous host release.
 #
 # Env: NAMESPACE (required). CONTRACTS_CHART (default charts/contracts).
 #      CONTEXT_SWITCH_TIMEOUT (helm --timeout, default 20m).
+#      KMS_CORE_NAMES (optional, party=name pairs, for example 1=5,4=6).
 # Run from a checkout of this repo. Not part of preview-env-deploy.
 set -euo pipefail
 
@@ -34,9 +42,10 @@ require_release() {
 
 # Overlay keeps its commands. Live release wins on a shared env name (testnet
 # RPC and deployer) and supplies the indexed committee. KMS_CONTEXT_ID is not
-# copied; the gateway step sets the next id. CA certs, node URL, MPC identity,
-# software version, and PCRs are replaced by apply_running_kms_material before
-# the host broadcast.
+# copied; the gateway step sets the next id. CA certs, signer addresses, node
+# URL, MPC identity, software version, and PCRs are replaced by
+# apply_running_kms_material before the host broadcast. The gateway broadcast
+# receives the same signer addresses.
 stage_values() {
   local live_release="$1" overlay="$2" out="$3"
   local live
@@ -128,23 +137,141 @@ sys.stdout.write("0x" + data.hex())
 PY
 }
 
+# Newest PUB-p<i>/VerfAddress object. kms-gen-keys stores the checksummed
+# Ethereum address of the verification key the core loads. The host and gateway
+# tasks want that address as KMS_SIGNER_ADDRESS_<i>.
+fetch_verf_address() {
+  STORAGE_URL="$1" STORAGE_PREFIX="$2" python3 - <<'PY'
+import os, re, sys, urllib.request
+from xml.etree import ElementTree as ET
+
+base = os.environ["STORAGE_URL"].rstrip("/")
+prefix = os.environ["STORAGE_PREFIX"].strip("/")
+list_url = f"{base}?list-type=2&prefix={prefix}/VerfAddress/"
+try:
+    xml = urllib.request.urlopen(list_url, timeout=30).read()
+except Exception as exc:
+    sys.exit(f"listing {list_url} failed: {exc}")
+root = ET.fromstring(xml)
+ns = {"s": "http://s3.amazonaws.com/doc/2006-03-01/"}
+items = []
+for contents in root.findall("s:Contents", ns) or root.findall("Contents"):
+    key = contents.findtext("s:Key", default="", namespaces=ns) or contents.findtext("Key", default="")
+    modified = contents.findtext("s:LastModified", default="", namespaces=ns) or contents.findtext("LastModified", default="")
+    if key and re.search(r"/VerfAddress/[^/]+$", key):
+        items.append((modified, key))
+if not items:
+    sys.exit(f"no VerfAddress object under {prefix} at {base}")
+items.sort(reverse=True)
+key = items[0][1]
+try:
+    data = urllib.request.urlopen(f"{base}/{key}", timeout=30).read()
+except Exception as exc:
+    sys.exit(f"fetching {base}/{key} failed: {exc}")
+address = data.decode("utf-8").strip()
+if not re.fullmatch(r"0x[0-9a-fA-F]{40}", address):
+    sys.exit(f"{key} is not an Ethereum address")
+sys.stdout.write(address)
+PY
+}
+
+# Name id from KMS_CORE_NAMES for this party, or nothing when the party is omitted.
+specified_core_name() {
+  local party="$1" pair party_id name
+  local -a pairs=()
+  [[ -z "${KMS_CORE_NAMES:-}" ]] && return 1
+  IFS=',' read -ra pairs <<< "${KMS_CORE_NAMES// /}"
+  for pair in "${pairs[@]}"; do
+    [[ -z "${pair}" ]] && continue
+    party_id="${pair%%=*}"
+    name="${pair#*=}"
+    if [[ "${party_id}" == "${party}" ]]; then
+      printf '%s\n' "${name}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+validate_kms_core_names() {
+  local n="$1" pair party_id name seen=""
+  local -a pairs=()
+  [[ -z "${KMS_CORE_NAMES:-}" ]] && return 0
+  IFS=',' read -ra pairs <<< "${KMS_CORE_NAMES// /}"
+  for pair in "${pairs[@]}"; do
+    [[ -z "${pair}" ]] && continue
+    if [[ ! "${pair}" =~ ^[1-9][0-9]*=[1-9][0-9]*$ ]]; then
+      echo "::error::KMS_CORE_NAMES entries must look like 4=6 (got '${pair}')" >&2
+      exit 1
+    fi
+    party_id="${pair%%=*}"
+    name="${pair#*=}"
+    if [[ "${seen}" == *"|${party_id}|"* ]]; then
+      echo "::error::KMS_CORE_NAMES lists party ${party_id} twice" >&2
+      exit 1
+    fi
+    seen="${seen}|${party_id}|"
+    if [[ "${party_id}" -gt "${n}" ]]; then
+      echo "::error::KMS_CORE_NAMES party ${party_id} is above NUM_KMS_NODES (${n})" >&2
+      exit 1
+    fi
+    if [[ "${party_id}" == "${name}" ]]; then
+      echo "::error::KMS_CORE_NAMES ${pair}: omit it to keep kms-core-${party_id}-core-${party_id}" >&2
+      exit 1
+    fi
+  done
+}
+
+# Release name id for this party. The pod is kms-core-<name>-core-<party>.
+resolve_core_name() {
+  local party="$1" name pods count pod phase
+  if ! name=$(specified_core_name "${party}"); then
+    pods=$(kubectl get pods -n "${NAMESPACE}" --field-selector=status.phase=Running \
+      -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
+      | grep -E "^kms-core-[0-9]+-core-${party}$" || true)
+    pods=$(printf '%s\n' "${pods}" | sed '/^$/d')
+    count=0
+    if [[ -n "${pods}" ]]; then
+      count=$(printf '%s\n' "${pods}" | wc -l | tr -d ' ')
+    fi
+    if [[ "${count}" -eq 0 ]]; then
+      echo "::error::no Running pod kms-core-<name>-core-${party} in ${NAMESPACE}" >&2
+      exit 1
+    fi
+    if [[ "${count}" -gt 1 ]]; then
+      echo "::error::several Running pods for party ${party}; set KMS_CORE_NAMES=${party}=<name>" >&2
+      printf '%s\n' "${pods}" >&2
+      exit 1
+    fi
+    name=$(printf '%s\n' "${pods}" | sed -E "s/^kms-core-([0-9]+)-core-${party}$/\\1/")
+  fi
+  pod="kms-core-${name}-core-${party}"
+  phase=$(kubectl get pod "${pod}" -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null || true)
+  if [[ "${phase}" != "Running" ]]; then
+    echo "::error::${pod} is not Running (${phase:-not found})" >&2
+    exit 1
+  fi
+  printf '%s\n' "${name}"
+}
+
 # NewMpcContext parses ca_cert as a PEM, ipAddress as a URL, and checks
-# mpc_identity against the TLS certificate CN (kms-core-<i>-core-<i>). The
+# mpc_identity against the TLS certificate CN, which is the pod name. The
 # cores attest the image that is actually running.
 apply_running_kms_material() {
   local values="$1"
-  local n pod image tag cm toml pcr_json i idx url prefix cert
+  local n pod image tag cm toml pcr_json i idx url prefix ca_prefix cert address node_host name
+  local -a core_names=()
   n=$(env_value "${values}" NUM_KMS_NODES)
   if [[ ! "${n}" =~ ^[0-9]+$ ]] || [[ "${n}" -lt 1 ]]; then
     echo "::error::NUM_KMS_NODES is not a party count (${n})" >&2
     exit 1
   fi
-  pod=$(kubectl get pods -n "${NAMESPACE}" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' \
-    | grep -E '^kms-core-1-core-1$' | head -1)
-  if [[ -z "${pod}" ]]; then
-    echo "::error::pod kms-core-1-core-1 is not in ${NAMESPACE}" >&2
-    exit 1
-  fi
+  validate_kms_core_names "${n}"
+  for ((i = 1; i <= n; i++)); do
+    core_names[i]=$(resolve_core_name "${i}") || exit 1
+  done
+  # The image and PCRs are the same on every core that stays in the committee.
+  pod="kms-core-${core_names[1]}-core-1"
   image=$(kubectl get pod "${pod}" -n "${NAMESPACE}" -o json | python3 -c '
 import json, sys
 doc = json.load(sys.stdin)
@@ -198,20 +325,37 @@ sys.stdout.write(json.dumps(triples, separators=(",", ":")))
   for ((i = 1; i <= n; i++)); do
     idx=$((i - 1))
     url=$(env_value "${values}" "KMS_NODE_STORAGE_URL_${idx}")
-    prefix=$(env_value "${values}" "KMS_NODE_STORAGE_PREFIX_${idx}")
+    name="${core_names[i]}"
+    node_host="kms-core-${name}-core-${i}"
+    if [[ "${name}" != "${i}" ]]; then
+      # Keygen for the replacement wrote the CA and the verification address
+      # under PUB-p<name>. The party id in the committee stays i.
+      prefix="PUB-p${name}"
+      ca_prefix="${prefix}"
+      set_env "${values}" "KMS_NODE_STORAGE_PREFIX_${idx}" "${prefix}"
+    else
+      prefix=$(env_value "${values}" "KMS_NODE_STORAGE_PREFIX_${idx}")
+      ca_prefix="${prefix}"
+    fi
     if [[ -z "${url}" || -z "${prefix}" || "${url}" == "null" || "${prefix}" == "null" ]]; then
       echo "::error::party ${i} is missing a storage URL or prefix" >&2
       exit 1
     fi
-    if ! cert=$(fetch_ca_cert "${url}" "${prefix}"); then
+    if ! cert=$(fetch_ca_cert "${url}" "${ca_prefix}"); then
       echo "::error::party ${i} CA cert: ${cert}" >&2
       exit 1
     fi
-    node_host="kms-core-${i}-core-${i}"
+    if ! address=$(fetch_verf_address "${url}" "${prefix}"); then
+      echo "::error::party ${i} signer address: ${address}" >&2
+      exit 1
+    fi
     set_env "${values}" "KMS_NODE_IP_${idx}" "http://${node_host}:50001"
     set_env "${values}" "KMS_NODE_MPC_IDENTITY_${idx}" "${node_host}"
     set_env "${values}" "KMS_NODE_CA_CERT_${idx}" "${cert}"
-    echo "Party ${i}: CA cert from ${prefix}/CACert ($(wc -c <<<"${cert}" | tr -d ' ') hex chars)"
+    set_env "${values}" "KMS_SIGNER_ADDRESS_${idx}" "${address}"
+    signer_addresses["${idx}"]="${address}"
+    node_hosts["${idx}"]="${node_host}"
+    echo "Party ${i}: ${node_host}, CA cert from ${ca_prefix}/CACert ($(wc -c <<<"${cert}" | tr -d ' ') hex chars), signer ${address}"
   done
 }
 
@@ -232,6 +376,11 @@ job_name() {
 
 require_release host-contracts
 require_release gateway-contracts
+
+# Indexed by party index. apply_running_kms_material fills these; the gateway
+# update must register the same verification addresses and URLs as the host context.
+signer_addresses=()
+node_hosts=()
 
 host_values=$(mktemp)
 stage_values host-contracts "${host_overlay}" "${host_values}"
@@ -258,7 +407,12 @@ stage_values gateway-contracts "${gw_overlay}" "${gw_values}"
 gw_n=$(env_value "${gw_values}" NUM_KMS_NODES)
 for ((i = 1; i <= gw_n; i++)); do
   idx=$((i - 1))
-  set_env "${gw_values}" "KMS_NODE_IP_ADDRESS_${idx}" "http://kms-core-${i}-core-${i}:50001"
+  if [[ -z "${signer_addresses[${idx}]:-}" || -z "${node_hosts[${idx}]:-}" ]]; then
+    echo "::error::no signer address or host was read for party ${i}" >&2
+    exit 1
+  fi
+  set_env "${gw_values}" "KMS_NODE_IP_ADDRESS_${idx}" "http://${node_hosts[${idx}]}:50001"
+  set_env "${gw_values}" "KMS_SIGNER_ADDRESS_${idx}" "${signer_addresses[${idx}]}"
 done
 ID="${new_id}" yq -i '
   (.scDeploy.env[] | select(.name == "KMS_CONTEXT_ID")).value = strenv(ID)

@@ -24,10 +24,10 @@
 # PROTOCOL_CONFIG_CONTRACT_ADDRESS from the eth-sc-addresses ConfigMap.
 # The build task prints the next context id (allocation counter + 1). The script
 # feeds that id to the gateway overlay. defineNewKmsContextAndEpoch reverts with
-# KmsLifecycleOperationInFlight while the previous attempt is still Pending, so
-# the first command destroys that id when it is live and is not the active
-# context. This broadcast only mines the tx; the cores still have to confirm
-# creation and activate the epoch.
+# KmsLifecycleOperationInFlight while the previous attempt is still Pending or
+# Created, so the first command destroys that id when it is live and is not the
+# active context. The active context is left in place. This broadcast only mines
+# the tx; the cores still have to confirm creation and activate the epoch.
 scDeploy:
   enabled: true
   preventRedeployment: false
@@ -95,3 +95,10 @@ persistence:
     create: false
 scUpgrade:
   enabled: false
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"
