@@ -6,13 +6,19 @@
       "name": "@fhevm/confidential-token",
       "dependencies": {
         "@fhevm/solana-zama-host": "file:../zama-host",
+      },
+      "devDependencies": {
         "@solana/kit": "8.4.0",
         "@solana/program-client-core": "8.4.0",
+      },
+      "peerDependencies": {
+        "@solana/kit": "^8.4.0",
+        "@solana/program-client-core": "^8.4.0",
       },
     },
   },
   "packages": {
-    "@fhevm/solana-zama-host": ["@fhevm/solana-zama-host@file:../zama-host", { "devDependencies": { "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0", "@types/node": "22.20.1", "typescript": "6.0.3" }, "peerDependencies": { "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0" } }],
+    "@fhevm/solana-zama-host": ["@fhevm/solana-zama-host@file:../zama-host", { "devDependencies": { "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0", "@types/node": "22.20.1", "typescript": "6.0.3" }, "peerDependencies": { "@solana/kit": "^8.4.0", "@solana/program-client-core": "^8.4.0" } }],
 
     "@solana/accounts": ["@solana/accounts@8.4.0", "", { "dependencies": { "@solana/addresses": "8.4.0", "@solana/codecs-core": "8.4.0", "@solana/codecs-strings": "8.4.0", "@solana/errors": "8.4.0", "@solana/rpc-spec": "8.4.0", "@solana/rpc-types": "8.4.0" }, "peerDependencies": { "typescript": ">=5.4.0" }, "optionalPeers": ["typescript"] }, "sha512-YklERWeG5UD2fzxR0zwWgzCVyuHRqg6eTIyGBAe8hOWIim8TYS1aPBVFAlVkSZiAXaFRxmu1E3IRfeCe/QSQmg=="],
 

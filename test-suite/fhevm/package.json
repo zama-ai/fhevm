@@ -26,6 +26,8 @@
     "@solana/kit": "8.4.0",
     "@solana/program-client-core": "8.4.0",
     "@solana/sysvars": "8.4.0",
+    "@solana/wallet-standard-features": "^1.4.0",
+    "@wallet-standard/base": "^1.1.1",
     "citty": "^0.1.6",
     "viem": "^2.46.3",
     "yaml": "^2.8.1"

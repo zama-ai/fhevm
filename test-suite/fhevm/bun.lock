@@ -13,6 +13,8 @@
         "@solana/kit": "8.4.0",
         "@solana/program-client-core": "8.4.0",
         "@solana/sysvars": "8.4.0",
+        "@solana/wallet-standard-features": "^1.4.0",
+        "@wallet-standard/base": "^1.1.1",
         "citty": "^0.1.6",
         "viem": "^2.46.3",
         "yaml": "^2.8.1",
@@ -32,11 +34,11 @@
 
     "@babel/runtime": ["@babel/runtime@7.29.7", "", {}, "sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw=="],
 
-    "@fhevm/confidential-token": ["@fhevm/confidential-token@file:../../solana/clients/confidential-token", { "dependencies": { "@fhevm/solana-zama-host": "file:../zama-host", "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0" } }],
+    "@fhevm/confidential-token": ["@fhevm/confidential-token@file:../../solana/clients/confidential-token", { "dependencies": { "@fhevm/solana-zama-host": "file:../zama-host" }, "devDependencies": { "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0" }, "peerDependencies": { "@solana/kit": "^8.4.0", "@solana/program-client-core": "^8.4.0" } }],
 
-    "@fhevm/sdk": ["@fhevm/sdk@file:../../sdk/js-sdk/src", { "dependencies": { "@fhevm/solana-zama-host": "0.15.0-0", "@noble/curves": "2.0.1", "@noble/hashes": "2.0.1", "@scure/base": "1.2.6", "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0", "@solana/sysvars": "8.4.0", "@solana/wallet-standard-features": "^1.4.0", "@wallet-standard/base": "^1.1.1", "wasm-feature-detect": "1.8.0" }, "peerDependencies": { "ethers": ">=6.8.0", "typescript": ">=5.0.4", "viem": ">=2" }, "optionalPeers": ["ethers", "typescript", "viem"] }],
+    "@fhevm/sdk": ["@fhevm/sdk@file:../../sdk/js-sdk/src", { "dependencies": { "@noble/curves": "2.0.1", "@noble/hashes": "2.0.1", "wasm-feature-detect": "1.8.0" }, "peerDependencies": { "@fhevm/solana-zama-host": "^0.15.0-0", "@solana/kit": "^8.4.0", "@solana/sysvars": "^8.4.0", "@solana/wallet-standard-features": "^1.4.0", "@wallet-standard/base": "^1.1.1", "ethers": ">=6.8.0", "typescript": ">=5.0.4", "viem": ">=2" }, "optionalPeers": ["@fhevm/solana-zama-host", "@solana/kit", "@solana/sysvars", "@solana/wallet-standard-features", "@wallet-standard/base", "ethers", "typescript", "viem"] }],
 
-    "@fhevm/solana-zama-host": ["@fhevm/solana-zama-host@file:../../solana/clients/zama-host", { "devDependencies": { "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0", "@types/node": "22.20.1", "typescript": "6.0.3" }, "peerDependencies": { "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0" } }],
+    "@fhevm/solana-zama-host": ["@fhevm/solana-zama-host@file:../../solana/clients/zama-host", { "devDependencies": { "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0", "@types/node": "22.20.1", "typescript": "6.0.3" }, "peerDependencies": { "@solana/kit": "^8.4.0", "@solana/program-client-core": "^8.4.0" } }],
 
     "@metaplex-foundation/beet": ["@metaplex-foundation/beet@0.7.1", "", { "dependencies": { "ansicolors": "^0.3.2", "bn.js": "^5.2.0", "debug": "^4.3.3" } }, "sha512-hNCEnS2WyCiYyko82rwuISsBY3KYpe828ubsd2ckeqZr7tl0WVLivGkoyA/qdiaaHEBGdGl71OpfWa2rqL3DiA=="],
 
@@ -364,9 +366,9 @@
 
     "yaml": ["yaml@2.8.2", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-mplynKqc1C2hTVYxd0PU2xQAc22TI1vShAYGksCCfxbn/dFwnHTNi1bvYsBTkhdUNtGIf5xNOg938rrSSYvS9A=="],
 
-    "@fhevm/confidential-token/@fhevm/solana-zama-host": ["@fhevm/solana-zama-host@file:../../solana/clients/zama-host", { "devDependencies": { "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0", "@types/node": "22.20.1", "typescript": "6.0.3" }, "peerDependencies": { "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0" } }],
+    "@fhevm/confidential-token/@fhevm/solana-zama-host": ["@fhevm/solana-zama-host@file:../../solana/clients/zama-host", { "devDependencies": { "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0", "@types/node": "22.20.1", "typescript": "6.0.3" }, "peerDependencies": { "@solana/kit": "^8.4.0", "@solana/program-client-core": "^8.4.0" } }],
 
-    "@fhevm/sdk/@fhevm/solana-zama-host": ["@fhevm/solana-zama-host@file:../../solana/clients/zama-host", { "devDependencies": { "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0", "@types/node": "22.20.1", "typescript": "6.0.3" }, "peerDependencies": { "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0" } }],
+    "@fhevm/sdk/@fhevm/solana-zama-host": ["@fhevm/solana-zama-host@file:../../solana/clients/zama-host", { "devDependencies": { "@solana/kit": "8.4.0", "@solana/program-client-core": "8.4.0", "@types/node": "22.20.1", "typescript": "6.0.3" }, "peerDependencies": { "@solana/kit": "^8.4.0", "@solana/program-client-core": "^8.4.0" } }],
 
     "@scure/bip32/@noble/curves": ["@noble/curves@1.9.1", "", { "dependencies": { "@noble/hashes": "1.8.0" } }, "sha512-k11yZxZg+t+gWvBbIswW0yoJlu8cHOC7dhunwOzoWH/mXGBiYyR4YY6hAEK/3EUs4UpB8la1RfdRpeGsFHkWsA=="],
 

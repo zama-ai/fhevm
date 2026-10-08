@@ -125,11 +125,31 @@
     "./package.json": "./package.json"
   },
   "peerDependencies": {
+    "@fhevm/solana-zama-host": "^0.15.0-0",
+    "@solana/kit": "^8.4.0",
+    "@solana/sysvars": "^8.4.0",
+    "@solana/wallet-standard-features": "^1.4.0",
+    "@wallet-standard/base": "^1.1.1",
     "ethers": ">=6.8.0",
     "typescript": ">=5.0.4",
     "viem": ">=2"
   },
   "peerDependenciesMeta": {
+    "@fhevm/solana-zama-host": {
+      "optional": true
+    },
+    "@solana/kit": {
+      "optional": true
+    },
+    "@solana/sysvars": {
+      "optional": true
+    },
+    "@solana/wallet-standard-features": {
+      "optional": true
+    },
+    "@wallet-standard/base": {
+      "optional": true
+    },
     "ethers": {
       "optional": true
     },
@@ -141,15 +161,8 @@
     }
   },
   "dependencies": {
-    "@fhevm/solana-zama-host": "0.15.0-0",
     "@noble/curves": "2.0.1",
     "@noble/hashes": "2.0.1",
-    "@scure/base": "1.2.6",
-    "@solana/kit": "8.4.0",
-    "@solana/program-client-core": "8.4.0",
-    "@solana/sysvars": "8.4.0",
-    "@solana/wallet-standard-features": "^1.4.0",
-    "@wallet-standard/base": "^1.1.1",
     "wasm-feature-detect": "1.8.0"
   },
   "repository": {
