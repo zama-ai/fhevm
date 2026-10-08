@@ -32,15 +32,17 @@ jobs:
               - .github/actions/setup-rust-and-protoc/**
               - coprocessor/fhevm-engine/**
               - host-contracts/rust_bindings/**
-              # The solana/ path dependencies of this workspace, direct or transitive;
-              # solana/scripts/check-path-filters.sh fails when one is missing.
+              # The solana/ path dependencies of this workspace, direct or transitive, and the shared
+              # fixtures its tests load; solana/scripts/check-path-filters.sh fails when one is missing.
               - solana/programs/zama-host/**
               # zama-host's build script reads its environment file here, through program-environment.
+              # It is not a crate, so check-path-filters.sh does not check this entry.
               - solana/environments/**
               - solana/crates/program-environment/**
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-merkle-proofs/**
               - solana/crates/zama-solana-transaction/**
+              - solana/test-fixtures/**
               # consensus-detector depends on these crates by path. Clippy of the
               # engine compiles them, but does not run their own tests.
               - shared/block-manifest/**

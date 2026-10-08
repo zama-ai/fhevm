@@ -141,11 +141,13 @@ typecheck — a root can be swept and still never compiled.
 
 In CI, a root's test, clippy and dependency-analysis workflows run on a Solana
 change only when their path filter names it. Each filter must name every `solana/` crate the
-root links, directly or through another `solana/` crate, and, for a test workflow,
-`solana/test-fixtures/**` when the root's tests load a shared fixture.
-`scripts/check-path-filters.sh` (job `solana-tests/path-filters`) reads the crates
-from `cargo metadata` and fails, naming the workflow and the path, when a filter
-misses one. The SDK's `js-sdk-tests` is held to the same fixture rule.
+root links, directly or through another `solana/` crate, and, for a workflow that
+compiles the root's tests (clippy `--all-targets` included), `solana/test-fixtures/**`
+when those tests load a shared fixture. `scripts/check-path-filters.sh` (job
+`solana-tests/path-filters`) reads the crates from `cargo metadata` and fails, naming
+the workflow and the path, when a filter misses one. The SDK's `js-sdk-tests` is held
+to the same fixture rule. The script checks crates and fixtures only: a `solana/` file
+that a build script reads, such as `solana/environments/`, must be named by hand.
 
 ## Scenario layer (SDK-driven e2e)
 

@@ -4,9 +4,9 @@ name: solana-images-publish
 # from source on every PR (#1766 step 3), plus the zama-host deployer image (Helm Job / compose
 # analog; not pulled by solana-e2e). Each image is built from its component's own Dockerfile.
 # fhevm-cli `--override` source builds (COMPONENT_BUILD_SPECS in
-# test-suite/fhevm/src/generate/compose.ts) build the coprocessor and kms-connector services from
-# their workspace's Dockerfile.workspace instead. solana-programs is Job-only and is not in that
-# table.
+# test-suite/fhevm/src/generate/compose.ts) build the coprocessor services and the kms-connector
+# services other than kms-connector-db-migration from their workspace's Dockerfile.workspace
+# instead. solana-programs is Job-only and is not in that table.
 #
 # Tags per image:
 #   ghcr.io/zama-ai/<image>:feature-solana                  floating, tracks the branch tip

@@ -2,7 +2,8 @@
 # Fails when a consumer's CI path filter misses a solana/ path the consumer reads: a crate its
 # Cargo workspace links, directly or through another solana/ crate, or the shared test fixtures
 # its tests load. Without the entry, a change to that path alone does not run the consumer's
-# checks, and the break surfaces later on an unrelated PR.
+# checks, and the break surfaces later on an unrelated PR. Other solana/ inputs, such as the
+# environment files a build script reads, are not checked.
 #
 # The Cargo manifests are the one source of the crates. Per-image docker-build filters are not
 # checked here; coprocessor-docker-build's are checked by
@@ -24,14 +25,17 @@ solana_graph=$(
 )
 
 # The repo-relative solana/ crates a Cargo workspace links, one per line, dev-dependencies
-# included: its tests compile them.
+# included: its tests compile them. Fails on a linked solana/ crate outside the solana/
+# workspace, whose own path dependencies the graph cannot follow.
 linked_crates() {
   cargo metadata --format-version 1 --no-deps --manifest-path "$1/Cargo.toml" |
     jq -r --argjson graph "$solana_graph" --arg root "$root" '
       def grow: [.[], (.[] | $graph[.] // [] | .[])] | unique;
       [.packages[].dependencies[] | select(.path != null) | .path] | unique
       | until(grow == .; grow)
-      | .[] | select(startswith($root + "solana/")) | ltrimstr($root)'
+      | .[] | select(startswith($root + "solana/"))
+      | if $graph[.] then ltrimstr($root)
+        else error("\(ltrimstr($root)) is not a member of solana/Cargo.toml") end'
 }
 
 # The entries of a paths-filter block, one per line, or of `on.pull_request.paths` when no
@@ -61,7 +65,8 @@ failures=0
 # check WORKFLOW FILTER CONSUMER_DIR CARGO TESTS
 #   FILTER: the paths-filter key, or '' for `on.pull_request.paths`.
 #   CARGO: whether CONSUMER_DIR is a Cargo workspace whose solana/ crates the filter must name.
-#   TESTS: whether the filter gates tests, which must run when a fixture they load changes.
+#   TESTS: whether the filter gates a job that compiles the consumer's tests, including
+#     `clippy --all-targets`, which must run when a fixture they load changes.
 check() {
   local workflow=$1 filter=$2 consumer=$3 cargo=$4 tests=$5 entries required="" path
   entries=$(filter_entries "$workflow" "$filter")
@@ -87,7 +92,7 @@ check() {
 }
 
 check coprocessor-cargo-tests.yml rust-files coprocessor/fhevm-engine cargo tests
-check coprocessor-cargo-clippy.yml rust-files coprocessor/fhevm-engine cargo -
+check coprocessor-cargo-clippy.yml rust-files coprocessor/fhevm-engine cargo tests
 check coprocessor-dependency-analysis.yml rust-files coprocessor/fhevm-engine cargo -
 check kms-connector-tests.yml connector kms-connector cargo tests
 check kms-connector-dependency-analysis.yml rust-files kms-connector cargo -

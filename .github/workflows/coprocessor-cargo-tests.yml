@@ -37,6 +37,7 @@ jobs:
               # fixtures its tests load; solana/scripts/check-path-filters.sh fails when one is missing.
               - solana/programs/zama-host/**
               # zama-host's build script reads its environment file here, through program-environment.
+              # It is not a crate, so check-path-filters.sh does not check this entry.
               - solana/environments/**
               - solana/crates/program-environment/**
               - solana/crates/zama-solana-acl/**
