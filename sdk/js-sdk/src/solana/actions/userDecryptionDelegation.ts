@@ -1,6 +1,6 @@
 import {
   createNoopSigner,
-  fetchEncodedAccount,
+  fetchEncodedAccounts,
   type Address,
   type Instruction,
   type MaybeEncodedAccount,
@@ -240,7 +240,7 @@ export interface SolanaUserDecryptionDelegationRows {
 
 /**
  * Reads both rows that could authorize the tuple — the application's own and the delegator's
- * wildcard row — at `finalized`, exactly the pair the Connector reads. Either being live (see
+ * wildcard row — in one read at `finalized`, exactly the pair the Connector reads. Either being live (see
  * [`isSolanaUserDecryptionDelegationLiveAt`]) is what authorizes a delegated request.
  *
  * A delegation record only ever lives in a zama-host-owned account, so an account at the
@@ -271,10 +271,12 @@ export async function fetchSolanaUserDecryptionDelegation(
     findDelegationRecordPda(tuple, { programAddress }),
     findDelegationRecordPda(wildcardTuple, { programAddress }),
   ]);
-  const [exactAccount, wildcardAccount] = await Promise.all([
-    fetchEncodedAccount(rpc, exactPda[0], { commitment: 'finalized' }),
-    fetchEncodedAccount(rpc, wildcardPda[0], { commitment: 'finalized' }),
-  ]);
+  // One RPC call, so both rows reflect one slot: two calls could straddle a revoke.
+  const accounts = await fetchEncodedAccounts(rpc, [exactPda[0], wildcardPda[0]], { commitment: 'finalized' });
+  const [exactAccount, wildcardAccount] = accounts;
+  if (accounts.length !== 2 || exactAccount === undefined || wildcardAccount === undefined) {
+    throw new Error(`getMultipleAccounts returned ${accounts.length} accounts for the two delegation rows`);
+  }
   const rowOrNull = (
     account: MaybeEncodedAccount,
     [address, bump]: ProgramDerivedAddress,

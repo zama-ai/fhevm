@@ -38,14 +38,17 @@ import {
   type InstructionWithData,
   type ReadonlyAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
 import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
   type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
 import { findPendingBurnPda, findVaultAuthorityPda } from '../pdas/index.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
@@ -150,59 +153,59 @@ export function getRedeemBurnedAmountInstructionDataCodec(): Codec<
 }
 
 export type RedeemBurnedAmountAsyncInput<
-  TAccountOwner extends string = string,
-  TAccountMint extends string = string,
-  TAccountTokenAccount extends string = string,
-  TAccountUnderlyingMint extends string = string,
-  TAccountVaultUsdc extends string = string,
-  TAccountDestinationUsdc extends string = string,
-  TAccountVaultAuthority extends string = string,
-  TAccountBurnedAmountStore extends string = string,
-  TAccountPendingBurn extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountKmsContext extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountTokenProgram extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountOwner extends InstructionSignerInput = InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVaultUsdc extends InstructionAccountInput = InstructionAccountInput,
+  TAccountDestinationUsdc extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVaultAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBurnedAmountStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPendingBurn extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Token owner, redemption recipient, and rent destination for the closed pending burn. */
-  owner: TransactionSigner<TAccountOwner>;
+  owner: TAccountOwner;
   /** Confidential mint whose vault backs the redeemed burned amount. */
-  mint: Address<TAccountMint>;
+  mint: TAccountMint;
   /** Confidential token account that produced the burned amount. */
-  tokenAccount: Address<TAccountTokenAccount>;
+  tokenAccount: TAccountTokenAccount;
   /** Underlying SPL mint. */
-  underlyingMint: Address<TAccountUnderlyingMint>;
+  underlyingMint: TAccountUnderlyingMint;
   /** Program vault USDC token account. */
-  vaultUsdc: Address<TAccountVaultUsdc>;
+  vaultUsdc: TAccountVaultUsdc;
   /**
    * Signer's destination USDC token account (any SPL account of the right mint). Ownership is
    * not required: the token-account owner must still sign, which is what prevents theft.
    */
-  destinationUsdc: Address<TAccountDestinationUsdc>;
-  vaultAuthority?: Address<TAccountVaultAuthority>;
+  destinationUsdc: TAccountDestinationUsdc;
+  vaultAuthority?: TAccountVaultAuthority;
   /**
    * Burned amount `EncryptedStore` account whose handle is redeemed. Bound to the mint/token
    * account by `assert_burned_amount_store_account`; the handler requires its current handle to
    * equal the pinned burned handle.
    */
-  burnedAmountStore: Address<TAccountBurnedAmountStore>;
+  burnedAmountStore: TAccountBurnedAmountStore;
   /** Pending-burn account opened at burn time; closed on successful redemption. */
-  pendingBurn?: Address<TAccountPendingBurn>;
+  pendingBurn?: TAccountPendingBurn;
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
-  hostConfig?: Address<TAccountHostConfig>;
+  hostConfig?: TAccountHostConfig;
   /**
    * KMS context PDA for the id the certificate commits to (any live context; validated by the
    * verifier CPI).
    */
-  kmsContext: Address<TAccountKmsContext>;
+  kmsContext: TAccountKmsContext;
   /** ZamaHost program used for the stateless verifier CPI. */
-  zamaProgram?: Address<TAccountZamaProgram>;
+  zamaProgram?: TAccountZamaProgram;
   /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
-  tokenProgram?: Address<TAccountTokenProgram>;
-  eventAuthority?: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  tokenProgram?: TAccountTokenProgram;
+  eventAuthority?: TAccountEventAuthority;
+  program?: TAccountProgram;
   burnedHandle: RedeemBurnedAmountInstructionDataArgs['burnedHandle'];
   cleartextAmount: RedeemBurnedAmountInstructionDataArgs['cleartextAmount'];
   signatures: RedeemBurnedAmountInstructionDataArgs['signatures'];
@@ -210,21 +213,21 @@ export type RedeemBurnedAmountAsyncInput<
 };
 
 export async function getRedeemBurnedAmountInstructionAsync<
-  TAccountOwner extends string,
-  TAccountMint extends string,
-  TAccountTokenAccount extends string,
-  TAccountUnderlyingMint extends string,
-  TAccountVaultUsdc extends string,
-  TAccountDestinationUsdc extends string,
-  TAccountVaultAuthority extends string,
-  TAccountBurnedAmountStore extends string,
-  TAccountPendingBurn extends string,
-  TAccountHostConfig extends string,
-  TAccountKmsContext extends string,
-  TAccountZamaProgram extends string,
-  TAccountTokenProgram extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountOwner extends InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput,
+  TAccountTokenAccount extends InstructionAccountInput,
+  TAccountUnderlyingMint extends InstructionAccountInput,
+  TAccountVaultUsdc extends InstructionAccountInput,
+  TAccountDestinationUsdc extends InstructionAccountInput,
+  TAccountVaultAuthority extends InstructionAccountInput,
+  TAccountBurnedAmountStore extends InstructionAccountInput,
+  TAccountPendingBurn extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: RedeemBurnedAmountAsyncInput<
@@ -248,46 +251,101 @@ export async function getRedeemBurnedAmountInstructionAsync<
 ): Promise<
   RedeemBurnedAmountInstruction<
     TProgramAddress,
-    TAccountOwner,
-    TAccountMint,
-    TAccountTokenAccount,
-    TAccountUnderlyingMint,
-    TAccountVaultUsdc,
-    TAccountDestinationUsdc,
-    TAccountVaultAuthority,
-    TAccountBurnedAmountStore,
-    TAccountPendingBurn,
-    TAccountHostConfig,
-    TAccountKmsContext,
-    TAccountZamaProgram,
-    TAccountTokenProgram,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<TAccountTokenAccount, InstructionAccountInputAddress<TAccountTokenAccount>>,
+    ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+    ResolvedInstructionAccountMeta<TAccountVaultUsdc, InstructionAccountInputAddress<TAccountVaultUsdc>>,
+    ResolvedInstructionAccountMeta<TAccountDestinationUsdc, InstructionAccountInputAddress<TAccountDestinationUsdc>>,
+    ResolvedInstructionAccountMeta<TAccountVaultAuthority, InstructionAccountInputAddress<TAccountVaultAuthority>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBurnedAmountStore,
+      InstructionAccountInputAddress<TAccountBurnedAmountStore>
+    >,
+    ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    owner: { value: input.owner ?? null, isWritable: true },
-    mint: { value: input.mint ?? null, isWritable: false },
-    tokenAccount: { value: input.tokenAccount ?? null, isWritable: false },
-    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
-    vaultUsdc: { value: input.vaultUsdc ?? null, isWritable: true },
-    destinationUsdc: { value: input.destinationUsdc ?? null, isWritable: true },
-    vaultAuthority: { value: input.vaultAuthority ?? null, isWritable: false },
-    burnedAmountStore: {
-      value: input.burnedAmountStore ?? null,
+    owner: { value: input.owner ?? null, isSigner: true, isWritable: true },
+    mint: { value: input.mint ?? null, isSigner: false, isWritable: false },
+    tokenAccount: {
+      value: input.tokenAccount ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    kmsContext: { value: input.kmsContext ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    underlyingMint: {
+      value: input.underlyingMint ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    vaultUsdc: {
+      value: input.vaultUsdc ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    destinationUsdc: {
+      value: input.destinationUsdc ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    vaultAuthority: {
+      value: input.vaultAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    burnedAmountStore: {
+      value: input.burnedAmountStore ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    pendingBurn: {
+      value: input.pendingBurn ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    kmsContext: {
+      value: input.kmsContext ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -296,15 +354,21 @@ export async function getRedeemBurnedAmountInstructionAsync<
 
   // Resolve default values.
   if (!accounts.vaultAuthority.value) {
-    accounts.vaultAuthority.value = await findVaultAuthorityPda({
-      mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
-    });
+    accounts.vaultAuthority.value = await findVaultAuthorityPda(
+      {
+        mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.pendingBurn.value) {
-    accounts.pendingBurn.value = await findPendingBurnPda({
-      mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
-      tokenAccount: getAddressFromResolvedInstructionAccount('tokenAccount', accounts.tokenAccount.value),
-    });
+    accounts.pendingBurn.value = await findPendingBurnPda(
+      {
+        mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
+        tokenAccount: getAddressFromResolvedInstructionAccount('tokenAccount', accounts.tokenAccount.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
@@ -334,7 +398,6 @@ export async function getRedeemBurnedAmountInstructionAsync<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('owner', accounts.owner),
@@ -357,78 +420,81 @@ export async function getRedeemBurnedAmountInstructionAsync<
     programAddress,
   } as RedeemBurnedAmountInstruction<
     TProgramAddress,
-    TAccountOwner,
-    TAccountMint,
-    TAccountTokenAccount,
-    TAccountUnderlyingMint,
-    TAccountVaultUsdc,
-    TAccountDestinationUsdc,
-    TAccountVaultAuthority,
-    TAccountBurnedAmountStore,
-    TAccountPendingBurn,
-    TAccountHostConfig,
-    TAccountKmsContext,
-    TAccountZamaProgram,
-    TAccountTokenProgram,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<TAccountTokenAccount, InstructionAccountInputAddress<TAccountTokenAccount>>,
+    ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+    ResolvedInstructionAccountMeta<TAccountVaultUsdc, InstructionAccountInputAddress<TAccountVaultUsdc>>,
+    ResolvedInstructionAccountMeta<TAccountDestinationUsdc, InstructionAccountInputAddress<TAccountDestinationUsdc>>,
+    ResolvedInstructionAccountMeta<TAccountVaultAuthority, InstructionAccountInputAddress<TAccountVaultAuthority>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBurnedAmountStore,
+      InstructionAccountInputAddress<TAccountBurnedAmountStore>
+    >,
+    ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 
 export type RedeemBurnedAmountInput<
-  TAccountOwner extends string = string,
-  TAccountMint extends string = string,
-  TAccountTokenAccount extends string = string,
-  TAccountUnderlyingMint extends string = string,
-  TAccountVaultUsdc extends string = string,
-  TAccountDestinationUsdc extends string = string,
-  TAccountVaultAuthority extends string = string,
-  TAccountBurnedAmountStore extends string = string,
-  TAccountPendingBurn extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountKmsContext extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountTokenProgram extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountOwner extends InstructionSignerInput = InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVaultUsdc extends InstructionAccountInput = InstructionAccountInput,
+  TAccountDestinationUsdc extends InstructionAccountInput = InstructionAccountInput,
+  TAccountVaultAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBurnedAmountStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPendingBurn extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Token owner, redemption recipient, and rent destination for the closed pending burn. */
-  owner: TransactionSigner<TAccountOwner>;
+  owner: TAccountOwner;
   /** Confidential mint whose vault backs the redeemed burned amount. */
-  mint: Address<TAccountMint>;
+  mint: TAccountMint;
   /** Confidential token account that produced the burned amount. */
-  tokenAccount: Address<TAccountTokenAccount>;
+  tokenAccount: TAccountTokenAccount;
   /** Underlying SPL mint. */
-  underlyingMint: Address<TAccountUnderlyingMint>;
+  underlyingMint: TAccountUnderlyingMint;
   /** Program vault USDC token account. */
-  vaultUsdc: Address<TAccountVaultUsdc>;
+  vaultUsdc: TAccountVaultUsdc;
   /**
    * Signer's destination USDC token account (any SPL account of the right mint). Ownership is
    * not required: the token-account owner must still sign, which is what prevents theft.
    */
-  destinationUsdc: Address<TAccountDestinationUsdc>;
-  vaultAuthority: Address<TAccountVaultAuthority>;
+  destinationUsdc: TAccountDestinationUsdc;
+  vaultAuthority: TAccountVaultAuthority;
   /**
    * Burned amount `EncryptedStore` account whose handle is redeemed. Bound to the mint/token
    * account by `assert_burned_amount_store_account`; the handler requires its current handle to
    * equal the pinned burned handle.
    */
-  burnedAmountStore: Address<TAccountBurnedAmountStore>;
+  burnedAmountStore: TAccountBurnedAmountStore;
   /** Pending-burn account opened at burn time; closed on successful redemption. */
-  pendingBurn: Address<TAccountPendingBurn>;
+  pendingBurn: TAccountPendingBurn;
   /** Host config carrying the current KMS context id and gateway EIP-712 domain. */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig: TAccountHostConfig;
   /**
    * KMS context PDA for the id the certificate commits to (any live context; validated by the
    * verifier CPI).
    */
-  kmsContext: Address<TAccountKmsContext>;
+  kmsContext: TAccountKmsContext;
   /** ZamaHost program used for the stateless verifier CPI. */
-  zamaProgram?: Address<TAccountZamaProgram>;
+  zamaProgram?: TAccountZamaProgram;
   /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
-  tokenProgram?: Address<TAccountTokenProgram>;
-  eventAuthority: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  tokenProgram?: TAccountTokenProgram;
+  eventAuthority: TAccountEventAuthority;
+  program?: TAccountProgram;
   burnedHandle: RedeemBurnedAmountInstructionDataArgs['burnedHandle'];
   cleartextAmount: RedeemBurnedAmountInstructionDataArgs['cleartextAmount'];
   signatures: RedeemBurnedAmountInstructionDataArgs['signatures'];
@@ -436,21 +502,21 @@ export type RedeemBurnedAmountInput<
 };
 
 export function getRedeemBurnedAmountInstruction<
-  TAccountOwner extends string,
-  TAccountMint extends string,
-  TAccountTokenAccount extends string,
-  TAccountUnderlyingMint extends string,
-  TAccountVaultUsdc extends string,
-  TAccountDestinationUsdc extends string,
-  TAccountVaultAuthority extends string,
-  TAccountBurnedAmountStore extends string,
-  TAccountPendingBurn extends string,
-  TAccountHostConfig extends string,
-  TAccountKmsContext extends string,
-  TAccountZamaProgram extends string,
-  TAccountTokenProgram extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountOwner extends InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput,
+  TAccountTokenAccount extends InstructionAccountInput,
+  TAccountUnderlyingMint extends InstructionAccountInput,
+  TAccountVaultUsdc extends InstructionAccountInput,
+  TAccountDestinationUsdc extends InstructionAccountInput,
+  TAccountVaultAuthority extends InstructionAccountInput,
+  TAccountBurnedAmountStore extends InstructionAccountInput,
+  TAccountPendingBurn extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountKmsContext extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: RedeemBurnedAmountInput<
@@ -473,45 +539,97 @@ export function getRedeemBurnedAmountInstruction<
   config?: { programAddress?: TProgramAddress },
 ): RedeemBurnedAmountInstruction<
   TProgramAddress,
-  TAccountOwner,
-  TAccountMint,
-  TAccountTokenAccount,
-  TAccountUnderlyingMint,
-  TAccountVaultUsdc,
-  TAccountDestinationUsdc,
-  TAccountVaultAuthority,
-  TAccountBurnedAmountStore,
-  TAccountPendingBurn,
-  TAccountHostConfig,
-  TAccountKmsContext,
-  TAccountZamaProgram,
-  TAccountTokenProgram,
-  TAccountEventAuthority,
-  TAccountProgram
+  ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+  ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+  ResolvedInstructionAccountMeta<TAccountTokenAccount, InstructionAccountInputAddress<TAccountTokenAccount>>,
+  ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+  ResolvedInstructionAccountMeta<TAccountVaultUsdc, InstructionAccountInputAddress<TAccountVaultUsdc>>,
+  ResolvedInstructionAccountMeta<TAccountDestinationUsdc, InstructionAccountInputAddress<TAccountDestinationUsdc>>,
+  ResolvedInstructionAccountMeta<TAccountVaultAuthority, InstructionAccountInputAddress<TAccountVaultAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountBurnedAmountStore, InstructionAccountInputAddress<TAccountBurnedAmountStore>>,
+  ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+  ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+  ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+  ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    owner: { value: input.owner ?? null, isWritable: true },
-    mint: { value: input.mint ?? null, isWritable: false },
-    tokenAccount: { value: input.tokenAccount ?? null, isWritable: false },
-    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
-    vaultUsdc: { value: input.vaultUsdc ?? null, isWritable: true },
-    destinationUsdc: { value: input.destinationUsdc ?? null, isWritable: true },
-    vaultAuthority: { value: input.vaultAuthority ?? null, isWritable: false },
-    burnedAmountStore: {
-      value: input.burnedAmountStore ?? null,
+    owner: { value: input.owner ?? null, isSigner: true, isWritable: true },
+    mint: { value: input.mint ?? null, isSigner: false, isWritable: false },
+    tokenAccount: {
+      value: input.tokenAccount ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    kmsContext: { value: input.kmsContext ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    tokenProgram: { value: input.tokenProgram ?? null, isWritable: false },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    underlyingMint: {
+      value: input.underlyingMint ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    vaultUsdc: {
+      value: input.vaultUsdc ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    destinationUsdc: {
+      value: input.destinationUsdc ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    vaultAuthority: {
+      value: input.vaultAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    burnedAmountStore: {
+      value: input.burnedAmountStore ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    pendingBurn: {
+      value: input.pendingBurn ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    kmsContext: {
+      value: input.kmsContext ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -532,7 +650,6 @@ export function getRedeemBurnedAmountInstruction<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('owner', accounts.owner),
@@ -555,21 +672,24 @@ export function getRedeemBurnedAmountInstruction<
     programAddress,
   } as RedeemBurnedAmountInstruction<
     TProgramAddress,
-    TAccountOwner,
-    TAccountMint,
-    TAccountTokenAccount,
-    TAccountUnderlyingMint,
-    TAccountVaultUsdc,
-    TAccountDestinationUsdc,
-    TAccountVaultAuthority,
-    TAccountBurnedAmountStore,
-    TAccountPendingBurn,
-    TAccountHostConfig,
-    TAccountKmsContext,
-    TAccountZamaProgram,
-    TAccountTokenProgram,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<TAccountTokenAccount, InstructionAccountInputAddress<TAccountTokenAccount>>,
+    ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+    ResolvedInstructionAccountMeta<TAccountVaultUsdc, InstructionAccountInputAddress<TAccountVaultUsdc>>,
+    ResolvedInstructionAccountMeta<TAccountDestinationUsdc, InstructionAccountInputAddress<TAccountDestinationUsdc>>,
+    ResolvedInstructionAccountMeta<TAccountVaultAuthority, InstructionAccountInputAddress<TAccountVaultAuthority>>,
+    ResolvedInstructionAccountMeta<
+      TAccountBurnedAmountStore,
+      InstructionAccountInputAddress<TAccountBurnedAmountStore>
+    >,
+    ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountKmsContext, InstructionAccountInputAddress<TAccountKmsContext>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 

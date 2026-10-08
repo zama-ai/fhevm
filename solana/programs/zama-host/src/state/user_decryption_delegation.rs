@@ -38,7 +38,7 @@ impl UserDecryptionDelegation {
 mod tests {
     use super::*;
     use anchor_lang::Discriminator;
-    use solana_sha256_hasher::hash;
+    use sha2::{Digest, Sha256};
 
     /// The eight bytes an off-chain reader has to look for, pinned as literals *and* as the
     /// preimage they are derived from.
@@ -58,7 +58,7 @@ mod tests {
         );
         assert_eq!(
             UserDecryptionDelegation::DISCRIMINATOR,
-            &hash(b"account:UserDecryptionDelegation").to_bytes()[..8],
+            &Sha256::digest(b"account:UserDecryptionDelegation")[..8],
             "the discriminator is no longer the hash of the account name"
         );
     }

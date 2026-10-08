@@ -2,7 +2,6 @@ import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
 import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
 import { assertKmsDecryptionBitLimit } from '../../core/kms/utils.js';
 import {
-  getEncodedSize,
   fetchEncodedAccount,
   fetchEncodedAccounts,
   type MaybeEncodedAccount,
@@ -19,7 +18,6 @@ import {
   findKmsContextPda,
   getHostConfigDecoder,
   getKmsContextDecoder,
-  getKmsContextEncoder,
   HOST_CONFIG_DISCRIMINATOR,
   KMS_CONTEXT_DISCRIMINATOR,
 } from '@fhevm/solana-zama-host';
@@ -181,14 +179,9 @@ export async function decryptPublicValues(
     throw new Error('Host configuration does not match the client');
   if (config.decryptionContract.every((byte) => byte === 0))
     throw new Error('Host decryption contract is not configured');
-  const contextBytes = read(contextAccount, KMS_CONTEXT_DISCRIMINATOR);
-  const kms = getKmsContextDecoder().decode(contextBytes);
+  const kms = getKmsContextDecoder().decode(read(contextAccount, KMS_CONTEXT_DISCRIMINATOR));
   if (kms.bump !== contextBump || kms.destroyed || !unsafeBytesEquals(new Uint8Array(kms.contextId), contextId))
     throw new Error('Invalid or destroyed KMS context');
-  // Kit decodes only 1 as true, so reject other nonzero encodings explicitly.
-  // Use the schema size, not the allocated account length: trailing bytes may exist.
-  const destroyedOffset = getEncodedSize(kms, getKmsContextEncoder()) - 2;
-  if (contextBytes[destroyedOffset] !== 0) throw new Error('Invalid or destroyed KMS context');
   // One 32-byte ABI word per handle, in request order.
   const cleartext = hexToBytes(claim.abiEncodedCleartext);
   if (cleartext.length !== 32 * handles.length) throw new Error('Public decrypt cleartext must be 32 bytes per handle');

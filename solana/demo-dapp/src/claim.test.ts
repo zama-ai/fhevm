@@ -1,7 +1,7 @@
 import { SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
-import { address } from '@solana/kit';
+import { address, createNoopSigner } from '@solana/kit';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -35,7 +35,7 @@ import { claimBatchPayout } from './claim';
 const batch = address('11111111111111111111111111111111');
 const user = address('SysvarC1ock11111111111111111111111111111111');
 const tokenProgram = address('SysvarRent111111111111111111111111111111111');
-const keeper = { address: address('SysvarRecentB1ockHashes11111111111111111111') };
+const keeper = createNoopSigner(address('SysvarRecentB1ockHashes11111111111111111111'));
 const config = {
   rpcUrl: 'http://127.0.0.1:8899',
   wsUrl: 'ws://127.0.0.1:8900',

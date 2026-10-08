@@ -10,7 +10,6 @@ version.workspace = true
 connector-utils.workspace = true
 kms-connector-api = { workspace = true, features = ["endpoint"] }
 zama-solana-acl.workspace = true
-zama-solana-request.workspace = true
 bc2wrap.workspace = true
 
 actix-web.workspace = true

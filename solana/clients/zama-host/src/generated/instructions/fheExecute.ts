@@ -34,11 +34,18 @@ import {
   type ReadonlyAccount,
   type ReadonlySignerAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
+  type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
+} from '@solana/program-client-core';
+import { findHostConfigPda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 import {
   getExecutionResultRefDecoder,
@@ -213,33 +220,33 @@ export function getFheExecuteInstructionDataCodec(): Codec<FheExecuteInstruction
 }
 
 export type FheExecuteAsyncInput<
-  TAccountPayer extends string = string,
-  TAccountAuthority extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountSystemProgram extends string = string,
-  TAccountHcuBlockMeter extends string = string,
-  TAccountHcuTrustedAppRecord extends string = string,
-  TAccountRandNonce extends string = string,
-  TAccountTransientStore extends string = string,
-  TAccountInstructions extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountRandNonce extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays rent for Store growth and lazy meter creation. */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /**
    * Default authority signer. Each Store read or written requires its stored authority to
    * sign, either here or among the remaining accounts.
    */
-  authority: TransactionSigner<TAccountAuthority>;
+  authority: TAccountAuthority;
   /**
    * Singleton config PDA. Read-only: the cap is read from here, but the writable per-slot
    * counter is the separate `hcu_block_meter`, never this singleton — so the hot path takes no
    * write lock on the config.
    */
-  hostConfig?: Address<TAccountHostConfig>;
+  hostConfig?: TAccountHostConfig;
   /** System program used for rent top-ups and lazy meter creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
   /**
    * Per-application HCU block meter (written once in the execution `charge`). The HCU PDAs
    * (`hcu_block_meter`, `hcu_trusted_app_record`) key on the `(program, scope)` of the
@@ -251,27 +258,27 @@ export type FheExecuteAsyncInput<
    * `UncheckedAccount` because it may be uninitialized (lazy-created) and is validated
    * manually.
    */
-  hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
+  hcuBlockMeter?: TAccountHcuBlockMeter;
   /**
    * Trust witness (read-only), keyed on `(program, scope)`. Present + program-owned +
    * `trusted == true` ⇒ bypass the cap; absent (`None`) ⇒ untrusted, fall through to the meter;
    * present-but-malformed ⇒ reject.
    */
-  hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
+  hcuTrustedAppRecord?: TAccountHcuTrustedAppRecord;
   /**
    * The host's rand nonce, consumed and incremented by an execution that contains a rand step.
    * Required exactly then, and refused otherwise so no execution write-locks it for nothing.
    */
-  randNonce?: Address<TAccountRandNonce>;
+  randNonce?: TAccountRandNonce;
   /**
    * Shared by every execution until the transaction's final CloseTransientStore.
    * Unchecked so an unopened (system-owned) PDA fails as `TransientStoreNotOpened`
    * instead of Anchor's generic owner error.
    */
-  transientStore: Address<TAccountTransientStore>;
-  instructions?: Address<TAccountInstructions>;
-  eventAuthority?: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  transientStore: TAccountTransientStore;
+  instructions?: TAccountInstructions;
+  eventAuthority?: TAccountEventAuthority;
+  program?: TAccountProgram;
   executionStoreIndex: FheExecuteInstructionDataArgs['executionStoreIndex'];
   accountCount: FheExecuteInstructionDataArgs['accountCount'];
   dictionary: FheExecuteInstructionDataArgs['dictionary'];
@@ -281,17 +288,17 @@ export type FheExecuteAsyncInput<
 };
 
 export async function getFheExecuteInstructionAsync<
-  TAccountPayer extends string,
-  TAccountAuthority extends string,
-  TAccountHostConfig extends string,
-  TAccountSystemProgram extends string,
-  TAccountHcuBlockMeter extends string,
-  TAccountHcuTrustedAppRecord extends string,
-  TAccountRandNonce extends string,
-  TAccountTransientStore extends string,
-  TAccountInstructions extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountHcuBlockMeter extends InstructionAccountInput,
+  TAccountHcuTrustedAppRecord extends InstructionAccountInput,
+  TAccountRandNonce extends InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
   input: FheExecuteAsyncInput<
@@ -311,38 +318,81 @@ export async function getFheExecuteInstructionAsync<
 ): Promise<
   FheExecuteInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountAuthority,
-    TAccountHostConfig,
-    TAccountSystemProgram,
-    TAccountHcuBlockMeter,
-    TAccountHcuTrustedAppRecord,
-    TAccountRandNonce,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
+    ResolvedInstructionAccountMeta<
+      TAccountHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<TAccountRandNonce, InstructionAccountInputAddress<TAccountRandNonce>>,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    authority: { value: input.authority ?? null, isWritable: false },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
-    hcuBlockMeter: { value: input.hcuBlockMeter ?? null, isWritable: true },
-    hcuTrustedAppRecord: {
-      value: input.hcuTrustedAppRecord ?? null,
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    authority: {
+      value: input.authority ?? null,
+      isSigner: true,
       isWritable: false,
     },
-    randNonce: { value: input.randNonce ?? null, isWritable: true },
-    transientStore: { value: input.transientStore ?? null, isWritable: true },
-    instructions: { value: input.instructions ?? null, isWritable: false },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hcuBlockMeter: {
+      value: input.hcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    hcuTrustedAppRecord: {
+      value: input.hcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    randNonce: {
+      value: input.randNonce ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    transientStore: {
+      value: input.transientStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    instructions: {
+      value: input.instructions ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -351,10 +401,7 @@ export async function getFheExecuteInstructionAsync<
 
   // Resolve default values.
   if (!accounts.hostConfig.value) {
-    accounts.hostConfig.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
-    });
+    accounts.hostConfig.value = await findHostConfigPda({ programAddress });
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
@@ -378,7 +425,6 @@ export async function getFheExecuteInstructionAsync<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -397,48 +443,51 @@ export async function getFheExecuteInstructionAsync<
     programAddress,
   } as FheExecuteInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountAuthority,
-    TAccountHostConfig,
-    TAccountSystemProgram,
-    TAccountHcuBlockMeter,
-    TAccountHcuTrustedAppRecord,
-    TAccountRandNonce,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
+    ResolvedInstructionAccountMeta<
+      TAccountHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<TAccountRandNonce, InstructionAccountInputAddress<TAccountRandNonce>>,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 
 export type FheExecuteInput<
-  TAccountPayer extends string = string,
-  TAccountAuthority extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountSystemProgram extends string = string,
-  TAccountHcuBlockMeter extends string = string,
-  TAccountHcuTrustedAppRecord extends string = string,
-  TAccountRandNonce extends string = string,
-  TAccountTransientStore extends string = string,
-  TAccountInstructions extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountRandNonce extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays rent for Store growth and lazy meter creation. */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /**
    * Default authority signer. Each Store read or written requires its stored authority to
    * sign, either here or among the remaining accounts.
    */
-  authority: TransactionSigner<TAccountAuthority>;
+  authority: TAccountAuthority;
   /**
    * Singleton config PDA. Read-only: the cap is read from here, but the writable per-slot
    * counter is the separate `hcu_block_meter`, never this singleton — so the hot path takes no
    * write lock on the config.
    */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig: TAccountHostConfig;
   /** System program used for rent top-ups and lazy meter creation. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
   /**
    * Per-application HCU block meter (written once in the execution `charge`). The HCU PDAs
    * (`hcu_block_meter`, `hcu_trusted_app_record`) key on the `(program, scope)` of the
@@ -450,27 +499,27 @@ export type FheExecuteInput<
    * `UncheckedAccount` because it may be uninitialized (lazy-created) and is validated
    * manually.
    */
-  hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
+  hcuBlockMeter?: TAccountHcuBlockMeter;
   /**
    * Trust witness (read-only), keyed on `(program, scope)`. Present + program-owned +
    * `trusted == true` ⇒ bypass the cap; absent (`None`) ⇒ untrusted, fall through to the meter;
    * present-but-malformed ⇒ reject.
    */
-  hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
+  hcuTrustedAppRecord?: TAccountHcuTrustedAppRecord;
   /**
    * The host's rand nonce, consumed and incremented by an execution that contains a rand step.
    * Required exactly then, and refused otherwise so no execution write-locks it for nothing.
    */
-  randNonce?: Address<TAccountRandNonce>;
+  randNonce?: TAccountRandNonce;
   /**
    * Shared by every execution until the transaction's final CloseTransientStore.
    * Unchecked so an unopened (system-owned) PDA fails as `TransientStoreNotOpened`
    * instead of Anchor's generic owner error.
    */
-  transientStore: Address<TAccountTransientStore>;
-  instructions?: Address<TAccountInstructions>;
-  eventAuthority: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  transientStore: TAccountTransientStore;
+  instructions?: TAccountInstructions;
+  eventAuthority: TAccountEventAuthority;
+  program?: TAccountProgram;
   executionStoreIndex: FheExecuteInstructionDataArgs['executionStoreIndex'];
   accountCount: FheExecuteInstructionDataArgs['accountCount'];
   dictionary: FheExecuteInstructionDataArgs['dictionary'];
@@ -480,17 +529,17 @@ export type FheExecuteInput<
 };
 
 export function getFheExecuteInstruction<
-  TAccountPayer extends string,
-  TAccountAuthority extends string,
-  TAccountHostConfig extends string,
-  TAccountSystemProgram extends string,
-  TAccountHcuBlockMeter extends string,
-  TAccountHcuTrustedAppRecord extends string,
-  TAccountRandNonce extends string,
-  TAccountTransientStore extends string,
-  TAccountInstructions extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountHcuBlockMeter extends InstructionAccountInput,
+  TAccountHcuTrustedAppRecord extends InstructionAccountInput,
+  TAccountRandNonce extends InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
   input: FheExecuteInput<
@@ -509,37 +558,80 @@ export function getFheExecuteInstruction<
   config?: { programAddress?: TProgramAddress },
 ): FheExecuteInstruction<
   TProgramAddress,
-  TAccountPayer,
-  TAccountAuthority,
-  TAccountHostConfig,
-  TAccountSystemProgram,
-  TAccountHcuBlockMeter,
-  TAccountHcuTrustedAppRecord,
-  TAccountRandNonce,
-  TAccountTransientStore,
-  TAccountInstructions,
-  TAccountEventAuthority,
-  TAccountProgram
+  ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+  ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+  ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
+  ResolvedInstructionAccountMeta<
+    TAccountHcuTrustedAppRecord,
+    InstructionAccountInputAddress<TAccountHcuTrustedAppRecord>
+  >,
+  ResolvedInstructionAccountMeta<TAccountRandNonce, InstructionAccountInputAddress<TAccountRandNonce>>,
+  ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+  ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+  ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    authority: { value: input.authority ?? null, isWritable: false },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
-    hcuBlockMeter: { value: input.hcuBlockMeter ?? null, isWritable: true },
-    hcuTrustedAppRecord: {
-      value: input.hcuTrustedAppRecord ?? null,
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    authority: {
+      value: input.authority ?? null,
+      isSigner: true,
       isWritable: false,
     },
-    randNonce: { value: input.randNonce ?? null, isWritable: true },
-    transientStore: { value: input.transientStore ?? null, isWritable: true },
-    instructions: { value: input.instructions ?? null, isWritable: false },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hcuBlockMeter: {
+      value: input.hcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    hcuTrustedAppRecord: {
+      value: input.hcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    randNonce: {
+      value: input.randNonce ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    transientStore: {
+      value: input.transientStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    instructions: {
+      value: input.instructions ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -559,7 +651,6 @@ export function getFheExecuteInstruction<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -578,17 +669,20 @@ export function getFheExecuteInstruction<
     programAddress,
   } as FheExecuteInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountAuthority,
-    TAccountHostConfig,
-    TAccountSystemProgram,
-    TAccountHcuBlockMeter,
-    TAccountHcuTrustedAppRecord,
-    TAccountRandNonce,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
+    ResolvedInstructionAccountMeta<
+      TAccountHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<TAccountRandNonce, InstructionAccountInputAddress<TAccountRandNonce>>,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 

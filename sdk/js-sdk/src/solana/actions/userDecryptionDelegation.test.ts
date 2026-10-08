@@ -278,40 +278,38 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
   const tuple = { delegator, delegate, ...application };
 
   function rpcWith(accounts: Readonly<Record<string, string | { data: string; owner: string }>>): SolanaRpc {
+    const accountInfo = (accountAddress: string) => {
+      const entry = accounts[accountAddress];
+      const account = typeof entry === 'string' ? { data: entry, owner: ZAMA_HOST_PROGRAM_ADDRESS } : entry;
+      return account === undefined
+        ? null
+        : {
+            data: [Buffer.from(bytesFromHex(account.data)).toString('base64'), 'base64'],
+            executable: false,
+            lamports: 1_000_000n,
+            owner: account.owner,
+            rentEpoch: 0n,
+            space: BigInt(account.data.length / 2),
+          };
+    };
+    // Only the batched read: a reader that splits the two rows into separate calls fails here.
     return {
-      getAccountInfo: (accountAddress: string) => ({
-        send: () => {
-          const entry = accounts[accountAddress];
-          const account = typeof entry === 'string' ? { data: entry, owner: ZAMA_HOST_PROGRAM_ADDRESS } : entry;
-          return Promise.resolve({
-            context: { slot: 0n },
-            value:
-              account === undefined
-                ? null
-                : {
-                    data: [Buffer.from(bytesFromHex(account.data)).toString('base64'), 'base64'],
-                    executable: false,
-                    lamports: 1_000_000n,
-                    owner: account.owner,
-                    rentEpoch: 0n,
-                    space: BigInt(account.data.length / 2),
-                  },
-          });
-        },
+      getMultipleAccounts: (accountAddresses: readonly string[]) => ({
+        send: () => Promise.resolve({ context: { slot: 0n }, value: accountAddresses.map(accountInfo) }),
       }),
     } as unknown as SolanaRpc;
   }
 
-  it('reads both rows at finalized and decodes the row of the application', async () => {
+  it('reads both rows in one getMultipleAccounts call at finalized and decodes the row of the application', async () => {
     const rpc = rpcWith({ [RECORD_ADDRESS]: RECORD_BYTES_HEX });
-    const getAccountInfo = vi.spyOn(rpc, 'getAccountInfo');
+    const getMultipleAccounts = vi.spyOn(rpc, 'getMultipleAccounts');
     const rows = await fetchSolanaUserDecryptionDelegation(rpc, tuple, HOST);
     expect(rows.exact?.delegationCounter).toBe(7n);
     expect(rows.wildcard).toBeNull();
-    expect(getAccountInfo).toHaveBeenCalledTimes(2);
-    for (const accountAddress of [RECORD_ADDRESS, WILDCARD_RECORD_ADDRESS]) {
-      expect(getAccountInfo).toHaveBeenCalledWith(accountAddress, expect.objectContaining({ commitment: 'finalized' }));
-    }
+    expect(getMultipleAccounts).toHaveBeenCalledExactlyOnceWith(
+      [RECORD_ADDRESS, WILDCARD_RECORD_ADDRESS],
+      expect.objectContaining({ commitment: 'finalized' }),
+    );
   });
 
   // The wildcard row as the host program would write it: the wildcard application in the tuple,
@@ -370,6 +368,18 @@ describe('fetchSolanaUserDecryptionDelegation', () => {
     const rows = await fetchSolanaUserDecryptionDelegation(rpcWith({}), tuple, HOST);
     expect(rows.exact).toBeNull();
     expect(rows.wildcard).toBeNull();
+  });
+
+  it.each([
+    ['fewer', [null]],
+    ['more', [null, null, null]],
+  ])('throws when the RPC answers %s accounts than the two rows requested', async (_, value) => {
+    const rpc = {
+      getMultipleAccounts: () => ({ send: () => Promise.resolve({ context: { slot: 0n }, value }) }),
+    } as unknown as SolanaRpc;
+    await expect(fetchSolanaUserDecryptionDelegation(rpc, tuple, HOST)).rejects.toThrow(
+      `getMultipleAccounts returned ${value.length} accounts for the two delegation rows`,
+    );
   });
 
   // Anyone can create a system account at the canonical address by transferring lamports to it;

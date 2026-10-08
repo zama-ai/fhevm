@@ -12,8 +12,6 @@ fhevm_host_bindings.workspace = true
 kms-grpc.workspace = true
 bc2wrap.workspace = true
 tfhe.workspace = true
-zama-solana-permit.workspace = true
-zama-solana-acl.workspace = true
 zama-solana-request.workspace = true
 solana-pubkey.workspace = true
 
@@ -35,7 +33,6 @@ prometheus.workspace = true
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -50,6 +47,8 @@ ciphertext-attestation = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 testcontainers = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
+zama-solana-acl = { workspace = true, optional = true }
+zama-solana-permit = { workspace = true, optional = true }
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["json-rpc"] }
@@ -63,5 +62,7 @@ tests = [
     "dep:rand",
     "dep:testcontainers",
     "dep:toml",
+    "dep:zama-solana-acl",
+    "dep:zama-solana-permit",
     "sqlx/migrate",
 ]

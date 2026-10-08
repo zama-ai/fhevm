@@ -31,14 +31,17 @@ import {
   type ReadonlyAccount,
   type ReadonlySignerAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
 import {
   getAccountMetaFactory,
   getAddressFromResolvedInstructionAccount,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
   type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
 import { findPendingBurnPda, findTotalSupplyAuthorityPda } from '../pdas/index.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '../programAddress.js';
@@ -154,49 +157,49 @@ export function getConfidentialBurnFromValueInstructionDataCodec(): FixedSizeCod
 }
 
 export type ConfidentialBurnFromValueAsyncInput<
-  TAccountOwner extends string = string,
-  TAccountPayer extends string = string,
-  TAccountMint extends string = string,
-  TAccountUnderlyingMint extends string = string,
-  TAccountOwnerAta extends string = string,
-  TAccountTokenAccount extends string = string,
-  TAccountTotalSupplyAuthority extends string = string,
-  TAccountBalanceStore extends string = string,
-  TAccountTotalSupplyStore extends string = string,
-  TAccountPendingBurn extends string = string,
-  TAccountAmountStore extends string = string,
-  TAccountZamaEventAuthority extends string = string,
-  TAccountTransientStore extends string = string,
-  TAccountInstructions extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountSystemProgram extends string = string,
-  TAccountHcuBlockMeter extends string = string,
-  TAccountHcuTrustedAppRecord extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountOwner extends InstructionSignerInput = InstructionSignerInput,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountOwnerAta extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBalanceStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPendingBurn extends InstructionAccountInput = InstructionAccountInput,
+  TAccountAmountStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /**
    * Token owner and burn authority. Must control `amount_store` (the spend gate).
    * Not `mut`: rent for the burned-amount encrypted store's first bind is paid by `payer`, so the owner
    * may be a program PDA (the batcher) that only authorizes the burn via `invoke_signed`.
    */
-  owner: TransactionSigner<TAccountOwner>;
+  owner: TAccountOwner;
   /** Pays rent for the burned-amount encrypted store on its first bind. */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /** Confidential mint whose encrypted total supply is decreased. */
-  mint: Address<TAccountMint>;
-  underlyingMint: Address<TAccountUnderlyingMint>;
-  ownerAta: Address<TAccountOwnerAta>;
+  mint: TAccountMint;
+  underlyingMint: TAccountUnderlyingMint;
+  ownerAta: TAccountOwnerAta;
   /** Token account whose balance is decreased. */
-  tokenAccount: Address<TAccountTokenAccount>;
-  totalSupplyAuthority?: Address<TAccountTotalSupplyAuthority>;
+  tokenAccount: TAccountTokenAccount;
+  totalSupplyAuthority?: TAccountTotalSupplyAuthority;
   /** Stable balance encrypted store; read for the current handle and replaced by this execution. */
-  balanceStore: Address<TAccountBalanceStore>;
+  balanceStore: TAccountBalanceStore;
   /** Stable total-supply encrypted store; read for the current handle and replaced by this execution. */
-  totalSupplyStore: Address<TAccountTotalSupplyStore>;
+  totalSupplyStore: TAccountTotalSupplyStore;
   /** A burn is rejected before execution while this account is already initialized. */
-  pendingBurn?: Address<TAccountPendingBurn>;
+  pendingBurn?: TAccountPendingBurn;
   /**
    * The existing encrypted amount to burn: a computed `euint64` handle. Read-only persistent
    * operand — never replaced, never consumed. Its address is the canonical PDA of its own
@@ -204,53 +207,53 @@ export type ConfidentialBurnFromValueAsyncInput<
    * be passed here when that app's value authority is the signing `owner` (a program PDA
    * authorizing through `invoke_signed`), or when it is one of the burner's own token values.
    */
-  amountStore: Address<TAccountAmountStore>;
-  zamaEventAuthority?: Address<TAccountZamaEventAuthority>;
-  transientStore: Address<TAccountTransientStore>;
-  instructions: Address<TAccountInstructions>;
+  amountStore: TAccountAmountStore;
+  zamaEventAuthority?: TAccountZamaEventAuthority;
+  transientStore: TAccountTransientStore;
+  instructions: TAccountInstructions;
   /** ZamaHost program used for FHE operations. */
-  zamaProgram?: Address<TAccountZamaProgram>;
+  zamaProgram?: TAccountZamaProgram;
   /** ZamaHost config used for handle derivation. */
-  hostConfig?: Address<TAccountHostConfig>;
+  hostConfig?: TAccountHostConfig;
   /** System program used for ACL account creation and the pending-burn PDA. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
   /**
    * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
    */
-  hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
+  hcuBlockMeter?: TAccountHcuBlockMeter;
   /**
    * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
    * means the mint is metered.
    */
-  hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
-  eventAuthority?: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  hcuTrustedAppRecord?: TAccountHcuTrustedAppRecord;
+  eventAuthority?: TAccountEventAuthority;
+  program?: TAccountProgram;
   key: ConfidentialBurnFromValueInstructionDataArgs['key'];
 };
 
 export async function getConfidentialBurnFromValueInstructionAsync<
-  TAccountOwner extends string,
-  TAccountPayer extends string,
-  TAccountMint extends string,
-  TAccountUnderlyingMint extends string,
-  TAccountOwnerAta extends string,
-  TAccountTokenAccount extends string,
-  TAccountTotalSupplyAuthority extends string,
-  TAccountBalanceStore extends string,
-  TAccountTotalSupplyStore extends string,
-  TAccountPendingBurn extends string,
-  TAccountAmountStore extends string,
-  TAccountZamaEventAuthority extends string,
-  TAccountTransientStore extends string,
-  TAccountInstructions extends string,
-  TAccountZamaProgram extends string,
-  TAccountHostConfig extends string,
-  TAccountSystemProgram extends string,
-  TAccountHcuBlockMeter extends string,
-  TAccountHcuTrustedAppRecord extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountOwner extends InstructionSignerInput,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput,
+  TAccountUnderlyingMint extends InstructionAccountInput,
+  TAccountOwnerAta extends InstructionAccountInput,
+  TAccountTokenAccount extends InstructionAccountInput,
+  TAccountTotalSupplyAuthority extends InstructionAccountInput,
+  TAccountBalanceStore extends InstructionAccountInput,
+  TAccountTotalSupplyStore extends InstructionAccountInput,
+  TAccountPendingBurn extends InstructionAccountInput,
+  TAccountAmountStore extends InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountHcuBlockMeter extends InstructionAccountInput,
+  TAccountHcuTrustedAppRecord extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: ConfidentialBurnFromValueAsyncInput<
@@ -280,67 +283,139 @@ export async function getConfidentialBurnFromValueInstructionAsync<
 ): Promise<
   ConfidentialBurnFromValueInstruction<
     TProgramAddress,
-    TAccountOwner,
-    TAccountPayer,
-    TAccountMint,
-    TAccountUnderlyingMint,
-    TAccountOwnerAta,
-    TAccountTokenAccount,
-    TAccountTotalSupplyAuthority,
-    TAccountBalanceStore,
-    TAccountTotalSupplyStore,
-    TAccountPendingBurn,
-    TAccountAmountStore,
-    TAccountZamaEventAuthority,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaProgram,
-    TAccountHostConfig,
-    TAccountSystemProgram,
-    TAccountHcuBlockMeter,
-    TAccountHcuTrustedAppRecord,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+    ResolvedInstructionAccountMeta<TAccountOwnerAta, InstructionAccountInputAddress<TAccountOwnerAta>>,
+    ResolvedInstructionAccountMeta<TAccountTokenAccount, InstructionAccountInputAddress<TAccountTokenAccount>>,
+    ResolvedInstructionAccountMeta<
+      TAccountTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountBalanceStore, InstructionAccountInputAddress<TAccountBalanceStore>>,
+    ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
+    ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
+    ResolvedInstructionAccountMeta<TAccountAmountStore, InstructionAccountInputAddress<TAccountAmountStore>>,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
+    ResolvedInstructionAccountMeta<
+      TAccountHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    owner: { value: input.owner ?? null, isWritable: false },
-    payer: { value: input.payer ?? null, isWritable: true },
-    mint: { value: input.mint ?? null, isWritable: true },
-    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
-    ownerAta: { value: input.ownerAta ?? null, isWritable: false },
-    tokenAccount: { value: input.tokenAccount ?? null, isWritable: true },
-    totalSupplyAuthority: {
-      value: input.totalSupplyAuthority ?? null,
+    owner: { value: input.owner ?? null, isSigner: true, isWritable: false },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    mint: { value: input.mint ?? null, isSigner: false, isWritable: true },
+    underlyingMint: {
+      value: input.underlyingMint ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    balanceStore: { value: input.balanceStore ?? null, isWritable: true },
-    totalSupplyStore: {
-      value: input.totalSupplyStore ?? null,
+    ownerAta: {
+      value: input.ownerAta ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    tokenAccount: {
+      value: input.tokenAccount ?? null,
+      isSigner: false,
       isWritable: true,
     },
-    pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
-    amountStore: { value: input.amountStore ?? null, isWritable: false },
+    totalSupplyAuthority: {
+      value: input.totalSupplyAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    balanceStore: {
+      value: input.balanceStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    totalSupplyStore: {
+      value: input.totalSupplyStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    pendingBurn: {
+      value: input.pendingBurn ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    amountStore: {
+      value: input.amountStore ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    transientStore: { value: input.transientStore ?? null, isWritable: true },
-    instructions: { value: input.instructions ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
-    hcuBlockMeter: { value: input.hcuBlockMeter ?? null, isWritable: true },
+    transientStore: {
+      value: input.transientStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    instructions: {
+      value: input.instructions ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hcuBlockMeter: {
+      value: input.hcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     hcuTrustedAppRecord: {
       value: input.hcuTrustedAppRecord ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -349,15 +424,21 @@ export async function getConfidentialBurnFromValueInstructionAsync<
 
   // Resolve default values.
   if (!accounts.totalSupplyAuthority.value) {
-    accounts.totalSupplyAuthority.value = await findTotalSupplyAuthorityPda({
-      mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
-    });
+    accounts.totalSupplyAuthority.value = await findTotalSupplyAuthorityPda(
+      {
+        mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.pendingBurn.value) {
-    accounts.pendingBurn.value = await findPendingBurnPda({
-      mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
-      tokenAccount: getAddressFromResolvedInstructionAccount('tokenAccount', accounts.tokenAccount.value),
-    });
+    accounts.pendingBurn.value = await findPendingBurnPda(
+      {
+        mint: getAddressFromResolvedInstructionAccount('mint', accounts.mint.value),
+        tokenAccount: getAddressFromResolvedInstructionAccount('tokenAccount', accounts.tokenAccount.value),
+      },
+      { programAddress },
+    );
   }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
@@ -391,7 +472,6 @@ export async function getConfidentialBurnFromValueInstructionAsync<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('owner', accounts.owner),
@@ -422,74 +502,83 @@ export async function getConfidentialBurnFromValueInstructionAsync<
     programAddress,
   } as ConfidentialBurnFromValueInstruction<
     TProgramAddress,
-    TAccountOwner,
-    TAccountPayer,
-    TAccountMint,
-    TAccountUnderlyingMint,
-    TAccountOwnerAta,
-    TAccountTokenAccount,
-    TAccountTotalSupplyAuthority,
-    TAccountBalanceStore,
-    TAccountTotalSupplyStore,
-    TAccountPendingBurn,
-    TAccountAmountStore,
-    TAccountZamaEventAuthority,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaProgram,
-    TAccountHostConfig,
-    TAccountSystemProgram,
-    TAccountHcuBlockMeter,
-    TAccountHcuTrustedAppRecord,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+    ResolvedInstructionAccountMeta<TAccountOwnerAta, InstructionAccountInputAddress<TAccountOwnerAta>>,
+    ResolvedInstructionAccountMeta<TAccountTokenAccount, InstructionAccountInputAddress<TAccountTokenAccount>>,
+    ResolvedInstructionAccountMeta<
+      TAccountTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountBalanceStore, InstructionAccountInputAddress<TAccountBalanceStore>>,
+    ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
+    ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
+    ResolvedInstructionAccountMeta<TAccountAmountStore, InstructionAccountInputAddress<TAccountAmountStore>>,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
+    ResolvedInstructionAccountMeta<
+      TAccountHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 
 export type ConfidentialBurnFromValueInput<
-  TAccountOwner extends string = string,
-  TAccountPayer extends string = string,
-  TAccountMint extends string = string,
-  TAccountUnderlyingMint extends string = string,
-  TAccountOwnerAta extends string = string,
-  TAccountTokenAccount extends string = string,
-  TAccountTotalSupplyAuthority extends string = string,
-  TAccountBalanceStore extends string = string,
-  TAccountTotalSupplyStore extends string = string,
-  TAccountPendingBurn extends string = string,
-  TAccountAmountStore extends string = string,
-  TAccountZamaEventAuthority extends string = string,
-  TAccountTransientStore extends string = string,
-  TAccountInstructions extends string = string,
-  TAccountZamaProgram extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountSystemProgram extends string = string,
-  TAccountHcuBlockMeter extends string = string,
-  TAccountHcuTrustedAppRecord extends string = string,
-  TAccountEventAuthority extends string = string,
-  TAccountProgram extends string = string,
+  TAccountOwner extends InstructionSignerInput = InstructionSignerInput,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountOwnerAta extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountBalanceStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPendingBurn extends InstructionAccountInput = InstructionAccountInput,
+  TAccountAmountStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /**
    * Token owner and burn authority. Must control `amount_store` (the spend gate).
    * Not `mut`: rent for the burned-amount encrypted store's first bind is paid by `payer`, so the owner
    * may be a program PDA (the batcher) that only authorizes the burn via `invoke_signed`.
    */
-  owner: TransactionSigner<TAccountOwner>;
+  owner: TAccountOwner;
   /** Pays rent for the burned-amount encrypted store on its first bind. */
-  payer: TransactionSigner<TAccountPayer>;
+  payer: TAccountPayer;
   /** Confidential mint whose encrypted total supply is decreased. */
-  mint: Address<TAccountMint>;
-  underlyingMint: Address<TAccountUnderlyingMint>;
-  ownerAta: Address<TAccountOwnerAta>;
+  mint: TAccountMint;
+  underlyingMint: TAccountUnderlyingMint;
+  ownerAta: TAccountOwnerAta;
   /** Token account whose balance is decreased. */
-  tokenAccount: Address<TAccountTokenAccount>;
-  totalSupplyAuthority: Address<TAccountTotalSupplyAuthority>;
+  tokenAccount: TAccountTokenAccount;
+  totalSupplyAuthority: TAccountTotalSupplyAuthority;
   /** Stable balance encrypted store; read for the current handle and replaced by this execution. */
-  balanceStore: Address<TAccountBalanceStore>;
+  balanceStore: TAccountBalanceStore;
   /** Stable total-supply encrypted store; read for the current handle and replaced by this execution. */
-  totalSupplyStore: Address<TAccountTotalSupplyStore>;
+  totalSupplyStore: TAccountTotalSupplyStore;
   /** A burn is rejected before execution while this account is already initialized. */
-  pendingBurn: Address<TAccountPendingBurn>;
+  pendingBurn: TAccountPendingBurn;
   /**
    * The existing encrypted amount to burn: a computed `euint64` handle. Read-only persistent
    * operand — never replaced, never consumed. Its address is the canonical PDA of its own
@@ -497,53 +586,53 @@ export type ConfidentialBurnFromValueInput<
    * be passed here when that app's value authority is the signing `owner` (a program PDA
    * authorizing through `invoke_signed`), or when it is one of the burner's own token values.
    */
-  amountStore: Address<TAccountAmountStore>;
-  zamaEventAuthority: Address<TAccountZamaEventAuthority>;
-  transientStore: Address<TAccountTransientStore>;
-  instructions: Address<TAccountInstructions>;
+  amountStore: TAccountAmountStore;
+  zamaEventAuthority: TAccountZamaEventAuthority;
+  transientStore: TAccountTransientStore;
+  instructions: TAccountInstructions;
   /** ZamaHost program used for FHE operations. */
-  zamaProgram?: Address<TAccountZamaProgram>;
+  zamaProgram?: TAccountZamaProgram;
   /** ZamaHost config used for handle derivation. */
-  hostConfig: Address<TAccountHostConfig>;
+  hostConfig: TAccountHostConfig;
   /** System program used for ACL account creation and the pending-burn PDA. */
-  systemProgram?: Address<TAccountSystemProgram>;
+  systemProgram?: TAccountSystemProgram;
   /**
    * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
    */
-  hcuBlockMeter?: Address<TAccountHcuBlockMeter>;
+  hcuBlockMeter?: TAccountHcuBlockMeter;
   /**
    * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
    * means the mint is metered.
    */
-  hcuTrustedAppRecord?: Address<TAccountHcuTrustedAppRecord>;
-  eventAuthority: Address<TAccountEventAuthority>;
-  program?: Address<TAccountProgram>;
+  hcuTrustedAppRecord?: TAccountHcuTrustedAppRecord;
+  eventAuthority: TAccountEventAuthority;
+  program?: TAccountProgram;
   key: ConfidentialBurnFromValueInstructionDataArgs['key'];
 };
 
 export function getConfidentialBurnFromValueInstruction<
-  TAccountOwner extends string,
-  TAccountPayer extends string,
-  TAccountMint extends string,
-  TAccountUnderlyingMint extends string,
-  TAccountOwnerAta extends string,
-  TAccountTokenAccount extends string,
-  TAccountTotalSupplyAuthority extends string,
-  TAccountBalanceStore extends string,
-  TAccountTotalSupplyStore extends string,
-  TAccountPendingBurn extends string,
-  TAccountAmountStore extends string,
-  TAccountZamaEventAuthority extends string,
-  TAccountTransientStore extends string,
-  TAccountInstructions extends string,
-  TAccountZamaProgram extends string,
-  TAccountHostConfig extends string,
-  TAccountSystemProgram extends string,
-  TAccountHcuBlockMeter extends string,
-  TAccountHcuTrustedAppRecord extends string,
-  TAccountEventAuthority extends string,
-  TAccountProgram extends string,
+  TAccountOwner extends InstructionSignerInput,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountMint extends InstructionAccountInput,
+  TAccountUnderlyingMint extends InstructionAccountInput,
+  TAccountOwnerAta extends InstructionAccountInput,
+  TAccountTokenAccount extends InstructionAccountInput,
+  TAccountTotalSupplyAuthority extends InstructionAccountInput,
+  TAccountBalanceStore extends InstructionAccountInput,
+  TAccountTotalSupplyStore extends InstructionAccountInput,
+  TAccountPendingBurn extends InstructionAccountInput,
+  TAccountAmountStore extends InstructionAccountInput,
+  TAccountZamaEventAuthority extends InstructionAccountInput,
+  TAccountTransientStore extends InstructionAccountInput,
+  TAccountInstructions extends InstructionAccountInput,
+  TAccountZamaProgram extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountHcuBlockMeter extends InstructionAccountInput,
+  TAccountHcuTrustedAppRecord extends InstructionAccountInput,
+  TAccountEventAuthority extends InstructionAccountInput,
+  TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 >(
   input: ConfidentialBurnFromValueInput<
@@ -572,66 +661,138 @@ export function getConfidentialBurnFromValueInstruction<
   config?: { programAddress?: TProgramAddress },
 ): ConfidentialBurnFromValueInstruction<
   TProgramAddress,
-  TAccountOwner,
-  TAccountPayer,
-  TAccountMint,
-  TAccountUnderlyingMint,
-  TAccountOwnerAta,
-  TAccountTokenAccount,
-  TAccountTotalSupplyAuthority,
-  TAccountBalanceStore,
-  TAccountTotalSupplyStore,
-  TAccountPendingBurn,
-  TAccountAmountStore,
-  TAccountZamaEventAuthority,
-  TAccountTransientStore,
-  TAccountInstructions,
-  TAccountZamaProgram,
-  TAccountHostConfig,
-  TAccountSystemProgram,
-  TAccountHcuBlockMeter,
-  TAccountHcuTrustedAppRecord,
-  TAccountEventAuthority,
-  TAccountProgram
+  ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+  ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+  ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+  ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+  ResolvedInstructionAccountMeta<TAccountOwnerAta, InstructionAccountInputAddress<TAccountOwnerAta>>,
+  ResolvedInstructionAccountMeta<TAccountTokenAccount, InstructionAccountInputAddress<TAccountTokenAccount>>,
+  ResolvedInstructionAccountMeta<
+    TAccountTotalSupplyAuthority,
+    InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
+  >,
+  ResolvedInstructionAccountMeta<TAccountBalanceStore, InstructionAccountInputAddress<TAccountBalanceStore>>,
+  ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
+  ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
+  ResolvedInstructionAccountMeta<TAccountAmountStore, InstructionAccountInputAddress<TAccountAmountStore>>,
+  ResolvedInstructionAccountMeta<
+    TAccountZamaEventAuthority,
+    InstructionAccountInputAddress<TAccountZamaEventAuthority>
+  >,
+  ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+  ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+  ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+  ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
+  ResolvedInstructionAccountMeta<
+    TAccountHcuTrustedAppRecord,
+    InstructionAccountInputAddress<TAccountHcuTrustedAppRecord>
+  >,
+  ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    owner: { value: input.owner ?? null, isWritable: false },
-    payer: { value: input.payer ?? null, isWritable: true },
-    mint: { value: input.mint ?? null, isWritable: true },
-    underlyingMint: { value: input.underlyingMint ?? null, isWritable: false },
-    ownerAta: { value: input.ownerAta ?? null, isWritable: false },
-    tokenAccount: { value: input.tokenAccount ?? null, isWritable: true },
-    totalSupplyAuthority: {
-      value: input.totalSupplyAuthority ?? null,
+    owner: { value: input.owner ?? null, isSigner: true, isWritable: false },
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    mint: { value: input.mint ?? null, isSigner: false, isWritable: true },
+    underlyingMint: {
+      value: input.underlyingMint ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    balanceStore: { value: input.balanceStore ?? null, isWritable: true },
-    totalSupplyStore: {
-      value: input.totalSupplyStore ?? null,
+    ownerAta: {
+      value: input.ownerAta ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    tokenAccount: {
+      value: input.tokenAccount ?? null,
+      isSigner: false,
       isWritable: true,
     },
-    pendingBurn: { value: input.pendingBurn ?? null, isWritable: true },
-    amountStore: { value: input.amountStore ?? null, isWritable: false },
+    totalSupplyAuthority: {
+      value: input.totalSupplyAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    balanceStore: {
+      value: input.balanceStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    totalSupplyStore: {
+      value: input.totalSupplyStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    pendingBurn: {
+      value: input.pendingBurn ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    amountStore: {
+      value: input.amountStore ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    transientStore: { value: input.transientStore ?? null, isWritable: true },
-    instructions: { value: input.instructions ?? null, isWritable: false },
-    zamaProgram: { value: input.zamaProgram ?? null, isWritable: false },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
-    hcuBlockMeter: { value: input.hcuBlockMeter ?? null, isWritable: true },
+    transientStore: {
+      value: input.transientStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    instructions: {
+      value: input.instructions ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    zamaProgram: {
+      value: input.zamaProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    hcuBlockMeter: {
+      value: input.hcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     hcuTrustedAppRecord: {
       value: input.hcuTrustedAppRecord ?? null,
+      isSigner: false,
       isWritable: false,
     },
-    eventAuthority: { value: input.eventAuthority ?? null, isWritable: false },
-    program: { value: input.program ?? null, isWritable: false },
+    eventAuthority: {
+      value: input.eventAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    program: {
+      value: input.program ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -651,7 +812,6 @@ export function getConfidentialBurnFromValueInstruction<
     accounts.program.isWritable = false;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('owner', accounts.owner),
@@ -682,27 +842,36 @@ export function getConfidentialBurnFromValueInstruction<
     programAddress,
   } as ConfidentialBurnFromValueInstruction<
     TProgramAddress,
-    TAccountOwner,
-    TAccountPayer,
-    TAccountMint,
-    TAccountUnderlyingMint,
-    TAccountOwnerAta,
-    TAccountTokenAccount,
-    TAccountTotalSupplyAuthority,
-    TAccountBalanceStore,
-    TAccountTotalSupplyStore,
-    TAccountPendingBurn,
-    TAccountAmountStore,
-    TAccountZamaEventAuthority,
-    TAccountTransientStore,
-    TAccountInstructions,
-    TAccountZamaProgram,
-    TAccountHostConfig,
-    TAccountSystemProgram,
-    TAccountHcuBlockMeter,
-    TAccountHcuTrustedAppRecord,
-    TAccountEventAuthority,
-    TAccountProgram
+    ResolvedInstructionAccountMeta<TAccountOwner, InstructionAccountInputAddress<TAccountOwner>>,
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountMint, InstructionAccountInputAddress<TAccountMint>>,
+    ResolvedInstructionAccountMeta<TAccountUnderlyingMint, InstructionAccountInputAddress<TAccountUnderlyingMint>>,
+    ResolvedInstructionAccountMeta<TAccountOwnerAta, InstructionAccountInputAddress<TAccountOwnerAta>>,
+    ResolvedInstructionAccountMeta<TAccountTokenAccount, InstructionAccountInputAddress<TAccountTokenAccount>>,
+    ResolvedInstructionAccountMeta<
+      TAccountTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountBalanceStore, InstructionAccountInputAddress<TAccountBalanceStore>>,
+    ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
+    ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
+    ResolvedInstructionAccountMeta<TAccountAmountStore, InstructionAccountInputAddress<TAccountAmountStore>>,
+    ResolvedInstructionAccountMeta<
+      TAccountZamaEventAuthority,
+      InstructionAccountInputAddress<TAccountZamaEventAuthority>
+    >,
+    ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
+    ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
+    ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
+    ResolvedInstructionAccountMeta<
+      TAccountHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<TAccountEventAuthority, InstructionAccountInputAddress<TAccountEventAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountProgram, InstructionAccountInputAddress<TAccountProgram>>
   >);
 }
 

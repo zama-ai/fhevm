@@ -7,6 +7,7 @@ import { AddressError } from '../base/errors/AddressError.js';
 import { ChecksummedAddressError } from '../base/errors/ChecksummedAddressError.js';
 import { fetchFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
 import { asBytes32Hex, asBytesHex } from '../base/bytes.js';
+import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 import { createZkProofBuilder } from './ZkProofBuilder-p.js';
 import {
   isZkProof,
@@ -33,7 +34,7 @@ const chainId = 1234;
 const contractAddress = '0xa5e1defb98EFe38EBb2D958CEe052410247F4c80' as ChecksummedAddress;
 const userAddress = '0x8ba1f109551bD432803012645Ac136ddd64DBA72' as ChecksummedAddress;
 
-function makeMockContext(overrides?: { aclAddress?: string; chainId?: number }) {
+function makeMockContext(overrides?: { aclAddress?: string; chainId?: bigint | number }) {
   const acl = { address: overrides?.aclAddress ?? aclContractAddress };
   return {
     chain: {
@@ -590,4 +591,54 @@ it('builds a Solana proof without EVM contracts and preserves its exact chain id
   expect(Buffer.from(metadata).toString('hex')).toBe(
     '11'.repeat(32) + '22'.repeat(32) + '33'.repeat(32) + '00'.repeat(24) + '0100000000000001',
   );
+});
+
+describe('a call to the entry point of the other host', () => {
+  it('build() on a Solana chain throws before the key fetch', async () => {
+    vi.mocked(fetchFheEncryptionKeyWasm).mockClear();
+    const context = makeMockContext({ chainId: 0x0100000000000001n });
+
+    await expect(
+      createZkProofBuilder()
+        .addUint64(42n)
+        .build(context, {
+          contractAddress,
+          userAddress,
+          extraData: '0x00',
+          fhevmContext: createFhevmClientFrozenContext({}),
+        }),
+    ).rejects.toThrow(new ZkProofError({ message: 'Use buildSolana() for Solana host chains' }));
+    expect(fetchFheEncryptionKeyWasm).not.toHaveBeenCalled();
+  });
+
+  it('build() on a chain of neither host type throws before the key fetch', async () => {
+    vi.mocked(fetchFheEncryptionKeyWasm).mockClear();
+    const context = makeMockContext({ chainId: 0x0200000000000001n });
+
+    await expect(
+      createZkProofBuilder()
+        .addUint64(42n)
+        .build(context, {
+          contractAddress,
+          userAddress,
+          extraData: '0x00',
+          fhevmContext: createFhevmClientFrozenContext({}),
+        }),
+    ).rejects.toThrow(new ZkProofError({ message: 'build() requires an EVM host chain (type byte 0x00), got 0x02' }));
+    expect(fetchFheEncryptionKeyWasm).not.toHaveBeenCalled();
+  });
+
+  it('buildSolana() on an EVM chain throws before the key fetch', async () => {
+    vi.mocked(fetchFheEncryptionKeyWasm).mockClear();
+
+    await expect(
+      createZkProofBuilder()
+        .addUint64(42n)
+        .buildSolana(makeMockContext(), {
+          contractAddress: `0x${'11'.repeat(32)}`,
+          userAddress: `0x${'22'.repeat(32)}`,
+        }),
+    ).rejects.toThrow(new ZkProofError({ message: 'buildSolana() requires a Solana host chain (type byte 0x01)' }));
+    expect(fetchFheEncryptionKeyWasm).not.toHaveBeenCalled();
+  });
 });

@@ -12,7 +12,6 @@ import {
   fixEncoderSize,
   getBytesDecoder,
   getBytesEncoder,
-  getProgramDerivedAddress,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
@@ -32,11 +31,18 @@ import {
   type ReadonlyAccount,
   type ReadonlySignerAccount,
   type ReadonlyUint8Array,
-  type TransactionSigner,
   type WritableAccount,
   type WritableSignerAccount,
 } from '@solana/kit';
-import { getAccountMetaFactory, type ResolvedInstructionAccount } from '@solana/program-client-core';
+import {
+  getAccountMetaFactory,
+  type InstructionAccountInput,
+  type InstructionAccountInputAddress,
+  type InstructionSignerInput,
+  type ResolvedInstructionAccount,
+  type ResolvedInstructionAccountMeta,
+} from '@solana/program-client-core';
+import { findHostConfigPda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const MAKE_STORE_HANDLE_PUBLIC_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -122,31 +128,31 @@ export function getMakeStoreHandlePublicInstructionDataCodec(): FixedSizeCodec<
 }
 
 export type MakeStoreHandlePublicAsyncInput<
-  TAccountPayer extends string = string,
-  TAccountAuthority extends string = string,
-  TAccountEncryptedStore extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountDenyScopeRecord extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
+  TAccountEncryptedStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountDenyScopeRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  payer: TransactionSigner<TAccountPayer>;
-  authority: TransactionSigner<TAccountAuthority>;
-  encryptedStore: Address<TAccountEncryptedStore>;
-  hostConfig?: Address<TAccountHostConfig>;
-  denyScopeRecord?: Address<TAccountDenyScopeRecord>;
-  systemProgram?: Address<TAccountSystemProgram>;
+  payer: TAccountPayer;
+  authority: TAccountAuthority;
+  encryptedStore: TAccountEncryptedStore;
+  hostConfig?: TAccountHostConfig;
+  denyScopeRecord?: TAccountDenyScopeRecord;
+  systemProgram?: TAccountSystemProgram;
   key: MakeStoreHandlePublicInstructionDataArgs['key'];
   handle: MakeStoreHandlePublicInstructionDataArgs['handle'];
   previousLeafCount: MakeStoreHandlePublicInstructionDataArgs['previousLeafCount'];
 };
 
 export async function getMakeStoreHandlePublicInstructionAsync<
-  TAccountPayer extends string,
-  TAccountAuthority extends string,
-  TAccountEncryptedStore extends string,
-  TAccountHostConfig extends string,
-  TAccountDenyScopeRecord extends string,
-  TAccountSystemProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput,
+  TAccountEncryptedStore extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountDenyScopeRecord extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
   input: MakeStoreHandlePublicAsyncInput<
@@ -161,28 +167,48 @@ export async function getMakeStoreHandlePublicInstructionAsync<
 ): Promise<
   MakeStoreHandlePublicInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountAuthority,
-    TAccountEncryptedStore,
-    TAccountHostConfig,
-    TAccountDenyScopeRecord,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountEncryptedStore, InstructionAccountInputAddress<TAccountEncryptedStore>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountDenyScopeRecord, InstructionAccountInputAddress<TAccountDenyScopeRecord>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    authority: { value: input.authority ?? null, isWritable: false },
-    encryptedStore: { value: input.encryptedStore ?? null, isWritable: true },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    denyScopeRecord: {
-      value: input.denyScopeRecord ?? null,
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    authority: {
+      value: input.authority ?? null,
+      isSigner: true,
       isWritable: false,
     },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    encryptedStore: {
+      value: input.encryptedStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    denyScopeRecord: {
+      value: input.denyScopeRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -191,16 +217,12 @@ export async function getMakeStoreHandlePublicInstructionAsync<
 
   // Resolve default values.
   if (!accounts.hostConfig.value) {
-    accounts.hostConfig.value = await getProgramDerivedAddress({
-      programAddress,
-      seeds: [getBytesEncoder().encode(new Uint8Array([104, 111, 115, 116, 45, 99, 111, 110, 102, 105, 103]))],
-    });
+    accounts.hostConfig.value = await findHostConfigPda({ programAddress });
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -214,41 +236,41 @@ export async function getMakeStoreHandlePublicInstructionAsync<
     programAddress,
   } as MakeStoreHandlePublicInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountAuthority,
-    TAccountEncryptedStore,
-    TAccountHostConfig,
-    TAccountDenyScopeRecord,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountEncryptedStore, InstructionAccountInputAddress<TAccountEncryptedStore>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountDenyScopeRecord, InstructionAccountInputAddress<TAccountDenyScopeRecord>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 
 export type MakeStoreHandlePublicInput<
-  TAccountPayer extends string = string,
-  TAccountAuthority extends string = string,
-  TAccountEncryptedStore extends string = string,
-  TAccountHostConfig extends string = string,
-  TAccountDenyScopeRecord extends string = string,
-  TAccountSystemProgram extends string = string,
+  TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput = InstructionSignerInput,
+  TAccountEncryptedStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountDenyScopeRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  payer: TransactionSigner<TAccountPayer>;
-  authority: TransactionSigner<TAccountAuthority>;
-  encryptedStore: Address<TAccountEncryptedStore>;
-  hostConfig: Address<TAccountHostConfig>;
-  denyScopeRecord?: Address<TAccountDenyScopeRecord>;
-  systemProgram?: Address<TAccountSystemProgram>;
+  payer: TAccountPayer;
+  authority: TAccountAuthority;
+  encryptedStore: TAccountEncryptedStore;
+  hostConfig: TAccountHostConfig;
+  denyScopeRecord?: TAccountDenyScopeRecord;
+  systemProgram?: TAccountSystemProgram;
   key: MakeStoreHandlePublicInstructionDataArgs['key'];
   handle: MakeStoreHandlePublicInstructionDataArgs['handle'];
   previousLeafCount: MakeStoreHandlePublicInstructionDataArgs['previousLeafCount'];
 };
 
 export function getMakeStoreHandlePublicInstruction<
-  TAccountPayer extends string,
-  TAccountAuthority extends string,
-  TAccountEncryptedStore extends string,
-  TAccountHostConfig extends string,
-  TAccountDenyScopeRecord extends string,
-  TAccountSystemProgram extends string,
+  TAccountPayer extends InstructionSignerInput,
+  TAccountAuthority extends InstructionSignerInput,
+  TAccountEncryptedStore extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
+  TAccountDenyScopeRecord extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
   input: MakeStoreHandlePublicInput<
@@ -262,27 +284,47 @@ export function getMakeStoreHandlePublicInstruction<
   config?: { programAddress?: TProgramAddress },
 ): MakeStoreHandlePublicInstruction<
   TProgramAddress,
-  TAccountPayer,
-  TAccountAuthority,
-  TAccountEncryptedStore,
-  TAccountHostConfig,
-  TAccountDenyScopeRecord,
-  TAccountSystemProgram
+  ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+  ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+  ResolvedInstructionAccountMeta<TAccountEncryptedStore, InstructionAccountInputAddress<TAccountEncryptedStore>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountDenyScopeRecord, InstructionAccountInputAddress<TAccountDenyScopeRecord>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
 > {
   // Program address.
   const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
 
+  // Account meta helper.
+  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
+
   // Original accounts.
   const originalAccounts = {
-    payer: { value: input.payer ?? null, isWritable: true },
-    authority: { value: input.authority ?? null, isWritable: false },
-    encryptedStore: { value: input.encryptedStore ?? null, isWritable: true },
-    hostConfig: { value: input.hostConfig ?? null, isWritable: false },
-    denyScopeRecord: {
-      value: input.denyScopeRecord ?? null,
+    payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
+    authority: {
+      value: input.authority ?? null,
+      isSigner: true,
       isWritable: false,
     },
-    systemProgram: { value: input.systemProgram ?? null, isWritable: false },
+    encryptedStore: {
+      value: input.encryptedStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    hostConfig: {
+      value: input.hostConfig ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    denyScopeRecord: {
+      value: input.denyScopeRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
@@ -294,7 +336,6 @@ export function getMakeStoreHandlePublicInstruction<
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
 
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
   return Object.freeze({
     accounts: [
       getAccountMeta('payer', accounts.payer),
@@ -308,12 +349,12 @@ export function getMakeStoreHandlePublicInstruction<
     programAddress,
   } as MakeStoreHandlePublicInstruction<
     TProgramAddress,
-    TAccountPayer,
-    TAccountAuthority,
-    TAccountEncryptedStore,
-    TAccountHostConfig,
-    TAccountDenyScopeRecord,
-    TAccountSystemProgram
+    ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
+    ResolvedInstructionAccountMeta<TAccountAuthority, InstructionAccountInputAddress<TAccountAuthority>>,
+    ResolvedInstructionAccountMeta<TAccountEncryptedStore, InstructionAccountInputAddress<TAccountEncryptedStore>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountDenyScopeRecord, InstructionAccountInputAddress<TAccountDenyScopeRecord>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>
   >);
 }
 
