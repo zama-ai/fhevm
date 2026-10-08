@@ -287,19 +287,23 @@ function generateIntroTestCodeUserDecrypt(
   typescriptImports: TypescriptTestGroupImports,
 ): string {
   const intro: string[] = [];
+  // Imports are emitted already sorted (third-party modules, blank line, relative paths)
+  // so the output does not depend on an import-sorting prettier plugin.
+  const typechainImports = shards
+    .map(
+      (os) =>
+        `import type { FHEVMTestSuite${os.shardNumber} } from '${typescriptImports.typechain}/FHEVMTestSuite${os.shardNumber}';`,
+    )
+    .join('\n');
   intro.push(`
-    import { expect } from 'chai';
-    import { ethers } from 'hardhat';
-    import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-    import { createInstances, decrypt8, decrypt16, decrypt32, decrypt64, decrypt128, decrypt256, decryptBool } from '${typescriptImports.instance}';
-    import { getSigners, initSigners } from '${typescriptImports.signers}';
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import { expect } from 'chai';
+import { ethers } from 'hardhat';
 
-  `);
-  shards.forEach((os) => {
-    intro.push(`
-  import type { FHEVMTestSuite${os.shardNumber} } from '${typescriptImports.typechain}/FHEVMTestSuite${os.shardNumber}';
-  `);
-  });
+${typechainImports}
+import { createInstances, decrypt8, decrypt16, decrypt32, decrypt64, decrypt128, decrypt256, decryptBool } from '${typescriptImports.instance}';
+import { getSigners, initSigners } from '${typescriptImports.signers}';
+`);
 
   shards.forEach((os) => {
     intro.push(`
@@ -347,19 +351,23 @@ function generateIntroTestCodePublicDecrypt(
   imports: TypescriptTestGroupImports,
 ): string {
   const intro: string[] = [];
+  // Imports are emitted already sorted (third-party modules, blank line, relative paths)
+  // so the output does not depend on an import-sorting prettier plugin.
+  const typechainImports = shards
+    .map(
+      (os) =>
+        `import type { FHEVMTestSuite${os.shardNumber} } from '${imports.typechain}/FHEVMTestSuite${os.shardNumber}';`,
+    )
+    .join('\n');
   intro.push(`
-    import { assert } from 'chai';
-    import { ethers } from 'hardhat';
-    import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-    import { createInstance } from '${imports.instance}';
-    import { getSigner, getSigners, initSigners } from '${imports.signers}';
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
+import { assert } from 'chai';
+import { ethers } from 'hardhat';
 
-  `);
-  shards.forEach((os) => {
-    intro.push(`
-  import type { FHEVMTestSuite${os.shardNumber} } from '${imports.typechain}/FHEVMTestSuite${os.shardNumber}';
-  `);
-  });
+${typechainImports}
+import { createInstance } from '${imports.instance}';
+import { getSigner, getSigners, initSigners } from '${imports.signers}';
+`);
 
   shards.forEach((os) => {
     intro.push(`
