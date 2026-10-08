@@ -18,6 +18,7 @@ import {
   getTransactionMessageLoadedAccountsDataSizeLimit,
   isSolanaError,
   SOLANA_ERROR__FAILED_TO_SIGN_TRANSACTION,
+  SOLANA_ERROR__TRANSACTION__SIGNATURES_MISSING,
   SOLANA_ERROR__TRANSACTION__FAILED_WHEN_SIMULATING_TO_ESTIMATE_RESOURCE_LIMITS,
   type Address,
   type Transaction,
@@ -175,6 +176,23 @@ describe('joinBatch (attested arm)', () => {
     expect(size.version).toBe(1);
     expect(size.bytes).toBeLessThanOrEqual(4096);
     expect(size.addresses).toBeLessThanOrEqual(64);
+  });
+
+  it('neither journals nor sends a transaction a signer left unsigned', async () => {
+    const payer = await generateKeyPairSigner();
+    const user = { address: key(77), signTransactions: async (transactions: readonly unknown[]) => transactions.map(() => ({})) };
+    const onTransactionSigned = vi.fn();
+    const { client } = testDemoClient(payer);
+    const params = await parameters({
+      user: user as unknown as TransactionSigner,
+      inputProof: proof(user.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
+      onTransactionSigned,
+    });
+
+    const error = await joinBatch(context, client, params).catch((caught: unknown) => caught);
+    expect(isSolanaError(error, SOLANA_ERROR__TRANSACTION__SIGNATURES_MISSING)).toBe(true);
+    expect(onTransactionSigned).not.toHaveBeenCalled();
+    expect(sendAndConfirm).not.toHaveBeenCalled();
   });
 
   it('does not submit when persistent transaction journaling fails', async () => {

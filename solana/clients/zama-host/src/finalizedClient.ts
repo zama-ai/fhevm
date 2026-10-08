@@ -36,10 +36,13 @@ export type FinalizedSendContext = RpcSignContext & { readonly signature: Signat
  * The loaded-data limit is set up front, so the executor keeps it. Left to the executor, it would be
  * the exact simulated size, and a shared store that grows before the transaction lands would make it
  * fail on chain, with the fee charged. The limit does not change the fee.
+ *
+ * The executor signs partially, for a wallet that adds its signature later. Callers journal the
+ * signature before sending, so `signTransaction` rejects a transaction a signer left unsigned.
  */
 export function v1TransactionSigning() {
-  return <T extends ClientWithPayer & ClientWithRpc<SolanaRpcApi>>(client: T) =>
-    pipe(
+  return <T extends ClientWithPayer & ClientWithRpc<SolanaRpcApi>>(client: T) => {
+    const signing = pipe(
       client,
       transactionPlanner(
         createTransactionPlanner({
@@ -54,6 +57,14 @@ export function v1TransactionSigning() {
       ),
       rpcTransactionPlanSigningExecutor(),
     );
+    return extendClient(signing, {
+      signTransaction: (async (input, config) => {
+        const result = await signing.signTransaction(input, config);
+        assertIsSendableTransaction(result.context.transaction);
+        return result;
+      }) as typeof signing.signTransaction,
+    });
+  };
 }
 
 /**
@@ -75,17 +86,17 @@ export function finalizedTransactionSending() {
       rpcSubscriptions: client.rpcSubscriptions,
     });
     // The signing step already simulated the transaction to estimate its limits.
-    const sendSignedTransaction = async (transaction: Transaction): Promise<void> => {
+    const sendSignedTransaction = async (transaction: Transaction, abortSignal?: AbortSignal): Promise<void> => {
       assertIsSendableTransaction(transaction);
       assertIsTransactionWithBlockhashLifetime(transaction);
-      await sendAndConfirm(transaction, { commitment: 'finalized', skipPreflight: true });
+      await sendAndConfirm(transaction, { abortSignal, commitment: 'finalized', skipPreflight: true });
     };
     const sendTransaction: ClientWithTransactionSending<FinalizedSendContext>['sendTransaction'] = async (
       input,
       config,
     ) => {
       const result = await signing.signTransaction(input, config);
-      await sendSignedTransaction(result.context.transaction);
+      await sendSignedTransaction(result.context.transaction, config?.abortSignal);
       return { ...result, context: { ...result.context, signature: getSignatureFromTransaction(result.context.transaction) } };
     };
     return extendClient(signing, { sendSignedTransaction, sendTransaction });
