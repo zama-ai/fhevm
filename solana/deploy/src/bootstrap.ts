@@ -1,5 +1,5 @@
-// Initializes HostConfig with EVM's HCU limits and defines the bring-up KMS context from live
-// gateway values.
+// Initializes HostConfig with EVM's initial HCU limits and defines the bring-up KMS context from
+// live gateway values.
 // A re-run validates the existing host binding before skipping account initialization:
 // `define_kms_context` is `init` on the context PDA, so a second call would fail closed
 // without the skip.
@@ -111,12 +111,8 @@ export const validateBootstrapInputs = (params: BootstrapZamaHostParams): void =
   kmsCertificateThreshold(params.kmsCorruptionThreshold, params.gateway.kmsSigners.length);
 };
 
-const describeHcuLimits = ({
-  maxHcuDepthPerTx,
-  maxHcuPerTx,
-  hcuBlockCapPerApp,
-}: Record<keyof typeof HCU_LIMITS, bigint>): string =>
-  `maxHcuDepthPerTx=${maxHcuDepthPerTx} maxHcuPerTx=${maxHcuPerTx} hcuBlockCapPerApp=${hcuBlockCapPerApp}`;
+// The program's unlimited HCU sentinel.
+const UNLIMITED_HCU = 2n ** 64n - 1n;
 
 export const bootstrapZamaHost = async (context: HostDeployContext, params: BootstrapZamaHostParams): Promise<void> => {
   validateBootstrapInputs(params);
@@ -155,12 +151,17 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
         'existing HostConfig does not match deployment inputs; refuse to bind an existing host to a different stack',
       );
     }
-    const foundHcu = describeHcuLimits(config);
-    const expectedHcu = describeHcuLimits(HCU_LIMITS);
-    if (foundHcu !== expectedHcu) {
-      throw new Error(`existing HostConfig HCU limits differ from the deployment's: found ${foundHcu}, expected ${expectedHcu}`);
+    // Initialization sets both limits in one transaction, so both unlimited means the host was
+    // never bootstrapped. Any other values are an admin's tuning and stay as they are.
+    if (config.maxHcuPerTx === UNLIMITED_HCU && config.maxHcuDepthPerTx === UNLIMITED_HCU) {
+      throw new Error(
+        'existing HostConfig still has unlimited HCU limits (never bootstrapped); set them with the HCU setters first',
+      );
     }
-    console.log('host_config matches deployment inputs');
+    console.log(
+      `host_config matches deployment inputs; HCU limits: maxHcuPerTx=${config.maxHcuPerTx} ` +
+        `maxHcuDepthPerTx=${config.maxHcuDepthPerTx} hcuBlockCapPerApp=${config.hcuBlockCapPerApp}`,
+    );
   } else if (!params.validateOnly) {
     await context.sendTransaction(params.payer, [
       await getInitializeHostConfigInstructionAsync(

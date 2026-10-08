@@ -197,7 +197,9 @@ test(
     const { maxHcuDepthPerTx, maxHcuPerTx, hcuBlockCapPerApp } = getHostConfigDecoder().decode(
       Buffer.from(before![0], 'base64'),
     );
-    expect({ maxHcuDepthPerTx, maxHcuPerTx, hcuBlockCapPerApp }).toEqual(HCU_LIMITS);
+    expect({ maxHcuDepthPerTx, maxHcuPerTx }).toEqual(HCU_LIMITS);
+    // The deployer never changes the per-application block cap.
+    expect(hcuBlockCapPerApp).toBe(2n ** 64n - 1n);
     const again = await deploy();
     expect(again.code, again.stderr).toBe(0);
     expect(again.stdout).toContain('unchanged');

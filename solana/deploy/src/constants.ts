@@ -11,14 +11,9 @@ export const BRINGUP_KMS_CONTEXT_ID = Uint8Array.from(
   BRINGUP_KMS_CONTEXT_HEX.match(/.{2}/g)!.map((byte) => Number.parseInt(byte, 16)),
 );
 
-// The HCU limits a deployed host holds. The per-transaction limits are EVM's, the values
-// `host-contracts/tasks/taskDeploy.ts` deploys `HCULimit` with. The per-application block cap
-// stays at the program's unlimited `u64::MAX`.
-export const HCU_LIMITS = {
-  maxHcuDepthPerTx: 5_000_000n,
-  maxHcuPerTx: 20_000_000n,
-  hcuBlockCapPerApp: 2n ** 64n - 1n,
-} as const;
+// The per-transaction HCU limits a new host starts with, the values `host-contracts/tasks/taskDeploy.ts`
+// deploys `HCULimit` with. Admins may tune them afterwards with the setters, as on EVM.
+export const HCU_LIMITS = { maxHcuDepthPerTx: 5_000_000n, maxHcuPerTx: 20_000_000n } as const;
 
 export const SOLANA_DEPLOY_PROGRAMS = [
   'zama_host',

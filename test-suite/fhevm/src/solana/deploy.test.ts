@@ -53,7 +53,10 @@ const fakeContext = async (
   hostConfigExists: boolean,
   payer: Address,
   kmsContextExists = false,
-  hcuLimits: Pick<HostConfigArgs, keyof typeof HCU_LIMITS> = HCU_LIMITS,
+  hcuLimits: Pick<HostConfigArgs, 'maxHcuPerTx' | 'maxHcuDepthPerTx' | 'hcuBlockCapPerApp'> = {
+    ...HCU_LIMITS,
+    hcuBlockCapPerApp: unlimited,
+  },
 ) => {
   const [hostConfig] = await findHostConfigPda();
   const [kmsContext] = await findKmsContextPda({ contextId: BRINGUP_KMS_CONTEXT_ID });
@@ -262,20 +265,29 @@ describe('bootstrapZamaHost', () => {
     expect(sent).toHaveLength(0);
   });
 
-  test('refuses a host with other HCU limits without submitting transactions', async () => {
+  test('accepts a host whose admin tuned its HCU limits, and leaves them as they are', async () => {
     const payer = await generateKeyPairSigner();
     for (const hcuLimits of [
-      { ...HCU_LIMITS, maxHcuPerTx: unlimited },
-      { ...HCU_LIMITS, maxHcuDepthPerTx: unlimited },
-      { ...HCU_LIMITS, hcuBlockCapPerApp: 1_000_000n },
+      { maxHcuPerTx: 30_000_000n, maxHcuDepthPerTx: 6_000_000n, hcuBlockCapPerApp: 40_000_000n },
+      { maxHcuPerTx: unlimited, maxHcuDepthPerTx: 5_000_000n, hcuBlockCapPerApp: unlimited },
     ]) {
-      const { context, sent } = await fakeContext(true, payer.address, false, hcuLimits);
-      await expect(bootstrapZamaHost(context, { payer, gateway })).rejects.toThrow(
-        `found maxHcuDepthPerTx=${hcuLimits.maxHcuDepthPerTx} maxHcuPerTx=${hcuLimits.maxHcuPerTx} ` +
-          `hcuBlockCapPerApp=${hcuLimits.hcuBlockCapPerApp}, expected maxHcuDepthPerTx=5000000`,
-      );
+      const { context, sent } = await fakeContext(true, payer.address, true, hcuLimits);
+      await bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold });
       expect(sent).toHaveLength(0);
     }
+  });
+
+  test('refuses a host whose HCU limits are still unlimited without submitting transactions', async () => {
+    const payer = await generateKeyPairSigner();
+    const { context, sent } = await fakeContext(true, payer.address, true, {
+      maxHcuPerTx: unlimited,
+      maxHcuDepthPerTx: unlimited,
+      hcuBlockCapPerApp: unlimited,
+    });
+    await expect(bootstrapZamaHost(context, { payer, gateway, kmsCorruptionThreshold })).rejects.toThrow(
+      'still has unlimited HCU limits (never bootstrapped)',
+    );
+    expect(sent).toHaveLength(0);
   });
 
   test('already bootstrapped: skips both initialize_host_config and define_kms_context', async () => {
@@ -314,8 +326,5 @@ test('HCU limits match the values the EVM deployment initializes HCULimit with',
   const args = task.match(/fn: 'initializeFromEmptyProxy', args: \[([^\]]*)\]/)?.[1];
   // HCULimit.initializeFromEmptyProxy(hcuCapPerBlock, maxHCUDepthPerTx, maxHCUPerTx).
   const [, depth, total] = [...(args ?? '').matchAll(/BigInt\('(\d+)'\)/g)].map((match) => BigInt(match[1]!));
-  expect({ maxHcuDepthPerTx: depth, maxHcuPerTx: total }).toEqual({
-    maxHcuDepthPerTx: HCU_LIMITS.maxHcuDepthPerTx,
-    maxHcuPerTx: HCU_LIMITS.maxHcuPerTx,
-  });
+  expect({ maxHcuDepthPerTx: depth, maxHcuPerTx: total }).toEqual(HCU_LIMITS);
 });

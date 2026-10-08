@@ -446,7 +446,8 @@ HTTP decryption has no pause on either chain, as on EVM.
 
 **37. [HOLDS]** The program initializes every HCU knob unlimited. The deployer (`bootstrapZamaHost`) sets EVM's
 per-transaction total and depth limits (`HCU_LIMITS`, pinned to `host-contracts/tasks/taskDeploy.ts`) in the
-initialization transaction and leaves the block cap unlimited. `u64::MAX` means
+initialization transaction and leaves the block cap unlimited. Admins may tune all three later, as on EVM; a
+deployer re-run refuses only a host whose two limits are both still unlimited. `u64::MAX` means
 unlimited; `0` is rejected for per-tx limits and means ban untrusted applications only for the block cap. When both
 compared limits are finite and the block cap is nonzero, setters enforce `block cap ≥ max per tx ≥ max depth`.
 Total and critical-path depth accumulate across all calls in the transaction’s shared transient store, including calls from
