@@ -17,8 +17,7 @@ import {
   SOLANA_MERKLE_POSTGRES_PORT,
   SOLANA_VALIDATOR_RPC_PORT,
 } from "../src/layout";
-import { kmsCoreImageRepository } from "../src/compat/compat";
-import { CORE_PLATFORM } from "../src/generate/kms-core";
+import { CORE_PLATFORM, kmsRenderOptionsFor } from "../src/generate/kms-core";
 import { solanaImages } from "../src/solana/images";
 import { run, runStreaming } from "../src/utils/process";
 import {
@@ -128,7 +127,7 @@ export const demoReservedPorts = (observability = false): readonly number[] => [
 ];
 const PROCESS_NAMES = ["validator", "listener", "indexer", "proofServer", "operator", "dapp"] as const;
 // Every kms-core in the threshold cluster runs this image, pinned to CORE_PLATFORM.
-const CORE_IMAGE = `${kmsCoreImageRepository(solanaImages.CORE_VERSION)}:${solanaImages.CORE_VERSION}`;
+const CORE_IMAGE = kmsRenderOptionsFor(solanaImages.CORE_VERSION).coreImage;
 const CORE_ARCHITECTURE = CORE_PLATFORM.slice("linux/".length);
 const REQUIRED_KEYPAIRS = [
   ...["alice", "bob", "keeper", "mint-authority"].map((name) =>
@@ -207,6 +206,8 @@ export type DoctorEnvironmentSnapshot = {
   readonly dockerError?: string;
   readonly dockerComposeError?: string;
   readonly dockerBuildxError?: string;
+  /** Platforms the default Buildx builder can run, including emulated ones. */
+  readonly builderPlatforms: readonly string[];
   readonly coreManifestArchitectures: readonly string[];
   readonly coreManifestError?: string;
   readonly missingKeypairs: readonly string[];
@@ -726,6 +727,18 @@ const collectManifestArchitectures = (value: unknown): string[] => {
   ];
 };
 
+/** Parses the `Platforms:` lines of `docker buildx inspect` (one per builder node; `*` marks a configured platform). */
+export const buildxInspectPlatforms = (output: string): string[] => [
+  ...new Set(
+    output
+      .split("\n")
+      .filter((line) => line.trimStart().startsWith("Platforms:"))
+      .flatMap((line) => line.slice(line.indexOf(":") + 1).split(","))
+      .map((platform) => platform.trim().replace(/\*$/, ""))
+      .filter((platform) => platform !== ""),
+  ),
+];
+
 const doctorEnvironmentSnapshot =
   async (): Promise<DoctorEnvironmentSnapshot> => {
     const [dockerInfo, dockerCompose, dockerBuildx, coreManifest, keypairs, runtimeDirectory] =
@@ -740,7 +753,7 @@ const doctorEnvironmentSnapshot =
           { allowFailure: true },
         ),
         run(["docker", "compose", "version"], { allowFailure: true }),
-        run(["docker", "buildx", "version"], { allowFailure: true }),
+        run(["docker", "buildx", "inspect"], { allowFailure: true }),
         run(["docker", "manifest", "inspect", "--verbose", CORE_IMAGE], {
           allowFailure: true,
         }).then(async (manifest) => {
@@ -815,6 +828,8 @@ const doctorEnvironmentSnapshot =
           ? undefined
           : (dockerBuildx.stderr || dockerBuildx.stdout).trim() ||
             "Docker Buildx plugin is unavailable",
+      builderPlatforms:
+        dockerBuildx.code === 0 ? buildxInspectPlatforms(dockerBuildx.stdout) : [],
       coreManifestArchitectures: [...new Set(manifestArchitectures)],
       coreManifestError: manifestError,
       missingKeypairs: keypairs
@@ -854,12 +869,15 @@ export const doctorEnvironmentErrors = (snapshot: DoctorEnvironmentSnapshot): st
   if (snapshot.dockerComposeError !== undefined) {
     errors.push(`Docker Compose unavailable: ${snapshot.dockerComposeError}`);
   }
-  if (
-    (snapshot.docker?.architecture === "arm64" ||
-      snapshot.docker?.architecture === "aarch64") &&
-    snapshot.dockerBuildxError !== undefined
-  ) {
-    errors.push(`Docker Buildx unavailable: ${snapshot.dockerBuildxError}`);
+  // An arm64 daemon runs the amd64-only kms-core image only through emulation (Rosetta or QEMU binfmt).
+  if (snapshot.docker?.architecture === "arm64" || snapshot.docker?.architecture === "aarch64") {
+    if (snapshot.dockerBuildxError !== undefined) {
+      errors.push(`Docker Buildx unavailable: ${snapshot.dockerBuildxError}`);
+    } else if (!snapshot.builderPlatforms.includes(CORE_PLATFORM)) {
+      errors.push(
+        `Docker cannot run ${CORE_PLATFORM} containers (builder platforms: ${snapshot.builderPlatforms.join(", ") || "none"}); enable amd64 emulation (Docker Desktop: Rosetta or QEMU; Linux: install binfmt/QEMU)`,
+      );
+    }
   }
   if (snapshot.coreManifestError !== undefined) {
     errors.push(`cannot inspect ${CORE_IMAGE}: ${snapshot.coreManifestError}`);

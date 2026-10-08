@@ -23,6 +23,7 @@ import {
   collisionErrors,
   DEMO_REQUIRED_COMMANDS,
   demoReservedPorts,
+  buildxInspectPlatforms,
   doctorEnvironmentErrors,
   demoComposeProject,
   demoLaunchUrl,
@@ -1108,6 +1109,7 @@ describe("Apple Silicon compose policy", () => {
             osType: "linux",
             architecture: "aarch64",
           },
+          builderPlatforms: ["linux/arm64", "linux/amd64"],
           coreManifestArchitectures: ["arm64"],
           missingKeypairs: ["/repo/missing.json"],
           runtimeWritable: false,
@@ -1132,6 +1134,7 @@ describe("Apple Silicon compose policy", () => {
       },
       dockerComposeError: "compose is not a docker command",
       dockerBuildxError: "buildx is not a docker command",
+      builderPlatforms: [],
       coreManifestArchitectures: ["amd64"],
       missingKeypairs: [],
       runtimeWritable: true,
@@ -1146,5 +1149,45 @@ describe("Apple Silicon compose policy", () => {
       "Docker Buildx unavailable: buildx is not a docker command",
       expect.stringContaining("has no linux/amd64 manifest"),
     ]);
+  });
+
+  test("doctor requires amd64 emulation on an arm64 daemon", () => {
+    const snapshot = {
+      docker: { cpus: 8, memoryBytes: 16 * 1024 ** 3, osType: "linux", architecture: "aarch64" },
+      builderPlatforms: ["linux/arm64", "linux/arm/v7"],
+      coreManifestArchitectures: ["amd64"],
+      missingKeypairs: [],
+      runtimeWritable: true,
+    };
+    expect(doctorEnvironmentErrors(snapshot)).toEqual([
+      expect.stringContaining("Docker cannot run linux/amd64 containers (builder platforms: linux/arm64, linux/arm/v7)"),
+    ]);
+    expect(doctorEnvironmentErrors({ ...snapshot, builderPlatforms: ["linux/arm64", "linux/amd64"] })).toEqual([]);
+    // An amd64 daemon runs the cores natively, whatever the builder reports.
+    expect(
+      doctorEnvironmentErrors({
+        ...snapshot,
+        docker: { ...snapshot.docker, architecture: "x86_64" },
+        builderPlatforms: [],
+      }),
+    ).toEqual([]);
+  });
+
+  test("reads every builder node's platforms from docker buildx inspect", () => {
+    expect(
+      buildxInspectPlatforms(
+        [
+          "Name:          desktop-linux",
+          "Driver:        docker",
+          "Nodes:",
+          "Name:             desktop-linux",
+          "Status:           running",
+          "Platforms:        linux/arm64, linux/amd64*, linux/amd64/v2, linux/riscv64",
+          "Name:             second",
+          "Platforms:        linux/arm64",
+        ].join("\n"),
+      ),
+    ).toEqual(["linux/arm64", "linux/amd64", "linux/amd64/v2", "linux/riscv64"]);
+    expect(buildxInspectPlatforms("Name: x\nError: context deadline exceeded")).toEqual([]);
   });
 });
