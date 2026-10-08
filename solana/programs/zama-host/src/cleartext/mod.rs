@@ -56,7 +56,8 @@ impl Value {
     }
 
     /// A big-endian 256-bit plaintext, as scalars and trivial encryptions carry it. Only its low
-    /// 128 bits are read: the host refuses a value above its type before it is used.
+    /// 128 bits are read: the host's range check refuses a value above its type before any
+    /// operation reads it.
     pub fn from_be_bytes(fhe_type: u8, bytes: [u8; 32]) -> Result<Self> {
         Self::new(
             fhe_type,

@@ -118,11 +118,15 @@ pub fn assert_binary_operand_types(
 }
 
 pub fn assert_valid_bounded_rand_upper_bound(upper_bound: [u8; 32], fhe_type: u8) -> Result<()> {
-    let max_bits = bounded_rand_type_bits(fhe_type).ok_or(ZamaHostError::UnsupportedFheType)?;
+    require!(
+        is_supported_uint_fhe_type(fhe_type),
+        ZamaHostError::UnsupportedFheType
+    );
+    let max_bits = fhe_type_bit_width(fhe_type)?;
     let bit_index =
         power_of_two_bit_index(upper_bound).ok_or(ZamaHostError::InvalidRandomUpperBound)?;
     require!(
-        bit_index <= max_bits,
+        u32::from(bit_index) <= max_bits,
         ZamaHostError::InvalidRandomUpperBound
     );
     Ok(())
@@ -286,11 +290,12 @@ pub fn assert_ternary_operand_types(
 }
 
 pub fn is_supported_fhe_type(fhe_type: u8) -> bool {
-    matches!(fhe_type, 0 | 2..=6)
+    shipped_fhe_type_bits(fhe_type).is_some()
 }
 
+/// Every shipped type except ebool (0).
 pub fn is_supported_uint_fhe_type(fhe_type: u8) -> bool {
-    matches!(fhe_type, 2..=6)
+    fhe_type != 0 && is_supported_fhe_type(fhe_type)
 }
 
 /// `FheMulDiv` output types: euint8..euint64. The product of two euint128 factors would need a
@@ -299,17 +304,23 @@ pub fn is_mul_div_fhe_type(fhe_type: u8) -> bool {
     matches!(fhe_type, 2..=5)
 }
 
+/// Width in bits of each shipped FHE type, ebool and euint8..euint128. Every type check and
+/// plaintext range derives from this one table.
+fn shipped_fhe_type_bits(fhe_type: u8) -> Option<u32> {
+    match fhe_type {
+        0 => Some(1),
+        2 => Some(8),
+        3 => Some(16),
+        4 => Some(32),
+        5 => Some(64),
+        6 => Some(128),
+        _ => None,
+    }
+}
+
 /// Width in bits of a shipped FHE type.
 pub(crate) fn fhe_type_bit_width(fhe_type: u8) -> Result<u32> {
-    match fhe_type {
-        0 => Ok(1),
-        2 => Ok(8),
-        3 => Ok(16),
-        4 => Ok(32),
-        5 => Ok(64),
-        6 => Ok(128),
-        _ => err!(ZamaHostError::UnsupportedFheType),
-    }
+    shipped_fhe_type_bits(fhe_type).ok_or_else(|| error!(ZamaHostError::UnsupportedFheType))
 }
 
 /// Largest plaintext of a shipped FHE type: 1 for ebool, the unsigned maximum for euint8..euint128.
@@ -345,17 +356,6 @@ pub(crate) fn assert_reduction_count(n: usize, ty: u8) -> Result<()> {
         ZamaHostError::InvalidFheExecuteAccount
     );
     Ok(())
-}
-
-fn bounded_rand_type_bits(fhe_type: u8) -> Option<u16> {
-    match fhe_type {
-        2 => Some(8),
-        3 => Some(16),
-        4 => Some(32),
-        5 => Some(64),
-        6 => Some(128),
-        _ => None,
-    }
 }
 
 fn power_of_two_bit_index(value: [u8; 32]) -> Option<u16> {
