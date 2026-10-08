@@ -2288,7 +2288,7 @@ fn unique_app() -> AppScope {
     }
 }
 
-/// Like [`host_config_account`] but with the two per-execution HCU limits pre-set.
+/// Like [`host_config_account`] but with the two per-transaction HCU limits pre-set.
 fn host_config_account_with_hcu_limits(
     admin: Pubkey,
     max_hcu_per_tx: u64,
@@ -2858,7 +2858,7 @@ fn mollusk_destroy_kms_context_rejects_already_destroyed() {
 
 #[test]
 fn mollusk_set_hcu_block_cap_metering_band_persists_and_emits_event() {
-    // With the per-execution cap disabled, any positive band value is accepted, persisted, and
+    // With the per-transaction cap unlimited, any positive band value is accepted, persisted, and
     // announced through the config-updated event.
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
@@ -2922,7 +2922,7 @@ fn mollusk_set_hcu_block_cap_below_max_per_tx_is_rejected() {
 
 #[test]
 fn mollusk_set_hcu_block_cap_with_max_per_tx_unlimited_accepts_any_band_value() {
-    // max_hcu_per_tx == u64::MAX means the per-execution cap is unlimited, so the ordering guard
+    // max_hcu_per_tx == u64::MAX means the per-transaction cap is unlimited, so the ordering guard
     // is vacuous and even a tiny band value is accepted.
     let admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
@@ -3494,7 +3494,7 @@ struct FheExecutionFixture {
 const FIXTURE_OUTPUT: &str = "output-hcu-fixture";
 
 impl FheExecutionFixture {
-    /// A fixture whose config carries a per-app block cap; per-execution HCU limits stay off.
+    /// A fixture whose config carries a per-app block cap; per-transaction HCU limits stay off.
     fn with_block_cap(cap: u64) -> Self {
         Self::with_block_cap_keys(cap, Pubkey::new_unique(), Pubkey::new_unique())
     }

@@ -3797,7 +3797,7 @@
           {
             "name": "max_hcu_per_tx",
             "docs": [
-              "Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited",
+              "Max total HCU summed over every execution in one transaction. `u64::MAX` = unlimited",
               "(enforcement off); `0` is rejected at set time."
             ],
             "type": "u64"
@@ -3805,7 +3805,7 @@
           {
             "name": "max_hcu_depth_per_tx",
             "docs": [
-              "Max critical-path (depth) HCU within one `fhe_execute` execution. `u64::MAX` =",
+              "Max critical-path (depth) HCU across every execution in one transaction. `u64::MAX` =",
               "unlimited; `0` is rejected at set time."
             ],
             "type": "u64"

@@ -1,4 +1,5 @@
-// Initializes HostConfig and defines the bring-up KMS context from live gateway values.
+// Initializes HostConfig with EVM's initial HCU limits and defines the bring-up KMS context from
+// live gateway values.
 // A re-run validates the existing host binding before skipping account initialization:
 // `define_kms_context` is `init` on the context PDA, so a second call would fail closed
 // without the skip.
@@ -12,7 +13,7 @@ import {
 } from '@solana/kit';
 import { LOADER_V3_PROGRAM_ADDRESS } from '@solana-program/loader-v3';
 
-import { BRINGUP_KMS_CONTEXT_ID, SOLANA_HOST_CHAIN_ID } from './constants';
+import { BRINGUP_KMS_CONTEXT_ID, HCU_LIMITS, SOLANA_HOST_CHAIN_ID } from './constants';
 import type { GatewayBootstrapInputs } from './gateway';
 import {
   findEventAuthorityPda,
@@ -23,6 +24,8 @@ import {
   getHostConfigDecoder,
   getInitializeHostConfigInstructionAsync,
   getKmsContextDecoder,
+  getSetMaxHcuDepthPerTxInstructionAsync,
+  getSetMaxHcuPerTxInstructionAsync,
   HOST_CONFIG_DISCRIMINATOR,
   KMS_CONTEXT_DISCRIMINATOR,
   ZAMA_HOST_PROGRAM_ADDRESS,
@@ -108,6 +111,9 @@ export const validateBootstrapInputs = (params: BootstrapZamaHostParams): void =
   kmsCertificateThreshold(params.kmsCorruptionThreshold, params.gateway.kmsSigners.length);
 };
 
+// The program's unlimited HCU sentinel.
+const UNLIMITED_HCU = 2n ** 64n - 1n;
+
 export const bootstrapZamaHost = async (context: HostDeployContext, params: BootstrapZamaHostParams): Promise<void> => {
   validateBootstrapInputs(params);
   const programAddress = params.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
@@ -145,7 +151,17 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
         'existing HostConfig does not match deployment inputs; refuse to bind an existing host to a different stack',
       );
     }
-    console.log('host_config matches deployment inputs');
+    // Initialization sets both limits in one transaction, so both unlimited means the host was
+    // never bootstrapped. Any other values are an admin's tuning and stay as they are.
+    if (config.maxHcuPerTx === UNLIMITED_HCU && config.maxHcuDepthPerTx === UNLIMITED_HCU) {
+      throw new Error(
+        'existing HostConfig still has unlimited HCU limits (never bootstrapped); set them with the HCU setters first',
+      );
+    }
+    console.log(
+      `host_config matches deployment inputs; HCU limits: maxHcuPerTx=${config.maxHcuPerTx} ` +
+        `maxHcuDepthPerTx=${config.maxHcuDepthPerTx} hcuBlockCapPerApp=${config.hcuBlockCapPerApp}`,
+    );
   } else if (!params.validateOnly) {
     await context.sendTransaction(params.payer, [
       await getInitializeHostConfigInstructionAsync(
@@ -163,6 +179,14 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
           grantDenyListEnabled: false,
           ...shared,
         },
+        ixConfig,
+      ),
+      await getSetMaxHcuDepthPerTxInstructionAsync(
+        { admin: params.payer, value: HCU_LIMITS.maxHcuDepthPerTx, ...shared },
+        ixConfig,
+      ),
+      await getSetMaxHcuPerTxInstructionAsync(
+        { admin: params.payer, value: HCU_LIMITS.maxHcuPerTx, ...shared },
         ixConfig,
       ),
     ]);

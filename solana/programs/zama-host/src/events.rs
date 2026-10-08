@@ -61,9 +61,9 @@ pub struct HostConfigUpdatedEvent {
     pub paused: PauseFlags,
     /// Current deny-list gate.
     pub grant_deny_list_enabled: bool,
-    /// Current max total HCU per `fhe_execute` execution (`u64::MAX` = unlimited).
+    /// Current max total HCU per transaction (`u64::MAX` = unlimited).
     pub max_hcu_per_tx: u64,
-    /// Current max critical-path HCU per `fhe_execute` execution (`u64::MAX` = unlimited).
+    /// Current max critical-path HCU per transaction (`u64::MAX` = unlimited).
     pub max_hcu_depth_per_tx: u64,
     /// Current per-app HCU block cap (`u64::MAX` = unrestricted, `0` = ban untrusted apps).
     pub hcu_block_cap_per_app: u64,

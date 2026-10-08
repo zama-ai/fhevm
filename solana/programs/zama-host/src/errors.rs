@@ -123,10 +123,11 @@ pub enum ZamaHostError {
     /// The coprocessor-attested contract does not match the execution's application program.
     #[msg("attested contract address does not match the execution's program")]
     InputBindContractMismatch,
-    /// An `fhe_execute` execution's summed HCU exceeds `max_hcu_per_tx` (or the running sum overflowed).
+    /// The transaction's summed HCU exceeds `max_hcu_per_tx` (or the running sum overflowed).
     #[msg("FHE op total HCU exceeds the per-transaction limit")]
     HcuTransactionLimitExceeded,
-    /// An `fhe_execute` value's critical-path HCU exceeds `max_hcu_depth_per_tx` (or the depth sum overflowed).
+    /// A value's critical-path HCU in the transaction exceeds `max_hcu_depth_per_tx` (or the depth sum
+    /// overflowed).
     #[msg("FHE op depth HCU exceeds the per-transaction depth limit")]
     HcuTransactionDepthLimitExceeded,
     /// The HCU cost table has no row for this op / FHE type / scalar combination (fail-closed).

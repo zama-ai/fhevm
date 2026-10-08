@@ -1,8 +1,7 @@
-//! Sets the per-`fhe_execute` total HCU limit (mirrors EVM `setMaxHCUPerTx`).
+//! Sets the per-transaction total HCU limit (mirrors EVM `setMaxHCUPerTx`).
 //!
-//! Naming note: the field is `max_hcu_per_tx` to match EVM's `setMaxHCUPerTx`, but on Solana the
-//! limit is enforced per `fhe_execute` execution, which can be smaller than a whole transaction (a tx may
-//! contain several executions). The EVM-aligned name is intentional; the scope difference is by design.
+//! The total sums every `fhe_execute` in the transaction: they all charge the one transient store
+//! the transaction's final instruction closes, as EVM's transient counters cover every call.
 
 use anchor_lang::prelude::*;
 
@@ -18,7 +17,7 @@ use super::host_admin::HostAdmin;
 /// - Preserves the `max_hcu_per_tx >= max_hcu_depth_per_tx` ordering, with `u64::MAX` = unlimited
 ///   (`check_hcu_ordering`).
 /// - Preserves the block-cap ordering from the other side: a metering-band
-///   `hcu_block_cap_per_app` must stay at or above the new total, so raising the per-execution
+///   `hcu_block_cap_per_app` must stay at or above the new total, so raising the per-transaction
 ///   limit cannot silently make a single legal execution exceed the block cap
 ///   (`check_block_cap_ordering`).
 /// - Emits the config-updated event carrying the new limits.

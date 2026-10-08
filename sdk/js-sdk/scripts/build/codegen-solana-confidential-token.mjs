@@ -128,6 +128,8 @@ const targets = [
         'makeStoreHandlePublic',
         // The host bootstrap (solana/deploy).
         'initializeHostConfig',
+        'setMaxHcuDepthPerTx',
+        'setMaxHcuPerTx',
         'defineKmsContext',
       ]),
       // Read back live: the SDK's decrypt trust inputs, the deployment's chain-id cross-check, the

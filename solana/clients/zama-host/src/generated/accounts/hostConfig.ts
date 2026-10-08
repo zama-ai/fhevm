@@ -92,12 +92,12 @@ export type HostConfig = {
   /** Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public. */
   grantDenyListEnabled: boolean;
   /**
-   * Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited
+   * Max total HCU summed over every execution in one transaction. `u64::MAX` = unlimited
    * (enforcement off); `0` is rejected at set time.
    */
   maxHcuPerTx: bigint;
   /**
-   * Max critical-path (depth) HCU within one `fhe_execute` execution. `u64::MAX` =
+   * Max critical-path (depth) HCU across every execution in one transaction. `u64::MAX` =
    * unlimited; `0` is rejected at set time.
    */
   maxHcuDepthPerTx: bigint;
@@ -153,12 +153,12 @@ export type HostConfigArgs = {
   /** Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public. */
   grantDenyListEnabled: boolean;
   /**
-   * Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited
+   * Max total HCU summed over every execution in one transaction. `u64::MAX` = unlimited
    * (enforcement off); `0` is rejected at set time.
    */
   maxHcuPerTx: number | bigint;
   /**
-   * Max critical-path (depth) HCU within one `fhe_execute` execution. `u64::MAX` =
+   * Max critical-path (depth) HCU across every execution in one transaction. `u64::MAX` =
    * unlimited; `0` is rejected at set time.
    */
   maxHcuDepthPerTx: number | bigint;

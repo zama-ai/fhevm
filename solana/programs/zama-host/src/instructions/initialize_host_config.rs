@@ -69,7 +69,8 @@ pub fn initialize_host_config(
     config.current_kms_context_id = [0u8; 32];
     config.paused = PauseFlags::default();
     config.grant_deny_list_enabled = args.grant_deny_list_enabled;
-    // Ship HCU enforcement disabled (u64::MAX = unlimited); an admin enables it post-calibration.
+    // Unlimited (u64::MAX) until the admin sets them: `bootstrapZamaHost` sets EVM's limits in the
+    // same transaction (INVARIANTS #37).
     config.max_hcu_per_tx = u64::MAX;
     config.max_hcu_depth_per_tx = u64::MAX;
     // Ship the per-app block cap unrestricted (u64::MAX): the neutral state that short-circuits

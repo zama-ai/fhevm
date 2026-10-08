@@ -444,7 +444,10 @@ property of #35. The flags do not reach decryption, and the KMS connector does n
 has its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point, the Solana entries included.
 HTTP decryption has no pause on either chain, as on EVM.
 
-**37. [HOLDS]** HCU enforcement ships disabled (unrestricted defaults) and is opt-in per knob. `u64::MAX` means
+**37. [HOLDS]** The program initializes every HCU knob unlimited. The deployer (`bootstrapZamaHost`) sets EVM's
+per-transaction total and depth limits (`HCU_LIMITS`, pinned to `host-contracts/tasks/taskDeploy.ts`) in the
+initialization transaction and leaves the block cap unlimited. Admins may tune all three later, as on EVM; a
+deployer re-run refuses only a host whose two limits are both still unlimited. `u64::MAX` means
 unlimited; `0` is rejected for per-tx limits and means ban untrusted applications only for the block cap. When both
 compared limits are finite and the block cap is nonzero, setters enforce `block cap ≥ max per tx ≥ max depth`.
 Total and critical-path depth accumulate across all calls in the transaction’s shared transient store, including calls from
@@ -453,7 +456,8 @@ occurrences retain the maximum depth for that handle; changing its operand witne
 Pinned by `mollusk_initialize_host_config_defaults_block_cap_to_unrestricted`, `mollusk_set_max_hcu_setters_reject_zero`,
 `mollusk_set_max_hcu_per_tx_rejects_above_block_cap_band`, `mollusk_set_hcu_block_cap_at_max_per_tx_boundary_is_accepted`,
 `mollusk_set_hcu_block_cap_below_max_per_tx_is_rejected` and
-`mollusk_fhe_execute_same_application_accumulates_across_payers_and_authorities_and_trips_cap`.
+`mollusk_fhe_execute_same_application_accumulates_across_payers_and_authorities_and_trips_cap`; the deployment values
+by the `bootstrapZamaHost` tests in `test-suite/fhevm/src/solana/deploy.test.ts`.
 
 **38. [ASSUMPTION]** The host admin key is a single trusted key. There is no
 multisig and no timelock yet (fhevm-internal#1634). The initial admin must be the BPF

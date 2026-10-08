@@ -5,7 +5,8 @@ import { cp, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { createFinalizedRpc, findHostConfigPda } from '@fhevm/solana-zama-host';
+import { createFinalizedRpc, findHostConfigPda, getHostConfigDecoder } from '@fhevm/solana-zama-host';
+import { HCU_LIMITS } from '../../../../solana/deploy/src/constants';
 import { DEFAULT_SOLANA_ENVIRONMENT, programIdsFor } from '../../../../solana/deploy/src/environment';
 import { solanaPubkeyFromKeypairFile } from '../../src/generate/solana';
 import { REPO_ROOT } from '../../src/layout';
@@ -193,6 +194,12 @@ test(
     expect(first.stdout).toContain('OK initialize');
     const before = await hostData();
     expect(before).toBeDefined();
+    const { maxHcuDepthPerTx, maxHcuPerTx, hcuBlockCapPerApp } = getHostConfigDecoder().decode(
+      Buffer.from(before![0], 'base64'),
+    );
+    expect({ maxHcuDepthPerTx, maxHcuPerTx }).toEqual(HCU_LIMITS);
+    // The deployer never changes the per-application block cap.
+    expect(hcuBlockCapPerApp).toBe(2n ** 64n - 1n);
     const again = await deploy();
     expect(again.code, again.stderr).toBe(0);
     expect(again.stdout).toContain('unchanged');

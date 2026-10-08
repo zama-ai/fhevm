@@ -40,10 +40,10 @@ pub struct HostConfig {
     pub paused: PauseFlags,
     /// Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public.
     pub grant_deny_list_enabled: bool,
-    /// Max total HCU summed over one `fhe_execute` execution. `u64::MAX` = unlimited
+    /// Max total HCU summed over every execution in one transaction. `u64::MAX` = unlimited
     /// (enforcement off); `0` is rejected at set time.
     pub max_hcu_per_tx: u64,
-    /// Max critical-path (depth) HCU within one `fhe_execute` execution. `u64::MAX` =
+    /// Max critical-path (depth) HCU across every execution in one transaction. `u64::MAX` =
     /// unlimited; `0` is rejected at set time.
     pub max_hcu_depth_per_tx: u64,
     /// Per-app HCU budget per slot, enforced in `fhe_execute`. `u64::MAX` = unrestricted (the ship

@@ -1104,8 +1104,8 @@ between dispatch and settle in either direction — the deadline-cancel path sta
 token/host CPI passes HCU accounts (`hcu_block_meter`, `hcu_trusted_app_record`) as hardcoded `None`.
 `join`, `quit` and `claim` forward their remaining accounts as the execution's deny records, and
 `cancel_dispatch` forwards them to the token's restore. `dispatch`, `open_batch` and `settle` pass
-none, so they assume `grant_deny_list_enabled = false`. Every path assumes no binding HCU cap, which
-is how the host test fixtures run.
+none, so they assume `grant_deny_list_enabled = false`. Every path assumes an unlimited
+per-application block cap, which the deployer leaves in place; the per-transaction caps do bind.
 
 ## DD-043: Two Derivation Regimes — Content-Addressed Deterministic Handles, Persistent-Write-Anchored Rand Seeds (`context_id` deleted)
 
