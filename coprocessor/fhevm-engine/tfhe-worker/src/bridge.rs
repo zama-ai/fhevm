@@ -330,8 +330,8 @@ pub(crate) async fn associate_pair(
     // ciphertext yet.
     let ciphertext_copied = sqlx::query!(
         r#"
-        INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
-        SELECT $1, ciphertext, ciphertext_version, ciphertext_type
+        INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type, consensus_version)
+        SELECT $1, ciphertext, ciphertext_version, ciphertext_type, consensus_version
         FROM ciphertexts
         WHERE handle = $2
           AND NOT EXISTS (SELECT 1 FROM ciphertexts WHERE handle = $1)

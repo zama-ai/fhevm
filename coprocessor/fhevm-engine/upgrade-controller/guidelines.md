@@ -94,6 +94,8 @@ and check Green pod logs for the resolved mode (it logs `gcs_mode` resolved from
 
 ## Step 3 - Send the upgrade proposal
 
+> **Prerequisite - deploy GCS on every operator BEFORE broadcasting the proposal.** The proposal is a one-time on-chain event, and only the GCS (v0.15) host-listener decodes `CoprocessorUpgradeProposed` and records it into `upgrade_state` (the released Blue v0.14 predates the Blue/Green machinery and ignores the event). Unlike the `gw-listener`, the **host-listener does not rewind**: a GCS host-listener first started after the proposal begins tailing at the current host tip, so if `proposal_block` is already behind that tip it never sees the event, never writes `upgrade_state`, and that operator cannot activate. Because cutover needs every operator, one operator missing the event stalls the whole round. So bring GCS up on all operators (Step 2), confirm each host-listener is tailing the authority chain, and only then send the proposal.
+
 > For the contracts-side detail of this step (task reference, parameters, and the DAO flow), see the host-contracts [Coprocessor upgrade runbook](https://github.com/zama-ai/fhevm/blob/9957e9c44ac34f97e37aaf05c0b72f8f2e5bd125/host-contracts/COPROCESSOR_UPGRADE_RUNBOOK.md).
 
 The proposal is one on-chain `ProtocolConfig.proposeCoprocessorUpgrade(proposalId, softwareVersion, chainUpgradeWindows[], gwStartBlock)`. Use the host-contracts tasks - they sample block times per chain, compute one `[startBlock, endBlock]` per host chain, and **pin `gwStartBlock` to the current gateway tip** (do not hand-pick block numbers).
@@ -127,10 +129,9 @@ Submit the printed Aragon calldata as the DAO proposal; `gwStartBlock` is still 
 
 ### Because `gwStartBlock` is pinned to the gateway tip
 
-Two consequences follow from fixing `gwStartBlock` to the tip before the proposal is signed:
+Draining the `[gw_start_block, *]` input backlog across the cutover is safe: input-handle derivation is deterministic and the inserts are idempotent (`input_handles` merges on `handle` with `ON CONFLICT DO NOTHING`), and `gw_listener_last_block` is merged GCS-wins at cutover, so the promoted stack resumes from Green's cursor and keeps scanning forward. Nothing in the window is dropped at the boundary.
 
-- **Draining the `[gw_start_block, *]` input backlog across the cutover is safe.** Input-handle derivation is deterministic and the inserts are idempotent (`input_handles` merges on `handle` with `ON CONFLICT DO NOTHING`), and `gw_listener_last_block` is merged GCS-wins at cutover, so the promoted stack resumes from Green's cursor and keeps scanning forward. Nothing in the window is dropped at the boundary.
-- **The Green `gw-listener` must be deployed and started at or before `gw_start_block`.** The `gcs` schema is created structure-only (`LIKE ... INCLUDING ALL`, no data), so its watermark starts empty; on first boot the listener begins at the current tip and does **not** rewind. A listener started after `gw_start_block` therefore skips `[gw_start_block, boot_tip)` and sees only a partial backlog. If operators boot at different times, they ingest different real inputs and the Gateway consensus track diverges. Starting *before* `gw_start_block` is harmless - pre-window proofs (`bn < gw_start_block`) are skipped in GCS mode, so the listener just reaches the window with a continuous watermark.
+The Green `gw-listener` does not have to scan `gw_start_block` on its first pass: on activation it rewinds its scan cursor to `gw_start_block - 1` when the window start would otherwise be left unscanned (latched once per proposal in `upgrade_state.gw_window_rewound`), so the whole Gateway window is covered even when the listener's cursor has already moved past `gw_start_block` (its empty `gcs` schema makes it tail from the current gateway tip). This is the Gateway-window coverage only; the proposal event itself must still be captured, which is the prerequisite in Step 3.
 
 ## Step 4 - Monitor the dry-run
 
