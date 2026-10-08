@@ -25,7 +25,7 @@ pub struct KmsThresholds {
 #[account]
 pub struct KmsContext {
     /// 32-byte context id (EVM `kmsContextId`), ordered as a big-endian integer; each new id is above
-    /// the current one. All-zero means none is defined.
+    /// the current one, so it is never all-zero.
     pub context_id: [u8; 32],
     /// KMS node signer EVM addresses authorized to sign certs in this context.
     pub signers: Vec<[u8; 20]>,

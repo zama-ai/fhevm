@@ -55,7 +55,7 @@ export type KmsContext = {
   discriminator: ReadonlyUint8Array;
   /**
    * 32-byte context id (EVM `kmsContextId`), ordered as a big-endian integer; each new id is above
-   * the current one. All-zero means none is defined.
+   * the current one, so it is never all-zero.
    */
   contextId: ReadonlyUint8Array;
   /** KMS node signer EVM addresses authorized to sign certs in this context. */
@@ -71,7 +71,7 @@ export type KmsContext = {
 export type KmsContextArgs = {
   /**
    * 32-byte context id (EVM `kmsContextId`), ordered as a big-endian integer; each new id is above
-   * the current one. All-zero means none is defined.
+   * the current one, so it is never all-zero.
    */
   contextId: ReadonlyUint8Array;
   /** KMS node signer EVM addresses authorized to sign certs in this context. */

@@ -20,7 +20,7 @@ pub mod fhe_execute;
 pub mod host_admin;
 pub mod initialize_host_config;
 pub mod input_verification;
-mod make_store_handle_public;
+pub mod make_store_handle_public;
 pub mod pause;
 pub mod revoke_delegation_for_user_decryption;
 pub mod revoke_permits;
