@@ -107,11 +107,20 @@ describe("demo supervisor control", () => {
     );
     temporaryDirectories.push(directory);
     const socketPath = path.join(directory, "supervisor.sock");
-    const stale = Bun.serve({
-      unix: socketPath,
-      fetch: () => Response.json({ bootId: "stale" }),
-    });
-    await stale.stop(true);
+    // A killed supervisor runs no cleanup, so its socket stays on disk. Stopping a server
+    // in-process would not do: Bun's stop() unlinks the socket.
+    const stale = Bun.spawn(
+      [
+        process.execPath,
+        "-e",
+        `Bun.serve({ unix: ${JSON.stringify(socketPath)}, fetch: () => new Response("stale") }); console.log("ready");`,
+      ],
+      { stdout: "pipe" },
+    );
+    const reader = stale.stdout.getReader();
+    expect(new TextDecoder().decode((await reader.read()).value)).toContain("ready");
+    stale.kill("SIGKILL");
+    await stale.exited;
     const bootId = "123e4567-e89b-42d3-a456-426614174000";
     const staleSocket = await fs.lstat(socketPath);
     expect(staleSocket.isSocket()).toBe(true);
