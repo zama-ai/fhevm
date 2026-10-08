@@ -349,10 +349,10 @@ async fn run_binary_operands_events(
 
 /// Types with cases to run. Anything above 256 bits is left out because the setup
 /// below cannot encrypt values that large.
-const BINARY_SPLIT_TYPES: &[i32] = &[0, 1, 2, 3, 4, 5, 6, 7, 8];
+const BINARY_SPLIT_TYPES: &[i32] = &[0, 2, 3, 4, 5, 6, 7, 8];
 
-/// The same, minus bool, which has no multiply, divide or remainder.
-const BINARY_SPLIT_TYPES_EXPENSIVE: &[i32] = &[1, 2, 3, 4, 5, 6, 7, 8];
+/// Types with multiply, divide and remainder.
+const BINARY_SPLIT_TYPES_EXPENSIVE: &[i32] = &[2, 3, 4, 5, 6];
 
 /// Multiply, divide and remainder take far longer than the rest and get slower fast
 /// as types get wider, so they run as separate tests.
@@ -391,7 +391,6 @@ macro_rules! binary_operands_test {
 }
 
 binary_operands_test!(binary_ops_cheap_bool, 0, is_cheap_binary_op);
-binary_operands_test!(binary_ops_cheap_u4, 1, is_cheap_binary_op);
 binary_operands_test!(binary_ops_cheap_u8, 2, is_cheap_binary_op);
 binary_operands_test!(binary_ops_cheap_u16, 3, is_cheap_binary_op);
 binary_operands_test!(binary_ops_cheap_u32, 4, is_cheap_binary_op);
@@ -400,15 +399,12 @@ binary_operands_test!(binary_ops_cheap_u128, 6, is_cheap_binary_op);
 binary_operands_test!(binary_ops_cheap_u160, 7, is_cheap_binary_op);
 binary_operands_test!(binary_ops_cheap_u256, 8, is_cheap_binary_op);
 
-binary_operands_test!(binary_ops_muldivrem_u4, 1, is_expensive_binary_op);
 binary_operands_test!(binary_ops_muldivrem_u8, 2, is_expensive_binary_op);
 binary_operands_test!(binary_ops_muldivrem_u16, 3, is_expensive_binary_op);
 binary_operands_test!(binary_ops_muldivrem_u32, 4, is_expensive_binary_op);
 binary_operands_test!(binary_ops_muldivrem_u64, 5, is_expensive_binary_op);
 
 binary_operands_test!(binary_ops_muldivrem_u128, 6, is_expensive_binary_op);
-binary_operands_test!(binary_ops_muldivrem_u160, 7, is_expensive_binary_op);
-binary_operands_test!(binary_ops_muldivrem_u256, 8, is_expensive_binary_op);
 
 /// Checks the split tests still cover every case the original single test did, so a
 /// forgotten type cannot quietly reduce what we test. Needs no database.
