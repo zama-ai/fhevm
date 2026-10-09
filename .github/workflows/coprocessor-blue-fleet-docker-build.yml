@@ -1,0 +1,112 @@
+name: coprocessor-blue-fleet-docker-build
+
+# Builds the coprocessor images a preview-env blue-green run installs as Blue,
+# compiled from this branch but carrying an older release identity.
+#
+# An RFC-021 cutover needs a predecessor whose consensus version is older than
+# the branch under test. No published release has one that also finalizes
+# blocks on its own, which is what Blue has to do when the host side runs on
+# the listener stack alone and no poller is deployed to backfill it. So Blue is
+# built here from the same tree, with the version constants supplied through
+# BUILD_CONSENSUS_VERSION / BUILD_STACK_VERSION. See the feature pair in
+# coprocessor/fhevm-engine/fhevm-engine-common/Cargo.toml.
+#
+# Every image deploy-coprocessor.sh installs under BCS_IMAGE_TAG is built here,
+# including the ones whose own sources never mention the constants: they all
+# call `resolve_gcs_mode` at startup, which compares the version compiled into
+# the binary against the single versioning row. A stack split across two
+# identities would have some of its services resolve themselves into the other
+# one, so they move together or not at all.
+#
+# Nothing here runs on the production path. These images carry a tag of their
+# own and are only ever referenced by a preview-env run that asked for them.
+
+on:
+  workflow_call:
+    inputs:
+      image-tag:
+        description: "Tag to publish the Blue fleet under. Must not collide with the production short-SHA tags."
+        type: string
+        required: true
+      build-consensus-version:
+        description: "CONSENSUS_PROTOCOL_VERSION to compile into the fleet. Older than the branch's, or there is no cutover to make."
+        type: string
+        required: true
+      build-stack-version:
+        description: "STACK_VERSION to compile into the fleet. Also names the GCS schema, so it must differ from the branch's."
+        type: string
+        required: true
+    secrets:
+      AWS_ACCESS_KEY_S3_USER:
+        required: true
+      AWS_SECRET_KEY_S3_USER:
+        required: true
+      BLOCKCHAIN_ACTIONS_TOKEN:
+        required: true
+      # Declared but not forwarded, same as coprocessor-docker-build.yml: it is
+      # here so callers can pass one shared secrets block to either workflow.
+      GHCR_READ_TOKEN:
+        required: true
+      CGR_USERNAME:
+        required: true
+      CGR_PASSWORD:
+        required: true
+
+permissions: {}
+
+jobs:
+  build:
+    name: build (${{ matrix.image }})
+    strategy:
+      # One image failing should not hide whether the others are reproducible.
+      fail-fast: false
+      matrix:
+        include:
+          - image: db-migration
+            docker-file: coprocessor/fhevm-engine/db-migration/Dockerfile
+          - image: gw-listener
+            docker-file: coprocessor/fhevm-engine/gw-listener/Dockerfile
+          - image: host-listener
+            docker-file: coprocessor/fhevm-engine/host-listener/Dockerfile
+          - image: sns-worker
+            docker-file: coprocessor/fhevm-engine/sns-worker/Dockerfile
+          - image: tfhe-worker
+            docker-file: coprocessor/fhevm-engine/tfhe-worker/Dockerfile
+          # The image is tx-sender; the crate it builds is transaction-sender.
+          - image: tx-sender
+            docker-file: coprocessor/fhevm-engine/transaction-sender/Dockerfile
+          - image: zkproof-worker
+            docker-file: coprocessor/fhevm-engine/zkproof-worker/Dockerfile
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+      attestations: 'write' # Required to create build attestations
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    secrets:
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/coprocessor/${{ matrix.image }}"
+      image-tag: ${{ inputs.image-tag }}
+      docker-file: ${{ matrix.docker-file }}
+      # Separate from the production cache: the override changes the features
+      # fhevm-engine-common compiles with, so the two share no artifacts worth
+      # trading and would only evict each other.
+      app-cache-dir: "fhevm-coprocessor-${{ matrix.image }}-blue-fleet"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/extras=s3-cache
+      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+      # Consumed by the ARG pair in each Dockerfile above. Setting one without
+      # the other fails the build rather than producing a half-identified stack.
+      build-args: |
+        BUILD_CONSENSUS_VERSION=${{ inputs.build-consensus-version }}
+        BUILD_STACK_VERSION=${{ inputs.build-stack-version }}

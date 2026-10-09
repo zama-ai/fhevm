@@ -162,9 +162,10 @@ async fn main() {
     // Declaring broker:
     let broker = match settings.broker.broker_type {
         BrokerType::Redis => {
-            match Broker::redis_with_ensure_publish(
+            match Broker::redis_with_options(
                 &settings.broker.broker_url,
                 settings.broker.ensure_publish,
+                settings.broker.max_stream_len(),
             )
             .await
             {

@@ -40,7 +40,8 @@ macro_rules! stack_version {
     };
 }
 
-/// Local runs only: the release comes from `BUILD_STACK_VERSION`.
+/// The release comes from `BUILD_STACK_VERSION`. See the feature pair in
+/// `Cargo.toml` for who builds this way and why.
 #[cfg(feature = "stack-version-override")]
 macro_rules! stack_version {
     () => {
@@ -74,10 +75,19 @@ pub const HANDLE_VERSION: i16 = 0;
 //   - randomization changes
 //   - the scheduling logic changes
 // Leave it as is for every other release, which then rolls out without a cutover.
+//
+// Before raising it, the start-position ladder in the consumer SDK
+// (`ListenerConsumer::seed_group`) needs a rung for a versioned predecessor. It
+// recognizes an unsuffixed one only, so a stack coming up at vN+1 does not match
+// the live vN group, starts at the tip of the stream, and never sees what was
+// published before its own group existed. The host-listener poller backfills that
+// under the default topology; nothing does when the host side runs on the listener
+// stack alone. The gap is silent — the cutover itself succeeds.
 #[cfg(not(feature = "consensus-version-override"))]
 pub const CONSENSUS_PROTOCOL_VERSION: u32 = 2;
 
-/// Local runs only: the value comes from `BUILD_CONSENSUS_VERSION`.
+/// The value comes from `BUILD_CONSENSUS_VERSION`. See the feature pair in
+/// `Cargo.toml` for who builds this way and why.
 #[cfg(feature = "consensus-version-override")]
 pub const CONSENSUS_PROTOCOL_VERSION: u32 = match u32::from_str_radix(
     env!(

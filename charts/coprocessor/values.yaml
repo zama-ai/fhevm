@@ -670,6 +670,10 @@ hostListenerConsumerShared:
 
   # Structured args. serviceName is the only modeled key; per-chain
   # chains[].hostListenerConsumer.serviceName takes precedence when set.
+  #
+  # serviceName is the telemetry label only. It does not decide which broker
+  # queue this consumer reads: that identity is compiled in, so two releases of
+  # the same deployment cannot drift apart by being renamed. Set this freely.
   args:
     # serviceName: host-listener-consumer
 

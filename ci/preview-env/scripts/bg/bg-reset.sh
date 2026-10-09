@@ -6,8 +6,9 @@
 # and CRS are untouched, no keygen re-runs. Per party it uninstalls the Green
 # releases, stops Blue, clears the work tables in ONE transaction, puts
 # versioning back to the Blue version, restarts Blue and checks it came up live.
-# The Redis broker is left alone: consumers delete acknowledged entries, so the
-# streams only hold unconsumed blocks and Blue's groups resume at the tip.
+# The Redis broker is left alone: acknowledging an entry does not remove it, so the
+# streams hold whatever the trimmer has not yet reclaimed and Blue's groups resume at
+# their own cursors rather than at the tip.
 # Idempotent: if it aborts half-way, fix the cause and run it again.
 #
 # Usage: NAMESPACE=<ns> bash ci/preview-env/scripts/bg/bg-reset.sh

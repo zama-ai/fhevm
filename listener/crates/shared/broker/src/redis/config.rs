@@ -49,7 +49,18 @@ pub struct RedisConsumerConfig {
     pub group_name: String,
     /// Unique consumer name within the group
     pub consumer_name: String,
+    /// Where a newly created group starts reading.
+    ///
+    /// Only consulted when the group does not already exist — an existing
+    /// group resumes from its own cursor and ignores this. `"0"` replays all
+    /// retained entries, `"$"` takes only new ones, and an explicit stream ID
+    /// starts at that point, which is how a new group joins a stream where
+    /// another group is already working.
+    pub start_id: String,
 }
+
+/// Default group start position: the beginning of retained history.
+pub const DEFAULT_GROUP_START_ID: &str = "0";
 
 /// Consumer configuration with retry support.
 #[derive(Debug, Clone)]
@@ -128,6 +139,7 @@ pub struct RedisConsumerConfigBuilder {
     stream: Option<String>,
     group_name: Option<String>,
     consumer_name: Option<String>,
+    start_id: Option<String>,
     dead_stream: Option<String>,
     max_retries: Option<u32>,
     claim_min_idle: Option<Duration>,
@@ -156,6 +168,15 @@ impl RedisConsumerConfigBuilder {
 
     pub fn consumer_name(mut self, consumer_name: impl Into<String>) -> Self {
         self.consumer_name = Some(consumer_name.into());
+        self
+    }
+
+    /// Set where a newly created consumer group starts reading.
+    ///
+    /// Defaults to [`DEFAULT_GROUP_START_ID`]. Has no effect if the group
+    /// already exists.
+    pub fn start_id(mut self, start_id: impl Into<String>) -> Self {
+        self.start_id = Some(start_id.into());
         self
     }
 
@@ -244,6 +265,10 @@ impl RedisConsumerConfigBuilder {
             consumer_name: self.consumer_name.clone().ok_or_else(|| {
                 RedisConsumerError::Configuration("consumer_name is required".into())
             })?,
+            start_id: self
+                .start_id
+                .clone()
+                .unwrap_or_else(|| DEFAULT_GROUP_START_ID.to_string()),
         })
     }
 

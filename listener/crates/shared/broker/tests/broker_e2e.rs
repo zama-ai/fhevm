@@ -60,6 +60,34 @@ async fn redis_xlen(url: &str, stream: &str) -> u64 {
         .unwrap_or(0)
 }
 
+/// Create a consumer group that is never read from. Its `last-delivered-id`
+/// stays at `0-0`, which pins the background trimmer's safe point and leaves
+/// the `XADD` cap as the only thing that can bound the stream.
+async fn freeze_group(url: &str, stream: &str) {
+    let client = redis::Client::open(url).unwrap();
+    let mut conn = client.get_multiplexed_async_connection().await.unwrap();
+    let _: String = redis::cmd("XGROUP")
+        .arg("CREATE")
+        .arg(stream)
+        .arg("frozen")
+        .arg("0")
+        .arg("MKSTREAM")
+        .query_async(&mut conn)
+        .await
+        .unwrap();
+}
+
+async fn publish_n(broker: &Broker, stream: &str, count: u64) {
+    let publisher = broker.publisher_unscoped().await.unwrap();
+    for block_number in 0..count {
+        publisher
+            .publish(stream, &BlockEvent { block_number })
+            .await
+            .unwrap();
+    }
+    publisher.shutdown().await;
+}
+
 // ── Test 1: Simple roundtrip via Broker facade ──────────────────────────────
 
 #[tokio::test]
@@ -1027,5 +1055,240 @@ async fn test_broker_classified_permanent_dlq_no_cb_trip() {
         success_count.load(Ordering::SeqCst),
         1,
         "valid message must be processed — CB should NOT have tripped from permanent errors"
+    );
+}
+
+// ── Test: ensure_topology creates the destination before any traffic ─────────
+
+/// `ensure_topology()` must leave the destination existing on both backends.
+///
+/// On Redis this used to be an unconditional `Ok(())`, on the assumption that
+/// streams are created by the first `XADD`. A publisher which checks the
+/// stream exists before writing never issues that first `XADD`, and a consumer
+/// which creates the stream only when it starts reading never creates it
+/// either — so nothing ever breaks the tie.
+///
+/// Asserted as a postcondition rather than as a call order: the point is that
+/// the stream exists once this returns, before anything is published or
+/// consumed.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn test_ensure_topology_creates_streams_before_any_traffic() {
+    let url = shared_redis_url().await;
+    let broker = Broker::redis(url).await.unwrap();
+
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let namespace = format!("bf-topology-{suffix}");
+    let topic = Topic::namespaced(&namespace, "events");
+
+    assert!(
+        !broker.exists(&topic).await.unwrap(),
+        "precondition: the stream must not exist before ensure_topology"
+    );
+
+    let consumer = broker
+        .consumer(&topic)
+        .group("bf-topology-group")
+        .consumer_name("consumer-1")
+        .prefetch(10)
+        .build()
+        .unwrap();
+
+    consumer.ensure_topology().await.unwrap();
+
+    assert!(
+        broker.exists(&topic).await.unwrap(),
+        "ensure_topology must create the main stream — a publisher gated on exists() depends on it"
+    );
+    assert!(
+        redis_key_exists(url, &topic.dead_key()).await,
+        "ensure_topology must also create the dead-letter stream"
+    );
+}
+
+async fn redis_key_exists(url: &str, key: &str) -> bool {
+    let client = redis::Client::open(url).unwrap();
+    let mut conn = client.get_multiplexed_async_connection().await.unwrap();
+    let count: u64 = redis::cmd("EXISTS")
+        .arg(key)
+        .query_async(&mut conn)
+        .await
+        .unwrap();
+    count == 1
+}
+
+async fn redis_group_count(url: &str, stream: &str) -> usize {
+    let client = redis::Client::open(url).unwrap();
+    let mut conn = client.get_multiplexed_async_connection().await.unwrap();
+    let groups: redis::Value = redis::cmd("XINFO")
+        .arg("GROUPS")
+        .arg(stream)
+        .query_async(&mut conn)
+        .await
+        .unwrap_or(redis::Value::Array(vec![]));
+    match groups {
+        redis::Value::Array(items) => items.len(),
+        _ => 0,
+    }
+}
+
+// ── Test: a new group can start somewhere other than the beginning ──────────
+
+/// A group created with an explicit start ID does not replay the history
+/// behind it.
+///
+/// This is the knob a second consumer group needs in order to join a stream
+/// another group is already working, at the point that group has reached,
+/// rather than at the beginning of whatever is still retained. Without it
+/// every new group inherits the entire retained backlog.
+///
+/// `"$"` is the sharpest version of that — start at the end — so it is what
+/// this asserts. The five entries published before the consumer exists must
+/// never be delivered; only the one published afterwards must arrive.
+///
+/// The regression target is the wiring, not Redis: `redis_start_id` has to
+/// survive the trip through `RedisOptions` → `RedisConsumerConfigBuilder` →
+/// `RedisConsumerConfig` → `ensure_consumer_group`. Drop any link in that
+/// chain and the group falls back to the default start of `"0"`, this
+/// consumer sees all six entries, and the assertion below fails.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn test_start_id_skips_the_backlog() {
+    let url = shared_redis_url().await;
+    let broker = Broker::redis(url).await.unwrap();
+
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let namespace = format!("bf-startid-{suffix}");
+    let publisher = broker.publisher(&namespace).await.unwrap();
+    let topic = Topic::namespaced(&namespace, "events");
+
+    // Backlog: five entries on the stream before any consumer group exists.
+    for block_number in 1..=5u64 {
+        publisher
+            .publish("events", &BlockEvent { block_number })
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        redis_xlen(url, &topic.key()).await,
+        5,
+        "precondition: the backlog must be on the stream before the group is created"
+    );
+
+    let seen = Arc::new(Mutex::new(Vec::<u64>::new()));
+    let seen_clone = seen.clone();
+    let handler = AsyncHandlerPayloadOnly::new(move |event: BlockEvent| {
+        let seen = seen_clone.clone();
+        async move {
+            seen.lock().unwrap().push(event.block_number);
+            Ok::<(), std::io::Error>(())
+        }
+    });
+
+    let consumer_broker = broker.clone();
+    let consumer_topic = topic.clone();
+    let consumer_handle = tokio::spawn(async move {
+        let _ = consumer_broker
+            .consumer(&consumer_topic)
+            .group("bf-startid-group")
+            .consumer_name("consumer-1")
+            .prefetch(10)
+            .redis_start_id("$")
+            .run(handler)
+            .await;
+    });
+
+    // Wait for the group to actually exist before publishing the entry it is
+    // supposed to see. Sleeping blind here would make the test pass for the
+    // wrong reason: a group created *after* the sixth publish would skip that
+    // one too, and `seen` would be empty either way.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while redis_group_count(url, &topic.key()).await == 0 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "consumer never created its group"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    publisher
+        .publish("events", &BlockEvent { block_number: 6 })
+        .await
+        .unwrap();
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while seen.lock().unwrap().is_empty() && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    // Give the backlog a chance to show up if the start ID was ignored.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    publisher.shutdown().await;
+    consumer_handle.abort();
+
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(
+        seen,
+        vec![6],
+        "a group started at `$` must see only what was published after it was created, \
+         but it saw {seen:?} — the start ID did not reach XGROUP CREATE"
+    );
+}
+
+// ── Test: the configured stream cap reaches the publisher ───────────────────
+
+/// `Broker` owns the `MAXLEN ~` that rides on every `XADD`, so whatever a
+/// deployment configures has to survive the trip from constructor to
+/// publisher. A frozen consumer group is what makes the cap matter at all:
+/// the background trimmer will not reclaim past such a group's cursor, so
+/// without the cap nothing bounds the stream.
+///
+/// Both directions are asserted, because they fail differently. A cap dropped
+/// on the way through looks healthy right up until a consumer dies and the
+/// stream eats the instance. A cap applied when it was configured away
+/// silently discards entries an operator asked to keep.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn test_configured_max_stream_len_reaches_the_publisher() {
+    let url = shared_redis_url().await;
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+
+    let cap: usize = 100;
+    let published: u64 = 3000;
+
+    let capped_stream = format!("maxlen.capped.{suffix}");
+    freeze_group(url, &capped_stream).await;
+    let capped = Broker::redis_with_options(url, false, Some(cap))
+        .await
+        .unwrap();
+    publish_n(&capped, &capped_stream, published).await;
+
+    let uncapped_stream = format!("maxlen.uncapped.{suffix}");
+    freeze_group(url, &uncapped_stream).await;
+    let uncapped = Broker::redis_with_options(url, false, None).await.unwrap();
+    publish_n(&uncapped, &uncapped_stream, published).await;
+
+    let capped_len = redis_xlen(url, &capped_stream).await;
+    let uncapped_len = redis_xlen(url, &uncapped_stream).await;
+
+    // `MAXLEN ~` trims on macro-node boundaries, so assert an order of
+    // magnitude rather than the exact cap.
+    assert!(
+        capped_len <= (cap as u64) * 10,
+        "a configured cap must bound the stream despite the frozen group \
+         (len={capped_len}, cap={cap}, published={published})"
+    );
+    assert_eq!(
+        uncapped_len, published,
+        "a cap configured off must keep every entry"
     );
 }
