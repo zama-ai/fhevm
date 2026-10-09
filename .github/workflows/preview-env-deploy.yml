@@ -42,6 +42,11 @@ name: preview-env-deploy
 # on the listener v2 stack ONLY (listener-core producer -> Redis ->
 # host-listener-consumer); the host-listener pollers (coprocessor-poller-<i>,
 # coprocessor-poller-polygon-<i>) are not deployed.
+# Dispatch-only: bcs_from_head (CLI --bcs-from-head) builds Blue from this
+# branch one consensus version and one release behind Green instead of pulling
+# the pinned previous release. Pair it with listener_v2_only: without a poller
+# the host side only finalizes blocks if Blue can do that itself, and no
+# published release both does that and predates the current consensus version.
 # The dedicated KMS (env.KMS_REPO_REF/KMS_CORE_TAG) is never built here.
 # (A pinned-only run with no builds is still possible via workflow_dispatch
 # with build_images=false.)
@@ -96,6 +101,14 @@ on:
           - "true"
       listener_v2_only:
         description: "Run the host side on the listener v2 stack ONLY (listener-core producer -> Redis -> host-listener-consumer): skip the host-listener pollers (coprocessor-poller-<i>, coprocessor-poller-polygon-<i>). Pair with automated_tests to run e2e against it."
+        required: true
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
+      bcs_from_head:
+        description: "Build the Blue/BCS fleet from this branch, compiled one consensus version behind Green, instead of pulling the pinned previous release. This is the only way to run RFC-021 with listener_v2_only: a listener-only host side needs a Blue that finalizes its own blocks, and no release that does also predates the current consensus version. Requires enable_blue_green and build_images."
         required: true
         type: choice
         default: "false"
@@ -240,6 +253,12 @@ jobs:
       chain_mode: ${{ steps.check.outputs.chain_mode }}
       overrides_json: ${{ steps.parse_overrides.outputs.overrides_json }}
       stack_version: ${{ steps.stack_version.outputs.stack_version }}
+      # Which Blue the deploy runs, and (only with bcs_from_head) what to
+      # compile it as. See the bcs_pin step.
+      bcs_from_head: ${{ steps.bcs_pin.outputs.from_head }}
+      bcs_image_tag: ${{ steps.bcs_pin.outputs.image_tag }}
+      bcs_consensus_version: ${{ steps.bcs_pin.outputs.consensus_version }}
+      bcs_stack_version: ${{ steps.bcs_pin.outputs.stack_version }}
     steps:
       - name: Validate dispatch lifetime
         if: github.event_name == 'workflow_dispatch'
@@ -247,6 +266,10 @@ jobs:
           LIFETIME: ${{ inputs.lifetime }}
           ENABLE_GPU: ${{ inputs.enable_gpu }}
           WORKERS_TAG: ${{ inputs.workers_tag }}
+          BCS_FROM_HEAD: ${{ inputs.bcs_from_head }}
+          ENABLE_BLUE_GREEN: ${{ inputs.enable_blue_green }}
+          BUILD_IMAGES: ${{ inputs.build_images }}
+          BUILD_TEST_SUITE_ONLY: ${{ inputs.build_test_suite_only }}
         run: |
           if [[ ! "${LIFETIME}" =~ ^[0-9]+$ ]] || (( 10#$LIFETIME < 4 || 10#$LIFETIME > 96 )); then
             echo "::error::lifetime must be an integer from 4 to 96 (got '${LIFETIME}')"
@@ -262,6 +285,18 @@ jobs:
           elif [[ -n "${WORKERS_TAG}" ]]; then
             echo "::error::workers_tag is only used when enable_gpu=true"
             exit 1
+          fi
+          # A Blue fleet compiled from this branch exists only if this run
+          # builds it, and only has something to cut over to under blue-green.
+          if [[ "${BCS_FROM_HEAD}" == "true" ]]; then
+            if [[ "${ENABLE_BLUE_GREEN}" != "true" ]]; then
+              echo "::error::bcs_from_head is the Blue half of an RFC-021 pair and needs enable_blue_green=true"
+              exit 1
+            fi
+            if [[ "${BUILD_IMAGES}" != "true" || "${BUILD_TEST_SUITE_ONLY}" == "true" ]]; then
+              echo "::error::bcs_from_head builds the Blue fleet, so it needs build_images=true and build_test_suite_only=false"
+              exit 1
+            fi
           fi
 
       - name: Checkout parse-overrides script and the stack version
@@ -283,6 +318,62 @@ jobs:
             exit 1
           fi
           echo "stack_version=${version}" >> "$GITHUB_OUTPUT"
+
+      # Which Blue the RFC-021 pair runs. By default it is the pinned previous
+      # release. With bcs_from_head it is this tree compiled as a synthetic
+      # predecessor: one consensus version back, one release back. Both numbers
+      # are derived from the compiled constants so they follow the release
+      # instead of rotting, and both are proved here rather than discovered as
+      # a no-op cutover in the namespace.
+      - id: bcs_pin
+        env:
+          BCS_FROM_HEAD: ${{ inputs.bcs_from_head || 'false' }}
+          STACK_VERSION: ${{ steps.stack_version.outputs.stack_version }}
+          # Previous-release pin for the BCS fleet.
+          PINNED_BCS_IMAGE_TAG: "v0.14.1"
+        run: |
+          if [[ "${BCS_FROM_HEAD}" != "true" ]]; then
+            {
+              echo "from_head=false"
+              echo "image_tag=${PINNED_BCS_IMAGE_TAG}"
+              echo "consensus_version="
+              echo "stack_version="
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          consensus="$(grep -m1 -oE 'CONSENSUS_PROTOCOL_VERSION: u32 = [0-9]+' \
+            coprocessor/fhevm-engine/fhevm-engine-common/src/lib.rs | grep -oE '[0-9]+$')"
+          if [[ -z "${consensus}" ]]; then
+            echo "::error::could not read CONSENSUS_PROTOCOL_VERSION from fhevm-engine-common/src/lib.rs"
+            exit 1
+          fi
+          bcs_consensus=$(( consensus - 1 ))
+          if (( bcs_consensus < 1 )); then
+            echo "::error::consensus version ${consensus} has no predecessor for Blue to be built at"
+            exit 1
+          fi
+          IFS=. read -r major minor _patch <<< "${STACK_VERSION}"
+          if (( minor < 1 )); then
+            echo "::error::release ${STACK_VERSION} has no previous minor; choose the Blue release by hand"
+            exit 1
+          fi
+          bcs_stack="${major}.$(( minor - 1 )).99"
+          # Green decides it is newer by comparing releases, so a Blue that does
+          # not sort below it would deploy and then never be cut over.
+          older="$(printf '%s\n%s\n' "${bcs_stack}" "${STACK_VERSION}" | sort -V | head -1)"
+          if [[ "${older}" != "${bcs_stack}" || "${bcs_stack}" == "${STACK_VERSION}" ]]; then
+            echo "::error::derived Blue release ${bcs_stack} is not older than ${STACK_VERSION}"
+            exit 1
+          fi
+          {
+            echo "from_head=true"
+            echo "image_tag=bcs-${GITHUB_SHA:0:7}"
+            echo "consensus_version=${bcs_consensus}"
+            echo "stack_version=${bcs_stack}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Blue from HEAD: tag bcs-${GITHUB_SHA:0:7}, release ${bcs_stack}, consensus ${bcs_consensus}" \
+            "(Green: ${STACK_VERSION}, consensus ${consensus})"
+
       - id: parse_overrides
         env:
           OVERRIDES_RAW: ${{ inputs.overrides }}
@@ -463,6 +554,23 @@ jobs:
     permissions: *docker_permissions
     secrets: *docker_secrets
 
+  # Second coprocessor fleet, built only for bcs_from_head: the same tree with
+  # the version constants overridden, pushed under its own tag so it cannot be
+  # confused with the images above. This is the Blue half of the pair.
+  build-coprocessor-blue-fleet:
+    name: build/coprocessor-blue-fleet
+    needs: check-labels
+    if: >-
+      needs.check-labels.outputs.should_deploy == 'true' &&
+      needs.check-labels.outputs.bcs_from_head == 'true'
+    uses: ./.github/workflows/coprocessor-blue-fleet-docker-build.yml
+    with:
+      image-tag: ${{ needs.check-labels.outputs.bcs_image_tag }}
+      build-consensus-version: ${{ needs.check-labels.outputs.bcs_consensus_version }}
+      build-stack-version: ${{ needs.check-labels.outputs.bcs_stack_version }}
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+
   build-listener:
     name: build/listener
     needs: check-labels
@@ -554,14 +662,16 @@ jobs:
   ##########################################################################
   deploy:
     name: deploy
-    needs: [check-labels, resolve-tags, build-coprocessor]
+    needs: [check-labels, resolve-tags, build-coprocessor, build-coprocessor-blue-fleet]
     if: >-
       !cancelled() &&
       needs.check-labels.outputs.should_deploy == 'true' &&
       needs.resolve-tags.result == 'success' &&
       (needs.check-labels.outputs.blue_green != 'true' ||
        needs.build-coprocessor.result == 'success' ||
-       needs.build-coprocessor.result == 'skipped')
+       needs.build-coprocessor.result == 'skipped') &&
+      (needs.check-labels.outputs.bcs_from_head != 'true' ||
+       needs.build-coprocessor-blue-fleet.result == 'success')
     runs-on: "runs-on=${{ github.run_id }}/runner=8cpu-linux-x64/spot=false"
     # 90m covers a plain deploy; automated_tests adds the sequential e2e DAG
     # (9 tests, each recompiling contracts). Blue-green + tests runs that DAG
@@ -599,8 +709,10 @@ jobs:
       KMS_REPO_REF: ${{ fromJSON(needs.check-labels.outputs.overrides_json).kms_repo_ref }}
       KMS_CORE_TAG: ${{ fromJSON(needs.check-labels.outputs.overrides_json).kms_core_version }}
       REDIS_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).redis_chart_version }}
-      # Previous-release pin for the BCS fleet.
-      BCS_IMAGE_TAG: "v0.14.1"
+      # Which Blue the BCS fleet runs: the pinned previous release, or the tag
+      # build-coprocessor-blue-fleet just pushed. Decided in check-labels so one
+      # step owns both the tag and the versions it was compiled with.
+      BCS_IMAGE_TAG: ${{ needs.check-labels.outputs.bcs_image_tag }}
       # Release the GCS fleet is compiled at; names the proposal and the
       # gcs-<release> schema the assertions read.
       GCS_VERSION: v${{ needs.check-labels.outputs.stack_version }}
