@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import { renderEnvMaps } from "./generate/env";
+import { solanaMerkleProofUrl } from "./generate/solana";
 import { COMPONENTS, TEMPLATE_ENV_DIR } from "./layout";
 import { presetBundle } from "./resolve/target";
 import { stackSpecForState } from "./stack-spec/stack-spec";
@@ -586,5 +587,49 @@ describe("env", () => {
     const rendered = await renderEnvMaps({ discovery: undefined }, stackSpecForState(state), templateEnvs, deriveWallet);
     expect(rendered.versionsEnv.RELAYER_IMAGE_REPOSITORY).toBe("ghcr.io/zama-ai/fhevm/relayer");
     expect(rendered.versionsEnv.RELAYER_MIGRATE_IMAGE_REPOSITORY).toBe("ghcr.io/zama-ai/fhevm/relayer-migrate");
+  });
+
+  test("signs a Solana chain's proof requests for coprocessor 0's signer once several coprocessors derive theirs", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      scenario: testDefaultScenario({
+        topology: { count: 2, threshold: 2 },
+        hostChains: [
+          { key: "host", chainId: "12345", rpcPort: 8545 },
+          { key: "solana", type: "solana", chainId: "72057594037940281", rpcPort: 8899 },
+        ],
+      }),
+      completedSteps: [],
+      updatedAt: "2026-03-30T00:00:00.000Z",
+    };
+    const discovery = {
+      gateway: {},
+      hosts: { host: {}, solana: {} },
+      kmsSigners: [],
+      fheKeyId: "",
+      crsKeyId: "",
+      endpoints: { gateway: {}, hosts: {}, objectStoreInternal: "", objectStoreExternal: "" },
+    } as unknown as State["discovery"];
+
+    const rendered = await renderEnvMaps({ discovery }, stackSpecForState(state), templateEnvs, deriveWallet);
+
+    const signer = rendered.componentEnvs["host-sc"].COPROCESSOR_SIGNER_ADDRESS_0;
+    expect(signer).not.toBe(templateEnvs["host-sc"].COPROCESSOR_SIGNER_ADDRESS_0);
+    const chains = JSON.parse(rendered.componentEnvs["kms-connector"].KMS_CONNECTOR_HOST_CHAINS) as Array<
+      Record<string, unknown>
+    >;
+    expect(chains[1]?.solana_proof_servers).toEqual([{ url: solanaMerkleProofUrl(), signer_address: signer }]);
   });
 });

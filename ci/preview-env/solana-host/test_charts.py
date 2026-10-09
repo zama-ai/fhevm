@@ -14,12 +14,14 @@ VALUES = ROOT / "ci/preview-env/solana-host"
 LISTENER = "coprocessor-1-solana-host-listener"
 INDEXER = "coprocessor-1-solana-merkle-indexer"
 PROOF_SERVER = "coprocessor-1-solana-merkle-proof-server"
-# deploy-preview.sh sets it on every rollout.
+# deploy-preview.sh sets both on every rollout.
 START_SLOT = ["--set-string", "solanaHostListener.merkleIndexer.startSlot=4242"]
+SIGNER_ADDRESS = "0x" + "5a" * 20
+SIGNER = ["--set-string", "solanaHostListener.proofServer.coprocessorSignerAddress=" + SIGNER_ADDRESS]
 # deploy-preview.sh merges the Solana values into the party's coprocessor release.
 COPROCESSOR = [ROOT / "ci/preview-env/coprocessor/values-coprocessor-e2e.yaml",
                VALUES / "values-solana-coprocessor-e2e.yaml"]
-PROOF_URLS = [f"http://{PROOF_SERVER}:8080"]
+PROOF_SERVERS = [{"url": f"http://{PROOF_SERVER}:8080", "signerAddress": SIGNER_ADDRESS}]
 
 
 def render(release, chart, values, *options):
@@ -57,7 +59,7 @@ class SolanaCharts(unittest.TestCase):
                 self.assertFalse(any("TOKEN_KEYPAIR" in e["name"] for e in container["env"]))
 
     def test_the_merkle_service_has_its_own_database_and_keeps_proofs_private(self):
-        documents = render("coprocessor-1", "coprocessor", COPROCESSOR, *START_SLOT)
+        documents = render("coprocessor-1", "coprocessor", COPROCESSOR, *START_SLOT, *SIGNER)
         deployments = {}
         for name, database in [(LISTENER, "fhevm_e2e"), (INDEXER, "solana_merkle"), (PROOF_SERVER, "solana_merkle")]:
             deployment = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == name)
@@ -74,7 +76,7 @@ class SolanaCharts(unittest.TestCase):
             self.assertEqual(writer["spec"]["replicas"], 1)
             self.assertEqual(writer["spec"]["strategy"],
                              {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0}})
-        scaled = render("coprocessor-1", "coprocessor", COPROCESSOR, *START_SLOT,
+        scaled = render("coprocessor-1", "coprocessor", COPROCESSOR, *START_SLOT, *SIGNER,
                         "--set", "solanaHostListener.replicas=2",
                         "--set", "solanaHostListener.merkleIndexer.replicas=2")
         for name in [LISTENER, INDEXER]:
@@ -87,6 +89,8 @@ class SolanaCharts(unittest.TestCase):
         self.assertEqual(indexer_env["SOLANA_GRPC_URL"]["valueFrom"]["secretKeyRef"]["name"], "solana-rpc")
         server, server_env = deployments[PROOF_SERVER]
         self.assertEqual(server["spec"]["template"]["spec"]["containers"][0]["command"], ["solana_merkle_proof_server"])
+        self.assertIn("--coprocessor-signer-address=" + SIGNER_ADDRESS,
+                      server["spec"]["template"]["spec"]["containers"][0]["args"])
         self.assertEqual(server_env["ETHEREUM_RPC_URL"]["value"], "http://anvil-host-anvil-node:8545")
         self.assertEqual(server_env["PROTOCOL_CONFIG_ADDRESS"]["valueFrom"]["configMapKeyRef"],
                          {"name": "host-sc-addresses", "key": "protocol_config.address"})
@@ -102,7 +106,7 @@ class SolanaCharts(unittest.TestCase):
 
     def test_a_numeric_start_slot_renders_as_an_integer(self):
         documents = render("coprocessor-1", "coprocessor", COPROCESSOR,
-                           "--set-json", "solanaHostListener.merkleIndexer.startSlot=312000000")
+                           "--set-json", "solanaHostListener.merkleIndexer.startSlot=312000000", *SIGNER)
         indexer = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == INDEXER)
         env = {e["name"]: e for e in indexer["spec"]["template"]["spec"]["containers"][0]["env"]}
         self.assertEqual(env["SOLANA_MERKLE_START_SLOT"]["value"], "312000000")
@@ -113,7 +117,12 @@ class SolanaCharts(unittest.TestCase):
 
     def test_the_merkle_service_requires_its_database(self):
         self.assertIn("solanaHostListener.merkleDatabaseUrl is required",
-                      render_error(*START_SLOT, "--set", "solanaHostListener.merkleDatabaseUrl="))
+                      render_error(*START_SLOT, *SIGNER, "--set", "solanaHostListener.merkleDatabaseUrl="))
+
+    def test_the_proof_server_requires_its_signer_address(self):
+        for options in [[], ["--set-string", "solanaHostListener.proofServer.coprocessorSignerAddress=0x1234"]]:
+            self.assertIn("solanaHostListener.proofServer.coprocessorSignerAddress must be",
+                          render_error(*START_SLOT, *options))
 
     def test_the_proof_server_requires_the_canonical_chain(self):
         self.assertIn("commonConfig.canonicalProtocolConfigChainId is required",
@@ -128,7 +137,7 @@ class SolanaCharts(unittest.TestCase):
     def test_iam_certificate_is_a_volume_list(self):
         documents = render("coprocessor-1", "coprocessor", COPROCESSOR,
                            "--set", "commonConfig.databaseAuthMode=iam",
-                           "--set", "commonConfig.databaseSslRootCert.enabled=true", *START_SLOT)
+                           "--set", "commonConfig.databaseSslRootCert.enabled=true", *START_SLOT, *SIGNER)
         for name in [LISTENER, INDEXER, PROOF_SERVER]:
             deployment = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == name)
             pod = deployment["spec"]["template"]["spec"]
@@ -144,13 +153,13 @@ class SolanaCharts(unittest.TestCase):
 
     def test_connector_preserves_evm_and_exact_solana_chain_id(self):
         # Same composition as deploy-preview.sh: the party's values, the Solana overlay, and the
-        # proof URLs the script sets. aclAddress is filled per party by deploy-kms-connector.sh.
+        # proof servers the script sets. aclAddress is filled per party by deploy-kms-connector.sh.
         documents = render("kms-connector-1", "kms-connector",
                            [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml",
                             VALUES / "values-solana-connector-e2e.yaml"],
                            "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
                            "--set-json",
-                           'commonConfig.hostChains.solana.solanaProofUrls=' + json.dumps(PROOF_URLS))
+                           'commonConfig.hostChains.solana.solanaProofServers=' + json.dumps(PROOF_SERVERS))
         deployment = next(d for d in documents if d and d["kind"] == "Deployment" and "kms-worker" in d["metadata"]["name"])
         env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
         tx_sender = next(d for d in documents if d and d["kind"] == "Deployment" and "tx-sender" in d["metadata"]["name"])
@@ -162,7 +171,7 @@ class SolanaCharts(unittest.TestCase):
         self.assertEqual(chains[12345]["aclAddress"], "0x" + "11" * 20)
         solana = chains[130140237723663404]
         self.assertNotIn("aclAddress", solana)
-        self.assertEqual(solana["solanaProofUrls"], PROOF_URLS)
+        self.assertEqual(solana["solanaProofServers"], PROOF_SERVERS)
         endpoint = next(d for d in documents if d and d["kind"] == "Deployment" and "endpoint" in d["metadata"]["name"])
         ids = next(e["value"] for e in endpoint["spec"]["template"]["spec"]["containers"][0]["env"]
                    if e["name"] == "KMS_CONNECTOR_SUPPORTED_CHAIN_IDS")
@@ -184,7 +193,7 @@ class SolanaCharts(unittest.TestCase):
         evm = [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml"]
         self.assertEqual(wallet_env(evm)["kms-worker"], {})
         envs = wallet_env(evm + [VALUES / "values-solana-connector-e2e.yaml"],
-                          "--set-json", "commonConfig.hostChains.solana.solanaProofUrls=" + json.dumps(PROOF_URLS),
+                          "--set-json", "commonConfig.hostChains.solana.solanaProofServers=" + json.dumps(PROOF_SERVERS),
                           "--set", "kmsConnectorTxSender.wallet.awsKms.enabled=true")
         self.assertEqual(list(envs["kms-worker"]), ["KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID"])
         self.assertEqual(envs["kms-worker"], envs["tx-sender"])
@@ -197,11 +206,11 @@ class SolanaCharts(unittest.TestCase):
                            "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
                            "--set-string", "commonConfig.hostChains.solana.chainId=72057594037940281",
                            "--set-json",
-                           'commonConfig.hostChains.solana.solanaProofUrls=' + json.dumps(PROOF_URLS))
+                           'commonConfig.hostChains.solana.solanaProofServers=' + json.dumps(PROOF_SERVERS))
         deployment = next(d for d in documents if d and d["kind"] == "Deployment" and "kms-worker" in d["metadata"]["name"])
         env = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
         chains = {c["chainId"]: c for c in json.loads(next(e["value"] for e in env if e["name"] == "KMS_CONNECTOR_HOST_CHAINS"))}
-        self.assertEqual(chains[72057594037940281]["solanaProofUrls"], PROOF_URLS)
+        self.assertEqual(chains[72057594037940281]["solanaProofServers"], PROOF_SERVERS)
 
     def test_connector_refuses_an_entry_whose_settings_are_not_its_kind(self):
         # YAML reads a large unquoted number as a float, which the chart must not round.
@@ -224,13 +233,16 @@ class SolanaCharts(unittest.TestCase):
                  'solana.chainId "0x0100000000003039" is not a decimal integer below 2^63'),
                 (["-f", unquoted.name],
                  "quote it, as YAML reads a large unquoted number as a float"),
+                (["--set-json", "commonConfig.hostChains.solana.solanaProofServers="
+                  + json.dumps([{"url": PROOF_SERVERS[0]["url"]}])],
+                 "solanaProofServers entries must each set url and signerAddress"),
             ]
             for options, expected in cases:
                 command = ["helm", "template", "kms-connector-1", str(ROOT / "charts/kms-connector"),
                            "-f", str(ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml"),
                            "-f", str(VALUES / "values-solana-connector-e2e.yaml"),
                            "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
-                           "--set-json", "commonConfig.hostChains.solana.solanaProofUrls=" + json.dumps(PROOF_URLS),
+                           "--set-json", "commonConfig.hostChains.solana.solanaProofServers=" + json.dumps(PROOF_SERVERS),
                            *options]
                 result = subprocess.run(command, capture_output=True, text=True)
                 self.assertNotEqual(result.returncode, 0, expected)
@@ -318,12 +330,15 @@ class SolanaCharts(unittest.TestCase):
             self.assertTrue(keys, name)
             self.assertLessEqual(keys, synced[name], name)
 
-    def test_preview_proof_urls_name_the_merkle_proof_servers(self):
-        # The connector tests pass PROOF_URLS in themselves: this pins it to what deploy-preview.sh sets.
+    def test_preview_proof_servers_name_the_merkle_proof_servers(self):
+        # The connector tests pass PROOF_SERVERS in themselves: this pins it to what deploy-preview.sh sets.
         script = (VALUES / "deploy-preview.sh").read_text()
-        program = re.search(r"^proof_urls=\$\(seq 1 \"\$NB_COPROCESSOR\" \| jq -Rsc '(.*)'\)$", script, re.M).group(1)
-        proof_urls = subprocess.check_output(["jq", "-Rsc", program], input="1\n", text=True)
-        self.assertEqual(json.loads(proof_urls), PROOF_URLS)
+        program = re.search(r"^proof_servers=\$\(jq -c --argjson count \"\$NB_COPROCESSOR\" '(.*)' <<< \"\$COPROC_WALLETS_JSON\"\)$",
+                            script, re.M).group(1)
+        wallets = json.dumps([{"party": 1, "address": SIGNER_ADDRESS}])
+        proof_servers = subprocess.check_output(["jq", "-c", "--argjson", "count", "1", program],
+                                                input=wallets, text=True)
+        self.assertEqual(json.loads(proof_servers), PROOF_SERVERS)
 
     def test_dispatch_overrides_reject_unknown_keys_and_multiline_values(self):
         script = ROOT / "ci/preview-env/scripts/resolve/parse-overrides.cjs"

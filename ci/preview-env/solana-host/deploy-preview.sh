@@ -71,22 +71,25 @@ for i in $(seq 1 "$NB_COPROCESSOR"); do
     --set-string "scDeploy.image.tag=$tag" --wait --wait-for-jobs --timeout=10m
   # Carry forward the original party-specific DB, wallets, S3 and tracing settings.
   helm get values "coprocessor-$i" -n "$NAMESPACE" -o yaml > "$work/coprocessor.yaml"
+  # The party's tx-sender is also its registered signer (wire-contracts-values.sh).
+  signer_address=$(jq -er --argjson party "$i" '.[] | select(.party == $party) | .address' <<< "$COPROC_WALLETS_JSON")
   helm upgrade "coprocessor-$i" "$COPROCESSOR_CHART" -n "$NAMESPACE" \
     -f "$work/coprocessor.yaml" -f "$values/values-solana-coprocessor-e2e.yaml" \
     --set-string "solanaHostListener.image.tag=$(jq -r .coprocessor_host_listener <<< "$TAGS_JSON")" \
     --set-string "solanaHostListener.merkleIndexer.startSlot=$merkle_start_slot" \
+    --set-string "solanaHostListener.proofServer.coprocessorSignerAddress=$signer_address" \
     --set-string "solanaHostListener.serviceAccountName=coprocessor-$i" --wait --wait-for-jobs --timeout=10m
   # zkproof loads host_chains only at startup.
   kubectl rollout restart "deployment/coprocessor-$i-zkproof-worker" -n "$NAMESPACE"
   kubectl rollout status "deployment/coprocessor-$i-zkproof-worker" -n "$NAMESPACE" --timeout=10m
 done
 
-proof_urls=$(seq 1 "$NB_COPROCESSOR" | jq -Rsc 'split("\n")[:-1] | map("http://coprocessor-" + . + "-solana-merkle-proof-server:8080")')
+proof_servers=$(jq -c --argjson count "$NB_COPROCESSOR" '[range(1; $count + 1) as $party | {url: "http://coprocessor-\($party)-solana-merkle-proof-server:8080", signerAddress: (.[] | select(.party == $party) | .address)}]' <<< "$COPROC_WALLETS_JSON")
 for i in $(seq 1 "$NB_KMS_CORE"); do
   helm get values "kms-connector-$i" -n "$NAMESPACE" -o yaml > "$work/connector.yaml"
   helm upgrade "kms-connector-$i" "$KMS_CONNECTOR_CHART" -n "$NAMESPACE" \
     -f "$work/connector.yaml" -f "$values/values-solana-connector-e2e.yaml" \
-    --set-json "commonConfig.hostChains.solana.solanaProofUrls=$proof_urls" \
+    --set-json "commonConfig.hostChains.solana.solanaProofServers=$proof_servers" \
     --wait --wait-for-jobs --timeout=10m
 done
 # Relayer host dispatch also needs the Solana RPC/program identity; preserve its EVM entry.

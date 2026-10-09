@@ -78,6 +78,9 @@
 {{- if not (or $canonical.protocolConfigContractAddress $canonical.protocolConfigContractAddressValueFrom) }}
 {{- fail (printf "chains entry %s needs protocolConfigContractAddress or protocolConfigContractAddressValueFrom for the Merkle proof server" $canonical.name) }}
 {{- end }}
+{{- if not (regexMatch "^0x[0-9a-fA-F]{40}$" (toString $server.coprocessorSignerAddress)) }}
+{{- fail "solanaHostListener.proofServer.coprocessorSignerAddress must be this coprocessor's registered signer address, a 0x-prefixed 20-byte address" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -235,6 +238,7 @@ spec:
             - --metrics-addr=0.0.0.0:{{ $server.metricsPort }}
             - --ethereum-rpc-url=$(ETHEREUM_RPC_URL)
             - --protocol-config-address=$(PROTOCOL_CONFIG_ADDRESS)
+            - --coprocessor-signer-address={{ $server.coprocessorSignerAddress }}
           env:
             - name: ETHEREUM_RPC_URL
               {{- if $canonical.httpUrl }}

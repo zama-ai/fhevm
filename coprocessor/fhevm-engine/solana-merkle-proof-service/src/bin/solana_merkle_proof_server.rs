@@ -37,21 +37,24 @@ struct Args {
 
     /// Most connections the server's pool holds. All but one serve requests
     /// reading the record, one at a time each; `/healthz` keeps the last.
+    /// Per replica: this bound is what protects the shared database, which sees
+    /// at most replicas × (this − 1) proof reads at a time.
     #[arg(long, default_value_t = 8, value_parser = clap::value_parser!(u32).range(2..))]
     database_pool_size: u32,
 
     /// Queried leaves per second each KMS tx-sender may ask for, in bursts of as
     /// many. A backstop against a faulty or compromised connector: a sustained
     /// load meets `--answer-cache-mib-per-kms-tx-sender` first.
+    /// Per replica, so N replicas allow N times this. It keeps one tx-sender from
+    /// taking this replica's reads from the others; `--database-pool-size`
+    /// bounds the shared database.
     #[arg(long, default_value_t = NonZeroU32::new(4000).unwrap())]
     kms_tx_sender_leaves_per_second: NonZeroU32,
 
     /// MiB of each KMS tx-sender's signed requests and their answers the server
-    /// remembers until the signatures expire; past it, that tx-sender's new
-    /// requests are refused. A 64-leaf request with 20-hash paths holds under
-    /// 48 KiB, so 16 MiB is about 22,000 leaves: 730 per second at the
-    /// connector's 30 s validity, and about 450 in 1-leaf requests. 13 KMS nodes
-    /// in two live contexts hold at most 416 MiB.
+    /// remembers until it stops accepting the signatures; past it, that
+    /// tx-sender's new requests are refused. Per replica: it bounds this
+    /// replica's memory. DD-067 gives the sizing.
     #[arg(long, default_value_t = 16)]
     answer_cache_mib_per_kms_tx_sender: usize,
 
@@ -70,6 +73,11 @@ struct Args {
     /// The canonical `ProtocolConfig`, whose live KMS contexts' tx-senders may call.
     #[arg(long)]
     protocol_config_address: Address,
+
+    /// This coprocessor's registered signer address, the audience a request must be
+    /// signed for (`FhevmSig`, RFC 038).
+    #[arg(long)]
+    coprocessor_signer_address: Address,
 
     #[arg(long, default_value_t = Level::INFO)]
     log_level: Level,
@@ -128,6 +136,7 @@ async fn main() -> Result<()> {
     HttpServer::merkle_proofs(
         pool,
         senders,
+        args.coprocessor_signer_address,
         args.kms_tx_sender_leaves_per_second,
         args.answer_cache_mib_per_kms_tx_sender << 20,
         args.http_port,

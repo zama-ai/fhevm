@@ -68,7 +68,7 @@ impl SolanaDecryptionVerifier {
                         config.host_rpc_max_concurrent_calls,
                     ),
                     proofs: CoprocessorProofClient::new(
-                        &solana.proof_urls,
+                        &solana.proof_servers,
                         proof_client.clone(),
                         wallet.clone(),
                         KeyRegistry {
@@ -135,14 +135,14 @@ impl SolanaDecryptionVerifier {
 mod tests {
     use super::*;
     use crate::core::{
-        config::{HostChainConfig, SolanaHostSettings},
+        config::{HostChainConfig, ProofServer, SolanaHostSettings},
         event_processor::{ProcessingError, ProcessingErrorKind},
         solana::{
             proof::{HostProofReader, LeafKind, LeafQuery},
             snapshot::HostStateReader,
         },
     };
-    use alloy::primitives::{B256, U256};
+    use alloy::primitives::{Address, B256, U256};
     use connector_utils::tests::rand::rand_handle;
     use solana_pubkey::Pubkey;
     use std::time::Duration;
@@ -155,7 +155,10 @@ mod tests {
             chain_id: solana_host_chain_id(cluster_tag),
             host: HostSettings::Solana(SolanaHostSettings {
                 host_program_id: Pubkey::new_from_array([7; 32]),
-                proof_urls: vec![endpoint.parse().unwrap()],
+                proof_servers: vec![ProofServer {
+                    url: endpoint.parse().unwrap(),
+                    signer_address: Address::repeat_byte(0xD0),
+                }],
             }),
         }
     }

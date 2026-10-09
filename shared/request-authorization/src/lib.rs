@@ -1,17 +1,20 @@
-//! An HTTP request authorized by an Ethereum key.
+//! `FhevmSig`: an HTTP request signed by an Ethereum key for one recipient, as RFC 038 specifies
+//! its request authentication.
 //!
-//! The caller signs the EIP-712 hash of `RequestAuthorization { path, bodyDigest, expires }` and
-//! sends the signature in the `Authorization` header:
+//! The caller signs the EIP-712 hash of `Request { path, bodyDigest, expires, audience }` and sends
+//! the signature in the `Authorization` header:
 //!
 //! ```text
-//! Authorization: Zama-EIP712 expires=1790950000, signature=0x<65 bytes: r, s, v>
+//! Authorization: FhevmSig expires=1790950060, sig=0x<65 bytes: r, s, v>
 //! ```
 //!
-//! `bodyDigest` is the keccak-256 of the exact body bytes, so a server checks what it received
-//! without re-encoding it. The server recovers the signer and decides whether that address may
-//! call. No recipient is signed: one signature covers every server the caller sends the same
-//! request to, so a server can replay it to the others until it expires. A server therefore answers
-//! a repeat of [`Authorization::signing_hash`] without new work, and charges its caller once.
+//! `path` starts at the version segment, as sent on the wire. A query string is not signed, so a
+//! route that accepts this scheme refuses a request that carries one. `bodyDigest` is the
+//! keccak-256 of the exact body bytes, `keccak256("")` for an empty body, so a server checks what
+//! it received without re-encoding it.
+//! `audience` is the recipient's address: the server rebuilds the request with its own, so a
+//! header signed for another recipient recovers an unrelated address. The server recovers the
+//! signer and decides whether that address may call.
 
 use alloy_primitives::{Address, B256, Signature, hex, keccak256};
 use alloy_signer::Signer;
@@ -19,20 +22,22 @@ use alloy_sol_types::{Eip712Domain, SolStruct, eip712_domain, sol};
 
 sol! {
     /// The signed fields of a request.
-    struct RequestAuthorization {
+    struct Request {
         string path;
         bytes32 bodyDigest;
         uint64 expires;
+        address audience;
     }
 }
 
 /// The `Authorization` scheme.
-pub const SCHEME: &str = "Zama-EIP712";
+pub const SCHEME: &str = "FhevmSig";
 
-/// How far ahead of the server's clock `expires` may be, in seconds. A caller picks a shorter
-/// validity; the margin absorbs clock skew. A server remembers each request it answered until it
-/// expires, so this also bounds that memory.
-pub const MAX_VALIDITY_SECS: u64 = 60;
+/// The longest validity a server accepts, in seconds: `MAX_AUTH_VALIDITY`.
+pub const MAX_AUTH_VALIDITY_SECS: u64 = 300;
+
+/// The clock skew a server tolerates on both bounds of `expires`, in seconds: `CLOCK_SKEW`.
+pub const CLOCK_SKEW_SECS: u64 = 30;
 
 /// The contract that registers the callers' keys, and its chain: the EIP-712 domain's
 /// `verifyingContract` and `chainId`. A signature is valid for this registry only, so two networks
@@ -46,25 +51,27 @@ pub struct KeyRegistry {
 impl KeyRegistry {
     fn domain(&self) -> Eip712Domain {
         eip712_domain! {
-            name: "zama-request-authorization",
+            name: "fhevm-http-auth",
             version: "1",
             chain_id: self.chain_id,
             verifying_contract: self.contract,
         }
     }
 
-    /// The hash a caller signs for `body` sent to `path`, valid until `expires` (Unix seconds).
-    fn signing_hash(&self, path: &str, body: &[u8], expires: u64) -> B256 {
-        RequestAuthorization {
+    /// The hash a caller signs for `body` sent to `path` at `audience`, valid until `expires`
+    /// (Unix seconds).
+    fn signing_hash(&self, path: &str, body: &[u8], expires: u64, audience: Address) -> B256 {
+        Request {
             path: path.to_owned(),
             bodyDigest: keccak256(body),
             expires,
+            audience,
         }
         .eip712_signing_hash(&self.domain())
     }
 }
 
-/// Signs `body` sent to `path`, valid until `expires` (Unix seconds), and returns the
+/// Signs `body` sent to `path` at `audience`, valid until `expires` (Unix seconds), and returns the
 /// `Authorization` header value.
 pub async fn authorize<S: Signer + ?Sized>(
     signer: &S,
@@ -72,16 +79,17 @@ pub async fn authorize<S: Signer + ?Sized>(
     path: &str,
     body: &[u8],
     expires: u64,
+    audience: Address,
 ) -> alloy_signer::Result<String> {
     let signature = signer
-        .sign_hash(&registry.signing_hash(path, body, expires))
+        .sign_hash(&registry.signing_hash(path, body, expires, audience))
         .await?;
     Ok(header_value(expires, &signature))
 }
 
 fn header_value(expires: u64, signature: &Signature) -> String {
     format!(
-        "{SCHEME} expires={expires}, signature=0x{}",
+        "{SCHEME} expires={expires}, sig=0x{}",
         hex::encode(signature.as_bytes())
     )
 }
@@ -90,10 +98,13 @@ fn header_value(expires: u64, signature: &Signature) -> String {
 pub enum AuthorizationError {
     #[error("missing or malformed {SCHEME} authorization")]
     Malformed,
-    #[error("the authorization expired at {expires}, before {now}")]
+    #[error("the authorization expired at {expires}, more than {CLOCK_SKEW_SECS} s before {now}")]
     Expired { expires: u64, now: u64 },
-    #[error("the authorization expires at {expires}, more than {MAX_VALIDITY_SECS} s after {now}")]
-    TooFarAhead { expires: u64, now: u64 },
+    #[error(
+        "the authorization expires at {expires}, more than {MAX_AUTH_VALIDITY_SECS} s and the \
+         {CLOCK_SKEW_SECS} s skew after {now}"
+    )]
+    TooLongLived { expires: u64, now: u64 },
     #[error("the signature recovers no signer")]
     BadSignature,
 }
@@ -102,31 +113,39 @@ pub enum AuthorizationError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Authorization {
     pub signer: Address,
-    /// What the signer signed: one hash per registry, path, body and expiry, whichever of a
-    /// signature's two encodings carried it.
+    /// What the signer signed: one hash per registry, path, body, expiry and audience, whichever
+    /// of a signature's two encodings carried it.
     pub signing_hash: B256,
     /// Unix seconds.
     pub expires: u64,
 }
 
-/// Recovers who signed the `Authorization` header `header` for `body` sent to `path`, at Unix time
-/// `now`. A signature over other fields recovers another address, so the caller must check the
-/// signer against the addresses it accepts.
+impl Authorization {
+    /// The last Unix second a server accepts this authorization, skew included.
+    pub fn accepted_until(&self) -> u64 {
+        self.expires.saturating_add(CLOCK_SKEW_SECS)
+    }
+}
+
+/// Recovers who signed the `Authorization` header `header` for `body` sent to `path` at
+/// `audience`, the server's own address, at Unix time `now`. A signature over other fields
+/// recovers another address, so the caller must check the signer against the addresses it accepts.
 pub fn recover_authorization(
     registry: &KeyRegistry,
     header: &str,
     path: &str,
     body: &[u8],
+    audience: Address,
     now: u64,
 ) -> Result<Authorization, AuthorizationError> {
     let (expires, signature) = parse(header)?;
-    if expires < now {
+    if expires.saturating_add(CLOCK_SKEW_SECS) < now {
         return Err(AuthorizationError::Expired { expires, now });
     }
-    if expires > now.saturating_add(MAX_VALIDITY_SECS) {
-        return Err(AuthorizationError::TooFarAhead { expires, now });
+    if expires > now.saturating_add(MAX_AUTH_VALIDITY_SECS + CLOCK_SKEW_SECS) {
+        return Err(AuthorizationError::TooLongLived { expires, now });
     }
-    let signing_hash = registry.signing_hash(path, body, expires);
+    let signing_hash = registry.signing_hash(path, body, expires, audience);
     let signer = signature
         .recover_address_from_prehash(&signing_hash)
         .map_err(|_| AuthorizationError::BadSignature)?;
@@ -150,7 +169,7 @@ fn parse(header: &str) -> Result<(u64, Signature), AuthorizationError> {
         .and_then(|digits| digits.parse().ok())
         .ok_or_else(malformed)?;
     let signature = signature
-        .strip_prefix("signature=0x")
+        .strip_prefix("sig=0x")
         .and_then(|hex_bytes| hex::decode(hex_bytes).ok())
         .and_then(|bytes| Signature::try_from(bytes.as_slice()).ok())
         .ok_or_else(malformed)?;
@@ -169,6 +188,7 @@ mod tests {
     };
     const PATH: &str = "/v1/example";
     const BODY: &[u8] = b"{\"leaves\":[]}";
+    const AUDIENCE: Address = Address::repeat_byte(0xA0);
     const NOW: u64 = 1_790_950_000;
 
     fn signer() -> PrivateKeySigner {
@@ -179,18 +199,26 @@ mod tests {
 
     fn header(expires: u64) -> String {
         let signature = signer()
-            .sign_hash_sync(&REGISTRY.signing_hash(PATH, BODY, expires))
+            .sign_hash_sync(&REGISTRY.signing_hash(PATH, BODY, expires, AUDIENCE))
             .unwrap();
         header_value(expires, &signature)
+    }
+
+    fn recover(header: &str) -> Result<Authorization, AuthorizationError> {
+        recover_authorization(&REGISTRY, header, PATH, BODY, AUDIENCE, NOW)
     }
 
     #[test]
     fn the_signer_is_recovered_within_the_validity() {
         let address = signer().address();
-        for expires in [NOW, NOW + 60, NOW + MAX_VALIDITY_SECS] {
+        for expires in [
+            NOW - CLOCK_SKEW_SECS,
+            NOW,
+            NOW + 60,
+            NOW + MAX_AUTH_VALIDITY_SECS + CLOCK_SKEW_SECS,
+        ] {
             assert_eq!(
-                recover_authorization(&REGISTRY, &header(expires), PATH, BODY, NOW)
-                    .map(|authorization| authorization.signer),
+                recover(&header(expires)).map(|authorization| authorization.signer),
                 Ok(address)
             );
         }
@@ -208,14 +236,15 @@ mod tests {
             contract: Address::repeat_byte(0xC1),
             ..REGISTRY
         };
-        for (registry, path, body) in [
-            (other_chain, PATH, BODY),
-            (other_contract, PATH, BODY),
-            (REGISTRY, "/v1/other", BODY),
-            (REGISTRY, PATH, b"{\"leaves\":[1]}".as_slice()),
+        for (registry, path, body, audience) in [
+            (other_chain, PATH, BODY, AUDIENCE),
+            (other_contract, PATH, BODY, AUDIENCE),
+            (REGISTRY, "/v1/other", BODY, AUDIENCE),
+            (REGISTRY, PATH, b"{\"leaves\":[1]}".as_slice(), AUDIENCE),
+            (REGISTRY, PATH, BODY, Address::repeat_byte(0xA1)),
         ] {
             assert_ne!(
-                recover_authorization(&registry, &header, path, body, NOW)
+                recover_authorization(&registry, &header, path, body, audience, NOW)
                     .map(|authorization| authorization.signer),
                 Ok(address)
             );
@@ -223,41 +252,36 @@ mod tests {
     }
 
     #[test]
-    fn an_expired_or_far_future_authorization_is_refused() {
+    fn an_expired_or_too_long_lived_authorization_is_refused() {
+        let expires = NOW - CLOCK_SKEW_SECS - 1;
         assert_eq!(
-            recover_authorization(&REGISTRY, &header(NOW - 1), PATH, BODY, NOW),
-            Err(AuthorizationError::Expired {
-                expires: NOW - 1,
-                now: NOW
-            })
+            recover(&header(expires)),
+            Err(AuthorizationError::Expired { expires, now: NOW })
         );
-        let expires = NOW + MAX_VALIDITY_SECS + 1;
+        let expires = NOW + MAX_AUTH_VALIDITY_SECS + CLOCK_SKEW_SECS + 1;
         assert_eq!(
-            recover_authorization(&REGISTRY, &header(expires), PATH, BODY, NOW),
-            Err(AuthorizationError::TooFarAhead { expires, now: NOW })
+            recover(&header(expires)),
+            Err(AuthorizationError::TooLongLived { expires, now: NOW })
         );
     }
 
     #[test]
     fn a_malformed_header_is_refused() {
         let valid = header(NOW + 60);
-        let (_, signature) = valid.split_once("signature=0x").unwrap();
+        let (_, signature) = valid.split_once("sig=0x").unwrap();
         for malformed in [
             String::new(),
             "Bearer secret".to_owned(),
-            valid.replacen(SCHEME, "zama-eip712", 1),
+            valid.replacen(SCHEME, "fhevmsig", 1),
             valid.replacen(", ", ",", 1),
             valid.replacen("expires=", "expires=+", 1),
-            format!("{SCHEME} expires=, signature=0x{signature}"),
-            format!(
-                "{SCHEME} expires={}, signature=0x{}",
-                NOW + 60,
-                &signature[2..]
-            ),
-            format!("{SCHEME} expires={}, signature={signature}", NOW + 60),
+            valid.replacen("sig=", "signature=", 1),
+            format!("{SCHEME} expires=, sig=0x{signature}"),
+            format!("{SCHEME} expires={}, sig=0x{}", NOW + 60, &signature[2..]),
+            format!("{SCHEME} expires={}, sig={signature}", NOW + 60),
         ] {
             assert_eq!(
-                recover_authorization(&REGISTRY, &malformed, PATH, BODY, NOW),
+                recover(&malformed),
                 Err(AuthorizationError::Malformed),
                 "{malformed}"
             );
@@ -266,17 +290,19 @@ mod tests {
 
     #[tokio::test]
     async fn authorize_signs_what_recover_authorization_checks() {
-        let header = authorize(&signer(), &REGISTRY, PATH, BODY, NOW + 60)
+        let header = authorize(&signer(), &REGISTRY, PATH, BODY, NOW + 60, AUDIENCE)
             .await
             .unwrap();
+        let authorization = recover(&header).unwrap();
         assert_eq!(
-            recover_authorization(&REGISTRY, &header, PATH, BODY, NOW),
-            Ok(Authorization {
+            authorization,
+            Authorization {
                 signer: signer().address(),
-                signing_hash: REGISTRY.signing_hash(PATH, BODY, NOW + 60),
+                signing_hash: REGISTRY.signing_hash(PATH, BODY, NOW + 60, AUDIENCE),
                 expires: NOW + 60,
-            })
+            }
         );
+        assert_eq!(authorization.accepted_until(), NOW + 60 + CLOCK_SKEW_SECS);
     }
 
     /// The other encoding of one ECDSA signature, `s` mirrored to `n - s` with the parity flipped,
@@ -284,27 +310,15 @@ mod tests {
     /// it as the same request.
     #[test]
     fn both_encodings_of_a_signature_name_one_signing_hash() {
-        let hash = REGISTRY.signing_hash(PATH, BODY, NOW + 60);
+        let hash = REGISTRY.signing_hash(PATH, BODY, NOW + 60, AUDIENCE);
         let signature = signer().sign_hash_sync(&hash).unwrap();
         let mirrored = Signature::new(
             signature.r(),
             alloy_primitives::U256::from_be_bytes(SECP256K1N) - signature.s(),
             !signature.v(),
         );
-        let first = recover_authorization(
-            &REGISTRY,
-            &header_value(NOW + 60, &signature),
-            PATH,
-            BODY,
-            NOW,
-        );
-        let second = recover_authorization(
-            &REGISTRY,
-            &header_value(NOW + 60, &mirrored),
-            PATH,
-            BODY,
-            NOW,
-        );
+        let first = recover(&header_value(NOW + 60, &signature));
+        let second = recover(&header_value(NOW + 60, &mirrored));
         assert_eq!(first, second);
         assert_eq!(first.unwrap().signer, signer().address());
     }
@@ -313,16 +327,49 @@ mod tests {
     const SECP256K1N: [u8; 32] =
         alloy_primitives::hex!("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
 
-    /// Pins the wire format. viem's `hashTypedData` and `signTypedData` produce the same values.
+    /// Pins the wire format to values computed with viem 2 alone, independently of this crate:
+    ///
+    /// ```js
+    /// const typed = {
+    ///   domain: { name: "fhevm-http-auth", version: "1", chainId: 12345,
+    ///             verifyingContract: "0xc0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0" },
+    ///   types: { Request: [{ name: "path", type: "string" }, { name: "bodyDigest", type: "bytes32" },
+    ///                      { name: "expires", type: "uint64" }, { name: "audience", type: "address" }] },
+    ///   primaryType: "Request",
+    ///   message: { path: "/v1/example", bodyDigest: keccak256(toBytes('{"leaves":[]}')),
+    ///              expires: 1790950060n, audience: "0xa0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0" },
+    /// };
+    /// hashTypedData(typed);
+    /// privateKeyToAccount("0x3f45…c774").signTypedData(typed);
+    /// // A request without a body signs keccak256 of no bytes.
+    /// const empty = { ...typed, message: { ...typed.message, bodyDigest: keccak256(new Uint8Array()) } };
+    /// ```
     #[test]
-    fn the_wire_format_is_pinned() {
+    fn the_wire_format_matches_viem() {
         assert_eq!(
-            REGISTRY.signing_hash(PATH, BODY, NOW + 60).to_string(),
-            "0xf9cf9ce562f03832d1f39ad11f699bf466ab3147e4de7f10664fc0030c0cf51a"
+            signer().address(),
+            "0x31De9c8ac5ECD5EacEddDdEE531e9BaD8AC9c2A5"
+                .parse::<Address>()
+                .unwrap()
+        );
+        assert_eq!(
+            REGISTRY
+                .signing_hash(PATH, BODY, NOW + 60, AUDIENCE)
+                .to_string(),
+            "0xb7cd940895f56b35d0ccc114e375919c7b734805663a44209413fa906b160e4a"
         );
         assert_eq!(
             header(NOW + 60),
-            "Zama-EIP712 expires=1790950060, signature=0xf80bc18d3fb149436cb11e1b44b237d84a04ff8472a01347d9824c8263eddba171bd7b55741997ec4f757bb63085e0371f42a3513ebead23bde15d5e5ccc8ff51b"
+            "FhevmSig expires=1790950060, sig=0x221e0fdb37848dea9211b3ec72a1ece532dcc4b519099098b3e2bf938dfb214146a40971c7fdb3174f85b5abaa844eb080769b18d7a5cc620d6cd71c6954da4b1c"
+        );
+        let empty = REGISTRY.signing_hash(PATH, b"", NOW + 60, AUDIENCE);
+        assert_eq!(
+            empty.to_string(),
+            "0x7fdba7612e3c0568d59b1274bebb86b6040758b926ce94f52c74d6d33c4b2a2a"
+        );
+        assert_eq!(
+            header_value(NOW + 60, &signer().sign_hash_sync(&empty).unwrap()),
+            "FhevmSig expires=1790950060, sig=0x762f9d2eb58a04a7ff1388c95f44b6b6256e67ae3b2c9da490bb9ea79b56b9e7701a51c190c28d56b436ed29965a644bb475b54f1967a582119725dbd05d33361b"
         );
     }
 }

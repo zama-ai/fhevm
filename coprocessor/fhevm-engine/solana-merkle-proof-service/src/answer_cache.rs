@@ -1,13 +1,14 @@
 //! The answer the Merkle proof server gives each signed request, by the signing hash of its
-//! authorization, until the signature expires.
+//! authorization, until the server stops accepting the signature.
 //!
-//! A request's signature names no recipient, so a coprocessor that received a request can resend
-//! it to the other servers until it expires. The first copy of a request to reach a server is
+//! A signed request can reach its server more than once until it expires: resent by anyone who
+//! reads the traffic, or by the connector itself. The first copy to reach a server is
 //! [`Admission::First`]: the server charges the signer and reads the record once. Every other
 //! copy, sent at the same time or later, is an [`Admission::Repeat`] and waits for that answer,
 //! including a refusal the answer ended in. A server therefore charges and reads at most once per
 //! signed request (DD-067). The signing hash names no signer, so two KMS nodes that sign the same
-//! body in the same second share one answer.
+//! body in the same second share one answer. A request the server [`AnswerCache::forget`]s is
+//! admitted again as a first copy.
 //!
 //! Each signer may hold [`AnswerCache::new`]'s bytes of requests. Past that, its new requests are
 //! refused ([`Admission::Full`]) rather than answered unremembered, so a faulty signer refuses
@@ -42,6 +43,7 @@ struct Requests<A> {
 
 struct Request<A> {
     signer: Address,
+    expires: u64,
     answer: watch::Receiver<Option<A>>,
     bytes: usize,
 }
@@ -74,9 +76,9 @@ impl<A> AnswerCache<A> {
         }
     }
 
-    /// Admits the request `signer` signed over `signing_hash`, valid until `expires`, at Unix
-    /// time `now`. Requests whose signature expired before `now` are forgotten first. A new
-    /// request with room is admitted when `charge` accepts it; a copy is never charged.
+    /// Admits the request `signer` signed over `signing_hash`, accepted until `expires`, at Unix
+    /// time `now`. Requests no longer accepted at `now` are forgotten first. A new request with
+    /// room is admitted when `charge` accepts it; a copy is never charged.
     pub fn admit(
         &self,
         signing_hash: B256,
@@ -106,6 +108,7 @@ impl<A> AnswerCache<A> {
             signing_hash,
             Request {
                 signer,
+                expires,
                 answer,
                 bytes: ENTRY_OVERHEAD_BYTES,
             },
@@ -129,6 +132,19 @@ impl<A> AnswerCache<A> {
         let signer = request.signer;
         *requests.bytes_by_signer.entry(signer).or_default() += answer_bytes;
     }
+
+    /// Forgets `signing_hash` before its expiry and releases its bytes, so its next copy is
+    /// admitted as a first copy. Copies already waiting still get its answer.
+    pub fn forget(&self, signing_hash: &B256) {
+        let mut requests =
+            self.inner.lock().unwrap_or_else(|err| err.into_inner());
+        let Some(request) = requests.by_signing_hash.remove(signing_hash)
+        else {
+            return;
+        };
+        requests.by_expiry.remove(&(request.expires, *signing_hash));
+        requests.release(&request);
+    }
 }
 
 impl<A> Requests<A> {
@@ -143,14 +159,18 @@ impl<A> Requests<A> {
                 .by_signing_hash
                 .remove(&hash)
                 .expect("every expiry entry has its request");
-            let held = self
-                .bytes_by_signer
-                .get_mut(&request.signer)
-                .expect("every request counts against its signer");
-            *held -= request.bytes;
-            if *held == 0 {
-                self.bytes_by_signer.remove(&request.signer);
-            }
+            self.release(&request);
+        }
+    }
+
+    fn release(&mut self, request: &Request<A>) {
+        let held = self
+            .bytes_by_signer
+            .get_mut(&request.signer)
+            .expect("every request counts against its signer");
+        *held -= request.bytes;
+        if *held == 0 {
+            self.bytes_by_signer.remove(&request.signer);
         }
     }
 }
@@ -230,6 +250,18 @@ mod tests {
             Admission::OverRate
         ));
         first(cache.admit(hash(1), NOW + 30, ALICE, NOW, charged));
+    }
+
+    #[test]
+    fn a_request_forgotten_early_is_admitted_again_with_its_bytes_released() {
+        // Room for one request.
+        let cache = AnswerCache::<u8>::new(ENTRY_OVERHEAD_BYTES);
+        first(cache.admit(hash(1), NOW + 30, ALICE, NOW, charged));
+        cache.forget(&hash(1));
+        first(cache.admit(hash(1), NOW + 30, ALICE, NOW, charged));
+        // Its expiry entry goes with it, so expiring requests later finds no request missing.
+        cache.forget(&hash(1));
+        first(cache.admit(hash(2), NOW + 30, ALICE, NOW + 31, charged));
     }
 
     #[test]

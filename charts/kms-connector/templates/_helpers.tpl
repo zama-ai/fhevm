@@ -39,8 +39,8 @@ hostChains is rendered as a map keyed by chain name (ethereum, polygon, ...):
   preset fails the render.
 - without a preset (network: ""), every commonConfig.hostChains entry must set
   url, chainId and aclAddress. A Solana entry (chain id type byte 0x01) sets
-  solanaHostProgramId and solanaProofUrls (the Merkle proof server of each
-  coprocessor) instead of aclAddress.
+  solanaHostProgramId and solanaProofServers (each coprocessor's Merkle proof
+  server url and registered signerAddress) instead of aclAddress.
 URLs are passed through untouched so they may reference an environment variable
 declared in commonConfig.env (e.g. "$(ETHEREUM_RPC_URL)").
 */}}
@@ -77,7 +77,7 @@ hostChains:
 {{- end }}
 {{- range $name, $presetChain := $presetChains }}
 {{- $chain := index $chains $name | default dict }}
-{{- range $field := list "solanaHostProgramId" "solanaProofUrls" }}
+{{- range $field := list "solanaHostProgramId" "solanaProofServers" }}
 {{- if index $chain $field }}
 {{- fail (printf "commonConfig.hostChains.%s.%s does not apply to a preset chain: presets are EVM chains; set commonConfig.network to \"\" to configure a Solana chain" $name $field) }}
 {{- end }}
@@ -107,8 +107,8 @@ hostChains:
 {{- fail (printf "commonConfig.hostChains.%s.chainId has type byte 0x%02x, which names no host kind" $name $type) }}
 {{- end }}
 {{- $solana := eq $type 1 }}
-{{- $required := ternary (list "url" "solanaHostProgramId" "solanaProofUrls") (list "url" "aclAddress") $solana }}
-{{- range $field := ternary (list "aclAddress") (list "solanaHostProgramId" "solanaProofUrls") $solana }}
+{{- $required := ternary (list "url" "solanaHostProgramId" "solanaProofServers") (list "url" "aclAddress") $solana }}
+{{- range $field := ternary (list "aclAddress") (list "solanaHostProgramId" "solanaProofServers") $solana }}
 {{- if index $chain $field }}
 {{- fail (printf "commonConfig.hostChains.%s.%s does not apply to %s chain" $name $field (ternary "a Solana" "an EVM" $solana)) }}
 {{- end }}
@@ -122,16 +122,16 @@ hostChains:
     url: {{ $chain.url | quote }}
     chainId: {{ $chainId | quote }}
 {{- if $solana }}
-{{- if not (kindIs "slice" $chain.solanaProofUrls) }}
-{{- fail (printf "commonConfig.hostChains.%s.solanaProofUrls must be a list of URLs" $name) }}
+{{- if not (kindIs "slice" $chain.solanaProofServers) }}
+{{- fail (printf "commonConfig.hostChains.%s.solanaProofServers must be a list of {url, signerAddress}" $name) }}
 {{- end }}
-{{- range $url := $chain.solanaProofUrls }}
-{{- if not (and (kindIs "string" $url) $url) }}
-{{- fail (printf "commonConfig.hostChains.%s.solanaProofUrls entries must each be a URL" $name) }}
+{{- range $server := $chain.solanaProofServers }}
+{{- if not (and (kindIs "map" $server) (kindIs "string" $server.url) $server.url (kindIs "string" $server.signerAddress) (regexMatch "^0x[0-9a-fA-F]{40}$" (toString $server.signerAddress))) }}
+{{- fail (printf "commonConfig.hostChains.%s.solanaProofServers entries must each set url and signerAddress, a 0x-prefixed 20-byte address" $name) }}
 {{- end }}
 {{- end }}
     solanaHostProgramId: {{ $chain.solanaHostProgramId | quote }}
-    solanaProofUrls: {{ $chain.solanaProofUrls | toJson }}
+    solanaProofServers: {{ $chain.solanaProofServers | toJson }}
 {{- else }}
     aclAddress: {{ $chain.aclAddress | quote }}
 {{- end }}

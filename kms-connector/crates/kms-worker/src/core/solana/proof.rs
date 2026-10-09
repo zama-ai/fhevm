@@ -4,6 +4,7 @@
 
 use alloy::primitives::B256;
 use connector_utils::config::KmsWallet;
+use futures::future::try_join_all;
 use rand::seq::SliceRandom;
 use request_authorization::KeyRegistry;
 use solana_pubkey::Pubkey;
@@ -11,13 +12,12 @@ use std::{
     future::Future,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use url::Url;
 use zama_solana_merkle_proofs::{
     ErrorResponse, LeafQuery as WireLeaf, LeafQueryKind as WireLeafKind, MAX_LEAVES_PER_REQUEST,
     MERKLE_PROOFS_PATH, MerkleProofOutcome, MerkleProofRequest, MerkleProofResponse,
 };
 
-use crate::monitoring::metrics::SOLANA_PROOF_ANSWER_COUNTER;
+use crate::{core::config::ProofServer, monitoring::metrics::SOLANA_PROOF_ANSWER_COUNTER};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum LeafKind {
@@ -36,7 +36,7 @@ pub struct LeafQuery {
 
 /// Implemented by [`CoprocessorProofClient`]; tests drive authorization with canned proofs.
 pub trait HostProofReader: Send + Sync {
-    /// A batch of queries made ready once and sent to any coprocessor.
+    /// A batch of queries made ready once for every coprocessor.
     type Batch: Sync;
 
     /// The coprocessors in the order to ask them.
@@ -86,7 +86,7 @@ pub enum ProofReadError {
     ResponseLengthMismatch { requested: usize, returned: usize },
 }
 
-// The HTTP transport: CBOR bodies over HTTP/2.
+// The HTTP transport over HTTP/2: CBOR requests and answers, JSON refusals.
 
 impl From<&LeafQuery> for WireLeaf {
     fn from(query: &LeafQuery) -> Self {
@@ -140,15 +140,18 @@ fn unavailable(reason: String) -> ProofReadError {
 }
 
 /// How long a signed batch stays valid. A coprocessor checks it when the request arrives, and
-/// every coprocessor is asked within a few `HEDGE_DELAY`s of signing, so this covers clock skew.
+/// every coprocessor is asked within a few `HEDGE_DELAY`s of signing.
 const AUTHORIZATION_VALIDITY_SECS: u64 = 30;
-const _: () = assert!(AUTHORIZATION_VALIDITY_SECS < request_authorization::MAX_VALIDITY_SECS);
+const _: () = assert!(AUTHORIZATION_VALIDITY_SECS <= request_authorization::MAX_AUTH_VALIDITY_SECS);
 
 /// The production reader: one signed `POST` per coprocessor asked. Every coprocessor of a batch
-/// receives the same body and signature, so the wallet signs once per batch.
+/// receives the same body, signed for its own signer address, so the wallet signs once per
+/// coprocessor before the first is asked.
 #[derive(Clone, Debug)]
 pub struct CoprocessorProofClient {
-    urls: Vec<Url>,
+    /// Each coprocessor's server: its URL, set to the route's path, and the signer address its
+    /// requests are signed for.
+    servers: Vec<ProofServer>,
     client: reqwest::Client,
     /// The connector's tx-sender wallet.
     wallet: KmsWallet,
@@ -161,34 +164,35 @@ pub struct CoprocessorProofClient {
 /// A batch signed for every coprocessor.
 pub struct SignedBatch {
     body: Vec<u8>,
-    authorization: String,
+    /// One `Authorization` header per coprocessor, in configuration order.
+    authorizations: Vec<String>,
 }
 
 impl CoprocessorProofClient {
     pub fn new(
-        urls: &[Url],
+        servers: &[ProofServer],
         client: reqwest::Client,
         wallet: KmsWallet,
         registry: KeyRegistry,
         signing_timeout: Duration,
     ) -> Self {
-        let urls = urls
+        let servers = servers
             .iter()
-            .map(|url| {
-                let mut url = url.clone();
-                url.set_path(MERKLE_PROOFS_PATH);
-                url
+            .map(|server| {
+                let mut server = server.clone();
+                server.url.set_path(MERKLE_PROOFS_PATH);
+                server
             })
             .collect();
         let client = Self {
-            urls,
+            servers,
             client,
             wallet,
             registry,
             signing_timeout,
         };
         // The outcome that pages exists for every coprocessor before its first answer.
-        for source in 0..client.urls.len() {
+        for source in 0..client.servers.len() {
             SOLANA_PROOF_ANSWER_COUNTER
                 .with_label_values(&[&client.source_name(source), "invalid"]);
         }
@@ -201,7 +205,7 @@ impl HostProofReader for CoprocessorProofClient {
 
     /// The coprocessor's host and port.
     fn source_name(&self, source: usize) -> String {
-        let url = &self.urls[source];
+        let url = &self.servers[source].url;
         match (url.host_str(), url.port_or_known_default()) {
             (Some(host), Some(port)) => format!("{host}:{port}"),
             _ => source.to_string(),
@@ -210,7 +214,7 @@ impl HostProofReader for CoprocessorProofClient {
 
     /// A fresh random order per batch spreads the reads over the coprocessors.
     fn hedge_order(&self) -> Vec<usize> {
-        let mut order: Vec<usize> = (0..self.urls.len()).collect();
+        let mut order: Vec<usize> = (0..self.servers.len()).collect();
         order.shuffle(&mut rand::rng());
         order
     }
@@ -221,14 +225,17 @@ impl HostProofReader for CoprocessorProofClient {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_secs())
             + AUTHORIZATION_VALIDITY_SECS;
-        let signing = request_authorization::authorize(
-            &self.wallet,
-            &self.registry,
-            MERKLE_PROOFS_PATH,
-            &body,
-            expires,
-        );
-        let authorization = tokio::time::timeout(self.signing_timeout, signing)
+        let signing = try_join_all(self.servers.iter().map(|server| {
+            request_authorization::authorize(
+                &self.wallet,
+                &self.registry,
+                MERKLE_PROOFS_PATH,
+                &body,
+                expires,
+                server.signer_address,
+            )
+        }));
+        let authorizations = tokio::time::timeout(self.signing_timeout, signing)
             .await
             .map_err(|_| {
                 unavailable(format!(
@@ -241,7 +248,7 @@ impl HostProofReader for CoprocessorProofClient {
             })?;
         Ok(SignedBatch {
             body,
-            authorization,
+            authorizations,
         })
     }
 
@@ -250,12 +257,12 @@ impl HostProofReader for CoprocessorProofClient {
         source: usize,
         batch: &SignedBatch,
     ) -> Result<Vec<MerkleProofOutcome>, ProofReadError> {
-        let url = &self.urls[source];
+        let url = &self.servers[source].url;
         let failed = |reason: String| unavailable(format!("{url}: {reason}"));
         let mut response = self
             .client
             .post(url.clone())
-            .header("authorization", &batch.authorization)
+            .header("authorization", &batch.authorizations[source])
             .header("content-type", "application/cbor")
             .body(batch.body.clone())
             .send()
@@ -278,7 +285,7 @@ impl HostProofReader for CoprocessorProofClient {
         }
         let status = response.status();
         if !status.is_success() {
-            let error = decode_cbor::<ErrorResponse>(&body).map_or_else(
+            let error = serde_json::from_slice::<ErrorResponse>(&body).map_or_else(
                 |_| String::new(),
                 |error| format!(" {:?}: {}", error.code, error.message),
             );
@@ -293,7 +300,9 @@ impl HostProofReader for CoprocessorProofClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy::primitives::Address;
     use ciborium::cbor;
+    use url::Url;
 
     /// The shared spelling of the wire; the coprocessor pins its own against the same file.
     const MERKLE_PROOFS_FIXTURE: &str = concat!(
@@ -365,10 +374,22 @@ mod tests {
         contract: alloy::primitives::Address::repeat_byte(0xC0),
     };
 
+    /// The signer address of the coprocessor `source` of a test client.
+    fn signer_address(source: usize) -> Address {
+        Address::repeat_byte(0xD0 + source as u8)
+    }
+
     fn client(urls: &[&Url], wallet: &KmsWallet) -> CoprocessorProofClient {
-        let urls: Vec<Url> = urls.iter().map(|url| (*url).clone()).collect();
+        let servers: Vec<ProofServer> = urls
+            .iter()
+            .enumerate()
+            .map(|(source, url)| ProofServer {
+                url: (*url).clone(),
+                signer_address: signer_address(source),
+            })
+            .collect();
         CoprocessorProofClient::new(
-            &urls,
+            &servers,
             proof_http_client(Duration::from_secs(5)).unwrap(),
             wallet.clone(),
             REGISTRY,
@@ -453,18 +474,16 @@ mod tests {
     #[tokio::test]
     async fn a_refusal_reports_the_coprocessor_error() {
         use mocktail::{StatusCode, server::MockServer};
-        let refusal = cbor(
-            cbor!({
-                "code" => "rate_limited",
-                "message" => "no database connection free within 200ms",
-                "retryable" => true,
-            })
-            .unwrap(),
-        );
+        let refusal = serde_json::to_vec(&serde_json::json!({
+            "code": "overloaded",
+            "message": "no database connection free within 200ms",
+            "retryable": true,
+        }))
+        .unwrap();
         let mut server = MockServer::new_http("refusal");
         server.mock(move |when, then| {
             when.post().path(MERKLE_PROOFS_PATH);
-            then.status(StatusCode::TOO_MANY_REQUESTS)
+            then.status(StatusCode::SERVICE_UNAVAILABLE)
                 .bytes(refusal.clone());
         });
         server.start().await.unwrap();
@@ -476,26 +495,30 @@ mod tests {
             client.read_proofs(0, &batch).await,
             Err(ProofReadError::Unavailable {
                 reason: format!(
-                    "{proofs_url}: HTTP 429 Too Many Requests RateLimited: \
+                    "{proofs_url}: HTTP 503 Service Unavailable Overloaded: \
                      no database connection free within 200ms"
                 ),
             })
         );
     }
 
-    /// Every coprocessor receives the same body and signature, which recovers to the wallet over
-    /// that exact body.
+    /// Every coprocessor receives the same body with a signature by the wallet for its own signer
+    /// address, which does not recover to the wallet for another coprocessor.
     #[tokio::test]
-    async fn every_coprocessor_receives_one_signature_by_the_wallet() {
+    async fn each_coprocessor_receives_a_signature_for_its_own_address() {
         use mocktail::server::MockServer;
         let wallet = wallet();
-        let batch = client(&[], &wallet).prepare(&query()).await.unwrap();
+        let unused = Url::parse("http://unused:1").unwrap();
+        let batch = client(&[&unused, &unused], &wallet)
+            .prepare(&query())
+            .await
+            .unwrap();
         let mut servers = Vec::new();
         let answer =
             cbor(cbor!({ "proofs" => [{ "status" => "notFound", "leafCount" => 0 }] }).unwrap());
-        for name in ["first", "second"] {
+        for (name, authorization) in ["first", "second"].into_iter().zip(&batch.authorizations) {
             let mut server = MockServer::new_http(name);
-            let authorization = batch.authorization.clone();
+            let authorization = authorization.clone();
             let answer = answer.clone();
             server.mock(move |when, then| {
                 when.post()
@@ -518,24 +541,31 @@ mod tests {
             client
                 .read_proofs(source, &batch)
                 .await
-                .expect("each coprocessor receives the batch's signature");
+                .expect("each coprocessor receives its own signature");
         }
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        assert_eq!(
+        let signer = |source: usize, audience: Address| {
             request_authorization::recover_authorization(
                 &REGISTRY,
-                &batch.authorization,
+                &batch.authorizations[source],
                 MERKLE_PROOFS_PATH,
                 &batch.body,
+                audience,
                 now,
             )
-            .map(|authorization| authorization.signer),
-            Ok(wallet.address())
-        );
+            .map(|authorization| authorization.signer)
+        };
+        for source in 0..2 {
+            assert_eq!(signer(source, signer_address(source)), Ok(wallet.address()));
+            assert_ne!(
+                signer(source, signer_address(1 - source)),
+                Ok(wallet.address())
+            );
+        }
         assert_eq!(batch.body, encode_merkle_proof_request(&query()));
     }
 }

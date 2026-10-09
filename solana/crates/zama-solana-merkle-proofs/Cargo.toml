@@ -1,7 +1,7 @@
 [package]
 name = "zama-solana-merkle-proofs"
 version = "0.1.0"
-description = "Shared CBOR wire types for Solana Merkle proof requests and responses"
+description = "Shared wire types for Solana Merkle proof requests: CBOR request and success bodies, JSON error bodies"
 # Standalone (no workspace inheritance), like zama-solana-acl: the KMS connector
 # Docker builds consume this path dependency without the solana workspace root.
 authors = ["Zama"]

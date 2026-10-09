@@ -212,5 +212,8 @@ acl_address = "0x0000000000000000000000000000000000000000"
 # the next one as soon as an answer leaves a query unproven, or after `HEDGE_DELAY` (250 ms)
 # without an answer, so a lagging or stalled coprocessor neither fails a request another one serves
 # nor delays it by more than that. Each request is signed by the tx-sender wallet configured above
-# (`private_key` or `aws_kms_config`).
-# solana_proof_urls = ["http://localhost:8080"]
+# (`private_key` or `aws_kms_config`) for the coprocessor's registered signer address
+# (`FhevmSig` audience, RFC 038), which its server checks.
+# solana_proof_servers = [
+#     { url = "http://localhost:8080", signer_address = "0xa5eE8292dA52d8234248709F3E217ffEBA5E8312" },
+# ]

@@ -1290,6 +1290,8 @@ jobs:
       ######################################################################
       - name: Deploy Solana host and listener
         if: env.DEPLOY_SOLANA == 'true'
+        env:
+          COPROC_WALLETS_JSON: ${{ steps.coproc-wallets.outputs.wallets_json }}
         run: bash ci/preview-env/solana-host/deploy-preview.sh
 
       - name: Deploy automated e2e test workflow

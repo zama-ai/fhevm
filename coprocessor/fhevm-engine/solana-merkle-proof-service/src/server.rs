@@ -5,25 +5,26 @@
 //! decrypt (an allow of a key on a handle, or a handle made public) and verifies
 //! it against the peaks of the on-chain account it read itself. This server only
 //! reads the leaf record ([`crate::store`]) and makes no decrypt authorization
-//! decision. It answers only callers in [`KmsTxSenders`]: each request carries a
-//! `request_authorization` signature by a KMS node's tx-sender.
+//! decision. It answers only callers in [`KmsTxSenders`]: each request carries an
+//! `FhevmSig` signature (RFC 038) by a KMS node's tx-sender, for this coprocessor's
+//! signer address as audience.
 //!
-//! A signature names no recipient, so whoever received a request can resend it
-//! to the other coprocessors while it is valid. The [`AnswerCache`] answers every
-//! copy of a signed request with the answer to its first copy, so a server charges
-//! the signer and reads the record at most once per signed request (DD-067).
+//! The [`AnswerCache`] answers every copy of a signed request with the answer to
+//! its first copy, so a server charges the signer and reads the record at most
+//! once per signed request (DD-067). An `overloaded` answer read nothing, so it
+//! is not kept: a copy sent after it is admitted again.
 //!
 //! Each KMS tx-sender may ask for [`HttpServer::merkle_proofs`]'s leaves per
-//! second and hold its bytes of requests in the cache. Proof reads take one
-//! connection each and leave one of the pool to `/healthz`; a request waits up
-//! to [`PROOF_READ_WAIT`] for its turn. These refusals are `rate_limited`,
-//! before any database read, and the connector asks another coprocessor at
-//! once.
+//! second and hold its bytes of requests in the cache; past either it is refused
+//! `rate_limited` (429). Proof reads take one connection each and leave one of
+//! the pool to `/healthz`; a request waits up to [`PROOF_READ_WAIT`] for its
+//! turn, then is refused `overloaded` (503). The connector asks another
+//! coprocessor at once after either refusal.
 //!
-//! Bodies are CBOR (RFC 8949), served over HTTP/1.1 or HTTP/2 without TLS. The
-//! wire contract is the committed OpenAPI document in `openapi/`; a test keeps
-//! it in sync with the code. Errors use the body shape of the Direct HTTP Decryption
-//! Endpoint RFC.
+//! Request and success bodies are CBOR (RFC 8949), served over HTTP/1.1 or HTTP/2
+//! without TLS. Error bodies are the JSON `{ code, message, retryable }` of RFC 033.
+//! The wire contract is the committed OpenAPI document in `openapi/`; a test keeps
+//! it in sync with the code.
 
 use std::{
     net::SocketAddr,
@@ -36,16 +37,17 @@ use alloy::primitives::Address;
 use axum::{
     body::Bytes,
     extract::{rejection::BytesRejection, DefaultBodyLimit, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{header, HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::{get, post},
     Router,
 };
 use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
 use prometheus::{
-    register_histogram, register_int_counter_vec, Histogram, IntCounterVec,
+    register_histogram, register_int_counter_vec, register_int_gauge,
+    Histogram, IntCounterVec, IntGauge,
 };
-use request_authorization::Authorization;
+use request_authorization::{Authorization, AuthorizationError};
 use serde::{de::DeserializeOwned, Serialize};
 use sqlx::PgPool;
 use tokio::{net::TcpListener, sync::Semaphore};
@@ -80,6 +82,10 @@ const CBOR: &str = "application/cbor";
 /// connector's 250 ms hedge delay, so a refusal sends the connector to the next coprocessor no
 /// later than the hedge would have.
 pub const PROOF_READ_WAIT: Duration = Duration::from_millis(200);
+
+/// The `Retry-After` of a `rate_limited` or `overloaded` refusal. The connector asks another
+/// coprocessor at once and retries this one on its next round.
+const RETRY_AFTER_SECS: u64 = 1;
 
 static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
@@ -119,10 +125,32 @@ static LEAVES: LazyLock<IntCounterVec> = LazyLock::new(|| {
     .unwrap()
 });
 
+static PROOF_READS_WAITING: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "solana_merkle_proof_server_proof_reads_waiting",
+        format!(
+            "Requests waiting for a database connection. No request waits longer than \
+             {PROOF_READ_WAIT:?} (PROOF_READ_WAIT). One that would is refused overloaded, so \
+             {PROOF_READ_WAIT:?} bounds the age of the oldest waiting request"
+        )
+    )
+    .unwrap()
+});
+
+static PROOF_READS_IN_FLIGHT: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "solana_merkle_proof_server_proof_reads_in_flight",
+        "Requests reading the leaf record, at most the database pool size minus one"
+    )
+    .unwrap()
+});
+
 #[derive(Clone)]
 struct AppState {
     pool: PgPool,
     senders: KmsTxSenders,
+    /// This coprocessor's signer address, the `FhevmSig` audience.
+    audience: Address,
     answers: Arc<AnswerCache<Answer>>,
     per_kms_tx_sender: Arc<DefaultKeyedRateLimiter<Address>>,
     proof_reads: Arc<Semaphore>,
@@ -148,14 +176,16 @@ impl HttpServer {
         }
     }
 
-    /// The health routes and the Merkle proof route, for the proof server. Each
-    /// KMS tx-sender may ask for `leaves_per_second`, in bursts of as many, and
-    /// the server remembers `answer_cache_bytes_per_signer` of each one's signed
-    /// requests and their answers.
+    /// The health routes and the Merkle proof route, for the proof server. A
+    /// request must be signed for `audience`, this coprocessor's signer address.
+    /// Each KMS tx-sender may ask for `leaves_per_second`, in bursts of as many,
+    /// and the server remembers `answer_cache_bytes_per_signer` of each one's
+    /// signed requests and their answers.
     /// The pool needs at least two connections.
     pub fn merkle_proofs(
         pool: PgPool,
         senders: KmsTxSenders,
+        audience: Address,
         leaves_per_second: NonZeroU32,
         answer_cache_bytes_per_signer: usize,
         port: u16,
@@ -169,6 +199,7 @@ impl HttpServer {
             router: merkle_proofs_router(
                 pool,
                 senders,
+                audience,
                 leaves_per_second,
                 answer_cache_bytes_per_signer,
                 proof_reads,
@@ -197,20 +228,25 @@ fn health_router(pool: PgPool) -> Router {
 fn merkle_proofs_router(
     pool: PgPool,
     senders: KmsTxSenders,
+    audience: Address,
     leaves_per_second: NonZeroU32,
     answer_cache_bytes_per_signer: usize,
     proof_reads: usize,
 ) -> Router {
-    // The outcomes alerts watch exist before the first one is counted.
+    // The outcomes alerts watch and the backlog gauges exist before the first
+    // request.
     for outcome in ["inconsistent", "quarantined"] {
         LEAVES.with_label_values(&[outcome]);
     }
+    LazyLock::force(&PROOF_READS_WAITING);
+    LazyLock::force(&PROOF_READS_IN_FLIGHT);
     // A burst always fits the largest request.
     let burst = leaves_per_second
         .max(NonZeroU32::new(MAX_LEAVES_PER_REQUEST as u32).expect("not zero"));
     let state = AppState {
         pool,
         senders,
+        audience,
         answers: Arc::new(AnswerCache::new(answer_cache_bytes_per_signer)),
         per_kms_tx_sender: Arc::new(RateLimiter::keyed(
             Quota::per_second(leaves_per_second).allow_burst(burst),
@@ -271,14 +307,23 @@ async fn proof_server_healthz(State(state): State<AppState>) -> StatusCode {
 fn http_status(code: ErrorCode) -> StatusCode {
     match code {
         ErrorCode::Malformed => StatusCode::BAD_REQUEST,
-        ErrorCode::SenderAuthenticationFailed => StatusCode::UNAUTHORIZED,
+        ErrorCode::AuthExpired | ErrorCode::SenderAuthenticationFailed => {
+            StatusCode::UNAUTHORIZED
+        }
         ErrorCode::UpstreamTransient => StatusCode::BAD_GATEWAY,
         ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+        ErrorCode::Overloaded => StatusCode::SERVICE_UNAVAILABLE,
     }
 }
 
 fn retryable(code: ErrorCode) -> bool {
-    matches!(code, ErrorCode::UpstreamTransient | ErrorCode::RateLimited)
+    matches!(
+        code,
+        ErrorCode::AuthExpired
+            | ErrorCode::UpstreamTransient
+            | ErrorCode::RateLimited
+            | ErrorCode::Overloaded
+    )
 }
 
 #[derive(Clone)]
@@ -302,24 +347,21 @@ impl HttpError {
 
 impl IntoResponse for HttpError {
     fn into_response(self) -> Response {
-        (
+        let mut response = (
             http_status(self.code),
-            Cbor(ErrorResponse {
+            axum::Json(ErrorResponse {
                 code: self.code,
                 message: self.message,
                 retryable: retryable(self.code),
             }),
         )
-            .into_response()
-    }
-}
-
-/// An `application/cbor` response body.
-struct Cbor<T>(T);
-
-impl<T: Serialize> IntoResponse for Cbor<T> {
-    fn into_response(self) -> Response {
-        ([(header::CONTENT_TYPE, CBOR)], encode_cbor(&self.0)).into_response()
+            .into_response();
+        if matches!(self.code, ErrorCode::RateLimited | ErrorCode::Overloaded) {
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, RETRY_AFTER_SECS.into());
+        }
+        response
     }
 }
 
@@ -354,20 +396,22 @@ fn decode_cbor<T: DeserializeOwned>(body: &[u8]) -> Result<T, HttpError> {
     request_body(content = MerkleProofRequest, content_type = "application/cbor"),
     responses(
         (status = 200, description = "One answer per queried leaf, in request order", body = MerkleProofResponse, content_type = "application/cbor"),
-        (status = 400, description = "Malformed request", body = ErrorResponse, content_type = "application/cbor"),
-        (status = 401, description = "Request signature refused", body = ErrorResponse, content_type = "application/cbor"),
-        (status = 429, description = "Signer over its rate or holding as many signed requests as it may, or no database connection free in time", body = ErrorResponse, content_type = "application/cbor"),
-        (status = 502, description = "Leaf record or KMS tx-sender set unavailable", body = ErrorResponse, content_type = "application/cbor"),
+        (status = 400, description = "Malformed request, or a query string", body = ErrorResponse, content_type = "application/json"),
+        (status = 401, description = "Request signature expired (`auth_expired`, retryable) or refused", body = ErrorResponse, content_type = "application/json"),
+        (status = 429, description = "Signer over its rate or holding as many signed requests as it may; `Retry-After` set", body = ErrorResponse, content_type = "application/json"),
+        (status = 502, description = "Leaf record or KMS tx-sender set unavailable", body = ErrorResponse, content_type = "application/json"),
+        (status = 503, description = "No database connection free in time; `Retry-After` set", body = ErrorResponse, content_type = "application/json"),
     ),
-    security(("request_authorization" = [])),
+    security(("fhevm_sig" = [])),
 )]
 async fn merkle_proofs(
     State(state): State<AppState>,
+    uri: Uri,
     headers: HeaderMap,
     body: Result<Bytes, BytesRejection>,
 ) -> Result<Response, HttpError> {
     let started = Instant::now();
-    let answer = answer_merkle_proofs(state, &headers, body).await;
+    let answer = answer_merkle_proofs(state, &uri, &headers, body).await;
     let error_code;
     let status = match &answer {
         Ok(Served { repeat: true, .. }) => "cached",
@@ -391,13 +435,19 @@ struct Served {
 
 async fn answer_merkle_proofs(
     state: AppState,
+    uri: &Uri,
     headers: &HeaderMap,
     body: Result<Bytes, BytesRejection>,
 ) -> Result<Served, HttpError> {
+    // `FhevmSig` does not sign a query string.
+    if uri.query().is_some() {
+        return Err(HttpError::malformed("a query string is not signed"));
+    }
     let body =
         body.map_err(|rejection| HttpError::malformed(rejection.body_text()))?;
     let now = unix_now_secs();
-    let authorization = authenticate(&state.senders, headers, &body, now)?;
+    let authorization =
+        authenticate(&state.senders, state.audience, headers, &body, now)?;
     REQUESTS_BY_SIGNER
         .with_label_values(&[&authorization.signer.to_string()])
         .inc();
@@ -417,7 +467,7 @@ async fn answer_merkle_proofs(
     };
     let admission = state.answers.admit(
         authorization.signing_hash,
-        authorization.expires,
+        authorization.accepted_until(),
         signer,
         now,
         charge,
@@ -430,10 +480,15 @@ async fn answer_merkle_proofs(
             // the request's other copies wait for.
             tokio::spawn(async move {
                 let answer = answer_request(&state, queries).await;
-                state.answers.settle(
-                    &authorization.signing_hash,
-                    answer.as_ref().map_or(0, Bytes::len),
-                );
+                let hash = &authorization.signing_hash;
+                match &answer {
+                    Err(error) if error.code == ErrorCode::Overloaded => {
+                        state.answers.forget(hash)
+                    }
+                    answer => state
+                        .answers
+                        .settle(hash, answer.as_ref().map_or(0, Bytes::len)),
+                }
                 sender.send_replace(Some(answer));
             });
             answer
@@ -453,7 +508,7 @@ async fn answer_merkle_proofs(
         }
         Admission::Expired => {
             return Err(HttpError::new(
-                ErrorCode::SenderAuthenticationFailed,
+                ErrorCode::AuthExpired,
                 "request authorization expired",
             ))
         }
@@ -491,18 +546,27 @@ fn parse_request(body: &[u8]) -> Result<Vec<ParsedQuery>, HttpError> {
 }
 
 async fn answer_request(state: &AppState, queries: Vec<ParsedQuery>) -> Answer {
-    let Ok(Ok(_proof_read)) =
+    PROOF_READS_WAITING.inc();
+    let proof_read =
         tokio::time::timeout(PROOF_READ_WAIT, state.proof_reads.acquire())
-            .await
-    else {
+            .await;
+    PROOF_READS_WAITING.dec();
+    let Ok(Ok(_proof_read)) = proof_read else {
         return Err(HttpError::new(
-            ErrorCode::RateLimited,
+            ErrorCode::Overloaded,
             format!("no database connection free within {PROOF_READ_WAIT:?}"),
         ));
     };
+    PROOF_READS_IN_FLIGHT.inc();
+    let answer = read_proofs(&state.pool, queries).await;
+    PROOF_READS_IN_FLIGHT.dec();
+    answer
+}
+
+async fn read_proofs(pool: &PgPool, queries: Vec<ParsedQuery>) -> Answer {
     let mut proofs = Vec::with_capacity(queries.len());
     for query in queries {
-        let Ok(proof) = prove(&state.pool, &query).await else {
+        let Ok(proof) = prove(pool, &query).await else {
             return Err(HttpError::new(
                 ErrorCode::UpstreamTransient,
                 "leaf record read failed",
@@ -520,9 +584,11 @@ fn cbor_response(body: Bytes) -> Response {
     ([(header::CONTENT_TYPE, CBOR)], body).into_response()
 }
 
-/// Returns what the KMS tx-sender that signed this exact body for this route signed.
+/// Returns what the KMS tx-sender that signed this exact body for this route and
+/// `audience` signed.
 fn authenticate(
     senders: &KmsTxSenders,
+    audience: Address,
     headers: &HeaderMap,
     body: &[u8],
     now: u64,
@@ -545,9 +611,15 @@ fn authenticate(
         header,
         MERKLE_PROOFS_PATH,
         body,
+        audience,
         now,
     )
-    .map_err(|err| refused(err.to_string()))?;
+    .map_err(|err| match err {
+        AuthorizationError::Expired { .. } => {
+            HttpError::new(ErrorCode::AuthExpired, err.to_string())
+        }
+        _ => refused(err.to_string()),
+    })?;
     if !set.senders.contains(&authorization.signer) {
         return Err(refused(format!(
             "{} is not the tx-sender of a node in a live KMS context of \
@@ -694,24 +766,28 @@ async fn prove_leaf(
 
 // --- OpenAPI ----------------------------------------------------------------------
 
-struct RequestAuthorizationScheme;
+struct FhevmSigScheme;
 
-impl Modify for RequestAuthorizationScheme {
+impl Modify for FhevmSigScheme {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         openapi
             .components
             .get_or_insert_with(Default::default)
             .add_security_scheme(
-                "request_authorization",
+                "fhevm_sig",
                 SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::with_description(
                     "Authorization",
                     &format!(
-                        "`{} expires=<unix seconds>, signature=0x<65 bytes>`: an EIP-712 \
-                         signature over this path and the exact body, by the tx-sender of a node \
-                         in a live KMS context of the canonical ProtocolConfig, valid for at most \
-                         {} s. The `shared/request-authorization` crate defines the typed data.",
+                        "`{} expires=<unix seconds>, sig=0x<65 bytes>` (RFC 038): an EIP-712 \
+                         signature over this path, the exact body, the expiry and this \
+                         coprocessor's signer address as audience, by the tx-sender of a node \
+                         in a live KMS context of the canonical ProtocolConfig. Accepted up to \
+                         {} s after expiry and at most {} s ahead. The \
+                         `shared/request-authorization` crate defines the typed data.",
                         request_authorization::SCHEME,
-                        request_authorization::MAX_VALIDITY_SECS,
+                        request_authorization::CLOCK_SKEW_SECS,
+                        request_authorization::MAX_AUTH_VALIDITY_SECS
+                            + request_authorization::CLOCK_SKEW_SECS,
                     ),
                 ))),
             );
@@ -736,7 +812,7 @@ impl Modify for RequestAuthorizationScheme {
         ErrorCode,
         ErrorResponse,
     )),
-    modifiers(&RequestAuthorizationScheme),
+    modifiers(&FhevmSigScheme),
 )]
 pub struct ApiDoc;
 
@@ -864,10 +940,14 @@ mod tests {
         contract: Address::repeat_byte(0xC0),
     };
 
-    async fn signed(
+    /// The signer address of the coprocessor under test.
+    const AUDIENCE: Address = Address::repeat_byte(0xCC);
+
+    async fn signed_for(
         signer: &PrivateKeySigner,
         body: &[u8],
         expires: u64,
+        audience: Address,
     ) -> String {
         request_authorization::authorize(
             signer,
@@ -875,15 +955,27 @@ mod tests {
             MERKLE_PROOFS_PATH,
             body,
             expires,
+            audience,
         )
         .await
         .expect("sign")
     }
 
+    async fn signed(
+        signer: &PrivateKeySigner,
+        body: &[u8],
+        expires: u64,
+    ) -> String {
+        signed_for(signer, body, expires, AUDIENCE).await
+    }
+
     async fn error_of(response: reqwest::Response) -> ErrorResponse {
-        assert_eq!(response.headers()[header::CONTENT_TYPE], CBOR);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "application/json"
+        );
         let body = response.bytes().await.expect("error body");
-        decode_cbor(&body).ok().expect("a CBOR error body")
+        serde_json::from_slice(&body).expect("a JSON error body")
     }
 
     async fn spawn(
@@ -892,7 +984,9 @@ mod tests {
         answer_cache_bytes_per_signer: usize,
         proof_reads: usize,
     ) -> (String, CancellationToken, tokio::task::JoinHandle<()>) {
+        // Nothing listens there, so a read fails once the acquire times out.
         let pool = PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(100))
             .connect_lazy("postgres://nobody@127.0.0.1:1/none")
             .expect("lazy pool");
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
@@ -904,6 +998,7 @@ mod tests {
                 let router = merkle_proofs_router(
                     pool,
                     senders,
+                    AUDIENCE,
                     NonZeroU32::new(leaves_per_second).expect("a rate"),
                     answer_cache_bytes_per_signer,
                     proof_reads,
@@ -964,8 +1059,6 @@ mod tests {
         let by_stranger = signed(&stranger, &body, unix_now_secs() + 30).await;
         refused(post(Some(by_stranger), body.clone()).await.expect("send"))
             .await;
-        let expired = signed(&connector, &body, unix_now_secs() - 1).await;
-        refused(post(Some(expired), body.clone()).await.expect("send")).await;
         let for_other_body =
             signed(&connector, &[0xA0], unix_now_secs() + 30).await;
         refused(
@@ -974,6 +1067,62 @@ mod tests {
                 .expect("send"),
         )
         .await;
+        // Signed for another coprocessor.
+        let for_other_audience = signed_for(
+            &connector,
+            &body,
+            unix_now_secs() + 30,
+            Address::repeat_byte(0xCD),
+        )
+        .await;
+        refused(
+            post(Some(for_other_audience), body.clone())
+                .await
+                .expect("send"),
+        )
+        .await;
+        let too_long_lived = signed(
+            &connector,
+            &body,
+            unix_now_secs()
+                + request_authorization::MAX_AUTH_VALIDITY_SECS
+                + request_authorization::CLOCK_SKEW_SECS
+                + 60,
+        )
+        .await;
+        refused(
+            post(Some(too_long_lived), body.clone())
+                .await
+                .expect("send"),
+        )
+        .await;
+
+        // Past its expiry and the clock skew, a signature is refused as expired, which
+        // the connector may sign again.
+        let expired = signed(
+            &connector,
+            &body,
+            unix_now_secs() - request_authorization::CLOCK_SKEW_SECS - 60,
+        )
+        .await;
+        let response = post(Some(expired), body.clone()).await.expect("send");
+        assert_eq!(response.status(), 401);
+        let error = error_of(response).await;
+        assert_eq!(error.code, ErrorCode::AuthExpired);
+        assert!(error.retryable);
+
+        // A query string is not signed, so a request that carries one is refused.
+        let authorization =
+            signed(&connector, &body, unix_now_secs() + 30).await;
+        let response = client
+            .post(format!("{url}?leaves=1"))
+            .header(header::AUTHORIZATION, authorization)
+            .body(body.clone())
+            .send()
+            .await
+            .expect("send");
+        assert_eq!(response.status(), 400);
+        assert_eq!(error_of(response).await.code, ErrorCode::Malformed);
 
         let not_cbor = b"{\"leaves\":[]}".to_vec();
         let authorization =
@@ -1049,12 +1198,14 @@ mod tests {
         })
     }
 
+    /// A refusal the connector takes to another coprocessor: its status, code and
+    /// message. It is retryable, and a 429 or 503 sets `Retry-After`.
     async fn refusal(
         client: &reqwest::Client,
         url: &str,
         authorization: &str,
         body: Vec<u8>,
-    ) -> String {
+    ) -> (u16, ErrorCode, String) {
         let response = client
             .post(url)
             .header(header::AUTHORIZATION, authorization)
@@ -1062,16 +1213,43 @@ mod tests {
             .send()
             .await
             .expect("send");
-        assert_eq!(response.status(), 429);
+        let retry_after = response
+            .headers()
+            .get(header::RETRY_AFTER)
+            .map(|value| value.to_str().expect("ASCII").to_owned());
+        let status = response.status().as_u16();
         let error = error_of(response).await;
-        assert_eq!(error.code, ErrorCode::RateLimited);
         assert!(error.retryable);
-        error.message
+        let backs_off = matches!(
+            error.code,
+            ErrorCode::RateLimited | ErrorCode::Overloaded
+        );
+        assert_eq!(
+            retry_after,
+            backs_off.then(|| RETRY_AFTER_SECS.to_string())
+        );
+        (status, error.code, error.message)
+    }
+
+    fn no_connection() -> (u16, ErrorCode, String) {
+        (
+            503,
+            ErrorCode::Overloaded,
+            format!("no database connection free within {PROOF_READ_WAIT:?}"),
+        )
+    }
+
+    fn read_failed() -> (u16, ErrorCode, String) {
+        (
+            502,
+            ErrorCode::UpstreamTransient,
+            "leaf record read failed".to_owned(),
+        )
     }
 
     /// Every copy of a signed request, sent at once or later, gets the first copy's
-    /// answer, here its refusal for want of a database connection: only the first
-    /// copy spends the signer's burst, and only a new request is over the rate.
+    /// answer, here its failed read: only the first copy spends the signer's burst,
+    /// and only a new request is over the rate.
     #[tokio::test]
     async fn copies_of_a_request_share_its_first_answer_and_cost() {
         let connector = PrivateKeySigner::random();
@@ -1082,7 +1260,7 @@ mod tests {
             }),
             1,
             1 << 20,
-            0,
+            1,
         )
         .await;
         let url = format!("{base}{MERKLE_PROOFS_PATH}");
@@ -1105,14 +1283,12 @@ mod tests {
                 refusal(&client, &url, &authorization, body).await
             });
         }
-        let no_connection =
-            format!("no database connection free within {PROOF_READ_WAIT:?}");
-        while let Some(message) = copies.join_next().await {
-            assert_eq!(message.expect("join"), no_connection);
+        while let Some(answer) = copies.join_next().await {
+            assert_eq!(answer.expect("join"), read_failed());
         }
         assert_eq!(
             refusal(&client, &url, &authorization, body).await,
-            no_connection
+            read_failed()
         );
 
         let other = full_request([0x11; 32]);
@@ -1120,7 +1296,55 @@ mod tests {
             signed(&connector, &other, unix_now_secs() + 30).await;
         assert_eq!(
             refusal(&client, &url, &authorization, other).await,
-            format!("{} is over its leaves per second", connector.address())
+            (
+                429,
+                ErrorCode::RateLimited,
+                format!(
+                    "{} is over its leaves per second",
+                    connector.address()
+                )
+            )
+        );
+
+        cancel.cancel();
+        server.await.expect("join");
+    }
+
+    /// An `overloaded` refusal read nothing, so a copy sent after it is admitted
+    /// again: charged anew, which puts this signer at one leaf per second over its
+    /// rate.
+    #[tokio::test]
+    async fn a_copy_after_an_overloaded_refusal_is_admitted_again() {
+        let connector = PrivateKeySigner::random();
+        let (base, cancel, server) = spawn(
+            KmsTxSenders::fixed(KmsTxSenderSet {
+                registry: REGISTRY,
+                senders: HashSet::from([connector.address()]),
+            }),
+            1,
+            1 << 20,
+            0,
+        )
+        .await;
+        let url = format!("{base}{MERKLE_PROOFS_PATH}");
+        let client = reqwest::Client::new();
+        let body = full_request([0x10; 32]);
+        let authorization =
+            signed(&connector, &body, unix_now_secs() + 30).await;
+        assert_eq!(
+            refusal(&client, &url, &authorization, body.clone()).await,
+            no_connection()
+        );
+        assert_eq!(
+            refusal(&client, &url, &authorization, body).await,
+            (
+                429,
+                ErrorCode::RateLimited,
+                format!(
+                    "{} is over its leaves per second",
+                    connector.address()
+                )
+            )
         );
 
         cancel.cancel();
@@ -1158,7 +1382,7 @@ mod tests {
             }),
             1,
             ENTRY_OVERHEAD_BYTES,
-            0,
+            1,
         )
         .await;
         let url = format!("{base}{MERKLE_PROOFS_PATH}");
@@ -1185,18 +1409,21 @@ mod tests {
                 refusal(&client, &url, &authorization, body).await
             }
         };
-        let no_connection =
-            format!("no database connection free within {PROOF_READ_WAIT:?}");
-        assert_eq!(ask(&alice, 0x10).await, no_connection);
+        // A failed read is kept, so it holds Alice's room.
+        assert_eq!(ask(&alice, 0x10).await, read_failed());
         // Alice's burst is spent too: the room is checked first.
         assert_eq!(
             ask(&alice, 0x11).await,
-            format!(
-                "{} holds as many signed requests as it may",
-                alice.address()
+            (
+                429,
+                ErrorCode::RateLimited,
+                format!(
+                    "{} holds as many signed requests as it may",
+                    alice.address()
+                )
             )
         );
-        assert_eq!(ask(&bob, 0x12).await, no_connection);
+        assert_eq!(ask(&bob, 0x12).await, read_failed());
 
         cancel.cancel();
         server.await.expect("join");

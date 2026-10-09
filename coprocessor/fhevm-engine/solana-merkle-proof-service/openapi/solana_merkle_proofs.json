@@ -42,9 +42,9 @@
             }
           },
           "400": {
-            "description": "Malformed request",
+            "description": "Malformed request, or a query string",
             "content": {
-              "application/cbor": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
@@ -52,9 +52,9 @@
             }
           },
           "401": {
-            "description": "Request signature refused",
+            "description": "Request signature expired (`auth_expired`, retryable) or refused",
             "content": {
-              "application/cbor": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
@@ -62,9 +62,9 @@
             }
           },
           "429": {
-            "description": "Signer over its rate or holding as many signed requests as it may, or no database connection free in time",
+            "description": "Signer over its rate or holding as many signed requests as it may; `Retry-After` set",
             "content": {
-              "application/cbor": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
@@ -74,7 +74,17 @@
           "502": {
             "description": "Leaf record or KMS tx-sender set unavailable",
             "content": {
-              "application/cbor": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No database connection free in time; `Retry-After` set",
+            "content": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }
@@ -84,7 +94,7 @@
         },
         "security": [
           {
-            "request_authorization": []
+            "fhevm_sig": []
           }
         ]
       }
@@ -94,12 +104,14 @@
     "schemas": {
       "ErrorCode": {
         "type": "string",
-        "description": "Error codes, in the vocabulary of the Direct HTTP Decryption Endpoint RFC.",
+        "description": "Error codes, in the vocabulary of RFC 033 (Direct HTTP Decryption Endpoint). Error bodies are\nJSON.",
         "enum": [
           "malformed",
+          "auth_expired",
           "sender_authentication_failed",
           "upstream_transient",
-          "rate_limited"
+          "rate_limited",
+          "overloaded"
         ]
       },
       "ErrorResponse": {
@@ -282,11 +294,11 @@
       }
     },
     "securitySchemes": {
-      "request_authorization": {
+      "fhevm_sig": {
         "type": "apiKey",
         "in": "header",
         "name": "Authorization",
-        "description": "`Zama-EIP712 expires=<unix seconds>, signature=0x<65 bytes>`: an EIP-712 signature over this path and the exact body, by the tx-sender of a node in a live KMS context of the canonical ProtocolConfig, valid for at most 60 s. The `shared/request-authorization` crate defines the typed data."
+        "description": "`FhevmSig expires=<unix seconds>, sig=0x<65 bytes>` (RFC 038): an EIP-712 signature over this path, the exact body, the expiry and this coprocessor's signer address as audience, by the tx-sender of a node in a live KMS context of the canonical ProtocolConfig. Accepted up to 30 s after expiry and at most 330 s ahead. The `shared/request-authorization` crate defines the typed data."
       }
     }
   }
