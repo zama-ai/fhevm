@@ -8,7 +8,9 @@ metadata:
     app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
   name: {{ include "zkProofWorkerName" . }}
 spec:
+  {{- if not .Values.zkProofWorker.hpa.enabled }}
   replicas: {{ .Values.zkProofWorker.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       app: coprocessor-zkproof-worker

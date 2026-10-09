@@ -953,6 +953,7 @@ tfheWorker:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/tfhe-worker
     tag: v0.11.0
 
+  # Used only when hpa.enabled is false; otherwise the HPA manages replicas.
   replicas: 1
 
   # Additional environment variables
@@ -1246,6 +1247,7 @@ zkProofWorker:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/zkproof-worker
     tag: v0.11.0
 
+  # Used only when hpa.enabled is false; otherwise the HPA manages replicas.
   replicas: 1
 
   # Additional environment variables.
@@ -1367,6 +1369,7 @@ snsWorker:
     name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/sns-worker
     tag: v0.11.0
 
+  # Used only when hpa.enabled is false; otherwise the HPA manages replicas.
   replicas: 1
 
   # Component-specific configuration

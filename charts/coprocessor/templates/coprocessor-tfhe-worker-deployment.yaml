@@ -8,7 +8,9 @@ metadata:
     app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
   name: {{ include "tfheWorkerName" . }}
 spec:
+  {{- if not .Values.tfheWorker.hpa.enabled }}
   replicas: {{ .Values.tfheWorker.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       app: coprocessor-tfhe-worker

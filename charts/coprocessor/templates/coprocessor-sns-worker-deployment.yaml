@@ -8,7 +8,9 @@ metadata:
     app.kubernetes.io/name: {{ include "snsWorkerName" . }}
   name: {{ include "snsWorkerName" . }}
 spec:
+  {{- if not .Values.snsWorker.hpa.enabled }}
   replicas: {{ .Values.snsWorker.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       app: coprocessor-sns-worker
