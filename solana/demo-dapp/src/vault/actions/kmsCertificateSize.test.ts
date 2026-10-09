@@ -18,13 +18,13 @@ function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
 }
 
-// A certificate at the host's maximum KMS threshold (MAX_KMS_SIGNERS = 16) with version 1 extra data
-// (a version byte then the 32-byte KMS context id).
+// A certificate at the host's maximum KMS threshold (MAX_KMS_SIGNERS = 16) with the SDK's version 2
+// extra data (a version byte, then the 32-byte KMS context and epoch ids).
 const claim: SolanaPublicDecryptCertificateClaim = {
   handle: `0x${'ab'.repeat(32)}`,
   abiEncodedCleartext: `${'00'.repeat(31)}2a`,
   signatures: Array.from({ length: 16 }, () => '11'.repeat(65)),
-  extraData: `0x01${'09'.repeat(32)}`,
+  extraData: `0x02${'09'.repeat(32)}${'0a'.repeat(32)}`,
 };
 const kmsContext = addr(9);
 
@@ -46,7 +46,7 @@ const consumers: [string, (payer: TransactionSigner) => Promise<Instruction>][] 
         burnedHandle: new Uint8Array(32).fill(0xab),
         cleartextAmount: 42n,
         signatures: Array.from({ length: 16 }, () => new Uint8Array(65).fill(0x11)),
-        extraData: new Uint8Array([0x01, ...new Uint8Array(32).fill(0x09)]),
+        extraData: new Uint8Array([0x02, ...new Uint8Array(32).fill(0x09), ...new Uint8Array(32).fill(0x0a)]),
       }),
   ],
   ['verify_public_decrypt', () => buildVerifyPublicDecryptInstruction({ programAddress: ZAMA_HOST_PROGRAM_ADDRESS, kmsContext }, claim)],

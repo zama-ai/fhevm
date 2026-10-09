@@ -88,12 +88,14 @@ export type DefineKmsContextInstruction<
 export type DefineKmsContextInstructionData = {
   discriminator: ReadonlyUint8Array;
   contextId: ReadonlyUint8Array;
+  epochId: ReadonlyUint8Array;
   signers: Array<ReadonlyUint8Array>;
   thresholds: KmsThresholds;
 };
 
 export type DefineKmsContextInstructionDataArgs = {
   contextId: ReadonlyUint8Array;
+  epochId: ReadonlyUint8Array;
   signers: Array<ReadonlyUint8Array>;
   thresholds: KmsThresholdsArgs;
 };
@@ -103,6 +105,7 @@ export function getDefineKmsContextInstructionDataEncoder(): Encoder<DefineKmsCo
     getStructEncoder([
       ['discriminator', fixEncoderSize(getBytesEncoder(), 8)],
       ['contextId', fixEncoderSize(getBytesEncoder(), 32)],
+      ['epochId', fixEncoderSize(getBytesEncoder(), 32)],
       ['signers', getArrayEncoder(fixEncoderSize(getBytesEncoder(), 20))],
       ['thresholds', getKmsThresholdsEncoder()],
     ]),
@@ -114,6 +117,7 @@ export function getDefineKmsContextInstructionDataDecoder(): Decoder<DefineKmsCo
   return getStructDecoder([
     ['discriminator', fixDecoderSize(getBytesDecoder(), 8)],
     ['contextId', fixDecoderSize(getBytesDecoder(), 32)],
+    ['epochId', fixDecoderSize(getBytesDecoder(), 32)],
     ['signers', getArrayDecoder(fixDecoderSize(getBytesDecoder(), 20))],
     ['thresholds', getKmsThresholdsDecoder()],
   ]);
@@ -136,7 +140,7 @@ export type DefineKmsContextAsyncInput<
 > = {
   /** Configured host admin and rent payer for the context account. */
   admin: TAccountAdmin;
-  /** Singleton config PDA; its `current_kms_context_id` is set to `context_id`. */
+  /** Singleton config PDA; its active context and epoch are set to `context_id` and `epoch_id`. */
   hostConfig?: TAccountHostConfig;
   /** KMS context PDA created for `context_id`. */
   kmsContext?: TAccountKmsContext;
@@ -145,6 +149,7 @@ export type DefineKmsContextAsyncInput<
   eventAuthority?: TAccountEventAuthority;
   program?: TAccountProgram;
   contextId: DefineKmsContextInstructionDataArgs['contextId'];
+  epochId: DefineKmsContextInstructionDataArgs['epochId'];
   signers: DefineKmsContextInstructionDataArgs['signers'];
   thresholds: DefineKmsContextInstructionDataArgs['thresholds'];
 };
@@ -280,7 +285,7 @@ export type DefineKmsContextInput<
 > = {
   /** Configured host admin and rent payer for the context account. */
   admin: TAccountAdmin;
-  /** Singleton config PDA; its `current_kms_context_id` is set to `context_id`. */
+  /** Singleton config PDA; its active context and epoch are set to `context_id` and `epoch_id`. */
   hostConfig: TAccountHostConfig;
   /** KMS context PDA created for `context_id`. */
   kmsContext: TAccountKmsContext;
@@ -289,6 +294,7 @@ export type DefineKmsContextInput<
   eventAuthority: TAccountEventAuthority;
   program?: TAccountProgram;
   contextId: DefineKmsContextInstructionDataArgs['contextId'];
+  epochId: DefineKmsContextInstructionDataArgs['epochId'];
   signers: DefineKmsContextInstructionDataArgs['signers'];
   thresholds: DefineKmsContextInstructionDataArgs['thresholds'];
 };
@@ -399,7 +405,7 @@ export type ParsedDefineKmsContextInstruction<
   accounts: {
     /** Configured host admin and rent payer for the context account. */
     admin: TAccountMetas[0];
-    /** Singleton config PDA; its `current_kms_context_id` is set to `context_id`. */
+    /** Singleton config PDA; its active context and epoch are set to `context_id` and `epoch_id`. */
     hostConfig: TAccountMetas[1];
     /** KMS context PDA created for `context_id`. */
     kmsContext: TAccountMetas[2];

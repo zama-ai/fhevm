@@ -87,6 +87,12 @@ export type HostConfig = {
    * none defined yet. Updated by `define_kms_context`.
    */
   currentKmsContextId: ReadonlyUint8Array;
+  /**
+   * Active KMS epoch id of the active context (with the context, mirrors
+   * `ProtocolConfig.getCurrentKmsContextAndEpoch`); `[0; 32]` until the first context. Updated
+   * by `define_kms_context` and `define_kms_epoch`. Certificate verification reads only the context.
+   */
+  currentKmsEpochId: ReadonlyUint8Array;
   /** Host areas currently stopped. A pauser sets them; only the admin clears them (DD-058). */
   paused: PauseFlags;
   /** Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public. */
@@ -148,6 +154,12 @@ export type HostConfigArgs = {
    * none defined yet. Updated by `define_kms_context`.
    */
   currentKmsContextId: ReadonlyUint8Array;
+  /**
+   * Active KMS epoch id of the active context (with the context, mirrors
+   * `ProtocolConfig.getCurrentKmsContextAndEpoch`); `[0; 32]` until the first context. Updated
+   * by `define_kms_context` and `define_kms_epoch`. Certificate verification reads only the context.
+   */
+  currentKmsEpochId: ReadonlyUint8Array;
   /** Host areas currently stopped. A pauser sets them; only the admin clears them (DD-058). */
   paused: PauseFlagsArgs;
   /** Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public. */
@@ -187,6 +199,7 @@ export function getHostConfigEncoder(): FixedSizeEncoder<HostConfigArgs> {
       ['coprocessorThreshold', getU8Encoder()],
       ['decryptionContract', fixEncoderSize(getBytesEncoder(), 20)],
       ['currentKmsContextId', fixEncoderSize(getBytesEncoder(), 32)],
+      ['currentKmsEpochId', fixEncoderSize(getBytesEncoder(), 32)],
       ['paused', getPauseFlagsEncoder()],
       ['grantDenyListEnabled', getBooleanEncoder()],
       ['maxHcuPerTx', getU64Encoder()],
@@ -211,6 +224,7 @@ export function getHostConfigDecoder(): FixedSizeDecoder<HostConfig> {
     ['coprocessorThreshold', getU8Decoder()],
     ['decryptionContract', fixDecoderSize(getBytesDecoder(), 20)],
     ['currentKmsContextId', fixDecoderSize(getBytesDecoder(), 32)],
+    ['currentKmsEpochId', fixDecoderSize(getBytesDecoder(), 32)],
     ['paused', getPauseFlagsDecoder()],
     ['grantDenyListEnabled', getBooleanDecoder()],
     ['maxHcuPerTx', getU64Decoder()],
@@ -276,5 +290,5 @@ export async function fetchAllMaybeHostConfig(
 }
 
 export function getHostConfigSize(): number {
-  return 319;
+  return 351;
 }

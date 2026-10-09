@@ -29,9 +29,9 @@ use zama_host::{
 use zama_solana_acl::StoreHistoryEvent;
 use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
-    coprocessor_signer_address, cost_snapshot, deny_scope_record_account, empty_system_account,
-    encrypted_store_account, event_authority, funded_system_account, handle_for_chain,
-    hcu_trusted_app_record_account, host_svm as mollusk,
+    canonical_test_epoch_id, coprocessor_signer_address, cost_snapshot, deny_scope_record_account,
+    empty_system_account, encrypted_store_account, event_authority, funded_system_account,
+    handle_for_chain, hcu_trusted_app_record_account, host_svm as mollusk,
     host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
     new_encrypted_store, new_encrypted_store_with_slot, paused_host_config, program_owned_account,
     rand_nonce_account, read_encrypted_store, readonly, readonly_signer, serialized_account,
@@ -1682,9 +1682,11 @@ fn mollusk_admin_setters_run_while_every_area_is_paused() {
             admin,
             host_config,
             next_context,
+            canonical_test_epoch_id(2),
             kms_context_signers(),
             default_kms_thresholds(),
         ),
+        define_kms_epoch_ix(admin, host_config, next_context, canonical_test_epoch_id(3)),
         destroy_kms_context_ix(admin, host_config, KMS_CONTEXT_ID),
         set_deny_scope_ix(admin, admin, host_config, app, true),
         set_hcu_app_trusted_ix(admin, admin, host_config, app, true),
@@ -1713,6 +1715,7 @@ fn mollusk_admin_setters_run_while_every_area_is_paused() {
     let config = read_host_config(&context, host_config).expect("config");
     assert_eq!(config.paused, host::PauseFlags::ALL);
     assert_eq!(config.current_kms_context_id, next_context);
+    assert_eq!(config.current_kms_epoch_id, canonical_test_epoch_id(3));
 }
 
 // ---------------------------------------------------------------------------
@@ -2442,6 +2445,7 @@ fn define_kms_context_ix(
     admin: Pubkey,
     host_config: Pubkey,
     context_id: [u8; 32],
+    epoch_id: [u8; 32],
     signers: Vec<[u8; 20]>,
     thresholds: host::KmsThresholds,
 ) -> Instruction {
@@ -2458,8 +2462,30 @@ fn define_kms_context_ix(
         },
         host::instruction::DefineKmsContext {
             context_id,
+            epoch_id,
             signers,
             thresholds,
+        },
+    )
+}
+
+fn define_kms_epoch_ix(
+    admin: Pubkey,
+    host_config: Pubkey,
+    context_id: [u8; 32],
+    epoch_id: [u8; 32],
+) -> Instruction {
+    anchor_ix(
+        host::id(),
+        host::accounts::DefineKmsEpoch {
+            admin,
+            host_config,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
+        host::instruction::DefineKmsEpoch {
+            context_id,
+            epoch_id,
         },
     )
 }
@@ -3321,7 +3347,14 @@ fn mollusk_define_kms_context_at_realistic_signer_count() {
     };
     let result = check_host_context(
         &context,
-        &define_kms_context_ix(admin, host_config, context_id, signers.clone(), thresholds),
+        &define_kms_context_ix(
+            admin,
+            host_config,
+            context_id,
+            canonical_test_epoch_id(1),
+            signers.clone(),
+            thresholds,
+        ),
         &[Check::success()],
     );
 
@@ -3335,6 +3368,7 @@ fn mollusk_define_kms_context_at_realistic_signer_count() {
     let event = sole_emitted_event::<host::NewKmsContextEvent>(&result);
     assert_eq!(event.version, host::EVENT_VERSION);
     assert_eq!(event.kms_context_id, context_id);
+    assert_eq!(event.kms_epoch_id, canonical_test_epoch_id(1));
     assert_eq!(event.signers, signers);
     assert_eq!(event.public_decryption_threshold, 7);
     assert_eq!(event.user_decryption_threshold, 7);
@@ -3365,6 +3399,7 @@ fn run_define_kms_context_expecting(signers: Vec<[u8; 20]>, expected: Check<'sta
             admin,
             host_config,
             context_id,
+            canonical_test_epoch_id(1),
             signers,
             default_kms_thresholds(),
         ),
@@ -3437,13 +3472,15 @@ fn mollusk_define_kms_context_requires_an_increasing_id() {
             .map(|(id, _)| (host::kms_context_address(*id).0, system_account(0))),
     );
     let context = mollusk_execute_context(admin, accounts);
-    for (id, expected) in steps {
+    // A fresh, higher epoch at every step, so only the context id decides.
+    for (step, (id, expected)) in steps.into_iter().enumerate() {
         check_host_context(
             &context,
             &define_kms_context_ix(
                 admin,
                 host_config,
                 id,
+                canonical_test_epoch_id(step as u8 + 1),
                 vec![[0xAA; 20]],
                 default_kms_thresholds(),
             ),
@@ -3452,6 +3489,99 @@ fn mollusk_define_kms_context_requires_an_increasing_id() {
     }
     let config = read_host_config(&context, host_config).expect("config");
     assert_eq!(config.current_kms_context_id, tagged(0x0100));
+}
+
+#[test]
+fn mollusk_define_kms_context_requires_an_increasing_epoch() {
+    // As EVM `mirrorKmsContextAndEpoch`: a new context also needs an epoch above the active one.
+    let admin = Pubkey::new_unique();
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
+    let non_increasing = || custom_error(host::errors::ZamaHostError::NonIncreasingKmsEpochId);
+    let steps = [
+        (1, 0, non_increasing()),
+        (1, 5, Check::success()),
+        (2, 5, non_increasing()),
+        (2, 3, non_increasing()),
+        (2, 6, Check::success()),
+    ];
+    let mut accounts = vec![(host_config, account)];
+    accounts.extend([1, 2].map(|n| {
+        (
+            host::kms_context_address(canonical_test_context_id(n)).0,
+            system_account(0),
+        )
+    }));
+    let context = mollusk_execute_context(admin, accounts);
+    for (context_n, epoch_n, expected) in steps {
+        check_host_context(
+            &context,
+            &define_kms_context_ix(
+                admin,
+                host_config,
+                canonical_test_context_id(context_n),
+                canonical_test_epoch_id(epoch_n),
+                vec![[0xAA; 20]],
+                default_kms_thresholds(),
+            ),
+            &[expected],
+        );
+    }
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.current_kms_context_id, canonical_test_context_id(2));
+    assert_eq!(config.current_kms_epoch_id, canonical_test_epoch_id(6));
+}
+
+#[test]
+fn mollusk_define_kms_epoch_advances_only_the_active_context() {
+    // As EVM `mirrorKmsEpoch`: the context must be the active one and the epoch must increase.
+    let admin = Pubkey::new_unique();
+    let (host_config, account) =
+        host_config_account_with_flags(admin, host::PauseFlags::default(), false);
+    let (older, active) = (canonical_test_context_id(1), canonical_test_context_id(2));
+    let context = mollusk_execute_context(
+        admin,
+        vec![
+            (host_config, account),
+            (host::kms_context_address(older).0, system_account(0)),
+            (host::kms_context_address(active).0, system_account(0)),
+        ],
+    );
+    let epoch = |context_id, n| {
+        define_kms_epoch_ix(admin, host_config, context_id, canonical_test_epoch_id(n))
+    };
+    let invalid_context = || custom_error(host::errors::ZamaHostError::InvalidKmsContext);
+    let non_increasing = || custom_error(host::errors::ZamaHostError::NonIncreasingKmsEpochId);
+
+    // Before any context, the all-zero active id names none.
+    check_host_context(&context, &epoch([0; 32], 1), &[invalid_context()]);
+    for (context_id, n) in [(older, 1), (active, 2)] {
+        check_host_context(
+            &context,
+            &define_kms_context_ix(
+                admin,
+                host_config,
+                context_id,
+                canonical_test_epoch_id(n),
+                vec![[0xAA; 20]],
+                default_kms_thresholds(),
+            ),
+            &[Check::success()],
+        );
+    }
+    // The older context is still live, but it is not the active one.
+    check_host_context(&context, &epoch(older, 3), &[invalid_context()]);
+    check_host_context(&context, &epoch(active, 2), &[non_increasing()]);
+    check_host_context(&context, &epoch(active, 1), &[non_increasing()]);
+    let result = check_host_context(&context, &epoch(active, 3), &[Check::success()]);
+
+    let event = sole_emitted_event::<host::NewKmsEpochEvent>(&result);
+    assert_eq!(event.version, host::EVENT_VERSION);
+    assert_eq!(event.kms_context_id, active);
+    assert_eq!(event.kms_epoch_id, canonical_test_epoch_id(3));
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.current_kms_context_id, active);
+    assert_eq!(config.current_kms_epoch_id, canonical_test_epoch_id(3));
 }
 
 // ---------------------------------------------------------------------------
@@ -4844,6 +4974,7 @@ fn host_config_with_context(admin: Pubkey, context_id: [u8; 32]) -> (Pubkey, Acc
                 coprocessor_threshold: 1,
                 decryption_contract: DECRYPTION_CONTRACT,
                 current_kms_context_id: context_id,
+                current_kms_epoch_id: canonical_test_epoch_id(1),
                 paused: host::PauseFlags::default(),
                 grant_deny_list_enabled: false,
                 max_hcu_per_tx: u64::MAX,
@@ -5047,6 +5178,7 @@ fn rotate_to_next_context(
         admin,
         host_config,
         next_context_id,
+        canonical_test_epoch_id(2),
         kms_context_signers(),
         default_kms_thresholds(),
     );

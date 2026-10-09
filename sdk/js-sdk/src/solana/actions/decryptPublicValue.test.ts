@@ -16,7 +16,7 @@ const message = createKmsPublicDecryptEip712({
   verifyingContractAddressDecryption: '0x0000000000000000000000000000000000000042',
   handles: [handle],
   decryptedResult: `0x${'00'.repeat(31)}2a`,
-  extraData: `0x01${'44'.repeat(32)}`,
+  extraData: `0x02${'44'.repeat(32)}${'45'.repeat(32)}`,
 });
 /** The SDK's EIP-712 message in the shape viem signs. */
 const typedData = (eip712: ReturnType<typeof createKmsPublicDecryptEip712>) => ({
@@ -56,7 +56,7 @@ describe('Solana public decryption authentication', () => {
           field === 'contract' ? '0x0000000000000000000000000000000000000043' : signingDomain.verifyingContract,
         handles: field === 'handle' ? [toFhevmHandle(`0x${'cd'.repeat(22)}01000000000030390500`)] : [handle],
         decryptedResult: field === 'cleartext' ? `0x${'00'.repeat(31)}2b` : message.message.decryptedResult,
-        extraData: field === 'context' ? `0x01${'55'.repeat(32)}` : message.message.extraData,
+        extraData: field === 'context' ? `0x02${'55'.repeat(32)}${'45'.repeat(32)}` : message.message.extraData,
       });
       expect(() => verifyPublicDecryptSignatures(publicDecryptDigest(changed), [signature], registered, 1)).toThrow(
         'threshold',
@@ -97,6 +97,7 @@ import * as certificateModule from './publicDecryptCertificate.js';
 import { asBytes32Hex } from '../../core/base/bytes.js';
 
 const contextId = new Uint8Array(32).fill(0x44);
+const epochId = new Uint8Array(32).fill(0x45);
 const store = new Uint8Array(32).fill(0x44);
 const chain = {
   id: 72057594037940281n,
@@ -123,6 +124,7 @@ async function accountFixture() {
     coprocessorThreshold: 1,
     decryptionContract: hexToBytes(signingDomain.verifyingContract),
     currentKmsContextId: contextId,
+    currentKmsEpochId: epochId,
     paused: { execution: false, verifiedInputs: false, aclWrites: false },
     grantDenyListEnabled: false,
     maxHcuPerTx: 1n,
@@ -173,7 +175,11 @@ async function accountFixture() {
   };
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe('public decrypt client account-to-plaintext flow', () => {
   it('does no I/O when already cancelled', async () => {
@@ -182,6 +188,16 @@ describe('public decrypt client account-to-plaintext flow', () => {
     controller.abort();
     await expect(
       f.client.decryptPublicValue({ handle, encryptedStore: store, options: { signal: controller.signal } }),
+    ).rejects.toBeInstanceOf(RelayerAbortError);
+    expect(f.rpc.getAccountInfo).not.toHaveBeenCalled();
+    expect(f.request).not.toHaveBeenCalled();
+  });
+  it('fails a cancelled certificate request as the relayer does, before any read', async () => {
+    const f = await accountFixture();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      f.client.publicDecryptCertificate({ handle, encryptedStore: store, options: { signal: controller.signal } }),
     ).rejects.toBeInstanceOf(RelayerAbortError);
     expect(f.rpc.getAccountInfo).not.toHaveBeenCalled();
     expect(f.request).not.toHaveBeenCalled();
@@ -208,7 +224,7 @@ describe('public decrypt client account-to-plaintext flow', () => {
       [f.configAddress, f.contextAddress],
       expect.objectContaining({ commitment: 'finalized' }),
     );
-    expect(f.request).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ contextId }));
+    expect(f.request).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ contextId, epochId }));
   });
   it("reads accounts under the chain's host program, not the bundled one", async () => {
     const f = await accountFixture();
@@ -236,6 +252,82 @@ describe('public decrypt client account-to-plaintext flow', () => {
       await expect(f.client.decryptPublicValue({ handle, encryptedStore: store })).rejects.toThrow();
     },
   );
+  it.each([
+    ['a version 1 routing of the context', `0x01${'44'.repeat(32)}`],
+    ['another epoch', `0x02${'44'.repeat(32)}${'46'.repeat(32)}`],
+  ])('rejects a certificate signed over %s', async (_case, extraData) => {
+    const f = await accountFixture();
+    const other = createKmsPublicDecryptEip712({
+      chainId: 31337n,
+      verifyingContractAddressDecryption: signingDomain.verifyingContract,
+      handles: [handle],
+      decryptedResult: message.message.decryptedResult,
+      extraData,
+    });
+    const signature = await alice.signTypedData(typedData(other));
+    f.request.mockResolvedValueOnce({ ...f.claim, signatures: [signature.slice(2)], extraData });
+    await expect(f.client.decryptPublicValue({ handle, encryptedStore: store })).rejects.toThrow(
+      'does not name the requested KMS context and epoch',
+    );
+  });
+  it('routes a certificate request to the context and epoch HostConfig holds', async () => {
+    const f = await accountFixture();
+    f.request.mockRestore();
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'queued', requestId: 'r1', result: { jobId: 'j1' } }), {
+          status: 202,
+          headers: { 'Retry-After': '1' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'succeeded',
+            requestId: 'r1',
+            result: {
+              decryptedValue: f.claim.abiEncodedCleartext,
+              signatures: f.claim.signatures,
+              extraData: f.claim.extraData,
+            },
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    const pending = f.client.publicDecryptCertificate({ handle, encryptedStore: store });
+    // The request starts after the HostConfig read; then run out the relayer's Retry-After.
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await vi.runAllTimersAsync();
+    const claim = await pending;
+    const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body)) as { extraData: string };
+    expect(body.extraData).toBe(`0x02${'44'.repeat(32)}${'45'.repeat(32)}`);
+    expect(claim.extraData).toBe(body.extraData);
+  });
+  it('certifies one handle as a batch of one under the active context and epoch', async () => {
+    const f = await accountFixture();
+    const claim = await f.client.publicDecryptCertificate({ handle, encryptedStore: store });
+    expect(f.request).toHaveBeenCalledWith(expect.anything(), {
+      contextId,
+      epochId,
+      options: undefined,
+      entries: [{ handle, encryptedStore: store }],
+    });
+    const { handles: _handles, ...rest } = f.claim;
+    expect(claim).toEqual({ ...rest, handle: handle.bytes32Hex });
+  });
+  it.each([
+    ['two handles', [handle.bytes32Hex, handle.bytes32Hex]],
+    ['another handle', [`0x${'07'.repeat(22)}01${'00'.repeat(9)}`]],
+  ])('refuses a single certificate covering %s', async (_case, handles) => {
+    const f = await accountFixture();
+    f.request.mockResolvedValueOnce({ ...f.claim, handles });
+    await expect(f.client.publicDecryptCertificate({ handle, encryptedStore: store })).rejects.toThrow(
+      'exactly the requested handle',
+    );
+  });
   it('keeps the originally requested context when a rotation leaves it live', async () => {
     const f = await accountFixture();
     f.request.mockImplementationOnce(async () => {
@@ -308,7 +400,7 @@ describe('public decrypt client account-to-plaintext flow', () => {
     const values = await f.client.decryptPublicValues({ entries });
     expect(values.map((value) => value.value)).toEqual([42n, true]);
     expect(f.request).toHaveBeenCalledTimes(1);
-    expect(f.request).toHaveBeenCalledWith(expect.anything(), { entries, contextId, options: undefined });
+    expect(f.request).toHaveBeenCalledWith(expect.anything(), { entries, contextId, epochId, options: undefined });
     expect(f.rpc.getAccountInfo).toHaveBeenCalledTimes(1);
     expect(f.rpc.getAccountInfo).toHaveBeenCalledWith(
       f.configAddress,

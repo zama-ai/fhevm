@@ -159,11 +159,11 @@ describe("solana confidential-token consume vertical", () => {
       // Disclose: same verifier CPI, then the handle/cleartext event. Idempotent by design.
       await discloseCertifiedHandle(context, { payer: wallet.signer, certificate });
 
-      // Keep the v1 KMS routing intact; change only the committed context id.
+      // Keep the v2 KMS routing intact; change only the committed context id (bytes 1..33).
       // The host must reject the context mismatch before checking the certificate signature.
       const wrongContextExtraData = hexToBytes(certificate.extraData);
-      expect(wrongContextExtraData.length).toBe(33);
-      expect(wrongContextExtraData[0]).toBe(1);
+      expect(wrongContextExtraData.length).toBe(65);
+      expect(wrongContextExtraData[0]).toBe(2);
       wrongContextExtraData[32] = wrongContextExtraData[32]! ^ 1;
       const wrongContextCertificate = { ...certificate, extraData: hex(wrongContextExtraData) };
       const rejection = await discloseCertifiedHandle(context, {

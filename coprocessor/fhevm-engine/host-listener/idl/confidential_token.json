@@ -5233,6 +5233,20 @@
             }
           },
           {
+            "name": "current_kms_epoch_id",
+            "docs": [
+              "Active KMS epoch id of the active context (with the context, mirrors",
+              "`ProtocolConfig.getCurrentKmsContextAndEpoch`); `[0; 32]` until the first context. Updated",
+              "by `define_kms_context` and `define_kms_epoch`. Certificate verification reads only the context."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
             "name": "paused",
             "docs": [
               "Host areas currently stopped. A pauser sets them; only the admin clears them (DD-058)."

@@ -409,16 +409,17 @@ after the check (its own unit tests pin that mapping).
 
 **35. [HOLDS]** Only the configured admin can change HostConfig, except that an enabled pauser can set pause flags
 (#36). Every change emits a host event (`HostConfigUpdatedEvent`, or `NewKmsContextEvent` when `define_kms_context`
-moves the current context). The event always goes out through the event CPI, so it lands in the transaction's inner
+moves the current context, or `NewKmsEpochEvent` when `define_kms_epoch` moves the current epoch). The event always goes out through the event CPI, so it lands in the transaction's inner
 instructions, which an RPC provider cannot truncate the way it can truncate logs. A reader therefore sees an admin
 change without replaying instruction data to find one (DD-044). The event only makes the change visible: readers and
 authorization take the current values from account state, never from event bytes. HostConfig records no
-last-modified slot; a client detects a new KMS context by reading `current_kms_context_id`.
+last-modified slot; a client detects a new KMS context or epoch by reading `current_kms_context_id` and
+`current_kms_epoch_id`.
 Pinned by `only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store`, which checks over random
 instruction sequences that `HostConfig`, the KMS contexts and the deny, HCU trust and pauser records change only in a
 transaction the admin signed, apart from a signer holding an enabled pauser record adding pause flags,
 and that every `HostConfig` change emits its event CPI (`NewKmsContextEvent` from `define_kms_context`,
-`HostConfigUpdatedEvent` from the rest). Every host instruction is drawn,
+`NewKmsEpochEvent` from `define_kms_epoch`, `HostConfigUpdatedEvent` from the rest). Every host instruction is drawn,
 with its admin or Store-authority role also filled by keys that lack it, signing or not, and a host account type the
 property does not classify fails it. The planted bugs `runtime-tests/planted-bugs/h1-unpause-skips-assert-admin.patch`,
 `h1-pause-accepts-a-withdrawn-pauser.patch` and `h1-set-grant-deny-list-skips-the-config-event.patch` must make it fail (`scripts/check-planted-bugs.sh`). This covers the default build; the preview-only `admin-sweep`

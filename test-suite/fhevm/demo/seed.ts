@@ -246,7 +246,6 @@ const main = async (): Promise<void> => {
     vaultProgram: vault.DEMO_VAULT_PROGRAM_ADDRESS,
     hostProgram: vault.ZAMA_HOST_PROGRAM_ADDRESS,
     vault: vaultAccount.address,
-    kmsContext,
   } as const;
   const depositRoots: VaultDemoRoots = {
     ...commonRoots,
@@ -320,7 +319,6 @@ const main = async (): Promise<void> => {
       vault: vault.DEMO_VAULT_PROGRAM_ADDRESS,
       host: vault.ZAMA_HOST_PROGRAM_ADDRESS,
     },
-    kmsContext,
     vault: vaultAccount.address,
     mints: {
       joinUnderlying: mockUsdcMint.address,

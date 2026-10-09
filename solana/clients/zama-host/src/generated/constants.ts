@@ -18,4 +18,5 @@ export const KMS_CONTEXT_DESTROYED_EVENT_DISCRIMINATOR: Uint8Array = new Uint8Ar
   222, 190, 134, 134, 245, 159, 38, 240,
 ]);
 export const NEW_KMS_CONTEXT_EVENT_DISCRIMINATOR: Uint8Array = new Uint8Array([43, 80, 86, 88, 234, 232, 240, 63]);
+export const NEW_KMS_EPOCH_EVENT_DISCRIMINATOR: Uint8Array = new Uint8Array([145, 215, 164, 120, 133, 128, 252, 229]);
 export const PAUSER_UPDATED_EVENT_DISCRIMINATOR: Uint8Array = new Uint8Array([17, 8, 177, 148, 52, 170, 85, 237]);

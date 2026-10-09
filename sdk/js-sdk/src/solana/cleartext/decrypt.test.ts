@@ -82,6 +82,7 @@ describe('cleartextPublicDecryptCertifier', () => {
       },
     ],
     contextId: new Uint8Array(32),
+    epochId: new Uint8Array(32),
   };
 
   beforeEach(() => vi.useFakeTimers());
@@ -92,7 +93,11 @@ describe('cleartextPublicDecryptCertifier', () => {
       handle: buildHandle({ chainId: 5n, hash21: `0x${'b2'.repeat(21)}`, fheTypeId: 5 }).bytes32,
       encryptedStore: new Uint8Array(32).fill(0xeb),
     };
-    const batch = { entries: [...parameters.entries, second], contextId: new Uint8Array(32).fill(0x44) };
+    const batch = {
+      entries: [...parameters.entries, second],
+      contextId: new Uint8Array(32).fill(0x44),
+      epochId: new Uint8Array(32).fill(0x45),
+    };
     const word = (value: number) => Uint8Array.from({ length: 32 }, (_, index) => (index === 31 ? value : 0));
     const valueOf = new Map([
       [0xea, word(1)],
@@ -118,6 +123,7 @@ describe('cleartextPublicDecryptCertifier', () => {
     const handles = batch.entries.map(({ handle }) => toFhevmHandle(handle));
     expect(claim.handles).toEqual(handles.map((handle) => handle.bytes32Hex));
     expect(claim.abiEncodedCleartext).toBe(bytesToHexNo0x(concatBytes(word(1), word(7))));
+    expect(claim.extraData).toBe(`0x02${'44'.repeat(32)}${'45'.repeat(32)}`);
     expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(1);
     const digest = publicDecryptDigest(
       createKmsPublicDecryptEip712({

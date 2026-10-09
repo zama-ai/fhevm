@@ -378,6 +378,7 @@ pub struct HostConfigParams {
     pub coprocessor_signers: Vec<[u8; 20]>,
     pub coprocessor_threshold: u8,
     pub current_kms_context_id: [u8; 32],
+    pub current_kms_epoch_id: [u8; 32],
     pub paused: host::PauseFlags,
     pub grant_deny_list_enabled: bool,
     pub hcu_block_cap_per_app: u64,
@@ -405,6 +406,7 @@ impl HostConfigParams {
             coprocessor_signers: vec![UNTRUSTED_COPROCESSOR_SIGNER],
             coprocessor_threshold: 1,
             current_kms_context_id: [0u8; 32],
+            current_kms_epoch_id: [0u8; 32],
             paused: host::PauseFlags::default(),
             grant_deny_list_enabled: false,
             hcu_block_cap_per_app: u64::MAX,
@@ -429,6 +431,7 @@ pub fn host_config_account(params: &HostConfigParams) -> (Pubkey, Account) {
                 coprocessor_threshold: params.coprocessor_threshold,
                 decryption_contract: DECRYPTION_CONTRACT,
                 current_kms_context_id: params.current_kms_context_id,
+                current_kms_epoch_id: params.current_kms_epoch_id,
                 paused: params.paused,
                 grant_deny_list_enabled: params.grant_deny_list_enabled,
                 max_hcu_per_tx: u64::MAX,
@@ -459,6 +462,12 @@ pub fn canonical_test_context_id(n: u8) -> [u8; 32] {
     let mut id = [0u8; 32];
     id[31] = n;
     id
+}
+
+/// Test KMS epoch id, shaped like [`canonical_test_context_id`]. `n = 0` is the all-zero id a
+/// host holds before its first context.
+pub fn canonical_test_epoch_id(n: u8) -> [u8; 32] {
+    canonical_test_context_id(n)
 }
 
 /// The host program's BPF upgradeable `ProgramData` account at its canonical address, with

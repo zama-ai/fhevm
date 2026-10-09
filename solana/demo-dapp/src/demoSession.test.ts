@@ -41,7 +41,6 @@ const validResponse = {
     gatewayChainId: '31337',
     gatewayDecryptionContract: `0x${'aa'.repeat(20)}`,
     authorityFundingLamports: '1000000',
-    kmsContext: '11111111111111111111111111111111',
     vault: '11111111111111111111111111111111',
     programs: {
       batcher: '11111111111111111111111111111111',

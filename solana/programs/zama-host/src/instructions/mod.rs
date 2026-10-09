@@ -14,6 +14,7 @@ pub use close_owned_accounts::*;
 pub mod create_encrypted_store;
 pub use create_encrypted_store::*;
 pub mod define_kms_context;
+pub mod define_kms_epoch;
 pub mod delegate_for_user_decryption;
 pub mod destroy_kms_context;
 pub mod fhe_execute;
@@ -38,6 +39,7 @@ pub mod unpause;
 pub mod verify_public_decrypt;
 
 pub use define_kms_context::*;
+pub use define_kms_epoch::*;
 pub use delegate_for_user_decryption::*;
 pub use destroy_kms_context::*;
 pub use fhe_execute::*;

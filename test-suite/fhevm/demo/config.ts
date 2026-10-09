@@ -42,7 +42,6 @@ export type VaultDemoRoots = {
   readonly payoutConfidentialMint: Address;
   readonly joinUnderlyingMint: Address;
   readonly payoutUnderlyingMint: Address;
-  readonly kmsContext: Address;
 };
 
 /**
@@ -106,7 +105,6 @@ export type SolanaDemoConfig = {
     readonly vault: Address;
     readonly host: Address;
   };
-  readonly kmsContext: Address;
   /** The `demo_vault` vault PDA (underlying = mock USDC; share mint created by the program). */
   readonly vault: Address;
   readonly mints: {
@@ -211,7 +209,6 @@ export const parseDemoConfig = (raw: unknown): SolanaDemoConfig => {
       vault: asAddress(programs.vault, "programs.vault"),
       host: asAddress(programs.host, "programs.host"),
     },
-    kmsContext: asAddress(o.kmsContext, "kmsContext"),
     vault: asAddress(o.vault, "vault"),
     mints: {
       joinUnderlying: asAddress(mints.joinUnderlying, "mints.joinUnderlying"),
@@ -258,13 +255,12 @@ export const writeDemoConfig = async (config: SolanaDemoConfig, configPath = res
   }
 };
 
-const commonRoots = (config: SolanaDemoConfig): Pick<VaultDemoRoots, "batcherProgram" | "tokenProgram" | "vaultProgram" | "hostProgram" | "vault" | "kmsContext"> => ({
+const commonRoots = (config: SolanaDemoConfig): Pick<VaultDemoRoots, "batcherProgram" | "tokenProgram" | "vaultProgram" | "hostProgram" | "vault"> => ({
   batcherProgram: config.programs.batcher,
   tokenProgram: config.programs.token,
   vaultProgram: config.programs.vault,
   hostProgram: config.programs.host,
   vault: config.vault,
-  kmsContext: config.kmsContext,
 });
 
 /** Projects the config onto the deposit-direction `VaultDemoRoots`: join = cUSDC → payout = cShares. */

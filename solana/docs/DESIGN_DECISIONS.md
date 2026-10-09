@@ -891,13 +891,17 @@ ever want one — noted, not in scope.
 
 ### Ops runbook: KMS context rotation (fhevm-internal#1862 #15)
 
-1. **Rotate for hygiene:** `define_kms_context(N+1)` (new signer set becomes current). In-flight certs
-   that name live context `N` remain verifiable — do **not** treat rotation alone as revocation.
+1. **Rotate for hygiene:** `define_kms_context(N+1, E)` (new signer set and its epoch `E` become
+   current). In-flight certs that name live context `N` remain verifiable — do **not** treat rotation
+   alone as revocation.
 2. **Revoke old set:** after grace (or immediately on compromise), `destroy_kms_context(N)`. That
    flips `destroyed` and fails every outstanding `N`-named cert at `verify_public_decrypt`.
 3. **Compromise path:** `define` the replacement, then `destroy` the compromised context in the same
    ops window. Forgotten destroy = old signers stay powerful indefinitely (same as EVM).
-4. **Token policy:** confidential-token `disclose_secp` / `redeem_burned_amount` accept any
+4. **Reshare keys:** when the KMS moves context `N` to a new epoch with the same signer set,
+   `define_kms_epoch(N, E+1)` sets the epoch new public decrypts route to. Verification reads only
+   the context, so certificates of `N` stay verifiable.
+5. **Token policy:** confidential-token `disclose_secp` / `redeem_burned_amount` accept any
    non-destroyed context the cert names (default). Apps that need current-only can compare
    `return_data`'s context id to `host_config.current_kms_context_id` — not wired in the token today.
 
@@ -979,10 +983,9 @@ real token account list) serializes to **989 bytes** as a legacy transaction, in
 4,096 bytes and 64 account keys.
 
 Public-decrypt consume transactions carry the certificate and no Merkle proof (DD-065), so their size
-grows only with the threshold. As legacy transactions, `disclose_secp` fits one packet up to 12
-signatures and `redeem_burned_amount` up to 8, against the production KMS threshold of 7
-(`runtime-tests/tests/disclose_packet_fit.rs`). Clients send them as version 1 transactions, so the
-legacy packet is a stricter bound than the one they face.
+grows only with the threshold. With the SDK's 65-byte v2 `extra_data`, `disclose_secp`,
+`redeem_burned_amount` and `verify_public_decrypt` each fit one version 1 transaction at the host's
+maximum of 16 KMS signatures (`demo-dapp/src/vault/actions/kmsCertificateSize.test.ts`).
 
 Relates to DD-007 (input verification model).
 
@@ -1175,11 +1178,11 @@ feature turns events on or off.
 
 Administration emits. An admin instruction changes a protocol-level setting that off-chain components
 have to be able to query directly. The admin and config events are `HostConfigUpdatedEvent`,
-`DenyScopeUpdatedEvent`, `HcuAppTrustUpdatedEvent`, `NewKmsContextEvent`, `KmsContextDestroyedEvent`
-and `PauserUpdatedEvent`. Their instructions (`initialize_host_config`, `define_kms_context`,
-`destroy_kms_context`, `set_deny_scope`, `set_hcu_app_trusted`, `set_admin`, the `HostAdmin` config
-setters, `pause`, `unpause` and `set_pauser`) carry Anchor's `#[event_cpi]` accounts
-(`event_authority`, `program`).
+`DenyScopeUpdatedEvent`, `HcuAppTrustUpdatedEvent`, `NewKmsContextEvent`, `NewKmsEpochEvent`,
+`KmsContextDestroyedEvent` and `PauserUpdatedEvent`. Their instructions (`initialize_host_config`,
+`define_kms_context`, `define_kms_epoch`, `destroy_kms_context`, `set_deny_scope`,
+`set_hcu_app_trusted`, `set_admin`, the `HostAdmin` config setters, `pause`, `unpause` and
+`set_pauser`) carry Anchor's `#[event_cpi]` accounts (`event_authority`, `program`).
 
 `fhe_execute` emits one `FheExecutedEvent` per execution with what the host decided: the block
 context, the random seeds and each step's result handle (DD-056). An indexer cannot recompute the
@@ -2017,7 +2020,7 @@ archive's history.
 
 Status: adopted
 
-Recorded in zama-ai/fhevm#4120.
+Recorded in zama-ai/fhevm#4120 and zama-ai/fhevm#4357.
 
 `extraData` is the KMS routing field on EVM, and the KMS signs it. A Store carried inside it would
 become part of a signed field whose version space EVM owns, and every layer (relayer, Gateway,
@@ -2033,7 +2036,11 @@ differs from the handle count. The relayer requires `encryptedStores` for Solana
 refuses it for EVM handles; the stores are part of the request's content hash. The
 connector keeps them in `handle_encrypted_stores` and proves each handle's public leaf against its
 own Store in one snapshot. The host verifier reads the context from v1 or v2 exactly as EVM
-`KMSVerifier` does, and reads no Store (DD-065). The SDK sends v1, `0x01 ‖ contextId`, because the host `KmsContext` has no epoch.
+`KMSVerifier` does, and reads no Store (DD-065). The SDK sends v2, `0x02 ‖ contextId ‖ epochId`, with
+the pair read from `HostConfig.current_kms_context_id` and `current_kms_epoch_id`, as the EVM SDK reads
+`ProtocolConfig.getCurrentKmsContextAndEpoch()`. `define_kms_context` sets both; `define_kms_epoch`
+moves the epoch of the active context when the KMS reshares its keys. Before the SDK verifies a
+certificate, it requires the certificate's `extraData` to be exactly that v2 routing.
 
 Rejected alternatives:
 
@@ -2330,9 +2337,8 @@ Consequences:
 On-chain, publicness rests on the connectors' leaf check and on the KMS committee's threshold
 honesty (INVARIANTS #21, #23), as on EVM. A program that wants on-chain proof that a handle it did
 not pin is public would need a separate proof-taking entry point; none is wanted today. Consume
-transactions shrink: a legacy redeem with 7 signatures is 1145 bytes, and `disclose_secp` fits one
-packet up to 12 signatures (`runtime-tests/tests/disclose_packet_fit.rs`); clients send both as
-version 1 transactions (4,096 bytes). Removing
+transactions shrink: `redeem_burned_amount` and `disclose_secp` each fit one version 1 transaction
+(4,096 bytes) at the host's maximum of 16 KMS signatures (DD-041). Removing
 `PublicDecryptProofInvalid` renumbered the later Anchor error codes of zama-host and
 confidential-token.
 

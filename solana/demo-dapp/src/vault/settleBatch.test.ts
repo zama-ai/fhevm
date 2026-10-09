@@ -23,7 +23,7 @@ import { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
 import { deriveBatchAddresses, type VaultDemoRoots } from './derive.js';
 import { getSettleInstructionDataDecoder, parseSettleInstruction } from './internal/generated/confidentialBatcher/instructions/settle.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
-import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
+import { findDenyScopeRecordPda, findKmsContextPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import { encodedSize, messageOf, testDemoClient } from '../testDemoClient';
 
@@ -57,11 +57,13 @@ function roots(): VaultDemoRoots {
     payoutConfidentialMint: addr(13),
     joinUnderlyingMint: addr(5),
     payoutUnderlyingMint: addr(14),
-    kmsContext: addr(9),
   };
 }
 
-function claim(cleartext: string, signatures = 1, extraData = '0x00') {
+// The SDK's v2 routing, `0x02 ‖ contextId ‖ epochId`.
+const V2_EXTRA_DATA = `0x02${'07'.repeat(32)}${'08'.repeat(32)}`;
+
+function claim(cleartext: string, signatures = 1, extraData = V2_EXTRA_DATA) {
   return {
     handle: `0x${hex(BURNED_HANDLE)}`,
     abiEncodedCleartext: cleartext,
@@ -79,7 +81,6 @@ async function setup(overrides: { burnedHandle?: Uint8Array } = {}) {
   });
   const opts: SolanaVaultSettleOptions = {
     roots: roots(),
-    contextId: new Uint8Array(32),
     authorityFundingLamports: 5_000_000n,
   };
   return { ...testDemoClient(await generateKeyPairSigner()), opts, addresses };
@@ -108,7 +109,6 @@ describe('settleBatch', () => {
     expect(certificate).toHaveBeenCalledTimes(1);
     expect(certificate.mock.calls[0]![0]).toEqual({
       handle: `0x${hex(BURNED_HANDLE)}`,
-      contextId: opts.contextId,
       encryptedStore: base58.decode(addresses.batchBurnedAmountStore),
       options: undefined,
     });
@@ -127,6 +127,9 @@ describe('settleBatch', () => {
     ]);
     const parsed = parseSettleInstruction({ ...settle!, accounts: settle!.accounts!, data: settle!.data! });
     expect(parsed.accounts.batch.address).toBe(addresses.batch);
+    // The host account of the context the certificate names, not a context fixed at seed time.
+    const [certificateContext] = await findKmsContextPda({ contextId: new Uint8Array(32).fill(0x07) });
+    expect(parsed.accounts.kmsContext.address).toBe(certificateContext);
     expect(open!.accounts?.[1]?.address).toBe(parsed.accounts.transientStore.address);
     expect(close!.accounts?.[1]?.address).toBe(parsed.accounts.transientStore.address);
     // The certified 32-byte cleartext was decoded to the u64 settle argument.
@@ -134,11 +137,10 @@ describe('settleBatch', () => {
   });
 
   // The largest settle: a certificate at the host's maximum KMS threshold (MAX_KMS_SIGNERS = 16),
-  // with version 1 extra data (a version byte then the 32-byte KMS context id, the largest the SDK
-  // sends, since the host holds no epoch), the deny record and both HCU witnesses. A v1 transaction is at most 4,096 bytes and 64
-  // account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
+  // with the SDK's 65-byte v2 extra data, the deny record and both HCU witnesses. A v1 transaction is at
+  // most 4,096 bytes and 64 account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
   it('fits one v1 transaction at the maximum KMS threshold with every witness', async () => {
-    certificate.mockResolvedValue(claim(cleartextHex(800n), 16, `0x01${'09'.repeat(32)}`));
+    certificate.mockResolvedValue(claim(cleartextHex(800n), 16));
     const { client, opts } = await setup();
     await settleBatch({ publicDecryptCertificate: certificate }, client, {
       ...opts,

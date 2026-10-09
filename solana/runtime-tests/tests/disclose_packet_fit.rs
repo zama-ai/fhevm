@@ -11,11 +11,14 @@ use anchor_lang::prelude::Pubkey;
 use confidential_token as token;
 use solana_sdk::{instruction::Instruction, message::Message, transaction::Transaction};
 use zama_host as host;
-use zama_solana_test_kit::{anchor_ix, canonical_test_context_id, event_authority};
+use zama_solana_test_kit::{
+    anchor_ix, canonical_test_context_id, canonical_test_epoch_id, event_authority,
+    signing::context_extra_data_v2,
+};
 
-/// Version-1 `extra_data`: the certificate names its KMS context explicitly.
+/// The `extra_data` the SDK sends: version 2, naming the KMS context and epoch.
 fn public_extra_data() -> Vec<u8> {
-    [&[1][..], &canonical_test_context_id(1)].concat()
+    context_extra_data_v2(canonical_test_context_id(1), canonical_test_epoch_id(1))
 }
 
 fn legacy_tx_size(ix: Instruction, payer: Pubkey) -> usize {
@@ -114,6 +117,6 @@ fn redeem_burned_amount_threshold_fit_table() {
     assert_fit_table(
         "redeem_burned_amount",
         redeem_burned_amount_tx_size,
-        &[(7, true), (8, true), (9, false)],
+        &[(7, true), (8, false)],
     );
 }

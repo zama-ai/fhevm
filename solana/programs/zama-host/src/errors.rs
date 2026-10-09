@@ -206,8 +206,11 @@ pub enum ZamaHostError {
     /// The supplied KMS context account is destroyed, is not the canonical PDA for the id the
     /// certificate committed to via signed `extra_data`, or has a mismatched stored id. Verification
     /// binds to the cert-named context (any live context), so a destroyed context — or an account
-    /// that is not the one the cert names — fails closed here.
-    #[msg("KMS context is destroyed or does not match the certificate's committed context")]
+    /// that is not the one the cert names — fails closed here. `define_kms_epoch` also returns it
+    /// for a context that is not the active one (EVM `InvalidKmsContext`).
+    #[msg(
+        "KMS context is destroyed, not the active one, or not the certificate's committed context"
+    )]
     InvalidKmsContext,
     /// The KMS `PublicDecryptVerification` certificate failed secp256k1 threshold verification
     /// against the cert-named context's signer set.
@@ -300,4 +303,8 @@ pub enum ZamaHostError {
     /// `ScalarOutOfRange`).
     #[msg("scalar exceeds the maximum of its FHE type")]
     ScalarOutOfRange,
+    /// A new KMS epoch id is not above the active one (EVM `NonIncreasingEpochId`). The active id
+    /// starts at all-zero, so the all-zero id is never accepted.
+    #[msg("KMS epoch id must be above the current one")]
+    NonIncreasingKmsEpochId,
 }

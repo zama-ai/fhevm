@@ -74,18 +74,6 @@ const addressToBytes32Hex = (value: Address): Bytes32Hex =>
   asBytes32Hex(`0x${Buffer.from(getAddressEncoder().encode(value)).toString("hex")}`);
 const addressBytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
 
-/** An unsigned decimal string as big-endian bytes32 — the shape the settle certificate's and the user-decrypt request's contextId take. */
-const asBytes32BigEndian = (decimal: string): Uint8Array => {
-  const bytes = new Uint8Array(32);
-  let value = BigInt(decimal);
-  for (let index = 31; index >= 0 && value > 0n; index -= 1) {
-    bytes[index] = Number(value & 0xffn);
-    value >>= 8n;
-  }
-  if (value > 0n) throw new Error(`${decimal} does not fit in 32 bytes`);
-  return bytes;
-};
-
 // Demo-lane gate: `test:e2e` sweeps this directory on a stack that never ran `demo:seed`, so the
 // seeded demo-config cannot exist there. The `demo:smoke` script sets RUN_DEMO_SCENARIOS=1; under
 // it the test runs unconditionally, so a missing config still fails the acceptance gate loudly.
@@ -381,7 +369,6 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const publicDecryptClient = createFhevmPublicDecryptClient({ chain, rpc });
       await vault.settleBatch(publicDecryptClient, keeperClient, {
         roots,
-        contextId: asBytes32BigEndian(config.userDecryptContextId),
         authorityFundingLamports: BigInt(config.authorityFundingLamports),
       });
 

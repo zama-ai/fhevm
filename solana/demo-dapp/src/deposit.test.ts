@@ -18,7 +18,6 @@ const user = address('SysvarRent111111111111111111111111111111111');
 const root = address('SysvarC1ock11111111111111111111111111111111');
 const config = {
   chainId: '2147483648',
-  kmsContext: root,
   vault: root,
   programs: { batcher: root, token: root, vault: root, host: root },
   mints: {

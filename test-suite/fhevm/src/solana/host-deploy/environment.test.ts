@@ -3,9 +3,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { REPO_ROOT } from '../../layout';
-import { SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT } from '../../layout';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
-import { BRINGUP_KMS_CONTEXT_ID, SOLANA_DEPLOY_PROGRAMS } from '../../../../../solana/deploy/src/constants';
+import { SOLANA_DEPLOY_PROGRAMS } from '../../../../../solana/deploy/src/constants';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import {
   DEFAULT_SOLANA_ENVIRONMENT,
@@ -24,10 +23,6 @@ describe('solana environments', () => {
     const stderr = await new Response(child.stderr).text();
     expect(await child.exited).not.toBe(0);
     expect(stderr).toContain('SOLANA_HOST_CHAIN_ID');
-  });
-
-  test('bring-up KMS context id matches the tagged gateway default', () => {
-    expect(`0x${Buffer.from(BRINGUP_KMS_CONTEXT_ID).toString('hex')}`).toBe(SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT);
   });
 
   test('the default environment ids are the ids the generated clients carry', () => {

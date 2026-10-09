@@ -45,6 +45,7 @@ export type {
   SolanaPublicDecryptCertificateClaim,
   SolanaPublicDecryptCertificateParameters,
 } from './actions/publicDecryptCertificate.js';
+export { solanaPublicDecryptContextId } from './actions/publicDecryptCertificate.js';
 export {
   buildVerifyPublicDecryptInstruction,
   verifyPublicDecryptArgsFromClaim,

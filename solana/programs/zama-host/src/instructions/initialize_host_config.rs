@@ -67,6 +67,7 @@ pub fn initialize_host_config(
     config.coprocessor_threshold = args.coprocessor_threshold;
     config.decryption_contract = args.decryption_contract;
     config.current_kms_context_id = [0u8; 32];
+    config.current_kms_epoch_id = [0u8; 32];
     config.paused = PauseFlags::default();
     config.grant_deny_list_enabled = args.grant_deny_list_enabled;
     // Unlimited (u64::MAX) until the admin sets them: `bootstrapZamaHost` sets EVM's limits in the

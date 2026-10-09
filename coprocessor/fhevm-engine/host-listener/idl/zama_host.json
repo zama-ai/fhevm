@@ -193,7 +193,7 @@
         {
           "name": "host_config",
           "docs": [
-            "Singleton config PDA; its `current_kms_context_id` is set to `context_id`."
+            "Singleton config PDA; its active context and epoch are set to `context_id` and `epoch_id`."
           ],
           "writable": true,
           "pda": {
@@ -273,6 +273,15 @@
           }
         },
         {
+          "name": "epoch_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
           "name": "signers",
           "type": {
             "vec": {
@@ -289,6 +298,84 @@
             "defined": {
               "name": "KmsThresholds"
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "define_kms_epoch",
+      "docs": [
+        "Activates a new epoch of the active KMS context (mirror of `ProtocolConfig.mirrorKmsEpoch`)."
+      ],
+      "discriminator": [
+        121,
+        217,
+        141,
+        84,
+        100,
+        198,
+        115,
+        36
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "Configured host admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA; its `current_kms_epoch_id` is set to `epoch_id`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "context_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "epoch_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
           }
         }
       ]
@@ -2454,6 +2541,19 @@
       ]
     },
     {
+      "name": "NewKmsEpochEvent",
+      "discriminator": [
+        145,
+        215,
+        164,
+        120,
+        133,
+        128,
+        252,
+        229
+      ]
+    },
+    {
       "name": "PauserUpdatedEvent",
       "discriminator": [
         17,
@@ -2761,7 +2861,7 @@
     {
       "code": 6058,
       "name": "InvalidKmsContext",
-      "msg": "KMS context is destroyed or does not match the certificate's committed context"
+      "msg": "KMS context is destroyed, not the active one, or not the certificate's committed context"
     },
     {
       "code": 6059,
@@ -2892,6 +2992,11 @@
       "code": 6084,
       "name": "ScalarOutOfRange",
       "msg": "scalar exceeds the maximum of its FHE type"
+    },
+    {
+      "code": 6085,
+      "name": "NonIncreasingKmsEpochId",
+      "msg": "KMS epoch id must be above the current one"
     }
   ],
   "types": [
@@ -4149,6 +4254,20 @@
             }
           },
           {
+            "name": "current_kms_epoch_id",
+            "docs": [
+              "Active KMS epoch id of the active context (with the context, mirrors",
+              "`ProtocolConfig.getCurrentKmsContextAndEpoch`); `[0; 32]` until the first context. Updated",
+              "by `define_kms_context` and `define_kms_epoch`. Certificate verification reads only the context."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
             "name": "paused",
             "docs": [
               "Host areas currently stopped. A pauser sets them; only the admin clears them (DD-058)."
@@ -4513,6 +4632,18 @@
             }
           },
           {
+            "name": "kms_epoch_id",
+            "docs": [
+              "The epoch activated with it."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
             "name": "signers",
             "docs": [
               "KMS node signer EVM addresses authorized in this context."
@@ -4539,6 +4670,49 @@
               "User-decrypt signature threshold."
             ],
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NewKmsEpochEvent",
+      "docs": [
+        "Emitted when a new epoch of the active KMS context is activated (mirrors",
+        "`ProtocolConfig.MirrorKmsEpoch`)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "kms_context_id",
+            "docs": [
+              "The active context id."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "kms_epoch_id",
+            "docs": [
+              "The new epoch id."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }

@@ -206,6 +206,11 @@ pub fn context_extra_data_v1(context_id: [u8; 32]) -> Vec<u8> {
     extra_data
 }
 
+/// Version-2 `extra_data`, `2 ‖ context ‖ epoch`: the KMS routing the SDK sends.
+pub fn context_extra_data_v2(context_id: [u8; 32], epoch_id: [u8; 32]) -> Vec<u8> {
+    [&[2u8][..], &context_id, &epoch_id].concat()
+}
+
 /// A v0 KMS `PublicDecryptVerification` cert over a `u64` amount, bound to the fixtures' gateway
 /// and `Decryption` contract, signed by the default KMS key. Returns the `(signatures,
 /// extra_data)` pair the verifying instructions take; `extra_data == [0x00]` binds through the

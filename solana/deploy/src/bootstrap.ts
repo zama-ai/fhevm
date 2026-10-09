@@ -14,7 +14,7 @@ import {
 import { LOADER_V3_PROGRAM_ADDRESS } from '@solana-program/loader-v3';
 
 import { assertValidSolanaChainId, isEvmHostChainId } from '../../../sdk/js-sdk/src/core/chains/hostChainId';
-import { BRINGUP_KMS_CONTEXT_ID, HCU_LIMITS } from './constants';
+import { BRINGUP_KMS_CONTEXT_ID, BRINGUP_KMS_EPOCH_ID, HCU_LIMITS } from './constants';
 import type { GatewayBootstrapInputs } from './gateway';
 import {
   findEventAuthorityPda,
@@ -226,6 +226,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
       {
         admin: params.payer,
         contextId: BRINGUP_KMS_CONTEXT_ID,
+        epochId: BRINGUP_KMS_EPOCH_ID,
         signers: [...params.gateway.kmsSigners],
         thresholds: {
           publicDecryption: certificateThreshold,

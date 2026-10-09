@@ -4,7 +4,7 @@ import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAs
 import { bytesToHex } from '../../core/base/bytes.js';
 import {
   publicDecryptCertificate,
-  singlePublicDecryptCertificate,
+  solanaPublicDecryptContextId,
   solanaPublicDecryptExtraData,
   type SolanaPublicDecryptBatch,
 } from './publicDecryptCertificate.js';
@@ -14,10 +14,12 @@ const handle = new Uint8Array(32);
 handle[22] = 0x01;
 const account = new Uint8Array(32).fill(4);
 const contextId = new Uint8Array(32).fill(5);
+const epochId = new Uint8Array(32).fill(6);
 
 const parameters = (): SolanaPublicDecryptBatch => ({
   entries: [{ handle, encryptedStore: account }],
   contextId,
+  epochId,
   options: { fetchRetries: 1 },
 });
 
@@ -32,18 +34,32 @@ const context = {
   runtime: { config: { auth: { type: 'ApiKeyHeader', value: 'test' } } } as FhevmRuntime,
 };
 
-const requestExtraData = () => solanaPublicDecryptExtraData(contextId);
+const requestExtraData = () => solanaPublicDecryptExtraData(contextId, epochId);
 
 describe('solanaPublicDecryptExtraData', () => {
-  it('is the v1 KMS routing of the context, with no store in it', () => {
-    expect(solanaPublicDecryptExtraData(contextId)).toBe(`0x01${'05'.repeat(32)}`);
+  it('is the v2 KMS routing of the context and epoch, with no store in it', () => {
+    expect(solanaPublicDecryptExtraData(contextId, epochId)).toBe(`0x02${'05'.repeat(32)}${'06'.repeat(32)}`);
   });
 
   it('refuses a field of the wrong width before anything is sent', async () => {
-    expect(() => solanaPublicDecryptExtraData(new Uint8Array(31))).toThrow('contextId must be 32 bytes');
+    expect(() => solanaPublicDecryptExtraData(new Uint8Array(31), epochId)).toThrow('contextId must be 32 bytes');
+    expect(() => solanaPublicDecryptExtraData(contextId, new Uint8Array(33))).toThrow('epochId must be 32 bytes');
     await expect(
       publicDecryptCertificate(context, { ...parameters(), entries: [{ handle, encryptedStore: new Uint8Array(33) }] }),
     ).rejects.toThrow('encryptedStore must be 32 bytes');
+  });
+});
+
+describe('solanaPublicDecryptContextId', () => {
+  it('reads the context id back from the v2 routing', () => {
+    expect(solanaPublicDecryptContextId({ extraData: requestExtraData() })).toEqual(contextId);
+  });
+
+  it.each([
+    ['version 0', '0x00'],
+    ['version 1', `0x01${'05'.repeat(32)}`],
+  ])('rejects %s routing', (_name, extraData) => {
+    expect(() => solanaPublicDecryptContextId({ extraData })).toThrow('must be the v2 KMS routing');
   });
 });
 
@@ -140,6 +156,7 @@ describe('publicDecryptCertificate', () => {
     [{ ...successResult(), signatures: ['a'] }, 'got 1 hex characters'],
     [{ ...successResult(), signatures: ['zz'.repeat(65)] }, 'valid 65-byte hex'],
     [{ ...successResult(), extraData: '0x00' }, 'extraData does not match'],
+    [{ ...successResult(), extraData: `0x01${'05'.repeat(32)}` }, 'extraData does not match'],
   ])('rejects malformed certificate material %#', async (result, message) => {
     vi.spyOn(RelayerAsyncRequest.prototype, 'run').mockResolvedValue(result as never);
     await expect(publicDecryptCertificate(context, parameters())).rejects.toThrow(message);
@@ -155,26 +172,5 @@ describe('publicDecryptCertificate', () => {
       thrown = error;
     }
     expect(thrown).toBe(terminal);
-  });
-});
-
-describe('singlePublicDecryptCertificate', () => {
-  const batchClaim = { abiEncodedCleartext: '00'.repeat(32), signatures: [signature], extraData: requestExtraData() };
-
-  it('certifies a batch of one and returns the claim the host verifier takes', async () => {
-    const certify = vi.fn().mockResolvedValue({ ...batchClaim, handles: [bytesToHex(handle)] });
-    const claim = await singlePublicDecryptCertificate(certify)({ handle, encryptedStore: account, contextId });
-    expect(certify).toHaveBeenCalledWith({ contextId, entries: [{ handle, encryptedStore: account }] });
-    expect(claim).toEqual({ ...batchClaim, handle: bytesToHex(handle) });
-  });
-
-  it.each([
-    ['two handles', [bytesToHex(handle), bytesToHex(handle)]],
-    ['another handle', [`0x${'07'.repeat(22)}01${'00'.repeat(9)}`]],
-  ])('refuses a certificate covering %s', async (_case, handles) => {
-    const certify = vi.fn().mockResolvedValue({ ...batchClaim, handles });
-    await expect(
-      singlePublicDecryptCertificate(certify)({ handle, encryptedStore: account, contextId }),
-    ).rejects.toThrow('exactly the requested handle');
   });
 });
