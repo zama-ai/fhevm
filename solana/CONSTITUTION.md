@@ -21,8 +21,8 @@ The rules every agent and reviewer applies to the Solana work: the code `AGENTS.
 ## Security
 
 7. **Every boundary has an admission rule and a negative test.** On-chain: every CPI target pinned to its program id; every account constrained by owner, key and seeds; wrong-program, wrong-mint and wrong-signer tests per instruction. Off-chain: the first service that sees a bad Solana input rejects it; nothing is coerced.
-8. **Solana best practices for programs.** Verified builds whose hash equals the deployed `.so`; upgrade authority behind a multisig and a timelock; toolchains installed with checksums; `security.txt`; no new private keys without Elias.
-9. **Supply chain.** Check a dependency's exact name before adding it, install with `--ignore-scripts`, and never let an assistant add a dependency unreviewed (security team advisory, 2026-09-29).
+8. **Solana best practices for programs.** Verified builds whose hash equals the deployed `.so`; upgrade authority behind a multisig and a timelock; toolchains installed with checksums; `security.txt`; no new private keys without the project lead.
+9. **Supply chain.** Check a dependency's exact name before adding it, install with `--ignore-scripts`, and never let an assistant add a dependency unreviewed.
 
 ## Robustness
 
@@ -36,7 +36,7 @@ The rules every agent and reviewer applies to the Solana work: the code `AGENTS.
 
 15. **A test counts only if it is shown to fail.** New guards come with mutation evidence. A CI job that runs zero tests fails. Each test layer states what it cannot prove.
 16. **Docs state only what code or a test pins.** Replaced designs move to DESIGN_HISTORY in the same PR.
-17. **Claims carry evidence.** A resolved alert is not proof of recovery. Decisions are surfaced to Elias, never buried in a PR.
+17. **Claims carry evidence.** A resolved alert is not proof of recovery. Decisions are surfaced to the project lead, never buried in a PR.
 
 ## Working rules for the train
 

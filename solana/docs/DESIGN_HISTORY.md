@@ -950,8 +950,8 @@ Earlier text of the decision:
 
 Decision history:
 
-The 2026/06/12 Solana guild weekly (Manoranjith + Jad) objected that identity and authorization scope
-were being smuggled through `extraData` and should be a proper request type. A dedicated typed
+Identity and authorization scope were being smuggled through `extraData` when they should be a
+proper request type. A dedicated typed
 entrypoint (`userDecryptionRequestSolana`) resolved that first. `solanaUserDecryptionRequest` and
 its versioned blob replaced it, and `extraData` carries no Solana identity, scope or proof data. It
 is a named entry rather than an overload of `userDecryptionRequest`, so the EVM entries keep their

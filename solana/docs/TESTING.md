@@ -392,11 +392,8 @@ and a record that is behind is a retry.
   crate `zama-host` compiles, so a layout change breaks the build. The vendored IDLs are build
   output: after a host instruction shape changes, `sync-zama-host-idl.sh` rewrites them and
   `npm run codegen:solana` the Codama clients; CI's `check-zama-host-idl.sh` and
-  `codegen:solana:check` fail on a stale copy. The SDK's zama-host seeds (`encrypted-state`,
-  `user-decryption-delegation`, `permit-invalidation`, `transient`) are hand-written TypeScript
-  literals that check 8 of `dead-surface-check.sh` holds to its allow-list until
-  fhevm-internal#2108 task 2 generates them. A host seed change must be mirrored there. The
-  confidential-token seeds come from the generated Codama client. Check 8 keeps the PendingBurn
+  `codegen:solana:check` fail on a stale copy. The zama-host and
+  confidential-token seeds come from the generated Codama clients. Check 8 keeps the PendingBurn
   seed to one raw literal in the program, in `constants.rs`.
   The user-decrypt side of the mirror is pinned by committed vectors that both sides assert
   against. The permit's canonical text and offchain-message envelope come from `zama-solana-permit`

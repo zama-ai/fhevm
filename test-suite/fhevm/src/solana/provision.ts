@@ -143,9 +143,9 @@ export type GeneratedKeypair = {
 
 /**
  * Generates a fresh Ed25519 keypair whose secret is extractable — unlike kit's
- * `generateKeyPairSigner`, whose WebCrypto key can never leave the runtime. The scenarios need the
- * raw bytes twice: written as a keypair file for the SDK transfer worker subprocess, and as the
- * user-decrypt secret key.
+ * `generateKeyPairSigner`, whose WebCrypto key can never leave the runtime. Callers need the raw
+ * bytes: written as a keypair file (the cleartext stack's deployer key), saved as a recovery key,
+ * and used as the user-decrypt secret key.
  */
 export const generateSolanaKeypair = async (): Promise<GeneratedKeypair> => {
   const pair = (await crypto.subtle.generateKey('Ed25519', true, ['sign', 'verify'])) as CryptoKeyPair;

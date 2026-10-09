@@ -1101,19 +1101,22 @@ share total always returns at least that many underlying units and `ZeroAssets` 
 a redeem batch (pinned by `mollusk_redeem_one_share_dust_settles_at_extreme_price`). Exit rules are
 symmetric too: `quit` returns the exact encrypted share amount while pending; there is NO exit
 between dispatch and settle in either direction — the deadline-cancel path stays out of demo scope
-(fhevm-internal#1773). Operational assumption, both directions (fhevm-internal#1774 item 2): every
-token/host CPI passes HCU accounts (`hcu_block_meter`, `hcu_trusted_app_record`) as hardcoded `None`.
-`join`, `quit` and `claim` forward their remaining accounts as the execution's deny records, and
-`cancel_dispatch` forwards them to the token's restore. `dispatch`, `open_batch` and `settle` pass
-none, so they assume `grant_deny_list_enabled = false`. Every path assumes an unlimited
-per-application block cap, which the deployer leaves in place; the per-transaction caps do bind.
+(fhevm-internal#1773). Operational levers, both directions (fhevm-internal#1774 item 2): every
+token/host CPI forwards the optional HCU accounts (`<app>_hcu_block_meter`,
+`<app>_hcu_trusted_app_record`) the caller passes for each application it touches. The remaining
+accounts are one deny-record slice per execution, in execution order (`lib.rs` lists each
+instruction's order); `split_deny_records` expects none while `grant_deny_list_enabled` is false and
+rejects any other total with `DenyRecordsMismatch`. Every flow, `quit` and `claim` included, works
+with the deny list on or a binding per-application block cap when the caller passes the witnesses
+(pinned by `batcher_mollusk.rs`). No demo flow passes them yet. The deployer leaves the
+per-application block cap unlimited; the per-transaction caps do bind.
 
 ## DD-043: Two Derivation Regimes — Content-Addressed Deterministic Handles, Persistent-Write-Anchored Rand Seeds (`context_id` deleted)
 
 Status: adopted
 
-Decision (fhevm-internal#1853 W3+W4). Handle derivation is unified on keccak (the recorded
-2026-07-06 team position: EVM-side handle math is keccak, and both are same-price syscalls) and
+Decision (fhevm-internal#1853 W3+W4). Handle derivation is unified on keccak (EVM-side handle
+math is keccak, and both are same-price syscalls) and
 split into exactly two regimes, mirroring `FHEVMExecutor`:
 
 1. **Deterministic ops** (binary, ternary, unary, sum, is-in, mul-div, trivial-encrypt) are
@@ -1345,9 +1348,9 @@ CPI are independent and neither can donate capacity to the other.
 
 Why not ship an allocator:
 
-1. The guild precedent (Pinocchio, 2026-06-25): a low-level win bought with permanent complexity
-   is not worth it while the executor "doesn't do much compute at all" — stay on the framework
-   default for now, revisit with a benchmark of the application that needs more heap.
+1. A low-level win bought with permanent complexity is not worth it while the executor does little
+   compute: stay on the framework default for now, revisit with a benchmark of the application that
+   needs more heap.
 2. The builder has typed limits for steps (`TooManySteps`), CPI instruction data
    (`ExceedsCpiInstructionDataLimit`) and its own requested heap
    (`ExceedsBuildHeapBudget`). Counting-allocator tests cover build, packet and invoke tables.
@@ -1775,7 +1778,7 @@ of that handler, not a step towards leaving the framework.
 
 | Option | Why not |
 |---|---|
-| Hand-written Pinocchio | The guild precedent of 2026-06-25 (DD-046): permanent complexity for programs that do little compute. |
+| Hand-written Pinocchio | Permanent complexity for programs that do little compute (DD-046). |
 | Anchor v2 (`lang-v2` on `anchor-next`) | Alpha: not audited, not on crates.io, APIs break between commits. It is the planned successor. |
 | Quasar | Beta, unaudited, no release. Not a production candidate. |
 
@@ -2867,11 +2870,11 @@ Status: adopted
 Context:
 
 Anything that can change needs one source: PDA seeds and derivations, instruction building, account
-and event decoders, types, structs and constants. Several are restated by hand today. The SDK spells
-the zama-host seeds and derives stores, transient stores, delegations and permit watermarks itself.
-The deployment, the demo dapp and the test suite derive event authorities and other programs' PDAs.
-The KMS connector, the relayer, the host follower and the Merkle proof service rebuild store and
-delegation addresses in Rust.
+and event decoders, types, structs and constants. Several were restated by hand when this was
+decided. The SDK spelled the zama-host seeds and derived stores, transient stores, delegations and
+permit watermarks itself. The deployment, the demo dapp and the test suite derived event authorities
+and other programs' PDAs. The KMS connector, the relayer, the host follower and the Merkle proof
+service rebuilt store and delegation addresses in Rust.
 
 A restated copy agrees with the program only until one of them changes, and on Solana the mismatch
 is silent. A wrong recipe still yields a valid address: the instruction built on it fails an account
