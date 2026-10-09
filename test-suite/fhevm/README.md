@@ -736,7 +736,7 @@ The runners enforce these rules:
   independent postcondition. A stopped process is confirmed stopped by reading
   `/proc`, and a killed one is confirmed replaced by a changed process identity
   — a successful signal proves only that the signal was sent.
-- Each case finishes cancellation, persistent-journal recovery, and safe service
+- Each case finishes cancellation, durable-journal recovery, and safe service
   restoration before admitting a later case. A failed case can be followed by a
   real next case; an unresolved cleanup prevents another fault. Matrix children
   stage results until the parent has completed cleanup, so parent failure produces
@@ -749,7 +749,7 @@ The runners enforce these rules:
   processes and faults before clearing that marker.
 
 The proof recovery case consumes the original interrupted request's encrypted
-input and requires persisted verifier outcomes. The stranded-child case proves
+input and requires durable verifier outcomes. The stranded-child case proves
 repair sensitivity with a scoped lost-decrement control. Replay requires
 committed insert attempts for the selected graph from the restarted poller.
 The gateway restart case identifies the exact event in each replacement's

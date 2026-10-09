@@ -1555,7 +1555,7 @@ const runBlueGreenSteps = async (
     await waitUntil({ label: "quiet success Gateway window", timeoutSecs: 120,
       check: async () => Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim()) >= start });
     await run(gatewayInputProbeArgv);
-    // Read persisted observations of cutover's DELETE. Synthetic Gateway input
+    // Read durable observations of cutover's DELETE. Synthetic Gateway input
     // can authorize promotion even before the explicit probe returns.
     for (const db of operatorDatabases) {
       await waitUntil({ label: `${db} synthetic work completed on every host track`, timeoutSecs: 180,

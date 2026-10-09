@@ -60,7 +60,7 @@ impl HttpChainClient {
 
         // A connected peer can accept a request and never send a response.
         // Reqwest defaults to no deadline; without one the retry layer never
-        // sees an error and the poller cannot advance its persistent cursor.
+        // sees an error and the poller cannot advance its durable cursor.
         let http = Client::builder()
             .connect_timeout(Duration::from_secs(3))
             .timeout(Duration::from_secs(30))

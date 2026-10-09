@@ -692,9 +692,10 @@ if run_check 3; then
   # a different axis from value persistence. Database commits and lifecycle markers use that
   # durability sense too; Solana's durable nonce is a protocol term.
   # The consensus tooling from main uses the word in the same written-to-disk sense for its canary
-  # journal and, in the test-suite README, for drift findings a scenario cannot remove.
+  # journal and, in the test-suite README, for drift findings a scenario cannot remove. Main's
+  # host-listener poller, test-suite README and test command use it the same way.
   check_alias 'durable — a persistent value is persistent' all \
-    'durable ingest|durable checkpoint|durable tip|durable history_start|durable nonce|durably ingest|observation durably|durably, keyed|durable state|durable, waits|marker durable|halves are already durable|journaled durably|durable canary|durable raw-byte journal|remove durable findings' \
+    'durable ingest|durable checkpoint|durable tip|durable history_start|durable nonce|durably ingest|observation durably|durably, keyed|durable state|durable, waits|marker durable|halves are already durable|journaled durably|durable canary|durable raw-byte journal|remove durable findings|durable cursor|durable-journal recovery|durable verifier outcomes|durable observations' \
     -iE '\bdurable\b|\bdurably\b'
   # update <- supersede, rotation. The noun and the participle are swept too: the verb forms were
   # the only ones matched, and "supersession" went on naming the thing in about thirty places —
