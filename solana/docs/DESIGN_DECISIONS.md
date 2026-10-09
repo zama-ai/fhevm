@@ -1098,15 +1098,15 @@ share total always returns at least that many underlying units and `ZeroAssets` 
 a redeem batch (pinned by `mollusk_redeem_one_share_dust_settles_at_extreme_price`). Exit rules are
 symmetric too: `quit` returns the exact encrypted share amount while pending; there is NO exit
 between dispatch and settle in either direction — the deadline-cancel path stays out of demo scope
-(fhevm-internal#1773). Operational levers, both directions (fhevm-internal#1774 item 2,
-fhevm-internal#2147): every token/host CPI forwards the optional HCU accounts
-(`<app>_hcu_block_meter`, `<app>_hcu_trusted_app_record`) the caller passes for each application it
-touches. The remaining accounts are one deny-record slice per execution, in execution order (`lib.rs`
-lists each instruction's order); `split_deny_records` expects none while `grant_deny_list_enabled`
-is false and rejects any other total with `DenyRecordsMismatch`. Every flow, `quit` and `claim`
-included, works with the deny list on or a binding per-application block cap when the caller passes
-the witnesses (pinned by `batcher_mollusk.rs`). The demo flows (`deposit.ts`, `redeem.ts`,
-`claim.ts`) pass neither yet.
+(fhevm-internal#1773). Operational levers, both directions (fhevm-internal#1774 item 2): every
+token/host CPI forwards the optional HCU accounts (`<app>_hcu_block_meter`,
+`<app>_hcu_trusted_app_record`) the caller passes for each application it touches. The remaining
+accounts are one deny-record slice per execution, in execution order (`lib.rs` lists each
+instruction's order); `split_deny_records` expects none while `grant_deny_list_enabled` is false and
+rejects any other total with `DenyRecordsMismatch`. Every flow, `quit` and `claim` included, works
+with the deny list on or a binding per-application block cap when the caller passes the witnesses
+(pinned by `batcher_mollusk.rs`). No demo flow passes them yet. The deployer leaves the
+per-application block cap unlimited; the per-transaction caps do bind.
 
 ## DD-043: Two Derivation Regimes — Content-Addressed Deterministic Handles, Persistent-Write-Anchored Rand Seeds (`context_id` deleted)
 
