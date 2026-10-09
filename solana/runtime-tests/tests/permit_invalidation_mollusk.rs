@@ -29,6 +29,7 @@ use solana_sdk::{
     account::Account,
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
+    signature::{Keypair, Signer},
 };
 use std::{ops::Range, path::PathBuf};
 use zama_host::{self as host, PermitInvalidation};
@@ -411,7 +412,8 @@ fn revocation_requires_the_users_signature() {
 /// malicious program would, so only the top-level rule stops the revoke.
 #[test]
 fn a_wallet_revoke_forwarded_through_another_program_is_rejected() {
-    let user = Pubkey::new_unique();
+    // A wallet key is on the curve; `new_unique` may yield an off-curve key, which reads as a PDA.
+    let user = Keypair::new().pubkey();
     let (invalidation, mut accounts) = accounts_with_absent_watermark(user);
     let revoke = revoke_ix(user, invalidation);
     let mut forwarded = zama_solana_test_kit::anchor_ix(

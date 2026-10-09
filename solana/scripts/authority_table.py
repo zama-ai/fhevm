@@ -141,11 +141,17 @@ DECLARATIONS: dict[str, dict[str, Any]] = {
     },
     "revoke_delegation_for_user_decryption": {
         "capability": "User rights",
-        "signers": {"delegator": "the user who granted the delegation"},
+        "signers": {
+            "delegator": "the user who granted the delegation; a wallet must call at the top "
+            "level, a PDA may call through CPI",
+        },
     },
     "revoke_permits": {
         "capability": "User rights",
-        "signers": {"user": "the user whose permits are revoked; also pays rent"},
+        "signers": {
+            "user": "the user whose permits are revoked; also pays rent; a wallet must call at "
+            "the top level",
+        },
     },
 }
 
