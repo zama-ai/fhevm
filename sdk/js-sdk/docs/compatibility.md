@@ -25,7 +25,7 @@ format is not forward-compatible across minor versions:
 The SDK no longer picks a `tfhe.wasm` version per chain. Each release targets
 exactly one protocol line and bundles exactly one `tfhe.wasm` and one
 `tkms.wasm` build for it — currently protocol `0.15.0`, `tfhe.wasm@1.8.1`, and
-`tkms.wasm@0.15.0-1-solana.97e46335` (see [Off-chain components](#off-chain-components)).
+`tkms.wasm@0.15.0-1-solana.650e2a4a` (see [Off-chain components](#off-chain-components)).
 There is no version-negotiation table, no per-chain fallback, and no runtime
 option to override it (the old `moduleVersions` runtime-config field is gone —
 see [Runtime configuration](runtime-configuration.md)).
