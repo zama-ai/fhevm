@@ -598,7 +598,9 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
     await assertContractMatchesVersionPrefix(hre, protocolConfigAddress, 'ProtocolConfig');
   } catch (err) {
     await assertContractMatchesVersionPrefix(hre, protocolConfigAddress, 'ProtocolConfigReplica').catch(() => {
-      throw new Error(`Cannot deploy KMSVerifier: ${formatError(err)}`);
+      throw new Error(
+        `Cannot deploy KMSVerifier: ${formatError(err)} A non-canonical host may also use "ProtocolConfigReplica v…".`,
+      );
     });
   }
 
@@ -858,13 +860,16 @@ task(
 // KMSGeneration (host-side)
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployKMSGeneration').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+task('task:deployKMSGeneration').setAction(async function (taskArguments: TaskArguments, hre) {
+  const { ethers, upgrades } = hre;
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('KMSGeneration', deployer);
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
+  // KMSGeneration only runs on the canonical host, which needs the full ProtocolConfig, not a replica.
+  await assertContractMatchesVersionPrefix(hre, parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS, 'ProtocolConfig');
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: { fn: 'initializeFromEmptyProxy' },
