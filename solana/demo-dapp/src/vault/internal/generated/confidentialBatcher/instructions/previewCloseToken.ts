@@ -126,7 +126,7 @@ export type PreviewCloseTokenInput<
   authority: TAccountAuthority;
   account: TAccountAccount;
   mint: TAccountMint;
-  /** Classic SPL Token or Token-2022; the token program refuses an account it does not own. */
+  /** Classic SPL Token or Token-2022. The CPI fails when this program does not own `account`. */
   tokenProgram?: TAccountTokenProgram;
   seeds: PreviewCloseTokenInstructionDataArgs['seeds'];
 };
@@ -233,7 +233,7 @@ export type ParsedPreviewCloseTokenInstruction<
     authority: TAccountMetas[2];
     account: TAccountMetas[3];
     mint: TAccountMetas[4];
-    /** Classic SPL Token or Token-2022; the token program refuses an account it does not own. */
+    /** Classic SPL Token or Token-2022. The CPI fails when this program does not own `account`. */
     tokenProgram: TAccountMetas[5];
   };
   data: PreviewCloseTokenInstructionData;

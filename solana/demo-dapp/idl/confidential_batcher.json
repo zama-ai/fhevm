@@ -1968,7 +1968,7 @@
         {
           "name": "token_program",
           "docs": [
-            "Classic SPL Token or Token-2022; the token program refuses an account it does not own."
+            "Classic SPL Token or Token-2022. The CPI fails when this program does not own `account`."
           ]
         }
       ],
