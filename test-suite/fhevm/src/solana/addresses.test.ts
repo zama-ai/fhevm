@@ -5,16 +5,16 @@ import path from "node:path";
 
 import { toFunctionSelector } from "viem";
 
+import { bytesToHex } from "@fhevm/sdk/base";
 import {
-  bytes32HexFromId,
+  BRINGUP_KMS_CONTEXT_ID,
   evmAddressBytes,
   readActiveKmsPair,
   readEvmKmsThresholds,
   readGatewayBootstrapInputs,
-  solanaUserDecryptContext,
+  uint256Bytes,
 } from "./addresses";
 import { SOLANA_HOST_CHAIN_ID } from "../layout";
-import { BRINGUP_KMS_CONTEXT_HEX } from "../../../../solana/deploy/src/constants";
 
 const ADDRESS_A = "0x000000000000000000000000000000000000aaaa";
 const ADDRESS_B = "0x1111111111111111111111111111111111111111";
@@ -43,22 +43,6 @@ describe("evmAddressBytes", () => {
   });
 });
 
-describe("bytes32HexFromId", () => {
-  test("left-pads to 32 bytes and keeps type-tagged high bytes", () => {
-    expect(bytes32HexFromId(1n)).toBe(`0x${"0".repeat(63)}1`);
-    expect(bytes32HexFromId((8n << 248n) | 1n)).toBe(`0x08${"0".repeat(61)}1`);
-  });
-});
-
-describe("solanaUserDecryptContext", () => {
-  test("encodes a decimal user-decrypt context as bytes32 and rejects any other form", () => {
-    expect(solanaUserDecryptContext("1")).toBe(`0x${"0".repeat(63)}1`);
-    expect(() => solanaUserDecryptContext("0x01")).toThrow("unsigned decimal integer");
-    expect(() => solanaUserDecryptContext("")).toThrow("unsigned decimal integer");
-    expect(() => solanaUserDecryptContext((1n << 256n).toString())).toThrow("fit in 32 bytes");
-  });
-});
-
 describe("readActiveKmsPair", () => {
   const originalFetch = globalThis.fetch;
   afterEach(() => {
@@ -75,15 +59,14 @@ describe("readActiveKmsPair", () => {
   test("reads the active pair from the deployed ProtocolConfig", async () => {
     const addressesPath = await writeHostArtifact(`PROTOCOL_CONFIG_CONTRACT_ADDRESS=${ADDRESS_B}`);
     // A fresh stack's first pair: both ids are type-tagged (0x07 / 0x08 in the high byte), so
-    // neither is ever zero — the exact property that makes a seeded zero epoch unservable.
-    const contextId = BigInt(`0x${BRINGUP_KMS_CONTEXT_HEX}`);
+    // neither is ever zero.
+    const contextId = BigInt(bytesToHex(BRINGUP_KMS_CONTEXT_ID));
     const epochId = (8n << 248n) | 1n;
     globalThis.fetch = (async (_url: string | URL | Request, options?: RequestInit) => {
       const request = JSON.parse(String(options?.body)) as { id: number; params: [{ to?: string }?] };
       expect(request.params?.[0]?.to).toBe(ADDRESS_B);
-      return new Response(
-        JSON.stringify({ jsonrpc: "2.0", id: request.id, result: `0x${word(bytes32HexFromId(contextId))}${word(bytes32HexFromId(epochId))}` }),
-      );
+      const result = `0x${word(bytesToHex(uint256Bytes(contextId)))}${word(bytesToHex(uint256Bytes(epochId)))}`;
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: request.id, result }));
     }) as typeof fetch;
 
     const pair = await readActiveKmsPair({ hostRpcUrl: "http://127.0.0.1:8545", addressesPath });
@@ -96,6 +79,13 @@ describe("readActiveKmsPair", () => {
     await expect(readActiveKmsPair({ hostRpcUrl: "http://unused", addressesPath })).rejects.toThrow(
       "missing PROTOCOL_CONFIG_CONTRACT_ADDRESS",
     );
+  });
+});
+
+describe("uint256Bytes", () => {
+  test("left-pads to 32 bytes and keeps type-tagged high bytes", () => {
+    expect(Buffer.from(uint256Bytes(1n)).toString("hex")).toBe(`${"0".repeat(63)}1`);
+    expect(Buffer.from(uint256Bytes((8n << 248n) | 1n)).toString("hex")).toBe(`08${"0".repeat(61)}1`);
   });
 });
 

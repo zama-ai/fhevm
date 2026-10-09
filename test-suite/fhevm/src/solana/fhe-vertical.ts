@@ -11,7 +11,6 @@ import {
 } from '@fhevm/sdk/solana';
 
 import { createFinalizedRpc, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
-import { solanaUserDecryptContext } from './addresses';
 import { relayerAuth } from '../layout';
 import { certificateCleartext, type PublicDecryptCertificate } from './public-decrypt';
 import type { SolanaProvisioningContext } from './provision';
@@ -27,20 +26,10 @@ export type FheVerticalConfig = {
   readonly relayerUrl: string;
   /** The Solana host chain id (`HostConfig.chain_id`, type byte `0x01`). */
   readonly chainId: bigint;
-  /** Gateway user-decrypt context id, unsigned decimal string. */
-  readonly userDecryptContextId: string;
   /** The zama-host program id as bytes32 hex — the permit's verifying program. */
   readonly verifyingProgramId: `0x${string}`;
-  /** The registered KMS signer set (EVM addresses, gateway registry order). */
-  readonly kmsSigners: readonly `0x${string}`[];
-  /** The KMS epoch id permits are minted for, bytes32 hex. */
-  readonly kmsEpochId: `0x${string}`;
   /** The FHE parameter choice the local stack runs. */
   readonly fheParameter: string;
-  /** The gateway chain id, unsigned decimal string. */
-  readonly gatewayChainId: string;
-  /** The gateway `Decryption` contract — the EIP-712 verifying contract of KMS node signatures. */
-  readonly gatewayDecryptionContract: `0x${string}`;
 };
 
 /** The current handle bytes of an encrypted value at `finalized`. */
@@ -133,20 +122,7 @@ export const userDecrypt = async (config: FheVerticalConfig, params: UserDecrypt
   const client = solana.createFhevmDecryptClient({
     chain,
     rpc: createFinalizedRpc(config.rpcUrl),
-    // Whom the client believes. Signer party ids follow the registry order, the same
-    // first-is-party-one assumption the EVM SDK path makes.
-    trust: {
-      kmsSigners: config.kmsSigners.map((address, index) => ({ partyId: index + 1, address })),
-      kmsContextId: asBytes32Hex(solanaUserDecryptContext(config.userDecryptContextId)),
-      kmsEpochId: asBytes32Hex(config.kmsEpochId),
-      fheParameter: config.fheParameter,
-      gatewayEip712Domain: {
-        name: 'Decryption',
-        version: '1',
-        chainId: BigInt(config.gatewayChainId),
-        verifyingContract: config.gatewayDecryptionContract,
-      },
-    },
+    fheParameter: config.fheParameter,
   });
   // One wallet signature mints a permissive session; the request runs under it.
   const wallet = solana.solanaPermitWalletFromSecretKey(hexToBytes(params.secretKey));

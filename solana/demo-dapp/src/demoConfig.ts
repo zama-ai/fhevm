@@ -13,17 +13,8 @@ export type DemoConfig = {
   readonly wsUrl: string;
   readonly relayerUrl: string;
   readonly aclProgram: `0x${string}`;
-  readonly userDecryptContextId: string;
-  /** The registered KMS signer set (EVM addresses, registry order); party ids follow that order. */
-  readonly kmsSigners: readonly `0x${string}`[];
-  /** The KMS epoch id permits are minted for, as bytes32 hex. */
-  readonly kmsEpochId: `0x${string}`;
   /** The FHE parameter choice this deployment runs. */
   readonly fheParameter: string;
-  /** The gateway chain id, as a decimal string. */
-  readonly gatewayChainId: string;
-  /** The gateway Decryption contract — the EIP-712 verifying contract of KMS node signatures. */
-  readonly gatewayDecryptionContract: `0x${string}`;
   readonly authorityFundingLamports: string;
   readonly vault: Address;
   readonly programs: {
@@ -64,11 +55,6 @@ const hexBytes = (value: unknown, name: string, byteLength: number): `0x${string
     throw new Error(`${name} must be a 0x-prefixed ${byteLength}-byte hex value`);
   }
   return text as `0x${string}`;
-};
-
-const hexBytesArray = (value: unknown, name: string, byteLength: number): readonly `0x${string}`[] => {
-  if (!Array.isArray(value) || value.length === 0) throw new Error(`${name} must be a non-empty array`);
-  return value.map((entry, index) => hexBytes(entry, `${name}[${index}]`, byteLength));
 };
 
 const localUrl = (value: unknown, name: string, protocol: "http:" | "ws:"): string => {
@@ -131,12 +117,7 @@ export const parseDemoConfig = (value: unknown): DemoConfig => {
     wsUrl,
     relayerUrl: localUrl(raw.relayerUrl, "demo config.relayerUrl", "http:"),
     aclProgram,
-    userDecryptContextId: string(raw.userDecryptContextId, "demo config.userDecryptContextId"),
-    kmsSigners: hexBytesArray(raw.kmsSigners, "demo config.kmsSigners", 20),
-    kmsEpochId: hexBytes(raw.kmsEpochId, "demo config.kmsEpochId", 32),
     fheParameter: string(raw.fheParameter, "demo config.fheParameter"),
-    gatewayChainId: string(raw.gatewayChainId, "demo config.gatewayChainId"),
-    gatewayDecryptionContract: hexBytes(raw.gatewayDecryptionContract, "demo config.gatewayDecryptionContract", 20),
     authorityFundingLamports: string(raw.authorityFundingLamports, "demo config.authorityFundingLamports"),
     vault: address(string(raw.vault, "demo config.vault")),
     programs: {

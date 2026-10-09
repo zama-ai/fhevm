@@ -34,12 +34,7 @@ const validResponse = {
     wsUrl: 'ws://127.0.0.1:8900',
     relayerUrl: 'http://127.0.0.1:3000',
     aclProgram: '0xb825643b79bf4499ff31ccfe8a297aa0eb30a8a0cc1f2319e82176c1b4d65e71',
-    userDecryptContextId: '123',
-    kmsSigners: [`0x${'01'.repeat(20)}`],
-    kmsEpochId: `0x${'00'.repeat(32)}`,
     fheParameter: 'test',
-    gatewayChainId: '31337',
-    gatewayDecryptionContract: `0x${'aa'.repeat(20)}`,
     authorityFundingLamports: '1000000',
     vault: '11111111111111111111111111111111',
     programs: {

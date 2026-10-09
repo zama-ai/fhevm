@@ -94,6 +94,8 @@ import { getAddressEncoder } from '@solana/kit';
 import { createFhevmPublicDecryptClient } from '../clients/createFhevmPublicDecryptClient.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 import * as certificateModule from './publicDecryptCertificate.js';
+import { clearSolanaHostKmsReads, createSolanaHostKmsReads, userDecryptVerification } from './hostKms.js';
+import { getSolanaRuntime } from '../internal/runtime.js';
 import { asBytes32Hex } from '../../core/base/bytes.js';
 
 const contextId = new Uint8Array(32).fill(0x44);
@@ -179,6 +181,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  clearSolanaHostKmsReads();
 });
 
 describe('public decrypt client account-to-plaintext flow', () => {
@@ -418,5 +421,138 @@ describe('public decrypt client account-to-plaintext flow', () => {
         ],
       }),
     ).rejects.toThrow('32 bytes per handle');
+  });
+});
+
+describe('the host KMS reads', () => {
+  const servedByAddress = (f: Awaited<ReturnType<typeof accountFixture>>) =>
+    vi.spyOn(f.rpc, 'getMultipleAccounts').mockImplementation(
+      (addresses: readonly string[]) =>
+        ({
+          send: async () => ({
+            value: addresses.map((address) =>
+              address === f.configAddress
+                ? f.configAccount()
+                : address === f.contextAddress
+                  ? f.contextAccount()
+                  : null,
+            ),
+          }),
+        }) as never,
+    );
+
+  it('routes repeated decryptions through one HostConfig read, and verifies each against a fresh one', async () => {
+    const f = await accountFixture();
+    await f.client.decryptPublicValue({ handle, encryptedStore: store });
+    await f.client.decryptPublicValue({ handle, encryptedStore: store });
+    expect(f.rpc.getAccountInfo).toHaveBeenCalledTimes(1);
+    expect(f.rpc.getMultipleAccounts).toHaveBeenCalledTimes(2);
+  });
+  // Callers that build a client per operation still share the read: the cache is keyed by
+  // runtime, host program and chain, not by client.
+  it('shares one HostConfig read between concurrent and later callers, across clients', async () => {
+    const f = await accountFixture();
+    const hostReads = () => createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
+    await Promise.all([hostReads().config(), hostReads().config()]);
+    await hostReads().config();
+    expect(f.rpc.getAccountInfo).toHaveBeenCalledTimes(1);
+  });
+  it('refuses a HostConfig of another chain, and caches nothing', async () => {
+    const f = await accountFixture();
+    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
+    f.config.chainId = chain.id + 1n;
+    await expect(host.config()).rejects.toThrow('Host configuration does not match the client');
+    f.config.chainId = chain.id;
+    await expect(host.config()).resolves.toMatchObject({ chainId: chain.id });
+    expect(f.rpc.getAccountInfo).toHaveBeenCalledTimes(2);
+  });
+  it('refuses a destroyed context, and reads it again on the next call', async () => {
+    const f = await accountFixture();
+    const read = servedByAddress(f);
+    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
+    f.kms.destroyed = true;
+    await expect(host.kmsContext(contextId)).rejects.toThrow('Invalid or destroyed KMS context');
+    f.kms.destroyed = false;
+    await expect(host.kmsContext(contextId)).resolves.toMatchObject({ kms: { destroyed: false } });
+    await host.kmsContext(contextId);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+  it('refuses a context the host never defined', async () => {
+    const f = await accountFixture();
+    vi.spyOn(f.rpc, 'getMultipleAccounts').mockReturnValue({
+      send: async () => ({ value: [f.configAccount(), null] }),
+    } as never);
+    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
+    await expect(host.kmsContext(contextId)).rejects.toThrow('Invalid host account');
+  });
+  it.each(['context', 'epoch'])('refuses to route while HostConfig holds no %s', async (field) => {
+    const f = await accountFixture();
+    if (field === 'context') f.config.currentKmsContextId = new Uint8Array(32);
+    else f.config.currentKmsEpochId = new Uint8Array(32);
+    await expect(f.client.decryptPublicValue({ handle, encryptedStore: store })).rejects.toThrow(
+      'KMS context is not configured',
+    );
+    expect(f.request).not.toHaveBeenCalled();
+  });
+  // A permit stays answerable after a context switch: its response is checked against the context
+  // it names, whose signers are parties 1..n in registered order.
+  it("trusts the signers of the permit's context as parties 1..n, under the host's gateway domain", async () => {
+    const f = await accountFixture();
+    const permitContextId = new Uint8Array(32).fill(0x55);
+    const [permitContext, bump] = await findKmsContextPda({ contextId: permitContextId });
+    Object.assign(f.kms, {
+      contextId: permitContextId,
+      bump,
+      signers: [bob, alice].map(({ address }) => hexToBytes(address)),
+    });
+    const read = vi
+      .spyOn(f.rpc, 'getMultipleAccounts')
+      .mockImplementation(() => ({ send: async () => ({ value: [f.configAccount(), f.contextAccount()] }) }) as never);
+    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
+
+    await expect(userDecryptVerification(host, permitContextId, 'test')).resolves.toEqual({
+      signers: [
+        { partyId: 1, address: bob.address.toLowerCase() },
+        { partyId: 2, address: alice.address.toLowerCase() },
+      ],
+      fheParameter: 'test',
+      gatewayEip712Domain: {
+        name: 'Decryption',
+        version: '1',
+        chainId: 31337n,
+        verifyingContract: signingDomain.verifyingContract,
+      },
+    });
+    expect(read).toHaveBeenCalledWith(
+      [f.configAddress, permitContext],
+      expect.objectContaining({ commitment: 'finalized' }),
+    );
+  });
+  // A KmsContext records no chain, and a fresh stack defines the same first context id on every
+  // cluster. Only the HostConfig read beside it shows which cluster answered.
+  it('refuses a KmsContext read from another cluster, and never trusts it for the right one', async () => {
+    const f = await accountFixture();
+    const other = await accountFixture();
+    other.config.chainId = chain.id + 1n;
+    other.kms.signers = [new Uint8Array(20).fill(0x02)];
+    const ownRead = servedByAddress(f);
+    servedByAddress(other);
+    const reads = (rpc: SolanaRpc) => createSolanaHostKmsReads({ chain, rpc }, getSolanaRuntime());
+
+    await expect(userDecryptVerification(reads(other.rpc), contextId, 'test')).rejects.toThrow(
+      'Host configuration does not match the client',
+    );
+    const { signers } = await userDecryptVerification(reads(f.rpc), contextId, 'test');
+    expect(signers.map(({ address }) => address)).toEqual([alice.address, bob.address].map((a) => a.toLowerCase()));
+    expect(ownRead).toHaveBeenCalledTimes(1);
+  });
+  it('refuses to verify under a HostConfig with no decryption contract', async () => {
+    const f = await accountFixture();
+    f.config.decryptionContract = new Uint8Array(20);
+    servedByAddress(f);
+    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
+    await expect(userDecryptVerification(host, contextId, 'test')).rejects.toThrow(
+      'Host decryption contract is not configured',
+    );
   });
 });

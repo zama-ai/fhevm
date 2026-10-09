@@ -5,7 +5,6 @@ import * as zamaHost from '@fhevm/solana-zama-host';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { address, getAddressEncoder, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
-import type { SolanaDecryptTrust } from '../clients/decorators/permitDecrypt.js';
 import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaMerkleProofReader } from './merkleProofs.js';
 import { bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '../../core/base/bytes.js';
@@ -183,10 +182,6 @@ describe('cleartextUserDecryptExecution', () => {
   const gatewayChainId = 7n;
   const decryptionContract = new Uint8Array(20).fill(0xdc);
   const kmsSigner = new Uint8Array(20).fill(0x5e);
-  const trust = {
-    gatewayEip712Domain: { chainId: gatewayChainId, verifyingContract: bytesToHex(decryptionContract) },
-    kmsSigners: [{ address: bytesToHex(kmsSigner) }],
-  } as unknown as SolanaDecryptTrust;
   const identity = (fill: number): Uint8Array => new Uint8Array(PERMIT_IDENTITY_LEN).fill(fill);
   const routing = new Uint8Array(PERMIT_KMS_ROUTING_LEN);
   routing[0] = PERMIT_KMS_ROUTING_VERSION;
@@ -214,7 +209,7 @@ describe('cleartextUserDecryptExecution', () => {
     options?: RelayerUserDecryptOptions,
     { attempts, start = now - 10n }: { attempts?: number; start?: bigint } = {},
   ) =>
-    cleartextUserDecryptExecution(rpc, chain, trust, readMerkleProofs).execute({
+    cleartextUserDecryptExecution(rpc, chain, readMerkleProofs).execute({
       session: sessionStarting(start),
       entries,
       attempts,

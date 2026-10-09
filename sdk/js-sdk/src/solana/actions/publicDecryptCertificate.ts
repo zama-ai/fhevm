@@ -11,9 +11,8 @@ import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAs
 import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
 import { hexToBytes } from '../../core/base/bytes.js';
 import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
-import { fetchEncodedAccount, type Address, type MaybeEncodedAccount, type ReadonlyUint8Array } from '@solana/kit';
-import { findHostConfigPda, getHostConfigDecoder, HOST_CONFIG_DISCRIMINATOR } from '@fhevm/solana-zama-host';
-import { solanaHostProgram, type SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
+import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
+import { readActiveKmsRouting, type SolanaHostKmsReads } from './hostKms.js';
 
 export type SolanaPublicDecryptCertificateContext = {
   readonly chain: FhevmSolanaChain;
@@ -64,24 +63,6 @@ export type SolanaPublicDecryptBatchClaim = Omit<SolanaPublicDecryptCertificateC
 /** Obtains the certificate of a batch of public handles; the relayer unless a cleartext client signs it. */
 export type SolanaPublicDecryptCertifier = (batch: SolanaPublicDecryptBatch) => Promise<SolanaPublicDecryptBatchClaim>;
 
-/** Data of a host account, after checking that it exists, belongs to the host and has `discriminator`. */
-export function hostAccountData(
-  account: MaybeEncodedAccount | undefined,
-  programAddress: Address,
-  discriminator: ReadonlyUint8Array,
-): Uint8Array {
-  if (
-    account === undefined ||
-    !account.exists ||
-    account.programAddress !== programAddress ||
-    account.executable ||
-    !discriminator.every((byte, index) => account.data[index] === byte)
-  ) {
-    throw new Error(`Invalid host account ${account?.address ?? 'missing'}`);
-  }
-  return new Uint8Array(account.data);
-}
-
 /** Throws the relayer request's abort error once `signal` is aborted, so every step fails alike. */
 export function publicDecryptAbortCheck(chain: FhevmSolanaChain, signal: AbortSignal | undefined): () => void {
   return () => {
@@ -94,46 +75,24 @@ export function publicDecryptAbortCheck(chain: FhevmSolanaChain, signal: AbortSi
 }
 
 /**
- * The host's active KMS context and epoch, read from `HostConfig` at finalized. A public decrypt
- * routes to this pair, as an EVM one routes to `ProtocolConfig.getCurrentKmsContextAndEpoch()`.
- */
-export async function readActiveKmsRouting(
-  client: SolanaClientParameters,
-  abortSignal?: AbortSignal,
-): Promise<Pick<SolanaPublicDecryptBatch, 'contextId' | 'epochId'>> {
-  const checkAbort = publicDecryptAbortCheck(client.chain, abortSignal);
-  checkAbort();
-  const programAddress = solanaHostProgram(client.chain);
-  const [configAddress] = await findHostConfigPda({ programAddress });
-  const account = await fetchEncodedAccount(client.rpc, configAddress, {
-    commitment: 'finalized',
-    ...(abortSignal === undefined ? {} : { abortSignal }),
-  }).catch((error: unknown) => {
-    checkAbort();
-    throw error;
-  });
-  checkAbort();
-  const config = getHostConfigDecoder().decode(hostAccountData(account, programAddress, HOST_CONFIG_DISCRIMINATOR));
-  const contextId = new Uint8Array(config.currentKmsContextId);
-  const epochId = new Uint8Array(config.currentKmsEpochId);
-  if (contextId.every((byte) => byte === 0) || epochId.every((byte) => byte === 0))
-    throw new Error('KMS context is not configured');
-  return { contextId, epochId };
-}
-
-/**
  * The single-handle certificate an on-chain consumer submits: the host verifier checks one handle.
  *
  * @param client - The Solana client whose host names the active KMS context and epoch.
+ * @param host - That client's host KMS reads.
  * @param certify - The batch certifier.
  */
 export function singlePublicDecryptCertificate(
   client: SolanaClientParameters,
+  host: SolanaHostKmsReads,
   certify: SolanaPublicDecryptCertifier,
 ): (parameters: SolanaPublicDecryptCertificateParameters) => Promise<SolanaPublicDecryptCertificateClaim> {
   return async ({ handle, encryptedStore, options }) => {
     const requested = toFhevmHandle(handle).bytes32Hex;
-    const routing = await readActiveKmsRouting(client, options?.signal);
+    // A shared read cannot carry one caller's signal, so cancellation is checked around it.
+    const checkAbort = publicDecryptAbortCheck(client.chain, options?.signal);
+    checkAbort();
+    const routing = await readActiveKmsRouting(host);
+    checkAbort();
     const { handles, ...claim } = await certify({ ...routing, options, entries: [{ handle, encryptedStore }] });
     if (handles.length !== 1 || handles[0]?.toLowerCase() !== requested.toLowerCase())
       throw new Error('public-decrypt certificate must cover exactly the requested handle');

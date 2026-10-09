@@ -5,23 +5,18 @@ import { getAddressDecoder, getAddressEncoder } from '@solana/kit';
 // This decorator is assembly and nothing else. Every rule it relies on lives in the modules it
 // fastens together — the permit builder and channel, the relayer transport, the retry session, the
 // response verification — and what it adds is the wiring: the chain says where the deployment is,
-// the trust configuration says whom to believe, and the caller brings the wallet and the handles.
+// the host program says whom to believe, and the caller brings the wallet and the handles.
 //
-// The trust configuration is caller-supplied deliberately. The KMS signer set and the routing pair
-// live in on-chain and management state whose read paths are open questions to their owners (the
-// party-id mapping of `KmsContext.signers`, the epoch source); until those close, a caller that
-// knows its deployment hands the values in explicitly, and nothing here pretends to have read them
-// from a canonical source.
+// The KMS trust is read from the host, as the EVM SDK reads it from `ProtocolConfig` and
+// `KMSVerifier`: a permit is minted for the host's active context and epoch, and a response is
+// verified against the signers and gateway domain of the context the permit names.
 
-import type { Bytes32Hex } from '../../../core/types/primitives.js';
 import type { TypedValue } from '../../../core/types/primitives.js';
 import type { FhevmRuntime } from '../../../core/types/coreFhevmRuntime.js';
 import type { FhevmSolanaChain } from '../../../core/types/fhevmSolanaChain.js';
 import type { RelayerUserDecryptOptions } from '../../../core/types/relayer.js';
 import type { SolanaPermitWallet } from '../../permit/index.js';
 import type {
-  SolanaGatewayEip712Domain,
-  SolanaKmsSigner,
   SolanaPermitSession,
   SolanaTransportKeyPair,
   SolanaUserDecryptHandleEntry,
@@ -44,29 +39,10 @@ import { bytes32ToHandle } from '../../../core/handle/FhevmHandle.js';
 import { bytesToClearValueType } from '../../../core/handle/FheType.js';
 import { createClearValue, clearValueToTypedValue } from '../../../core/handle/ClearValue.js';
 import { hexToBytes32, isBytes32 } from '../../../core/base/bytes.js';
+import { readActiveKmsRouting, userDecryptVerification, type SolanaHostKmsReads } from '../../actions/hostKms.js';
 
 /** The origin of every clear value this path produces; nothing outside this module can mint one. */
 const SOLANA_PERMIT_USER_DECRYPT_TOKEN = Symbol('fhevm.solana.permit-user-decrypt');
-
-/**
- * Whom the permit path believes: the KMS signer set, the routing pair permits are minted for, the
- * FHE parameter, and the gateway domain node signatures verify under.
- *
- * Every field is caller-supplied while the canonical read paths remain open questions to their
- * owners; see the module comment.
- */
-export interface SolanaDecryptTrust {
-  /** The registered KMS signer set — the trust anchor of response verification. */
-  readonly kmsSigners: readonly SolanaKmsSigner[];
-  /** The KMS context id new permits are minted for. */
-  readonly kmsContextId: Bytes32Hex;
-  /** The KMS epoch id new permits are minted for. */
-  readonly kmsEpochId: Bytes32Hex;
-  /** The FHE parameter choice this deployment runs, e.g. `default` or `test`. */
-  readonly fheParameter: string;
-  /** The gateway EIP-712 domain the response link is hashed under and KMS signatures verify against. */
-  readonly gatewayEip712Domain: SolanaGatewayEip712Domain;
-}
 
 /** One `(program, scope)` pair a permit may be restricted to. */
 export interface SolanaPermitScope {
@@ -134,27 +110,22 @@ export type SolanaPermitDecryptActions = {
 };
 
 /**
- * Builds the permit-path actions for one deployment and one trust configuration.
+ * Answers user decryptions through the relayer, verifying each response against the host's record
+ * of the permit's KMS context.
  *
- * @param chain - Where the deployment is; permits are signed for its host program id.
- * @param trust - Whom to believe; see {@link SolanaDecryptTrust}.
+ * @param chain - Where the deployment is; the relayer it names answers.
+ * @param host - The client's host KMS reads.
  * @param runtime - The client runtime; its configured auth reaches every relayer submission,
  * with per-call options taking precedence — the same merge the public-decrypt action runs.
- * @param execution - How requests under a permit are answered; the relayer and KMS when absent.
- * @throws If the trust configuration lacks the gateway domain the permit path stands on.
+ * @param fheParameter - The FHE parameter choice this deployment runs, e.g. `default` or `test`.
  */
-export function solanaPermitDecryptActions(
+export function relayerUserDecryptExecution(
   chain: FhevmSolanaChain,
-  trust: SolanaDecryptTrust,
+  host: SolanaHostKmsReads,
   runtime: FhevmRuntime,
-  fetchPermitInvalidation: (user: Address) => Promise<bigint>,
-  execution?: SolanaUserDecryptExecution,
-): SolanaPermitDecryptActions {
-  // Fail at construction, not mid-session: a trust configuration missing the domain would otherwise
-  // surface as a failure of whichever request first needed it.
-  const gatewayEip712Domain = requiredField(trust.gatewayEip712Domain, 'trust.gatewayEip712Domain');
-
-  const { transportKeyPair, execute }: SolanaUserDecryptExecution = execution ?? {
+  fheParameter: string,
+): SolanaUserDecryptExecution {
+  return {
     transportKeyPair: () => generateSolanaTransportKeyPair(runtime),
     execute: async ({ session, entries, attempts, options }) => {
       const transport = createSolanaUserDecryptRelayerTransport({
@@ -162,6 +133,11 @@ export function solanaPermitDecryptActions(
         logger: runtime.config.logger,
         options: { auth: runtime.config.auth, ...options },
       });
+      const verification = await userDecryptVerification(
+        host,
+        session.signedPermit.fields.kmsRouting.kmsContextId,
+        fheParameter,
+      );
       const plaintexts = await executeSolanaUserDecrypt({
         runtime,
         session,
@@ -169,22 +145,33 @@ export function solanaPermitDecryptActions(
         transport,
         clock: transport,
         attempts,
-        verification: {
-          signers: trust.kmsSigners,
-          fheParameter: trust.fheParameter,
-          gatewayEip712Domain,
-        },
+        verification,
       });
       transport.throwIfAbortedOrExpired();
       return plaintexts;
     },
   };
+}
 
+/**
+ * Builds the permit-path actions for one deployment.
+ *
+ * @param chain - Where the deployment is; permits are signed for its host program id.
+ * @param host - The client's host KMS reads; permits are minted for the active context and epoch.
+ * @param execution - How requests under a permit are answered.
+ */
+export function solanaPermitDecryptActions(
+  chain: FhevmSolanaChain,
+  host: SolanaHostKmsReads,
+  fetchPermitInvalidation: (user: Address) => Promise<bigint>,
+  { transportKeyPair, execute }: SolanaUserDecryptExecution,
+): SolanaPermitDecryptActions {
   return {
     async signPermit(parameters: SolanaSignPermitParameters): Promise<SolanaPermitSession> {
       const invalidationWatermark = await fetchPermitInvalidation(
         getAddressDecoder().decode(parameters.wallet.account.publicKey),
       );
+      const { contextId, epochId } = await readActiveKmsRouting(host);
       const keyPair = await transportKeyPair();
       const now = BigInt(Math.floor(Date.now() / 1000));
       const startTimestamp = normalizeSolanaPermitStart({
@@ -201,8 +188,8 @@ export function solanaPermitDecryptActions(
         chainId: chain.id,
         extraData: encodeSolanaKmsRouting({
           version: PERMIT_KMS_ROUTING_VERSION,
-          kmsContextId: hexToBytes32(trust.kmsContextId),
-          kmsEpochId: hexToBytes32(trust.kmsEpochId),
+          kmsContextId: contextId,
+          kmsEpochId: epochId,
         }),
       });
       const warnings = solanaPermitWarnings(fields);
@@ -289,9 +276,4 @@ function toClearValues(
       SOLANA_PERMIT_USER_DECRYPT_TOKEN,
     );
   });
-}
-
-function requiredField<T>(value: T | undefined, path: string): T {
-  if (value === undefined) throw new Error(`Missing required field: ${path}`);
-  return value;
 }

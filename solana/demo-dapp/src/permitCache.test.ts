@@ -19,8 +19,6 @@ const key = (overrides: Partial<PermitCacheKey> = {}): PermitCacheKey => ({
   walletAddress: 'A1iceWa11etAddress11111111111111111111111111',
   chainId: '42',
   permitScope: 'prog/mint',
-  kmsContextId: '0xc0',
-  kmsEpochId: '0xe0',
   ...overrides,
 });
 
@@ -44,8 +42,6 @@ describe('permitSessionFor', () => {
     ['wallet', { walletAddress: 'BobWa11etAddress1111111111111111111111111111' }],
     ['chain', { chainId: '43' }],
     ['scope', { permitScope: 'prog/other' }],
-    ['KMS context', { kmsContextId: '0xc1' }],
-    ['KMS epoch', { kmsEpochId: '0xe1' }],
   ] as const)('a different %s is a different permit', async (_name, overrides) => {
     const sign = signerOf(sessionWithWindow(NOW, 3_600n));
 

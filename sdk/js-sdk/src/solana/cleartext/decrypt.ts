@@ -13,7 +13,7 @@
 import { getAddressDecoder, parseBase64RpcAccount, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaRpc } from '../encryptedStore.js';
-import type { SolanaDecryptTrust, SolanaUserDecryptExecution } from '../clients/decorators/permitDecrypt.js';
+import type { SolanaUserDecryptExecution } from '../clients/decorators/permitDecrypt.js';
 import type {
   SolanaTransportKeyPair,
   SolanaUserDecryptPlaintext,
@@ -68,7 +68,6 @@ const PUBLIC_DECRYPT_RETRY_MS = 250;
 export function cleartextUserDecryptExecution(
   rpc: SolanaRpc,
   chain: FhevmSolanaChain,
-  trust: SolanaDecryptTrust,
   readMerkleProofs: SolanaMerkleProofReader,
 ): SolanaUserDecryptExecution {
   const programAddress = solanaHostProgram(chain);
@@ -84,7 +83,6 @@ export function cleartextUserDecryptExecution(
           // Each attempt is judged against the host as it is then, as the Connector rechecks the KMS
           // context on every attempt.
           const host = await fetchHostDecryptionState(rpc, programAddress, fields.kmsRouting.kmsContextId, signal);
-          assertTrustMatchesHost(host, trust, fields.kmsRouting.kmsContextId);
 
           // The relayer, when the request is posted: the signature over the chain the handles name,
           // which admission made the permit's, then that chain.
@@ -195,32 +193,6 @@ async function fetchHostDecryptionState(
     fetchKmsContext(rpc, (await findKmsContextPda({ contextId }, { programAddress }))[0], fetchConfig),
   ]);
   return { config, context };
-}
-
-/**
- * Throws when the trust configuration names another KMS or gateway than the host registers: on the
- * real stack, response verification would reject every answer.
- */
-function assertTrustMatchesHost(
-  { config, context }: HostDecryptionState,
-  trust: SolanaDecryptTrust,
-  contextId: Uint8Array,
-): void {
-  const domain = trust.gatewayEip712Domain;
-  const decryptionContract = bytesToHex(new Uint8Array(config.decryptionContract));
-  if (domain.chainId !== config.gatewayChainId || domain.verifyingContract.toLowerCase() !== decryptionContract) {
-    throw new Error(
-      `trust.gatewayEip712Domain is chain ${domain.chainId}, contract ${domain.verifyingContract}; the host registers ` +
-        `chain ${config.gatewayChainId}, contract ${decryptionContract}`,
-    );
-  }
-  const trusted = trust.kmsSigners.map((signer) => signer.address.toLowerCase()).sort();
-  const registered = context.signers.map((signer) => bytesToHex(new Uint8Array(signer))).sort();
-  if (trusted.join() !== registered.join()) {
-    throw new Error(
-      `trust.kmsSigners are ${trusted.join(', ')}; KMS context ${bytesToHex(contextId)} registers ${registered.join(', ')}`,
-    );
-  }
 }
 
 /** One `getMultipleAccounts` read of the host accounts, at a slot no older than `minContextSlot`. */

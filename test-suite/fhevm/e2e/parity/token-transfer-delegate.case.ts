@@ -127,8 +127,6 @@ export const parityCase: ParityCase<{ fund: bigint; amount: bigint }> = {
       rpcUrl: env.rpcUrl,
       wsUrl: env.wsUrl,
       relayerUrl: env.relayerUrl,
-      hostRpcUrl: env.hostRpcUrl,
-      gatewayRpcUrl: env.gatewayRpcUrl,
       aclProgram: env.aclProgram,
       funding: env.funding,
       funderKeypairPath: env.capabilities.faucet ? undefined : env.roots.deployerKeypairPath,
@@ -136,7 +134,6 @@ export const parityCase: ParityCase<{ fund: bigint; amount: bigint }> = {
       waitForHandle: async () => {
         throw new Error("the parity case does not wait on the coprocessor database");
       },
-      userDecryptContextId: env.userDecryptContextId,
     });
     let scenario: TwoHolderScenario | undefined;
     try {

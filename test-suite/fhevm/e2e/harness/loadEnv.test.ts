@@ -33,10 +33,6 @@ describe("loadEnv", () => {
     expect(() => resolveEnv({ aclProgram: "0xdeadbeef" })).toThrow(/32-byte hex/);
   });
 
-  test("rejects a non-decimal user-decrypt context id", () => {
-    expect(() => resolveEnv({ userDecryptContextId: "0x01" })).toThrow(/unsigned decimal/);
-  });
-
   test("SOLANA_E2E_SOURCE=devnet: no faucet, no fast slots, small transfers from the deployer", () => {
     const env = loadEnv({
       SOLANA_E2E_SOURCE: "devnet",

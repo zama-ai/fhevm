@@ -74,12 +74,6 @@ export type TestEnv = {
   readonly chainId: bigint;
   /** zama-host program id as a bytes32 hex — the Solana ACL identity. */
   readonly aclProgram: `0x${string}`;
-  /**
-   * KMS/gateway user-decrypt context id override, as an unsigned decimal string. There is no
-   * static default: when absent, helpers read the active pair from the deployed `ProtocolConfig`
-   * (`readActiveKmsPair`) so the permit names a pair the Connector actually serves.
-   */
-  readonly userDecryptContextId: string | undefined;
   /** Command prefix that runs `psql` against the coprocessor DB (for ciphertext-materialization waits). */
   readonly coprocessorDbPsql: readonly string[];
   /** Command prefix that runs `psql` against the Merkle proof service's database. */
@@ -112,7 +106,6 @@ type TestEnvOverrides = {
   hostRpcUrl: string;
   chainId: string;
   aclProgram: string;
-  userDecryptContextId: string;
   coprocessorDbPsql: readonly string[];
   merkleDbPsql: readonly string[];
   deployerKeypairPath: string;
@@ -162,11 +155,6 @@ const solanaChainId = (value: string): bigint => {
   return id;
 };
 
-const decimalString = (value: string, name: string): string => {
-  if (!/^\d+$/.test(value)) throw new Error(`${name} must be an unsigned decimal integer, got ${value}`);
-  return value;
-};
-
 /** Reads TestEnv overrides from the process environment (the "now" source). */
 export const envOverrides = (env: NodeJS.ProcessEnv): Partial<TestEnvOverrides> => {
   const pick = <K extends keyof TestEnvOverrides>(key: K, name: string): Partial<Pick<TestEnvOverrides, K>> => {
@@ -181,7 +169,6 @@ export const envOverrides = (env: NodeJS.ProcessEnv): Partial<TestEnvOverrides> 
     ...pick("hostRpcUrl", "HOST_RPC"),
     ...pick("chainId", "SOLANA_HOST_CHAIN_ID"),
     ...pick("aclProgram", "SOLANA_ACL_PROGRAM"),
-    ...pick("userDecryptContextId", "SOLANA_UD_CONTEXT_ID"),
     ...psqlOverride(env),
     ...pick("deployerKeypairPath", "SOLANA_DEPLOYER_KEYPAIR"),
   };
@@ -229,10 +216,6 @@ export const resolveEnv = (
     hostRpcUrl: merged.hostRpcUrl,
     chainId: solanaChainId(merged.chainId),
     aclProgram: bytes32Hex(merged.aclProgram),
-    userDecryptContextId:
-      merged.userDecryptContextId === undefined
-        ? undefined
-        : decimalString(merged.userDecryptContextId, "userDecryptContextId"),
     coprocessorDbPsql: merged.coprocessorDbPsql,
     merkleDbPsql: merged.merkleDbPsql,
     roots: { deployerKeypairPath: merged.deployerKeypairPath },

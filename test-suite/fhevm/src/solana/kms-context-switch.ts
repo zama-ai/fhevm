@@ -6,10 +6,9 @@
 // match the EVM context's. The leg checks Solana decrypts at the transitions that change what a
 // certificate proves: the first switch and the node swap (values written at the baseline still
 // decrypt, and the new context certifies them), and the destroy (the destroyed context's
-// certificate is refused, and the current context still serves).
-import { address } from '@solana/kit';
-
-import { bytesToHex, hexToBytes } from '@fhevm/sdk/base';
+// certificate is refused, and the current context still serves). Each decrypt runs in a fresh
+// process, so the SDK's cached zama-host reads never hide a switch.
+import { bytesToHex } from '@fhevm/sdk/base';
 import { TOTAL_SUPPLY_KEY } from '@fhevm/confidential-token';
 import {
   ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT,
@@ -23,7 +22,7 @@ import { defineKmsContextInstruction } from '../../../../solana/deploy/src/boots
 import type { ContextAndEpoch } from '../commands/kms-context-switch';
 import { SOLANA_ACL_PROGRAM } from '../layout';
 import type { State } from '../types';
-import { bytes32HexFromId, readEvmKmsSignersForContext } from './addresses';
+import { readEvmKmsSignersForContext, uint256Bytes } from './addresses';
 import {
   assertActiveKmsPairMatchesEvmHost,
   assertKmsContextMatchesEvmHost,
@@ -31,7 +30,8 @@ import {
   solanaDeployerKeypairPath,
 } from './deploy';
 import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
-import { type FheVerticalConfig, certifiedPublicDecrypt, currentHandle, userDecryptExpect } from './fhe-vertical';
+import { type FheVerticalConfig, currentHandle } from './fhe-vertical';
+import { certifiedPublicDecryptInFreshProcess, userDecryptExpectInFreshProcess } from './fresh-decrypt';
 import { expectProgramError } from './program-error';
 import {
   createConfidentialMint,
@@ -47,14 +47,10 @@ import {
 } from './provision';
 import { waitForSnsCommit } from './sns';
 import { sdkVerifyModule } from './lazy-modules';
-import { readDecryptTrustInputs } from './target';
 import { discloseCertifiedHandle, sealTotalSupplyHandle, totalSupplyStore } from './token-vertical';
 
 const WRAP_AMOUNT = 1000n;
 const HOLDER_SOL = 5;
-
-/** A KMS context or epoch id as zama-host stores it: the EVM uint256, 32 bytes big-endian. */
-const idBytes = (id: bigint): Uint8Array => hexToBytes(bytes32HexFromId(id));
 
 export type SolanaKmsContextLeg = {
   /**
@@ -114,20 +110,12 @@ export const prepareSolanaKmsContextLeg = async (
   await waitForSnsCommit(balance.currentHandle);
 
   const chainId = await readHostChainId(context);
-  const decryptConfig = async (): Promise<FheVerticalConfig> => {
-    const trust = await readDecryptTrustInputs({ gatewayRpcUrl: endpoints.gatewayRpc, hostRpcUrl: endpoints.hostRpc });
-    return {
-      rpcUrl: endpoints.validatorRpc,
-      relayerUrl: endpoints.relayer,
-      chainId,
-      userDecryptContextId: trust.kmsContextId.toString(),
-      verifyingProgramId: SOLANA_ACL_PROGRAM,
-      kmsSigners: trust.kmsSigners,
-      kmsEpochId: bytes32HexFromId(trust.kmsEpochId),
-      fheParameter: state.scenario.kms.fheParams.toLowerCase(),
-      gatewayChainId: trust.gatewayChainId.toString(),
-      gatewayDecryptionContract: trust.decryptionContract,
-    };
+  const decryptConfig: FheVerticalConfig = {
+    rpcUrl: endpoints.validatorRpc,
+    relayerUrl: endpoints.relayer,
+    chainId,
+    verifyingProgramId: SOLANA_ACL_PROGRAM,
+    fheParameter: state.scenario.kms.fheParams.toLowerCase(),
   };
 
   /**
@@ -135,15 +123,16 @@ export const prepareSolanaKmsContextLeg = async (
    * must be `contextId`.
    */
   const certifySupply = async (contextId: bigint) => {
-    const { cleartext, certificate } = await certifiedPublicDecrypt(await decryptConfig(), {
+    const { cleartext, certificate } = await certifiedPublicDecryptInFreshProcess(decryptConfig, {
       encryptedStore: supplyStore,
       handle: supplyHandle,
     });
     if (cleartext !== WRAP_AMOUNT) throw new Error(`Solana total supply decrypted to ${cleartext}, expected ${WRAP_AMOUNT}`);
     const { solanaPublicDecryptContextId } = await sdkVerifyModule();
     const namedContext = bytesToHex(solanaPublicDecryptContextId(certificate));
-    if (namedContext !== bytes32HexFromId(contextId)) {
-      throw new Error(`the certificate names KMS context ${namedContext}, expected ${bytes32HexFromId(contextId)}`);
+    const expectedContext = bytesToHex(uint256Bytes(contextId));
+    if (namedContext !== expectedContext) {
+      throw new Error(`the certificate names KMS context ${namedContext}, expected ${expectedContext}`);
     }
     return certificate;
   };
@@ -154,8 +143,8 @@ export const prepareSolanaKmsContextLeg = async (
     adminClient.sendTransaction([
       await defineKmsContextInstruction({
         admin,
-        contextId: idBytes(contextId),
-        epochId: idBytes(epochId),
+        contextId: uint256Bytes(contextId),
+        epochId: uint256Bytes(epochId),
         signers,
         kmsCorruptionThreshold: bootstrapThresholdsForState(state).kmsCorruptionThreshold,
       }),
@@ -183,7 +172,7 @@ export const prepareSolanaKmsContextLeg = async (
     mirrorContext: async (pair) => {
       const signers = await evmSigners(pair.contextId);
       await defineContext(pair, signers);
-      await assertKmsContextMatchesEvmHost(ZAMA_HOST_PROGRAM_ADDRESS, idBytes(pair.contextId));
+      await assertKmsContextMatchesEvmHost(ZAMA_HOST_PROGRAM_ADDRESS, uint256Bytes(pair.contextId));
       await assertActiveKmsPairMatchesEvmHost(ZAMA_HOST_PROGRAM_ADDRESS);
       console.log(
         `[kms-context-switch] solana: defined context ${pair.contextId} with epoch ${pair.epochId}, the EVM ` +
@@ -193,7 +182,7 @@ export const prepareSolanaKmsContextLeg = async (
 
     mirrorEpoch: async ({ contextId, epochId }) => {
       await adminClient.sendTransaction([
-        await getDefineKmsEpochInstructionAsync({ admin, contextId: idBytes(contextId), epochId: idBytes(epochId) }),
+        await getDefineKmsEpochInstructionAsync({ admin, contextId: uint256Bytes(contextId), epochId: uint256Bytes(epochId) }),
       ]);
       await assertActiveKmsPairMatchesEvmHost(ZAMA_HOST_PROGRAM_ADDRESS);
       console.log(
@@ -204,8 +193,8 @@ export const prepareSolanaKmsContextLeg = async (
     checkDecrypts: async (contextId) => {
       const certificate = await certifySupply(contextId);
       await discloseCertifiedHandle(context, { payer: holder.signer, certificate });
-      await userDecryptExpect(await decryptConfig(), {
-        encryptedStore: address(balance.encryptedStore),
+      await userDecryptExpectInFreshProcess(decryptConfig, {
+        encryptedStore: balance.encryptedStore,
         handle: Buffer.from(balance.currentHandle.slice(2), 'hex'),
         secretKey: bytesToHex(holder.bytes.subarray(0, 32)),
         expected: WRAP_AMOUNT,
@@ -218,7 +207,7 @@ export const prepareSolanaKmsContextLeg = async (
 
     destroyBaseline: async (currentContextId) => {
       await adminClient.sendTransaction([
-        await getDestroyKmsContextInstructionAsync({ admin, contextId: idBytes(baseline.contextId) }),
+        await getDestroyKmsContextInstructionAsync({ admin, contextId: uint256Bytes(baseline.contextId) }),
       ]);
       await expectProgramError(
         `disclose a certificate of destroyed context ${baseline.contextId}`,

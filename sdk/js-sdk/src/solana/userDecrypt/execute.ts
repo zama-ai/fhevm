@@ -3,11 +3,11 @@
 // The pieces are already built — the retry session, the response verification — and this module
 // only fastens them together. Its one substantive rule is where the request inputs come from: the
 // signed permit's own fields, including the KMS routing decoded out of the permit's extraData, plus
-// the gateway domain from trust configuration. Configuration hands the routing in once, at permit
-// creation; from then on the permit is the single source, and a verification that read the routing
-// from configuration again could disagree with what the wallet actually signed. The domain is the
-// exception by nature: the permit does not carry it, so it comes from the same trust configuration
-// as the signer set and is bound into the link there.
+// the gateway domain from `HostConfig`. The routing is read from `HostConfig` once, when the permit
+// is minted; from then on the permit is the single source, and a verification that read the routing
+// from `HostConfig` again could disagree with what the wallet signed once the host switches context.
+// The domain is the exception by nature: the permit does not carry it, so it comes from `HostConfig`,
+// read beside the permit's `KmsContext` that supplies the signer set, and is bound into the link there.
 
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import type { SolanaPermitFields, SolanaPermitWarning, SolanaSignedPermit } from '../permit/index.js';
@@ -38,7 +38,7 @@ export interface SolanaPermitSession {
   readonly warnings: readonly SolanaPermitWarning[];
 }
 
-/** What response verification must be told beyond the permit: the trust configuration. */
+/** What response verification must be told beyond the permit: the signers of the permit's `KmsContext` and the gateway domain from `HostConfig`. */
 export interface SolanaUserDecryptVerification {
   readonly signers: readonly SolanaKmsSigner[];
   readonly fheParameter: string;
@@ -51,12 +51,12 @@ export interface SolanaUserDecryptVerification {
  *
  * Everything but the handles and the domain is the permit's own: the extra_data is the KMS routing
  * the wallet signed, re-encoded to the exact wire bytes the request carries, not read from
- * configuration — so the link this client computes and the link the KMS computes can only disagree
- * if the permit itself does, or if the configured domain is not the gateway's.
+ * `HostConfig` again — so the link this client computes and the link the KMS computes can only
+ * disagree if the permit itself does, or if `HostConfig`'s domain is not the gateway's.
  *
  * @param fields - The signed permit's validated fields.
  * @param handles - The requested handles, in the order the request carries them.
- * @param gatewayEip712Domain - The gateway domain, from trust configuration.
+ * @param gatewayEip712Domain - The gateway domain, from `HostConfig`.
  */
 export function solanaUserDecryptRequestInputs(
   fields: SolanaPermitFields,
@@ -81,7 +81,7 @@ export function solanaUserDecryptRequestInputs(
  * @param run.transport - Submits a request and waits for its outcome.
  * @param run.clock - Used for the backoff between attempts.
  * @param run.attempts - Submission budget; the session's default applies when absent.
- * @param run.verification - The trust configuration verification runs under.
+ * @param run.verification - The signers of the permit's `KmsContext` and the gateway domain from `HostConfig`.
  * @throws SolanaUserDecryptRunError - When no attempt was answered.
  * @throws If the answer does not verify as this request's.
  */

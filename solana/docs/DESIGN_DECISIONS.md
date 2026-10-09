@@ -2938,3 +2938,66 @@ Consequences:
   helper in `solana/deploy` derives it and the test suite imports that helper.
 
 Pinned by `dead-surface-check.sh` check 8 and its `--self-test` fixtures.
+
+## DD-073: The SDK reads decryption trust from zama-host
+
+Status: adopted
+
+Context:
+
+A decryption needs to know which KMS to trust: the context and epoch a request is routed to, the
+signers that answer it, and the gateway domain their signatures are made under. The Solana private
+decrypt client took all of it from the caller, as a `trust` object, while the public decrypt client
+already read the context and epoch from `HostConfig`. Every caller, from the demo dapp to the test
+suite, restated values the host program already holds, and a stale copy failed only when the KMS
+answered under another context.
+
+The EVM SDK reads the same trust from the chain. It mints under
+`ProtocolConfig.getCurrentKmsContextAndEpoch()`, verifies a response against the signers
+`KMSVerifier` returns for the context in the permit's `extraData`, numbers them `1..n` in that order,
+and caches both reads for 15 minutes.
+
+Decision:
+
+The SDK reads decryption trust from zama-host, as the EVM SDK reads it from Ethereum.
+
+- A permit and a public decrypt are routed to `HostConfig.current_kms_context_id` and
+  `current_kms_epoch_id`. An unset pair is refused.
+- A user-decrypt response is verified against the `KmsContext` the permit names, not the current
+  one, so a permit stays usable after a context switch until its context is destroyed. A missing or
+  destroyed context is refused.
+- That context's signers are parties `1..n` in their registered order. The client passes no
+  threshold: the KMS WASM derives it from the signer count, as on EVM.
+- The gateway domain is `Decryption`, version `1`, on `HostConfig.gateway_chain_id` and
+  `decryption_contract`.
+- The FHE parameter stays deployment configuration: zama-host does not hold it.
+- `HostConfig` and each `KmsContext` are read at finalized and cached for 15 minutes, sharing
+  in-flight reads. A failed read is not cached. As on EVM, every client on a runtime shares the
+  cache, so callers that build a client per operation still read once. A destroyed context can keep
+  verifying user-decrypt responses for up to 15 minutes, the revocation window EVM has.
+- EVM keys these caches by runtime and contract address. Solana adds the chain id, because a program
+  id can repeat across clusters and the chain id names the cluster (DD-052).
+- A `KmsContext` records no chain, and every fresh stack defines the same first context id. So each
+  `KmsContext` is read in one request together with `HostConfig`, and nothing is cached unless that
+  `HostConfig` records the client's chain id. A client whose RPC reaches another cluster fails
+  instead of filling an entry with that cluster's signers. An unset decryption contract is refused
+  in the same read.
+
+This answers RFC 036 open question 1.
+
+Rationale:
+
+The host program is the record the KMS connector and the on-chain verifier already act on. A copy in
+each caller can only drift from it. Reading it keeps one source (DD-072) and gives Solana the EVM
+SDK's outcome and revocation window.
+
+Consequences:
+
+- zama-host's current context and epoch must be a pair Ethereum's `ProtocolConfig` holds as valid,
+  because the KMS connector validates each request against it. A permit minted under a pair
+  Ethereum never activated, or has destroyed, is refused by the connector. zama-host must follow
+  Ethereum's context switches and epoch rotations.
+- The public decrypt client keeps a fresh read after the certificate arrives, so a context destroyed
+  while a request waits is still refused.
+- Callers no longer pass signers, routing or a domain; the demo dapp and the test suite drop those
+  values from their configuration.

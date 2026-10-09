@@ -62,12 +62,7 @@ const session = {
     relayerUrl: 'http://127.0.0.1:3000',
     rpcUrl: 'http://127.0.0.1:8899',
     aclProgram: `0x${'22'.repeat(32)}`,
-    userDecryptContextId: '0',
-    kmsSigners: [`0x${'01'.repeat(20)}`],
-    kmsEpochId: `0x${'00'.repeat(32)}`,
     fheParameter: 'test',
-    gatewayChainId: '31337',
-    gatewayDecryptionContract: `0x${'aa'.repeat(20)}`,
     programs: { token: 'confidential-token-program' },
   },
   signer: {
