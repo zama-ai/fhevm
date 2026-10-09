@@ -409,9 +409,8 @@ after the check (its own unit tests pin that mapping).
 
 **35. [HOLDS]** Only the configured admin can change HostConfig, except that an enabled pauser can set pause flags
 (#36). Every change emits a host event (`HostConfigUpdatedEvent`, or `NewKmsContextEvent` when `define_kms_context`
-moves the current context, or `NewKmsEpochEvent` when `define_kms_epoch` moves the current epoch). The event
-always goes out through the event CPI, so it lands in the transaction's inner instructions, which an RPC provider
-cannot truncate the way it can truncate logs. A reader therefore sees an admin
+moves the current context, or `NewKmsEpochEvent` when `define_kms_epoch` moves the current epoch). The event always goes out through the event CPI, so it lands in the transaction's inner
+instructions, which an RPC provider cannot truncate the way it can truncate logs. A reader therefore sees an admin
 change without replaying instruction data to find one (DD-044). The event only makes the change visible: readers and
 authorization take the current values from account state, never from event bytes. HostConfig records no
 last-modified slot; a client detects a new KMS context or epoch by reading `current_kms_context_id` and

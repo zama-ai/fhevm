@@ -2,8 +2,8 @@
 //! and which one it gets depends on whether an off-chain component has to be able to query it (DD-044).
 //!
 //! - **Emitted, always, through the event CPI** (`crate::event_cpi`). Two groups qualify. The admin and
-//!   config lifecycle — `HostConfig*`, `*KmsContext*`, `NewKmsEpoch`, `DenyScopeUpdated`,
-//!   `HcuAppTrustUpdated`, `PauserUpdated` — because an admin change is a protocol-level fact a component must be able to read without
+//!   config lifecycle — `HostConfig*`, `*KmsContext*`, `NewKmsEpoch`, `DenyScopeUpdated`, `HcuAppTrustUpdated`, `PauserUpdated` —
+//!   because an admin change is a protocol-level fact a component must be able to read without
 //!   replaying instruction data to find it. And `FheExecutedEvent`, emitted by every `fhe_execute`:
 //!   the instruction carries what the caller asked for, and the event carries what the host decided
 //!   — the block context, the random seeds and the result handle of each step. An indexer cannot

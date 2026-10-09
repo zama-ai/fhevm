@@ -5139,7 +5139,8 @@ fn mollusk_verify_public_decrypt_accepts_v2_kms_routing() {
     let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
     let handle = handle_for_chain(5, 5);
 
-    let extra_data = signing::context_extra_data_v2(KMS_CONTEXT_ID, [0x08; 32]);
+    let epoch_id = [0x08; 32];
+    let extra_data = [&[2][..], &KMS_CONTEXT_ID, &epoch_id].concat();
     let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
     let ix = verify_public_decrypt_ix(
         host_config,

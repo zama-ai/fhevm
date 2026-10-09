@@ -146,9 +146,8 @@ pub(super) fn require_top_level_unless_pda(signer: &Pubkey, error: ZamaHostError
 
 /// Emits the config snapshot after a config change. Every instruction that touches `HostConfig`
 /// routes through here, except `define_kms_context` and `define_kms_epoch`, whose
-/// `NewKmsContextEvent` and `NewKmsEpochEvent` carry the new current context and epoch. The
-/// emitter takes the event authority as an argument rather than using `emit_cpi!` because that
-/// macro reads a binding named `ctx`, which a shared helper does not have.
+/// `NewKmsContextEvent` and `NewKmsEpochEvent` carry the new current context and epoch. The emitter takes the event authority as an argument rather than using
+/// `emit_cpi!` because that macro reads a binding named `ctx`, which a shared helper does not have.
 pub(super) fn emit_config_updated(
     config: &HostConfig,
     signer: Pubkey,
