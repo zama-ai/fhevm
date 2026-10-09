@@ -983,10 +983,9 @@ real token account list) serializes to **989 bytes** as a legacy transaction, in
 4,096 bytes and 64 account keys.
 
 Public-decrypt consume transactions carry the certificate and no Merkle proof (DD-065), so their size
-grows only with the threshold. As legacy transactions, `disclose_secp` fits one packet up to 12
-signatures and `redeem_burned_amount` up to 8, against the production KMS threshold of 7
-(`runtime-tests/tests/disclose_packet_fit.rs`). Clients send them as version 1 transactions, so the
-legacy packet is a stricter bound than the one they face.
+grows only with the threshold. With the SDK's 65-byte v2 `extra_data`, `disclose_secp`,
+`redeem_burned_amount` and `verify_public_decrypt` each fit one version 1 transaction at the host's
+maximum of 16 KMS signatures (`demo-dapp/src/vault/actions/kmsCertificateSize.test.ts`).
 
 Relates to DD-007 (input verification model).
 

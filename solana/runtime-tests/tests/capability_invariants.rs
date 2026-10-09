@@ -473,6 +473,7 @@ impl World {
         let admin = wallets[0];
         let (host_config, host_config_account) = host_config_account(&HostConfigParams {
             current_kms_context_id: kms_context_id(0),
+            current_kms_epoch_id: kms_epoch_id(0),
             ..HostConfigParams::new(admin)
         });
         let mut accounts = HashMap::from([

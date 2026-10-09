@@ -9,6 +9,7 @@ import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
 import { hexToBytes } from '../../core/base/bytes.js';
+import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
 import { fetchEncodedAccount, type Address, type MaybeEncodedAccount, type ReadonlyUint8Array } from '@solana/kit';
 import { findHostConfigPda, getHostConfigDecoder, HOST_CONFIG_DISCRIMINATOR } from '@fhevm/solana-zama-host';
 import { solanaHostProgram, type SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
@@ -80,6 +81,17 @@ export function hostAccountData(
   return new Uint8Array(account.data);
 }
 
+/** Throws the relayer request's abort error once `signal` is aborted, so every step fails alike. */
+export function publicDecryptAbortCheck(chain: FhevmSolanaChain, signal: AbortSignal | undefined): () => void {
+  return () => {
+    if (signal?.aborted === true)
+      throw new RelayerAbortError({
+        operation: 'PUBLIC_DECRYPT',
+        url: buildRelayerUrlString(validateRelayerBaseUrl(chain.fhevm.relayerUrl, false), 'v2/public-decrypt'),
+      });
+  };
+}
+
 /**
  * The host's active KMS context and epoch, read from `HostConfig` at finalized. A public decrypt
  * routes to this pair, as an EVM one routes to `ProtocolConfig.getCurrentKmsContextAndEpoch()`.
@@ -88,12 +100,18 @@ export async function readActiveKmsRouting(
   client: SolanaClientParameters,
   abortSignal?: AbortSignal,
 ): Promise<Pick<SolanaPublicDecryptBatch, 'contextId' | 'epochId'>> {
+  const checkAbort = publicDecryptAbortCheck(client.chain, abortSignal);
+  checkAbort();
   const programAddress = solanaHostProgram(client.chain);
   const [configAddress] = await findHostConfigPda({ programAddress });
   const account = await fetchEncodedAccount(client.rpc, configAddress, {
     commitment: 'finalized',
     ...(abortSignal === undefined ? {} : { abortSignal }),
+  }).catch((error: unknown) => {
+    checkAbort();
+    throw error;
   });
+  checkAbort();
   const config = getHostConfigDecoder().decode(hostAccountData(account, programAddress, HOST_CONFIG_DISCRIMINATOR));
   const contextId = new Uint8Array(config.currentKmsContextId);
   const epochId = new Uint8Array(config.currentKmsEpochId);

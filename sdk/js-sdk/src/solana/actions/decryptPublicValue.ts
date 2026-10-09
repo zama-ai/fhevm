@@ -1,5 +1,3 @@
-import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
-import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
 import { assertKmsDecryptionBitLimit } from '../../core/kms/utils.js';
 import { fetchEncodedAccounts, type ReadonlyUint8Array } from '@solana/kit';
 import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
@@ -7,7 +5,12 @@ import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
 import type { SolanaPublicDecryptCertifier, SolanaPublicHandleEntry } from './publicDecryptCertificate.js';
 import { MAX_SOLANA_DECRYPT_HANDLES } from '../userDecrypt/request.js';
-import { hostAccountData, readActiveKmsRouting, solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
+import {
+  hostAccountData,
+  publicDecryptAbortCheck,
+  readActiveKmsRouting,
+  solanaPublicDecryptExtraData,
+} from './publicDecryptCertificate.js';
 import {
   findHostConfigPda,
   findKmsContextPda,
@@ -110,13 +113,7 @@ export async function decryptPublicValues(
   certify: SolanaPublicDecryptCertifier,
 ): Promise<TypedValue[]> {
   const signal = parameters.options?.signal;
-  const checkAbort = (): void => {
-    if (signal?.aborted === true)
-      throw new RelayerAbortError({
-        operation: 'PUBLIC_DECRYPT',
-        url: buildRelayerUrlString(validateRelayerBaseUrl(client.chain.fhevm.relayerUrl, false), 'v2/public-decrypt'),
-      });
-  };
+  const checkAbort = publicDecryptAbortCheck(client.chain, signal);
   checkAbort();
   const handles = parameters.entries.map((entry) => toFhevmHandle(entry.handle));
   if (handles.length === 0) throw new Error('Public decrypt requires at least one handle');
@@ -126,11 +123,7 @@ export async function decryptPublicValues(
   if (handles.some((handle) => BigInt(handle.chainId) !== client.chain.id))
     throw new Error('Public decrypt handle belongs to another chain');
   const programAddress = solanaHostProgram(client.chain);
-  const routing = await readActiveKmsRouting(client, signal).catch((error: unknown) => {
-    checkAbort();
-    throw error;
-  });
-  checkAbort();
+  const routing = await readActiveKmsRouting(client, signal);
   const { contextId, epochId } = routing;
   const claim = await certify({ ...routing, entries: parameters.entries, options: parameters.options });
   // Whatever certified it, the certificate must name the context and epoch requested.

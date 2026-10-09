@@ -192,6 +192,16 @@ describe('public decrypt client account-to-plaintext flow', () => {
     expect(f.rpc.getAccountInfo).not.toHaveBeenCalled();
     expect(f.request).not.toHaveBeenCalled();
   });
+  it('fails a cancelled certificate request as the relayer does, before any read', async () => {
+    const f = await accountFixture();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      f.client.publicDecryptCertificate({ handle, encryptedStore: store, options: { signal: controller.signal } }),
+    ).rejects.toBeInstanceOf(RelayerAbortError);
+    expect(f.rpc.getAccountInfo).not.toHaveBeenCalled();
+    expect(f.request).not.toHaveBeenCalled();
+  });
   it('forwards cancellation to the verification read and never returns cancelled plaintext', async () => {
     const f = await accountFixture();
     const controller = new AbortController();

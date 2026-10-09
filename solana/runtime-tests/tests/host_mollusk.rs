@@ -1682,10 +1682,11 @@ fn mollusk_admin_setters_run_while_every_area_is_paused() {
             admin,
             host_config,
             next_context,
-            canonical_test_epoch_id(1),
+            canonical_test_epoch_id(2),
             kms_context_signers(),
             default_kms_thresholds(),
         ),
+        define_kms_epoch_ix(admin, host_config, next_context, canonical_test_epoch_id(3)),
         destroy_kms_context_ix(admin, host_config, KMS_CONTEXT_ID),
         set_deny_scope_ix(admin, admin, host_config, app, true),
         set_hcu_app_trusted_ix(admin, admin, host_config, app, true),
@@ -1714,6 +1715,7 @@ fn mollusk_admin_setters_run_while_every_area_is_paused() {
     let config = read_host_config(&context, host_config).expect("config");
     assert_eq!(config.paused, host::PauseFlags::ALL);
     assert_eq!(config.current_kms_context_id, next_context);
+    assert_eq!(config.current_kms_epoch_id, canonical_test_epoch_id(3));
 }
 
 // ---------------------------------------------------------------------------
@@ -4972,7 +4974,7 @@ fn host_config_with_context(admin: Pubkey, context_id: [u8; 32]) -> (Pubkey, Acc
                 coprocessor_threshold: 1,
                 decryption_contract: DECRYPTION_CONTRACT,
                 current_kms_context_id: context_id,
-                current_kms_epoch_id: [0u8; 32],
+                current_kms_epoch_id: canonical_test_epoch_id(1),
                 paused: host::PauseFlags::default(),
                 grant_deny_list_enabled: false,
                 max_hcu_per_tx: u64::MAX,
@@ -5137,8 +5139,7 @@ fn mollusk_verify_public_decrypt_accepts_v2_kms_routing() {
     let (kms_context, kms_context_acct) = kms_context_account(KMS_CONTEXT_ID);
     let handle = handle_for_chain(5, 5);
 
-    let epoch_id = [0x08; 32];
-    let extra_data = [&[2][..], &KMS_CONTEXT_ID, &epoch_id].concat();
+    let extra_data = signing::context_extra_data_v2(KMS_CONTEXT_ID, [0x08; 32]);
     let (cleartext, signatures) = public_decrypt_cert(handle, &extra_data);
     let ix = verify_public_decrypt_ix(
         host_config,
@@ -5176,7 +5177,7 @@ fn rotate_to_next_context(
         admin,
         host_config,
         next_context_id,
-        canonical_test_epoch_id(1),
+        canonical_test_epoch_id(2),
         kms_context_signers(),
         default_kms_thresholds(),
     );
