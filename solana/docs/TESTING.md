@@ -272,7 +272,9 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
 Leaf proofs come from an in-memory leaf record of the validator (`createSolanaLeafRecord`, whose
 header gives its catch-up rules). The e2e's decrypt clients share one record for the test process
 (`readMerkleProofs` in `test-suite/fhevm/src/solana/target.ts`), as coprocessors keep theirs, so a
-decrypt reads only the store writes since the last one.
+decrypt reads only the store writes since the last one. The record needs each store's full
+transaction history from the validator; `--limit-ledger-size` only delays pruning, so a validator
+that runs long enough loses the history of a store the record has not read yet.
 
 What the cleartext target does not prove, so these parts skip there
 (`capabilities.protocolServices` is false):

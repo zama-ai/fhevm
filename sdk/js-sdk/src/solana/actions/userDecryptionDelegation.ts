@@ -100,7 +100,7 @@ export function resolvedSigner(value: SolanaSignerOrAddress): TransactionSigner 
   return typeof value === 'string' ? createNoopSigner(value) : value;
 }
 
-export function resolvedAddress(value: SolanaSignerOrAddress): Address {
+function resolvedAddress(value: SolanaSignerOrAddress): Address {
   return typeof value === 'string' ? value : value.address;
 }
 

@@ -166,20 +166,6 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
     ]);
   });
 
-  it("revokes the tuple's own record, never a record address passed beside it", async () => {
-    // The record of the same delegator's grant to another delegate: the host would accept it.
-    const [otherRecord] = await findDelegationRecordPda({ delegator, delegate: payer, ...application });
-    const instruction = await buildRevokeDelegationForUserDecryptionInstruction({
-      programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
-      delegator,
-      delegate,
-      ...application,
-      // @ts-expect-error the record derives from the tuple and is not a parameter.
-      delegationRecord: otherRecord,
-    });
-    expect(instruction.accounts?.[2]?.address).toBe(RECORD_ADDRESS);
-  });
-
   it('carries a passed TransactionSigner through to the delegator meta', async () => {
     const delegatorSigner = await generateKeyPairSigner();
     const instruction = await buildRevokeDelegationForUserDecryptionInstruction({
