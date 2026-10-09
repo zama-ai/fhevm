@@ -29,12 +29,13 @@ import {
 import { base58 } from '@scure/base';
 
 import { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
-import { getJoinInstructionDataDecoder } from './internal/generated/confidentialBatcher/instructions/join.js';
+import { getJoinInstructionDataDecoder, parseJoinInstruction } from './internal/generated/confidentialBatcher/instructions/join.js';
 import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import { encodedSize, TEST_BLOCKHASH, messageOf, testDemoClient } from '../testDemoClient';
-import { testHostPolicy } from './testHostPolicy.js';
+import { hcuSlots, testHostPolicy } from './testHostPolicy.js';
+import { batchApp, tokenApp } from './internal/hostPolicy.js';
 
 const CHAIN_ID = 72057594037940281n;
 const CANONICAL_ACL = bytesToHex(base58.decode(ZAMA_HOST_PROGRAM_ADDRESS));
@@ -82,6 +83,7 @@ async function parameters(overrides: Partial<SolanaVaultJoinParameters> = {}): P
     joinConfidentialMint: key(2),
     joinUnderlyingMint: key(11),
     tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    host: testHostPolicy(false),
     ...overrides,
   } satisfies SolanaVaultJoinParameters;
 }
@@ -163,20 +165,24 @@ describe('joinBatch (attested arm)', () => {
     expect((await submittedJoinAccounts(true)).slice(plain.length)).toEqual([joinMintRecord, batchRecord]);
   });
 
+  it("puts the join mint's and the batch's HCU accounts in their slots", async () => {
+    const { client, params } = await sendable({ host: testHostPolicy(false, true) });
+    await joinBatch(context, client, params);
+    const join = messageOf(sent()).instructions[1]!;
+    const parsed = parseJoinInstruction({ ...join, accounts: join.accounts!, data: join.data! });
+
+    const { actual, expected } = await hcuSlots(parsed.accounts, {
+      joinMint: tokenApp(params.joinConfidentialMint),
+      batch: batchApp(params.batch),
+    });
+    expect(actual).toEqual(expected);
+  });
+
   // The largest join: the host's maximum coprocessor threshold (MAX_COPROCESSOR_SIGNERS = 8) with
   // the deny records and both HCU witnesses of each app. A v1 transaction is at most 4,096 bytes
   // and 64 account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
   it('fits one v1 transaction at the maximum coprocessor threshold with every witness', async () => {
-    const { joinConfidentialMint, batch } = await parameters();
-    const { client, params } = await sendable(
-      {
-        host: testHostPolicy(true, {
-          [joinConfidentialMint]: { hcuBlockMeter: key(30), hcuTrustedAppRecord: key(31) },
-          [batch]: { hcuBlockMeter: key(32), hcuTrustedAppRecord: key(33) },
-        }),
-      },
-      8,
-    );
+    const { client, params } = await sendable({ host: testHostPolicy(true, true) }, 8);
     await joinBatch(context, client, params);
     const size = encodedSize(sent());
     expect(size.version).toBe(1);

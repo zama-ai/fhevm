@@ -298,7 +298,8 @@ const eventAuthority = pdaNode({
 });
 
 // zama-host derives an app's meter from the app its stores name at run time (block_cap.rs), so no
-// instruction declares the meter's seeds; the finder takes them from the IDL's seed constant.
+// instruction declares the meter's seeds. Only the prefix comes from the IDL; the (appProgram, scope)
+// order is typed here and checked by pda-golden.test.ts.
 const hcuBlockMeterSeed = hostIdl.constants.find(({ name }) => name === 'HCU_BLOCK_METER_SEED');
 if (!hcuBlockMeterSeed) throw new Error('HCU_BLOCK_METER_SEED is missing from the committed zama-host IDL');
 const hcuBlockMeter = pdaNode({

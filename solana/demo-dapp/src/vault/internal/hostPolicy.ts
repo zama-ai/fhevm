@@ -1,15 +1,17 @@
-import type { Address, GetAccountInfoApi, Rpc } from '@solana/kit';
+import { AccountRole, type Address, type GetAccountInfoApi, type Instruction, type Rpc } from '@solana/kit';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import {
   fetchHostConfig,
   fetchMaybeHcuTrustedAppRecord,
   findHcuBlockMeterPda,
   findHcuTrustedAppRecordPda,
+  findDenyScopeRecordPda,
   findHostConfigPda,
+  HCU_UNLIMITED,
+  type DenyScopeRecordSeeds,
   type HcuBlockMeterSeeds,
 } from '@fhevm/solana-zama-host';
-
-// zama-host's unrestricted block cap: no execution touches a meter or a trust record (block_cap.rs).
-const UNRESTRICTED_HCU_BLOCK_CAP = 2n ** 64n - 1n;
+import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './generated/confidentialBatcher/programAddress.js';
 
 /** The optional HCU accounts of one execution's application. */
 export type HcuAccounts = {
@@ -29,8 +31,8 @@ export type HostPolicy = {
 };
 
 export type HostPolicyParameters = {
-  /** The host policy read at the start of the flow; without it the instruction carries neither. */
-  readonly host?: HostPolicy | undefined;
+  /** The host policy read at the start of the flow. */
+  readonly host: HostPolicy;
 };
 
 /**
@@ -43,11 +45,45 @@ export async function readHostPolicy(rpc: Rpc<GetAccountInfoApi>): Promise<HostP
   return {
     denyListEnabled: data.grantDenyListEnabled,
     async hcuAccounts(app) {
-      if (data.hcuBlockCapPerApp === UNRESTRICTED_HCU_BLOCK_CAP) return {};
+      // An unrestricted cap touches neither a meter nor a trust record (block_cap.rs).
+      if (data.hcuBlockCapPerApp === HCU_UNLIMITED) return {};
       const [trustRecord] = await findHcuTrustedAppRecordPda(app);
       const trust = await fetchMaybeHcuTrustedAppRecord(rpc, trustRecord);
       if (trust.exists && trust.data.trusted) return { hcuTrustedAppRecord: trustRecord };
       return { hcuBlockMeter: (await findHcuBlockMeterPda(app))[0] };
     },
+  };
+}
+
+/** The application a mint's token executions run as. */
+export const tokenApp = (mint: Address): DenyScopeRecordSeeds => ({
+  appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+  scope: mint,
+});
+
+/** The application the batcher's own executions for `batch` run as. */
+export const batchApp = (batch: Address): DenyScopeRecordSeeds => ({
+  appProgram: CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
+  scope: batch,
+});
+
+/**
+ * Appends, while the host's deny list is on, the deny records an instruction takes as its remaining
+ * accounts: one per application each execution touches, in the order the instruction documents
+ * (`confidential-batcher/src/lib.rs`, `confidential-token/src/fhe/mod.rs`).
+ */
+export async function withDenyRecords(
+  instruction: Instruction,
+  denyListEnabled: boolean,
+  apps: readonly DenyScopeRecordSeeds[],
+): Promise<Instruction> {
+  if (!denyListEnabled) return instruction;
+  const records = await Promise.all(apps.map((app) => findDenyScopeRecordPda(app)));
+  return {
+    ...instruction,
+    accounts: [
+      ...(instruction.accounts ?? []),
+      ...records.map(([address]) => ({ address, role: AccountRole.READONLY })),
+    ],
   };
 }

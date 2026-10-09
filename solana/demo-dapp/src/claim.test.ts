@@ -30,6 +30,7 @@ vi.mock('./demoClient', () => ({ createDemoClient: mocks.createClient }));
 
 import type { DemoConfig } from './demoConfig';
 import { claimBatchPayout } from './claim';
+import { testHostPolicy } from './vault/testHostPolicy';
 
 const batch = address('11111111111111111111111111111111');
 const user = address('SysvarC1ock11111111111111111111111111111111');
@@ -51,7 +52,7 @@ const config = {
   },
 } as unknown as DemoConfig;
 const position = { batchIndex: 1n, batch, amountBaseUnits: 100_000_000n };
-const host = { denyListEnabled: true, hcuAccounts: vi.fn() };
+const host = testHostPolicy(true);
 const initializeInstruction = { programAddress: tokenProgram, accounts: [], data: new Uint8Array([1]) };
 const claimInstruction = { programAddress: tokenProgram, accounts: [], data: new Uint8Array([2]) };
 let keeperStore: string;

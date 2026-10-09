@@ -7,8 +7,7 @@ import { bytesToHex, hexToBytes } from '@fhevm/sdk/base';
 import type { FhevmSolanaPublicDecryptClient } from '@fhevm/sdk/solana';
 import type { RelayerPublicDecryptOptions } from '@fhevm/sdk/types';
 import { getSettleInstructionAsync } from './internal/generated/confidentialBatcher/instructions/settle.js';
-import { tokenApp, withDenyRecords } from './internal/denyRecords.js';
-import { type HostPolicyParameters } from './internal/hostPolicy.js';
+import { tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 import { fetchBatch } from './internal/generated/confidentialBatcher/accounts/batch.js';
 import { settleTotalFromCleartext } from './internal/cleartext.js';
 import { deriveBatchAddresses, deriveSettleAccounts, type BatchAddresses, type VaultDemoRoots } from './derive.js';
@@ -82,7 +81,7 @@ export async function settleBatch(
   // A zero total cancels the batch without the wrap, the one execution on the payout mint.
   const payoutMint = tokenApp(roots.payoutConfidentialMint);
   const wraps = cleartextTotal !== 0n;
-  const payoutMintHcu = wraps ? await options.host?.hcuAccounts(payoutMint) : undefined;
+  const payoutMintHcu = wraps ? await options.host.hcuAccounts(payoutMint) : {};
   const settleWithoutDenyRecords = await getSettleInstructionAsync({
     transientStore: transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
@@ -93,10 +92,10 @@ export async function settleBatch(
     signatures,
     extraData: hexToBytes(claim.extraData),
     authorityFundingLamports: options.authorityFundingLamports,
-    payoutMintHcuBlockMeter: payoutMintHcu?.hcuBlockMeter,
-    payoutMintHcuTrustedAppRecord: payoutMintHcu?.hcuTrustedAppRecord,
+    payoutMintHcuBlockMeter: payoutMintHcu.hcuBlockMeter,
+    payoutMintHcuTrustedAppRecord: payoutMintHcu.hcuTrustedAppRecord,
   });
-  const settleInstruction = await withDenyRecords(settleWithoutDenyRecords, options.host?.denyListEnabled, wraps ? [payoutMint] : []);
+  const settleInstruction = await withDenyRecords(settleWithoutDenyRecords, options.host.denyListEnabled, wraps ? [payoutMint] : []);
 
   return (await keeperClient.sendFheTransaction(transientStore, [settleInstruction])).context.signature;
 }

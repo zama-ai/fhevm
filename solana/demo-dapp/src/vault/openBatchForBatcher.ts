@@ -5,8 +5,7 @@ import {
 } from '@fhevm/confidential-token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Instruction, TransactionSigner } from '@solana/kit';
-import { tokenApp, withDenyRecords } from './internal/denyRecords.js';
-import { type HostPolicyParameters } from './internal/hostPolicy.js';
+import { tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 import { getOpenBatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/openBatch.js';
 import { deriveBatchAddresses, type VaultDemoRoots } from './derive.js';
 
@@ -38,8 +37,8 @@ export async function openBatchForBatcher(parameters: SolanaVaultOpenBatchForBat
   const joinMint = tokenApp(roots.joinConfidentialMint);
   const payoutMint = tokenApp(roots.payoutConfidentialMint);
   const [joinMintHcu, payoutMintHcu] = await Promise.all([
-    parameters.host?.hcuAccounts(joinMint),
-    parameters.host?.hcuAccounts(payoutMint),
+    parameters.host.hcuAccounts(joinMint),
+    parameters.host.hcuAccounts(payoutMint),
   ]);
   const instruction = await getOpenBatchInstructionAsync({
     transientStore: parameters.transientStore.address,
@@ -59,10 +58,10 @@ export async function openBatchForBatcher(parameters: SolanaVaultOpenBatchForBat
     payoutUnderlyingMint: roots.payoutUnderlyingMint,
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
     authorityFundingLamports: parameters.authorityFundingLamports,
-    joinMintHcuBlockMeter: joinMintHcu?.hcuBlockMeter,
-    joinMintHcuTrustedAppRecord: joinMintHcu?.hcuTrustedAppRecord,
-    payoutMintHcuBlockMeter: payoutMintHcu?.hcuBlockMeter,
-    payoutMintHcuTrustedAppRecord: payoutMintHcu?.hcuTrustedAppRecord,
+    joinMintHcuBlockMeter: joinMintHcu.hcuBlockMeter,
+    joinMintHcuTrustedAppRecord: joinMintHcu.hcuTrustedAppRecord,
+    payoutMintHcuBlockMeter: payoutMintHcu.hcuBlockMeter,
+    payoutMintHcuTrustedAppRecord: payoutMintHcu.hcuTrustedAppRecord,
   });
-  return withDenyRecords(instruction, parameters.host?.denyListEnabled, [joinMint, payoutMint]);
+  return withDenyRecords(instruction, parameters.host.denyListEnabled, [joinMint, payoutMint]);
 }

@@ -76,8 +76,9 @@ vi.mock('./vaultRoots', () => ({
 
 import type { DemoSession } from './demoSession';
 import { depositToVault } from './deposit';
+import { testHostPolicy } from './vault/testHostPolicy';
 
-const host = { denyListEnabled: true, hcuAccounts: vi.fn() };
+const host = testHostPolicy(true);
 const session = {
   config: {
     chainId: '2147483648',

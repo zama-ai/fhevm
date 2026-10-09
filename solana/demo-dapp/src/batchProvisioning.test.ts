@@ -33,6 +33,7 @@ vi.mock('./vaultRoots', () => ({ vaultRoots: () => ({ batcher: 'batcher-1' }) })
 import { RECLAIM_SCAN_WINDOW, prepareNextBatch, reclaimFinishedBatchAuthorities } from './batchProvisioning';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { BatchStatus } from './batchTypes';
+import { testHostPolicy } from './vault/testHostPolicy';
 
 const config = {
   chainId: 42,
@@ -42,7 +43,7 @@ const config = {
   batchers: { deposit: { batcher: 'batcher-1' }, redeem: { batcher: 'batcher-2' } },
 } as never;
 
-const host = { denyListEnabled: true, hcuAccounts: vi.fn() };
+const host = testHostPolicy(true);
 const keeper = createNoopSigner(address('5bV6jUfhDHCQVA1WfKBUnXUsboJgoKgkzkKcxr3joew5'));
 
 const reclaimedBatches = (): string[] =>

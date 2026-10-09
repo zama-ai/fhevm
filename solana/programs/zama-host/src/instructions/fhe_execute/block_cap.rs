@@ -14,6 +14,7 @@ use anchor_lang::prelude::*;
 
 use super::super::common::{create_pda_if_needed, is_uninitialized_pda_account, write_account};
 use super::FheExecute;
+use crate::constants::HCU_UNLIMITED;
 use crate::errors::ZamaHostError;
 use crate::state::{
     hcu_block_meter_address, hcu_trusted_app_address, AppScope, HcuBlockMeter, HcuTrustedAppRecord,
@@ -30,7 +31,7 @@ pub(super) fn charge<'info>(
 ) -> Result<()> {
     let cap = ctx.accounts.host_config.hcu_block_cap_per_app;
     // Unrestricted (ship default): short-circuit, touching neither optional account. Zero contention.
-    if cap == u64::MAX {
+    if cap == HCU_UNLIMITED {
         return Ok(());
     }
     // A well-formed trusted witness bypasses the cap entirely — even under a ban.

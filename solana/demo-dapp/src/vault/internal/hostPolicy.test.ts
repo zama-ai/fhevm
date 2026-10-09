@@ -7,6 +7,8 @@ import {
   findHostConfigPda,
   getHcuTrustedAppRecordEncoder,
   getHostConfigEncoder,
+  HCU_UNLIMITED,
+  MAX_COPROCESSOR_SIGNERS,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
 
@@ -14,7 +16,6 @@ import { readHostPolicy } from './hostPolicy.js';
 
 const addr = (fill: number): Address => address(base58.encode(new Uint8Array(32).fill(fill)));
 const app = { appProgram: addr(1), scope: addr(2) };
-const unrestricted = 2n ** 64n - 1n;
 
 const hostConfig = (grantDenyListEnabled: boolean, hcuBlockCapPerApp: bigint) =>
   getHostConfigEncoder().encode({
@@ -22,7 +23,7 @@ const hostConfig = (grantDenyListEnabled: boolean, hcuBlockCapPerApp: bigint) =>
     chainId: 1n,
     gatewayChainId: 1n,
     inputVerificationContract: new Uint8Array(20),
-    coprocessorSigners: Array.from({ length: 8 }, () => new Uint8Array(20)),
+    coprocessorSigners: Array.from({ length: MAX_COPROCESSOR_SIGNERS }, () => new Uint8Array(20)),
     coprocessorSignerCount: 1,
     coprocessorThreshold: 1,
     decryptionContract: new Uint8Array(20),
@@ -30,8 +31,8 @@ const hostConfig = (grantDenyListEnabled: boolean, hcuBlockCapPerApp: bigint) =>
     currentKmsEpochId: new Uint8Array(32),
     paused: { execution: false, verifiedInputs: false, aclWrites: false },
     grantDenyListEnabled,
-    maxHcuPerTx: unrestricted,
-    maxHcuDepthPerTx: unrestricted,
+    maxHcuPerTx: HCU_UNLIMITED,
+    maxHcuDepthPerTx: HCU_UNLIMITED,
     hcuBlockCapPerApp,
     bump: 0,
   });
@@ -65,7 +66,7 @@ const rpcWith = (accounts: Record<string, ReadonlyUint8Array>) => {
 describe('readHostPolicy', () => {
   it('carries the deny-list flag and no HCU account while the block cap is unrestricted', async () => {
     const [config] = await findHostConfigPda();
-    const { rpc, reads } = rpcWith({ [config]: hostConfig(true, unrestricted) });
+    const { rpc, reads } = rpcWith({ [config]: hostConfig(true, HCU_UNLIMITED) });
 
     const host = await readHostPolicy(rpc);
 

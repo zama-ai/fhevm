@@ -1,6 +1,5 @@
 import { tokenStoreAddress } from './internal/encryptedStores.js';
-import { type HostPolicyParameters } from './internal/hostPolicy.js';
-import { tokenApp, withDenyRecords } from './internal/denyRecords.js';
+import { tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import {
@@ -30,7 +29,7 @@ export async function buildInitializeTokenAccountInstruction(
 ): Promise<Instruction> {
   const [tokenAccount] = await findTokenAccountPda({ mint: parameters.mint, owner: parameters.owner });
   const app = tokenApp(parameters.mint);
-  const hcu = await parameters.host?.hcuAccounts(app);
+  const hcu = await parameters.host.hcuAccounts(app);
   const instruction = await getInitializeTokenAccountInstructionAsync({
     transientStore: parameters.transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
@@ -40,8 +39,8 @@ export async function buildInitializeTokenAccountInstruction(
     tokenAccount,
     balanceEncryptedStore: await tokenStoreAddress(parameters.mint, tokenAccount),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-    hcuBlockMeter: hcu?.hcuBlockMeter,
-    hcuTrustedAppRecord: hcu?.hcuTrustedAppRecord,
+    hcuBlockMeter: hcu.hcuBlockMeter,
+    hcuTrustedAppRecord: hcu.hcuTrustedAppRecord,
   });
-  return withDenyRecords(instruction, parameters.host?.denyListEnabled, [app]);
+  return withDenyRecords(instruction, parameters.host.denyListEnabled, [app]);
 }

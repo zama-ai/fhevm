@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::bpf_loader_upgradeable;
 
 use super::common::*;
-use crate::{errors::ZamaHostError, state::*};
+use crate::{constants::HCU_UNLIMITED, errors::ZamaHostError, state::*};
 use zama_solana_acl::host_chain::{is_evm_host_chain_id, is_solana_host_chain_id};
 
 /// Accounts for initializing the singleton [`HostConfig`].
@@ -72,11 +72,11 @@ pub fn initialize_host_config(
     config.grant_deny_list_enabled = args.grant_deny_list_enabled;
     // Unlimited (u64::MAX) until the admin sets them: `bootstrapZamaHost` sets EVM's limits in the
     // same transaction (INVARIANTS #37).
-    config.max_hcu_per_tx = u64::MAX;
-    config.max_hcu_depth_per_tx = u64::MAX;
+    config.max_hcu_per_tx = HCU_UNLIMITED;
+    config.max_hcu_depth_per_tx = HCU_UNLIMITED;
     // Ship the per-app block cap unrestricted (u64::MAX): the neutral state that short-circuits
     // the cap and touches no meter. A `0` default would instead ban every untrusted app on deploy.
-    config.hcu_block_cap_per_app = u64::MAX;
+    config.hcu_block_cap_per_app = HCU_UNLIMITED;
     config.bump = ctx.bumps.host_config;
     ctx.accounts.rand_nonce.nonce = 0;
     ctx.accounts.rand_nonce.bump = ctx.bumps.rand_nonce;

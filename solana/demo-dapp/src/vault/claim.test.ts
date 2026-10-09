@@ -8,11 +8,13 @@ import { buildClaimInstruction } from './claim.js';
 import {
   CLAIM_DISCRIMINATOR,
   getClaimInstructionDataDecoder,
+  parseClaimInstruction,
 } from './internal/generated/confidentialBatcher/instructions/claim.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
-import { testHostPolicy } from './testHostPolicy.js';
+import { batchApp, tokenApp } from './internal/hostPolicy.js';
+import { hcuSlots, testHostPolicy } from './testHostPolicy.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -55,19 +57,20 @@ describe('buildClaimInstruction', () => {
   const ASSOCIATED_TOKEN = address('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
   const ata = (owner: Address, mint: Address): Promise<Address> =>
     pda(ASSOCIATED_TOKEN, [base58.decode(owner), base58.decode(SPL_TOKEN), base58.decode(mint)]);
+  const input = async (host = testHostPolicy(false)) => ({
+    transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
+    payer,
+    user,
+    batcher,
+    batch,
+    payoutConfidentialMint,
+    payoutUnderlyingMint,
+    tokenProgram: SPL_TOKEN,
+    host,
+  });
 
   it('derives every non-root account exactly as claim.rs validates them', async () => {
-    const transientStore = await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
-    const instruction = await buildClaimInstruction({
-      transientStore: transientStore,
-      payer,
-      user,
-      batcher,
-      batch,
-      payoutConfidentialMint,
-      payoutUnderlyingMint,
-      tokenProgram: SPL_TOKEN,
-    });
+    const instruction = await buildClaimInstruction(await input());
     expect(instruction.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
 
     const batchAuthority = await pda(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, [
@@ -133,16 +136,7 @@ describe('buildClaimInstruction', () => {
   // test), the rest carried over unchanged, the event authorities from
   // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
-    const instruction = await buildClaimInstruction({
-      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
-      payer,
-      user,
-      batcher,
-      batch,
-      payoutConfidentialMint,
-      payoutUnderlyingMint,
-      tokenProgram: SPL_TOKEN,
-    });
+    const instruction = await buildClaimInstruction(await input());
     const addresses = instruction.accounts!.map((a) => a.address);
     expect(addresses[13]).toBe('4MxNx3UFs82BQ349hySkRZ4YTLuuT77jTpXc1ohbXYnA'); // batchPayoutTokenAccount
     expect(addresses[15]).toBe('4pn8uFyj9EnVWa8g8YGQedU4sCLBCNEQnhcJBZRnkwtw'); // batchPayoutBalanceStore
@@ -151,18 +145,8 @@ describe('buildClaimInstruction', () => {
   });
 
   it('appends, under the deny list, the batch then the payout mint deny record', async () => {
-    const input = {
-      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
-      payer,
-      user,
-      batcher,
-      batch,
-      payoutConfidentialMint,
-      payoutUnderlyingMint,
-      tokenProgram: SPL_TOKEN,
-    };
-    const plain = await buildClaimInstruction(input);
-    const instruction = await buildClaimInstruction({ ...input, host: testHostPolicy(true) });
+    const plain = await buildClaimInstruction(await input());
+    const instruction = await buildClaimInstruction(await input(testHostPolicy(true)));
     const [batchRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, scope: batch });
     const [payoutMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: payoutConfidentialMint });
     // The MulDiv runs as the batch; the payout transfer runs as the payout mint.
@@ -170,5 +154,14 @@ describe('buildClaimInstruction', () => {
       { address: batchRecord, role: 0 },
       { address: payoutMintRecord, role: 0 },
     ]);
+  });
+
+  it("puts the batch's and the payout mint's HCU accounts in their slots", async () => {
+    const instruction = await buildClaimInstruction(await input(testHostPolicy(false, true)));
+    const { actual, expected } = await hcuSlots(parseClaimInstruction(instruction as never).accounts, {
+      batch: batchApp(batch),
+      payoutMint: tokenApp(payoutConfidentialMint),
+    });
+    expect(actual).toEqual(expected);
   });
 });

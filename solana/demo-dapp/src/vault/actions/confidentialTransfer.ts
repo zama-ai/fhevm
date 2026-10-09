@@ -1,6 +1,6 @@
 import { findAssociatedTokenPda } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore } from '@fhevm/sdk/solana';
-import { AccountRole, address, type Address, type Signature, type TransactionSigner } from '@solana/kit';
+import { address, type Address, type Signature, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
 
 import { hexToBytes } from '@fhevm/sdk/base';
@@ -11,8 +11,9 @@ import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { getConfidentialTransferInstructionAsync,
   findEventAuthorityPda, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import type { DemoClient } from '../../demoClient';
+import { tokenApp, withDenyRecords, type HostPolicyParameters } from '../internal/hostPolicy.js';
 
-export type SolanaConfidentialTransferParameters = {
+export type SolanaConfidentialTransferParameters = HostPolicyParameters & {
   readonly inputProof: SolanaInputProof;
 
   readonly inputIndex: number;
@@ -28,9 +29,6 @@ export type SolanaConfidentialTransferParameters = {
   readonly toOwner: Address;
   readonly fromStore: Address;
   readonly toStore: Address;
-  readonly hcuBlockMeter?: Address | undefined;
-  readonly hcuTrustedAppRecord?: Address | undefined;
-  readonly denyRecords?: readonly Address[] | undefined;
 };
 
 /** Builds, sends, and confirms one confidential-token transfer; `client.payer` pays the fee and transientStore rent. */
@@ -70,13 +68,10 @@ export async function confidentialTransfer(
     if (bytes.length !== 65) throw new Error(`input proof signature[${index}] must be 65 bytes`);
     return bytes;
   });
-  if (
-    parameters.fromAccount === parameters.toAccount &&
-    parameters.denyRecords !== undefined &&
-    parameters.denyRecords.length > 0
-  ) {
-    throw new Error('self-transfers cannot include deny records');
-  }
+  // The program returns before any execution on a self-transfer, so it takes no HCU account or deny record.
+  const app = tokenApp(mint);
+  const executes = parameters.fromAccount !== parameters.toAccount;
+  const hcu = executes ? await parameters.host.hcuAccounts(app) : {};
 
   const tokenEventAuthority = (await findEventAuthorityPda())[0];
   const transientStore = await prepareTransientStore({ payer: client.payer, host: zamaHostProgramAddress });
@@ -102,8 +97,8 @@ export async function confidentialTransfer(
     fromStore: parameters.fromStore,
     toStore: parameters.toStore,
     zamaProgram: zamaHostProgramAddress,
-    ...(parameters.hcuBlockMeter !== undefined ? { hcuBlockMeter: parameters.hcuBlockMeter } : {}),
-    ...(parameters.hcuTrustedAppRecord !== undefined ? { hcuTrustedAppRecord: parameters.hcuTrustedAppRecord } : {}),
+    hcuBlockMeter: hcu.hcuBlockMeter,
+    hcuTrustedAppRecord: hcu.hcuTrustedAppRecord,
     eventAuthority: tokenEventAuthority,
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     amountAttestation: {
@@ -118,18 +113,6 @@ export async function confidentialTransfer(
     },
     // A plain transfer leaves no transferred-amount receipt for a recipient program.
   });
-  const instruction =
-    parameters.denyRecords !== undefined && parameters.denyRecords.length > 0
-      ? {
-          ...transferInstruction,
-          accounts: [
-            ...transferInstruction.accounts,
-            ...parameters.denyRecords.map((denyAddress) => ({
-              address: denyAddress,
-              role: AccountRole.READONLY,
-            })),
-          ],
-        }
-      : transferInstruction;
+  const instruction = await withDenyRecords(transferInstruction, parameters.host.denyListEnabled, executes ? [app] : []);
   return (await client.sendFheTransaction(transientStore, [instruction])).context.signature;
 }

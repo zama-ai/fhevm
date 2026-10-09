@@ -16,6 +16,9 @@ pub const HCU_TRUSTED_APP_SEED: &[u8] = b"hcu-trusted";
 /// Seed prefix for per-application HCU block meter PDAs.
 #[constant]
 pub const HCU_BLOCK_METER_SEED: &[u8] = b"hcu-block-meter";
+/// The "off" value of every HCU limit: an unlimited per-transaction limit, an unrestricted block cap.
+#[constant]
+pub const HCU_UNLIMITED: u64 = u64::MAX;
 /// Seed of the singleton random-seed nonce PDA.
 pub const RAND_NONCE_SEED: &[u8] = b"rand-nonce";
 /// Seed prefix for pauser records.

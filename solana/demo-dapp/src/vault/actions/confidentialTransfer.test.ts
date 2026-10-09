@@ -23,9 +23,11 @@ import {
 import { base58 } from '@scure/base';
 
 import { confidentialTransfer, type SolanaConfidentialTransferParameters } from './confidentialTransfer.js';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
+import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, parseConfidentialTransferInstruction } from '@fhevm/confidential-token';
 import { messageOf, testDemoClient } from '../../testDemoClient';
+import { tokenApp } from '../internal/hostPolicy.js';
+import { hcuSlots, testHostPolicy } from '../testHostPolicy.js';
 
 const CHAIN_ID = 72057594037940281n;
 const ACL = `0x${'11'.repeat(32)}` as Bytes32Hex;
@@ -84,6 +86,7 @@ async function parameters(overrides: Partial<SolanaConfidentialTransferParameter
     toOwner: key(10),
     fromStore: key(6),
     toStore: key(7),
+    host: testHostPolicy(false),
     ...overrides,
   } satisfies SolanaConfidentialTransferParameters;
 }
@@ -191,9 +194,7 @@ describe('confidentialTransfer attestation binding', () => {
       toAccount: mode === 'same' ? key(4) : key(5),
       fromStore: key(6),
       toStore: mode === 'same' ? key(6) : key(7),
-      hcuBlockMeter: key(8),
-      hcuTrustedAppRecord: key(9),
-      ...(mode === 'same' ? {} : { denyRecords: [key(10), key(11)] }),
+      host: testHostPolicy(true, true),
       inputProof: proof(owner.address, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS),
     });
 
@@ -206,12 +207,6 @@ describe('confidentialTransfer attestation binding', () => {
     expect(message.version).toBe(1);
     // open_transient_store, confidential_transfer, close_transient_store.
     expect(message.instructions).toHaveLength(3);
-    if (mode === 'distinct') {
-      expect(message.instructions[1]!.accounts?.slice(-2)).toEqual([
-        { address: key(10), role: AccountRole.READONLY },
-        { address: key(11), role: AccountRole.READONLY },
-      ]);
-    }
     const [fromAta] = await findAssociatedTokenPda({
       owner: params.owner.address,
       tokenProgram: TOKEN_PROGRAM_ADDRESS,
@@ -228,20 +223,19 @@ describe('confidentialTransfer attestation binding', () => {
     });
     expect(message.instructions[1]!.accounts?.[4]).toEqual({ address: fromAta, role: AccountRole.READONLY });
     expect(message.instructions[1]!.accounts?.[5]).toEqual({ address: toAta, role: AccountRole.READONLY });
-    // The HCU pair sits after the system program: owner, payer, mint, underlying mint, two freeze
-    // ATAs, two token accounts, two balance values, transferred value, zama event authority, zama
-    // program, host config, system program — then the meter and the trust witness.
-    expect(message.instructions[1]!.accounts?.[16]).toEqual({ address: key(8), role: AccountRole.WRITABLE });
-    expect(message.instructions[1]!.accounts?.[17]).toEqual({ address: key(9), role: AccountRole.READONLY });
-  });
-
-  it('rejects deny records on the program self-transfer no-op path', async () => {
-    const params = await parameters({
-      toAccount: key(4),
-      toStore: key(6),
-      denyRecords: [key(10), key(11)],
-    });
-    await expect(confidentialTransfer(context, idleClient().client, params)).rejects.toThrow('self-transfers cannot include deny records');
+    // The mint's HCU accounts and deny record, except on the program's no-op self-transfer.
+    const transfer = message.instructions[1]!;
+    const parsed = parseConfidentialTransferInstruction({ ...transfer, accounts: transfer.accounts!, data: transfer.data! });
+    const { actual, expected } = await hcuSlots(parsed.accounts, { '': tokenApp(params.mint) });
+    const [mintRecord] = await findDenyScopeRecordPda(tokenApp(params.mint));
+    if (mode === 'distinct') {
+      expect(actual).toEqual(expected);
+      expect(transfer.accounts?.find((account) => account.address === expected.hcuBlockMeter)?.role).toBe(AccountRole.WRITABLE);
+      expect(transfer.accounts?.at(-1)).toEqual({ address: mintRecord, role: AccountRole.READONLY });
+    } else {
+      expect(Object.values(actual)).toEqual([undefined, undefined]);
+      expect(Array.from(transfer.accounts ?? [], (account) => account.address)).not.toContain(mintRecord);
+    }
   });
 
   it.each(['0x44', `0x${'44'.repeat(66)}`])(

@@ -26,7 +26,8 @@ import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confi
 import { findDenyScopeRecordPda, findKmsContextPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import { encodedSize, messageOf, testDemoClient } from '../testDemoClient';
-import { testHostPolicy } from './testHostPolicy.js';
+import { hcuSlots, testHostPolicy } from './testHostPolicy.js';
+import { tokenApp } from './internal/hostPolicy.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -83,6 +84,7 @@ async function setup(overrides: { burnedHandle?: Uint8Array } = {}) {
   const opts: SolanaVaultSettleOptions = {
     roots: roots(),
     authorityFundingLamports: 5_000_000n,
+    host: testHostPolicy(false),
   };
   return { ...testDemoClient(await generateKeyPairSigner()), opts, addresses };
 }
@@ -145,14 +147,27 @@ describe('settleBatch', () => {
     const { client, opts } = await setup();
     await settleBatch({ publicDecryptCertificate: certificate }, client, {
       ...opts,
-      host: testHostPolicy(true, {
-        [roots().payoutConfidentialMint]: { hcuBlockMeter: addr(40), hcuTrustedAppRecord: addr(41) },
-      }),
+      host: testHostPolicy(true, true),
     });
     const size = encodedSize(sent());
     expect(size.version).toBe(1);
     expect(size.bytes).toBeLessThanOrEqual(4096);
     expect(size.addresses).toBeLessThanOrEqual(64);
+  });
+
+  it("puts the payout mint's HCU accounts in its slots for the wrap, and none for a zero total", async () => {
+    const settled = async (total: bigint) => {
+      certificate.mockResolvedValue(claim(cleartextHex(total)));
+      const { client, opts } = await setup();
+      await settleBatch({ publicDecryptCertificate: certificate }, client, { ...opts, host: testHostPolicy(false, true) });
+      const settle = messageOf(sent()).instructions[1]!;
+      return parseSettleInstruction({ ...settle, accounts: settle.accounts!, data: settle.data! }).accounts;
+    };
+    const slots = { payoutMint: tokenApp(roots().payoutConfidentialMint) };
+
+    const { actual, expected } = await hcuSlots(await settled(800n), slots);
+    expect(actual).toEqual(expected);
+    expect(Object.values((await hcuSlots(await settled(0n), slots)).actual)).toEqual([undefined, undefined]);
   });
 
   // The settle instruction's accounts as submitted.

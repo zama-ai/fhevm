@@ -8,8 +8,7 @@ import {
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import { getCancelDispatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/cancelDispatch.js';
-import { tokenApp, withDenyRecords } from './internal/denyRecords.js';
-import { type HostPolicyParameters } from './internal/hostPolicy.js';
+import { tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/pdas/index.js';
 
 export type SolanaVaultCancelDispatchParameters = HostPolicyParameters & {
@@ -28,7 +27,7 @@ export async function buildCancelDispatchInstruction(
 ): Promise<Instruction> {
   const mint = parameters.joinConfidentialMint;
   const joinMint = tokenApp(mint);
-  const joinMintHcu = await parameters.host?.hcuAccounts(joinMint);
+  const joinMintHcu = await parameters.host.hcuAccounts(joinMint);
   const [batchAuthority] = await findBatchAuthorityPda({ batch: parameters.batch });
   const batchJoinTokenAccount = (await findTokenAccountPda({ mint, owner: batchAuthority }))[0];
   const totalSupplyAuthority = (await findTotalSupplyAuthorityPda({ mint }))[0];
@@ -47,8 +46,8 @@ export async function buildCancelDispatchInstruction(
     pendingBurn: (await findPendingBurnPda({ mint, tokenAccount: batchJoinTokenAccount }))[0],
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
     authorityFundingLamports: parameters.authorityFundingLamports ?? 0n,
-    joinMintHcuBlockMeter: joinMintHcu?.hcuBlockMeter,
-    joinMintHcuTrustedAppRecord: joinMintHcu?.hcuTrustedAppRecord,
+    joinMintHcuBlockMeter: joinMintHcu.hcuBlockMeter,
+    joinMintHcuTrustedAppRecord: joinMintHcu.hcuTrustedAppRecord,
   });
-  return withDenyRecords(instruction, parameters.host?.denyListEnabled, [joinMint]);
+  return withDenyRecords(instruction, parameters.host.denyListEnabled, [joinMint]);
 }

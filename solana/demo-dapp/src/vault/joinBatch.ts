@@ -16,8 +16,7 @@ import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { getJoinInstructionAsync } from './internal/generated/confidentialBatcher/instructions/join.js';
-import { batchApp, tokenApp, withDenyRecords } from './internal/denyRecords.js';
-import { type HostPolicyParameters } from './internal/hostPolicy.js';
+import { batchApp, tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/pdas/index.js';
 import { joinStoreAddress, tokenStoreAddress } from './internal/encryptedStores.js';
 import { findTokenAccountPda, ZAMA_HOST_PROGRAM_ADDRESS, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
@@ -102,8 +101,8 @@ export async function joinBatch(
   const joinMint = tokenApp(joinConfidentialMint);
   const batch = batchApp(parameters.batch);
   const [joinMintHcu, batchHcu] = await Promise.all([
-    parameters.host?.hcuAccounts(joinMint),
-    parameters.host?.hcuAccounts(batch),
+    parameters.host.hcuAccounts(joinMint),
+    parameters.host.hcuAccounts(batch),
   ]);
   const joinInstruction = await getJoinInstructionAsync({
     user,
@@ -138,12 +137,12 @@ export async function joinBatch(
     contractChainId: inputProof.chainId,
     extraData: hexToBytes(inputProof.extraData),
     signatures,
-    joinMintHcuBlockMeter: joinMintHcu?.hcuBlockMeter,
-    joinMintHcuTrustedAppRecord: joinMintHcu?.hcuTrustedAppRecord,
-    batchHcuBlockMeter: batchHcu?.hcuBlockMeter,
-    batchHcuTrustedAppRecord: batchHcu?.hcuTrustedAppRecord,
+    joinMintHcuBlockMeter: joinMintHcu.hcuBlockMeter,
+    joinMintHcuTrustedAppRecord: joinMintHcu.hcuTrustedAppRecord,
+    batchHcuBlockMeter: batchHcu.hcuBlockMeter,
+    batchHcuTrustedAppRecord: batchHcu.hcuTrustedAppRecord,
   });
-  const instruction = await withDenyRecords(joinInstruction, parameters.host?.denyListEnabled, [joinMint, batch]);
+  const instruction = await withDenyRecords(joinInstruction, parameters.host.denyListEnabled, [joinMint, batch]);
 
   const signed = await client.signFheTransaction(transientStore, [instruction]);
   const { message, transaction } = signed.context;

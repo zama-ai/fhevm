@@ -6,8 +6,7 @@ import { findAssociatedTokenPda } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import { getClaimInstructionAsync } from './internal/generated/confidentialBatcher/instructions/claim.js';
-import { batchApp, tokenApp, withDenyRecords } from './internal/denyRecords.js';
-import { type HostPolicyParameters } from './internal/hostPolicy.js';
+import { batchApp, tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/pdas/index.js';
 import { joinStoreAddress, tokenStoreAddress } from './internal/encryptedStores.js';
 
@@ -48,8 +47,8 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
   const batch = batchApp(parameters.batch);
   const payoutMint = tokenApp(payoutConfidentialMint);
   const [batchHcu, payoutMintHcu] = await Promise.all([
-    parameters.host?.hcuAccounts(batch),
-    parameters.host?.hcuAccounts(payoutMint),
+    parameters.host.hcuAccounts(batch),
+    parameters.host.hcuAccounts(payoutMint),
   ]);
   const instruction = await getClaimInstructionAsync({
     transientStore: parameters.transientStore.address,
@@ -77,10 +76,10 @@ export async function buildClaimInstruction(parameters: SolanaVaultClaimParamete
     batchPayoutBalanceStore: await tokenStoreAddress(payoutConfidentialMint, batchPayoutTokenAccount),
     userPayoutBalanceStore: await tokenStoreAddress(payoutConfidentialMint, userPayoutTokenAccount),
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
-    batchHcuBlockMeter: batchHcu?.hcuBlockMeter,
-    batchHcuTrustedAppRecord: batchHcu?.hcuTrustedAppRecord,
-    payoutMintHcuBlockMeter: payoutMintHcu?.hcuBlockMeter,
-    payoutMintHcuTrustedAppRecord: payoutMintHcu?.hcuTrustedAppRecord,
+    batchHcuBlockMeter: batchHcu.hcuBlockMeter,
+    batchHcuTrustedAppRecord: batchHcu.hcuTrustedAppRecord,
+    payoutMintHcuBlockMeter: payoutMintHcu.hcuBlockMeter,
+    payoutMintHcuTrustedAppRecord: payoutMintHcu.hcuTrustedAppRecord,
   });
-  return withDenyRecords(instruction, parameters.host?.denyListEnabled, [batch, payoutMint]);
+  return withDenyRecords(instruction, parameters.host.denyListEnabled, [batch, payoutMint]);
 }

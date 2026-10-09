@@ -5149,6 +5149,14 @@
       "value": "[104, 99, 117, 45, 98, 108, 111, 99, 107, 45, 109, 101, 116, 101, 114]"
     },
     {
+      "name": "HCU_UNLIMITED",
+      "docs": [
+        "The \"off\" value of every HCU limit: an unlimited per-transaction limit, an unrestricted block cap."
+      ],
+      "type": "u64",
+      "value": "18446744073709551615"
+    },
+    {
       "name": "MAX_COPROCESSOR_SIGNERS",
       "docs": [
         "Upper bound on registered coprocessor signers. A hard cap keeps the `HostConfig` byte layout",

@@ -254,6 +254,7 @@ export const initializeConfidentialTokenAccount = async (
     payer: params.payer,
     owner: params.owner,
     mint: params.mint,
+    host: await vault.readHostPolicy(context.rpc),
   });
   await (await context.client(params.payer)).sendFheTransaction(transientStore, [instruction]);
 };
@@ -279,6 +280,7 @@ export const wrapUnderlying = async (
       underlyingMint: params.underlyingMint,
       tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
       amount: params.amount,
+      host: await vault.readHostPolicy(context.rpc),
     }),
   ]);
 };

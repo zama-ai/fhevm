@@ -8,11 +8,13 @@ import { buildDispatchBatchInstruction } from './dispatchBatch.js';
 import {
   DISPATCH_DISCRIMINATOR,
   getDispatchInstructionDataDecoder,
+  parseDispatchInstruction,
 } from './internal/generated/confidentialBatcher/instructions/dispatch.js';
+import { tokenApp } from './internal/hostPolicy.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
-import { testHostPolicy } from './testHostPolicy.js';
+import { hcuSlots, testHostPolicy } from './testHostPolicy.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -49,17 +51,19 @@ describe('buildDispatchBatchInstruction', () => {
   const ASSOCIATED_TOKEN = address('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
   const ata = (owner: Address, mint: Address): Promise<Address> =>
     pda(ASSOCIATED_TOKEN, [base58.decode(owner), base58.decode(SPL_TOKEN), base58.decode(mint)]);
+  const input = async (host = testHostPolicy(false)) => ({
+    transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
+    payer,
+    batcher,
+    batch,
+    joinConfidentialMint,
+    joinUnderlyingMint,
+    tokenProgram: SPL_TOKEN,
+    host,
+  });
 
   it('derives every non-root account exactly as dispatch.rs validates them', async () => {
-    const instruction = await buildDispatchBatchInstruction({
-      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
-      payer,
-      batcher,
-      batch,
-      joinConfidentialMint,
-      joinUnderlyingMint,
-      tokenProgram: SPL_TOKEN,
-    });
+    const instruction = await buildDispatchBatchInstruction(await input());
 
     expect(instruction.programAddress).toBe(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS);
 
@@ -116,15 +120,7 @@ describe('buildDispatchBatchInstruction', () => {
   // test), the rest carried over unchanged, the event authorities from
   // `solana find-program-derived-address <program> string:__event_authority`.
   it('matches the golden derived addresses for the fixed fixture', async () => {
-    const instruction = await buildDispatchBatchInstruction({
-      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
-      payer,
-      batcher,
-      batch,
-      joinConfidentialMint,
-      joinUnderlyingMint,
-      tokenProgram: SPL_TOKEN,
-    });
+    const instruction = await buildDispatchBatchInstruction(await input());
     const addresses = instruction.accounts!.map((a) => a.address);
     expect(addresses[7]).toBe('2K4784bFHReRcc7juUMW2N12NQbxMsL35i33Hcxy4zGk'); // totalSupplyAuthority
     expect(addresses[8]).toBe('4MxNx3UFs82BQ349hySkRZ4YTLuuT77jTpXc1ohbXYnA'); // batchJoinTokenAccount
@@ -136,18 +132,17 @@ describe('buildDispatchBatchInstruction', () => {
   });
 
   it('appends, under the deny list, the join mint deny record for the burn', async () => {
-    const input = {
-      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
-      payer,
-      batcher,
-      batch,
-      joinConfidentialMint,
-      joinUnderlyingMint,
-      tokenProgram: SPL_TOKEN,
-    };
-    const plain = await buildDispatchBatchInstruction(input);
-    const instruction = await buildDispatchBatchInstruction({ ...input, host: testHostPolicy(true) });
+    const plain = await buildDispatchBatchInstruction(await input());
+    const instruction = await buildDispatchBatchInstruction(await input(testHostPolicy(true)));
     const [joinMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: joinConfidentialMint });
     expect(instruction.accounts!.slice(plain.accounts!.length)).toEqual([{ address: joinMintRecord, role: 0 }]);
+  });
+
+  it("puts the join mint's HCU accounts in its slots", async () => {
+    const instruction = await buildDispatchBatchInstruction(await input(testHostPolicy(false, true)));
+    const { actual, expected } = await hcuSlots(parseDispatchInstruction(instruction as never).accounts, {
+      joinMint: tokenApp(joinConfidentialMint),
+    });
+    expect(actual).toEqual(expected);
   });
 });

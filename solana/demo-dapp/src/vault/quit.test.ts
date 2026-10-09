@@ -8,11 +8,13 @@ import { buildQuitInstruction } from './quit.js';
 import {
   QUIT_DISCRIMINATOR,
   getQuitInstructionDataDecoder,
+  parseQuitInstruction,
 } from './internal/generated/confidentialBatcher/instructions/quit.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import { findDenyScopeRecordPda } from '@fhevm/solana-zama-host';
-import { testHostPolicy } from './testHostPolicy.js';
+import { batchApp, tokenApp } from './internal/hostPolicy.js';
+import { hcuSlots, testHostPolicy } from './testHostPolicy.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -38,6 +40,7 @@ async function quitInput() {
     userBalanceStore: addr(10),
     joinStore: addr(12),
     confidentialTokenEventAuthority: addr(15),
+    host: testHostPolicy(false),
   };
 }
 
@@ -61,15 +64,13 @@ describe('buildQuitInstruction', () => {
 
   it('carries each application\'s HCU accounts and, under the deny list, its deny records in program order', async () => {
     const input = await quitInput();
-    const instruction = await buildQuitInstruction({
-      ...input,
-      host: testHostPolicy(true, {
-        [input.joinConfidentialMint]: { hcuBlockMeter: addr(20), hcuTrustedAppRecord: addr(21) },
-        [input.batch]: { hcuBlockMeter: addr(22), hcuTrustedAppRecord: addr(23) },
-      }),
+    const instruction = await buildQuitInstruction({ ...input, host: testHostPolicy(true, true) });
+    const { actual, expected } = await hcuSlots(parseQuitInstruction(instruction as never).accounts, {
+      joinMint: tokenApp(input.joinConfidentialMint),
+      batch: batchApp(input.batch),
     });
+    expect(actual).toEqual(expected);
     const accounts = instruction.accounts!;
-    expect(accounts.slice(23, 27).map((a) => a.address)).toEqual([addr(20), addr(21), addr(22), addr(23)]);
     // The meters are written; the trust records are read.
     expect(accounts.slice(23, 27).map((a) => isWritableRole(a.role))).toEqual([true, false, true, false]);
     const [joinMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: input.joinConfidentialMint });

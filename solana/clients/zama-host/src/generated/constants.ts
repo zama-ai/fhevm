@@ -3,6 +3,7 @@
 export const HCU_BLOCK_METER_SEED: Uint8Array = new Uint8Array([
   104, 99, 117, 45, 98, 108, 111, 99, 107, 45, 109, 101, 116, 101, 114,
 ]);
+export const HCU_UNLIMITED: bigint = 18446744073709551615n;
 export const MAX_COPROCESSOR_SIGNERS: number = 8;
 export const MAX_KMS_SIGNERS: number = 16;
 export const WILDCARD_APP: Uint8Array = new Uint8Array([

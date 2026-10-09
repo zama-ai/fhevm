@@ -9,8 +9,7 @@ import { findAssociatedTokenPda } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import { getDispatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/dispatch.js';
-import { tokenApp, withDenyRecords } from './internal/denyRecords.js';
-import { type HostPolicyParameters } from './internal/hostPolicy.js';
+import { tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/pdas/index.js';
 
 
@@ -48,7 +47,7 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
   const batchJoinTokenAccount = (await findTokenAccountPda({ mint: joinConfidentialMint, owner: batchAuthority }))[0];
   const totalSupplyAuthority = (await findTotalSupplyAuthorityPda({ mint: joinConfidentialMint }))[0];
   const joinMint = tokenApp(joinConfidentialMint);
-  const joinMintHcu = await parameters.host?.hcuAccounts(joinMint);
+  const joinMintHcu = await parameters.host.hcuAccounts(joinMint);
   const instruction = await getDispatchInstructionAsync({
     transientStore: parameters.transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
@@ -69,8 +68,8 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
     totalSupplyStore: await tokenStoreAddress(joinConfidentialMint, totalSupplyAuthority),
     pendingBurn: (await findPendingBurnPda({ mint: joinConfidentialMint, tokenAccount: batchJoinTokenAccount }))[0],
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
-    joinMintHcuBlockMeter: joinMintHcu?.hcuBlockMeter,
-    joinMintHcuTrustedAppRecord: joinMintHcu?.hcuTrustedAppRecord,
+    joinMintHcuBlockMeter: joinMintHcu.hcuBlockMeter,
+    joinMintHcuTrustedAppRecord: joinMintHcu.hcuTrustedAppRecord,
   });
-  return withDenyRecords(instruction, parameters.host?.denyListEnabled, [joinMint]);
+  return withDenyRecords(instruction, parameters.host.denyListEnabled, [joinMint]);
 }

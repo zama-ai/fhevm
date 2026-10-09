@@ -5,8 +5,7 @@ import {
   getQuitInstructionAsync,
   type QuitAsyncInput,
 } from './internal/generated/confidentialBatcher/instructions/quit.js';
-import { batchApp, tokenApp, withDenyRecords } from './internal/denyRecords.js';
-import { type HostPolicyParameters } from './internal/hostPolicy.js';
+import { batchApp, tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 
 /**
  * Accounts for the batcher `quit` instruction. `batchAuthority`, `joinRecord`, `hostConfig` and
@@ -39,15 +38,15 @@ export async function buildQuitInstruction(parameters: SolanaVaultQuitParameters
   const { transientStore, host, ...accounts } = parameters;
   const joinMint = tokenApp(accounts.joinConfidentialMint);
   const batch = batchApp(accounts.batch);
-  const [joinMintHcu, batchHcu] = await Promise.all([host?.hcuAccounts(joinMint), host?.hcuAccounts(batch)]);
+  const [joinMintHcu, batchHcu] = await Promise.all([host.hcuAccounts(joinMint), host.hcuAccounts(batch)]);
   const instruction = await getQuitInstructionAsync({
     ...accounts,
     transientStore: transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
-    joinMintHcuBlockMeter: joinMintHcu?.hcuBlockMeter,
-    joinMintHcuTrustedAppRecord: joinMintHcu?.hcuTrustedAppRecord,
-    batchHcuBlockMeter: batchHcu?.hcuBlockMeter,
-    batchHcuTrustedAppRecord: batchHcu?.hcuTrustedAppRecord,
+    joinMintHcuBlockMeter: joinMintHcu.hcuBlockMeter,
+    joinMintHcuTrustedAppRecord: joinMintHcu.hcuTrustedAppRecord,
+    batchHcuBlockMeter: batchHcu.hcuBlockMeter,
+    batchHcuTrustedAppRecord: batchHcu.hcuTrustedAppRecord,
   });
-  return withDenyRecords(instruction, host?.denyListEnabled, [joinMint, batch, batch]);
+  return withDenyRecords(instruction, host.denyListEnabled, [joinMint, batch, batch]);
 }
