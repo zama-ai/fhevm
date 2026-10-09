@@ -644,10 +644,11 @@ test.skipIf(!runsDemoScenarios)(
     await aliceClient.sendFheTransaction(transientStore, [quit]);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
     expect(await readAmount(joinStore, vault.JOINED_AMOUNT_KEY)).toBe(0n);
-    // A retry cannot credit the original contribution twice.
-    await aliceClient.sendFheTransaction(transientStore, [quit]);
+    // The quit closed the join record, so a retry is rejected and cannot credit the contribution twice.
+    const joinRecord = (await vault.findJoinRecordPda({ batch, user: alice.address }))[0];
+    expect((await rpc.getAccountInfo(joinRecord, { encoding: 'base64' }).send()).value).toBeNull();
+    await expect(aliceClient.sendFheTransaction(transientStore, [quit])).rejects.toThrow();
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
-    expect(await readAmount(joinStore, vault.JOINED_AMOUNT_KEY)).toBe(0n);
-    console.log(`refund acceptance passed: batch=${batch}; joined=${amount}; restored exactly; join record retained until reset`);
+    console.log(`refund acceptance passed: batch=${batch}; joined=${amount}; restored exactly; join record closed by the quit`);
   }, SCENARIO_TIMEOUT_MS,
 );
