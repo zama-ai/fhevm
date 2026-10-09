@@ -56,7 +56,7 @@ const chain = {
 // and that context's `KmsContext` lists its signers.
 const HOST_PROGRAM = getAddressDecoder().decode(hexToBytes32(PROGRAM_ID));
 const [HOST_CONFIG_ADDRESS, HOST_CONFIG_BUMP] = await findHostConfigPda({ programAddress: HOST_PROGRAM });
-const [, KMS_CONTEXT_BUMP] = await findKmsContextPda(
+const [KMS_CONTEXT_ADDRESS, KMS_CONTEXT_BUMP] = await findKmsContextPda(
   { contextId: hexToBytes32(CONTEXT_ID) },
   { programAddress: HOST_PROGRAM },
 );
@@ -67,28 +67,31 @@ const hostAccount = (data: Uint8Array) => ({
   lamports: 1n,
   space: BigInt(data.length),
 });
-const hostConfigAccount = hostAccount(
-  new Uint8Array(
-    getHostConfigEncoder().encode({
-      admin: HOST_PROGRAM,
-      chainId: chain.id,
-      gatewayChainId: 31337n,
-      inputVerificationContract: new Uint8Array(20),
-      coprocessorSigners: Array.from({ length: 8 }, () => new Uint8Array(20)),
-      coprocessorSignerCount: 1,
-      coprocessorThreshold: 1,
-      decryptionContract: new Uint8Array(20).fill(0x42),
-      currentKmsContextId: hexToBytes32(CONTEXT_ID),
-      currentKmsEpochId: hexToBytes32(EPOCH_ID),
-      paused: { execution: false, verifiedInputs: false, aclWrites: false },
-      grantDenyListEnabled: false,
-      maxHcuPerTx: 1n,
-      maxHcuDepthPerTx: 1n,
-      hcuBlockCapPerApp: 1n,
-      bump: HOST_CONFIG_BUMP,
-    }),
-  ),
-);
+/** `HostConfig` with `currentKmsContextId` as the active context. */
+const hostConfigAccountFor = (currentKmsContextId: Uint8Array) =>
+  hostAccount(
+    new Uint8Array(
+      getHostConfigEncoder().encode({
+        admin: HOST_PROGRAM,
+        chainId: chain.id,
+        gatewayChainId: 31337n,
+        inputVerificationContract: new Uint8Array(20),
+        coprocessorSigners: Array.from({ length: 8 }, () => new Uint8Array(20)),
+        coprocessorSignerCount: 1,
+        coprocessorThreshold: 1,
+        decryptionContract: new Uint8Array(20).fill(0x42),
+        currentKmsContextId,
+        currentKmsEpochId: hexToBytes32(EPOCH_ID),
+        paused: { execution: false, verifiedInputs: false, aclWrites: false },
+        grantDenyListEnabled: false,
+        maxHcuPerTx: 1n,
+        maxHcuDepthPerTx: 1n,
+        hcuBlockCapPerApp: 1n,
+        bump: HOST_CONFIG_BUMP,
+      }),
+    ),
+  );
+const hostConfigAccount = hostConfigAccountFor(hexToBytes32(CONTEXT_ID));
 const kmsContextAccount = hostAccount(
   new Uint8Array(
     getKmsContextEncoder().encode({
@@ -376,6 +379,47 @@ describe('running a user decryption through the client', () => {
       hex(ENCRYPTED_VALUE_ACCOUNT),
     ]);
   });
+  // A permit stays answerable after the host switches context: its response is verified against
+  // the context the permit names, not the one HostConfig now holds.
+  it('verifies a permit against its own KMS context after the host switches to another', async () => {
+    const { wallet } = conformingWallet();
+    const session = await client().signPermit({ wallet, durationSeconds: 3_600n });
+    vi.spyOn(rpc, 'getAccountInfo').mockImplementation(
+      (address: Address) =>
+        ({
+          send: async () => ({
+            value: address === HOST_CONFIG_ADDRESS ? hostConfigAccountFor(new Uint8Array(32).fill(0x55)) : null,
+          }),
+        }) as never,
+    );
+    const contextRead = vi.spyOn(rpc, 'getMultipleAccounts');
+    const relayer = vi.fn(async () =>
+      jsonResponse(
+        {
+          status: 'failed',
+          error: {
+            label: 'validation_failed',
+            message: 'refused by the test relayer',
+            details: [{ field: 'handles', issue: 'refused by the test relayer' }],
+          },
+        },
+        400,
+      ),
+    );
+    vi.stubGlobal('fetch', relayer);
+
+    await expect(
+      client().decryptValues({
+        session,
+        entries: [{ handle: HANDLE, encryptedStore: ENCRYPTED_VALUE_ACCOUNT }],
+        attempts: 1,
+      }),
+    ).rejects.toThrow('refused');
+
+    expect(contextRead).toHaveBeenCalledWith([KMS_CONTEXT_ADDRESS], expect.anything());
+    expect(relayer).toHaveBeenCalled();
+  });
+
   it.each(['timeout', 'abort'])('does not return plaintext after %s during verification', async (cause) => {
     const { wallet } = conformingWallet();
     const decryptClient = client();
