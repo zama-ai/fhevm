@@ -28,6 +28,7 @@ use anchor_lang::{
     Discriminator, InstructionData, ToAccountMetas,
 };
 use anchor_spl::token::spl_token;
+use anchor_spl::token_2022::spl_token_2022;
 use mollusk_svm::{result::Check, Mollusk, MolluskContext};
 use solana_sdk::{
     account::Account,
@@ -290,6 +291,70 @@ pub fn spl_token_account(mint: Pubkey, owner: Pubkey, amount: u64) -> Account {
         lamports: 1_000_000_000,
         data,
         owner: spl_token::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+/// An initialized Token-2022 mint without extensions and without a mint authority.
+pub fn token_2022_mint_account(decimals: u8) -> Account {
+    let mut data = vec![0u8; spl_token_2022::state::Mint::LEN];
+    spl_token_2022::state::Mint::pack(
+        spl_token_2022::state::Mint {
+            mint_authority: COption::None,
+            supply: 1_000_000,
+            decimals,
+            is_initialized: true,
+            freeze_authority: COption::None,
+        },
+        &mut data,
+    )
+    .unwrap();
+    Account {
+        lamports: 1_000_000_000,
+        data,
+        owner: spl_token_2022::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
+/// An initialized Token-2022 account carrying `ImmutableOwner`, the shape of a Token-2022 ATA.
+pub fn token_2022_immutable_owner_account(
+    mint: Pubkey,
+    owner: Pubkey,
+    amount: u64,
+    account_state: spl_token_2022::state::AccountState,
+) -> Account {
+    use spl_token_2022::extension::{
+        immutable_owner::ImmutableOwner, BaseStateWithExtensionsMut, ExtensionType,
+        StateWithExtensionsMut,
+    };
+    let len = ExtensionType::try_calculate_account_len::<spl_token_2022::state::Account>(&[
+        ExtensionType::ImmutableOwner,
+    ])
+    .unwrap();
+    let mut data = vec![0u8; len];
+    let mut state =
+        StateWithExtensionsMut::<spl_token_2022::state::Account>::unpack_uninitialized(&mut data)
+            .unwrap();
+    state.base = spl_token_2022::state::Account {
+        mint,
+        owner,
+        amount,
+        delegate: COption::None,
+        state: account_state,
+        is_native: COption::None,
+        delegated_amount: 0,
+        close_authority: COption::None,
+    };
+    state.init_extension::<ImmutableOwner>(true).unwrap();
+    state.init_account_type().unwrap();
+    state.pack_base();
+    Account {
+        lamports: 1_000_000_000,
+        data,
+        owner: spl_token_2022::id(),
         executable: false,
         rent_epoch: 0,
     }

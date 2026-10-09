@@ -407,7 +407,9 @@
         },
         {
           "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "docs": [
+            "Classic SPL Token or Token-2022. The CPI fails when this program does not own `account`."
+          ]
         }
       ],
       "args": [

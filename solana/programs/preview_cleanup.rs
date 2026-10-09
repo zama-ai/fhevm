@@ -2,7 +2,7 @@
 // Recover PDA-owned external accounts before erasing the state used to discover them.
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::{bpf_loader_upgradeable, system_program};
-use anchor_spl::token::{self, Burn, CloseAccount, Token, TokenAccount};
+use anchor_spl::token_interface::{self, Burn, CloseAccount, TokenAccount, TokenInterface};
 
 #[derive(Accounts)]
 pub struct PreviewAdmin<'info> {
@@ -27,11 +27,12 @@ pub struct PreviewCloseToken<'info> {
     /// CHECK: checked against the caller-supplied PDA seeds before signing.
     pub authority: UncheckedAccount<'info>,
     #[account(mut, constraint = account.owner == authority.key())]
-    pub account: Account<'info, TokenAccount>,
+    pub account: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: token program checks the mint; bound to the token account here.
     #[account(mut, address = account.mint)]
     pub mint: UncheckedAccount<'info>,
-    pub token_program: Program<'info, Token>,
+    /// Classic SPL Token or Token-2022. The CPI fails when this program does not own `account`.
+    pub token_program: Interface<'info, TokenInterface>,
 }
 
 /// Reset destroys disposable mock tokens; this instruction is absent from non-preview builds.
@@ -42,7 +43,7 @@ pub fn close_token(ctx: Context<PreviewCloseToken>, seeds: Vec<Vec<u8>>) -> Resu
     require_keys_eq!(authority, ctx.accounts.authority.key());
     let signer = [&seeds[..]];
     if ctx.accounts.account.amount > 0 {
-        token::burn(
+        token_interface::burn(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.key(),
                 Burn {
@@ -55,7 +56,7 @@ pub fn close_token(ctx: Context<PreviewCloseToken>, seeds: Vec<Vec<u8>>) -> Resu
             ctx.accounts.account.amount,
         )?;
     }
-    token::close_account(CpiContext::new_with_signer(
+    token_interface::close_account(CpiContext::new_with_signer(
         ctx.accounts.token_program.key(),
         CloseAccount {
             account: ctx.accounts.account.to_account_info(),

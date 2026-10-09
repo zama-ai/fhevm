@@ -9,8 +9,10 @@ use solana_sdk::{
 use std::collections::HashMap;
 use zama_solana_test_kit::{
     funded_system_account, program_data_account, spl_mint_account, spl_token_account,
-    system_account,
+    system_account, token_2022_immutable_owner_account, token_2022_mint_account,
 };
+
+const PREVIEW_CLOSE_TOKEN: [u8; 8] = [64, 227, 93, 185, 105, 167, 223, 84];
 
 fn programs() -> [(Pubkey, &'static str); 3] {
     [
@@ -30,6 +32,31 @@ fn seeds_data(discriminator: &[u8], seeds: &[&[u8]]) -> Vec<u8> {
         data.extend(*seed);
     }
     data
+}
+fn preview_close_token(
+    program: Pubkey,
+    admin: Pubkey,
+    seeds: &[&[u8]],
+    token: Pubkey,
+    mint: Pubkey,
+    token_program: Pubkey,
+) -> Instruction {
+    let authority = Pubkey::create_program_address(seeds, &program).unwrap();
+    Instruction {
+        program_id: program,
+        accounts: vec![
+            AccountMeta::new(admin, true),
+            AccountMeta::new_readonly(
+                bpf_loader_upgradeable::get_program_data_address(&program),
+                false,
+            ),
+            AccountMeta::new_readonly(authority, false),
+            AccountMeta::new(token, false),
+            AccountMeta::new(mint, false),
+            AccountMeta::new_readonly(token_program, false),
+        ],
+        data: seeds_data(&PREVIEW_CLOSE_TOKEN, seeds),
+    }
 }
 
 #[test]
@@ -61,21 +88,14 @@ fn preview_cleanup_checks_authority_and_refunds_token_rent_and_pda_sol() {
                 },
             ),
         ]));
-        let mut close = Instruction {
-            program_id: program,
-            accounts: vec![
-                AccountMeta::new(admin, true),
-                AccountMeta::new_readonly(program_data, false),
-                AccountMeta::new_readonly(authority, false),
-                AccountMeta::new(token, false),
-                AccountMeta::new(mint, false),
-                AccountMeta::new_readonly(anchor_spl::token::ID, false),
-            ],
-            data: seeds_data(
-                &[64, 227, 93, 185, 105, 167, 223, 84],
-                &[b"cleanup-test", &[bump]],
-            ),
-        };
+        let mut close = preview_close_token(
+            program,
+            admin,
+            &[b"cleanup-test", &[bump]],
+            token,
+            mint,
+            anchor_spl::token::ID,
+        );
         close.accounts[0] = AccountMeta::new(stranger, true);
         assert!(context.process_instruction(&close).program_result.is_err());
         assert_eq!(
@@ -84,7 +104,7 @@ fn preview_cleanup_checks_authority_and_refunds_token_rent_and_pda_sol() {
         );
         close.accounts[0] = AccountMeta::new(admin, true);
         let good_data = close.data.clone();
-        close.data = seeds_data(&[64, 227, 93, 185, 105, 167, 223, 84], &[b"wrong", &[bump]]);
+        close.data = seeds_data(&PREVIEW_CLOSE_TOKEN, &[b"wrong", &[bump]]);
         assert!(context.process_instruction(&close).program_result.is_err());
         close.data = good_data;
         context.process_and_validate_instruction(&close, &[Check::success()]);
@@ -118,6 +138,125 @@ fn preview_cleanup_checks_authority_and_refunds_token_rent_and_pda_sol() {
             context.account_store.borrow().get(&admin).unwrap().lamports,
             before + token_rent + 12345
         );
+    }
+}
+
+#[test]
+fn preview_cleanup_burns_and_closes_token_2022_accounts() {
+    use anchor_spl::token_2022::spl_token_2022::{self, state::AccountState};
+    use solana_sdk::program_pack::Pack;
+    for (program, artifact) in programs() {
+        let admin = Pubkey::new_unique();
+        let mint = Pubkey::new_unique();
+        let token = Pubkey::new_unique();
+        let (authority, bump) = Pubkey::find_program_address(&[b"cleanup-test"], &program);
+        let token_account =
+            token_2022_immutable_owner_account(mint, authority, 7, AccountState::Initialized);
+        let token_rent = token_account.lamports;
+        let funded = funded_system_account();
+        let before = funded.lamports;
+        let mut svm = zama_solana_test_kit::svm(&program, artifact);
+        mollusk_svm_programs_token::token2022::add_program(&mut svm);
+        let mint_account = token_2022_mint_account(6);
+        let supply = spl_token_2022::state::Mint::unpack(&mint_account.data)
+            .unwrap()
+            .supply;
+        let context = svm.with_context(HashMap::from([
+            (admin, funded),
+            (
+                bpf_loader_upgradeable::get_program_data_address(&program),
+                program_data_account(Some(admin)).1,
+            ),
+            (mint, mint_account),
+            (token, token_account),
+        ]));
+        context.process_and_validate_instruction(
+            &preview_close_token(
+                program,
+                admin,
+                &[b"cleanup-test", &[bump]],
+                token,
+                mint,
+                spl_token_2022::ID,
+            ),
+            &[Check::success()],
+        );
+        let store = context.account_store.borrow();
+        assert_eq!(store.get(&admin).unwrap().lamports, before + token_rent);
+        assert_eq!(store.get(&token).map_or(0, |a| a.lamports), 0);
+        assert_eq!(
+            spl_token_2022::state::Mint::unpack(&store.get(&mint).unwrap().data)
+                .unwrap()
+                .supply,
+            supply - 7
+        );
+    }
+}
+
+#[test]
+fn preview_cleanup_refuses_token_account_of_the_other_token_program() {
+    use anchor_spl::token_2022::spl_token_2022::{self, state::AccountState};
+    use solana_sdk::{instruction::InstructionError, program_error::ProgramError};
+    for (program, artifact) in programs() {
+        let (authority, bump) = Pubkey::find_program_address(&[b"cleanup-test"], &program);
+        let mint = Pubkey::new_unique();
+        let token_2022_base_layout = Account {
+            owner: spl_token_2022::ID,
+            ..spl_token_account(mint, authority, 7)
+        };
+        for (token_account, mint_account, wrong_token_program, refusal) in [
+            // Classic Token burns without checking the account owner; the runtime then rejects
+            // its write to an account Token-2022 owns.
+            (
+                token_2022_base_layout,
+                token_2022_mint_account(6),
+                anchor_spl::token::ID,
+                Check::instruction_err(InstructionError::ExternalAccountDataModified),
+            ),
+            // Classic Token refuses the longer layout of an account with extensions.
+            (
+                token_2022_immutable_owner_account(mint, authority, 7, AccountState::Initialized),
+                token_2022_mint_account(6),
+                anchor_spl::token::ID,
+                Check::err(ProgramError::InvalidAccountData),
+            ),
+            (
+                spl_token_account(mint, authority, 7),
+                spl_mint_account(None, 1_000_000),
+                spl_token_2022::ID,
+                Check::err(ProgramError::IncorrectProgramId),
+            ),
+        ] {
+            let admin = Pubkey::new_unique();
+            let token = Pubkey::new_unique();
+            let mut svm = zama_solana_test_kit::svm(&program, artifact);
+            mollusk_svm_programs_token::token::add_program(&mut svm);
+            mollusk_svm_programs_token::token2022::add_program(&mut svm);
+            let context = svm.with_context(HashMap::from([
+                (admin, funded_system_account()),
+                (
+                    bpf_loader_upgradeable::get_program_data_address(&program),
+                    program_data_account(Some(admin)).1,
+                ),
+                (mint, mint_account),
+                (token, token_account.clone()),
+            ]));
+            context.process_and_validate_instruction(
+                &preview_close_token(
+                    program,
+                    admin,
+                    &[b"cleanup-test", &[bump]],
+                    token,
+                    mint,
+                    wrong_token_program,
+                ),
+                &[refusal],
+            );
+            assert_eq!(
+                context.account_store.borrow().get(&token).unwrap(),
+                &token_account
+            );
+        }
     }
 }
 
@@ -194,7 +333,7 @@ fn default_builds_have_no_preview_administrative_entrypoint() {
                 ]));
         for discriminator in [
             vec![36, 68, 214, 114, 46, 227, 146, 228],
-            vec![64, 227, 93, 185, 105, 167, 223, 84],
+            PREVIEW_CLOSE_TOKEN.to_vec(),
             vec![229, 176, 14, 73, 64, 247, 65, 76],
         ] {
             let ix = Instruction {
