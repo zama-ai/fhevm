@@ -5,19 +5,13 @@ import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
 import type { SolanaPublicDecryptCertifier, SolanaPublicHandleEntry } from './publicDecryptCertificate.js';
 import { MAX_SOLANA_DECRYPT_HANDLES } from '../userDecrypt/request.js';
-import {
-  hostAccountData,
-  publicDecryptAbortCheck,
-  readActiveKmsRouting,
-  solanaPublicDecryptExtraData,
-} from './publicDecryptCertificate.js';
+import { hostAccountData, publicDecryptAbortCheck, solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
+import { liveKmsContext, readActiveKmsRouting, type SolanaHostKmsReads } from './hostKms.js';
 import {
   findHostConfigPda,
   findKmsContextPda,
   getHostConfigDecoder,
-  getKmsContextDecoder,
   HOST_CONFIG_DISCRIMINATOR,
-  KMS_CONTEXT_DISCRIMINATOR,
 } from '@fhevm/solana-zama-host';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { bytesToHex, concatBytes, hexToBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
@@ -94,11 +88,17 @@ export type SolanaDecryptPublicValuesParameters = Omit<
  */
 export async function decryptPublicValue(
   client: SolanaClientParameters,
+  host: SolanaHostKmsReads,
   parameters: SolanaDecryptPublicValueParameters,
   certify: SolanaPublicDecryptCertifier,
 ): Promise<TypedValue> {
   const { handle, encryptedStore, ...shared } = parameters;
-  const [value] = await decryptPublicValues(client, { ...shared, entries: [{ handle, encryptedStore }] }, certify);
+  const [value] = await decryptPublicValues(
+    client,
+    host,
+    { ...shared, entries: [{ handle, encryptedStore }] },
+    certify,
+  );
   if (value === undefined) throw new Error('Public decrypt returned no value');
   return value;
 }
@@ -109,6 +109,7 @@ export async function decryptPublicValue(
  */
 export async function decryptPublicValues(
   client: SolanaClientParameters,
+  host: SolanaHostKmsReads,
   parameters: SolanaDecryptPublicValuesParameters,
   certify: SolanaPublicDecryptCertifier,
 ): Promise<TypedValue[]> {
@@ -123,7 +124,7 @@ export async function decryptPublicValues(
   if (handles.some((handle) => BigInt(handle.chainId) !== client.chain.id))
     throw new Error('Public decrypt handle belongs to another chain');
   const programAddress = solanaHostProgram(client.chain);
-  const routing = await readActiveKmsRouting(client, signal);
+  const routing = await readActiveKmsRouting(client.chain, host, signal);
   const { contextId, epochId } = routing;
   const claim = await certify({ ...routing, entries: parameters.entries, options: parameters.options });
   // Whatever certified it, the certificate must name the context and epoch requested.
@@ -149,9 +150,7 @@ export async function decryptPublicValues(
     throw new Error('Host configuration does not match the client');
   if (config.decryptionContract.every((byte) => byte === 0))
     throw new Error('Host decryption contract is not configured');
-  const kms = getKmsContextDecoder().decode(hostAccountData(contextAccount, programAddress, KMS_CONTEXT_DISCRIMINATOR));
-  if (kms.bump !== contextBump || kms.destroyed || !unsafeBytesEquals(new Uint8Array(kms.contextId), contextId))
-    throw new Error('Invalid or destroyed KMS context');
+  const kms = liveKmsContext(contextAccount, programAddress, contextId, contextBump);
   // One 32-byte ABI word per handle, in request order.
   const cleartext = hexToBytes(claim.abiEncodedCleartext);
   if (cleartext.length !== 32 * handles.length) throw new Error('Public decrypt cleartext must be 32 bytes per handle');

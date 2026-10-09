@@ -9,10 +9,8 @@ import { afterEach } from "bun:test";
 
 import { getAddressEncoder } from "@solana/kit";
 
-import { bytes32HexFromId } from "../../../src/solana/addresses";
 import type { FheVerticalConfig } from "../../../src/solana/fhe-vertical";
 import { readHostChainId, type GeneratedKeypair, type SolanaProvisioningContext } from "../../../src/solana/provision";
-import { readDecryptTrustInputs } from "../../../src/solana/target";
 import { loadEnv, type TestEnv } from "../loadEnv";
 import { openRunWallets, type RunWallets } from "../wallets";
 import { openProvisioning } from "./provisioning";
@@ -46,22 +44,15 @@ export const verticalSetup = async (): Promise<VerticalTestSetup> => {
   const wallets = openRunWallets(env, context);
   activeWallets.add(wallets);
   const wallet = await wallets.fresh(env.funding.primarySol);
-  // The permit path's trust inputs (party ids follow the signer registry order). The local stack
-  // runs the test FHE parameter set.
-  const trust = await readDecryptTrustInputs(env);
+  // The local stack runs the test FHE parameter set; the SDK reads the KMS trust from zama-host.
   const config: FheVerticalConfig = {
     rpcUrl: env.rpcUrl,
     relayerUrl: env.relayerUrl,
     // From the live HostConfig account, not the env: the decrypts must bind the chain id the
     // deployed host actually signs for.
     chainId: await readHostChainId(context),
-    userDecryptContextId: env.userDecryptContextId ?? trust.kmsContextId.toString(),
     verifyingProgramId: env.aclProgram,
-    kmsSigners: trust.kmsSigners,
-    kmsEpochId: bytes32HexFromId(trust.kmsEpochId),
     fheParameter: "test",
-    gatewayChainId: trust.gatewayChainId.toString(),
-    gatewayDecryptionContract: trust.decryptionContract,
   };
   const secretKey = `0x${Buffer.from(wallet.bytes.subarray(0, 32)).toString("hex")}`;
   const walletHex = `0x${Buffer.from(getAddressEncoder().encode(wallet.signer.address)).toString("hex")}` as const;

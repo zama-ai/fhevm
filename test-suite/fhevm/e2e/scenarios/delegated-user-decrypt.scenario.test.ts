@@ -45,7 +45,7 @@ import {
   setFhevmRuntimeConfig,
   solanaHostProgram,
   solanaPermitWalletFromSecretKey,
-  type SolanaDecryptTrust,
+  type FhevmSolanaChain,
 } from "@fhevm/sdk/solana";
 import { getCloseTransientStoreInstruction, getOpenTransientStoreInstruction } from "@fhevm/solana-zama-host";
 
@@ -61,7 +61,6 @@ import {
   type SpecimenValue,
 } from "../../src/solana/specimens";
 import { squadsGenesisExtras } from "../../src/solana/squads";
-import { solanaUserDecryptContext } from "../../src/solana/addresses";
 import {
   approveProposal,
   assertSquadsDeployed,
@@ -84,7 +83,7 @@ const addressBytes = (address: Address): Uint8Array => new Uint8Array(getAddress
 
 /** How long past the host's current time every grant here lives: well beyond one arc. */
 const EXPIRY_SECONDS_AHEAD = 3_600n;
-type Bytes32Hex = SolanaDecryptTrust["kmsContextId"];
+type Bytes32Hex = FhevmSolanaChain["fhevm"]["programs"]["host"]["address"];
 
 /** The delegate's decrypt of the delegator's value: the permit is the delegate's, `ownerAddress` names whose allow. */
 const delegatedDecrypt = (
@@ -177,19 +176,7 @@ describe("solana delegated user-decrypt", () => {
         // job. Asserted at the wire: both POST bodies are byte-identical and both answers carry
         // the same job id. The interception passes everything through untouched.
         setFhevmRuntimeConfig({ auth: relayerAuth() });
-        const trust: SolanaDecryptTrust = {
-          kmsSigners: config.kmsSigners.map((address, index) => ({ partyId: index + 1, address })),
-          kmsContextId: solanaUserDecryptContext(config.userDecryptContextId) as SolanaDecryptTrust["kmsContextId"],
-          kmsEpochId: config.kmsEpochId as SolanaDecryptTrust["kmsEpochId"],
-          fheParameter: config.fheParameter,
-          gatewayEip712Domain: {
-            name: "Decryption",
-            version: "1",
-            chainId: BigInt(config.gatewayChainId),
-            verifyingContract: config.gatewayDecryptionContract,
-          } as SolanaDecryptTrust["gatewayEip712Domain"],
-        };
-        const client = createFhevmDecryptClient({ chain, rpc: context.rpc, trust });
+        const client = createFhevmDecryptClient({ chain, rpc: context.rpc, fheParameter: config.fheParameter });
         const session = await client.signPermit({
           wallet: solanaPermitWalletFromSecretKey(delegate.bytes.subarray(0, 32)),
           durationSeconds: 3_600n,

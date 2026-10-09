@@ -48,20 +48,9 @@ export type ActiveKmsPair = {
 export const bytes32HexFromId = (id: bigint): `0x${string}` =>
   `0x${id.toString(16).padStart(64, "0")}` as `0x${string}`;
 
-/** Parses a user-decrypt KMS context id given as an unsigned decimal (the env form) into bytes32 hex. */
-export const solanaUserDecryptContext = (decimal: string): `0x${string}` => {
-  if (!/^\d+$/.test(decimal)) throw new Error("user-decrypt context id must be an unsigned decimal integer");
-  const value = BigInt(decimal);
-  if (value >= 1n << 256n) throw new Error("user-decrypt context id must fit in 32 bytes");
-  return bytes32HexFromId(value);
-};
-
 /**
- * Reads the active KMS context/epoch pair from the deployed `ProtocolConfig` — the contract on the
- * primary EVM host chain the KMS Connector itself validates each permit's signed pair against, so a
- * permit built from this read names a pair the Connector will serve. Nothing here may be assumed:
- * even a fresh stack activates a type-tagged, non-zero epoch id, so seeding zero (or any other
- * guess) is rejected before the request reaches KMS.
+ * Reads the active KMS context/epoch pair from the deployed `ProtocolConfig`, the contract on the
+ * primary EVM host chain the KMS Connector validates each request's pair against.
  */
 export const readActiveKmsPair = async (parameters: {
   readonly hostRpcUrl: string;

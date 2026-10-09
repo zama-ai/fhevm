@@ -42,7 +42,6 @@ const toOverrides = (config: SolanaDemoConfig) => ({
   gatewayRpcUrl: config.gatewayRpcUrl,
   chainId: config.chainId,
   aclProgram: config.aclProgram,
-  userDecryptContextId: config.userDecryptContextId,
 });
 
 /**

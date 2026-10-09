@@ -11,8 +11,9 @@ import { createSolanaRpc } from '@solana/kit';
 
 import type { FhevmSolanaChain } from '../../../core/types/fhevmSolanaChain.js';
 import type { SolanaPermitSession } from '../../userDecrypt/index.js';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { asBytes32Hex } from '../../../core/base/bytes.js';
+import * as hostKms from '../../actions/hostKms.js';
 import { createFhevmDecryptClient } from '../createFhevmDecryptClient.js';
 import { setFhevmRuntimeConfig } from '../../internal/config.js';
 
@@ -26,31 +27,31 @@ const chain = {
   },
 } as const satisfies FhevmSolanaChain;
 
-const trust = {
-  kmsSigners: [{ partyId: 1, address: '0x0000000000000000000000000000000000000001' }],
-  kmsContextId: asBytes32Hex(`0x${'33'.repeat(32)}`),
-  kmsEpochId: asBytes32Hex(`0x${'44'.repeat(32)}`),
-  fheParameter: 'test',
-  gatewayEip712Domain: {
-    name: 'Decryption',
-    version: '1',
-    chainId: 31337n,
-    verifyingContract: '0x0000000000000000000000000000000000000042',
-  },
-};
-
 /** Just enough session for `userDecrypt` to reach the transport; nothing here is ever signed. */
 const session = {
-  signedPermit: { fields: { userAddress: new Uint8Array(32).fill(0x07) } },
+  signedPermit: {
+    fields: { userAddress: new Uint8Array(32).fill(0x07), kmsRouting: { kmsContextId: new Uint8Array(32) } },
+  },
 } as unknown as SolanaPermitSession;
 
 beforeAll(() => {
   setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: 'runtime-key' } });
+  // The host's KMS trust is not what these tests pin; reading it would need a validator.
+  vi.spyOn(hostKms, 'userDecryptVerification').mockResolvedValue({
+    signers: [],
+    fheParameter: 'test',
+    gatewayEip712Domain: {
+      name: 'Decryption',
+      version: '1',
+      chainId: 31337n,
+      verifyingContract: '0x0000000000000000000000000000000000000042',
+    },
+  });
 });
 
 describe('relayer authentication on the permit path', () => {
   it('carries the runtime-configured auth into the user-decrypt transport', async () => {
-    const client = createFhevmDecryptClient({ rpc, chain, trust });
+    const client = createFhevmDecryptClient({ rpc, chain, fheParameter: 'test' });
 
     await expect(client.decryptValues({ session, entries: [] })).rejects.toThrow(
       'HTTPS is required when auth credentials are provided',
@@ -58,7 +59,7 @@ describe('relayer authentication on the permit path', () => {
   });
 
   it('lets a per-call option override the runtime auth', async () => {
-    const client = createFhevmDecryptClient({ rpc, chain, trust });
+    const client = createFhevmDecryptClient({ rpc, chain, fheParameter: 'test' });
 
     // With auth overridden away, the http URL is admissible again and the run proceeds past the
     // transport to the next refusal — the empty handle list.

@@ -23,6 +23,7 @@ import { setFhevmRuntimeConfig } from '../internal/config.js';
 import { getSolanaRuntime } from '../internal/runtime.js';
 import { verifySolanaUserDecryptPlaintexts, verifySolanaUserDecryptResponse } from './index.js';
 import { hexToBytes } from '../../core/base/bytes.js';
+import { userDecryptVerification, type SolanaHostKmsReads } from '../actions/hostKms.js';
 
 /* eslint-disable @typescript-eslint/naming-convention -- KMS transcript wire fields */
 interface Transcript {
@@ -207,6 +208,30 @@ describe('the response verification', () => {
     }));
     await expect(verify({ shares: included })).rejects.toThrow(PASSED_THE_CLIENT);
     await expect(verify({ shares: included, signers: swapped })).rejects.toThrow(NOT_ENOUGH_SHARES);
+  });
+
+  // The host registers a context's signers in party order, and the client numbers them 1..n from
+  // that order: a context whose table swaps two parties trusts each under the other's address.
+  it('passes shares under a KmsContext in party order, and refuses them once two parties swap places', async () => {
+    const included = shares.slice(0, 2 * t + 1);
+    const inPartyOrder = [...signers].sort((a, b) => a.partyId - b.partyId).map(({ address }) => hexToBytes(address));
+    const trustedUnder = async (registered: readonly Uint8Array[]) => {
+      const host = {
+        config: async () => ({
+          gatewayChainId: request.gatewayEip712Domain.chainId,
+          decryptionContract: hexToBytes(request.gatewayEip712Domain.verifyingContract),
+        }),
+        kmsContext: async () => ({ signers: registered }),
+      } as unknown as SolanaHostKmsReads;
+      // The transcript is signed under the KMS test's own domain, so only the signer table is taken.
+      const { signers: trusted } = await userDecryptVerification(host, new Uint8Array(32), transcript.fhe_parameter);
+      return verify({ shares: included, signers: [...trusted] });
+    };
+    // Shares 0-2 are parties 3, 4 and 2: swapping parties 1 and 3 misplaces an included share.
+    const [party1, party2, party3, ...rest] = inPartyOrder;
+    if (party1 === undefined || party2 === undefined || party3 === undefined) throw new Error('too few parties');
+    await expect(trustedUnder(inPartyOrder)).rejects.toThrow(PASSED_THE_CLIENT);
+    await expect(trustedUnder([party3, party2, party1, ...rest])).rejects.toThrow(NOT_ENOUGH_SHARES);
   });
 
   it('refuses shares whose node signatures do not verify', async () => {

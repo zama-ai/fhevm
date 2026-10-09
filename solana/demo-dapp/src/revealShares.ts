@@ -11,7 +11,6 @@ import {
   createFhevmBaseClient,
   defineFhevmSolanaChain,
   setFhevmRuntimeConfig,
-  type SolanaDecryptTrust,
 } from '@fhevm/sdk/solana';
 import { getEncryptedStore, tokenStoreAddress } from './vault/index.js';
 import type { DemoSession } from './demoSession';
@@ -33,31 +32,6 @@ export type ConfidentialBalanceEvidence = {
 
 const handleHex = (handle: Uint8Array): string =>
   `0x${Array.from(handle, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
-
-const asBytes32BigEndian = (decimal: string): Uint8Array => {
-  const bytes = new Uint8Array(32);
-  let value = BigInt(decimal);
-  for (let index = 31; index >= 0 && value > 0n; index -= 1) {
-    bytes[index] = Number(value & 0xffn);
-    value >>= 8n;
-  }
-  if (value > 0n) throw new Error(`${decimal} does not fit in 32 bytes`);
-  return bytes;
-};
-
-/** The trust configuration the seeded demo deployment pins; party ids follow the registry order. */
-const demoTrust = (config: DemoSession['config']): SolanaDecryptTrust => ({
-  kmsSigners: config.kmsSigners.map((address, index) => ({ partyId: index + 1, address })),
-  kmsContextId: handleHex(asBytes32BigEndian(config.userDecryptContextId)) as Bytes32Hex,
-  kmsEpochId: config.kmsEpochId as Bytes32Hex,
-  fheParameter: config.fheParameter,
-  gatewayEip712Domain: {
-    name: 'Decryption',
-    version: '1',
-    chainId: BigInt(config.gatewayChainId),
-    verifyingContract: config.gatewayDecryptionContract,
-  },
-});
 
 /** One-shot exact-handle reveal; the clear balance is never persisted. */
 const revealConfidentialBalance = async (
@@ -91,20 +65,17 @@ const revealConfidentialBalance = async (
       `${session.wallet.name} does not support solana:signOffchainMessage, the only channel a reveal is signed through; connect a wallet that does, or use the demo wallet`,
     );
   }
-  const trust = demoTrust(session.config);
-  const client = createFhevmDecryptClient({ chain, rpc, trust });
+  const client = createFhevmDecryptClient({ chain, rpc, fheParameter: session.config.fheParameter });
   const state = await getEncryptedStore(client, encryptedStore);
   await client.ready;
   const startedAt = performance.now();
-  // One confirmation per (wallet, permit scope, KMS route) and validity window: repeated views of
-  // the same private balance reuse the signed permit instead of prompting the wallet again.
+  // One confirmation per (wallet, permit scope) and validity window: repeated views of the same
+  // private balance reuse the signed permit instead of prompting the wallet again.
   const permit = await permitSessionFor(
     {
       walletAddress: permitWallet.account.address,
       chainId: session.config.chainId,
       permitScope: `${permitScope.program}/${permitScope.scope}`,
-      kmsContextId: trust.kmsContextId,
-      kmsEpochId: trust.kmsEpochId,
     },
     () => client.signPermit({ wallet: permitWallet, durationSeconds: 3_600n, allowedScopes: [permitScope] }),
   );

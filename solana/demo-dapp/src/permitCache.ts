@@ -3,22 +3,21 @@
 // A permit is signed once and stays reusable for its whole validity window, so asking the wallet
 // again for every private-balance view spends the user's attention on a signature that changes
 // nothing. The cache holds one signed session per question the permit answers — the wallet, the
-// chain, the permit's scope and the KMS route — and hands it back until the window is close
-// enough to expiry that a decrypt started now could outlive it. A different wallet, a reseeded
-// deployment (new mints, new KMS pair) or an expired window all miss the cache and prompt again.
+// chain and the permit's scope — and hands it back until the window is close enough to expiry that
+// a decrypt started now could outlive it. A different wallet, a reseeded deployment (new mints) or
+// an expired window all miss the cache and prompt again. The KMS route is not part of the key: the
+// client mints each permit for the route zama-host holds, and only a reseed changes it here.
 //
 // Only the signed session is cached — never a clear balance: what a reveal decrypts is still
 // fetched and decrypted on every view.
 
 import type { SolanaPermitSession } from '@fhevm/sdk/solana';
 
-/** The identity a cached permit answers for: one wallet, one permit scope, one KMS route. */
+/** The identity a cached permit answers for: one wallet, one chain, one permit scope. */
 export type PermitCacheKey = {
   readonly walletAddress: string;
   readonly chainId: string;
   readonly permitScope: string;
-  readonly kmsContextId: string;
-  readonly kmsEpochId: string;
 };
 
 /**
@@ -31,7 +30,7 @@ export const PERMIT_REUSE_SAFETY_MARGIN_SECONDS = 60n;
 const cache = new Map<string, SolanaPermitSession>();
 
 const cacheKeyOf = (key: PermitCacheKey): string =>
-  [key.walletAddress, key.chainId, key.permitScope, key.kmsContextId, key.kmsEpochId].join('|');
+  [key.walletAddress, key.chainId, key.permitScope].join('|');
 
 /** Whether the permit's own signed window still covers now, with the safety margin to spare. */
 export const permitSessionCoversNow = (session: SolanaPermitSession, nowSeconds: bigint): boolean => {

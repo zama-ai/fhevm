@@ -5,8 +5,8 @@ import * as zamaHost from '@fhevm/solana-zama-host';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSolanaRpc } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
-import type { SolanaDecryptTrust } from '../clients/decorators/permitDecrypt.js';
-import { asBytes32Hex, bytesToHex } from '../../core/base/bytes.js';
+import * as hostKms from '../actions/hostKms.js';
+import { asBytes32Hex } from '../../core/base/bytes.js';
 import { buildHandle } from '../../core/handle/FhevmHandle.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 import { PERMIT_TRANSPORT_KEY_LEN, solanaPermitWalletFromSecretKey } from '../permit/index.js';
@@ -29,18 +29,6 @@ const chain = {
 } as const satisfies FhevmSolanaChain;
 const decryptionContract = new Uint8Array(20).fill(0xdc);
 const kmsSigner = new Uint8Array(20).fill(0x5e);
-const trust: SolanaDecryptTrust = {
-  kmsSigners: [{ partyId: 1, address: bytesToHex(kmsSigner) }],
-  kmsContextId: asBytes32Hex(`0x${'00'.repeat(32)}`),
-  kmsEpochId: asBytes32Hex(`0x${'00'.repeat(32)}`),
-  fheParameter: 'test',
-  gatewayEip712Domain: {
-    name: 'Decryption',
-    version: '1',
-    chainId: 7n,
-    verifyingContract: bytesToHex(decryptionContract),
-  },
-};
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -48,6 +36,10 @@ describe('createFhevmCleartextDecryptClient', () => {
   it('signs a permit and answers a user decryption without the KMS WASM', async () => {
     setFhevmRuntimeConfig({});
     vi.spyOn(revokePermits, 'fetchSolanaPermitInvalidation').mockResolvedValue(0n);
+    vi.spyOn(hostKms, 'readActiveKmsRouting').mockResolvedValue({
+      contextId: new Uint8Array(32).fill(0x33),
+      epochId: new Uint8Array(32).fill(0x44),
+    });
     vi.spyOn(zamaHost, 'fetchHostConfig').mockResolvedValue({
       data: { chainId: chain.id, gatewayChainId: 7n, decryptionContract },
     } as unknown as Awaited<ReturnType<typeof zamaHost.fetchHostConfig>>);
@@ -60,7 +52,6 @@ describe('createFhevmCleartextDecryptClient', () => {
     const client = createFhevmCleartextDecryptClient({
       chain,
       rpc: createSolanaRpc('http://127.0.0.1:1'),
-      trust,
       readMerkleProofs: () => Promise.reject(new Error('the leaf record is not read here')),
     });
 

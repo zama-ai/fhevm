@@ -5,7 +5,6 @@ export { createFhevmBaseClient } from './clients/createFhevmBaseClient.js';
 export { createFhevmDecryptClient } from './clients/createFhevmDecryptClient.js';
 export type { FhevmSolanaDecryptClient, SolanaDecryptValueParameters } from './clients/createFhevmDecryptClient.js';
 export type {
-  SolanaDecryptTrust,
   SolanaPermitDecryptActions,
   SolanaSignPermitParameters,
   SolanaUserDecryptEntry,
@@ -20,7 +19,6 @@ export {
 } from './permit/index.js';
 export type { SolanaPermitWallet, SolanaSignedPermit, SolanaPermitWarning } from './permit/index.js';
 export type { SolanaPermitSession } from './userDecrypt/execute.js';
-export type { SolanaKmsSigner, SolanaGatewayEip712Domain } from './userDecrypt/response.js';
 export { SolanaUserDecryptRunError } from './userDecrypt/session.js';
 export { SolanaUserDecryptRequestError } from './userDecrypt/request.js';
 export type {

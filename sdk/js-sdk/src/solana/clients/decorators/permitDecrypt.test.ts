@@ -5,6 +5,12 @@ import {
   getBase58Decoder,
   getProgramDerivedAddress,
 } from '@solana/kit';
+import {
+  findHostConfigPda,
+  findKmsContextPda,
+  getHostConfigEncoder,
+  getKmsContextEncoder,
+} from '@fhevm/solana-zama-host';
 import type { SolanaRpc } from '../../encryptedStore.js';
 import { RelayerAbortError } from '../../../core/errors/RelayerAbortError.js';
 // The permit-path actions, assembled onto the client.
@@ -13,8 +19,7 @@ import { RelayerAbortError } from '../../../core/errors/RelayerAbortError.js';
 // derived fields, and a mistake here is signed by a real wallet and refused by every verifier
 // after it. The wallet below is the conforming one — it builds the envelope itself around the
 // text it is handed — and the transport pair is the real TKMS module's, so the permit that
-// comes out is exactly what production would mint. Construction fails fast on a chain that does
-// not name the identity the path stands on.
+// comes out is exactly what production would mint.
 
 import type { FhevmSolanaChain } from '../../../core/types/fhevmSolanaChain.js';
 import { RelayerTimeoutError } from '../../../core/errors/RelayerTimeoutError.js';
@@ -25,6 +30,7 @@ import { PERMIT_TRANSPORT_KEY_LEN, SOLANA_SIGN_OFFCHAIN_MESSAGE_FEATURE } from '
 import { compileSolanaPermitEnvelope } from '../../permit/envelope.js';
 import { createFhevmDecryptClient } from '../createFhevmDecryptClient.js';
 import * as responseVerification from '../../userDecrypt/response.js';
+import * as hostKms from '../../actions/hostKms.js';
 import { setFhevmRuntimeConfig } from '../../internal/config.js';
 import { getSolanaRuntime } from '../../internal/runtime.js';
 import { initTkmsModule } from '../../../core/modules/decrypt/module/init-p.js';
@@ -46,18 +52,54 @@ const chain = {
   },
 } as const satisfies FhevmSolanaChain;
 
-const trust = {
-  kmsSigners: [{ partyId: 1, address: '0x0000000000000000000000000000000000000001' }],
-  kmsContextId: CONTEXT_ID,
-  kmsEpochId: EPOCH_ID,
-  fheParameter: 'test',
-  gatewayEip712Domain: {
-    name: 'Decryption',
-    version: '1',
-    chainId: 31337n,
-    verifyingContract: '0x0000000000000000000000000000000000000042',
-  },
-};
+// The host's KMS trust, as the client reads it: `HostConfig` names the active context and epoch,
+// and that context's `KmsContext` lists its signers.
+const HOST_PROGRAM = getAddressDecoder().decode(hexToBytes32(PROGRAM_ID));
+const [HOST_CONFIG_ADDRESS, HOST_CONFIG_BUMP] = await findHostConfigPda({ programAddress: HOST_PROGRAM });
+const [, KMS_CONTEXT_BUMP] = await findKmsContextPda(
+  { contextId: hexToBytes32(CONTEXT_ID) },
+  { programAddress: HOST_PROGRAM },
+);
+const hostAccount = (data: Uint8Array) => ({
+  data: [Buffer.from(data).toString('base64'), 'base64'],
+  owner: HOST_PROGRAM,
+  executable: false,
+  lamports: 1n,
+  space: BigInt(data.length),
+});
+const hostConfigAccount = hostAccount(
+  new Uint8Array(
+    getHostConfigEncoder().encode({
+      admin: HOST_PROGRAM,
+      chainId: chain.id,
+      gatewayChainId: 31337n,
+      inputVerificationContract: new Uint8Array(20),
+      coprocessorSigners: Array.from({ length: 8 }, () => new Uint8Array(20)),
+      coprocessorSignerCount: 1,
+      coprocessorThreshold: 1,
+      decryptionContract: new Uint8Array(20).fill(0x42),
+      currentKmsContextId: hexToBytes32(CONTEXT_ID),
+      currentKmsEpochId: hexToBytes32(EPOCH_ID),
+      paused: { execution: false, verifiedInputs: false, aclWrites: false },
+      grantDenyListEnabled: false,
+      maxHcuPerTx: 1n,
+      maxHcuDepthPerTx: 1n,
+      hcuBlockCapPerApp: 1n,
+      bump: HOST_CONFIG_BUMP,
+    }),
+  ),
+);
+const kmsContextAccount = hostAccount(
+  new Uint8Array(
+    getKmsContextEncoder().encode({
+      contextId: hexToBytes32(CONTEXT_ID),
+      signers: [new Uint8Array(20).fill(0x01)],
+      thresholds: { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 },
+      destroyed: false,
+      bump: KMS_CONTEXT_BUMP,
+    }),
+  ),
+);
 
 const USER_SEED = new Uint8Array(32).fill(0x07);
 const USER_PUBKEY = ed25519.getPublicKey(USER_SEED);
@@ -93,11 +135,17 @@ function conformingWallet() {
   };
 }
 
-const rpc = { getAccountInfo: vi.fn(() => ({ send: async () => ({ value: null }) })) } as unknown as SolanaRpc;
+// No permit-invalidation record: every account but the host's KMS trust is absent.
+const rpc = {
+  getAccountInfo: vi.fn((address: Address) => ({
+    send: async () => ({ value: address === HOST_CONFIG_ADDRESS ? hostConfigAccount : null }),
+  })),
+  getMultipleAccounts: vi.fn(() => ({ send: async () => ({ value: [kmsContextAccount] }) })),
+} as unknown as SolanaRpc;
 
 function client() {
   setFhevmRuntimeConfig({});
-  return createFhevmDecryptClient({ rpc, chain, trust });
+  return createFhevmDecryptClient({ rpc, chain, fheParameter: 'test' });
 }
 
 const scopeBytes = (program: Address, scope: Address): Uint8Array => {
@@ -115,25 +163,8 @@ afterEach(() => {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-describe('assembling the permit-path client', () => {
-  it('rejects a missing verification domain before signing or submitting', () => {
-    setFhevmRuntimeConfig({});
-    expect(() =>
-      createFhevmDecryptClient({
-        rpc,
-        chain,
-        trust: {
-          ...trust,
-          // @ts-expect-error Exercise an untyped caller's incomplete deployment configuration.
-          gatewayEip712Domain: undefined,
-        },
-      }),
-    ).toThrow('Missing required field: trust.gatewayEip712Domain');
-  });
-});
-
 describe('signing a permit through the client', () => {
-  it('mints the fields the configuration pins, and one wallet prompt signs them', async () => {
+  it('mints the fields the host and chain pin, and one wallet prompt signs them', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-08-18T12:34:56Z'));
     const { wallet, signOffchainMessage } = conformingWallet();
@@ -274,6 +305,20 @@ describe('running a user decryption through the client', () => {
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('')}`;
 
+  // Deriving the KMS context PDA hashes off the main thread, which fake timers do not drive; the tests
+  // that advance them pin the deadline, not the host read.
+  const trustHostVerification = () =>
+    vi.spyOn(hostKms, 'userDecryptVerification').mockResolvedValue({
+      signers: [{ partyId: 1, address: '0x0101010101010101010101010101010101010101' }],
+      fheParameter: 'test',
+      gatewayEip712Domain: {
+        name: 'Decryption',
+        version: '1',
+        chainId: 31337n,
+        verifyingContract: '0x4242424242424242424242424242424242424242',
+      },
+    });
+
   function jsonResponse(body: unknown, status = 200): Response {
     return new Response(JSON.stringify(body), {
       status,
@@ -343,6 +388,7 @@ describe('running a user decryption through the client', () => {
       await pending;
       return [];
     });
+    trustHostVerification();
     vi.useFakeTimers();
     vi.stubGlobal(
       'fetch',
@@ -387,6 +433,7 @@ describe('running a user decryption through the client', () => {
     const { wallet, signOffchainMessage } = conformingWallet();
     const decryptClient = client();
     const session = await decryptClient.signPermit({ wallet, durationSeconds: 3_600n });
+    trustHostVerification();
     vi.useFakeTimers();
     const fetch = vi
       .fn()
@@ -416,6 +463,7 @@ describe('running a user decryption through the client', () => {
       const { wallet, signOffchainMessage } = conformingWallet();
       const decryptClient = client();
       const session = await decryptClient.signPermit({ wallet, durationSeconds: 3_600n });
+      trustHostVerification();
       vi.useFakeTimers();
       const fetch = vi
         .fn()

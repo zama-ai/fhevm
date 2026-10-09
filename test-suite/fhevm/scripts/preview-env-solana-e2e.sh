@@ -20,7 +20,7 @@
 #
 # What it gathers from the namespace, and why:
 #   - gateway/host contract addresses (configmaps) into the fhevm-cli address layout under
-#     <state-dir>, so `readGatewayBootstrapInputs`/`readActiveKmsPair` read them unchanged;
+#     <state-dir>, so the address readers in `src/solana/addresses.ts` read them unchanged;
 #   - the devnet RPC URL (secret `solana-rpc`; the websocket URL is the same endpoint over wss);
 #   - the deployer keypair (secret `solana-deployer`) unless SOLANA_DEPLOYER_KEYPAIR already
 #     names a funded devnet wallet; it funds every scenario actor by transfer;

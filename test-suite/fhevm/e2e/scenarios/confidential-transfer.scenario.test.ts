@@ -50,15 +50,10 @@ describe("solana confidential-transfer scenario", () => {
           rpcUrl: env.rpcUrl,
           wsUrl: env.wsUrl,
           relayerUrl: env.relayerUrl,
-          hostRpcUrl: env.hostRpcUrl,
-          gatewayRpcUrl: env.gatewayRpcUrl,
           aclProgram: env.aclProgram,
           funding: env.funding,
           funderKeypairPath: env.capabilities.faucet ? undefined : env.roots.deployerKeypairPath,
           waitForHandle: stack.waitForSnsCommit,
-          // Explicit env override only; otherwise the decrypts read the active KMS pair live from
-          // the deployed ProtocolConfig.
-          userDecryptContextId: env.userDecryptContextId,
         }),
       );
     },

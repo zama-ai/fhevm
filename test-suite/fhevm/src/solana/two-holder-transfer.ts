@@ -6,7 +6,6 @@ import { recordRunWallet } from "./recovery";
 import { address, getAddressEncoder, type Address, type TransactionSigner } from "@solana/kit";
 import { fetchSysvarClock } from "@solana/sysvars";
 
-import { bytes32HexFromId } from "./addresses";
 import { relayerAuth } from "../layout";
 import { vaultModule } from "./lazy-modules";
 import {
@@ -22,7 +21,7 @@ import {
   type BalanceStore,
   type SolanaProvisioningContext,
 } from "./provision";
-import { loadSolanaSdk, readDecryptTrustInputs } from "./target";
+import { loadSolanaSdk } from "./target";
 import { expectCleartext } from "./user-decrypt-result";
 import { withHostReachableFetch } from "../utils/fs";
 import { timed } from "../utils/timing";
@@ -42,15 +41,7 @@ export type TwoHolderConfig = {
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly relayerUrl: string;
-  readonly gatewayRpcUrl: string;
-  readonly hostRpcUrl: string;
   readonly aclProgram: `0x${string}`;
-  /**
-   * Explicit user-decrypt context override, as an unsigned decimal. When absent, the decrypts use
-   * the active KMS context read live from the deployed `ProtocolConfig` — the pair the KMS
-   * Connector actually serves.
-   */
-  readonly userDecryptContextId: string | undefined;
   /** SOL each holder starts with: Alice pays every provisioning rent and the arc's fees, Bob his own account. */
   readonly funding: { readonly primarySol: number; readonly secondarySol: number };
   /** Resolves once a handle's ciphertext is decryptable: the SNS commit on the real stack. */
@@ -97,19 +88,13 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
     // Loaded here, not at the top: `bun test src` runs this module's orchestration test without
     // the SDK installed.
     const { userDecrypt } = await import("./fhe-vertical");
-    const trust = await readDecryptTrustInputs(cfg);
     return userDecrypt(
       {
         rpcUrl: cfg.rpcUrl,
         relayerUrl: cfg.relayerUrl,
         chainId: BigInt(state.chainId),
-        userDecryptContextId: cfg.userDecryptContextId ?? trust.kmsContextId.toString(),
         verifyingProgramId: cfg.aclProgram,
-        kmsSigners: trust.kmsSigners,
-        kmsEpochId: bytes32HexFromId(trust.kmsEpochId),
         fheParameter: "test",
-        gatewayChainId: trust.gatewayChainId.toString(),
-        gatewayDecryptionContract: trust.decryptionContract,
       },
       {
         // The balance account the probe derived and verified; the Connector reads it and proves

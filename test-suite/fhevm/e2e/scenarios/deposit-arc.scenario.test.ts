@@ -32,7 +32,6 @@ import { loadPersonas, until } from "../harness";
 import { withHostReachableFetch } from "../../src/utils/fs";
 import { waitForSnsCommit } from "../../src/solana/sns";
 import { relayerAuth, solanaDemoSmokeMarkerPath } from "../../src/layout";
-import { solanaUserDecryptContext } from "../../src/solana/addresses";
 import { targetsCleartext } from "../../src/solana/target";
 import { depositRoots, resolveDemoConfigPath, type VaultDemoRoots } from "../../demo/config";
 import { readDemoAuthorization } from "../../demo/lifecycle";
@@ -421,19 +420,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const decryptClient = createFhevmDecryptClient({
         chain: decryptChain,
         rpc,
-        trust: {
-          // Party ids follow the registry order — the same assumption the EVM SDK path makes.
-          kmsSigners: config.kmsSigners.map((signer, index) => ({ partyId: index + 1, address: signer })),
-          kmsContextId: asBytes32Hex(solanaUserDecryptContext(config.userDecryptContextId)),
-          kmsEpochId: asBytes32Hex(config.kmsEpochId),
-          fheParameter: config.fheParameter,
-          gatewayEip712Domain: {
-            name: "Decryption",
-            version: "1",
-            chainId: BigInt(config.gatewayChainId),
-            verifyingContract: config.gatewayDecryptionContract,
-          },
-        },
+        fheParameter: config.fheParameter,
       });
       await decryptClient.ready;
       const permitSession = await decryptClient.signPermit({ wallet: aliceWallet, durationSeconds: 3_600n });
@@ -566,13 +553,7 @@ test.skipIf(!runsDemoScenarios)(
     const chain = defineFhevmSolanaChain({ id: BigInt(config.chainId), fhevm: {
       relayerUrl: env.relayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } },
     } });
-    const decrypt = createFhevmDecryptClient({ chain, rpc, trust: {
-      kmsSigners: config.kmsSigners.map((address, index) => ({ partyId: index + 1, address })),
-      kmsContextId: asBytes32Hex(solanaUserDecryptContext(config.userDecryptContextId)),
-      kmsEpochId: asBytes32Hex(config.kmsEpochId), fheParameter: config.fheParameter,
-      gatewayEip712Domain: { name: 'Decryption', version: '1', chainId: BigInt(config.gatewayChainId),
-        verifyingContract: config.gatewayDecryptionContract },
-    } });
+    const decrypt = createFhevmDecryptClient({ chain, rpc, fheParameter: config.fheParameter });
     await decrypt.ready;
     const permit = await decrypt.signPermit({ wallet: solanaPermitWalletFromSecretKey(aliceBytes), durationSeconds: 3600n });
     const userTokenAccount = (await findTokenAccountPda({ mint, owner: alice.address }))[0];

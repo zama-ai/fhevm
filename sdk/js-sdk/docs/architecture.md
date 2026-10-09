@@ -145,18 +145,19 @@ compose instructions through Solana Kit and their own program clients.
 open and close and hand them to the client's own signing and sending as one
 transaction.
 
-The private-decrypt client requires `SolanaDecryptTrust` and exposes `signPermit` and
-`decryptValues`: sign once, then reuse the permit across requests. The public-only
-factory requires no private-decrypt trust. Its `decryptPublicValue(s)` actions read
-HostConfig and KmsContext through RPC, authenticate distinct KMS signatures, and return
-shared `TypedValue` results. The lower-level `publicDecryptCertificate` returns the raw
-claim for on-chain consumers, which verify only the certificate and compare its handle with one
-they pinned.
-The trust configuration includes the KMS signer set, routing identifiers, FHE
-parameter and response-signature domain. These are trusted deployment inputs,
-not values inferred from the response. A missing domain is rejected when the
-private-decrypt client is constructed. The Solana KMS WASM verifies shares and
-recovers plaintext; TypeScript checks the result count and handle types.
+The private-decrypt client takes the deployment's FHE parameter and exposes `signPermit` and
+`decryptValues`: sign once, then reuse the permit across requests. Both decrypt clients read their
+KMS trust from zama-host, as the EVM SDK reads it from `ProtocolConfig` and `KMSVerifier`. A permit
+or a public decrypt is routed to the context and epoch `HostConfig` holds. A user-decrypt response
+is verified against the signers of the `KmsContext` the permit names, as parties `1..n` in their
+registered order, under the gateway domain `HostConfig` records. These reads are cached for 15
+minutes per client, as on EVM; a destroyed context is refused and never cached. The
+`decryptPublicValue(s)` actions also read HostConfig and KmsContext afresh after the certificate
+arrives, authenticate distinct KMS signatures, and return shared `TypedValue` results. The
+lower-level `publicDecryptCertificate` returns the raw claim for on-chain consumers, which verify
+only the certificate and compare its handle with one they pinned.
+The Solana KMS WASM verifies shares and recovers plaintext; TypeScript checks the result count and
+handle types.
 
 A user-decrypt operation has one timeout budget for submissions and retry delays.
 The relayer transport gives each request its remaining time and bounds backoff

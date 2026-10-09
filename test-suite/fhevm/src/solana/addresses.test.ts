@@ -6,12 +6,9 @@ import path from "node:path";
 import { toFunctionSelector } from "viem";
 
 import {
-  bytes32HexFromId,
   evmAddressBytes,
-  readActiveKmsPair,
   readEvmKmsThresholds,
   readGatewayBootstrapInputs,
-  solanaUserDecryptContext,
 } from "./addresses";
 import { SOLANA_HOST_CHAIN_ID } from "../layout";
 import { BRINGUP_KMS_CONTEXT_HEX } from "../../../../solana/deploy/src/constants";
@@ -40,62 +37,6 @@ describe("evmAddressBytes", () => {
     expect(() => evmAddressBytes("0x1234")).toThrow("20-byte EVM address");
     expect(() => evmAddressBytes(`${ADDRESS_B}00`)).toThrow("20-byte EVM address");
     expect(() => evmAddressBytes("0xzz11111111111111111111111111111111111111")).toThrow("20-byte EVM address");
-  });
-});
-
-describe("bytes32HexFromId", () => {
-  test("left-pads to 32 bytes and keeps type-tagged high bytes", () => {
-    expect(bytes32HexFromId(1n)).toBe(`0x${"0".repeat(63)}1`);
-    expect(bytes32HexFromId((8n << 248n) | 1n)).toBe(`0x08${"0".repeat(61)}1`);
-  });
-});
-
-describe("solanaUserDecryptContext", () => {
-  test("encodes a decimal user-decrypt context as bytes32 and rejects any other form", () => {
-    expect(solanaUserDecryptContext("1")).toBe(`0x${"0".repeat(63)}1`);
-    expect(() => solanaUserDecryptContext("0x01")).toThrow("unsigned decimal integer");
-    expect(() => solanaUserDecryptContext("")).toThrow("unsigned decimal integer");
-    expect(() => solanaUserDecryptContext((1n << 256n).toString())).toThrow("fit in 32 bytes");
-  });
-});
-
-describe("readActiveKmsPair", () => {
-  const originalFetch = globalThis.fetch;
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-  });
-
-  const writeHostArtifact = async (contents: string): Promise<string> => {
-    const dir = await mkdtemp(path.join(tmpdir(), "host-addresses-"));
-    const file = path.join(dir, ".env.host");
-    await writeFile(file, contents);
-    return file;
-  };
-
-  test("reads the active pair from the deployed ProtocolConfig", async () => {
-    const addressesPath = await writeHostArtifact(`PROTOCOL_CONFIG_CONTRACT_ADDRESS=${ADDRESS_B}`);
-    // A fresh stack's first pair: both ids are type-tagged (0x07 / 0x08 in the high byte), so
-    // neither is ever zero — the exact property that makes a seeded zero epoch unservable.
-    const contextId = BigInt(`0x${BRINGUP_KMS_CONTEXT_HEX}`);
-    const epochId = (8n << 248n) | 1n;
-    globalThis.fetch = (async (_url: string | URL | Request, options?: RequestInit) => {
-      const request = JSON.parse(String(options?.body)) as { id: number; params: [{ to?: string }?] };
-      expect(request.params?.[0]?.to).toBe(ADDRESS_B);
-      return new Response(
-        JSON.stringify({ jsonrpc: "2.0", id: request.id, result: `0x${word(bytes32HexFromId(contextId))}${word(bytes32HexFromId(epochId))}` }),
-      );
-    }) as typeof fetch;
-
-    const pair = await readActiveKmsPair({ hostRpcUrl: "http://127.0.0.1:8545", addressesPath });
-    expect(pair.kmsContextId).toBe(contextId);
-    expect(pair.kmsEpochId).toBe(epochId);
-  });
-
-  test("fails on a missing ProtocolConfig address", async () => {
-    const addressesPath = await writeHostArtifact(`ACL_CONTRACT_ADDRESS=${ADDRESS_A}`);
-    await expect(readActiveKmsPair({ hostRpcUrl: "http://unused", addressesPath })).rejects.toThrow(
-      "missing PROTOCOL_CONFIG_CONTRACT_ADDRESS",
-    );
   });
 });
 
