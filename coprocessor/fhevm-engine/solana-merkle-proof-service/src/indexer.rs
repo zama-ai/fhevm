@@ -57,9 +57,11 @@ impl IndexerStart {
     }
 }
 
-/// Applies one sealed block: its leaves, nodes and store cursors, and the checkpoint. A block
-/// at the checkpoint with the same hash writes nothing. A conflicting hash or an older slot
-/// stops the indexer because the finalized follower cannot roll back.
+/// Applies one sealed block: its leaves, nodes and store cursors, and the checkpoint. Several
+/// replicas apply every block, and the checkpoint row, locked here, is the only guard: the leaf
+/// and cursor writes are not idempotent on their own. A block at or below the checkpoint was
+/// already applied, by this replica or another, and writes nothing. A different hash at the
+/// checkpoint's slot stops the indexer because finalized blocks do not change.
 async fn apply_block(
     pool: &PgPool,
     prepared: &PreparedBlock,
@@ -74,11 +76,12 @@ async fn apply_block(
     })?;
     if let Some(checkpoint) = checkpoint {
         if block.slot < checkpoint.slot {
-            return Err(IngestFailure::fatal(anyhow!(
-                "finalized block at slot {} is below the recorded checkpoint at slot {}; the follower cannot hand an older block",
-                block.slot,
-                checkpoint.slot
-            )));
+            info!(
+                slot = block.slot,
+                checkpoint_slot = checkpoint.slot,
+                "block already recorded below the checkpoint; skipping"
+            );
+            return Ok(());
         }
         if block.slot == checkpoint.slot {
             if block.block_hash != checkpoint.block_hash {

@@ -894,15 +894,11 @@ mod apply_block_tests {
         (instance, db)
     }
 
-    /// Slots 40, 41, 43 and 44, with slot 42 skipped, are heights 38 to 41: the rows step by
-    /// one and each names its parent, as the manifest ranges require. The output stored at
-    /// slot 43 is produced at height 40, the block number the detector joins on.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn rows_are_numbered_by_height_across_a_skipped_slot() {
-        let (_instance, db) = new_db().await;
+    /// A trivial encryption written to the store, which also requests its material.
+    fn stored_execution() -> DecodedInstruction {
         let mut accounts = vec![[0; 32]; zama_host::FHE_EXECUTE_FIXED_ACCOUNTS];
         accounts.push(STATE);
-        let stored = DecodedInstruction {
+        DecodedInstruction {
             accounts,
             data: encoded_execution(FheExecuteArgs {
                 execution_store_index: 0,
@@ -926,12 +922,20 @@ mod apply_block_tests {
                 }],
                 returned_results: vec![],
             }),
-        };
+        }
+    }
+
+    /// Slots 40, 41, 43 and 44, with slot 42 skipped, are heights 38 to 41: the rows step by
+    /// one and each names its parent, as the manifest ranges require. The output stored at
+    /// slot 43 is produced at height 40, the block number the detector joins on.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn rows_are_numbered_by_height_across_a_skipped_slot() {
+        let (_instance, db) = new_db().await;
         let mut slot_43 = empty(43, 40, [0x43; 32], [0x41; 32]);
         slot_43.transactions = vec![PreparedTransaction {
             signature: Signature::from([1; 64]),
             index: 0,
-            instructions: with_events([stored]),
+            instructions: with_events([stored_execution()]),
         }];
         for block in [
             empty(40, 38, [0x40; 32], [0x39; 32]),
@@ -1210,5 +1214,141 @@ mod apply_block_tests {
         assert!(ingested.contains(&consumer.to_vec()));
         assert_eq!(load_checkpoint(&pool).await.unwrap().unwrap().slot, 42);
         assert_eq!(handle_check_failures() - failures_before, 1.0);
+    }
+
+    /// Every row a block writes, as sorted JSON, without the columns no result depends on: the
+    /// dependence chain a computation joins is scheduling, and each replica assigns it from its
+    /// own caches, as the EVM listener does.
+    async fn rows_without_chain_topology(pool: &sqlx::PgPool) -> Vec<String> {
+        let mut tables = Vec::new();
+        for table in [
+            "computations",
+            "pbs_computations",
+            "allowed_handles",
+            "handle_producer_block",
+            "host_chain_blocks_valid",
+            "solana_listener_checkpoint",
+        ] {
+            tables.push(
+                sqlx::query_scalar(&format!(
+                    "SELECT coalesce(jsonb_agg(row ORDER BY row::text), '[]')::text FROM \
+                     (SELECT to_jsonb(t) - ARRAY['dependence_chain_id', 'created_at', \
+                     'updated_at', 'last_updated_at'] AS row FROM {table} t) rows"
+                ))
+                .fetch_one(pool)
+                .await
+                .unwrap(),
+            );
+        }
+        tables
+    }
+
+    /// The database holds `expected`, and every computation belongs to a chain row.
+    async fn assert_single_run_rows(pool: &sqlx::PgPool, expected: &[String]) {
+        assert_eq!(rows_without_chain_topology(pool).await, expected);
+        let unchained: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM computations c WHERE NOT EXISTS \
+             (SELECT 1 FROM dependence_chain d WHERE d.dependence_chain_id = c.dependence_chain_id)",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(unchained, 0);
+    }
+
+    /// Two replicas, each with its own caches, apply every block to one database: one after the
+    /// other, overlapping, and concurrently. The rows are those of a single run apart from chain
+    /// topology, every computation belongs to a chain, and the checkpoint never moves back.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[serial(handle_check_failures)]
+    async fn two_replicas_write_the_single_run_rows() {
+        let transaction = |signature: u8, instructions| PreparedTransaction {
+            signature: Signature::from([signature; 64]),
+            index: 0,
+            instructions,
+        };
+        let mut tampered = with_events([two_steps([2; 32], vec![SCALAR])]);
+        tamper(&mut tampered);
+        let blocks = [
+            PreparedBlock {
+                block: sealed(41, [0x41; 32], [0x40; 32]),
+                transactions: vec![transaction(
+                    1,
+                    with_events([two_steps([1; 32], vec![SCALAR])]),
+                )],
+            },
+            PreparedBlock {
+                block: sealed(42, [0x42; 32], [0x41; 32]),
+                transactions: vec![transaction(2, tampered)],
+            },
+            PreparedBlock {
+                block: sealed(43, [0x43; 32], [0x42; 32]),
+                transactions: vec![transaction(
+                    3,
+                    with_events([stored_execution()]),
+                )],
+            },
+        ];
+
+        let (_reference_instance, reference) = new_db().await;
+        for block in &blocks {
+            apply_block(&reference, &config(), block).await.unwrap();
+        }
+        let expected =
+            rows_without_chain_topology(&reference.pool().await).await;
+        assert_single_run_rows(&reference.pool().await, &expected).await;
+
+        let all = 0..blocks.len();
+        let schedules: [Vec<(usize, usize)>; 2] = [
+            all.clone()
+                .map(|i| (0, i))
+                .chain(all.map(|i| (1, i)))
+                .collect(),
+            [(0, 0), (1, 0), (1, 1), (1, 2), (0, 1), (0, 2)].into(),
+        ];
+        for schedule in schedules {
+            let (instance, first) = new_db().await;
+            let second = Database::new(
+                &instance.db_url,
+                ChainId::from_canonical_u64(config().chain_id),
+                100,
+            )
+            .await
+            .unwrap();
+            let replicas = [&first, &second];
+            let pool = first.pool().await;
+            let mut highest = 0;
+            for (replica, index) in schedule {
+                apply_block(replicas[replica], &config(), &blocks[index])
+                    .await
+                    .unwrap();
+                let slot = load_checkpoint(&pool).await.unwrap().unwrap().slot;
+                assert!(
+                    slot >= highest,
+                    "checkpoint moved back from {highest} to {slot}"
+                );
+                highest = slot;
+            }
+            assert_single_run_rows(&pool, &expected).await;
+        }
+
+        let (instance, first) = new_db().await;
+        let second = Database::new(
+            &instance.db_url,
+            ChainId::from_canonical_u64(config().chain_id),
+            100,
+        )
+        .await
+        .unwrap();
+        let config = config();
+        for block in &blocks {
+            let (a, b) = tokio::join!(
+                apply_block(&first, &config, block),
+                apply_block(&second, &config, block)
+            );
+            a.unwrap();
+            b.unwrap();
+        }
+        assert_single_run_rows(&first.pool().await, &expected).await;
     }
 }

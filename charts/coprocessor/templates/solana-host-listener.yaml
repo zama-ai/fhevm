@@ -6,10 +6,11 @@ kind: Deployment
 metadata:
   name: {{ $name }}
 spec:
-  # The durable Solana checkpoint is a singleton in this coprocessor database.
-  replicas: 1
+  replicas: {{ $listener.replicas }}
+  {{- with $listener.updateStrategy }}
   strategy:
-    type: Recreate
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ $name }}

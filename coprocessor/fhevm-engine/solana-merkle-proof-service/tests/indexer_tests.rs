@@ -346,9 +346,11 @@ async fn a_rewound_checkpoint_cannot_reapply_recorded_leaves() {
     );
 }
 
+/// A block at or below the checkpoint was already recorded and changes nothing. Only a different
+/// hash at the checkpoint's slot stops the indexer.
 #[tokio::test]
 #[serial(db)]
-async fn only_the_matching_checkpoint_block_can_be_rehanded() {
+async fn only_a_different_hash_at_the_checkpoint_stops_the_indexer() {
     let blocks = blocks();
     let (_db, pool) = support::record_db().await;
     apply_all(&pool, &blocks[..3]).await;
@@ -360,22 +362,21 @@ async fn only_the_matching_checkpoint_block_can_be_rehanded() {
     .await
     .unwrap();
 
-    apply(&pool, &blocks[2]).await.unwrap();
-    assert_eq!(Record::read(&pool).await, before);
-    let mut conflicting = blocks[2].clone();
-    conflicting.block.block_hash = [0xEE; 32];
-    for (block, message) in [
-        (
-            &conflicting,
-            "block hash differs from the recorded checkpoint",
-        ),
-        (&blocks[1], "below the recorded checkpoint"),
-    ] {
-        let failure = apply(&pool, block).await.unwrap_err();
-        assert!(failure.is_fatal(), "{failure}");
-        assert!(failure.to_string().contains(message), "{failure}");
+    for block in [&blocks[2], &blocks[1]] {
+        apply(&pool, block).await.unwrap();
         assert_eq!(Record::read(&pool).await, before);
     }
+    let mut conflicting = blocks[2].clone();
+    conflicting.block.block_hash = [0xEE; 32];
+    let failure = apply(&pool, &conflicting).await.unwrap_err();
+    assert!(failure.is_fatal(), "{failure}");
+    assert!(
+        failure
+            .to_string()
+            .contains("block hash differs from the recorded checkpoint"),
+        "{failure}"
+    );
+    assert_eq!(Record::read(&pool).await, before);
     assert_eq!(
         sqlx::query_scalar::<_, String>(
             "SELECT row_to_json(checkpoint)::text FROM checkpoint",
@@ -385,6 +386,66 @@ async fn only_the_matching_checkpoint_block_can_be_rehanded() {
         .unwrap(),
         checkpoint
     );
+}
+
+/// Two replicas, each with its own pool, apply every block to one record: one after the other,
+/// overlapping, and concurrently. The record is the one a single run builds, and the checkpoint
+/// never moves back. The replica behind the checkpoint does not stop. The checkpoint is the only
+/// guard: the leaf writes alone would apply a block twice, as
+/// `a_rewound_checkpoint_cannot_reapply_recorded_leaves` shows.
+#[tokio::test]
+#[serial(db)]
+async fn two_replicas_build_the_single_run_record() {
+    let blocks = blocks();
+    let (_reference_db, reference) = support::record_db().await;
+    apply_all(&reference, &blocks).await;
+    let expected = Record::read(&reference).await;
+
+    let all = 0..blocks.len();
+    let schedules: [Vec<(usize, usize)>; 2] = [
+        all.clone()
+            .map(|i| (0, i))
+            .chain(all.clone().map(|i| (1, i)))
+            .collect(),
+        (0..6)
+            .map(|i| (0, i))
+            .chain((0..9).map(|i| (1, i)))
+            .chain((6..12).map(|i| (0, i)))
+            .chain((9..12).map(|i| (1, i)))
+            .collect(),
+    ];
+    for schedule in schedules {
+        let (db, pool) = support::record_db().await;
+        let replicas = [
+            MerkleIndexerSink::new(pool.clone()),
+            MerkleIndexerSink::new(
+                PgPoolOptions::new().connect(db.db_url()).await.unwrap(),
+            ),
+        ];
+        let mut highest = 0;
+        for (replica, index) in schedule {
+            replicas[replica].apply(&blocks[index]).await.unwrap();
+            let slot = load_checkpoint(&pool).await.unwrap().unwrap().slot;
+            assert!(
+                slot >= highest,
+                "checkpoint moved back from {highest} to {slot}"
+            );
+            highest = slot;
+        }
+        assert_eq!(Record::read(&pool).await, expected);
+    }
+
+    let (db, pool) = support::record_db().await;
+    let second = MerkleIndexerSink::new(
+        PgPoolOptions::new().connect(db.db_url()).await.unwrap(),
+    );
+    let first = MerkleIndexerSink::new(pool.clone());
+    for block in &blocks {
+        let (a, b) = tokio::join!(first.apply(block), second.apply(block));
+        a.unwrap();
+        b.unwrap();
+    }
+    assert_eq!(Record::read(&pool).await, expected);
 }
 
 /// A store whose first write the record sees already held leaves was created before the
