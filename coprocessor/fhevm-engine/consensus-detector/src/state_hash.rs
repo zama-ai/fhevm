@@ -384,17 +384,35 @@ where
 /// hash that the next tick's rewind cannot repair. The latch is only written by the
 /// listener in (or after) its alignment transaction, so requiring it here holds the GW
 /// track until the listener has provably aligned to this window.
-pub(crate) async fn gw_window_rewound<'e, E>(executor: E) -> Result<bool, sqlx::Error>
+///
+/// Returns `(gw_start_block, gw_tip, gw_window_rewound)` read in ONE statement, so all three
+/// come from one snapshot even under READ COMMITTED. The listener lowers the watermark and
+/// sets the latch in the same transaction; separate reads could pair a stale pre-rewind
+/// watermark with the post-rewind latch and seal a block still being re-ingested. `None`
+/// when `gw_start_block` or the watermark is unset.
+pub(crate) async fn gw_window_rewound<'e, E>(
+    executor: E,
+) -> Result<Option<(i64, i64, bool)>, sqlx::Error>
 where
     E: sqlx::Executor<'e, Database = Postgres>,
 {
-    let v: Option<bool> = sqlx::query_scalar(
-        "SELECT BOOL_AND(gw_window_rewound) FROM upgrade_state
-          WHERE stack_role = 'GCS' AND status = 'in_progress'",
-    )
-    .fetch_one(executor)
-    .await?;
-    Ok(v.unwrap_or(false))
+    let (gw_start, gw_tip, rewound): (Option<i64>, Option<i64>, Option<bool>) =
+        sqlx::query_as(&format!(
+            "SELECT
+               (SELECT gw_start_block FROM upgrade_state
+                 WHERE stack_role = 'GCS' AND status = 'in_progress'
+                 ORDER BY host_chain_id
+                 LIMIT 1),
+               (SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+                 WHERE dummy_id = true),
+               (SELECT BOOL_AND(gw_window_rewound) FROM upgrade_state
+                 WHERE stack_role = 'GCS' AND status = 'in_progress')"
+        ))
+        .fetch_one(executor)
+        .await?;
+    Ok(gw_start
+        .zip(gw_tip)
+        .map(|(start, tip)| (start, tip, rewound.unwrap_or(false))))
 }
 
 /// Uploads GCS `state_hash` rows with `s3_uploaded_at IS NULL`, attaching the
@@ -723,11 +741,7 @@ async fn compute_and_upload_state_hashes(
         // The gate itself lives in compute_and_insert_gw_input_hashes (it self-skips);
         // here it is mirrored into gw_ready to gate the upload.
         if !skip_gw {
-            if let (Some(gw_start), Some(gw_tip)) = (
-                gw_start_block(&mut *tx).await?,
-                gw_listener_tip(&mut *tx).await?,
-            ) {
-                let gw_aligned = gw_window_rewound(&mut *tx).await?;
+            if let Some((gw_start, gw_tip, gw_aligned)) = gw_window_rewound(&mut *tx).await? {
                 gw_ready = gw_aligned && gw_tip >= gw_start;
                 compute_and_insert_gw_input_hashes(
                     &mut tx,
