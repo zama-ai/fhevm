@@ -65,9 +65,6 @@ pub enum ConfidentialTokenError {
     /// The certified `uint256` cleartext does not fit the token's euint64 width (nonzero high bytes).
     #[msg("certified cleartext exceeds euint64 width")]
     CleartextExceedsEuint64,
-    /// The supplied pending-burn account is not the canonical PDA for `(mint, token_account)`.
-    #[msg("pending burn address does not match")]
-    PendingBurnAddressMismatch,
     /// The pending-burn PDA is already initialized (or is not a fresh system-owned empty account).
     #[msg("pending burn is already initialized")]
     PendingBurnAlreadyInitialized,

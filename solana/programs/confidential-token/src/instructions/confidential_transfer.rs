@@ -102,11 +102,6 @@ pub fn confidential_transfer<'info>(
     ctx: Context<'info, ConfidentialTransfer<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
 ) -> Result<()> {
-    require_keys_eq!(
-        ctx.accounts.from_account.owner,
-        ctx.accounts.owner.key(),
-        ConfidentialTokenError::OwnerMismatch
-    );
     let mut accounts = ctx.accounts.as_transfer_accounts(ctx.remaining_accounts);
     accounts.result_grant = ResultGrantAccounts::bind(ctx.accounts.result_store.as_ref())?;
     let outcome = execute_transfer(accounts, TransferAmountSource::Attested(amount_attestation))?;
@@ -261,11 +256,6 @@ pub fn confidential_transfer_from_value<'info>(
     ctx: Context<'info, ConfidentialTransferFromValue<'info>>,
     amount_source: TransferInput,
 ) -> Result<()> {
-    require_keys_eq!(
-        ctx.accounts.from_account.owner,
-        ctx.accounts.owner.key(),
-        ConfidentialTokenError::OwnerMismatch
-    );
     let source = match amount_source {
         TransferInput::Slot { key } => {
             let info = ctx

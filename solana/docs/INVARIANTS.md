@@ -562,9 +562,10 @@ chain type first.
 
 **55. [HOLDS]** `disclose_secp` verifies a KMS certificate through `verify_public_decrypt` and emits
 `HandleDisclosedEvent { handle, cleartext_amount }`, as ERC-7984 `discloseEncryptedAmount` emits `AmountDisclosed`. It
-reads no token account, no Store and no mint. The event carries no slot key and no token kind; which account and
-operation produced the handle is known from that operation's own event. A certificate stays valid after the slot moves
-on, so an old handle can be disclosed at any time, and disclosing it again emits the same event.
+reads no token account, no Store and no mint. It does not check the handle's FHE type, as ERC-7984 does not. The event
+carries no slot key and no token kind; which account and operation produced the handle is known from that operation's
+own event. A certificate stays valid after the slot moves on, so an old handle can be disclosed at any time, and
+disclosing it again emits the same event.
 Pinned by `mollusk_disclose_secp_emits_certified_handle_and_cleartext`,
 `mollusk_disclose_secp_rejects_cleartext_wider_than_u64` and `mollusk_disclose_secp_is_idempotent_no_replay_marker`.
 

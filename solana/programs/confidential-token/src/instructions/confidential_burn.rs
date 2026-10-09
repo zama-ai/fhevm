@@ -580,10 +580,6 @@ fn execute_burn<'info>(
 
 /// Checks that the constrained pending-burn PDA is available for creation.
 fn assert_pending_burn_available(pending_burn_ai: &AccountInfo<'_>) -> Result<()> {
-    require!(
-        pending_burn_ai.is_writable,
-        ConfidentialTokenError::PendingBurnAddressMismatch
-    );
     require_keys_eq!(
         *pending_burn_ai.owner,
         System::id(),
@@ -614,24 +610,13 @@ fn open_pending_burn<'info>(
         pending.token_account.as_ref(),
         &bump_seed,
     ];
-    let rent = fund_allocate_assign(
+    fund_allocate_assign(
         &payer.to_account_info(),
         pending_burn_ai,
         &system_program.to_account_info(),
         space,
         seeds,
     )?;
-    require_keys_eq!(
-        *pending_burn_ai.owner,
-        crate::ID,
-        ConfidentialTokenError::PendingBurnAddressMismatch
-    );
-    require!(
-        !pending_burn_ai.executable
-            && pending_burn_ai.data_len() == space
-            && pending_burn_ai.lamports() >= rent,
-        ConfidentialTokenError::PendingBurnAddressMismatch
-    );
 
     let mut data = pending_burn_ai.try_borrow_mut_data()?;
     let mut cursor = &mut data[..];
@@ -646,7 +631,7 @@ fn fund_allocate_assign<'info>(
     system_program: &AccountInfo<'info>,
     space: usize,
     seeds: &[&[u8]],
-) -> Result<u64> {
+) -> Result<()> {
     let rent = Rent::get()?.minimum_balance(space);
     let balance = account.lamports();
     if balance < rent {
@@ -665,5 +650,5 @@ fn fund_allocate_assign<'info>(
         &[account.clone(), system_program.clone()],
         &[seeds],
     )?;
-    Ok(rent)
+    Ok(())
 }
