@@ -84,9 +84,6 @@ export const prepareNextBatch = async (
   const { rpc } = client;
   const roots = vaultRoots(config, direction);
   const current = await getCurrentBatch(rpc, roots);
-  if (current.state.status === BatchStatus.Dispatched) {
-    throw new Error(`The current ${direction} batch is still settling`);
-  }
 
   const batchIndex = current.state.status === BatchStatus.Pending ? current.index : current.index + 1n;
   if (current.state.status !== BatchStatus.Pending) {

@@ -2804,6 +2804,56 @@ fn mollusk_open_batch_requires_previous_batch_not_pending() {
     );
 }
 
+/// The next batch opens once the previous one is dispatched, as on EVM, where dispatching opens it: a
+/// join during the KMS round lands in the next batch, and the dispatched batch still settles and
+/// pays its claim.
+#[test]
+fn mollusk_open_batch_accepts_dispatched_previous_batch() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+
+    let next = BatchKeys::new(&fixture, 1);
+    ensure_open_batch_accounts(&context, &fixture, &next);
+    check_batcher_instruction(
+        &context,
+        &open_batch_ix(&fixture, &next, Some(keys.batch)),
+        &[Check::success()],
+    );
+    assert_eq!(
+        read_batch(&context, keys.batch).status,
+        batcher::BatchStatus::Dispatched
+    );
+    run_join(
+        &context,
+        &fixture,
+        &next,
+        &fixture.bob,
+        handle_for_chain(42, BALANCE_FHE_TYPE),
+        500,
+    );
+
+    run_settle(&context, &fixture, &keys, burned_handle, 300);
+    assert_eq!(
+        read_batch(&context, keys.batch).status,
+        batcher::BatchStatus::Settled
+    );
+    run_claim(&context, &fixture, &keys, &fixture.alice);
+    let next_batch = read_batch(&context, next.batch);
+    assert_eq!(next_batch.status, batcher::BatchStatus::Pending);
+    assert_eq!(next_batch.join_count, 1);
+}
+
 /// A token account's owner does not sign its creation, and the next batch authority derives from the
 /// public `next_batch_index`, so anyone can create the next batch's token accounts first. The open
 /// still succeeds and keeps their zero balances.
