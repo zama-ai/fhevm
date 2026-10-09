@@ -304,7 +304,7 @@ export function cleartextPublicDecryptCertifier(
     );
     const cleartext = concatBytes(...cleartexts);
     const { config, context } = await fetchHostDecryptionState(rpc, programAddress, parameters.contextId, signal);
-    const extraData = solanaPublicDecryptExtraData(parameters.contextId);
+    const extraData = solanaPublicDecryptExtraData(parameters.contextId, parameters.epochId);
     const digest = publicDecryptDigest(
       createKmsPublicDecryptEip712({
         verifyingContractAddressDecryption: bytesToHex(new Uint8Array(config.decryptionContract)),

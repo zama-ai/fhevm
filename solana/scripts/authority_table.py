@@ -97,6 +97,7 @@ DECLARATIONS: dict[str, dict[str, Any]] = {
         "capability": "Trust roots",
         "signers": {"admin": f"{ADMIN}; also pays rent"},
     },
+    "define_kms_epoch": {"capability": "Trust roots", "signers": {"admin": ADMIN}},
     "destroy_kms_context": {"capability": "Trust roots", "signers": {"admin": ADMIN}},
     "set_coprocessor_signers": {"capability": "Trust roots", "signers": {"admin": ADMIN}},
     "set_eip712_domain": {"capability": "Trust roots", "signers": {"admin": ADMIN}},

@@ -2,7 +2,7 @@
 //! and which one it gets depends on whether an off-chain component has to be able to query it (DD-044).
 //!
 //! - **Emitted, always, through the event CPI** (`crate::event_cpi`). Two groups qualify. The admin and
-//!   config lifecycle — `HostConfig*`, `*KmsContext*`, `DenyScopeUpdated`, `HcuAppTrustUpdated`, `PauserUpdated` —
+//!   config lifecycle — `HostConfig*`, `*KmsContext*`, `NewKmsEpoch`, `DenyScopeUpdated`, `HcuAppTrustUpdated`, `PauserUpdated` —
 //!   because an admin change is a protocol-level fact a component must be able to read without
 //!   replaying instruction data to find it. And `FheExecutedEvent`, emitted by every `fhe_execute`:
 //!   the instruction carries what the caller asked for, and the event carries what the host decided
@@ -76,12 +76,26 @@ pub struct NewKmsContextEvent {
     pub version: u8,
     /// The new context id.
     pub kms_context_id: [u8; 32],
+    /// The epoch activated with it.
+    pub kms_epoch_id: [u8; 32],
     /// KMS node signer EVM addresses authorized in this context.
     pub signers: Vec<[u8; 20]>,
     /// Public-decrypt signature threshold.
     pub public_decryption_threshold: u8,
     /// User-decrypt signature threshold.
     pub user_decryption_threshold: u8,
+}
+
+/// Emitted when a new epoch of the active KMS context is activated (mirrors
+/// `ProtocolConfig.MirrorKmsEpoch`).
+#[event]
+pub struct NewKmsEpochEvent {
+    /// Event schema version.
+    pub version: u8,
+    /// The active context id.
+    pub kms_context_id: [u8; 32],
+    /// The new epoch id.
+    pub kms_epoch_id: [u8; 32],
 }
 
 /// Emitted when a KMS context is destroyed (mirrors `ProtocolConfig.KmsContextDestroyed`).

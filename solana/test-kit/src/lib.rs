@@ -429,6 +429,7 @@ pub fn host_config_account(params: &HostConfigParams) -> (Pubkey, Account) {
                 coprocessor_threshold: params.coprocessor_threshold,
                 decryption_contract: DECRYPTION_CONTRACT,
                 current_kms_context_id: params.current_kms_context_id,
+                current_kms_epoch_id: [0u8; 32],
                 paused: params.paused,
                 grant_deny_list_enabled: params.grant_deny_list_enabled,
                 max_hcu_per_tx: u64::MAX,
@@ -459,6 +460,12 @@ pub fn canonical_test_context_id(n: u8) -> [u8; 32] {
     let mut id = [0u8; 32];
     id[31] = n;
     id
+}
+
+/// Test KMS epoch id, shaped like [`canonical_test_context_id`]. `n = 0` is the all-zero id a
+/// host holds before its first context.
+pub fn canonical_test_epoch_id(n: u8) -> [u8; 32] {
+    canonical_test_context_id(n)
 }
 
 /// The host program's BPF upgradeable `ProgramData` account at its canonical address, with

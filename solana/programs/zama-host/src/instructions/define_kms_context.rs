@@ -1,10 +1,10 @@
 //! Defines a new KMS context (Solana mirror of `ProtocolConfig.mirrorKmsContextAndEpoch`).
 //!
 //! Creates the `KmsContext` PDA for `context_id`, records the KMS node signer set +
-//! thresholds, and sets `HostConfig.current_kms_context_id`. As on EVM, each new id must be above
-//! the current one, so the current context never moves back and no id is defined twice. A used id
-//! already fails in the `init` of its PDA, before this check.
-//! Admin-gated in the PoC.
+//! thresholds, and makes `context_id` and `epoch_id` the active pair in `HostConfig`. As on EVM,
+//! each new context id and epoch id must be above the current one, so neither moves back and no
+//! context is defined twice. A used context id already fails in the `init` of its PDA, before this
+//! check. Admin-gated in the PoC.
 
 use anchor_lang::prelude::*;
 
@@ -24,7 +24,7 @@ pub struct DefineKmsContext<'info> {
     /// Configured host admin and rent payer for the context account.
     #[account(mut)]
     pub admin: Signer<'info>,
-    /// Singleton config PDA; its `current_kms_context_id` is set to `context_id`.
+    /// Singleton config PDA; its active context and epoch are set to `context_id` and `epoch_id`.
     #[account(mut, seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
     pub host_config: Account<'info, HostConfig>,
     /// KMS context PDA created for `context_id`.
@@ -40,10 +40,11 @@ pub struct DefineKmsContext<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Records a new KMS context and makes it the active one.
+/// Records a new KMS context and makes it and `epoch_id` the active pair.
 pub fn define_kms_context(
     ctx: Context<DefineKmsContext>,
     context_id: [u8; 32],
+    epoch_id: [u8; 32],
     signers: Vec<[u8; 20]>,
     thresholds: KmsThresholds,
 ) -> Result<()> {
@@ -53,6 +54,10 @@ pub fn define_kms_context(
     require!(
         context_id > ctx.accounts.host_config.current_kms_context_id,
         ZamaHostError::NonIncreasingKmsContextId
+    );
+    require!(
+        epoch_id > ctx.accounts.host_config.current_kms_epoch_id,
+        ZamaHostError::NonIncreasingKmsEpochId
     );
     assert_evm_signer_set(
         &signers,
@@ -93,12 +98,14 @@ pub fn define_kms_context(
     kms_context.destroyed = false;
     kms_context.bump = ctx.bumps.kms_context;
     ctx.accounts.host_config.current_kms_context_id = context_id;
+    ctx.accounts.host_config.current_kms_epoch_id = epoch_id;
 
     emit_event_cpi(
         &ctx.accounts.event_authority,
         &NewKmsContextEvent {
             version: EVENT_VERSION,
             kms_context_id: context_id,
+            kms_epoch_id: epoch_id,
             signers,
             public_decryption_threshold: thresholds.public_decryption,
             user_decryption_threshold: thresholds.user_decryption,

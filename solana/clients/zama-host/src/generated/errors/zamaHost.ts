@@ -130,7 +130,7 @@ export const ZAMA_HOST_ERROR__DIVISION_BY_ZERO = 0x17a7; // 6055
 export const ZAMA_HOST_ERROR__INVALID_CHAIN_TYPE_BYTE = 0x17a8; // 6056
 /** FheExecuteMixedScopes: FHE execution mixes values of different application scopes */
 export const ZAMA_HOST_ERROR__FHE_EXECUTE_MIXED_SCOPES = 0x17a9; // 6057
-/** InvalidKmsContext: KMS context is destroyed or does not match the certificate's committed context */
+/** InvalidKmsContext: KMS context is destroyed, not the active one, or not the certificate's committed context */
 export const ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT = 0x17aa; // 6058
 /** InvalidKmsCertificate: KMS public-decrypt certificate is invalid */
 export const ZAMA_HOST_ERROR__INVALID_KMS_CERTIFICATE = 0x17ab; // 6059
@@ -184,6 +184,8 @@ export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c2
 export const ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c3; // 6083
 /** ScalarOutOfRange: scalar exceeds the maximum of its FHE type */
 export const ZAMA_HOST_ERROR__SCALAR_OUT_OF_RANGE = 0x17c4; // 6084
+/** NonIncreasingKmsEpochId: KMS epoch id must be above the current one */
+export const ZAMA_HOST_ERROR__NON_INCREASING_KMS_EPOCH_ID = 0x17c5; // 6085
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ACL_WRITES_PAUSED
@@ -251,6 +253,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__MALFORMED_INPUT_ATTESTATION
   | typeof ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO
   | typeof ZAMA_HOST_ERROR__NON_INCREASING_KMS_CONTEXT_ID
+  | typeof ZAMA_HOST_ERROR__NON_INCREASING_KMS_EPOCH_ID
   | typeof ZAMA_HOST_ERROR__NOT_DELEGATED_YET
   | typeof ZAMA_HOST_ERROR__NOT_PAUSER
   | typeof ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH
@@ -333,13 +336,14 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__INVALID_INPUT_HANDLE_TYPE]: `input handle FHE type is unsupported`,
     [ZAMA_HOST_ERROR__INVALID_INPUT_HANDLE_VERSION]: `input handle version is unsupported`,
     [ZAMA_HOST_ERROR__INVALID_KMS_CERTIFICATE]: `KMS public-decrypt certificate is invalid`,
-    [ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT]: `KMS context is destroyed or does not match the certificate's committed context`,
+    [ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT]: `KMS context is destroyed, not the active one, or not the certificate's committed context`,
     [ZAMA_HOST_ERROR__INVALID_KMS_THRESHOLD]: `KMS context threshold is invalid`,
     [ZAMA_HOST_ERROR__INVALID_RANDOM_UPPER_BOUND]: `bounded random upper bound is invalid`,
     [ZAMA_HOST_ERROR__INVALID_RETURN_SELECTION]: `invalid execution return selection`,
     [ZAMA_HOST_ERROR__MALFORMED_INPUT_ATTESTATION]: `input attestation payload is malformed`,
     [ZAMA_HOST_ERROR__MUL_DIV_DIVISOR_ZERO]: `fheMulDiv divisor must be non-zero`,
     [ZAMA_HOST_ERROR__NON_INCREASING_KMS_CONTEXT_ID]: `KMS context id must be above the current one`,
+    [ZAMA_HOST_ERROR__NON_INCREASING_KMS_EPOCH_ID]: `KMS epoch id must be above the current one`,
     [ZAMA_HOST_ERROR__NOT_DELEGATED_YET]: `delegation is not granted`,
     [ZAMA_HOST_ERROR__NOT_PAUSER]: `signer is not an enabled pauser`,
     [ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH]: `PDA creation target is invalid`,

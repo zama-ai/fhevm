@@ -36,6 +36,10 @@ pub struct HostConfig {
     /// signer set + thresholds live in the `KmsContext` PDA at this id; `[0; 32]` means
     /// none defined yet. Updated by `define_kms_context`.
     pub current_kms_context_id: [u8; 32],
+    /// Active KMS epoch id of the active context (with the context, mirrors
+    /// `ProtocolConfig.getCurrentKmsContextAndEpoch`); `[0; 32]` until the first context. Updated
+    /// by `define_kms_context` and `define_kms_epoch`. Certificate verification reads only the context.
+    pub current_kms_epoch_id: [u8; 32],
     /// Host areas currently stopped. A pauser sets them; only the admin clears them (DD-058).
     pub paused: PauseFlags,
     /// Enables the deny list: a denied application `(program, scope)` cannot compute, allow, or make a handle public.
@@ -65,6 +69,7 @@ impl HostConfig {
         + 1
         + 1
         + 20
+        + 32
         + 32
         + PauseFlags::SPACE
         + 1
@@ -176,7 +181,7 @@ mod tests {
     // many signers are registered.
     #[test]
     fn host_config_space_matches_serialized_len() {
-        assert_eq!(HostConfig::SPACE, 311);
+        assert_eq!(HostConfig::SPACE, 343);
 
         let cfg = HostConfig {
             admin: Pubkey::new_unique(),
@@ -188,6 +193,7 @@ mod tests {
             coprocessor_threshold: 0,
             decryption_contract: [0u8; 20],
             current_kms_context_id: [0u8; 32],
+            current_kms_epoch_id: [0u8; 32],
             paused: PauseFlags::default(),
             grant_deny_list_enabled: false,
             max_hcu_per_tx: u64::MAX,

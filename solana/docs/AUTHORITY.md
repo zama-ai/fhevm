@@ -44,6 +44,7 @@ check requires its `assert_no_remaining_accounts` call. `?` marks an optional ac
 | Instruction | Signers | Writes | Reads | Calls | Remaining accounts |
 |---|---|---|---|---|---|
 | `define_kms_context` | `admin`: `HostConfig.admin`; also pays rent | `admin`, `host_config`, `kms_context` | — | System, self (event CPI) | — |
+| `define_kms_epoch` | `admin`: `HostConfig.admin` | `host_config` | — | self (event CPI) | — |
 | `destroy_kms_context` | `admin`: `HostConfig.admin` | `kms_context` | `host_config` | self (event CPI) | — |
 | `set_coprocessor_signers` | `admin`: `HostConfig.admin` | `host_config` | — | self (event CPI) | — |
 | `set_eip712_domain` | `admin`: `HostConfig.admin` | `host_config` | — | self (event CPI) | — |

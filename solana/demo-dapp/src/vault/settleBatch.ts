@@ -27,8 +27,6 @@ export type SolanaVaultSettleOptions = Pick<SettleAsyncInput, 'payoutMintHcuBloc
   readonly roots: VaultDemoRoots;
   /** Which batch to settle; defaults to the batcher's current (most-recently-opened) batch. */
   readonly batchIndex?: bigint | undefined;
-  /** 32-byte context id the certificate commits to (the host's current KMS context). */
-  readonly contextId: Uint8Array;
   readonly authorityFundingLamports: bigint;
   /** Bounds and observes the relayer/KMS certificate request independently of the on-chain send. */
   readonly certificateOptions?: RelayerPublicDecryptOptions | undefined;
@@ -67,7 +65,6 @@ export async function settleBatch(
   // The KMS burn certificate. The relayer request names the handle and the account, nothing else.
   const claim = await client.publicDecryptCertificate({
       handle: bytesToHex(burnedTotalHandle),
-      contextId: options.contextId,
       encryptedStore: base58.decode(accounts.batchBurnedAmountStore),
       options: options.certificateOptions,
   });

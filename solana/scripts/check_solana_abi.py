@@ -194,6 +194,7 @@ PINNED_SCHEMAS = [
     # `shared_crate_decoder_reads_what_the_program_serializes`.
     ("zama_host", "account", "RandNonce", True),
     ("zama_host", "instruction_args", "define_kms_context", True),
+    ("zama_host", "instruction_args", "define_kms_epoch", True),
     ("zama_host", "instruction_args", "delegate_for_user_decryption", True),
     ("zama_host", "instruction_args", "destroy_kms_context", True),
     ("zama_host", "instruction_args", "revoke_delegation_for_user_decryption", True),

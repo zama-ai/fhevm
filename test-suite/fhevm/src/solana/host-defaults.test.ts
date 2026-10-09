@@ -42,6 +42,7 @@ test('generated KMS context preserves argument seeds and selected program', asyn
         eventAuthority: programAddress,
         program: programAddress,
         contextId,
+        epochId: contextId,
         signers: [new Uint8Array(20)],
         thresholds: { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 },
       },

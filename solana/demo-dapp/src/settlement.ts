@@ -39,17 +39,6 @@ type DemoUserSession = {
   readonly signer: TransactionSigner;
 };
 
-const asBytes32BigEndian = (decimal: string): Uint8Array => {
-  const bytes = new Uint8Array(32);
-  let value = BigInt(decimal);
-  for (let index = 31; index >= 0 && value > 0n; index -= 1) {
-    bytes[index] = Number(value & 0xffn);
-    value >>= 8n;
-  }
-  if (value > 0n) throw new Error(`${decimal} does not fit in 32 bytes`);
-  return bytes;
-};
-
 const currentPinnedBatch = async (
   session: { readonly config: DemoConfig },
   position: BatchTarget,
@@ -149,7 +138,6 @@ export const settleVaultBatch = async (
   const signature = await settleBatch(publicDecryptClient, keeperClient, {
     roots,
     batchIndex: position.batchIndex,
-    contextId: asBytes32BigEndian(session.config.userDecryptContextId),
     authorityFundingLamports: BigInt(session.config.authorityFundingLamports),
     certificateOptions: { timeout: 60_000 },
   });

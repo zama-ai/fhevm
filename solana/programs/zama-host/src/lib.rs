@@ -91,10 +91,20 @@ pub mod zama_host {
     pub fn define_kms_context(
         ctx: Context<DefineKmsContext>,
         context_id: [u8; 32],
+        epoch_id: [u8; 32],
         signers: Vec<[u8; 20]>,
         thresholds: KmsThresholds,
     ) -> Result<()> {
-        instructions::define_kms_context(ctx, context_id, signers, thresholds)
+        instructions::define_kms_context(ctx, context_id, epoch_id, signers, thresholds)
+    }
+
+    /// Activates a new epoch of the active KMS context (mirror of `ProtocolConfig.mirrorKmsEpoch`).
+    pub fn define_kms_epoch(
+        ctx: Context<DefineKmsEpoch>,
+        context_id: [u8; 32],
+        epoch_id: [u8; 32],
+    ) -> Result<()> {
+        instructions::define_kms_epoch(ctx, context_id, epoch_id)
     }
 
     /// Destroys a non-current KMS context (mirror of `ProtocolConfig.destroyKmsContext`).

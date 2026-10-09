@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { BRINGUP_KMS_CONTEXT_ID, type GatewayBootstrapInputs } from './addresses';
+import { BRINGUP_KMS_CONTEXT_ID, BRINGUP_KMS_EPOCH_ID, type GatewayBootstrapInputs } from './addresses';
 import {
   assertKmsThresholdsMatch,
   bootstrapThresholdsForState,
@@ -17,13 +17,12 @@ import {
   findKmsContextPda,
   findRandNoncePda,
   getDefineKmsContextInstructionDataDecoder,
-  getDefineKmsContextInstructionDataEncoder,
   getHostConfigEncoder,
   getInitializeHostConfigInstructionDataDecoder,
+  getKmsContextEncoder,
   getSetMaxHcuDepthPerTxInstructionDataDecoder,
   getSetMaxHcuPerTxInstructionDataDecoder,
   type HostConfigArgs,
-  KMS_CONTEXT_DISCRIMINATOR,
   SET_MAX_HCU_DEPTH_PER_TX_DISCRIMINATOR,
   SET_MAX_HCU_PER_TX_DISCRIMINATOR,
   ZAMA_HOST_PROGRAM_ADDRESS,
@@ -90,23 +89,22 @@ const fakeContext = async (
                             coprocessorSignerCount: 1,
                             coprocessorThreshold: 1,
                             currentKmsContextId: BRINGUP_KMS_CONTEXT_ID,
+                            currentKmsEpochId: BRINGUP_KMS_EPOCH_ID,
                             paused: { execution: false, verifiedInputs: false, aclWrites: false },
                             grantDenyListEnabled: false,
                             ...hcuLimits,
                             bump: 0,
                           }),
                         ).toString('base64')
-                      : Buffer.concat([
-                          Buffer.from(KMS_CONTEXT_DISCRIMINATOR),
-                          Buffer.from(
-                            getDefineKmsContextInstructionDataEncoder().encode({
-                              contextId: BRINGUP_KMS_CONTEXT_ID,
-                              signers: [...gateway.kmsSigners],
-                              thresholds: { publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 1 },
-                            }),
-                          ).subarray(8),
-                          Buffer.from([0, 0]),
-                        ]).toString('base64'),
+                      : Buffer.from(
+                          getKmsContextEncoder().encode({
+                            contextId: BRINGUP_KMS_CONTEXT_ID,
+                            signers: [...gateway.kmsSigners],
+                            thresholds: { publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 1 },
+                            destroyed: false,
+                            bump: 0,
+                          }),
+                        ).toString('base64'),
                     'base64',
                   ] as const,
                   owner: ZAMA_HOST_PROGRAM_ADDRESS,
@@ -212,6 +210,7 @@ describe('bootstrapZamaHost', () => {
     expect(defineContext.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
     const defineData = getDefineKmsContextInstructionDataDecoder().decode(defineContext.data ?? new Uint8Array());
     expect(Buffer.from(defineData.contextId)).toEqual(Buffer.from(BRINGUP_KMS_CONTEXT_ID));
+    expect(Buffer.from(defineData.epochId)).toEqual(Buffer.from(BRINGUP_KMS_EPOCH_ID));
     expect(defineData.signers).toHaveLength(4);
     expect(defineData.thresholds).toEqual({ publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 1 });
   });

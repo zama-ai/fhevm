@@ -6,7 +6,8 @@
 //!   deny-list switch, HCU limits), every KMS context, the deny and HCU trust records, and the
 //!   pauser records. The one exception is a pause: a key whose pauser record was enabled may set
 //!   pause flags and nothing else. A `HostConfig` change also emits its event CPI:
-//!   `NewKmsContextEvent` from `define_kms_context`, `HostConfigUpdatedEvent` from the rest.
+//!   `NewKmsContextEvent` from `define_kms_context`, `NewKmsEpochEvent` from `define_kms_epoch`,
+//!   `HostConfigUpdatedEvent` from the rest.
 //! - **H2** (INVARIANTS #11): a Store changes only in a transaction its authority signed.
 //!
 //! The oracles compare raw account bytes before and after each transaction against the
@@ -42,11 +43,11 @@ use zama_host::encode::ExecutionDictionary;
 use zama_host::{self as host, AppScope, FheExecuteArgs, FheExecuteStep};
 use zama_solana_test_kit::cleartext;
 use zama_solana_test_kit::{
-    anchor_ix, canonical_test_context_id, empty_system_account, encrypted_store_account,
-    event_authority, funded_system_account, host_config_account, host_svm, kms_context_account,
-    label, new_encrypted_store, pauser_record_account, program_data_account, program_owned_account,
-    readonly, readonly_signer, system_program_account, transaction::fhe_transaction, u256_be,
-    writable, Ctx, HostConfigParams,
+    anchor_ix, canonical_test_context_id, canonical_test_epoch_id, empty_system_account,
+    encrypted_store_account, event_authority, funded_system_account, host_config_account, host_svm,
+    kms_context_account, label, new_encrypted_store, pauser_record_account, program_data_account,
+    program_owned_account, readonly, readonly_signer, system_program_account,
+    transaction::fhe_transaction, u256_be, writable, Ctx, HostConfigParams,
 };
 
 mod host_fixtures;
@@ -59,6 +60,7 @@ const STORES: usize = AUTHORITIES * SCOPES;
 const PROGRAMS: usize = 2;
 const APPS: usize = PROGRAMS * SCOPES;
 const KMS_CONTEXTS: usize = 3;
+const KMS_EPOCHS: usize = 3;
 /// The wallet whose pauser record exists at genesis; `Key::Holder` for `pause`.
 const GENESIS_PAUSER: usize = 1;
 
@@ -152,6 +154,12 @@ enum Action {
     DefineKmsContext {
         admin: Role,
         context: usize,
+        epoch: usize,
+    },
+    DefineKmsEpoch {
+        admin: Role,
+        context: usize,
+        epoch: usize,
     },
     DestroyKmsContext {
         admin: Role,
@@ -212,6 +220,7 @@ impl Action {
             Action::SetHcuAppTrusted { .. } => "set_hcu_app_trusted",
             Action::SetDenyScope { .. } => "set_deny_scope",
             Action::DefineKmsContext { .. } => "define_kms_context",
+            Action::DefineKmsEpoch { .. } => "define_kms_epoch",
             Action::DestroyKmsContext { .. } => "destroy_kms_context",
             Action::CreateEncryptedStore { .. } => "create_encrypted_store",
             Action::FheExecute { .. } => "fhe_execute",
@@ -290,7 +299,10 @@ fn action() -> impl Strategy<Value = Action> {
             .prop_map(|(payer, admin, app, trusted)| Action::SetHcuAppTrusted { payer, admin, app, trusted }),
         2 => (wallet(), role(), 0..APPS, any::<bool>())
             .prop_map(|(payer, admin, app, denied)| Action::SetDenyScope { payer, admin, app, denied }),
-        1 => (role(), 0..KMS_CONTEXTS).prop_map(|(admin, context)| Action::DefineKmsContext { admin, context }),
+        1 => (role(), 0..KMS_CONTEXTS, 0..KMS_EPOCHS)
+            .prop_map(|(admin, context, epoch)| Action::DefineKmsContext { admin, context, epoch }),
+        1 => (role(), 0..KMS_CONTEXTS, 0..KMS_EPOCHS)
+            .prop_map(|(admin, context, epoch)| Action::DefineKmsEpoch { admin, context, epoch }),
         1 => (role(), 0..KMS_CONTEXTS).prop_map(|(admin, context)| Action::DestroyKmsContext { admin, context }),
         2 => (wallet(), 0..STORES, role())
             .prop_map(|(payer, store, authority)| Action::CreateEncryptedStore { payer, store, authority }),
@@ -429,6 +441,10 @@ fn app(index: usize) -> AppScope {
 
 fn kms_context_id(index: usize) -> [u8; 32] {
     canonical_test_context_id(index as u8 + 1)
+}
+
+fn kms_epoch_id(index: usize) -> [u8; 32] {
+    canonical_test_epoch_id(index as u8 + 1)
 }
 
 fn slot_key() -> [u8; 32] {
@@ -832,7 +848,11 @@ impl World {
                 );
                 unsign(ix, admin, signs)
             }
-            Action::DefineKmsContext { admin, context } => {
+            Action::DefineKmsContext {
+                admin,
+                context,
+                epoch,
+            } => {
                 let (admin, signs) = admin_role(admin);
                 let context_id = kms_context_id(*context);
                 let ix = anchor_ix(
@@ -847,6 +867,7 @@ impl World {
                     },
                     host::instruction::DefineKmsContext {
                         context_id,
+                        epoch_id: kms_epoch_id(*epoch),
                         signers: vec![[0x99; 20]],
                         thresholds: host::KmsThresholds {
                             public_decryption: 1,
@@ -854,6 +875,27 @@ impl World {
                             kms_gen: 1,
                             mpc: 1,
                         },
+                    },
+                );
+                unsign(ix, admin, signs)
+            }
+            Action::DefineKmsEpoch {
+                admin,
+                context,
+                epoch,
+            } => {
+                let (admin, signs) = admin_role(admin);
+                let ix = anchor_ix(
+                    host::id(),
+                    host::accounts::DefineKmsEpoch {
+                        admin,
+                        host_config,
+                        event_authority: event_authority(host::id()),
+                        program: host::id(),
+                    },
+                    host::instruction::DefineKmsEpoch {
+                        context_id: kms_context_id(*context),
+                        epoch_id: kms_epoch_id(*epoch),
                     },
                 );
                 unsign(ix, admin, signs)
@@ -1153,6 +1195,9 @@ impl World {
                     "NewKmsContextEvent",
                     host::NewKmsContextEvent::DISCRIMINATOR,
                 ),
+                Action::DefineKmsEpoch { .. } => {
+                    ("NewKmsEpochEvent", host::NewKmsEpochEvent::DISCRIMINATOR)
+                }
                 _ => (
                     "HostConfigUpdatedEvent",
                     host::HostConfigUpdatedEvent::DISCRIMINATOR,

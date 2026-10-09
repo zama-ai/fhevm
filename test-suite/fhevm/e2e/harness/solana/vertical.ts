@@ -9,7 +9,6 @@ import { afterEach } from "bun:test";
 
 import { getAddressEncoder } from "@solana/kit";
 
-import { SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT } from "../../../src/layout";
 import { bytes32HexFromId } from "../../../src/solana/addresses";
 import type { FheVerticalConfig } from "../../../src/solana/fhe-vertical";
 import { readHostChainId, type GeneratedKeypair, type SolanaProvisioningContext } from "../../../src/solana/provision";
@@ -56,7 +55,6 @@ export const verticalSetup = async (): Promise<VerticalTestSetup> => {
     // From the live HostConfig account, not the env: the decrypts must bind the chain id the
     // deployed host actually signs for.
     chainId: await readHostChainId(context),
-    publicDecryptContextId: SOLANA_DEFAULT_PUBLIC_DECRYPT_CONTEXT,
     userDecryptContextId: env.userDecryptContextId ?? trust.kmsContextId.toString(),
     verifyingProgramId: env.aclProgram,
     kmsSigners: trust.kmsSigners,

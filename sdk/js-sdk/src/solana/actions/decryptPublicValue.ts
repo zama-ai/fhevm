@@ -1,18 +1,13 @@
 import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
 import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
 import { assertKmsDecryptionBitLimit } from '../../core/kms/utils.js';
-import {
-  fetchEncodedAccount,
-  fetchEncodedAccounts,
-  type MaybeEncodedAccount,
-  type ReadonlyUint8Array,
-} from '@solana/kit';
+import { fetchEncodedAccounts, type ReadonlyUint8Array } from '@solana/kit';
 import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
 import type { SolanaPublicDecryptCertifier, SolanaPublicHandleEntry } from './publicDecryptCertificate.js';
 import { MAX_SOLANA_DECRYPT_HANDLES } from '../userDecrypt/request.js';
-import { solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
+import { hostAccountData, readActiveKmsRouting, solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
 import {
   findHostConfigPda,
   findKmsContextPda,
@@ -80,8 +75,6 @@ export function verifyPublicDecryptSignatures(
 }
 
 export type SolanaDecryptPublicValueParameters = SolanaPublicHandleEntry & {
-  /** The KMS context the certificate commits to; the host's current context when omitted. */
-  readonly contextId?: Uint8Array | undefined;
   readonly options?: RelayerPublicDecryptOptions | undefined;
 };
 
@@ -133,38 +126,20 @@ export async function decryptPublicValues(
   if (handles.some((handle) => BigInt(handle.chainId) !== client.chain.id))
     throw new Error('Public decrypt handle belongs to another chain');
   const programAddress = solanaHostProgram(client.chain);
-  const read = (account: MaybeEncodedAccount | undefined, discriminator: ReadonlyUint8Array): Uint8Array => {
-    if (
-      account === undefined ||
-      !account.exists ||
-      account.programAddress !== programAddress ||
-      account.executable ||
-      !discriminator.every((byte, index) => account.data[index] === byte)
-    ) {
-      throw new Error(`Invalid host account ${account?.address ?? 'missing'}`);
-    }
-    return new Uint8Array(account.data);
-  };
-  const [configAddress, configBump] = await findHostConfigPda({ programAddress });
-  const initial = getHostConfigDecoder().decode(
-    read(
-      await fetchEncodedAccount(client.rpc, configAddress, {
-        commitment: 'finalized',
-        ...(signal === undefined ? {} : { abortSignal: signal }),
-      }).catch((error: unknown) => {
-        checkAbort();
-        throw error;
-      }),
-      HOST_CONFIG_DISCRIMINATOR,
-    ),
-  );
+  const routing = await readActiveKmsRouting(client, signal).catch((error: unknown) => {
+    checkAbort();
+    throw error;
+  });
   checkAbort();
-  const contextId = new Uint8Array(parameters.contextId ?? initial.currentKmsContextId);
-  if (contextId.length !== 32 || contextId.every((byte) => byte === 0))
-    throw new Error('KMS context is not configured');
-  const claim = await certify({ entries: parameters.entries, contextId, options: parameters.options });
+  const { contextId, epochId } = routing;
+  const claim = await certify({ ...routing, entries: parameters.entries, options: parameters.options });
+  // Whatever certified it, the certificate must name the context and epoch requested.
+  const extraData = solanaPublicDecryptExtraData(contextId, epochId);
+  if (!unsafeBytesEquals(hexToBytes(claim.extraData), hexToBytes(extraData)))
+    throw new Error('Public decrypt certificate does not name the requested KMS context and epoch');
   // Read the requested context after the response. A rotation preserves an old live context;
   // destruction invalidates it. Do not substitute the new current context for the signed one.
+  const [configAddress, configBump] = await findHostConfigPda({ programAddress });
   const [contextAddress, contextBump] = await findKmsContextPda({ contextId }, { programAddress });
   const [configAccount, contextAccount] = await fetchEncodedAccounts(client.rpc, [configAddress, contextAddress], {
     commitment: 'finalized',
@@ -174,12 +149,12 @@ export async function decryptPublicValues(
     throw error;
   });
   checkAbort();
-  const config = getHostConfigDecoder().decode(read(configAccount, HOST_CONFIG_DISCRIMINATOR));
+  const config = getHostConfigDecoder().decode(hostAccountData(configAccount, programAddress, HOST_CONFIG_DISCRIMINATOR));
   if (config.bump !== configBump || config.chainId !== client.chain.id)
     throw new Error('Host configuration does not match the client');
   if (config.decryptionContract.every((byte) => byte === 0))
     throw new Error('Host decryption contract is not configured');
-  const kms = getKmsContextDecoder().decode(read(contextAccount, KMS_CONTEXT_DISCRIMINATOR));
+  const kms = getKmsContextDecoder().decode(hostAccountData(contextAccount, programAddress, KMS_CONTEXT_DISCRIMINATOR));
   if (kms.bump !== contextBump || kms.destroyed || !unsafeBytesEquals(new Uint8Array(kms.contextId), contextId))
     throw new Error('Invalid or destroyed KMS context');
   // One 32-byte ABI word per handle, in request order.
@@ -190,7 +165,7 @@ export async function decryptPublicValues(
     chainId: config.gatewayChainId,
     handles,
     decryptedResult: bytesToHex(cleartext),
-    extraData: solanaPublicDecryptExtraData(contextId),
+    extraData,
   });
   verifyPublicDecryptSignatures(
     publicDecryptDigest(eip712),

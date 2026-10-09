@@ -770,6 +770,7 @@ fn run_walk(
         coprocessor_threshold: 1,
         decryption_contract: [1; 20],
         current_kms_context_id: [0; 32],
+        current_kms_epoch_id: [0; 32],
         paused: crate::PauseFlags::default(),
         grant_deny_list_enabled: false,
         max_hcu_per_tx: total,

@@ -61,7 +61,10 @@ function roots(): VaultDemoRoots {
   };
 }
 
-function claim(cleartext: string, signatures = 1, extraData = '0x00') {
+// The SDK's v2 routing, `0x02 ‖ contextId ‖ epochId`.
+const V2_EXTRA_DATA = `0x02${'07'.repeat(32)}${'08'.repeat(32)}`;
+
+function claim(cleartext: string, signatures = 1, extraData = V2_EXTRA_DATA) {
   return {
     handle: `0x${hex(BURNED_HANDLE)}`,
     abiEncodedCleartext: cleartext,
@@ -79,7 +82,6 @@ async function setup(overrides: { burnedHandle?: Uint8Array } = {}) {
   });
   const opts: SolanaVaultSettleOptions = {
     roots: roots(),
-    contextId: new Uint8Array(32),
     authorityFundingLamports: 5_000_000n,
   };
   return { ...testDemoClient(await generateKeyPairSigner()), opts, addresses };
@@ -108,7 +110,6 @@ describe('settleBatch', () => {
     expect(certificate).toHaveBeenCalledTimes(1);
     expect(certificate.mock.calls[0]![0]).toEqual({
       handle: `0x${hex(BURNED_HANDLE)}`,
-      contextId: opts.contextId,
       encryptedStore: base58.decode(addresses.batchBurnedAmountStore),
       options: undefined,
     });
@@ -134,11 +135,10 @@ describe('settleBatch', () => {
   });
 
   // The largest settle: a certificate at the host's maximum KMS threshold (MAX_KMS_SIGNERS = 16),
-  // with version 1 extra data (a version byte then the 32-byte KMS context id, the largest the SDK
-  // sends, since the host holds no epoch), the deny record and both HCU witnesses. A v1 transaction is at most 4,096 bytes and 64
-  // account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
+  // with the SDK's 65-byte v2 extra data, the deny record and both HCU witnesses. A v1 transaction is at
+  // most 4,096 bytes and 64 account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
   it('fits one v1 transaction at the maximum KMS threshold with every witness', async () => {
-    certificate.mockResolvedValue(claim(cleartextHex(800n), 16, `0x01${'09'.repeat(32)}`));
+    certificate.mockResolvedValue(claim(cleartextHex(800n), 16));
     const { client, opts } = await setup();
     await settleBatch({ publicDecryptCertificate: certificate }, client, {
       ...opts,
