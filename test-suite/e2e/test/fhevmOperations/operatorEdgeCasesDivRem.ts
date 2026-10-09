@@ -3,7 +3,7 @@ import { assert, expect } from 'chai';
 import { NARROW_CASES, decryptBatch, useOperatorEdgeCaseFixture } from './operatorEdgeCases';
 
 describe('FHEVM manual operations - div and rem edge cases', function () {
-  useOperatorEdgeCaseFixture();
+  useOperatorEdgeCaseFixture(108);
 
   NARROW_CASES.forEach(({ bits, valueType, value }) => {
     const max = (1n << bits) - 1n;
