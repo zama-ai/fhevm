@@ -576,7 +576,7 @@ async fn a_repeated_request_gets_its_first_answer_at_no_cost(
 
     let other = proofs.post(&full_request([0x11; 32])).await?;
     assert_eq!(other.status(), 429);
-    let error: ErrorResponse = decode(other).await?;
+    let error: ErrorResponse = serde_json::from_slice(&other.bytes().await?)?;
     assert_eq!(error.code, ErrorCode::RateLimited);
 
     cancel.cancel();
