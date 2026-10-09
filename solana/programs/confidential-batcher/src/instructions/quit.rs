@@ -8,13 +8,18 @@
 //! the contribution slot to an encrypted zero so a later re-join accumulates from zero.
 //! The refund can never partially fail: the batch account's balance is the sum
 //! of all recorded joins, so `ge(balance, joined)` always holds pending.
+//!
+//! A refunding batch never takes another join, so its quit closes the JoinRecord to the user: the
+//! record has nothing left to authorize, and `close_join_record` cannot tell it is spent.
 
 use super::*;
 
 /// Accounts for quitting a batch.
 #[derive(Accounts)]
 pub struct Quit<'info> {
-    /// Quitting user; owner of the refund destination.
+    /// Quitting user; owner of the refund destination. Receives the join record's rent when the
+    /// batch is refunding.
+    #[account(mut)]
     pub user: Signer<'info>,
     /// Pays the transfer output rent and the reset execution's ACL rent.
     #[account(mut)]
@@ -30,6 +35,7 @@ pub struct Quit<'info> {
     pub batch_authority: UncheckedAccount<'info>,
     /// The user's join record for this batch.
     #[account(
+        mut,
         seeds = [JOIN_RECORD_SEED, batch.key().as_ref(), user.key().as_ref()],
         bump = join_record.bump,
     )]
@@ -182,6 +188,12 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
             .map(|account| account.to_account_info()),
     }
     .invoke(execution, vec![ctx.accounts.join_store.to_account_info()])?;
+
+    if ctx.accounts.batch.status == BatchStatus::Refunding {
+        ctx.accounts
+            .join_record
+            .close(ctx.accounts.user.to_account_info())?;
+    }
 
     emit!(QuitBatch {
         version: APP_EVENT_VERSION,

@@ -28,7 +28,6 @@ import {
   type InstructionWithAccounts,
   type InstructionWithData,
   type ReadonlyAccount,
-  type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type WritableAccount,
   type WritableSignerAccount,
@@ -87,7 +86,7 @@ export type QuitInstruction<
   InstructionWithAccounts<
     [
       TAccountUser extends string
-        ? ReadonlySignerAccount<TAccountUser> & AccountSignerMeta<TAccountUser>
+        ? WritableSignerAccount<TAccountUser> & AccountSignerMeta<TAccountUser>
         : TAccountUser,
       TAccountPayer extends string
         ? WritableSignerAccount<TAccountPayer> & AccountSignerMeta<TAccountPayer>
@@ -95,7 +94,7 @@ export type QuitInstruction<
       TAccountBatcher extends string ? ReadonlyAccount<TAccountBatcher> : TAccountBatcher,
       TAccountBatch extends string ? ReadonlyAccount<TAccountBatch> : TAccountBatch,
       TAccountBatchAuthority extends string ? ReadonlyAccount<TAccountBatchAuthority> : TAccountBatchAuthority,
-      TAccountJoinRecord extends string ? ReadonlyAccount<TAccountJoinRecord> : TAccountJoinRecord,
+      TAccountJoinRecord extends string ? WritableAccount<TAccountJoinRecord> : TAccountJoinRecord,
       TAccountJoinConfidentialMint extends string
         ? ReadonlyAccount<TAccountJoinConfidentialMint>
         : TAccountJoinConfidentialMint,
@@ -189,7 +188,10 @@ export type QuitAsyncInput<
   TAccountBatchHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountBatchHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  /** Quitting user; owner of the refund destination. */
+  /**
+   * Quitting user; owner of the refund destination. Receives the join record's rent when the
+   * batch is refunding.
+   */
   user: TAccountUser;
   /** Pays the transfer output rent and the reset execution's ACL rent. */
   payer: TAccountPayer;
@@ -383,7 +385,7 @@ export async function getQuitInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    user: { value: input.user ?? null, isSigner: true, isWritable: false },
+    user: { value: input.user ?? null, isSigner: true, isWritable: true },
     payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
     batcher: {
       value: input.batcher ?? null,
@@ -399,7 +401,7 @@ export async function getQuitInstructionAsync<
     joinRecord: {
       value: input.joinRecord ?? null,
       isSigner: false,
-      isWritable: false,
+      isWritable: true,
     },
     joinConfidentialMint: {
       value: input.joinConfidentialMint ?? null,
@@ -678,7 +680,10 @@ export type QuitInput<
   TAccountBatchHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountBatchHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  /** Quitting user; owner of the refund destination. */
+  /**
+   * Quitting user; owner of the refund destination. Receives the join record's rent when the
+   * batch is refunding.
+   */
   user: TAccountUser;
   /** Pays the transfer output rent and the reset execution's ACL rent. */
   payer: TAccountPayer;
@@ -864,7 +869,7 @@ export function getQuitInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    user: { value: input.user ?? null, isSigner: true, isWritable: false },
+    user: { value: input.user ?? null, isSigner: true, isWritable: true },
     payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
     batcher: {
       value: input.batcher ?? null,
@@ -880,7 +885,7 @@ export function getQuitInstruction<
     joinRecord: {
       value: input.joinRecord ?? null,
       isSigner: false,
-      isWritable: false,
+      isWritable: true,
     },
     joinConfidentialMint: {
       value: input.joinConfidentialMint ?? null,
@@ -1109,7 +1114,10 @@ export type ParsedQuitInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Quitting user; owner of the refund destination. */
+    /**
+     * Quitting user; owner of the refund destination. Receives the join record's rent when the
+     * batch is refunding.
+     */
     user: TAccountMetas[0];
     /** Pays the transfer output rent and the reset execution's ACL rent. */
     payer: TAccountMetas[1];

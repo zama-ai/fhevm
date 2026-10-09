@@ -145,7 +145,8 @@ pub mod confidential_batcher {
     /// Leaves a pending batch before dispatch, or a refunding batch after dispatch cancellation:
     /// transfers the user's exact
     /// recorded amount back from the batch account (all-or-nothing) and
-    /// resets the joined encrypted store to zero.
+    /// resets the joined encrypted store to zero. In a refunding batch it also closes the join
+    /// record, returning its rent to the user.
     /// Deny records: `(token, join mint)` and `(batcher, batch)` for the refund, then
     /// `(batcher, batch)` again for the reset.
     pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
