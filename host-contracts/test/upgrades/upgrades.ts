@@ -8,8 +8,6 @@ import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 const KEY_COUNTER_BASE = BigInt(4) << BigInt(248);
 const CRS_COUNTER_BASE = BigInt(5) << BigInt(248);
-// OpenZeppelin Initializable ERC-7201 slot.
-const INITIALIZABLE_STORAGE_SLOT = '0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00';
 
 describe('Upgrades', function () {
   before(async function () {
@@ -67,33 +65,47 @@ describe('Upgrades', function () {
     await expectThresholds(pc2);
   });
 
-  it('upgrades a ProtocolConfig proxy in place to ProtocolConfigReplica', async function () {
-    const factory = await ethers.getContractFactory('ProtocolConfig', this.signers.fred);
-    const replicaFactory = await ethers.getContractFactory('ProtocolConfigReplica', this.signers.fred);
-    const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
-    const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
-      call: {
-        fn: 'initializeFromEmptyProxy',
-        args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
-      },
+  // Deploys a proxy with the v0.14.2 ProtocolConfig storage layout, at initialized version 3.
+  async function deployV0142ProtocolConfig(fred: any, emptyUUPSFactory: any) {
+    const factory = await ethers.getContractFactory('ProtocolConfigV0142LayoutExample', fred);
+    const pc = await upgrades.upgradeProxy(await deployEmptyProxy(emptyUUPSFactory), factory, {
+      call: { fn: 'initializeFromEmptyProxy', args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds()] },
     });
     await pc.waitForDeployment();
-    const [contextId, epochId] = await pc.getCurrentKmsContextAndEpoch();
-    // Production converts released v0.14.2 proxies, initialized at version 3. A fresh ProtocolConfig
-    // is initialized at 5, at the replica's reinitializer version, so pin the released value.
-    await ethers.provider.send('hardhat_setStorageAt', [
-      await pc.getAddress(),
-      INITIALIZABLE_STORAGE_SLOT,
-      ethers.toBeHex(3, 32),
-    ]);
+    return pc;
+  }
 
+  const expectV0142State = async (c: any) => {
+    expect(await c.getKmsSigners()).to.deep.equal(buildProtocolConfigNodes().map((n) => n.signerAddress));
+    expect(await c.getPublicDecryptionThreshold()).to.equal(1n);
+    expect(await c.getUserDecryptionThreshold()).to.equal(2n);
+    expect(await c.getKmsGenThreshold()).to.equal(3n);
+    expect(await c.getMpcThreshold()).to.equal(4n);
+  };
+
+  it('upgrades a v0.14.2 ProtocolConfig proxy in place to ProtocolConfigReplica', async function () {
+    const pc = await deployV0142ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
+    const replicaFactory = await ethers.getContractFactory('ProtocolConfigReplica', this.signers.fred);
     const replica = await upgrades.upgradeProxy(pc, replicaFactory, { call: { fn: 'reinitializeV4' } });
     await replica.waitForDeployment();
     expect(await replica.getVersion()).to.equal('ProtocolConfigReplica v0.1.0');
-    expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId]);
+    const [contextId, epochId] = await replica.getCurrentKmsContextAndEpoch();
+    expect(await replica.isValidEpochForContext(contextId, epochId)).to.be.true;
+    await expectV0142State(replica);
 
     await (await replica.mirrorKmsEpoch(contextId, epochId + 1n)).wait();
     expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId + 1n]);
+  });
+
+  it('upgrades a v0.14.2 ProtocolConfig proxy in place to ProtocolConfig', async function () {
+    const pc = await deployV0142ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
+    const factory = await ethers.getContractFactory('ProtocolConfig', this.signers.fred);
+    const canonical = await upgrades.upgradeProxy(pc, factory, { call: { fn: 'reinitializeV4' } });
+    await canonical.waitForDeployment();
+    expect(await canonical.getVersion()).to.equal('ProtocolConfig v0.4.0');
+    const [contextId, epochId] = await canonical.getCurrentKmsContextAndEpoch();
+    expect(await canonical.isValidEpochForContext(contextId, epochId)).to.be.true;
+    await expectV0142State(canonical);
   });
 
   it('deploy upgradeable KMSGeneration', async function () {
