@@ -57,9 +57,15 @@ gpu = ["tfhe/gpu"]
 latency = []
 throughput = []
 compact-hex = []
-# Local runs only: take the versions from BUILD_CONSENSUS_VERSION and
-# BUILD_STACK_VERSION so a second stack builds from the same tree. A cutover
-# needs both to move, so they are normally used together.
+# Compile this tree as a different release: the versions come from the
+# BUILD_CONSENSUS_VERSION and BUILD_STACK_VERSION environment variables instead
+# of the constants in `src/lib.rs`. Two callers. `run_with_localnet.sh` brings
+# up a second stack from one tree. The preview-env Blue fleet needs a
+# predecessor whose consensus version is older than the branch under test, and
+# no published release has one that also finalizes blocks on its own, which is
+# what a listener-only topology requires of it.
+#
+# A cutover moves both versions, so set both or neither.
 consensus-version-override = []
 stack-version-override = []
 

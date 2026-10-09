@@ -62,6 +62,11 @@ launch options:
   --polygon                 second Polygon host (with --blue-green: two-chain RFC-021)
   --listener-v2-only        listener_v2_only=true: listener v2 stack only, no
                             host-listener pollers
+  --bcs-from-head           bcs_from_head=true: build Blue from this branch one
+                            consensus version and one release behind Green,
+                            instead of the pinned previous release. Needs
+                            --blue-green; pair with --listener-v2-only, which
+                            has no poller to finalize blocks for Blue
   --observability           in-namespace Prometheus/Grafana/Jaeger
   --no-build                build_images=false
   --test-suite-only         build only the e2e test-suite image
@@ -192,6 +197,7 @@ cmd_launch() {
   local tests="false" polygon="false" observability="false"
   local build_images="true" test_suite_only="false" kms_parties="4"
   local do_watch="false" lifetime="8" workers_tag="" listener_v2_only="false"
+  local bcs_from_head="false"
   local -a sets=()
 
   while [[ $# -gt 0 ]]; do
@@ -206,6 +212,7 @@ cmd_launch() {
       --tests) tests="true"; shift ;;
       --polygon) polygon="true"; shift ;;
       --listener-v2-only) listener_v2_only="true"; shift ;;
+      --bcs-from-head) bcs_from_head="true"; shift ;;
       --observability) observability="true"; shift ;;
       --no-build) build_images="false"; shift ;;
       --test-suite-only) test_suite_only="true"; shift ;;
@@ -239,6 +246,13 @@ cmd_launch() {
   if [[ "${blue_green}" == "true" && "${parties}" == "1" ]]; then
     parties="2"
   fi
+  if [[ "${bcs_from_head}" == "true" ]]; then
+    # Blue only has a Green to cut over to under blue-green, and only exists
+    # at all if this run builds it.
+    [[ "${blue_green}" == "true" ]] || die "--bcs-from-head requires --blue-green"
+    [[ "${build_images}" == "true" ]] || die "--bcs-from-head builds Blue, so it cannot be used with --no-build"
+    [[ "${test_suite_only}" != "true" ]] || die "--bcs-from-head builds Blue, so it cannot be used with --test-suite-only"
+  fi
   if [[ "${chain_mode}" == "blockchain-dev" && "${polygon}" == "true" ]]; then
     die "--blockchain-dev is incompatible with --polygon"
   fi
@@ -269,7 +283,7 @@ print(json.dumps(out, separators=(",", ":")))
 
   need_gh
   echo "dispatching ${DEPLOY_WORKFLOW} on ${REPO} @ ${ref}"
-  echo "  parties=${parties} blue_green=${blue_green} gpu=${gpu} workers_tag=${workers_tag:-<none>} chain_mode=${chain_mode} tests=${tests} polygon=${polygon} listener_v2_only=${listener_v2_only} lifetime=${lifetime}h"
+  echo "  parties=${parties} blue_green=${blue_green} gpu=${gpu} workers_tag=${workers_tag:-<none>} chain_mode=${chain_mode} tests=${tests} polygon=${polygon} listener_v2_only=${listener_v2_only} bcs_from_head=${bcs_from_head} lifetime=${lifetime}h"
   echo "  overrides=${overrides}"
 
   gh workflow run "${DEPLOY_WORKFLOW}" -R "${REPO}" --ref "${ref}" \
@@ -285,6 +299,7 @@ print(json.dumps(out, separators=(",", ":")))
     -f "deploy_polygon=${polygon}" \
     -f "chain_mode=${chain_mode}" \
     -f "listener_v2_only=${listener_v2_only}" \
+    -f "bcs_from_head=${bcs_from_head}" \
     -f "lifetime=${lifetime}" \
     -f "overrides=${overrides}"
 

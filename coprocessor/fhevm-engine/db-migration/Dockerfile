@@ -39,6 +39,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # postgres runtime image below. Pinned to a specific version for reproducible builds.
 ARG TARGETARCH
 ARG AWS_CLI_VERSION="2.34.52"
+
+# Preview-env only: compile this image as a different release, so a blue/green
+# cutover has a second side to play without waiting for one to be published.
+# Set both or neither - see the feature pair in fhevm-engine-common/Cargo.toml.
+# Empty is the production path and leaves the image unchanged.
+ARG BUILD_CONSENSUS_VERSION=
+ARG BUILD_STACK_VERSION=
 RUN set -eux; \
     apk add --no-cache unzip; \
     arch="${TARGETARCH:-}"; \
@@ -91,7 +98,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
-    cargo build --release -p fhevm-engine-common --bin resolve_database_url --bin bootstrap_versioning && \
+    version_override=""; \
+    if [ -n "${BUILD_CONSENSUS_VERSION}" ] || [ -n "${BUILD_STACK_VERSION}" ]; then \
+      : "${BUILD_CONSENSUS_VERSION:?must be set together with BUILD_STACK_VERSION}"; \
+      : "${BUILD_STACK_VERSION:?must be set together with BUILD_CONSENSUS_VERSION}"; \
+      version_override="--features fhevm-engine-common/consensus-version-override,fhevm-engine-common/stack-version-override"; \
+    fi && \
+    cargo build ${version_override} --release -p fhevm-engine-common --bin resolve_database_url --bin bootstrap_versioning && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     mkdir -p /out && \
     cp target/release/resolve_database_url /out/ && \
