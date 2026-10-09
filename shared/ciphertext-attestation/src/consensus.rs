@@ -1,28 +1,32 @@
 //! Attestation consensus evaluation module.
 
-use crate::{CiphertextAttestation, CiphertextFormat};
-use alloy_primitives::{Address, B256, U256};
-use std::{collections::HashMap, num::NonZeroUsize};
+use crate::{AttestationError, CiphertextAttestation};
+use alloy_primitives::Address;
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    hash::Hash,
+    num::NonZeroUsize,
+};
 use tracing::{trace, warn};
 
-/// The ciphertext material a consensus group agreed on.
-#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ConsensusMaterial {
-    pub key_id: U256,
-    pub ciphertext_digest: B256,
-    pub sns_ciphertext_digest: B256,
-    pub format: CiphertextFormat,
-}
+/// An attestation that Coprocessors sign and a [`ConsensusRound`] counts.
+pub trait Attestation: Clone + Debug {
+    /// What the attestation is about.
+    type Subject: Clone + Display + Send + Sync + 'static;
+    /// What the attestation vouches for about its subject. Two attestations agree when their
+    /// material is equal; `Ord` only makes tie-breaking deterministic.
+    type Material: Clone + Ord + Hash + Debug + Send + Sync + 'static;
 
-impl From<&CiphertextAttestation> for ConsensusMaterial {
-    fn from(att: &CiphertextAttestation) -> Self {
-        Self {
-            key_id: att.key_id,
-            ciphertext_digest: att.ciphertext_digest,
-            sns_ciphertext_digest: att.sns_ciphertext_digest,
-            format: att.format,
-        }
-    }
+    /// Verifies that this attestation was signed by `expected_signer` over `subject`.
+    fn verify(
+        &self,
+        subject: &Self::Subject,
+        expected_signer: Address,
+    ) -> Result<(), AttestationError>;
+
+    /// The material this attestation vouches for.
+    fn material(&self) -> Self::Material;
 }
 
 /// The on-chain identity of a registered Coprocessor.
@@ -35,18 +39,17 @@ pub struct CoprocessorEntry {
 
 /// One round of asking every registered Coprocessor for an attestation.
 #[derive(Clone)]
-pub struct ConsensusRound {
-    pub handle: B256,
+pub struct ConsensusRound<A: Attestation = CiphertextAttestation> {
+    pub subject: A::Subject,
     pub threshold: NonZeroUsize,
-    coprocessor_context_id: U256,
     /// One slot per registered Coprocessor, in the order given. Filled in place as replies arrive.
-    replies: Vec<(CoprocessorEntry, CoprocessorReply)>,
+    replies: Vec<(CoprocessorEntry, CoprocessorReply<A::Material>)>,
 }
 
 /// What one registered Coprocessor did this round.
 #[derive(Clone, Debug)]
-enum CoprocessorReply {
-    Attested(ConsensusMaterial),
+enum CoprocessorReply<M> {
+    Attested(M),
     /// No attestation came back: timeout, HTTP error, missing or malformed header.
     NoReply,
     /// An attestation came back, but it failed validation.
@@ -57,41 +60,40 @@ enum CoprocessorReply {
 
 /// A reached consensus together with the Coprocessors that agreed on it.
 #[derive(Debug)]
-pub struct ResolvedConsensus {
-    pub material: ConsensusMaterial,
+pub struct ResolvedConsensus<A: Attestation = CiphertextAttestation> {
+    pub material: A::Material,
     /// The Coprocessors whose attestation is in the winning group.
     pub winners: Vec<CoprocessorEntry>,
 }
 
-/// Why a handle has no attestation consensus this round.
+/// Why a subject has no attestation consensus this round.
 #[derive(Debug, thiserror::Error)]
-pub enum ConsensusCheckError {
+pub enum ConsensusCheckError<A: Attestation = CiphertextAttestation> {
     /// No group reached the threshold. Retriable: attestations are published asynchronously, so
     /// this is the normal early state.
     #[error("no attestation consensus yet: {0}")]
-    NotReachedThisRound(ConsensusRound),
+    NotReachedThisRound(ConsensusRound<A>),
 
     /// The Coprocessors that answered disagree, and even the best possible outcome would still
     /// fall short of threshold. Terminal for this round.
     #[error("attestation consensus unreachable: {0}")]
-    Unreachable(ConsensusRound),
+    Unreachable(ConsensusRound<A>),
 }
 
 /// The decision a round ends on.
-pub type ConsensusOutcome = Result<ResolvedConsensus, ConsensusCheckError>;
+pub type ConsensusOutcome<A = CiphertextAttestation> =
+    Result<ResolvedConsensus<A>, ConsensusCheckError<A>>;
 
-impl ConsensusRound {
-    /// Opens the round: one slot per registered Coprocessor, all [`CoprocessorReply::Outstanding`].
-    pub fn new(
-        handle: B256,
-        coprocessor_context_id: U256,
+impl<A: Attestation> ConsensusRound<A> {
+    /// Opens the round: one slot per registered Coprocessor, all outstanding.
+    pub fn open(
+        subject: A::Subject,
         entries: impl IntoIterator<Item = CoprocessorEntry>,
         threshold: NonZeroUsize,
     ) -> Self {
         Self {
-            handle,
             threshold,
-            coprocessor_context_id,
+            subject,
             replies: entries
                 .into_iter()
                 .map(|entry| (entry, CoprocessorReply::Outstanding))
@@ -106,10 +108,10 @@ impl ConsensusRound {
 
     /// The largest group of Coprocessors that attested the same material, with that material.
     ///
-    /// Ties are broken deterministically by material, smallest wins, so the outcome never depends
+    /// Ties are broken deterministically by material (largest wins) so the outcome never depends
     /// on reply order.
-    fn largest_group(&self) -> Option<(ConsensusMaterial, Vec<CoprocessorEntry>)> {
-        let mut grouped: HashMap<&ConsensusMaterial, Vec<CoprocessorEntry>> = HashMap::new();
+    fn largest_group(&self) -> Option<(A::Material, Vec<CoprocessorEntry>)> {
+        let mut grouped: HashMap<&A::Material, Vec<CoprocessorEntry>> = HashMap::new();
         for (entry, reply) in &self.replies {
             if let CoprocessorReply::Attested(material) = reply {
                 grouped.entry(material).or_default().push(entry.clone());
@@ -117,28 +119,20 @@ impl ConsensusRound {
         }
         grouped
             .into_iter()
-            .max_by(
-                |(left_material, left_entries), (right_material, right_entries)| {
-                    left_entries
-                        .len()
-                        .cmp(&right_entries.len())
-                        .then_with(|| right_material.cmp(left_material))
-                },
-            )
+            .max_by_key(|(material, entries)| (entries.len(), *material))
             .map(|(material, entries)| (material.clone(), entries))
     }
 
-    /// Verifies the attestation served by `signer`'s bucket and fills its slot.
+    /// Verifies the attestation served by `signer` and fills its slot.
     pub fn record_attestation(
         &mut self,
         signer: Address,
-        attestation: &CiphertextAttestation,
-    ) -> Option<ConsensusOutcome> {
-        let handle = self.handle;
-        let reply = match attestation.verify(handle, self.coprocessor_context_id, signer) {
-            Ok(()) => CoprocessorReply::Attested(ConsensusMaterial::from(attestation)),
+        attestation: &A,
+    ) -> Option<ConsensusOutcome<A>> {
+        let reply = match attestation.verify(&self.subject, signer) {
+            Ok(()) => CoprocessorReply::Attested(attestation.material()),
             Err(e) => {
-                warn!(%signer, %handle, "Discarding invalid attestation: {e}");
+                warn!(%signer, subject = %self.subject, "Discarding invalid attestation: {e}");
                 CoprocessorReply::Rejected
             }
         };
@@ -146,12 +140,12 @@ impl ConsensusRound {
     }
 
     /// Fills `signer`'s slot for a Coprocessor that served no attestation.
-    pub fn record_no_reply(&mut self, signer: Address) -> Option<ConsensusOutcome> {
+    pub fn record_no_reply(&mut self, signer: Address) -> Option<ConsensusOutcome<A>> {
         self.record(signer, CoprocessorReply::NoReply)
     }
 
-    /// Ends the round, turning every slot still outstanding into [`CoprocessorReply::NoReply`].
-    pub fn close(mut self) -> ConsensusOutcome {
+    /// Ends the round, turning every slot still outstanding into a missing reply.
+    pub fn close(mut self) -> ConsensusOutcome<A> {
         for (_, reply) in &mut self.replies {
             if matches!(reply, CoprocessorReply::Outstanding) {
                 *reply = CoprocessorReply::NoReply;
@@ -162,8 +156,12 @@ impl ConsensusRound {
     }
 
     /// Records a coprocessor reply for this round.
-    fn record(&mut self, signer: Address, reply: CoprocessorReply) -> Option<ConsensusOutcome> {
-        trace!(%signer, handle = %self.handle, ?reply, "Coprocessor reply recorded");
+    fn record(
+        &mut self,
+        signer: Address,
+        reply: CoprocessorReply<A::Material>,
+    ) -> Option<ConsensusOutcome<A>> {
+        trace!(%signer, subject = %self.subject, ?reply, "Coprocessor reply recorded");
         match self
             .replies
             .iter_mut()
@@ -182,7 +180,7 @@ impl ConsensusRound {
     /// Evaluates the consensus with the currently registered coprocessor replies.
     ///
     /// `None` while not everyone has answered and the threshold is still reachable this round.
-    fn outcome(&self) -> Option<ConsensusOutcome> {
+    fn outcome(&self) -> Option<ConsensusOutcome<A>> {
         let threshold = self.threshold.get();
         let largest_group = self.largest_group();
         let largest = largest_group
@@ -222,7 +220,10 @@ impl ConsensusRound {
         self.addresses_where(|r| matches!(r, CoprocessorReply::Outstanding))
     }
 
-    fn addresses_where(&self, pred: impl Fn(&CoprocessorReply) -> bool) -> Vec<Address> {
+    fn addresses_where(
+        &self,
+        pred: impl Fn(&CoprocessorReply<A::Material>) -> bool,
+    ) -> Vec<Address> {
         self.replies
             .iter()
             .filter(|(_, reply)| pred(reply))
@@ -231,12 +232,12 @@ impl ConsensusRound {
     }
 }
 
-impl std::fmt::Display for ConsensusRound {
+impl<A: Attestation> Display for ConsensusRound<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "handle {}: {} of {} required attested",
-            self.handle,
+            "{}: {} of {} required attested",
+            self.subject,
             self.largest_group_size(),
             self.threshold.get()
         )?;
@@ -256,9 +257,9 @@ impl std::fmt::Display for ConsensusRound {
     }
 }
 
-impl std::fmt::Debug for ConsensusRound {
+impl<A: Attestation> Debug for ConsensusRound<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "handle {}: need {}: ", self.handle, self.threshold.get())?;
+        write!(f, "{}: need {}: ", self.subject, self.threshold.get())?;
         for (i, (entry, reply)) in self.replies.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
@@ -287,7 +288,11 @@ fn format_addrs(addrs: &[Address]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CiphertextAttestationPayload, Version};
+    use crate::{
+        CiphertextAttestationPayload, CiphertextFormat, CiphertextRef, ConsensusMaterial,
+        ciphertext::Version,
+    };
+    use alloy_primitives::{B256, U256};
     use alloy_signer_local::PrivateKeySigner;
 
     const HANDLE: B256 = B256::repeat_byte(0xAA);
@@ -326,9 +331,8 @@ mod tests {
             signer,
             bucket: format!("http://bucket-{signer}"),
         });
-        ConsensusRound::new(
-            HANDLE,
-            COPROCESSOR_CONTEXT_ID,
+        ConsensusRound::open(
+            CiphertextRef::new(HANDLE, COPROCESSOR_CONTEXT_ID),
             entries,
             NonZeroUsize::new(threshold).unwrap(),
         )
@@ -721,8 +725,8 @@ mod tests {
         // test does not go vacuous if the fixtures' digests ever change.
         assert_eq!(
             winning_material,
-            material1.min(material2),
-            "the winning group must hold the smaller material on a tie"
+            material1.max(material2),
+            "the winning group must hold the larger material on a tie"
         );
     }
 

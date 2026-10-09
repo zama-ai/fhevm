@@ -2,6 +2,7 @@
 //! evaluates consensus over the results.
 
 use crate::{
+    ciphertext::consensus::CiphertextRef,
     client::{registry::CoprocessorRegistrySnapshot, s3::BoundedClient},
     consensus::{ConsensusOutcome, ConsensusRound},
 };
@@ -28,7 +29,11 @@ pub async fn fetch_attestations_and_check_consensus(
     }
 
     let entries = registry.coprocessors.iter().cloned();
-    let mut round = ConsensusRound::new(handle, client.context_id(), entries, registry.threshold);
+    let mut round = ConsensusRound::open(
+        CiphertextRef::new(handle, client.context_id()),
+        entries,
+        registry.threshold,
+    );
 
     while let Some(joined) = fetch_attestation_tasks.join_next().await {
         let (signer, fetch_result) = match joined {

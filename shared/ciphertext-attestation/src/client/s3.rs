@@ -6,9 +6,7 @@
 //! bytes; wrapping them in a KMS type and extracting the handle's FHE type stay in
 //! `kms-connector`.
 
-use crate::{
-    CiphertextAttestation, S3_METADATA_ATTESTATION_HEADER, s3_ct128_key, sign::keccak_b256,
-};
+use crate::{CiphertextAttestation, S3_METADATA_ATTESTATION_HEADER, keccak_b256, s3_ct128_key};
 use alloy::{
     primitives::{B256, U256},
     transports::http::{

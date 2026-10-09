@@ -15,7 +15,7 @@ use alloy::primitives::{Address, B256, U256};
 use alloy::signers::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
 use ciphertext_attestation::{
-    CiphertextAttestation, CiphertextAttestationPayload, CiphertextFormat, Version,
+    ciphertext::Version, CiphertextAttestation, CiphertextAttestationPayload, CiphertextFormat,
     S3_METADATA_ATTESTATION_HEADER,
 };
 use std::time::Duration;
