@@ -36,7 +36,7 @@ const keeper = createNoopSigner(address('SysvarRecentB1ockHashes1111111111111111
 const config = {
   rpcUrl: 'http://127.0.0.1:8899',
   wsUrl: 'ws://127.0.0.1:8900',
-  programs: { token: tokenProgram, host: ZAMA_HOST_PROGRAM_ADDRESS },
+  programs: { host: ZAMA_HOST_PROGRAM_ADDRESS },
   mints: {
     joinUnderlying: address('SysvarStakeHistory1111111111111111111111111'),
     payoutUnderlying: address('Stake11111111111111111111111111111111111111'),
@@ -52,7 +52,6 @@ const position = { batchIndex: 1n, batch, amountBaseUnits: 100_000_000n };
 const initializeInstruction = { programAddress: tokenProgram, accounts: [], data: new Uint8Array([1]) };
 const claimInstruction = { programAddress: tokenProgram, accounts: [], data: new Uint8Array([2]) };
 let keeperStore: string;
-const sentBody = (call: number) => mocks.send.mock.calls[call]?.[1];
 
 describe('sponsored payout claim', () => {
   beforeEach(async () => {
@@ -77,7 +76,7 @@ describe('sponsored payout claim', () => {
     );
     expect(mocks.createClient).toHaveBeenCalledWith(config, keeper);
     expect(mocks.send.mock.calls[0]?.[0]).toMatchObject({ address: keeperStore });
-    expect(sentBody(0)).toEqual([initializeInstruction, claimInstruction]);
+    expect(mocks.send.mock.calls[0]?.[1]).toEqual([initializeInstruction, claimInstruction]);
   });
 
   test('treats an already claimed join as idempotent success', async () => {

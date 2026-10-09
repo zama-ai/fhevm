@@ -247,10 +247,12 @@ export type OpenBatchAsyncInput<
   batchAuthority?: TAccountBatchAuthority;
   /** Confidential mint users join batches with. */
   joinConfidentialMint: TAccountJoinConfidentialMint;
+  /** someone already created it. */
   batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
   batchJoinBalanceStore: TAccountBatchJoinBalanceStore;
   /** Confidential mint claims pay out in. */
   payoutConfidentialMint: TAccountPayoutConfidentialMint;
+  /** someone already created it. */
   batchPayoutTokenAccount: TAccountBatchPayoutTokenAccount;
   batchPayoutBalanceStore: TAccountBatchPayoutBalanceStore;
   /**
@@ -821,10 +823,12 @@ export type OpenBatchInput<
   batchAuthority: TAccountBatchAuthority;
   /** Confidential mint users join batches with. */
   joinConfidentialMint: TAccountJoinConfidentialMint;
+  /** someone already created it. */
   batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
   batchJoinBalanceStore: TAccountBatchJoinBalanceStore;
   /** Confidential mint claims pay out in. */
   payoutConfidentialMint: TAccountPayoutConfidentialMint;
+  /** someone already created it. */
   batchPayoutTokenAccount: TAccountBatchPayoutTokenAccount;
   batchPayoutBalanceStore: TAccountBatchPayoutBalanceStore;
   /**
@@ -1326,10 +1330,12 @@ export type ParsedOpenBatchInstruction<
     batchAuthority: TAccountMetas[4];
     /** Confidential mint users join batches with. */
     joinConfidentialMint: TAccountMetas[5];
+    /** someone already created it. */
     batchJoinTokenAccount: TAccountMetas[6];
     batchJoinBalanceStore: TAccountMetas[7];
     /** Confidential mint claims pay out in. */
     payoutConfidentialMint: TAccountMetas[8];
+    /** someone already created it. */
     batchPayoutTokenAccount: TAccountMetas[9];
     batchPayoutBalanceStore: TAccountMetas[10];
     /**

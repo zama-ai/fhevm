@@ -1,6 +1,6 @@
 import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
-import { prepareTransientStore, type TransientStore } from '@fhevm/sdk/solana';
-import { type Address, type Instruction, type Signature, type TransactionSigner } from '@solana/kit';
+import { prepareTransientStore } from '@fhevm/sdk/solana';
+import { type Address, type Signature, type TransactionSigner } from '@solana/kit';
 import {
   buildClaimInstruction as buildVaultClaimInstruction,
   buildInitializeTokenAccountInstruction,
@@ -40,18 +40,21 @@ const readClaimStore = async (
   return { roots, claimed: joinRecord.claimed };
 };
 
-const buildClaimInstructions = async (
+/**
+ * Sponsors the connected local-demo user's canonical payout account and permissionless claim.
+ * Accounts and instructions are derived server-side; the keeper never signs browser-provided messages.
+ */
+export const claimBatchPayout = async (
   session: ClaimSession,
   position: BatchTarget,
   direction: VaultDirection,
   user: Address,
-): Promise<{ readonly transientStore: TransientStore; readonly instructions: readonly Instruction[] } | null> => {
+): Promise<Signature | null> => {
   const { roots, claimed } = await readClaimStore(session, position, direction, user);
   if (claimed) return null;
 
   const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
   const instructions = [
-    // Creates the user's payout account, or leaves the existing one as it is.
     await buildInitializeTokenAccountInstruction({
       transientStore: transientStore,
       payer: session.keeper,
@@ -69,22 +72,6 @@ const buildClaimInstructions = async (
       tokenProgram: TOKEN_PROGRAM_ADDRESS,
     }),
   ];
-  return { transientStore, instructions };
-};
-
-/**
- * Sponsors the connected local-demo user's canonical payout account and permissionless claim.
- * Accounts and instructions are derived server-side; the keeper never signs browser-provided messages.
- */
-export const claimBatchPayout = async (
-  session: ClaimSession,
-  position: BatchTarget,
-  direction: VaultDirection,
-  user: Address,
-): Promise<Signature | null> => {
-  const claim = await buildClaimInstructions(session, position, direction, user);
-  if (claim === null) return null;
-  return (
-    await createDemoClient(session.config, session.keeper).sendFheTransaction(claim.transientStore, claim.instructions)
-  ).context.signature;
+  return (await createDemoClient(session.config, session.keeper).sendFheTransaction(transientStore, instructions)).context
+    .signature;
 };

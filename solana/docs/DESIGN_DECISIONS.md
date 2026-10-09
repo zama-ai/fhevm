@@ -1315,11 +1315,11 @@ config and its pause flags (DD-058). This keeps the boundary aligned without pay
 derivation or adding redundant IDL metadata.
 
 Confidential accounts follow the associated token account model: canonical derivation, permissionless
-create-for, and an idempotent `initialize_token_account`, like the associated token program's
-`CreateIdempotent`. An account that already exists is left unchanged and its creator keeps the rent,
-so a client includes the instruction without reading the account first. Because the owner does not
-sign, anyone can create the next batch's token accounts before `open_batch` does, and the open still
-succeeds (`mollusk_open_batch_accepts_precreated_batch_token_accounts`).
+create-for, and idempotent creation (`initialize_token_account`, like `CreateIdempotent`). An account
+that already exists is left unchanged and its creator keeps the rent, so a client includes the
+instruction without reading the account first. Because the owner does not sign, anyone can create the
+next batch's token accounts before `open_batch` does, and the open still succeeds (pinned by
+`mollusk_open_batch_accepts_precreated_batch_token_accounts`).
 
 Disclosure publishes the certified handle and cleartext and reads no token state (DD-040). The
 binding is checked when the handle is made public: `make_token_account_handle_public` names a

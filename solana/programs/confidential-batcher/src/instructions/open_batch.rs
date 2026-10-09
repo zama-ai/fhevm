@@ -40,7 +40,8 @@ pub struct OpenBatch<'info> {
     pub batch_authority: UncheckedAccount<'info>,
     /// Confidential mint users join batches with.
     pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
-    /// CHECK: batch's confidential join token account; created by the token CPI.
+    /// CHECK: batch's confidential join token account; created by the token CPI, or kept as is if
+    /// someone already created it.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
     /// CHECK: batch join balance encrypted store; created by the host CPI.
@@ -48,7 +49,8 @@ pub struct OpenBatch<'info> {
     pub batch_join_balance_store: UncheckedAccount<'info>,
     /// Confidential mint claims pay out in.
     pub payout_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
-    /// CHECK: batch's confidential payout token account; created by the token CPI.
+    /// CHECK: batch's confidential payout token account; created by the token CPI, or kept as is if
+    /// someone already created it.
     #[account(mut)]
     pub batch_payout_token_account: UncheckedAccount<'info>,
     /// CHECK: batch payout balance encrypted store; created by the host CPI.
@@ -120,7 +122,7 @@ pub struct OpenBatch<'info> {
     pub payout_mint_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
-/// Creates the batch and both of its confidential token accounts.
+/// Creates the batch and, unless they already exist, both of its confidential token accounts.
 pub fn open_batch<'info>(
     ctx: Context<'info, OpenBatch<'info>>,
     index: u64,

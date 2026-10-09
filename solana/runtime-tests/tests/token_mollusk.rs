@@ -1299,18 +1299,6 @@ fn mollusk_initialize_token_account_allows_distinct_sponsor_and_owner() {
             &[owner]
         )
     );
-
-    // Creating it again succeeds without a second balance write.
-    let retry = check_token_instruction(&context, &ix, &[Check::success()]);
-    assert!(retry.inner_instructions.is_empty());
-    let stored_after_retry = read_token_account(&context, token_account);
-    let balance_after_retry = read_encrypted_store(&context, balance_encrypted_store);
-    assert_eq!(stored_after_retry.owner, stored.owner);
-    assert_eq!(
-        store_handle(&balance_after_retry, token::balance_key()),
-        store_handle(&balance_store, token::balance_key())
-    );
-    assert_eq!(balance_after_retry.peaks, balance_store.peaks);
 }
 
 /// Initializing an account that already holds a balance succeeds and writes nothing: the balance,
