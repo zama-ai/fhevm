@@ -194,6 +194,73 @@ fn preview_cleanup_burns_and_closes_token_2022_accounts() {
 }
 
 #[test]
+fn preview_cleanup_refuses_token_account_of_the_other_token_program() {
+    use anchor_spl::token_2022::spl_token_2022::{self, state::AccountState};
+    use solana_sdk::{instruction::InstructionError, program_error::ProgramError};
+    for (program, artifact) in programs() {
+        let (authority, bump) = Pubkey::find_program_address(&[b"cleanup-test"], &program);
+        let mint = Pubkey::new_unique();
+        let token_2022_base_layout = Account {
+            owner: spl_token_2022::ID,
+            ..spl_token_account(mint, authority, 7)
+        };
+        for (token_account, mint_account, wrong_token_program, refusal) in [
+            // Classic Token burns without checking the account owner; the runtime then rejects
+            // its write to an account Token-2022 owns.
+            (
+                token_2022_base_layout,
+                token_2022_mint_account(6),
+                anchor_spl::token::ID,
+                Check::instruction_err(InstructionError::ExternalAccountDataModified),
+            ),
+            // Classic Token refuses the longer layout of an account with extensions.
+            (
+                token_2022_immutable_owner_account(mint, authority, 7, AccountState::Initialized),
+                token_2022_mint_account(6),
+                anchor_spl::token::ID,
+                Check::err(ProgramError::InvalidAccountData),
+            ),
+            (
+                spl_token_account(mint, authority, 7),
+                spl_mint_account(None, 1_000_000),
+                spl_token_2022::ID,
+                Check::err(ProgramError::IncorrectProgramId),
+            ),
+        ] {
+            let admin = Pubkey::new_unique();
+            let token = Pubkey::new_unique();
+            let mut svm = zama_solana_test_kit::svm(&program, artifact);
+            mollusk_svm_programs_token::token::add_program(&mut svm);
+            mollusk_svm_programs_token::token2022::add_program(&mut svm);
+            let context = svm.with_context(HashMap::from([
+                (admin, funded_system_account()),
+                (
+                    bpf_loader_upgradeable::get_program_data_address(&program),
+                    program_data_account(Some(admin)).1,
+                ),
+                (mint, mint_account),
+                (token, token_account.clone()),
+            ]));
+            context.process_and_validate_instruction(
+                &preview_close_token(
+                    program,
+                    admin,
+                    &[b"cleanup-test", &[bump]],
+                    token,
+                    mint,
+                    wrong_token_program,
+                ),
+                &[refusal],
+            );
+            assert_eq!(
+                context.account_store.borrow().get(&token).unwrap(),
+                &token_account
+            );
+        }
+    }
+}
+
+#[test]
 fn preview_owned_account_cleanup_is_idempotent_and_skips_foreign_owners() {
     for (program, artifact) in programs() {
         let admin = Pubkey::new_unique();
@@ -266,7 +333,7 @@ fn default_builds_have_no_preview_administrative_entrypoint() {
                 ]));
         for discriminator in [
             vec![36, 68, 214, 114, 46, 227, 146, 228],
-            vec![64, 227, 93, 185, 105, 167, 223, 84],
+            PREVIEW_CLOSE_TOKEN.to_vec(),
             vec![229, 176, 14, 73, 64, 247, 65, 76],
         ] {
             let ix = Instruction {

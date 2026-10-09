@@ -31,7 +31,7 @@ pub struct PreviewCloseToken<'info> {
     /// CHECK: token program checks the mint; bound to the token account here.
     #[account(mut, address = account.mint)]
     pub mint: UncheckedAccount<'info>,
-    /// Classic SPL Token or Token-2022; the token program refuses an account it does not own.
+    /// Classic SPL Token or Token-2022. The CPI fails when this program does not own `account`.
     pub token_program: Interface<'info, TokenInterface>,
 }
 
