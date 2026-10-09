@@ -1310,9 +1310,9 @@ or Token-2022 confidential transfer requires a separate decision because each ch
 transfer semantics.
 
 Token-facing instructions pass a typed Host config account but do not redundantly derive its PDA at
-the wrapper boundary. Every path immediately invokes a Host instruction that enforces the canonical
-config and its pause flags (DD-058). This keeps the boundary aligned without paying for a second PDA
-derivation or adding redundant IDL metadata.
+the wrapper boundary. Every path that writes or computes immediately invokes a Host instruction that
+enforces the canonical config and its pause flags (DD-058). This keeps the boundary aligned without
+paying for a second PDA derivation or adding redundant IDL metadata.
 
 Confidential accounts follow the associated token account model: canonical derivation, permissionless
 create-for, and idempotent creation (`initialize_token_account`, like `CreateIdempotent`). An account
