@@ -1,8 +1,8 @@
 //! The answer the Merkle proof server gives each signed request, by the signing hash of its
-//! authorization, until the signature expires.
+//! authorization, until the server stops accepting the signature.
 //!
-//! A request's signature names no recipient, so a coprocessor that received a request can resend
-//! it to the other servers until it expires. The first copy of a request to reach a server is
+//! A signed request can reach its server more than once until it expires: resent by anyone who
+//! reads the traffic, or by the connector itself. The first copy to reach a server is
 //! [`Admission::First`]: the server charges the signer and reads the record once. Every other
 //! copy, sent at the same time or later, is an [`Admission::Repeat`] and waits for that answer,
 //! including a refusal the answer ended in. A server therefore charges and reads at most once per
@@ -74,9 +74,9 @@ impl<A> AnswerCache<A> {
         }
     }
 
-    /// Admits the request `signer` signed over `signing_hash`, valid until `expires`, at Unix
-    /// time `now`. Requests whose signature expired before `now` are forgotten first. A new
-    /// request with room is admitted when `charge` accepts it; a copy is never charged.
+    /// Admits the request `signer` signed over `signing_hash`, accepted until `expires`, at Unix
+    /// time `now`. Requests no longer accepted at `now` are forgotten first. A new request with
+    /// room is admitted when `charge` accepts it; a copy is never charged.
     pub fn admit(
         &self,
         signing_hash: B256,

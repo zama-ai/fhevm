@@ -2275,8 +2275,8 @@ applied again, a replay holds back no step (consensus may have healed one since)
 checkpoint only moves forward. More than one listener replica costs latency, not correctness: a
 replica that did not write a block learns which dependence chains that block gated only from its
 periodic reload (`SEALED_CHAIN_REFRESH_INTERVAL_SECS` in `host-listener`), and until then it can
-schedule later work behind them, as on EVM. The connector's `solana_proof_urls` name the proof
-server's Service.
+schedule later work behind them, as on EVM. The connector's `solana_proof_servers` entries name the
+proof server's Service and its coprocessor's signer address.
 
 On EVM the connector reads the ACL from the host chain, and no coprocessor serves proofs. The split
 follows the coprocessor's one Deployment per role: `host_listener`, `host_listener_poller` and
@@ -2432,18 +2432,22 @@ Decision:
 
 kms-worker signs each request with its party's tx-sender wallet, the key its tx-sender submits
 Gateway transactions with: a local private key or an AWS KMS key, never a session key. The
-signature is EIP-712 over `RequestAuthorization(string path, bytes32 bodyDigest, uint64 expires)`,
-with the domain `{name: "zama-request-authorization", version: "1", chainId, verifyingContract}`
-naming the canonical `ProtocolConfig` and its chain, so two networks on one chain do not accept
-each other's requests. It travels as `Authorization: Zama-EIP712 expires=<unix seconds>,
-signature=0x<65 bytes>`. The `shared/request-authorization` crate builds and checks it for both
-sides. A signature is valid for at most `MAX_VALIDITY_SECS` (60) seconds after the server's clock;
-kms-worker signs for 30 seconds, waits at most `host_rpc_call_timeout` for the signature, and sends
-the same signed batch to each coprocessor it asks. A server checks the expiry when a request
-arrives, and kms-worker asks every coprocessor within a few hedge delays, so 30 seconds leaves room
-for clock skew. It asks them one after another in a random order: the next one
-as soon as an answer leaves a query without a verified proof, or after `HEDGE_DELAY` (250 ms)
-without an answer.
+signature is `FhevmSig` (RFC 038, the scheme RFC 033 names for its own hops): EIP-712 over
+`Request(string path, bytes32 bodyDigest, uint64 expires, address audience)` in the domain
+`{name: "fhevm-http-auth", version: "1", chainId, verifyingContract}`, which names the canonical
+`ProtocolConfig` and its chain, so two networks on one chain do not accept each other's requests.
+`audience` is the registered signer address of the coprocessor the request is sent to. Each
+`solana_proof_servers` entry of the connector names its server's address, and the server is started
+with its own (`--coprocessor-signer-address`), until `ProtocolConfig` lists the coprocessors. The
+signature travels as `Authorization: FhevmSig expires=<unix seconds>, sig=0x<65 bytes>`. The
+`shared/request-authorization` crate builds and checks it for both sides, and pins its wire bytes
+against viem. A server refuses a signature with `expires < now - CLOCK_SKEW` (30 s) as
+`auth_expired` (401, retryable), and one with `expires > now + MAX_AUTH_VALIDITY + CLOCK_SKEW`
+(300 + 30 s) as too long-lived. It refuses a request with a query string as `malformed` (400),
+since the signature does not cover one. kms-worker signs for 30 seconds, once per coprocessor and
+in parallel before it asks the first, and waits at most `host_rpc_call_timeout` for the signatures.
+It asks the coprocessors one after another in a random order: the next one as soon as an answer
+leaves a query without a verified proof, or after `HEDGE_DELAY` (250 ms) without an answer.
 
 `solana_merkle_proof_server` recovers the signer and answers only the tx-senders of the live KMS
 contexts. It reads them from the canonical `ProtocolConfig` at the finalized block every 60 seconds:
@@ -2451,44 +2455,48 @@ the live context ids, then each context's nodes from its `NewKmsContext` event a
 anchor block, checked against the anchor's `contextInfoHash`. kms-worker reads a previous context
 the same way, through `shared/kms-context`. A refresh that fails, or takes more than 30 seconds,
 keeps the last set. Until the first read succeeds, every request gets `upstream_transient` (502,
-retryable) and `/healthz` answers 503. A missing, expired, malformed or unknown signature gets
-`sender_authentication_failed` (401) before the database is read.
+retryable) and `/healthz` answers 503. A missing, malformed, too long-lived or unknown signature,
+or one for another audience, gets `sender_authentication_failed` (401) before the database is read.
 
-The bodies are CBOR (RFC 8949) over HTTP/2 without TLS negotiation (prior knowledge). Hashes and
-keys travel as 32-byte byte strings, and the requests kms-worker sends one coprocessor share one
-connection. `solana/test-fixtures/merkle-proofs/merkle_proofs_v1.json` pins the request and
-response bytes for both sides.
+Request and success bodies are CBOR (RFC 8949) over HTTP/2 without TLS negotiation (prior
+knowledge). Hashes and keys travel as 32-byte byte strings, and the requests kms-worker sends one
+coprocessor share one connection. `solana/test-fixtures/merkle-proofs/merkle_proofs_v1.json` pins
+the request and response bytes for both sides. Error bodies are JSON `{code, message, retryable}`,
+the RFC 033 shape, and the OpenAPI document `openapi/solana_merkle_proofs.json` describes the route.
 
-No recipient is signed. A coprocessor that received a batch, or anyone who reads the plain-HTTP
-traffic inside the cluster, can resend it to the other coprocessors until it expires. The answers
-are public proofs, so a replay learns nothing, and it must not cost anything either. Each server
-remembers every signed request it admitted until its signature expires (`AnswerCache`, keyed by the
-EIP-712 signing hash). A request whose body does not decode is refused before the cache. A request
-is admitted once its signer's rate accepts it, charged under the cache's lock, so two copies
-arriving together are charged once; an over-rate request is refused and never remembered. The first
-copy to arrive is answered once, in a task of its own, so a caller that disconnects does not cancel
-it. Every other copy, sent at the same time or later, waits for that answer and gets the same bytes,
+The audience stops a coprocessor from replaying a batch to another: that server rebuilds the
+request with its own address and recovers another signer. Copies of one signed request can still
+reach the server it was signed for until the server stops accepting it, at `expires + CLOCK_SKEW`:
+resent by anyone who reads the plain-HTTP traffic inside the cluster, or by the connector itself.
+The answers are public proofs, so a copy learns nothing, and it must not cost anything either. Each
+server remembers every signed request it admitted until then (`AnswerCache`, keyed by the EIP-712
+signing hash). A request whose body does not decode is refused before the cache. A request is
+admitted once its signer's rate accepts it, charged under the cache's lock, so two copies arriving
+together are charged once; an over-rate request is refused and never remembered. The first copy to
+arrive is answered once, in a task of its own, so a caller that disconnects does not cancel it.
+Every other copy, sent at the same time or later, waits for that answer and gets the same bytes,
 including a refusal the answer ended in. A server therefore charges and reads at most once per
-signed request. A copy that arrives after its request was forgotten at expiry is refused as expired
-rather than charged again. The signing hash names no signer, so KMS nodes that sign the same body in
-the same second share one answer. A worker retry signed within the same second as the batch it
-retries has the same signing hash, and gets the earlier answer; the worker loop retries it again
-later. The relayer does not call the Merkle proof server.
+signed request. A copy that arrives after its request was forgotten is refused as `auth_expired`
+rather than charged again. The signing hash names no signer, so KMS nodes that sign the same body
+for the same coprocessor in the same second share one answer. A worker retry signed within the same
+second as the batch it retries has the same signing hash, and gets the earlier answer; the worker
+loop retries it again later. The relayer does not call the Merkle proof server.
 
 Each KMS tx-sender may ask one server for `--kms-tx-sender-leaves-per-second` (4000) queried
 leaves per second, in bursts of as many and at least `MAX_LEAVES_PER_REQUEST` (64). The rate is a
 backstop against a faulty or compromised connector, not sized from load data; a sustained load
-meets the cache budget below first. All but one
-connection of the pool (`--database-pool-size`, 8, at least 2) serve proof reads, one request each
-at a time, so `/healthz` always has one. A request waits up to `PROOF_READ_WAIT` (200 ms) for its
-turn. That is below the connector's `HEDGE_DELAY`, so a refusal sends the connector to the next
-coprocessor no later than its hedge would have. A server remembers at most
+meets the cache budget below first. A server remembers at most
 `--answer-cache-mib-per-kms-tx-sender` (16) MiB of each tx-sender's requests with their answers,
 counting `ENTRY_OVERHEAD_BYTES` (768) per request beside its answer. A new request past that is
-refused rather than admitted unremembered, since a replay of it would then cost work again. The
+refused rather than admitted unremembered, since a copy of it would then cost work again. The
 budget is per tx-sender, so a faulty or compromised connector refuses only its own requests. These
-refusals are `rate_limited` (429, retryable), and the connector treats them as a failed read and
-asks the next coprocessor at once.
+two refusals are `rate_limited` (429, retryable). All but one connection of the pool
+(`--database-pool-size`, 8, at least 2) serve proof reads, one request each at a time, so
+`/healthz` always has one. A request waits up to `PROOF_READ_WAIT` (200 ms) for its turn, and is
+otherwise refused as `overloaded` (503, retryable). That wait is below the connector's
+`HEDGE_DELAY`, so a refusal sends the connector to the next coprocessor no later than its hedge
+would have. Both 429 and 503 carry `Retry-After: 1`, and the connector treats every refusal as a
+failed read and asks the next coprocessor at once.
 
 Rejected alternatives:
 
@@ -2498,11 +2506,11 @@ Rejected alternatives:
 | A key per connector, listed in each coprocessor's config | Each coprocessor edits its config when a KMS context changes; `ProtocolConfig` already lists the tx-senders. |
 | mTLS | Each coprocessor runs a certificate authority for the KMS parties, and the identity is not the on-chain one. |
 | Every coprocessor asked at once | Each coprocessor serves every proof read, so the load grows with the number of coprocessors, for an answer one coprocessor usually gives alone. |
-| Sign the recipient coprocessor | The coprocessors share no identity the connector signs for, and the connector would sign once per coprocessor instead of once per batch. |
-| Refuse a signature a server has already seen | The first coprocessor asked could replay the batch to the others before the connector reaches them, and the connector's own read would then be refused. |
-| JSON bodies | Hex doubles every hash: a full answer of 64 proofs with 64 siblings is about 280 KB instead of 150 KB, and both sides parse hex by hand. |
+| One signature per batch, valid at every coprocessor | Any coprocessor asked could replay the batch to the others, and RFC 038 signs the audience for that reason. |
+| Refuse a signature a server has already seen | A copy that reaches the server before the connector's own, resent by a traffic reader, would have the connector's read refused; answering every copy from one read costs the same. |
+| JSON success bodies | Hex doubles every hash: a full answer of 64 proofs with 64 siblings is about 280 KB instead of 150 KB, and both sides parse hex by hand. |
 | Protobuf or gRPC | A schema compiler and generated code in two workspaces, for four message types. |
-| A session key kms-worker registers with its tx-sender key | A second key to rotate and a registration round, for a signature per batch that AWS KMS already serves. |
+| A session key kms-worker registers with its tx-sender key | A second key to rotate and a registration round, for signatures that AWS KMS already serves. |
 
 Consequences:
 
@@ -2510,21 +2518,26 @@ kms-worker needs signing access to the tx-sender key: the same `KMS_CONNECTOR_PR
 `KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID`, which the chart passes to kms-worker only when a Solana host
 chain is configured. With AWS KMS, kms-worker's own service account needs `kms:GetPublicKey` and
 `kms:Sign` on that key, or kms-worker exits at startup. A compromised kms-worker can then sign as
-the party's tx-sender, which submits its Gateway transactions. Each signed batch costs one AWS KMS
-signature from the quota the tx-sender also uses. A new KMS context is answered
-once its creation is finalized, up to 60 seconds later. The proof server reads the canonical
-`ProtocolConfig` over the RPC of the coprocessor's `chains[]` entry named by
-`commonConfig.canonicalProtocolConfigChainId`, and the chart refuses to render without it. The
-preview mints no proof secret. A 64-leaf answer with 20-hash paths (a store of a million leaves)
-holds under 48 KiB, so a tx-sender's 16 MiB holds about 22,000 leaves: 730 per second for
-30 seconds each, and about 450 in 1-leaf requests. This budget, not the rate, bounds a
-connector's sustained reads from one server. kms-worker shuffles the coprocessors for each
-batch, so one server sees about its share of the batches that the first coprocessor asked
-resolves; a batch with a query left unresolved, such as one whose leaf is not recorded yet,
-reaches every coprocessor. A tx-sender past its budget is refused until older requests expire,
-and the connector asks another coprocessor. 13 KMS nodes in two live contexts hold at most
-416 MiB, inside the chart's 512 MiB limit. The cache and the rate are per replica, so a copy that
-reaches another replica of the same server is charged there again.
+the party's tx-sender, which submits its Gateway transactions. Each batch costs one AWS KMS
+signature per coprocessor, from the quota the tx-sender also uses. kms-worker waits for every
+signature before it asks the first coprocessor, so one failed or late signing call fails the batch,
+and the worker loop retries it later. A coprocessor's signer address is
+configured twice, in its proof server and in every connector's `solana_proof_servers` entry for it;
+a wrong address makes every read of that server fail with 401, and the connector asks the next. A
+new KMS context is answered once its creation is finalized, up to 60 seconds later. The proof
+server reads the canonical `ProtocolConfig` over the RPC of the coprocessor's `chains[]` entry
+named by `commonConfig.canonicalProtocolConfigChainId`, and the chart refuses to render without it
+or without `solanaHostListener.proofServer.coprocessorSignerAddress`. The preview mints no proof
+secret. A 64-leaf answer with 20-hash paths (a store of a million leaves) holds under 48 KiB, so a
+tx-sender's 16 MiB holds about 22,000 leaves. A server remembers each request for the connector's
+30-second validity plus the 30-second skew, so that is 365 leaves per second, and about 225 in
+1-leaf requests. This budget, not the rate, bounds a connector's sustained reads from one server.
+kms-worker shuffles the coprocessors for each batch, so one server sees about its share of the
+batches that the first coprocessor asked resolves; a batch with a query left unresolved, such as
+one whose leaf is not recorded yet, reaches every coprocessor. A tx-sender past its budget is
+refused until older requests expire, and the connector asks another coprocessor. 13 KMS nodes in
+two live contexts hold at most 416 MiB, inside the chart's 512 MiB limit. The cache and the rate
+are per replica, so a copy that reaches another replica of the same server is charged there again.
 
 ## DD-068: The Merkle indexer checks its record against the chain and quarantines a store that disagrees
 

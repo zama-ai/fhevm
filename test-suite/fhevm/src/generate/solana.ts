@@ -60,9 +60,9 @@ export const solanaValidatorUrl = (chain: { readonly rpcPort: number }): string 
  * as {@link solanaValidatorUrl}: the proof server runs natively next to the validator, the
  * connector runs in a container.
  *
- * One URL, because the demo runs one `solana_merkle_proof_server` (on `SOLANA_MERKLE_PROOF_PORT`).
- * A topology with several coprocessors lists one URL per Merkle proof server; the connector asks
- * them one after another, hedging a slow one.
+ * One URL, because the demo runs one `solana_merkle_proof_server` (on `SOLANA_MERKLE_PROOF_PORT`),
+ * coprocessor 0's. A topology with several coprocessors lists one server per coprocessor; the
+ * connector asks them one after another, hedging a slow one.
  */
 export const solanaMerkleProofUrl = (): string => `http://host.docker.internal:${SOLANA_MERKLE_PROOF_PORT}`;
 
@@ -79,17 +79,22 @@ export type KmsHostChainEntry = {
  * Serializes `KMS_CONNECTOR_HOST_CHAINS`. EVM entries carry a numeric `chain_id` + `acl_address`.
  * Solana entries emit `chain_id` as a raw integer literal (RFC-021 ids exceed
  * Number.MAX_SAFE_INTEGER, so `JSON.stringify(Number(id))` would corrupt it),
- * `solana_host_program_id` and the Merkle proof URLs the connector requires for a Solana chain,
- * and no `acl_address`. The connector takes the kind from the chain id's type byte and refuses an
- * entry carrying the other kind's settings.
+ * `solana_host_program_id` and the Merkle proof server the connector requires for a Solana chain,
+ * with `proofServerSignerAddress`, the signer of the coprocessor running it, and no `acl_address`.
+ * The connector takes the kind from the chain id's type byte and refuses an entry carrying the
+ * other kind's settings.
  */
-export const serializeKmsHostChains = (entries: readonly KmsHostChainEntry[]): string => {
+export const serializeKmsHostChains = (
+  entries: readonly KmsHostChainEntry[],
+  proofServerSignerAddress: string,
+): string => {
   const parts = entries.map((e) => {
     if (e.kind === "solana") {
+      const proofServers = [{ url: solanaMerkleProofUrl(), signer_address: proofServerSignerAddress }];
       return (
         `{"url":${JSON.stringify(e.url)},"chain_id":${BigInt(e.chainId).toString()},` +
         `"solana_host_program_id":${JSON.stringify(e.solanaProgramId ?? "")},` +
-        `"solana_proof_urls":${JSON.stringify([solanaMerkleProofUrl()])}}`
+        `"solana_proof_servers":${JSON.stringify(proofServers)}}`
       );
     }
     return JSON.stringify({ url: e.url, chain_id: Number(e.chainId), acl_address: e.aclAddress ?? "" });

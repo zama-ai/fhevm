@@ -205,9 +205,9 @@ The store check compares every recorded store with its account on chain, once at
 
 #### Metric Name: `solana_merkle_proof_server_requests_total`
  - **Type**: Counter (labeled by `status`)
- - **Description**: Merkle proof requests answered, by `status`: `ok`, `cached` (a copy of a signed request whose first answer was `ok`, served from the answer cache) or the error code (`malformed`, `sender_authentication_failed`, `upstream_transient`, `rate_limited`). A copy of a refused request counts under the refusal's code.
+ - **Description**: Merkle proof requests answered, by `status`: `ok`, `cached` (a copy of a signed request whose first answer was `ok`, served from the answer cache) or the error code (`malformed`, `auth_expired`, `sender_authentication_failed`, `upstream_transient`, `rate_limited`, `overloaded`). A copy of a refused request counts under the refusal's code.
  - **Alarm**: Sustained refusals.
-    - **Recommendation**: warning, `sum(rate(counter{status="rate_limited"}[5m])) > 0` for 15 minutes. A rising `cached` share means someone replays signed requests; it costs no work, so it is a signal, not an alarm.
+    - **Recommendation**: warning, `sum(rate(counter{status=~"rate_limited|overloaded"}[5m])) > 0` for 15 minutes. `rate_limited` is one KMS tx-sender over its rate or answer-cache budget; `overloaded` is every database connection busy past 200 ms. A rising `cached` share means someone replays signed requests; it costs no work, so it is a signal, not an alarm.
 
 #### Metric Name: `solana_merkle_proof_server_request_duration_seconds`
  - **Type**: Histogram

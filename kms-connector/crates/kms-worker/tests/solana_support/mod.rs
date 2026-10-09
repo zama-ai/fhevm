@@ -22,6 +22,7 @@ use connector_utils::config::KmsWallet;
 use connector_utils::types::solana_request::{
     SolanaEntryClaims, SolanaRequestBlob, SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
 };
+use kms_worker::core::ProofServer;
 use kms_worker::core::solana::{
     SolanaHost,
     pipeline::AuthorizationContext,
@@ -1182,6 +1183,13 @@ pub fn solana_host(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHost
 
 /// The production proof client asking `urls`, signing as a test tx-sender.
 pub fn proof_client(urls: &[url::Url], client: Client) -> CoprocessorProofClient {
+    let servers: Vec<_> = urls
+        .iter()
+        .map(|url| ProofServer {
+            url: url.clone(),
+            signer_address: alloy::primitives::Address::repeat_byte(0xD0),
+        })
+        .collect();
     let wallet = KmsWallet::from_private_key_str(
         "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774",
         None,
@@ -1191,7 +1199,7 @@ pub fn proof_client(urls: &[url::Url], client: Client) -> CoprocessorProofClient
         chain_id: 12345,
         contract: alloy::primitives::Address::repeat_byte(0xC0),
     };
-    CoprocessorProofClient::new(urls, client, wallet, registry, Duration::from_secs(5))
+    CoprocessorProofClient::new(&servers, client, wallet, registry, Duration::from_secs(5))
 }
 
 /// A Merkle proof answer as the coprocessor route serializes it.

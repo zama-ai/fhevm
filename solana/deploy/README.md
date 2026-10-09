@@ -56,8 +56,8 @@ with separate program keypairs, so its addresses never collide with the preview'
 
 The deployer must hold Solana devnet SOL. Cluster networking must reach the RPC/Yellowstone
 provider and allow connectors to reach `coprocessor-<party>-solana-merkle-proof-server:8080`.
-The proof API answers only requests signed by a live KMS context's tx-sender, through a ClusterIP
-Service with no public ingress.
+The proof API answers only requests signed by a live KMS context's tx-sender for that coprocessor's
+signer address, through a ClusterIP Service with no public ingress.
 The listener stores computations and its checkpoint in its coprocessor's database. The Merkle
 indexer records the leaves in the `solana_merkle` database on the same Postgres server, and the
 Merkle proof server reads them from it (DD-066). Every rollout and every `reset-preview.sh`

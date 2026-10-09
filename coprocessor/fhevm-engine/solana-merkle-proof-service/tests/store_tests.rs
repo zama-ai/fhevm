@@ -62,6 +62,10 @@ const REGISTRY: KeyRegistry = KeyRegistry {
     contract: alloy::primitives::Address::repeat_byte(0xC0),
 };
 
+/// The coprocessor signer address the server answers for.
+const AUDIENCE: alloy::primitives::Address =
+    alloy::primitives::Address::repeat_byte(0xCC);
+
 /// Posts Merkle proof requests signed by a KMS tx-sender the server accepts.
 struct ProofClient {
     url: String,
@@ -93,6 +97,7 @@ impl ProofClient {
             MERKLE_PROOFS_PATH,
             &body,
             expires,
+            AUDIENCE,
         )
         .await
         .expect("sign");
@@ -140,6 +145,7 @@ async fn serve_proofs(
             registry: REGISTRY,
             senders: HashSet::from([connector.address()]),
         }),
+        AUDIENCE,
         std::num::NonZeroU32::new(leaves_per_second).expect("a rate"),
         1 << 20,
         port,

@@ -1,4 +1,5 @@
-//! CBOR wire contract for the Solana Merkle proof HTTP service.
+//! Wire contract for the Solana Merkle proof HTTP service: CBOR request and
+//! success bodies, JSON error bodies.
 
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteArray;
@@ -86,23 +87,29 @@ pub struct MerkleProofResponse {
     pub proofs: Vec<MerkleProofOutcome>,
 }
 
-/// Error codes, in the vocabulary of the Direct HTTP Decryption Endpoint RFC.
+/// Error codes, in the vocabulary of RFC 033 (Direct HTTP Decryption Endpoint) and RFC 038
+/// (Coprocessor PRF Endpoint). Error bodies are JSON.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
-    /// Malformed body, missing key, too many leaves.
+    /// Malformed body, missing key, too many leaves, or a query string.
     Malformed,
-    /// The request signature is missing, malformed or expired, or its signer is
-    /// not the tx-sender of a node in a live KMS context.
+    /// The `FhevmSig` signature expired; sign again.
+    AuthExpired,
+    /// The `FhevmSig` signature is missing, malformed, too long-lived or for
+    /// another recipient, or its signer is not the tx-sender of a node in a live
+    /// KMS context.
     SenderAuthenticationFailed,
-    /// The leaf record could not be read or is inconsistent, or the KMS
-    /// tx-sender set is not read yet; retry later.
+    /// The leaf record could not be read, or the KMS tx-sender set is not read
+    /// yet; retry later.
     UpstreamTransient,
     /// The signer is over its leaves per second or holds as many signed
-    /// requests as it may, or no database connection freed in time; ask another
-    /// coprocessor or retry later.
+    /// requests as it may; ask another coprocessor or retry later.
     RateLimited,
+    /// No database connection freed in time; ask another coprocessor or retry
+    /// later.
+    Overloaded,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

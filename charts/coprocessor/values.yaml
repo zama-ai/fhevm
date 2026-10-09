@@ -1969,6 +1969,9 @@ solanaHostListener:
   # commonConfig.canonicalProtocolConfigChainId (its httpUrl and
   # protocolConfigContractAddress).
   proofServer:
+    # Required: this coprocessor's registered signer address. A request must be signed for it
+    # (`FhevmSig` audience, RFC 038), so a request signed for another coprocessor is refused.
+    coprocessorSignerAddress: ""
     replicas: 1
     httpPort: 8080
     metricsPort: 9100

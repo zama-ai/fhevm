@@ -195,7 +195,17 @@ pub struct SolanaHostSettings {
     pub host_program_id: Pubkey,
     /// The coprocessors' Merkle proof servers, one per coprocessor, at least one. They are asked
     /// one after another in a random order until a proof verifies for every query.
-    pub proof_urls: Vec<Url>,
+    pub proof_servers: Vec<ProofServer>,
+}
+
+/// A coprocessor's Merkle proof server.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct ProofServer {
+    pub url: Url,
+    /// The coprocessor's registered signer address. Each request is signed for it (the
+    /// `FhevmSig` audience, RFC 038), so another coprocessor cannot replay it.
+    #[serde(alias = "signerAddress")]
+    pub signer_address: Address,
 }
 
 /// A host chain as written in the configuration, before its settings are checked against the
@@ -213,8 +223,8 @@ struct HostChainEntry {
         alias = "solanaHostProgramId"
     )]
     solana_host_program_id: Option<Pubkey>,
-    #[serde(default, alias = "solanaProofUrls")]
-    solana_proof_urls: Vec<Url>,
+    #[serde(default, alias = "solanaProofServers")]
+    solana_proof_servers: Vec<ProofServer>,
 }
 
 impl TryFrom<HostChainEntry> for HostChainConfig {
@@ -224,9 +234,10 @@ impl TryFrom<HostChainEntry> for HostChainConfig {
         let chain_id = entry.chain_id;
         let host = match chain_type_byte(chain_id) {
             EVM_CHAIN_TYPE => {
-                if entry.solana_host_program_id.is_some() || !entry.solana_proof_urls.is_empty() {
+                if entry.solana_host_program_id.is_some() || !entry.solana_proof_servers.is_empty()
+                {
                     return Err(format!(
-                        "EVM host chain {chain_id} must not set solana_host_program_id or solana_proof_urls"
+                        "EVM host chain {chain_id} must not set solana_host_program_id or solana_proof_servers"
                     ));
                 }
                 let acl_address = entry.acl_address.ok_or_else(|| {
@@ -245,14 +256,14 @@ impl TryFrom<HostChainEntry> for HostChainConfig {
                 let host_program_id = entry.solana_host_program_id.ok_or_else(|| {
                     format!("Solana host chain {chain_id} requires solana_host_program_id")
                 })?;
-                if entry.solana_proof_urls.is_empty() {
+                if entry.solana_proof_servers.is_empty() {
                     return Err(format!(
-                        "Solana host chain {chain_id} requires at least one solana_proof_urls entry"
+                        "Solana host chain {chain_id} requires at least one solana_proof_servers entry"
                     ));
                 }
                 HostSettings::Solana(SolanaHostSettings {
                     host_program_id,
-                    proof_urls: entry.solana_proof_urls,
+                    proof_servers: entry.solana_proof_servers,
                 })
             }
             other => {
@@ -719,7 +730,10 @@ mod tests {
                             "url": "http://localhost:8899",
                             "chainId": 72057594037959824,
                             "solanaHostProgramId": "11111111111111111111111111111111",
-                            "solanaProofUrls": ["http://coprocessor-1:8080"]
+                            "solanaProofServers": [{
+                                "url": "http://coprocessor-1:8080",
+                                "signerAddress": "0xa5eE8292dA52d8234248709F3E217ffEBA5E8312"
+                            }]
                         }
                     ]
                 "#,
@@ -736,7 +750,13 @@ mod tests {
                 chain_id: solana_host_chain_id(31888),
                 host: HostSettings::Solana(SolanaHostSettings {
                     host_program_id: Pubkey::new_from_array([0; 32]),
-                    proof_urls: vec![Url::from_str("http://coprocessor-1:8080").unwrap()],
+                    proof_servers: vec![ProofServer {
+                        url: Url::from_str("http://coprocessor-1:8080").unwrap(),
+                        signer_address: Address::from_str(
+                            "0xa5eE8292dA52d8234248709F3E217ffEBA5E8312"
+                        )
+                        .unwrap(),
+                    }],
                 }),
             }]
         );
@@ -752,7 +772,10 @@ mod tests {
             "url": "http://localhost:8899",
             "chain_id": solana_host_chain_id(cluster_tag),
             "solana_host_program_id": "11111111111111111111111111111111",
-            "solana_proof_urls": ["http://coprocessor-1:8080"]
+            "solana_proof_servers": [{
+                "url": "http://coprocessor-1:8080",
+                "signer_address": "0xa5eE8292dA52d8234248709F3E217ffEBA5E8312"
+            }]
         })
     }
 
@@ -797,15 +820,15 @@ mod tests {
                     "solana_host_program_id",
                     "11111111111111111111111111111111".into(),
                 ),
-                "must not set solana_host_program_id or solana_proof_urls",
+                "must not set solana_host_program_id or solana_proof_servers",
             ),
             (
                 with(
                     evm.clone(),
-                    "solana_proof_urls",
-                    solana_entry(1)["solana_proof_urls"].clone(),
+                    "solana_proof_servers",
+                    solana_entry(1)["solana_proof_servers"].clone(),
                 ),
-                "must not set solana_host_program_id or solana_proof_urls",
+                "must not set solana_host_program_id or solana_proof_servers",
             ),
             (
                 with(solana_entry(1), "acl_address", evm["acl_address"].clone()),
@@ -816,8 +839,8 @@ mod tests {
                 "requires solana_host_program_id",
             ),
             (
-                without(solana_entry(1), "solana_proof_urls"),
-                "requires at least one solana_proof_urls entry",
+                without(solana_entry(1), "solana_proof_servers"),
+                "requires at least one solana_proof_servers entry",
             ),
             (
                 with(evm.clone(), "chain_id", 0x0200_0000_0000_0009_u64.into()),
@@ -864,7 +887,10 @@ mod tests {
 url = "http://localhost:8899"
 chain_id = {solana_chain_id}
 solana_host_program_id = "11111111111111111111111111111111"
-solana_proof_urls = ["http://coprocessor-1:8080", "http://coprocessor-2:8080"]
+solana_proof_servers = [
+    {{ url = "http://coprocessor-1:8080", signer_address = "0xa5eE8292dA52d8234248709F3E217ffEBA5E8312" }},
+    {{ url = "http://coprocessor-2:8080", signer_address = "0xA951F315d5FD35Cac111dFB5250DF231FB8eF905" }},
+]
 "#
             ),
         )
@@ -875,10 +901,23 @@ solana_proof_urls = ["http://coprocessor-1:8080", "http://coprocessor-2:8080"]
         let HostSettings::Solana(solana) = &config.unwrap().host_chains[1].host else {
             panic!("the second entry is a Solana chain");
         };
-        let urls: Vec<_> = solana.proof_urls.iter().map(Url::as_str).collect();
+        let servers: Vec<_> = solana
+            .proof_servers
+            .iter()
+            .map(|server| (server.url.as_str(), server.signer_address.to_string()))
+            .collect();
         assert_eq!(
-            urls,
-            ["http://coprocessor-1:8080/", "http://coprocessor-2:8080/"]
+            servers,
+            [
+                (
+                    "http://coprocessor-1:8080/",
+                    "0xa5eE8292dA52d8234248709F3E217ffEBA5E8312".to_owned()
+                ),
+                (
+                    "http://coprocessor-2:8080/",
+                    "0xA951F315d5FD35Cac111dFB5250DF231FB8eF905".to_owned()
+                ),
+            ]
         );
     }
 

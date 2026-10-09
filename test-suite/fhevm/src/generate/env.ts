@@ -153,12 +153,15 @@ const applyCompatEnv = (
   }
 };
 
-/** Applies discovery outputs such as deployed addresses and signer material. */
+/**
+ * Applies discovery outputs such as deployed addresses and signer material. Returns the
+ * connector's host chains, which `renderEnvMaps` serializes once coprocessor 0's signer is final.
+ */
 const applyDiscoveryEnv = (
   envs: Record<string, Record<string, string>>,
   state: Pick<State, "discovery">,
   plan: StackSpec,
-) => {
+): KmsHostChainEntry[] => {
   // One registered signer per party, each discovered from its party's public vault prefix.
   (state.discovery?.kmsSigners ?? []).forEach((address, index) => {
     envs["gateway-sc"][`KMS_SIGNER_ADDRESS_${index}`] = address;
@@ -170,13 +173,13 @@ const applyDiscoveryEnv = (
     envs["host-sc"][`KMS_NODE_CA_CERT_${index}`] = caCert;
   });
   if (!state.discovery) {
-    return;
+    return [];
   }
 
   const chains = hostChainRuntimes(plan.hostChains);
   const defaultChain = chains[0];
   if (!defaultChain) {
-    return;
+    return [];
   }
   const primaryHost = state.discovery.hosts[defaultChain.key] ?? {};
   const gatewayKmsGenerationAddress = state.discovery.gateway.KMS_GENERATION_ADDRESS;
@@ -240,7 +243,6 @@ const applyDiscoveryEnv = (
     KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
     KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: connectorKmsGenerationAddress ?? "",
     KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
-    KMS_CONNECTOR_HOST_CHAINS: serializeKmsHostChains(kmsHostChains),
     KMS_CONNECTOR_SUPPORTED_CHAIN_IDS: chains.map((chain) => String(chain.chainId)).join(","),
   });
   updateContracts(envs["relayer"], {
@@ -268,6 +270,7 @@ const applyDiscoveryEnv = (
     ZAMA_OFT_ADDRESS: envs["gateway-sc"].ZAMA_OFT_ADDRESS,
   });
   envs["test-suite"].BRIDGE_REAL_LZ = chains.some((chain) => realLzEndpointFor(chain.key)) ? "true" : "";
+  return kmsHostChains;
 };
 
 export type KmsParty = { party: number; endpoint: string; privateKey: string; dbName: string };
@@ -544,7 +547,7 @@ export const renderEnvMaps = async (
   applyHostScKmsEnv(envs);
   applyBaseRuntimeEnv(envs, state);
   applyCompatEnv(envs, plan);
-  applyDiscoveryEnv(envs, state, plan);
+  const kmsHostChains = applyDiscoveryEnv(envs, state, plan);
   envs["host-node"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-node"].HOST_NODE_PORT = String(defaultChain.rpcPort);
   envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;
@@ -588,6 +591,13 @@ export const renderEnvMaps = async (
   });
 
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
+  if (kmsHostChains.length > 0) {
+    // Coprocessor 0 runs the Solana Merkle proof server, which takes its signer as audience.
+    envs["kms-connector"].KMS_CONNECTOR_HOST_CHAINS = serializeKmsHostChains(
+      kmsHostChains,
+      envs["host-sc"].COPROCESSOR_SIGNER_ADDRESS_0,
+    );
+  }
   envs["test-suite"].GATEWAY_DEPLOYER_PRIVATE_KEY = envs["gateway-sc"].DEPLOYER_PRIVATE_KEY;
   envs["test-suite"].GATEWAY_PAUSER_PRIVATE_KEY = envs["gateway-sc"].PAUSER_PRIVATE_KEY;
   Object.assign(instanceEnvs, buildKmsConnectorInstanceEnvs(envs, kmsParties));

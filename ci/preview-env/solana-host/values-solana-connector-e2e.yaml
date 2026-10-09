@@ -1,8 +1,8 @@
 # Merge after values-kms-connector-e2e.yaml for every KMS party.
 # commonConfig.hostChains is a map, so this adds the Solana chain next to the party's EVM chains.
 # $(...) placeholders resolve against the kms-worker env below. deploy-preview.sh sets
-# solanaProofUrls to one Merkle proof server Service per coprocessor; kms-worker signs its requests
-# with the party's tx-sender wallet.
+# solanaProofServers to one Merkle proof server Service per coprocessor with that coprocessor's
+# signer address; kms-worker signs its requests for that address with the party's tx-sender wallet.
 commonConfig:
   hostChains:
     solana:

@@ -1471,3 +1471,25 @@ its checks.
 
 > A record holds every Store from leaf zero or has not seen it, so a proof answer is `found`,
 > `notFound` or `unknownAccount`; there is no incomplete history.
+
+### DD-067, replaced in part by RFC 038
+
+Aligning with RFC 038's `FhevmSig` signed the recipient coprocessor's address as `audience`, widened
+the accepted window to RFC 038's bounds, moved error bodies to JSON and answered a full pool with
+`overloaded` (503).
+
+> The signature is EIP-712 over `RequestAuthorization(string path, bytes32 bodyDigest, uint64 expires)`,
+> with the domain `{name: "zama-request-authorization", version: "1", chainId, verifyingContract}`
+> [...]. It travels as `Authorization: Zama-EIP712 expires=<unix seconds>,
+> signature=0x<65 bytes>`. [...] A signature is valid for at most `MAX_VALIDITY_SECS` (60) seconds
+> after the server's clock; kms-worker signs for 30 seconds, waits at most `host_rpc_call_timeout`
+> for the signature, and sends the same signed batch to each coprocessor it asks.
+
+> No recipient is signed. A coprocessor that received a batch, or anyone who reads the plain-HTTP
+> traffic inside the cluster, can resend it to the other coprocessors until it expires.
+
+> | Sign the recipient coprocessor | The coprocessors share no identity the connector signs for, and the connector would sign once per coprocessor instead of once per batch. |
+
+> A request waits up to `PROOF_READ_WAIT` (200 ms) for its turn. [...] These refusals are
+> `rate_limited` (429, retryable), and the connector treats them as a failed read and asks the next
+> coprocessor at once.

@@ -114,6 +114,16 @@ export const readCoprocessorDatabaseUrl = async (index = 0): Promise<string> => 
   return url.replace('@db:', '@127.0.0.1:');
 };
 
+/**
+ * Coprocessor 0's registered signer from the generated env: the Merkle proof server runs for it,
+ * and the generated `KMS_CONNECTOR_HOST_CHAINS` names it as that server's signer.
+ */
+export const readCoprocessorSignerAddress = async (): Promise<string> => {
+  const address = (await readEnvFile(envPath('host-sc'))).COPROCESSOR_SIGNER_ADDRESS_0;
+  if (!address) throw new Error('missing COPROCESSOR_SIGNER_ADDRESS_0 in the generated host-sc env');
+  return address;
+};
+
 /** The running stack's fhevm-cli state. */
 export const readStackState = async (): Promise<State> => {
   const state = await loadState();
@@ -373,6 +383,8 @@ export const startMerkleProofServer = async (parameters: {
   readonly databaseUrl: string;
   readonly ethereumRpcUrl: string;
   readonly protocolConfigAddress: string;
+  /** The signer of the coprocessor this server answers for: the audience a request is signed for. */
+  readonly coprocessorSignerAddress: string;
   readonly logDir: string;
   readonly lifecycleDir?: string;
 }): Promise<void> => {
@@ -389,6 +401,8 @@ export const startMerkleProofServer = async (parameters: {
       parameters.ethereumRpcUrl,
       '--protocol-config-address',
       parameters.protocolConfigAddress,
+      '--coprocessor-signer-address',
+      parameters.coprocessorSignerAddress,
     ],
     path.join(parameters.logDir, 'merkle-proof-server.log'),
     parameters.lifecycleDir && path.join(parameters.lifecycleDir, 'merkle-proof-server.pid'),
@@ -540,6 +554,7 @@ export const provisionSolanaHostNode = async (state: State): Promise<{ zamaHostI
     databaseUrl: merkleUrl,
     ethereumRpcUrl: LOCAL_SOLANA_ENDPOINTS.hostRpc,
     protocolConfigAddress: await readProtocolConfigAddress(),
+    coprocessorSignerAddress: await readCoprocessorSignerAddress(),
     logDir,
     lifecycleDir,
   });
