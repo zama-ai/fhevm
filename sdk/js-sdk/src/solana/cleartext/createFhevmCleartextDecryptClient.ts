@@ -27,7 +27,11 @@ type CleartextLeafRecordParameters = { readonly readMerkleProofs?: SolanaMerkleP
 export function createFhevmCleartextPublicDecryptClient<C extends FhevmSolanaChain>(
   parameters: SolanaClientParameters<C> & CleartextLeafRecordParameters,
 ): FhevmSolanaPublicDecryptClient<C> {
-  return publicDecryptClient(parameters, createSolanaHostKmsReads(parameters), leafRecordOf(parameters));
+  return publicDecryptClient(
+    parameters,
+    createSolanaHostKmsReads(parameters, getCleartextSolanaRuntime()),
+    leafRecordOf(parameters),
+  );
 }
 
 /**
@@ -39,7 +43,7 @@ export function createFhevmCleartextDecryptClient<C extends FhevmSolanaChain>(
   parameters: SolanaClientParameters<C> & CleartextLeafRecordParameters,
 ): FhevmSolanaDecryptClient<C> {
   const readMerkleProofs = leafRecordOf(parameters);
-  const host = createSolanaHostKmsReads(parameters);
+  const host = createSolanaHostKmsReads(parameters, getCleartextSolanaRuntime());
   return withPermitDecrypt(
     publicDecryptClient(parameters, host, readMerkleProofs),
     host,

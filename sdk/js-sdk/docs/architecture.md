@@ -151,7 +151,8 @@ KMS trust from zama-host, as the EVM SDK reads it from `ProtocolConfig` and `KMS
 or a public decrypt is routed to the context and epoch `HostConfig` holds. A user-decrypt response
 is verified against the signers of the `KmsContext` the permit names, as parties `1..n` in their
 registered order, under the gateway domain `HostConfig` records. These reads are cached for 15
-minutes per client, as on EVM; a destroyed context is refused and never cached. The
+minutes, keyed like the EVM caches by runtime and program, plus the chain id that names the cluster.
+A `HostConfig` recording another chain id, or a destroyed context, is refused and never cached. The
 `decryptPublicValue(s)` actions also read HostConfig and KmsContext afresh after the certificate
 arrives, authenticate distinct KMS signatures, and return shared `TypedValue` results. The
 lower-level `publicDecryptCertificate` returns the raw claim for on-chain consumers, which verify

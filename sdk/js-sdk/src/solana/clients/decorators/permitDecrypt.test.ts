@@ -162,6 +162,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  hostKms.clearSolanaHostKmsReads();
 });
 
 ////////////////////////////////////////////////////////////////////////////////

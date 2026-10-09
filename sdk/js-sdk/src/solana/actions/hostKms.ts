@@ -1,3 +1,4 @@
+/** Public API surface: the Solana decrypt clients, and the SDK's tests through `clearSolanaHostKmsReads`. */
 import { fetchEncodedAccount, fetchEncodedAccounts, type Address, type MaybeEncodedAccount } from '@solana/kit';
 import {
   findHostConfigPda,
@@ -13,6 +14,7 @@ import { bytesToHex, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { CACHE_TTL_15MIN, createCachedFetch } from '../../core/base/cachedFetch.js';
 import { createKmsEip712Domain } from '../../core/kms/createKmsEip712Domain.js';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
+import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import type { SolanaUserDecryptVerification } from '../userDecrypt/execute.js';
 import { solanaHostProgram, type SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
 import { hostAccountData, publicDecryptAbortCheck } from './publicDecryptCertificate.js';
@@ -21,10 +23,9 @@ import { hostAccountData, publicDecryptAbortCheck } from './publicDecryptCertifi
  * The KMS trust a client reads from the host program: `HostConfig` and the `KmsContext` accounts,
  * at finalized.
  *
- * Both reads are cached for 15 minutes per client, as the EVM SDK caches its `ProtocolConfig` and
+ * Both reads are cached for 15 minutes, as the EVM SDK caches its `ProtocolConfig` and
  * `KMSVerifier` reads; concurrent callers share one request. A failed read is not cached, so a
- * destroyed context stops verifying within that window, as a revoked EVM context does. The cache
- * lives in the client because the client fixes the cluster and RPC it reads from.
+ * destroyed context stops verifying within that window, as a revoked EVM context does.
  */
 export type SolanaHostKmsReads = {
   readonly config: () => Promise<HostConfig>;
@@ -32,30 +33,64 @@ export type SolanaHostKmsReads = {
   readonly kmsContext: (contextId: Uint8Array) => Promise<KmsContext>;
 };
 
-export function createSolanaHostKmsReads(client: SolanaClientParameters): SolanaHostKmsReads {
-  const programAddress = solanaHostProgram(client.chain);
-  const config = createCachedFetch<undefined, Record<never, never>, HostConfig>({
-    executeFn: async () => {
-      const [address] = await findHostConfigPda({ programAddress });
-      const account = await fetchEncodedAccount(client.rpc, address, { commitment: 'finalized' });
-      return getHostConfigDecoder().decode(hostAccountData(account, programAddress, HOST_CONFIG_DISCRIMINATOR));
-    },
-    cacheKeyFn: () => programAddress,
-    ttlMs: CACHE_TTL_15MIN,
-  });
-  const kmsContext = createCachedFetch<undefined, { readonly contextId: Uint8Array }, KmsContext>({
-    executeFn: async (_, { contextId }) => {
-      const [address, bump] = await findKmsContextPda({ contextId }, { programAddress });
-      const [account] = await fetchEncodedAccounts(client.rpc, [address], { commitment: 'finalized' });
-      return liveKmsContext(account, programAddress, contextId, bump);
-    },
-    cacheKeyFn: (_, { contextId }) => bytesToHex(contextId),
-    ttlMs: CACHE_TTL_15MIN,
-  });
+type HostReadContext = { readonly client: SolanaClientParameters; readonly runtime: FhevmRuntime };
+
+// Keyed like the EVM caches, by runtime and program, plus the chain id: a Solana program id can
+// repeat across clusters, and a Solana chain id names the cluster (DD-052).
+const hostKey = ({ client, runtime }: HostReadContext): string =>
+  `${runtime.uid}:${solanaHostProgram(client.chain)}:${client.chain.id}`;
+
+const cachedHostConfig = createCachedFetch<HostReadContext, Record<never, never>, HostConfig>({
+  executeFn: async ({ client }) => {
+    const programAddress = solanaHostProgram(client.chain);
+    const [address, bump] = await findHostConfigPda({ programAddress });
+    const account = await fetchEncodedAccount(client.rpc, address, { commitment: 'finalized' });
+    return clientHostConfig(account, programAddress, bump, client.chain);
+  },
+  cacheKeyFn: hostKey,
+  ttlMs: CACHE_TTL_15MIN,
+});
+
+const cachedKmsContext = createCachedFetch<HostReadContext, { readonly contextId: Uint8Array }, KmsContext>({
+  executeFn: async ({ client }, { contextId }) => {
+    const programAddress = solanaHostProgram(client.chain);
+    const [address, bump] = await findKmsContextPda({ contextId }, { programAddress });
+    const [account] = await fetchEncodedAccounts(client.rpc, [address], { commitment: 'finalized' });
+    return liveKmsContext(account, programAddress, contextId, bump);
+  },
+  cacheKeyFn: (context, { contextId }) => `${hostKey(context)}:${bytesToHex(contextId)}`,
+  ttlMs: CACHE_TTL_15MIN,
+});
+
+/** The host KMS reads of a client on `runtime`, through the shared cache. */
+export function createSolanaHostKmsReads(client: SolanaClientParameters, runtime: FhevmRuntime): SolanaHostKmsReads {
+  const context = { client, runtime };
   return {
-    config: () => config.execute(undefined, {}),
-    kmsContext: (contextId) => kmsContext.execute(undefined, { contextId }),
+    config: () => cachedHostConfig.execute(context, {}),
+    kmsContext: (contextId) => cachedKmsContext.execute(context, { contextId }),
   };
+}
+
+/** Empties the host KMS read cache; a test boundary. */
+export function clearSolanaHostKmsReads(): void {
+  cachedHostConfig.clear({ includeInflight: true });
+  cachedKmsContext.clear({ includeInflight: true });
+}
+
+/**
+ * The `HostConfig` in `account`, if it is the one at `bump` and records the client's chain. A
+ * client whose RPC reaches another cluster fails here instead of caching that cluster's config.
+ */
+export function clientHostConfig(
+  account: MaybeEncodedAccount | undefined,
+  programAddress: Address,
+  bump: number,
+  chain: FhevmSolanaChain,
+): HostConfig {
+  const config = getHostConfigDecoder().decode(hostAccountData(account, programAddress, HOST_CONFIG_DISCRIMINATOR));
+  if (config.bump !== bump || config.chainId !== chain.id)
+    throw new Error('Host configuration does not match the client');
+  return config;
 }
 
 /** The `KmsContext` in `account`, if it is the live context `contextId` names at `bump`. */

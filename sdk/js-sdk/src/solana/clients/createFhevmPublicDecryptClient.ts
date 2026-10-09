@@ -29,7 +29,7 @@ export function createFhevmPublicDecryptClient<C extends FhevmSolanaChain>(
   parameters: SolanaClientParameters<C>,
 ): FhevmSolanaPublicDecryptClient<C> {
   const runtime = getSolanaRuntime();
-  return createSolanaPublicDecryptClient(parameters, runtime, createSolanaHostKmsReads(parameters), (batch) =>
+  return createSolanaPublicDecryptClient(parameters, runtime, createSolanaHostKmsReads(parameters, runtime), (batch) =>
     publicDecryptCertificate({ chain: parameters.chain, runtime }, batch),
   );
 }

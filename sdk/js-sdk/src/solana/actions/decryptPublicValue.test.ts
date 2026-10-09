@@ -94,7 +94,8 @@ import { getAddressEncoder } from '@solana/kit';
 import { createFhevmPublicDecryptClient } from '../clients/createFhevmPublicDecryptClient.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 import * as certificateModule from './publicDecryptCertificate.js';
-import { createSolanaHostKmsReads, userDecryptVerification } from './hostKms.js';
+import { clearSolanaHostKmsReads, createSolanaHostKmsReads, userDecryptVerification } from './hostKms.js';
+import { getSolanaRuntime } from '../internal/runtime.js';
 import { asBytes32Hex } from '../../core/base/bytes.js';
 
 const contextId = new Uint8Array(32).fill(0x44);
@@ -180,6 +181,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  clearSolanaHostKmsReads();
 });
 
 describe('public decrypt client account-to-plaintext flow', () => {
@@ -435,17 +437,28 @@ describe('the host KMS reads', () => {
     expect(f.rpc.getAccountInfo).toHaveBeenCalledTimes(1);
     expect(f.rpc.getMultipleAccounts).toHaveBeenCalledTimes(2);
   });
-  it('shares one HostConfig read between concurrent and later callers', async () => {
+  // Callers that build a client per operation still share the read: the cache is keyed by
+  // runtime, host program and chain, not by client.
+  it('shares one HostConfig read between concurrent and later callers, across clients', async () => {
     const f = await accountFixture();
-    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc });
-    await Promise.all([host.config(), host.config()]);
-    await host.config();
+    const hostReads = () => createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
+    await Promise.all([hostReads().config(), hostReads().config()]);
+    await hostReads().config();
     expect(f.rpc.getAccountInfo).toHaveBeenCalledTimes(1);
+  });
+  it('refuses a HostConfig of another chain, and caches nothing', async () => {
+    const f = await accountFixture();
+    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
+    f.config.chainId = chain.id + 1n;
+    await expect(host.config()).rejects.toThrow('Host configuration does not match the client');
+    f.config.chainId = chain.id;
+    await expect(host.config()).resolves.toMatchObject({ chainId: chain.id });
+    expect(f.rpc.getAccountInfo).toHaveBeenCalledTimes(2);
   });
   it('refuses a destroyed context, and reads it again on the next call', async () => {
     const f = await accountFixture();
     const read = contextServed(f);
-    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc });
+    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
     f.kms.destroyed = true;
     await expect(host.kmsContext(contextId)).rejects.toThrow('Invalid or destroyed KMS context');
     f.kms.destroyed = false;
@@ -456,7 +469,7 @@ describe('the host KMS reads', () => {
   it('refuses a context the host never defined', async () => {
     const f = await accountFixture();
     vi.spyOn(f.rpc, 'getMultipleAccounts').mockReturnValue({ send: async () => ({ value: [null] }) } as never);
-    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc });
+    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
     await expect(host.kmsContext(contextId)).rejects.toThrow('Invalid host account');
   });
   it.each(['context', 'epoch'])('refuses to route while HostConfig holds no %s', async (field) => {
@@ -480,7 +493,7 @@ describe('the host KMS reads', () => {
       signers: [bob, alice].map(({ address }) => hexToBytes(address)),
     });
     const read = contextServed(f);
-    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc });
+    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
 
     await expect(userDecryptVerification(host, permitContextId, 'test')).resolves.toEqual({
       signers: [

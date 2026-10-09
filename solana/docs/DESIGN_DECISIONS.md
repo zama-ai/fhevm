@@ -2971,9 +2971,13 @@ The SDK reads decryption trust from zama-host, as the EVM SDK reads it from Ethe
 - The gateway domain is `Decryption`, version `1`, on `HostConfig.gateway_chain_id` and
   `decryption_contract`.
 - The FHE parameter stays deployment configuration: zama-host does not hold it.
-- `HostConfig` and each `KmsContext` are read at finalized and cached for 15 minutes per client,
-  sharing in-flight reads. A failed read is not cached. The cache lives in the client, because the
-  client fixes the cluster and RPC; Solana program ids can repeat across clusters.
+- `HostConfig` and each `KmsContext` are read at finalized and cached for 15 minutes, sharing
+  in-flight reads. A failed read is not cached. As on EVM, every client on a runtime shares the
+  cache, so callers that build a client per operation still read once.
+- EVM keys these caches by runtime and contract address. Solana adds the chain id, because a program
+  id can repeat across clusters and the chain id names the cluster (DD-052). A `HostConfig` whose
+  `chain_id` is not the client's is refused before it is cached, so a client whose RPC reaches
+  another cluster fails instead of filling the entry with that cluster's trust.
 
 This answers RFC 036 open question 1.
 

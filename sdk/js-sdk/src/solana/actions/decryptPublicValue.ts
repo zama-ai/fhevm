@@ -5,14 +5,9 @@ import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
 import type { SolanaPublicDecryptCertifier, SolanaPublicHandleEntry } from './publicDecryptCertificate.js';
 import { MAX_SOLANA_DECRYPT_HANDLES } from '../userDecrypt/request.js';
-import { hostAccountData, publicDecryptAbortCheck, solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
-import { liveKmsContext, readActiveKmsRouting, type SolanaHostKmsReads } from './hostKms.js';
-import {
-  findHostConfigPda,
-  findKmsContextPda,
-  getHostConfigDecoder,
-  HOST_CONFIG_DISCRIMINATOR,
-} from '@fhevm/solana-zama-host';
+import { publicDecryptAbortCheck, solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
+import { clientHostConfig, liveKmsContext, readActiveKmsRouting, type SolanaHostKmsReads } from './hostKms.js';
+import { findHostConfigPda, findKmsContextPda } from '@fhevm/solana-zama-host';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { bytesToHex, concatBytes, hexToBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { recoverAddress } from '../../core/base/sign.js';
@@ -143,11 +138,7 @@ export async function decryptPublicValues(
     throw error;
   });
   checkAbort();
-  const config = getHostConfigDecoder().decode(
-    hostAccountData(configAccount, programAddress, HOST_CONFIG_DISCRIMINATOR),
-  );
-  if (config.bump !== configBump || config.chainId !== client.chain.id)
-    throw new Error('Host configuration does not match the client');
+  const config = clientHostConfig(configAccount, programAddress, configBump, client.chain);
   if (config.decryptionContract.every((byte) => byte === 0))
     throw new Error('Host decryption contract is not configured');
   const kms = liveKmsContext(contextAccount, programAddress, contextId, contextBump);
