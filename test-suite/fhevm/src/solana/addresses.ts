@@ -16,7 +16,7 @@ import {
 import { DEFAULT_HOST_CHAIN_KEY, gatewayAddressesPath, hostChainAddressesPath } from "../layout";
 import { readEnvFile } from "../utils/fs";
 
-export { BRINGUP_KMS_CONTEXT_ID, BRINGUP_KMS_EPOCH_ID } from "../../../../solana/deploy/src/constants";
+export { BRINGUP_KMS_CONTEXT_ID, BRINGUP_KMS_EPOCH_ID, uint256Bytes } from "../../../../solana/deploy/src/constants";
 export { evmAddressBytes, type GatewayBootstrapInputs };
 
 /**
@@ -43,10 +43,6 @@ export type ActiveKmsPair = {
   /** Active KMS epoch id (32-byte unsigned; type-tagged `0x08` in the high byte — never zero). */
   readonly kmsEpochId: bigint;
 };
-
-/** Formats a 32-byte unsigned id (KMS context/epoch) as 0x-prefixed bytes32 hex. */
-export const bytes32HexFromId = (id: bigint): `0x${string}` =>
-  `0x${id.toString(16).padStart(64, "0")}` as `0x${string}`;
 
 /**
  * Reads the active KMS context/epoch pair from the deployed `ProtocolConfig`, the contract on the

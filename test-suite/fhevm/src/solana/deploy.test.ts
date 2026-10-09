@@ -3,9 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { hexToBytes } from '@fhevm/sdk/base';
 
-import { BRINGUP_KMS_CONTEXT_ID, BRINGUP_KMS_EPOCH_ID, type GatewayBootstrapInputs, bytes32HexFromId } from './addresses';
+import { BRINGUP_KMS_CONTEXT_ID, BRINGUP_KMS_EPOCH_ID, type GatewayBootstrapInputs, uint256Bytes } from './addresses';
 import {
   assertActiveKmsPairMatches,
   assertKmsSignersMatch,
@@ -187,11 +186,10 @@ describe('host bootstrap thresholds', () => {
   test("zama-host's active pair must be the EVM host's: mirroring the aborted epoch fails", () => {
     const context = 0x07n << 248n;
     const epoch = 0x08n << 248n;
-    const id = (value: bigint) => hexToBytes(bytes32HexFromId(value));
     // Step 4b: the EVM host's active pair is the recovery epoch …254; the aborted epoch is …253.
     const evm = { kmsContextId: context + 3n, kmsEpochId: epoch + 254n };
-    const recovery = { currentKmsContextId: id(context + 3n), currentKmsEpochId: id(epoch + 254n) };
-    const aborted = { currentKmsContextId: id(context + 3n), currentKmsEpochId: id(epoch + 253n) };
+    const recovery = { currentKmsContextId: uint256Bytes(context + 3n), currentKmsEpochId: uint256Bytes(epoch + 254n) };
+    const aborted = { currentKmsContextId: uint256Bytes(context + 3n), currentKmsEpochId: uint256Bytes(epoch + 253n) };
     expect(() => assertActiveKmsPairMatches(recovery, evm)).not.toThrow();
     expect(() => assertActiveKmsPairMatches(aborted, evm)).toThrow(
       "differs from the EVM ProtocolConfig's",

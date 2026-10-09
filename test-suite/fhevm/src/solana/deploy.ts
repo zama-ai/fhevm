@@ -55,12 +55,12 @@ import { until } from '../utils/until';
 import {
   type ActiveKmsPair,
   BRINGUP_KMS_CONTEXT_ID,
-  bytes32HexFromId,
   readActiveKmsPair,
   readEvmKmsSignersForContext,
   readEvmKmsThresholds,
   readGatewayBootstrapInputs,
   readProtocolConfigAddress,
+  uint256Bytes,
 } from './addresses';
 import {
   SOLANA_E2E_PROGRAMS,
@@ -215,7 +215,7 @@ export const assertActiveKmsPairMatches = (
   evm: ActiveKmsPair,
 ): void => {
   const active = `${accountBytesHex(solana.currentKmsContextId)}/${accountBytesHex(solana.currentKmsEpochId)}`;
-  const expected = `${bytes32HexFromId(evm.kmsContextId)}/${bytes32HexFromId(evm.kmsEpochId)}`;
+  const expected = `${accountBytesHex(uint256Bytes(evm.kmsContextId))}/${accountBytesHex(uint256Bytes(evm.kmsEpochId))}`;
   if (active !== expected) {
     throw new Error(`zama-host's active KMS context/epoch ${active} differs from the EVM ProtocolConfig's ${expected}`);
   }
