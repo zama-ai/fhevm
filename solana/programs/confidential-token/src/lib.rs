@@ -80,7 +80,8 @@ pub mod confidential_token {
         instructions::initialize_mint(ctx)
     }
 
-    /// Initializes a token account and creates its zero confidential balance handle.
+    /// Initializes a token account and creates its zero confidential balance handle. An account
+    /// that already exists is left unchanged, like the associated token program's `CreateIdempotent`.
     pub fn initialize_token_account<'info>(
         ctx: Context<'info, InitializeTokenAccount<'info>>,
     ) -> Result<()> {

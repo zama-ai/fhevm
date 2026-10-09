@@ -22,7 +22,7 @@ idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "zama-host/idl-bui
 program-environment = { path = "../../crates/program-environment" }
 
 [dependencies]
-anchor-lang = "1.2.0"
+anchor-lang = { version = "1.2.0", features = ["init-if-needed"] }
 anchor-spl = { version = "1.2.0", default-features = false, features = ["associated_token", "token", "token_2022"] }
 zama-fhe = { path = "../../crates/zama-fhe", features = ["cpi"] }
 zama-host = { path = "../zama-host", features = ["cpi"] }

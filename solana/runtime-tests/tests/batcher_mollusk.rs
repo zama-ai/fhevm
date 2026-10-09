@@ -53,9 +53,9 @@ use zama_solana_test_kit::{
     anchor_error_check, anchor_ix, coprocessor_signer_address, cost_snapshot,
     deny_scope_record_account, encrypted_store_account, ensure_system_accounts, event_authority,
     handle_for_chain, hcu_trusted_app_record_account, host_config_account, kms_context_account,
-    new_encrypted_store, paused_host_config, read_account, read_spl_amount, readonly,
-    serialized_account, spl_mint_account, spl_token_account, system_account, Ctx, HostConfigParams,
-    BALANCE_FHE_TYPE, DECIMALS,
+    new_encrypted_store, paused_host_config, read_account, read_spl_amount, read_store_handle,
+    readonly, serialized_account, spl_mint_account, spl_token_account, system_account, Ctx,
+    HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
 };
 
 const KMS_CONTEXT_ID: [u8; 32] = {
@@ -2802,6 +2802,88 @@ fn mollusk_open_batch_requires_previous_batch_not_pending() {
         &open_batch_ix(&fixture, &next, None),
         &[batcher_error(batcher::BatcherError::PreviousBatchMismatch)],
     );
+}
+
+/// A token account's owner does not sign its creation, and the next batch authority derives from the
+/// public `next_batch_index`, so anyone can create the next batch's token accounts first. The open
+/// still succeeds and keeps their zero balances.
+#[test]
+fn mollusk_open_batch_accepts_precreated_batch_token_accounts() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    check_batcher_instruction(
+        &context,
+        &initialize_batcher_ix(&fixture, 0),
+        &[Check::success()],
+    );
+    let keys = BatchKeys::new(&fixture, 0);
+    ensure_open_batch_accounts(&context, &fixture, &keys);
+    let stranger = Pubkey::new_unique();
+    context
+        .account_store
+        .borrow_mut()
+        .insert(stranger, system_account(5_000_000_000));
+    let precreated = [
+        (
+            fixture.join_app(),
+            keys.join_token_account,
+            keys.join_balance_store,
+        ),
+        (
+            fixture.payout_app(),
+            keys.payout_token_account,
+            keys.payout_balance_store,
+        ),
+    ];
+    for (app, token_account, balance_store) in precreated {
+        let ix = anchor_ix(
+            token::id(),
+            token::accounts::InitializeTokenAccount {
+                payer: stranger,
+                owner: keys.batch_authority,
+                mint: app.scope,
+                token_account,
+                balance_encrypted_store: balance_store,
+                zama_event_authority: event_authority(host::id()),
+                transient_store: host::transient_store_address(stranger).0,
+                instructions: Instructions::id(),
+                zama_program: host::id(),
+                host_config: fixture.host_config,
+                system_program: system_program::ID,
+                hcu_block_meter: fixture.hcu_block_meter(app),
+                hcu_trusted_app_record: fixture.hcu_trusted_app_record(app),
+                event_authority: event_authority(token::id()),
+                program: token::id(),
+            },
+            token::instruction::InitializeTokenAccount {},
+        );
+        zama_solana_test_kit::transaction::process_fhe_instruction(
+            &context,
+            stranger,
+            &fixture.with_deny_records(ix, &[&[app]]),
+            &[Check::success()],
+        );
+    }
+    let handles =
+        precreated.map(|(_, _, store)| read_store_handle(&context, store, token::balance_key()));
+
+    check_batcher_instruction(
+        &context,
+        &open_batch_ix(&fixture, &keys, None),
+        &[Check::success()],
+    );
+
+    assert_eq!(
+        read_account::<batcher::Batcher>(&context, fixture.batcher).next_batch_index,
+        1
+    );
+    for ((_, _, store), handle) in precreated.into_iter().zip(handles) {
+        assert_eq!(
+            read_store_handle(&context, store, token::balance_key()),
+            handle
+        );
+        assert_eq!(store_u64(&context, store, token::balance_key()), 0);
+    }
 }
 
 #[test]

@@ -28,8 +28,6 @@ export {
 export { buildInitializeMintInstruction, type SolanaVaultInitializeMintParameters } from './initializeMint.js';
 export {
   buildInitializeTokenAccountInstruction,
-  getOrCreateConfidentialTokenAccountInstruction,
-  needsConfidentialTokenAccountInitialization,
   type SolanaVaultInitializeTokenAccountParameters,
 } from './initializeTokenAccount.js';
 export { buildWrapUsdcInstruction, type SolanaVaultWrapUsdcParameters } from './wrapUsdc.js';
