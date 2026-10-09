@@ -186,8 +186,6 @@ export const ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c3; // 
 export const ZAMA_HOST_ERROR__SCALAR_OUT_OF_RANGE = 0x17c4; // 6084
 /** NonIncreasingKmsEpochId: KMS epoch id must be above the current one */
 export const ZAMA_HOST_ERROR__NON_INCREASING_KMS_EPOCH_ID = 0x17c5; // 6085
-/** WalletRevokeThroughCpi: a wallet must revoke in a top-level instruction */
-export const ZAMA_HOST_ERROR__WALLET_REVOKE_THROUGH_CPI = 0x17c6; // 6086
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ACL_WRITES_PAUSED
@@ -274,7 +272,6 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED
   | typeof ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI
   | typeof ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI
-  | typeof ZAMA_HOST_ERROR__WALLET_REVOKE_THROUGH_CPI
   | typeof ZAMA_HOST_ERROR__ZERO_COPROCESSOR_SIGNER
   | typeof ZAMA_HOST_ERROR__ZERO_KMS_SIGNER;
 
@@ -365,7 +362,6 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__VERIFIED_INPUTS_PAUSED]: `verified inputs are paused`,
     [ZAMA_HOST_ERROR__WALLET_DELEGATION_THROUGH_CPI]: `a wallet delegator must delegate in a top-level instruction`,
     [ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI]: `a wallet pauser must pause in a top-level instruction`,
-    [ZAMA_HOST_ERROR__WALLET_REVOKE_THROUGH_CPI]: `a wallet must revoke in a top-level instruction`,
     [ZAMA_HOST_ERROR__ZERO_COPROCESSOR_SIGNER]: `coprocessor signer set contains the zero address`,
     [ZAMA_HOST_ERROR__ZERO_KMS_SIGNER]: `KMS signer set contains the zero address`,
   };

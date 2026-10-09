@@ -2997,11 +2997,6 @@
       "code": 6085,
       "name": "NonIncreasingKmsEpochId",
       "msg": "KMS epoch id must be above the current one"
-    },
-    {
-      "code": 6086,
-      "name": "WalletRevokeThroughCpi",
-      "msg": "a wallet must revoke in a top-level instruction"
     }
   ],
   "types": [
