@@ -96,11 +96,11 @@ export function solanaDelegationWarnings(application: SolanaDelegationApplicatio
  */
 export type SolanaSignerOrAddress = Address | TransactionSigner;
 
-function resolvedSigner(value: SolanaSignerOrAddress): TransactionSigner {
+export function resolvedSigner(value: SolanaSignerOrAddress): TransactionSigner {
   return typeof value === 'string' ? createNoopSigner(value) : value;
 }
 
-function resolvedAddress(value: SolanaSignerOrAddress): Address {
+export function resolvedAddress(value: SolanaSignerOrAddress): Address {
   return typeof value === 'string' ? value : value.address;
 }
 
@@ -142,7 +142,7 @@ export async function buildDelegateForUserDecryptionInstruction(
   );
 }
 
-/** Parameters of a delegation revocation: the tuple, or an explicit record address. */
+/** Parameters of a delegation revocation: the tuple whose record it revokes. */
 export type SolanaRevokeDelegationForUserDecryptionParameters = Omit<
   SolanaUserDecryptionDelegationTuple,
   'delegator'
@@ -151,8 +151,6 @@ export type SolanaRevokeDelegationForUserDecryptionParameters = Omit<
   readonly delegator: SolanaSignerOrAddress;
   /** Canonical singleton host config; defaults to the host config PDA when omitted. */
   readonly hostConfig?: Address;
-  /** The record address; defaults to the canonical PDA of the tuple when omitted. */
-  readonly delegationRecord?: Address;
 } & SolanaZamaHostAddressConfig;
 
 /**
@@ -166,14 +164,15 @@ export type SolanaRevokeDelegationForUserDecryptionParameters = Omit<
 export async function buildRevokeDelegationForUserDecryptionInstruction(
   params: SolanaRevokeDelegationForUserDecryptionParameters,
 ): Promise<Instruction> {
-  const { delegator, delegate, program, scope, delegationRecord, programAddress, ...accounts } = params;
-  // The revoke instruction carries no tuple arguments, so the record cannot default from them.
+  const { delegator, delegate, program, scope, programAddress, ...accounts } = params;
+  // The host derives the record's seeds from the record's own fields and checks only the delegator,
+  // so the record must come from the tuple: a record of another tuple would revoke that one.
   const tuple = { delegator: resolvedAddress(delegator), delegate, program, scope };
   return getRevokeDelegationForUserDecryptionInstructionAsync(
     {
       ...accounts,
       delegator: resolvedSigner(delegator),
-      delegationRecord: delegationRecord ?? (await findDelegationRecordPda(tuple, { programAddress }))[0],
+      delegationRecord: (await findDelegationRecordPda(tuple, { programAddress }))[0],
     },
     { programAddress },
   );

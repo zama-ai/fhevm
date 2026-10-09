@@ -1,6 +1,6 @@
 import type { SolanaRpc } from '../encryptedStore.js';
+import { resolvedAddress, resolvedSigner, type SolanaSignerOrAddress } from './userDecryptionDelegation.js';
 import {
-  createNoopSigner,
   fetchEncodedAccount,
   type Address,
   type Instruction,
@@ -24,8 +24,11 @@ import {
  * for delegated requests.
  */
 export async function buildRevokePermitsInstruction(params: {
-  /** The user whose permits die. Signs the transaction and pays rent for the watermark. */
-  readonly user: Address;
+  /**
+   * The user whose permits die. Signs the transaction and pays rent for the watermark (see
+   * [`SolanaSignerOrAddress`]).
+   */
+  readonly user: SolanaSignerOrAddress;
   /** The watermark address; defaults to the canonical PDA of the user when omitted. */
   readonly invalidation?: Address | undefined;
   /** The zama-host program id of the deployment. */
@@ -33,10 +36,10 @@ export async function buildRevokePermitsInstruction(params: {
 }): Promise<Instruction> {
   const invalidation =
     params.invalidation ??
-    (await findInvalidationPda({ user: params.user }, { programAddress: params.programAddress }))[0];
+    (await findInvalidationPda({ user: resolvedAddress(params.user) }, { programAddress: params.programAddress }))[0];
   return getRevokePermitsInstruction(
     {
-      user: createNoopSigner(params.user),
+      user: resolvedSigner(params.user),
       invalidation,
     },
     { programAddress: params.programAddress },

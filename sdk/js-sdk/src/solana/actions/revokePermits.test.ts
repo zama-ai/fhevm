@@ -4,10 +4,18 @@ import {
   AccountRole,
   type Address,
   address,
+  appendTransactionMessageInstruction,
+  blockhash,
+  createTransactionMessage,
+  generateKeyPairSigner,
   getAddressDecoder,
   lamports,
   type MaybeEncodedAccount,
+  pipe,
   type ProgramDerivedAddressBump,
+  setTransactionMessageFeePayerSigner,
+  setTransactionMessageLifetimeUsingBlockhash,
+  signTransactionMessageWithSigners,
 } from '@solana/kit';
 
 import {
@@ -49,6 +57,27 @@ describe('buildRevokePermitsInstruction', () => {
       [WATERMARK_ADDRESS, AccountRole.WRITABLE],
       [SYSTEM_PROGRAM, AccountRole.READONLY],
     ]);
+  });
+
+  it("signs through Kit when the user's wallet signer pays for the transaction", async () => {
+    const wallet = await generateKeyPairSigner();
+    const instruction = await buildRevokePermitsInstruction({
+      user: wallet,
+      programAddress: ZAMA_HOST_PROGRAM_ADDRESS,
+    });
+    const message = pipe(
+      createTransactionMessage({ version: 1 }),
+      (message) => setTransactionMessageFeePayerSigner(wallet, message),
+      (message) =>
+        setTransactionMessageLifetimeUsingBlockhash(
+          { blockhash: blockhash('11111111111111111111111111111111'), lastValidBlockHeight: 0n },
+          message,
+        ),
+      (message) => appendTransactionMessageInstruction(instruction, message),
+    );
+    const signed = await signTransactionMessageWithSigners(message);
+    expect(Object.keys(signed.signatures)).toEqual([wallet.address]);
+    expect(signed.signatures[wallet.address]).not.toBeNull();
   });
 });
 
