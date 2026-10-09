@@ -411,7 +411,7 @@ pub async fn publish_context_and_epoch(
     context_id: U256,
     epoch_id: U256,
 ) -> anyhow::Result<()> {
-    info!("Publishing KMS context #{context_id} (epoch #{epoch_id}) in DB...");
+    info!("Publishing KMS context #{context_id:#066x} (epoch #{epoch_id:#066x}) in DB...");
     let now = Utc::now();
     let query_result = sqlx::query!(
         "INSERT INTO kms_context(id, epoch_id, is_valid, created_at, updated_at)
@@ -426,9 +426,13 @@ pub async fn publish_context_and_epoch(
     .await?;
 
     if query_result.rows_affected() == 1 {
-        info!("KMS context #{context_id} (epoch #{epoch_id}) was successfully published!");
+        info!(
+            "KMS context #{context_id:#066x} (epoch #{epoch_id:#066x}) was successfully published!"
+        );
     } else {
-        debug!("KMS context #{context_id} (epoch #{epoch_id}) was not published: {query_result:?}");
+        debug!(
+            "KMS context #{context_id:#066x} (epoch #{epoch_id:#066x}) was not published: {query_result:?}"
+        );
     }
     Ok(())
 }
@@ -548,7 +552,7 @@ async fn invalidate_kms_context<'e>(
     .await?;
 
     info!(
-        "KMS context #{context_id} destroyed: {} epoch(s) invalidated in DB",
+        "KMS context #{context_id:#066x} destroyed: {} epoch(s) invalidated in DB",
         query_result.rows_affected()
     );
     Ok(())

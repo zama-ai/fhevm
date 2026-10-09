@@ -227,14 +227,14 @@ where
                     && e.previousContextId == KMS_CONTEXT_COUNTER_BASE
                 {
                     info!(
-                        "Skipping genesis/re-init NewKmsContext #{} (sentinel previousContextId)",
+                        "Skipping genesis/re-init NewKmsContext #{:#066x} (sentinel previousContextId)",
                         e.contextId,
                     );
                     continue;
                 }
 
                 if let ProtocolConfigEvents::KmsContextDestroyed(e) = &protocol_config_event {
-                    info!("KMS context #{} destroyed on-chain", e.kmsContextId);
+                    info!("KMS context #{:#066x} destroyed on-chain", e.kmsContextId);
                     EVENT_RECEIVED_COUNTER
                         .with_label_values(&["kms_context_destroyed"])
                         .inc();

@@ -52,7 +52,9 @@ impl DbInstance {
             .await?;
         info!("KMS Connector DB ready!");
 
-        info!("Inserting context #{TESTING_KMS_CONTEXT}, epoch #{DEFAULT_EPOCH_ID}) for tests...");
+        info!(
+            "Inserting context #{TESTING_KMS_CONTEXT:#066x}, epoch #{DEFAULT_EPOCH_ID:#066x} for tests..."
+        );
         let now = Utc::now();
         sqlx::query!(
             "INSERT INTO kms_context(id, epoch_id, is_valid, created_at, updated_at)
@@ -65,7 +67,7 @@ impl DbInstance {
         )
         .execute(&pool)
         .await?;
-        info!("Context #{TESTING_KMS_CONTEXT} is ready for tests!");
+        info!("Context #{TESTING_KMS_CONTEXT:#066x} is ready for tests!");
 
         Ok(DbInstance {
             db_container: container,
