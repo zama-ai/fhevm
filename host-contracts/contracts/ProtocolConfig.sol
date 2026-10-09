@@ -84,6 +84,36 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         keccak256("EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)");
 
     // -----------------------------------------------------------------------------------------
+    // ERC-7201 namespaced storage
+    // -----------------------------------------------------------------------------------------
+
+    /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfigCanonical
+    struct ProtocolConfigCanonicalStorage {
+        /// @notice Hash of the stored node set and thresholds, signed in ContextCreationConfirmation.
+        mapping(uint256 contextId => bytes32) nodeConfigHashForContext;
+        /// @notice Context creation confirmations per signer (one digest per signer per context).
+        mapping(uint256 contextId => mapping(address signer => bool confirmed)) contextCreationConfirmedBySigner;
+        /// @notice Previous-committee context creation confirmations grouped by digest.
+        mapping(uint256 contextId => mapping(bytes32 digest => uint256 confirmations)) contextCreationPreviousConfirmationCountForDigest;
+        /// @notice New-committee context creation confirmations grouped by digest.
+        mapping(uint256 contextId => mapping(bytes32 digest => uint256 confirmations)) contextCreationNewConfirmationCountForDigest;
+        /// @notice Context destruction confirmations per signer.
+        mapping(uint256 contextId => mapping(address signer => bool confirmed)) contextDestructionConfirmedBySigner;
+        /// @notice Epoch destruction confirmations per signer.
+        mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochDestructionConfirmedBySigner;
+    }
+
+    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ProtocolConfigCanonical")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant PROTOCOL_CONFIG_CANONICAL_STORAGE_LOCATION =
+        0x98bc32bb4045abd79f66305d47272679087ff12d8a03152ce14a0954b7709c00;
+
+    function _getProtocolConfigCanonicalStorage() internal pure returns (ProtocolConfigCanonicalStorage storage $) {
+        assembly {
+            $.slot := PROTOCOL_CONFIG_CANONICAL_STORAGE_LOCATION
+        }
+    }
+
+    // -----------------------------------------------------------------------------------------
     // Constructor
     // -----------------------------------------------------------------------------------------
 
@@ -170,7 +200,9 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
         // Commit to the stored node set and thresholds. Both committees sign it in ContextCreationConfirmation.
         KmsNode[] memory nodes = $.kmsNodesForContext[contextId];
-        $.nodeConfigHashForContext[contextId] = keccak256(abi.encode(nodes, thresholds));
+        _getProtocolConfigCanonicalStorage().nodeConfigHashForContext[contextId] = keccak256(
+            abi.encode(nodes, thresholds)
+        );
 
         // Cache the number of previous-committee confirmations confirmKmsContextCreation requires.
         // The previous committee has `n` nodes, of which at most `t` (its MPC threshold) are assumed
@@ -225,6 +257,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         bytes calldata extraData
     ) external virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        ProtocolConfigCanonicalStorage storage canonical$ = _getProtocolConfigCanonicalStorage();
         if ($.contextState[kmsContextId] != ContextState.Pending) {
             revert KmsContextNotPending(kmsContextId);
         }
@@ -237,7 +270,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
                     EIP712_CONTEXT_CREATION_TYPE_HASH,
                     previousContextId,
                     kmsContextId,
-                    $.nodeConfigHashForContext[kmsContextId],
+                    canonical$.nodeConfigHashForContext[kmsContextId],
                     keccak256(extraData)
                 )
             )
@@ -248,27 +281,27 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         if (!isPreviousSigner && !isNewSigner) {
             revert KmsContextCreationUnauthorized(signer, kmsContextId);
         }
-        if ($.contextCreationConfirmedBySigner[kmsContextId][signer]) {
+        if (canonical$.contextCreationConfirmedBySigner[kmsContextId][signer]) {
             revert KmsContextCreationAlreadyConfirmed(signer, kmsContextId);
         }
 
         // Record the confirmation and counts separately for the split quorum. A signer in both
         // committees counts toward both.
-        $.contextCreationConfirmedBySigner[kmsContextId][signer] = true;
+        canonical$.contextCreationConfirmedBySigner[kmsContextId][signer] = true;
         if (isPreviousSigner) {
-            ++$.contextCreationPreviousConfirmationCountForDigest[kmsContextId][digest];
+            ++canonical$.contextCreationPreviousConfirmationCountForDigest[kmsContextId][digest];
         }
         if (isNewSigner) {
-            ++$.contextCreationNewConfirmationCountForDigest[kmsContextId][digest];
+            ++canonical$.contextCreationNewConfirmationCountForDigest[kmsContextId][digest];
         }
 
         emit KmsContextCreationConfirmation(kmsContextId, signer, signature, extraData);
 
         // Context creation quorum: all new nodes and (n - t) previous nodes confirmed the same digest.
         if (
-            $.contextCreationNewConfirmationCountForDigest[kmsContextId][digest] ==
+            canonical$.contextCreationNewConfirmationCountForDigest[kmsContextId][digest] ==
             $.kmsNodesForContext[kmsContextId].length &&
-            $.contextCreationPreviousConfirmationCountForDigest[kmsContextId][digest] >=
+            canonical$.contextCreationPreviousConfirmationCountForDigest[kmsContextId][digest] >=
             $.contextCreationPreviousTxSenderThreshold[kmsContextId]
         ) {
             $.contextState[kmsContextId] = ContextState.Created;
@@ -404,10 +437,11 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         if (!$.isKmsSignerForContext[$.latestActiveKmsContextId][signer]) {
             revert KmsContextDestructionUnauthorized(signer, destroyedContextId);
         }
-        if ($.contextDestructionConfirmedBySigner[destroyedContextId][signer]) {
+        ProtocolConfigCanonicalStorage storage canonical$ = _getProtocolConfigCanonicalStorage();
+        if (canonical$.contextDestructionConfirmedBySigner[destroyedContextId][signer]) {
             revert KmsContextDestructionAlreadyConfirmed(signer, destroyedContextId);
         }
-        $.contextDestructionConfirmedBySigner[destroyedContextId][signer] = true;
+        canonical$.contextDestructionConfirmedBySigner[destroyedContextId][signer] = true;
 
         emit KmsContextDestructionConfirmed(destroyedContextId, destroyedEpochIds, signer, signature, extraData);
     }
@@ -432,10 +466,11 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         if (!$.isKmsSignerForContext[$.latestActiveKmsContextId][signer]) {
             revert KmsEpochDestructionUnauthorized(signer, destroyedEpochId);
         }
-        if ($.epochDestructionConfirmedBySigner[destroyedEpochId][signer]) {
+        ProtocolConfigCanonicalStorage storage canonical$ = _getProtocolConfigCanonicalStorage();
+        if (canonical$.epochDestructionConfirmedBySigner[destroyedEpochId][signer]) {
             revert KmsEpochDestructionAlreadyConfirmed(signer, destroyedEpochId);
         }
-        $.epochDestructionConfirmedBySigner[destroyedEpochId][signer] = true;
+        canonical$.epochDestructionConfirmedBySigner[destroyedEpochId][signer] = true;
 
         emit KmsEpochDestructionConfirmed(destroyedEpochId, signer, signature, extraData);
     }

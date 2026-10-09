@@ -462,6 +462,19 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(stored, KMS_CONTEXT_COUNTER_BASE + 2);
     }
 
+    function test_canonicalStorageLocationPinned() public {
+        _setupDefault();
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(1), _defaultThresholds());
+
+        /// @dev nodeConfigHashForContext is the first field of the canonical namespace.
+        bytes32 location = keccak256(abi.encode(uint256(keccak256("fhevm.storage.ProtocolConfigCanonical")) - 1)) &
+            ~bytes32(uint256(0xff));
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        bytes32 slot = keccak256(abi.encode(contextId, location));
+        assertEq(vm.load(address(protocolConfig), slot), nodeConfigHashes[contextId]);
+    }
+
     // -----------------------------------------------------------------------
     // Validation error tests
     // -----------------------------------------------------------------------

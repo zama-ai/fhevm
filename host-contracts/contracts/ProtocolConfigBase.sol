@@ -98,20 +98,8 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         mapping(uint256 contextId => uint256 confirmations) contextCreationPreviousTxSenderConfirmationCount;
         /// @notice Context anchor recorded when NewKmsContext was emitted.
         mapping(uint256 contextId => KmsContextAnchor) contextAnchors;
-        /// @notice Hash of the stored node set and thresholds, signed in ContextCreationConfirmation.
-        mapping(uint256 contextId => bytes32) nodeConfigHashForContext;
-        /// @notice Context creation confirmations per signer (one digest per signer per context).
-        mapping(uint256 contextId => mapping(address signer => bool confirmed)) contextCreationConfirmedBySigner;
-        /// @notice Previous-committee context creation confirmations grouped by digest.
-        mapping(uint256 contextId => mapping(bytes32 digest => uint256 confirmations)) contextCreationPreviousConfirmationCountForDigest;
-        /// @notice New-committee context creation confirmations grouped by digest.
-        mapping(uint256 contextId => mapping(bytes32 digest => uint256 confirmations)) contextCreationNewConfirmationCountForDigest;
         /// @notice Whether an epoch was destroyed by destroyKmsEpoch.
         mapping(uint256 epochId => bool) destroyedEpochs;
-        /// @notice Context destruction confirmations per signer.
-        mapping(uint256 contextId => mapping(address signer => bool confirmed)) contextDestructionConfirmedBySigner;
-        /// @notice Epoch destruction confirmations per signer.
-        mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochDestructionConfirmedBySigner;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ProtocolConfig")) - 1)) & ~bytes32(uint256(0xff))
