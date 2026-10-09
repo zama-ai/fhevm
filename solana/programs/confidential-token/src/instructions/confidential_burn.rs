@@ -387,16 +387,16 @@ fn execute_burn<'info>(
     let token_account = accounts.token_account;
     let owner = token_account.owner;
     let token_account_key = token_account.key();
-    let balance_store = fhe::read_state(&accounts.balance_store)?;
-    let total_supply_store = fhe::read_state(&accounts.total_supply_store)?;
-    let old_balance_handle = fhe::store_handle(&balance_store, balance_key())?;
-    let old_total_supply_handle = fhe::store_handle(&total_supply_store, total_supply_key())?;
-
     require_keys_eq!(
         owner,
         accounts.burn_authority.key(),
         ConfidentialTokenError::OwnerMismatch
     );
+    let balance_store = fhe::read_state(&accounts.balance_store)?;
+    let total_supply_store = fhe::read_state(&accounts.total_supply_store)?;
+    let old_balance_handle = fhe::store_handle(&balance_store, balance_key())?;
+    let old_total_supply_handle = fhe::store_handle(&total_supply_store, total_supply_key())?;
+
     require_keys_eq!(
         token_account.mint,
         mint_key,
