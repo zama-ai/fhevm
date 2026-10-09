@@ -338,3 +338,15 @@ test('HCU limits match the values the EVM deployment initializes HCULimit with',
   const [, depth, total] = [...(args ?? '').matchAll(/BigInt\('(\d+)'\)/g)].map((match) => BigInt(match[1]!));
   expect({ maxHcuDepthPerTx: depth, maxHcuPerTx: total }).toEqual(HCU_LIMITS);
 });
+
+test('the bring-up KMS context is the first id above the EVM KMS_CONTEXT_COUNTER_BASE', async () => {
+  const constants = await readFile(path.join(REPO_ROOT, 'host-contracts/contracts/shared/Constants.sol'), 'utf8');
+  // KMS_CONTEXT_COUNTER_BASE = uint256(RequestType.KmsContext) << REQUEST_TYPE_SHIFT.
+  const requestTypes = [...(constants.match(/enum RequestType \{([^}]*)\}/)?.[1] ?? '').matchAll(/^\s*(\w+)/gm)];
+  const tag = requestTypes.findIndex((match) => match[1] === 'KmsContext');
+  const shift = constants.match(/REQUEST_TYPE_SHIFT = (\d+);/)?.[1];
+  expect(tag).toBeGreaterThan(0);
+  expect(shift).toBeDefined();
+  const counterBase = BigInt(tag) << BigInt(shift!);
+  expect(BigInt(`0x${Buffer.from(BRINGUP_KMS_CONTEXT_ID).toString('hex')}`)).toBe(counterBase + 1n);
+});

@@ -118,8 +118,10 @@ jobs:
               - solana/demo-dapp/**
               - solana/clients/confidential-token/**
               - solana/clients/zama-host/**
-              # deploy.test.ts pins the deployer's HCU_LIMITS to EVM's HCULimit deploy arguments.
+              # deploy.test.ts pins the deployer's HCU_LIMITS to EVM's HCULimit deploy arguments,
+              # and its bring-up KMS context to EVM's KMS_CONTEXT_COUNTER_BASE.
               - host-contracts/tasks/taskDeploy.ts
+              - host-contracts/contracts/shared/Constants.sol
             cleartext-e2e:
               - .github/workflows/solana-tests.yml
               - solana/**
