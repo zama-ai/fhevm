@@ -86,7 +86,8 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         /// @notice Epoch activation confirmations per signer (one digest per signer per epoch).
         mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochActivationConfirmedBySigner;
         /// @notice Number of epoch activation confirmations grouped by EpochActivationConfirmation digest
-        mapping(uint256 epochId => mapping(bytes32 digest => uint256 confirmations)) epochActivationConfirmationCountForDigest;
+        /// @dev The key keeps its `dataHash` name for the OpenZeppelin upgrades layout check.
+        mapping(uint256 epochId => mapping(bytes32 dataHash => uint256 confirmations)) epochActivationConfirmationCountForDigest;
         /// @notice Required previous-context confirmation quorum, cached at pending-context creation time.
         mapping(uint256 contextId => uint256 threshold) contextCreationPreviousTxSenderThreshold;
         /// @notice New-context tx-sender confirmations for context creation.
