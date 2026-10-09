@@ -128,8 +128,8 @@ describe('the authority-reclaim crank drains every finished batch once', () => {
 });
 
 describe('prepareNextBatch', () => {
-  test.each([BatchStatus.Settled, BatchStatus.Canceled, BatchStatus.Refunding])(
-    'opens the next batch after a finished one (%s) as one FHE transaction',
+  test.each([BatchStatus.Dispatched, BatchStatus.Settled, BatchStatus.Canceled, BatchStatus.Refunding])(
+    'opens the next batch once the current one stops taking joins (%s) as one FHE transaction',
     async (status) => {
       mocks.getCurrentBatch
         .mockResolvedValueOnce({ index: 0n, addresses: { batch: 'batch-0' }, state: { status } })
@@ -150,13 +150,6 @@ describe('prepareNextBatch', () => {
 
     await expect(prepareNextBatch(config, keeper, 'deposit')).resolves.toEqual({ batchIndex: 3n, batch: 'batch-3' });
     expect(mocks.openBatchForBatcher).not.toHaveBeenCalled();
-    expect(mocks.sendFheTransaction).not.toHaveBeenCalled();
-  });
-
-  test('refuses while the current batch is still settling', async () => {
-    mocks.getCurrentBatch.mockResolvedValue({ index: 2n, addresses: { batch: 'batch-2' }, state: { status: BatchStatus.Dispatched } });
-
-    await expect(prepareNextBatch(config, keeper, 'deposit')).rejects.toThrow('still settling');
     expect(mocks.sendFheTransaction).not.toHaveBeenCalled();
   });
 });
