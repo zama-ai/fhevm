@@ -858,7 +858,9 @@ jobs:
         # consensus is never reached and only preprocessing ever runs.
         # FALLBACK_HANDLE is used only if anonymous bucket listing is disabled.
         # Emits s3_endpoint and signers_json (one JSON blob, since step outputs
-        # can't be addressed by a looped name later).
+        # can't be addressed by a looped name later). Each entry also carries
+        # caCert, the 0x-hex PEM at PUB-p<i>/CACert/<handle>, which the host
+        # wiring step stores as KMS_NODE_CA_CERT_<i>.
         env:
           FALLBACK_HANDLE: "60b7070add74be3827160aa635fb255eeeeb88586c4debf7ab1134ddceb4beee"
         run: |

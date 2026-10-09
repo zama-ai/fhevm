@@ -49,12 +49,15 @@ ci/preview-env/
 │   ├── values-anvil-host-polygon-e2e.yaml   # anvil-node overlay, Polygon host chain (deploy_polygon)
 │   ├── values-host-contracts-e2e.yaml   # contracts overlay, host-contracts
 │   ├── values-host-contracts-polygon-e2e.yaml # contracts overlay, Polygon host-contracts (mirrors ETH ProtocolConfig)
-│   └── values-host-trigger-keygen-e2e.yaml # contracts overlay, real FHE key/CRS gen ceremony
+│   ├── values-host-trigger-keygen-e2e.yaml # contracts overlay, real FHE key/CRS gen ceremony
+│   ├── values-host-define-new-kms-context-e2e.yaml # contracts overlay, same-committee context switch (manual)
+│   └── values-host-define-new-epoch-e2e.yaml # contracts overlay, same-context epoch rotation (manual)
 ├── gateway-chain/
 │   ├── values-anvil-gateway-e2e.yaml         # anvil-node overlay, gateway chain
 │   ├── values-gateway-contracts-e2e.yaml     # contracts overlay, gateway-contracts
 │   ├── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
-│   └── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
+│   ├── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
+│   └── values-gateway-update-kms-context-e2e.yaml # contracts overlay, gateway context id bump (manual)
 ├── coprocessor/
 │   ├── values-coprocessor-e2e.yaml        # coprocessor overlay (one release per party: coprocessor-<i>)
 │   ├── values-coprocessor-bcs-e2e.yaml    # RFC-021 BCS overlay (pinned 0.14.0, extraSelectorLabels)
@@ -69,7 +72,7 @@ ci/preview-env/
 │   └── values-postgres-listener-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to the listener's cursor DB
 ├── kms-connector/
 │   ├── values-kms-connector-e2e.yaml       # kms-connector overlay
-│   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain to hostChains (deploy_polygon)
+│   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain (deploy_polygon)
 │   └── values-postgres-connector-e2e.yaml  # `common` chart overlay: in-cluster Postgres, dedicated to kms-connector
 ├── observability/
 │   ├── values-prometheus-e2e.yaml # `common` chart overlay (raw objects): in-namespace Prometheus, endpoints-SD scraping
@@ -478,7 +481,8 @@ Polygon **reuses the ETH-activated KMS key** — there is no second keygen cerem
   `postgres-listener-polygon-<i>`) publishes chain-`80002` events to the **same**
   per-party Redis; the Polygon consumer filters them out by `--chain-id`.
 - The relayer gets a second `host_chains` entry and the kms-connector a second
-  `hostChains` entry (`values-kms-connector-polygon-e2e.yaml`) so host ACL checks cover
+  host chain (`values-kms-connector-polygon-e2e.yaml`, both the chart 2.x
+  `hostChains` map and the chart 1.5.3 flat keys) so host ACL checks cover
   Polygon ciphertexts.
 - Chain `80002` is registered into the shared GatewayConfig by a second
   `addHostChainsToGatewayConfig` call (`values-gateway-add-host-chains-polygon-e2e.yaml`,
@@ -495,6 +499,103 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
 > `true` and it takes the **reduced / read-only** path (the `hcu-block-cap` owner-only
 > and `evm_*` deterministic subtests `this.skip()`). The Polygon run is a multichain
 > routing smoke test; the ETH `staging` run remains the full-coverage one.
+
+## KMS context switch (manual)
+
+A same-committee switch on a namespace that already finished keygen. None of
+these commands are part of `preview-env-deploy`. The host and gateway contract
+Jobs tolerate `karpenter.sh/nodepool=zws-pool`; without that toleration the
+pod stays Pending.
+
+### Replace one party first
+
+`prepare-kms-core-replacement.sh` scales one party to 0 and installs a new
+core under a new release name. The party id stays in `kmsPeers.id` and in
+`peersList[].id`. The second argument is only the release name, the pod name,
+and the vault prefix.
+
+Replacing party 1 with name 5 installs `kms-core-5`, pod `kms-core-5-core-1`,
+and prefixes `PUB-p5` / `PRIV-p5` / `BACKUP-p5`. The chart would still fetch
+that party's CA from `PUB-p1`, so the script points the fetch at `PUB-p5`,
+strips `[[threshold.peers]]`, and starts the server only after that. The boot
+log must show `peers: None`. Connector 1 is then pointed at
+`http://kms-core-5-core-1:50100`. The tx-sender secret stays party 1's key.
+
+```bash
+NAMESPACE=fhevm-ci-<actor>-<id> \
+  bash ci/preview-env/scripts/deploy/prepare-kms-core-replacement.sh 1 5
+```
+
+Every other party stays up. A party that was already replaced counts as up
+when `kms-core-<name>-core-<id>` is Running, even if
+`kms-core-<id>-core-<id>` is scaled to 0. Do not helm-upgrade the new release
+afterwards: that restores the peer list and the old CA fetch. A peer list at
+boot on the new core stores its identity in the current context. The same list
+on the other cores deletes their private context.
+
+### Broadcast the switch
+
+`kms-context-switch.sh` keeps each party id and uses the Running pod
+`kms-core-<name>-core-<id>`. When `<name>` differs from the party id, the CA,
+signer, and storage prefix come from `PUB-p<name>`. Several Running pods for
+one id need `KMS_CORE_NAMES=1=5,4=6`. A party left out of that list is
+discovered from its Running pod.
+
+The two overlays carry the Anvil network, RPC, chain id, and deployer. The
+script overwrites those from the live releases when a testnet preview changed
+them, and appends the committee. It replaces each `KMS_NODE_CA_CERT_<i>` with
+the PEM in that party's public vault (`PUB-p<name>` for a replacement),
+`KMS_SIGNER_ADDRESS_<i>` with the newest `VerfAddress`, the node URL and MPC
+identity with the peer service the TLS certificate names, and
+`KMS_SOFTWARE_VERSION` and `KMS_PCR_VALUES` from a running core. It then
+broadcasts `defineNewKmsContextAndEpoch`, then `updateKmsContext` with the next
+id (the ProtocolConfig allocation counter + 1). This does not wipe KMS storage
+and does not destroy the active context.
+
+```bash
+helm pull oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts --version 0.8.2 --untar
+CONTRACTS_CHART="$PWD/contracts" NAMESPACE=fhevm-ci-<actor>-<id> \
+  bash ci/preview-env/scripts/deploy/kms-context-switch.sh
+```
+
+`CONTRACTS_CHART` defaults to `charts/contracts`. Pull the chart when the
+preview was launched with `contracts_chart_version` set.
+
+The first host deploy registers that same material. `wire-contracts-values.sh`
+reads each party's CA cert from the public vault, the software version from
+`KMS_CORE_TAG`, and the PCR triple from the enclave image labels. A later
+switch replays the previous context, so a namespace whose first context was
+registered with the placeholder certificate cannot be repaired by this
+command. Launch a new preview after that change.
+
+The two Helm jobs return once the transactions are mined. Creation
+confirmations and epoch activation continue on the cores. With the replaced
+party scaled to 0, that party is a silent Set1: the reshare waits out the
+charged rounds (hours at the 300s network timeout) and then completes.
+`Still waiting to receive from party` is not a failure. A dispatch preview
+needs a lifetime that covers the wait. The gateway update rejects an id that
+is not strictly greater than the current one.
+
+## Epoch rotation (manual)
+
+Same context, new epoch, on a namespace that already has an active context.
+`rotate-epoch.sh` copies the live host-contracts network, RPC, and deployer
+onto `values-host-define-new-epoch-e2e.yaml` and broadcasts
+`defineNewEpochForCurrentKmsContext`. It then watches that preview's host
+chain until there is one `EpochActivationConfirmation` per `NUM_KMS_NODES`,
+one `ActivateEpoch`, and `getCurrentKmsContextAndEpoch()` shows the same
+context id with a new epoch id. It does not read KMS core logs. After the
+epoch moves, it runs `./run-tests.sh --no-hardhat-compile -g "test user input uint64"`
+in the idle test-suite pod (user decrypt and public decrypt). Set `DECRYPT_CMD`
+to replace that command.
+
+```bash
+CONTRACTS_CHART="$PWD/contracts" NAMESPACE=fhevm-ci-<actor>-<id> \
+  bash ci/preview-env/scripts/deploy/rotate-epoch.sh
+```
+
+The Job stays installed once it is Complete. The next run uninstalls it
+before broadcasting again.
 
 ## TODO / remaining work
 

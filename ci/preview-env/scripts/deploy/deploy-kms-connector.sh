@@ -45,7 +45,10 @@ if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
   cp ci/preview-env/kms-connector/values-kms-connector-polygon-e2e.yaml "${polygon_values}"
   set_host_chain_acl "${polygon_values}" ethereum "${acl}"
   set_host_chain_acl "${polygon_values}" polygon "${polygon_acl}"
-  polygon_args=(-f "${polygon_values}")
+  polygon_args=(
+    -f "${polygon_values}"
+    --set-string "commonConfig.polygonContractAddresses.acl=${polygon_acl}"
+  )
 fi
 
 tracing=()
@@ -123,6 +126,7 @@ for i in $(seq 1 "${NB_KMS_CORE}"); do
     --set-string "commonConfig.gatewayContractAddresses.gatewayConfig=${gateway_config}" \
     --set-string "commonConfig.ethereumContractAddresses.kmsGeneration=${kms_generation}" \
     --set-string "commonConfig.ethereumContractAddresses.protocolConfig=${protocol_config}" \
+    --set-string "commonConfig.ethereumContractAddresses.acl=${acl}" \
     --set-string "commonConfig.databaseUrl=postgresql://zama:zama@postgres-connector-${i}:5432/connector" \
     --set-string "kmsConnectorKmsWorker.config.kmsCoreEndpoints=http://kms-core-${i}-core-${i}:50100" \
     --set-string "kmsConnectorTxSender.wallet.secret.name=kms-connector-tx-sender-${i}" \
