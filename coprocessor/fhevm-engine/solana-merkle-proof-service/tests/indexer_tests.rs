@@ -19,6 +19,7 @@ use solana_merkle_proof_service::MIGRATOR;
 use solana_sdk::signature::Signature;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use test_harness::instance::DBInstance;
 use zama_solana_acl::{mmr_append, public_decrypt_leaf_commitment};
 
 const STORES: [[u8; 32]; 2] = [[0xA1; 32], [0xB2; 32]];
@@ -229,6 +230,11 @@ async fn apply_all(pool: &PgPool, blocks: &[PreparedBlock]) {
     }
 }
 
+/// A second replica's sink on `db`'s record, with a pool of its own.
+async fn second_sink(db: &DBInstance) -> MerkleIndexerSink {
+    MerkleIndexerSink::new(support::connect(db).await)
+}
+
 /// A process killed at any point of a block, or restarted after it, leaves the record it would
 /// have built uninterrupted. A crash inside a block's transaction commits none of the block, its
 /// checkpoint included, and is retryable; the follower then hands the block again. An `apply`
@@ -390,11 +396,9 @@ async fn only_a_different_hash_at_the_checkpoint_stops_the_indexer() {
 
 /// Two replicas, each with its own pool, apply every block to one record: one after the other,
 /// overlapping, and concurrently. The record is the one a single run builds, and the checkpoint
-/// never moves back. The replica behind the checkpoint does not stop. The checkpoint is the only
-/// guard: the leaf writes alone would apply a block twice, as
-/// `a_rewound_checkpoint_cannot_reapply_recorded_leaves` shows. Before the first block is recorded
-/// there is no checkpoint row to lock: two replicas can both write that block, and the second
-/// fails retryably on the leaf key and finds it recorded when the follower hands it again.
+/// never moves back. The replica behind the checkpoint does not stop. The checkpoint, read under
+/// the indexer's apply lock, is the only guard: the leaf writes alone would apply a block twice,
+/// as `a_rewound_checkpoint_cannot_reapply_recorded_leaves` shows.
 #[tokio::test]
 #[serial(db)]
 async fn two_replicas_build_the_single_run_record() {
@@ -418,12 +422,8 @@ async fn two_replicas_build_the_single_run_record() {
     ];
     for schedule in schedules {
         let (db, pool) = support::record_db().await;
-        let replicas = [
-            MerkleIndexerSink::new(pool.clone()),
-            MerkleIndexerSink::new(
-                PgPoolOptions::new().connect(db.db_url()).await.unwrap(),
-            ),
-        ];
+        let replicas =
+            [MerkleIndexerSink::new(pool.clone()), second_sink(&db).await];
         let mut highest = 0;
         for (replica, index) in schedule {
             replicas[replica].apply(&blocks[index]).await.unwrap();
@@ -438,32 +438,127 @@ async fn two_replicas_build_the_single_run_record() {
     }
 
     let (db, pool) = support::record_db().await;
-    let second = MerkleIndexerSink::new(
-        PgPoolOptions::new().connect(db.db_url()).await.unwrap(),
-    );
     let first = MerkleIndexerSink::new(pool.clone());
+    let second = second_sink(&db).await;
     for block in &blocks {
-        tokio::join!(
-            apply_as_the_follower(&first, block),
-            apply_as_the_follower(&second, block)
-        );
+        let (a, b) = tokio::join!(first.apply(block), second.apply(block));
+        a.unwrap();
+        b.unwrap();
     }
     assert_eq!(Record::read(&pool).await, expected);
 }
 
-/// Applies `block` as the follower does: a retryable failure hands the same block again.
-async fn apply_as_the_follower(
-    sink: &MerkleIndexerSink,
-    block: &PreparedBlock,
-) {
-    for _ in 0..3 {
-        match sink.apply(block).await {
-            Ok(()) => return,
-            Err(failure) if !failure.is_fatal() => continue,
-            Err(failure) => panic!("{failure}"),
+/// A replica that read the empty record cannot write its first block after another replica
+/// recorded blocks. The lagging replica reads the empty checkpoint for a first block without
+/// leaves and waits at its checkpoint write, while the leading one applies that block and the next
+/// two. Before any block is recorded there is no checkpoint row to lock, so only the apply lock
+/// keeps the lagging replica from moving the checkpoint back to the first block.
+#[tokio::test]
+#[serial(db)]
+async fn a_replica_that_read_the_empty_record_waits_for_the_other() {
+    let mut blocks = blocks();
+    let mut empty = blocks[0].clone();
+    let slot = FIRST_SLOT - 1;
+    empty.transactions.clear();
+    empty.block = SealedBlock {
+        slot,
+        block_hash: block_hash(slot),
+        parent_slot: slot - 1,
+        parent_block_hash: block_hash(slot - 1),
+        block_time: Some(1_700_000_000 + slot as i64),
+        block_height: Some(slot),
+        executed_transaction_count: 0,
+    };
+    blocks.insert(0, empty);
+    let (_reference_db, reference) = support::record_db().await;
+    apply_all(&reference, &blocks[..3]).await;
+    let expected = Record::read(&reference).await;
+
+    let (_db, pool) = support::record_db().await;
+    const GATE: i64 = 7;
+    sqlx::raw_sql(
+        "CREATE FUNCTION lagging_gate() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN
+             IF current_setting('application_name') = 'lagging' THEN
+                 PERFORM pg_advisory_xact_lock_shared(7);
+             END IF;
+             RETURN NULL;
+         END $$;
+         CREATE TRIGGER lagging_gate BEFORE INSERT ON checkpoint
+             FOR EACH STATEMENT EXECUTE FUNCTION lagging_gate();",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut gate = pool.acquire().await.unwrap();
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(GATE)
+        .execute(gate.as_mut())
+        .await
+        .unwrap();
+    let waiting = |application: &'static str| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity \
+                 WHERE datname = current_database() AND application_name = $1 \
+                 AND wait_event_type = 'Lock')",
+            )
+            .bind(application)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
         }
+    };
+
+    let lagging = MerkleIndexerSink::new(
+        PgPoolOptions::new()
+            .connect_with(
+                pool.connect_options()
+                    .as_ref()
+                    .clone()
+                    .application_name("lagging"),
+            )
+            .await
+            .unwrap(),
+    );
+    let first_block = blocks[0].clone();
+    let lagging_apply =
+        tokio::spawn(async move { lagging.apply(&first_block).await });
+    while !waiting("lagging").await {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    panic!("slot {} still fails after 3 attempts", block.block.slot);
+
+    let leading_pool = PgPoolOptions::new()
+        .connect_with(
+            pool.connect_options()
+                .as_ref()
+                .clone()
+                .application_name("leading"),
+        )
+        .await
+        .unwrap();
+    let leading_blocks = blocks[..3].to_vec();
+    let leading_apply = tokio::spawn(async move {
+        apply_all(&leading_pool, &leading_blocks).await;
+    });
+    // The leading replica either records its blocks or waits for the lagging one's apply.
+    while !leading_apply.is_finished() && !waiting("leading").await {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    sqlx::query("SELECT pg_advisory_unlock($1)")
+        .bind(GATE)
+        .execute(gate.as_mut())
+        .await
+        .unwrap();
+
+    lagging_apply.await.unwrap().unwrap();
+    leading_apply.await.unwrap();
+    assert_eq!(
+        load_checkpoint(&pool).await.unwrap().unwrap(),
+        blocks[2].block.checkpoint()
+    );
+    assert_eq!(Record::read(&pool).await, expected);
 }
 
 /// A store whose first write the record sees already held leaves was created before the

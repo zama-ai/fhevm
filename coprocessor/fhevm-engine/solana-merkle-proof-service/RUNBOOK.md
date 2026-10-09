@@ -61,8 +61,9 @@ divergence.
      mismatch log line by up to one check interval, longer if the indexer was down, and a dump
      taken in that gap carries it.
    - With no dump to trust, rebuild from the chain instead (below).
-2. **Stop the writer, then the server.** Scale `<release>-solana-merkle-indexer` to 0 first,
-   because it is the record's only writer. Then scale `<release>-solana-merkle-proof-server` to 0.
+2. **Stop the writers, then the server.** Scale `<release>-solana-merkle-indexer` to 0 first,
+   because its replicas are the record's only writers. Then scale
+   `<release>-solana-merkle-proof-server` to 0.
    The connectors use the other coprocessors meanwhile. When Argo CD auto-syncs the release, it
    reverts `kubectl scale` at the next sync: pause auto-sync for the application, or set the
    replica counts in its values, until the last step.
@@ -71,8 +72,9 @@ divergence.
    `pg_restore --no-owner --no-privileges --single-transaction --dbname=<solana_merkle URL> <dump>`.
    `pg_dump` must be the server's major version or newer, and `pg_restore` the version of the
    `pg_dump` that made the archive or newer.
-4. **Start the indexer.** Scale `<release>-solana-merkle-indexer` to 1. It resumes after the
-   dump's checkpoint. The follower verifies that block's hash and skips it. A different hash
+4. **Start the indexer.** Scale `<release>-solana-merkle-indexer` back to its configured count,
+   `solanaHostListener.merkleIndexer.replicas`. Its replicas apply one block at a time and resume
+   after the dump's checkpoint. The follower verifies that block's hash and skips it. A different hash
    stops the indexer: take an older dump. Re-handing the matching checkpoint block to the
    indexer also writes nothing.
 5. **Wait for a clean store check.** Re-admit only when all three hold:
@@ -96,7 +98,7 @@ stopped until the end.
 
 1. Stop the indexer, then the proof server, as in step 2 above.
 2. Drop and recreate `solana_merkle`, empty.
-3. Start the indexer. On an empty database it starts at
+3. Start the indexer at its configured count, as in step 4 above. On an empty database it starts at
    `solanaHostListener.merkleIndexer.startSlot` (`--start-slot`), a slot before the first
    encrypted store was created, such as the zama-host deployment slot.
 4. Wait for a clean store check and start the proof server, as in steps 5 and 6 above.

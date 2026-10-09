@@ -145,7 +145,9 @@ async fn apply_block(
         parent_hash: sealed_block.parent_block_hash.into(),
         timestamp: block_timestamp.assume_utc().unix_timestamp() as u64,
     };
-    require_parent_height(&mut db_tx, db.chain_id.as_i64(), &summary).await?;
+    let recorded =
+        require_parent_height(&mut db_tx, db.chain_id.as_i64(), &summary)
+            .await?;
 
     let mut records_by_transaction = Vec::new();
     let mut held_back = Vec::new();
@@ -183,17 +185,21 @@ async fn apply_block(
             IngestFailure::retryable(err).context("insert_solana_block_records")
         })?
     };
-    let held_rows = hold_back_computations(&mut db_tx, &held_back)
-        .await
-        .map_err(|err| {
-            IngestFailure::retryable(err).context("hold back computations")
-        })?;
-    if held_rows != held_back.len() as u64 {
-        return Err(IngestFailure::fatal(anyhow!(
-            "slot {}: {} held-back steps but {held_rows} computation rows",
-            sealed_block.slot,
-            held_back.len()
-        )));
+    // A recorded block's steps were held back when it was first applied, and consensus may have
+    // healed one since, so a replay leaves them as they are.
+    if !recorded {
+        let held_rows = hold_back_computations(&mut db_tx, &held_back)
+            .await
+            .map_err(|err| {
+                IngestFailure::retryable(err).context("hold back computations")
+            })?;
+        if held_rows != held_back.len() as u64 {
+            return Err(IngestFailure::fatal(anyhow!(
+                "slot {}: {} held-back steps but {held_rows} computation rows",
+                sealed_block.slot,
+                held_back.len()
+            )));
+        }
     }
 
     // The listener reads at finalized (DD-070), so every block is final when it is recorded.
@@ -256,14 +262,14 @@ async fn apply_block(
 
 /// The block's parent row must be at the height below it. The consensus detector numbers manifest
 /// ranges by height, and `mark_block_as_valid` records an ingested block as finalized without
-/// refusing a parent that disagrees. Only the chain's first row has no parent row. A block that is
-/// already recorded was checked when it was first applied, by this replica or another, and its
-/// replay writes nothing new.
+/// refusing a parent that disagrees. Only the chain's first row has no parent row. Returns whether
+/// the block is already recorded: such a block was checked when it was first applied, by this
+/// replica or another.
 async fn require_parent_height(
     db_tx: &mut Transaction<'_>,
     chain_id: i64,
     block: &BlockSummary,
-) -> std::result::Result<(), IngestFailure> {
+) -> std::result::Result<bool, IngestFailure> {
     let parent = sqlx::query!(
         r#"
         SELECT
@@ -284,10 +290,10 @@ async fn require_parent_height(
         IngestFailure::retryable(err).context("read the parent block row")
     })?;
     if parent.recorded {
-        return Ok(());
+        return Ok(true);
     }
     match parent.parent_height {
-        Some(height) if height as u64 + 1 == block.number => Ok(()),
+        Some(height) if height as u64 + 1 == block.number => Ok(false),
         Some(height) => Err(IngestFailure::fatal(anyhow!(
             "block {} at height {} has its parent at height {height}",
             block.hash,
@@ -299,7 +305,7 @@ async fn require_parent_height(
             block.number,
             block.parent_hash
         ))),
-        None => Ok(()),
+        None => Ok(false),
     }
 }
 
@@ -892,14 +898,21 @@ mod apply_block_tests {
 
     async fn new_db() -> (test_harness::instance::DBInstance, Database) {
         let instance = setup_test_db(ImportMode::None).await.expect("test db");
-        let db = Database::new(
+        let db = replica(&instance).await;
+        (instance, db)
+    }
+
+    /// A listener replica on `instance`'s database, with caches of its own.
+    async fn replica(
+        instance: &test_harness::instance::DBInstance,
+    ) -> Database {
+        Database::new(
             &instance.db_url,
             ChainId::from_canonical_u64(config().chain_id),
             100,
         )
         .await
-        .unwrap();
-        (instance, db)
+        .unwrap()
     }
 
     /// A trivial encryption written to the store, which also requests its material.
@@ -1316,13 +1329,7 @@ mod apply_block_tests {
         ];
         for schedule in schedules {
             let (instance, first) = new_db().await;
-            let second = Database::new(
-                &instance.db_url,
-                ChainId::from_canonical_u64(config().chain_id),
-                100,
-            )
-            .await
-            .unwrap();
+            let second = replica(&instance).await;
             let replicas = [&first, &second];
             let pool = first.pool().await;
             let mut highest = 0;
@@ -1341,13 +1348,7 @@ mod apply_block_tests {
         }
 
         let (instance, first) = new_db().await;
-        let second = Database::new(
-            &instance.db_url,
-            ChainId::from_canonical_u64(config().chain_id),
-            100,
-        )
-        .await
-        .unwrap();
+        let second = replica(&instance).await;
         let config = config();
         for block in &blocks {
             let (a, b) = tokio::join!(
@@ -1358,5 +1359,53 @@ mod apply_block_tests {
             b.unwrap();
         }
         assert_single_run_rows(&first.pool().await, &expected).await;
+    }
+    /// A replica that lags replays a block after consensus healed the step that block held back.
+    /// The step stays completed: only the first apply of a block holds steps back.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[serial(handle_check_failures)]
+    async fn a_lagging_replica_leaves_a_healed_step_completed() {
+        let mut tampered = with_events([two_steps([2; 32], vec![SCALAR])]);
+        tamper(&mut tampered);
+        let block = PreparedBlock {
+            block: sealed(42, [0x42; 32], [0x41; 32]),
+            transactions: vec![PreparedTransaction {
+                signature: Signature::from([2; 64]),
+                index: 0,
+                instructions: tampered,
+            }],
+        };
+        let (instance, first) = new_db().await;
+        let lagging = replica(&instance).await;
+        let pool = first.pool().await;
+        let step = || async {
+            sqlx::query_as::<_, (bool, bool)>(
+                "SELECT is_completed, is_error FROM computations WHERE output_handle = $1",
+            )
+            .bind(WRONG.to_vec())
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        };
+
+        apply_block(&first, &config(), &block).await.unwrap();
+        assert_eq!(step().await, (false, true), "held back");
+        // The healing worker's update once consensus stored the step's ciphertext.
+        sqlx::query(
+            "UPDATE computations SET is_completed = true, is_error = false, error_message = NULL \
+             WHERE output_handle = $1 AND is_completed = false",
+        )
+        .bind(WRONG.to_vec())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        apply_block(&lagging, &config(), &block).await.unwrap();
+        assert_eq!(
+            step().await,
+            (true, false),
+            "the replay undid the healed step"
+        );
+        assert_eq!(load_checkpoint(&pool).await.unwrap().unwrap().slot, 42);
     }
 }

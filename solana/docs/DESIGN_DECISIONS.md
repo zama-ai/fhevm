@@ -2260,10 +2260,16 @@ by the tx-sender of a live KMS context (DD-067). It only reads the Merkle proof 
 (DD-066), so it can run several replicas and roll without downtime. The Merkle indexer, which writes
 that database, and the listener, which serves only `/healthz` and `/liveness`, roll like the EVM
 listeners: one replica by default, `RollingUpdate` with `maxSurge: 1` and `maxUnavailable: 0`, and
-more on request. Every replica applies every finalized block. The indexer locks its checkpoint for
-each block and skips a block at or below it. The listener's row writes change nothing when a block
-is applied again, and its checkpoint only moves forward. The connector's `solana_proof_urls` name
-the proof server's Service.
+more on request. Every replica applies every finalized block. The indexer applies one block at a
+time under a transaction-scoped advisory lock, reads its checkpoint under it and skips a block at
+or below it: its leaf and cursor writes are not idempotent, and before the first block is recorded
+there is no checkpoint row to lock. The listener's row writes change nothing when a block is
+applied again, a replay holds back no step (consensus may have healed one since), and its
+checkpoint only moves forward. More than one listener replica costs latency, not correctness: a
+replica that did not write a block learns which dependence chains that block gated only from its
+periodic reload (`SEALED_CHAIN_REFRESH_INTERVAL_SECS` in `host-listener`), and until then it can
+schedule later work behind them, as on EVM. The connector's `solana_proof_urls` name the proof
+server's Service.
 
 On EVM the connector reads the ACL from the host chain, and no coprocessor serves proofs. The split
 follows the coprocessor's one Deployment per role: `host_listener`, `host_listener_poller` and

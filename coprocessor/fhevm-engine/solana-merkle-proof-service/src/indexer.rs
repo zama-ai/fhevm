@@ -57,13 +57,16 @@ impl IndexerStart {
     }
 }
 
+/// Serializes block applies across replicas, ASCII `MRKLAPLY`. The Merkle record has a database
+/// of its own, so no other lock shares the key.
+const APPLY_LOCK: i64 = i64::from_be_bytes(*b"MRKLAPLY");
+
 /// Applies one sealed block: its leaves, nodes and store cursors, and the checkpoint. Several
-/// replicas apply every block, and the checkpoint row, locked here, is the only guard: the leaf
-/// and cursor writes are not idempotent on their own. A block at or below the checkpoint was
-/// already applied, by this replica or another, and writes nothing. A different hash at the
-/// checkpoint's slot stops the indexer because finalized blocks do not change. Before the first
-/// block is recorded there is no row to lock: a second replica writing that block fails retryably
-/// on the leaf key, and the follower hands it again.
+/// replicas apply every block, and `APPLY_LOCK` is the only guard: the leaf and cursor writes
+/// are not idempotent on their own, and before the first block is recorded there is no
+/// checkpoint row to lock. A block at or below the checkpoint was already applied, by this
+/// replica or another, and writes nothing. A different hash at the checkpoint's slot stops the
+/// indexer because finalized blocks do not change.
 async fn apply_block(
     pool: &PgPool,
     prepared: &PreparedBlock,
@@ -73,6 +76,12 @@ async fn apply_block(
         .begin()
         .await
         .map_err(|err| IngestFailure::retryable(err).context("open db tx"))?;
+    sqlx::query!("SELECT pg_advisory_xact_lock($1)", APPLY_LOCK)
+        .execute(db_tx.as_mut())
+        .await
+        .map_err(|err| {
+            IngestFailure::retryable(err).context("lock the record")
+        })?;
     let checkpoint = load_checkpoint(db_tx.as_mut()).await.map_err(|err| {
         IngestFailure::retryable(err).context("load checkpoint")
     })?;
