@@ -1199,13 +1199,16 @@ async fn install_matching_ct64(
         trx.rollback().await?;
         return Ok(false);
     }
+    // TODO(follow-up PR): stamp the real consensus_version carried with the
+    // ct64 bytes downloaded from S3, instead of NULL.
     sqlx::query!(
         r#"
         INSERT INTO ciphertexts (
-            handle, ciphertext, ciphertext_version, ciphertext_type
-        ) VALUES ($1, $2, $3, $4)
+            handle, ciphertext, ciphertext_version, ciphertext_type, consensus_version
+        ) VALUES ($1, $2, $3, $4, NULL)
         ON CONFLICT (handle, ciphertext_version) DO UPDATE
-        SET ciphertext = EXCLUDED.ciphertext
+        SET ciphertext = EXCLUDED.ciphertext,
+            consensus_version = NULL
         WHERE ciphertexts.ciphertext IS DISTINCT FROM EXCLUDED.ciphertext
         "#,
         &job.handle,

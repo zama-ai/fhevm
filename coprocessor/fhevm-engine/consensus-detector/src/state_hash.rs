@@ -209,22 +209,25 @@ async fn compute_and_insert_gw_input_hashes(
     gw_chain_id: i64,
     gw_start_block: i64,
     gw_tip: i64,
+    gw_window_rewound: bool,
     batch_limit: i64,
 ) -> anyhow::Result<()> {
-    // Compute nothing until the GCS gw-listener watermark (gw_tip = last_block_num) has reached
-    // gw_start_block. The GCS listener begins tailing the Gateway at startup, before the proposal
-    // activates (see upgrade-controller `run`), and the window's gw_start_block is pinned to the
-    // tip at proposal time - so a listener that was already tailing has processed gw_start_block
-    // contiguously, and `gw_tip >= gw_start_block` then means every block in
-    // [gw_start_block, gw_tip) has complete inputs. Without this an operator that has not yet
-    // reached gw_start_block could stamp a one-shot, permanent gw_start_block hash from a
-    // synthetic-only (incomplete) input set.
+    // Compute nothing until BOTH hold:
     //
-    // This assumes the intended deploy order (Green up and tailing before the proposal). A
-    // listener first started AFTER activation, with the tip already past gw_start_block, is out
-    // of scope for this guard - its watermark is also past gw_start_block yet it never scanned
-    // the window start.
-    if gw_tip < gw_start_block {
+    //  * `gw_window_rewound` - the gw-listener's per-proposal alignment latch. The listener
+    //    sets it only in (or after) the transaction that aligned its scan cursor to
+    //    gw_start_block (rewinding when a gap existed). Without it, a proposal that
+    //    activates mid-tick - after the listener's top-of-tick alignment check but before
+    //    its synthetic injection and watermark write - leaves `gw_tip >= gw_start_block`
+    //    and the synthetic row with the window start's real inputs never scanned; hashing
+    //    then stamps a one-shot, permanent synthetic-only gw_start_block hash that the next
+    //    tick's rewind cannot repair.
+    //
+    //  * `gw_tip >= gw_start_block` - the watermark has reached the window start, so (the
+    //    scan being contiguous once aligned) every block in [gw_start_block, gw_tip) has
+    //    complete inputs. The latch alone is not enough either: right after a rewind the
+    //    cursor sits at gw_start_block - 1 with the window not yet re-scanned.
+    if !gw_window_rewound || gw_tip < gw_start_block {
         return Ok(());
     }
     let pending_sql = format!(
@@ -367,6 +370,49 @@ where
     .fetch_one(executor)
     .await?;
     Ok(v.unwrap_or(false))
+}
+
+/// Whether the GCS gw-listener has aligned its scan cursor to the active window's
+/// `gw_start_block` - the per-proposal `gw_window_rewound` latch, `BOOL_AND`ed over the
+/// in-progress rows so one unaligned row keeps the gate closed. `false` with no rows.
+///
+/// This closes the activation race on the watermark gate alone: a proposal that activates
+/// mid-tick - after the listener's top-of-tick alignment check but before its synthetic
+/// injection and watermark write - can leave `last_block_num >= gw_start_block` (and the
+/// synthetic `verify_proofs` row) WITHOUT the window start's real inputs having been
+/// scanned. Hashing then would stamp a one-shot, permanent synthetic-only `gw_start_block`
+/// hash that the next tick's rewind cannot repair. The latch is only written by the
+/// listener in (or after) its alignment transaction, so requiring it here holds the GW
+/// track until the listener has provably aligned to this window.
+///
+/// Returns `(gw_start_block, gw_tip, gw_window_rewound)` read in ONE statement, so all three
+/// come from one snapshot even under READ COMMITTED. The listener lowers the watermark and
+/// sets the latch in the same transaction; separate reads could pair a stale pre-rewind
+/// watermark with the post-rewind latch and seal a block still being re-ingested. `None`
+/// when `gw_start_block` or the watermark is unset.
+pub(crate) async fn gw_window_rewound<'e, E>(
+    executor: E,
+) -> Result<Option<(i64, i64, bool)>, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let (gw_start, gw_tip, rewound): (Option<i64>, Option<i64>, Option<bool>) =
+        sqlx::query_as(&format!(
+            "SELECT
+               (SELECT gw_start_block FROM upgrade_state
+                 WHERE stack_role = 'GCS' AND status = 'in_progress'
+                 ORDER BY host_chain_id
+                 LIMIT 1),
+               (SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+                 WHERE dummy_id = true),
+               (SELECT BOOL_AND(gw_window_rewound) FROM upgrade_state
+                 WHERE stack_role = 'GCS' AND status = 'in_progress')"
+        ))
+        .fetch_one(executor)
+        .await?;
+    Ok(gw_start
+        .zip(gw_tip)
+        .map(|(start, tip)| (start, tip, rewound.unwrap_or(false))))
 }
 
 /// Uploads GCS `state_hash` rows with `s3_uploaded_at IS NULL`, attaching the
@@ -689,21 +735,20 @@ async fn compute_and_upload_state_hashes(
             .await?;
         }
 
-        // Gateway-inputs track: only while not yet anchored (skip_gw) and once the GCS
-        // gw-listener watermark has reached gw_start_block. The `gw_tip >= gw_start` gate lives
-        // in compute_and_insert_gw_input_hashes (it self-skips below gw_start); here we mirror it
-        // into gw_ready to gate the upload, so the gate itself is stated in exactly one place.
+        // Gateway-inputs track: only while not yet anchored (skip_gw), once the GCS
+        // gw-listener has latched its window alignment (gw_window_rewound - closes the
+        // mid-tick activation race), and once its watermark has reached gw_start_block.
+        // The gate itself lives in compute_and_insert_gw_input_hashes (it self-skips);
+        // here it is mirrored into gw_ready to gate the upload.
         if !skip_gw {
-            if let (Some(gw_start), Some(gw_tip)) = (
-                gw_start_block(&mut *tx).await?,
-                gw_listener_tip(&mut *tx).await?,
-            ) {
-                gw_ready = gw_tip >= gw_start;
+            if let Some((gw_start, gw_tip, gw_aligned)) = gw_window_rewound(&mut *tx).await? {
+                gw_ready = gw_aligned && gw_tip >= gw_start;
                 compute_and_insert_gw_input_hashes(
                     &mut tx,
                     gw_chain_id,
                     gw_start,
                     gw_tip,
+                    gw_aligned,
                     batch_limit,
                 )
                 .await?;
@@ -908,7 +953,7 @@ mod tests {
         // Watermark has NOT reached gw_start (gw_tip < gw_start): no Gateway hash is produced,
         // even though the synthetic row and inputs are present.
         let mut tx = pool.begin().await.unwrap();
-        compute_and_insert_gw_input_hashes(&mut tx, gw_chain_id, gw_start, gw_start - 1, 10)
+        compute_and_insert_gw_input_hashes(&mut tx, gw_chain_id, gw_start, gw_start - 1, true, 10)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -918,9 +963,23 @@ mod tests {
             "no Gateway hash before the watermark reaches gw_start"
         );
 
-        // Watermark has reached gw_start (gw_tip == gw_start): the anchor hash is produced.
+        // Alignment latch NOT set (gw_window_rewound = false): no Gateway hash either, even
+        // with the watermark at gw_start - the mid-tick activation race leaves exactly this
+        // state with the window start unscanned.
         let mut tx = pool.begin().await.unwrap();
-        compute_and_insert_gw_input_hashes(&mut tx, gw_chain_id, gw_start, gw_start, 10)
+        compute_and_insert_gw_input_hashes(&mut tx, gw_chain_id, gw_start, gw_start, false, 10)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            hashes(pool.clone()).await,
+            0,
+            "no Gateway hash before the listener has latched its window alignment"
+        );
+
+        // Latched AND watermark at gw_start: the anchor hash is produced.
+        let mut tx = pool.begin().await.unwrap();
+        compute_and_insert_gw_input_hashes(&mut tx, gw_chain_id, gw_start, gw_start, true, 10)
             .await
             .unwrap();
         tx.commit().await.unwrap();
