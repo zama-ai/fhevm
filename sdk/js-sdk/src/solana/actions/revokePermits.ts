@@ -1,5 +1,5 @@
 import type { SolanaRpc } from '../encryptedStore.js';
-import { resolvedAddress, resolvedSigner, type SolanaSignerOrAddress } from './userDecryptionDelegation.js';
+import { resolvedSigner, type SolanaSignerOrAddress } from './userDecryptionDelegation.js';
 import {
   fetchEncodedAccount,
   type Address,
@@ -12,7 +12,7 @@ import {
   findInvalidationPda,
   getPermitInvalidationDecoder,
   getPermitInvalidationSize,
-  getRevokePermitsInstruction,
+  getRevokePermitsInstructionAsync,
   PERMIT_INVALIDATION_DISCRIMINATOR,
 } from '@fhevm/solana-zama-host';
 
@@ -26,22 +26,14 @@ import {
 export async function buildRevokePermitsInstruction(params: {
   /**
    * The user whose permits die. Signs the transaction and pays rent for the watermark (see
-   * [`SolanaSignerOrAddress`]).
+   * [`SolanaSignerOrAddress`]). The watermark is the user's canonical PDA.
    */
   readonly user: SolanaSignerOrAddress;
-  /** The watermark address; defaults to the canonical PDA of the user when omitted. */
-  readonly invalidation?: Address | undefined;
   /** The zama-host program id of the deployment. */
   readonly programAddress: Address;
 }): Promise<Instruction> {
-  const invalidation =
-    params.invalidation ??
-    (await findInvalidationPda({ user: resolvedAddress(params.user) }, { programAddress: params.programAddress }))[0];
-  return getRevokePermitsInstruction(
-    {
-      user: resolvedSigner(params.user),
-      invalidation,
-    },
+  return getRevokePermitsInstructionAsync(
+    { user: resolvedSigner(params.user) },
     { programAddress: params.programAddress },
   );
 }
