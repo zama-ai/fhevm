@@ -1032,8 +1032,10 @@ routing still determines which consensus epoch owns the discovered ciphertexts.
 This history stays in `public`, alongside `versioning` and `upgrade_state`; it
 is deliberately not copied into `gcs`. Each row records the consensus epoch, the
 proposal identity and block, the candidate stack version (audit only), the
-`consensus_version` it was minted for, and its `pending`, `succeeded`, or
-`failed` outcome. The detector accepts a non-`legacy` epoch only when its
+`consensus_version` it was minted for (for `legacy`, the version live before
+the first upgrade: 1 on existing networks, the compiled one on a new database),
+and its `pending`, `succeeded`, or `failed` outcome. Healing reads it to stamp
+the producing version on a ciphertext it installs without one. The detector accepts a non-`legacy` epoch only when its
 `consensus_version` equals the binary's compiled `CONSENSUS_PROTOCOL_VERSION`,
 so a Green release built for another protocol version than the proposal's is
 refused instead of publishing under that epoch. It is an allocation ledger, not a manifest

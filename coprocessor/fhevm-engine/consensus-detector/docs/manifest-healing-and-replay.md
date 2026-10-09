@@ -179,6 +179,15 @@ names the finding's epoch. An object without it predates the tag and counts as
 `legacy`. The tag is not signed; it can only exclude a vote, whose attestation
 is still verified. Pinned targets are unaffected and already reject bytes of
 another digest.
+The same tag dates the installed bytes. `ciphertexts.consensus_version`
+records the protocol version of the stack that produced a row; healing replaces
+the bytes, not their producer, so it keeps a version the row already holds. Only
+a missing row, or one without a version, takes the healed object's: the
+`consensus_version` that `consensus_epoch_history` records for its uploading
+epoch (the number alone, not the epoch's proposal block). An untagged object is
+`legacy`, whose version is 1 on networks that predate the column and the
+compiled one on a new database; an epoch unknown locally leaves it NULL. A row
+whose version differs from the object's keeps its own, with a warning.
 The handle is the unit of repair. A reorg can leave several findings for one
 handle in different blocks, and a single install heals them all. Only active
 siblings count: those with a healable reason that are unhealed and not

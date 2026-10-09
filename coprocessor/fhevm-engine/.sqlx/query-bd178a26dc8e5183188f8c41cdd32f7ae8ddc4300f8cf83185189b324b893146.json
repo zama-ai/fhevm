@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT consensus_version\n          FROM ciphertexts\n         WHERE handle = $1 AND ciphertext_version = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consensus_version",
+        "type_info": "Int2"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "bd178a26dc8e5183188f8c41cdd32f7ae8ddc4300f8cf83185189b324b893146"
+}

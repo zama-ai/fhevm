@@ -24,9 +24,29 @@ impl AttestedCt64 {
     pub(super) fn new(digest: B256, consensus_epoch: Option<&str>) -> Self {
         Self {
             digest,
-            consensus_epoch: consensus_epoch.unwrap_or(LEGACY_CONSENSUS_EPOCH).to_owned(),
+            consensus_epoch: uploading_epoch(consensus_epoch),
         }
     }
+}
+
+/// A peer's ct64 bytes and the epoch whose stack uploaded them.
+pub(super) struct DownloadedCt64 {
+    pub(super) bytes: Vec<u8>,
+    pub(super) consensus_epoch: String,
+}
+
+impl DownloadedCt64 {
+    /// An object without the epoch tag was uploaded by the `legacy` epoch.
+    pub(super) fn new(bytes: Vec<u8>, consensus_epoch: Option<&str>) -> Self {
+        Self {
+            bytes,
+            consensus_epoch: uploading_epoch(consensus_epoch),
+        }
+    }
+}
+
+fn uploading_epoch(consensus_epoch: Option<&str>) -> String {
+    consensus_epoch.unwrap_or(LEGACY_CONSENSUS_EPOCH).to_owned()
 }
 
 pub(super) trait Ct64Source: Clone + Send + Sync + 'static {
@@ -35,7 +55,7 @@ pub(super) trait Ct64Source: Clone + Send + Sync + 'static {
         bucket_url: &str,
         handle: &[u8],
         coprocessor_context_id: U256,
-    ) -> Result<Vec<u8>, ExecutionError>;
+    ) -> Result<DownloadedCt64, ExecutionError>;
 
     /// Attested ct64 digest and uploading epoch from object metadata (HEAD).
     /// `expected_signer` is the registry signer for this bucket when known.
@@ -65,7 +85,7 @@ impl Ct64Source for S3Ct64Source {
         bucket_url: &str,
         handle: &[u8],
         coprocessor_context_id: U256,
-    ) -> Result<Vec<u8>, ExecutionError> {
+    ) -> Result<DownloadedCt64, ExecutionError> {
         let location = s3_bucket_location(bucket_url)?;
         let key = location.object_key(&s3_ct64_key(handle, coprocessor_context_id));
         let response = timeout(
@@ -105,6 +125,10 @@ impl Ct64Source for S3Ct64Source {
                 location.bucket
             )));
         }
+        let consensus_epoch = response
+            .metadata()
+            .and_then(|meta| meta.get(S3_METADATA_CONSENSUS_EPOCH_KEY))
+            .cloned();
         let collected = timeout(DOWNLOAD_TIMEOUT, response.body.collect())
             .await
             .map_err(|_| {
@@ -126,7 +150,10 @@ impl Ct64Source for S3Ct64Source {
                 location.bucket
             )));
         }
-        Ok(body.to_vec())
+        Ok(DownloadedCt64::new(
+            body.to_vec(),
+            consensus_epoch.as_deref(),
+        ))
     }
 
     async fn head_ct64_digest(
