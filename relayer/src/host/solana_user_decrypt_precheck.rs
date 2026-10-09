@@ -248,7 +248,10 @@ pub(crate) fn plan_row_reads(
         addresses: Vec::new(),
     };
     for (entry, application) in entries.into_iter().zip(applications) {
-        let Some(app) = application.filter(|_| entry.owner != delegate) else {
+        if entry.owner == delegate {
+            continue;
+        }
+        let Some(app) = application else {
             continue;
         };
         let rows = delegation_rows(&entry.owner, &delegate, app, program_id);
@@ -336,6 +339,7 @@ pub(crate) mod tests {
         encode_clock, encode_user_decryption_delegation, encrypted_store_discriminator,
         EncryptedStore, UserDecryptionDelegationRecord, SYSTEM_PROGRAM_ID, SYSVAR_OWNER_ID,
     };
+    use zama_solana_permit::ApplicationScope;
 
     pub(crate) const PROGRAM_ID: [u8; 32] = [7; 32];
     pub(crate) const APP_PROGRAM: [u8; 32] = [1; 32];
@@ -674,16 +678,15 @@ pub(crate) mod tests {
 
     // ---- the permit's scopes ----
 
+    pub(crate) fn scope_entry(program: [u8; 32], scope: [u8; 32]) -> ApplicationScope {
+        ApplicationScope::new(Identity::new(program), Identity::new(scope))
+    }
+
     fn scopes(applications: &[AppScope]) -> AllowedScopes {
         AllowedScopes::new(
             applications
                 .iter()
-                .map(|app| {
-                    zama_solana_permit::ApplicationScope::new(
-                        Identity::new(app.program),
-                        Identity::new(app.scope),
-                    )
-                })
+                .map(|app| scope_entry(app.program, app.scope))
                 .collect(),
         )
         .expect("one scope is a valid list")

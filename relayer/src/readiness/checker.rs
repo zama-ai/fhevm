@@ -165,15 +165,8 @@ impl ReadinessChecker {
                     .check_unified_user_decrypt(job_id, handles, *user_address)
                     .await
             }
-            // RFC-021 Solana: the authoritative host-chain ACL check stays with the KMS
-            // Connector (an atomic `finalized` snapshot). What runs here is the advisory,
-            // negative-only pre-check of scopes and delegations
-            // (`host::solana_user_decrypt_precheck`): without it, a request outside its permit's
-            // scopes or whose delegation is revoked or expired would cost a gateway transaction
-            // and die by timeout — the Decryption contract has no rejection entry point, so a
-            // connector refusal is never observable at the relayer. Allow leaves are not
-            // pre-checked: they are sealed on the write, and there is no cheaper reading of them
-            // here than the connector's own.
+            // RFC-021 Solana: the advisory pre-check of `host::solana_user_decrypt_precheck`,
+            // whose module doc says what it refuses; the KMS connector stays authoritative.
             UserDecryptRequest::SolanaSrfc38V1 {
                 ct_handles,
                 request_validity,

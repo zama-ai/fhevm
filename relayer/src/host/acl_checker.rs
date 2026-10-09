@@ -27,7 +27,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, warn};
 use zama_solana_acl::host_chain::{chain_type_byte, is_evm_host_chain_id, is_solana_host_chain_id};
-use zama_solana_permit::AllowedScopes;
 use zama_solana_request::SolanaUserDecryptRequest;
 
 type Provider = FillProvider<
@@ -95,15 +94,9 @@ struct SolanaHostChain {
 /// Checks handle permissions against host chain ACL contracts via multicall.
 pub struct HostAclChecker {
     chains: HashMap<u64, HostChainAcl>,
-    /// RFC-021 Solana host chains (type byte `0x01`), keyed by chain id. A Solana
-    /// host carries a base58 `acl_address` (the zama-host program) and has no EVM ACL
-    /// contract to `eth_call`; its ACL is enforced authoritatively by the KMS Connector.
-    /// Allow leaves and public decrypts are not pre-checked here — they are sealed on the
-    /// write, and this checker has no cheaper reading of them than the connector's own. A
-    /// user-decrypt entry's scope and delegation rows ARE: the v3 request names the owner
-    /// address and the encrypted store, which is everything the advisory negative-only
-    /// pre-check (`check_solana_user_decrypt`) needs to read the store's application and
-    /// the delegation rows.
+    /// RFC-021 Solana host chains (type byte `0x01`), keyed by chain id; each carries the
+    /// zama-host program as a base58 `acl_address`. What is pre-checked for them is
+    /// [`super::solana_user_decrypt_precheck`]'s module doc.
     solana_chains: HashMap<u64, SolanaHostChain>,
     retry_config: RetrySettings,
 }
@@ -596,20 +589,7 @@ impl HostAclChecker {
         if scopes.is_permissive() && entries.iter().all(|entry| entry.owner == user_address) {
             return Ok(());
         }
-        self.check_entries(job_id, chain, chain_id, user_address, scopes, entries)
-            .await
-    }
 
-    /// The two reads of the pre-check and its verdict.
-    async fn check_entries(
-        &self,
-        job_id: &JobId,
-        chain: &SolanaHostChain,
-        chain_id: u64,
-        user_address: [u8; 32],
-        scopes: &AllowedScopes,
-        entries: Vec<RequestEntry>,
-    ) -> Result<(), HostAclError> {
         // Round 1: the encrypted stores the entries name, to learn each entry's application. Its
         // slot is the floor the row read must be served at or after — otherwise a load-balanced
         // RPC can answer round 2 from a replica behind round 1, and a grant finalized between the
@@ -1296,7 +1276,7 @@ mod tests {
     async fn check_one_entry(
         max_attempts: u32,
         owner: [u8; 32],
-        allowed_scopes: Vec<[u8; 64]>,
+        allowed_scopes: Vec<zama_solana_permit::ApplicationScope>,
         rows: Vec<Vec<Option<RawAccount>>>,
     ) -> (Result<(), HostAclError>, Vec<Option<u64>>) {
         use super::super::solana_user_decrypt_precheck::tests::{
@@ -1340,7 +1320,10 @@ mod tests {
             },
             SolanaRequestBlob {
                 user_address: DELEGATE,
-                allowed_scopes,
+                allowed_scopes: allowed_scopes
+                    .iter()
+                    .map(|scope| *scope.as_bytes())
+                    .collect(),
                 verifying_program_id: PROGRAM_ID,
                 signature: [9; 64],
                 entries: vec![SolanaEntryClaims {
@@ -1355,11 +1338,6 @@ mod tests {
             .await;
         let required_slots = required_slots.lock().expect("required slots lock").clone();
         (outcome, required_slots)
-    }
-
-    fn scope_entry(program: [u8; 32], scope: [u8; 32]) -> [u8; 64] {
-        use zama_solana_permit::{ApplicationScope, Identity};
-        *ApplicationScope::new(Identity::new(program), Identity::new(scope)).as_bytes()
     }
 
     /// A client that waited for less than `finalized` can ask before its grant is finalized: the
@@ -1408,7 +1386,9 @@ mod tests {
     /// the store read, as the connector refuses it after the gateway fee (`ScopeNotAllowed`).
     #[tokio::test]
     async fn a_direct_entry_outside_the_permit_scopes_is_refused_before_the_fee() {
-        use super::super::solana_user_decrypt_precheck::tests::{APP_PROGRAM, DELEGATE};
+        use super::super::solana_user_decrypt_precheck::tests::{
+            scope_entry, APP_PROGRAM, DELEGATE,
+        };
 
         let (outcome, required_slots) = check_one_entry(
             3,
@@ -1428,7 +1408,9 @@ mod tests {
     /// row read.
     #[tokio::test]
     async fn a_direct_entry_inside_the_permit_scopes_passes_on_the_store_read() {
-        use super::super::solana_user_decrypt_precheck::tests::{APP_PROGRAM, DELEGATE, SCOPE};
+        use super::super::solana_user_decrypt_precheck::tests::{
+            scope_entry, APP_PROGRAM, DELEGATE, SCOPE,
+        };
 
         let (outcome, required_slots) =
             check_one_entry(3, DELEGATE, vec![scope_entry(APP_PROGRAM, SCOPE)], vec![]).await;
@@ -1440,13 +1422,16 @@ mod tests {
     /// connector judges the scope before the delegation.
     #[tokio::test]
     async fn a_delegated_entry_outside_the_permit_scopes_is_refused_without_a_row_read() {
-        use super::super::solana_user_decrypt_precheck::tests::{APP_PROGRAM, DELEGATOR};
+        use super::super::solana_user_decrypt_precheck::tests::{
+            clock, live_exact, row, scope_entry, APP_PROGRAM, DELEGATOR, NOW,
+        };
 
+        // A live row is on offer, so only the scope can refuse the entry.
         let (outcome, required_slots) = check_one_entry(
             3,
             DELEGATOR,
             vec![scope_entry(APP_PROGRAM, [0x99; 32])],
-            vec![],
+            vec![vec![Some(row(&live_exact())), None, Some(clock(NOW))]],
         )
         .await;
         assert!(
