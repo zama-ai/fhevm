@@ -102,24 +102,62 @@ interface IProtocolConfig is IProtocolConfigBase {
     /**
      * @notice Emitted on every successful KMS context creation confirmation.
      * @param kmsContextId The pending context ID being confirmed.
-     * @param txSender The KMS tx sender that confirmed.
-     * @param isPreviousTxSender Whether the tx sender is part of the previous active context.
-     * @param isNewTxSender Whether the tx sender is part of the new pending context.
+     * @param signer The KMS signer recovered from the ContextCreationConfirmation signature.
+     * @param signature The signer's EIP-712 ContextCreationConfirmation signature.
+     * @param extraData The extra data bound into the signature.
      */
     event KmsContextCreationConfirmation(
         uint256 indexed kmsContextId,
-        address indexed txSender,
-        bool isPreviousTxSender,
-        bool isNewTxSender
+        address indexed signer,
+        bytes signature,
+        bytes extraData
     );
 
     /**
      * @notice Emitted on every successful epoch activation confirmation.
      * @param epochId The pending epoch ID being confirmed.
      * @param signer The KMS signer that confirmed.
-     * @param dataHash The digest of the structured key/CRS payload the signer agreed on.
+     * @param epochMaterialHash The hash of the key and CRS results the signer agreed on.
+     * @param signature The signer's EIP-712 EpochActivationConfirmation signature.
+     * @param extraData The extra data bound into the signature.
      */
-    event EpochActivationConfirmation(uint256 indexed epochId, address indexed signer, bytes32 dataHash);
+    event EpochActivationConfirmation(
+        uint256 indexed epochId,
+        address indexed signer,
+        bytes32 epochMaterialHash,
+        bytes signature,
+        bytes extraData
+    );
+
+    /**
+     * @notice Emitted on every successful KMS context destruction confirmation.
+     * @param destroyedContextId The destroyed context ID.
+     * @param destroyedEpochIds The epochs the KMS nodes destroyed with the context.
+     * @param signer The active-committee KMS signer that confirmed.
+     * @param signature The signer's EIP-712 ContextDestructionConfirmation signature.
+     * @param extraData The extra data bound into the signature.
+     */
+    event KmsContextDestructionConfirmed(
+        uint256 indexed destroyedContextId,
+        uint256[] destroyedEpochIds,
+        address indexed signer,
+        bytes signature,
+        bytes extraData
+    );
+
+    /**
+     * @notice Emitted on every successful KMS epoch destruction confirmation.
+     * @param destroyedEpochId The destroyed epoch ID.
+     * @param signer The active-committee KMS signer that confirmed.
+     * @param signature The signer's EIP-712 EpochDestructionConfirmation signature.
+     * @param extraData The extra data bound into the signature.
+     */
+    event KmsEpochDestructionConfirmed(
+        uint256 indexed destroyedEpochId,
+        address indexed signer,
+        bytes signature,
+        bytes extraData
+    );
 
     /**
      * @notice Emitted when a KMS context is destroyed.
@@ -169,20 +207,20 @@ interface IProtocolConfig is IProtocolConfigBase {
     /// @param epochId The latest-issued epoch ID.
     error KmsLifecycleOperationInFlight(uint256 kmsContextId, uint256 epochId);
 
-    /// @notice The caller cannot confirm creation for the KMS context.
-    /// @param caller The unauthorized caller.
+    /// @notice The recovered signer is in neither the previous nor the new committee.
+    /// @param signer The recovered signer.
     /// @param kmsContextId The context ID.
-    error KmsContextCreationUnauthorized(address caller, uint256 kmsContextId);
+    error KmsContextCreationUnauthorized(address signer, uint256 kmsContextId);
 
-    /// @notice The tx sender has already confirmed creation for the KMS context.
-    /// @param txSender The tx sender address.
+    /// @notice The signer has already confirmed creation for the KMS context.
+    /// @param signer The signer address.
     /// @param kmsContextId The context ID.
-    error KmsContextCreationAlreadyConfirmed(address txSender, uint256 kmsContextId);
+    error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
 
-    /// @notice The caller cannot confirm activation for the epoch.
-    /// @param caller The unauthorized caller.
+    /// @notice The recovered signer is not in the epoch's committee.
+    /// @param signer The recovered signer.
     /// @param epochId The epoch ID.
-    error EpochActivationUnauthorized(address caller, uint256 epochId);
+    error EpochActivationUnauthorized(address signer, uint256 epochId);
 
     /// @notice The signer has already confirmed activation for the epoch.
     /// @param signer The signer address.
@@ -193,10 +231,38 @@ interface IProtocolConfig is IProtocolConfigBase {
     /// @param epochId The epoch ID.
     error EmptyEpochActivationAttestation(uint256 epochId);
 
-    /// @notice The structured activation signature does not match the caller's KMS signer.
+    /// @notice An epoch activation signature recovers to a different signer than the first key result.
+    /// @param expectedSigner The signer recovered from the first key result.
+    /// @param recoveredSigner The signer recovered from the mismatching signature.
+    error EpochResultSignerMismatch(address expectedSigner, address recoveredSigner);
+
+    /// @notice The KMS context was not destroyed with destroyKmsContext.
+    /// @param kmsContextId The context ID.
+    error KmsContextNotDestroyed(uint256 kmsContextId);
+
+    /// @notice The epoch was not destroyed with destroyKmsEpoch.
+    /// @param epochId The epoch ID.
+    error KmsEpochNotDestroyed(uint256 epochId);
+
+    /// @notice The recovered signer is not in the active committee.
     /// @param signer The recovered signer.
-    /// @param txSender The transaction sender.
-    error EpochActivationSignerDoesNotMatchTxSender(address signer, address txSender);
+    /// @param kmsContextId The destroyed context ID.
+    error KmsContextDestructionUnauthorized(address signer, uint256 kmsContextId);
+
+    /// @notice The recovered signer is not in the active committee.
+    /// @param signer The recovered signer.
+    /// @param epochId The destroyed epoch ID.
+    error KmsEpochDestructionUnauthorized(address signer, uint256 epochId);
+
+    /// @notice The signer has already confirmed destruction of the KMS context.
+    /// @param signer The signer address.
+    /// @param kmsContextId The destroyed context ID.
+    error KmsContextDestructionAlreadyConfirmed(address signer, uint256 kmsContextId);
+
+    /// @notice The signer has already confirmed destruction of the epoch.
+    /// @param signer The signer address.
+    /// @param epochId The destroyed epoch ID.
+    error KmsEpochDestructionAlreadyConfirmed(address signer, uint256 epochId);
 
     /// @notice The coprocessor `softwareVersion` argument is the empty string.
     error EmptySoftwareVersion();
@@ -253,6 +319,7 @@ interface IProtocolConfig is IProtocolConfigBase {
 
     /**
      * @notice Create a pending KMS context and pending epoch.
+     * @dev Every committee must satisfy `n >= 3t + 1`. The contract does not check it.
      * @param kmsNodeParams The KMS nodes to register, including MPC metadata.
      * @param thresholds The thresholds for the new context.
      * @param softwareVersion The KMS software version expected for the context.
@@ -271,21 +338,62 @@ interface IProtocolConfig is IProtocolConfigBase {
     function defineNewEpochForCurrentKmsContext() external;
 
     /**
-     * @notice Confirm that a pending KMS context has been created.
+     * @notice Submit a KMS signer's ContextCreationConfirmation signature for a pending context.
+     * @dev Anyone may call. The recovered signer must be in the previous or the new committee.
      * @param kmsContextId The pending context ID.
+     * @param signature The signer's EIP-712 ContextCreationConfirmation signature.
+     * @param extraData The extra data bound into the signature.
      */
-    function confirmKmsContextCreation(uint256 kmsContextId) external;
+    function confirmKmsContextCreation(
+        uint256 kmsContextId,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external;
 
     /**
-     * @notice Confirm activation of a pending epoch.
+     * @notice Submit a KMS signer's epoch results and EpochActivationConfirmation signature.
+     * @dev Anyone may call. Every key and CRS signature and the EpochActivationConfirmation
+     *      signature must recover to the same signer of the epoch's committee.
      * @param epochId The pending epoch ID.
      * @param keys The key results to associate with the epoch.
      * @param crsList The CRS results to associate with the epoch.
+     * @param signature The signer's EIP-712 EpochActivationConfirmation signature.
+     * @param extraData The extra data bound into the signature.
      */
     function confirmEpochActivation(
         uint256 epochId,
         EpochKeyResult[] calldata keys,
-        EpochCrsResult[] calldata crsList
+        EpochCrsResult[] calldata crsList,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external;
+
+    /**
+     * @notice Submit an active-committee signer's ContextDestructionConfirmation signature.
+     * @dev Anyone may call. The context must be destroyed with destroyKmsContext first.
+     * @param destroyedContextId The destroyed context ID.
+     * @param destroyedEpochIds The epochs the KMS nodes destroyed with the context.
+     * @param signature The signer's EIP-712 ContextDestructionConfirmation signature.
+     * @param extraData The extra data bound into the signature.
+     */
+    function confirmKmsContextDestruction(
+        uint256 destroyedContextId,
+        uint256[] calldata destroyedEpochIds,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external;
+
+    /**
+     * @notice Submit an active-committee signer's EpochDestructionConfirmation signature.
+     * @dev Anyone may call. The epoch must be destroyed with destroyKmsEpoch first.
+     * @param destroyedEpochId The destroyed epoch ID.
+     * @param signature The signer's EIP-712 EpochDestructionConfirmation signature.
+     * @param extraData The extra data bound into the signature.
+     */
+    function confirmKmsEpochDestruction(
+        uint256 destroyedEpochId,
+        bytes calldata signature,
+        bytes calldata extraData
     ) external;
 
     /**

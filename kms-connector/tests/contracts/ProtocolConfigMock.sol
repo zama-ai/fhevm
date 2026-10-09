@@ -78,12 +78,18 @@ contract ProtocolConfigMock {
 
     event KmsContextCreationConfirmation(
         uint256 indexed kmsContextId,
-        address indexed txSender,
-        bool isPreviousTxSender,
-        bool isNewTxSender
+        address indexed signer,
+        bytes signature,
+        bytes extraData
     );
 
-    event EpochActivationConfirmation(uint256 indexed epochId, address indexed signer, bytes32 dataHash);
+    event EpochActivationConfirmation(
+        uint256 indexed epochId,
+        address indexed signer,
+        bytes32 epochMaterialHash,
+        bytes signature,
+        bytes extraData
+    );
 
     event KmsContextDestroyed(uint256 indexed kmsContextId);
 
@@ -97,16 +103,22 @@ contract ProtocolConfigMock {
         emit KmsEpochDestroyed(epochId);
     }
 
-    function confirmKmsContextCreation(uint256 kmsContextId) external {
-        emit KmsContextCreationConfirmation(kmsContextId, msg.sender, true, true);
+    function confirmKmsContextCreation(
+        uint256 kmsContextId,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external {
+        emit KmsContextCreationConfirmation(kmsContextId, msg.sender, signature, extraData);
     }
 
     function confirmEpochActivation(
         uint256 epochId,
         EpochKeyResult[] calldata,
-        EpochCrsResult[] calldata
+        EpochCrsResult[] calldata,
+        bytes calldata signature,
+        bytes calldata extraData
     ) external {
-        emit EpochActivationConfirmation(epochId, msg.sender, bytes32(0));
+        emit EpochActivationConfirmation(epochId, msg.sender, bytes32(0), signature, extraData);
     }
 
     function defineNewKmsContextAndEpoch(

@@ -72,7 +72,8 @@ describe('OnchainPublicDecrypt', function () {
     const protocolConfigAdd = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
     const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     const accounts = await ethers.getSigners();
-    const signerAddresses = [accounts[7], accounts[8], accounts[9]].map((s) => s.address);
+    const newSigners = [accounts[7], accounts[8], accounts[9]];
+    const signerAddresses = newSigners.map((s) => s.address);
     const kmsVerifier = await ethers.getContractAt('KMSVerifier', kmsAdd);
     const protocolConfig = await ethers.getContractAt('ProtocolConfig', protocolConfigAdd);
     const newTxSenders = [accounts[2], accounts[3], accounts[4]];
@@ -87,7 +88,9 @@ describe('OnchainPublicDecrypt', function () {
       storagePrefix: '',
     }));
     const newThresholds = { publicDecryption: 2, userDecryption: 2, kmsGen: 2, mpc: 2 };
-    await activateNewKmsContext(protocolConfig, deployer, newNodes, newThresholds, newTxSenders, newTxSenders);
+    // accounts[7] signs for the default context too, so its confirmation also covers the previous side's
+    // n - t target (one node, so the target is 1).
+    await activateNewKmsContext(protocolConfig, deployer, newNodes, newThresholds, newSigners);
     expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(2);
     expect(await kmsVerifier.getKmsSigners()).to.deep.equal(signerAddresses); /// Now KMS_SIGNER_ADDRESS_0, KMS_SIGNER_ADDRESS_1 and KMS_SIGNER_ADDRESS_2 are all signers, threshold is 2
 
@@ -141,9 +144,9 @@ describe('OnchainPublicDecrypt', function () {
       },
     ];
     const resetThresholds = { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 };
-    // accounts[2] alone completes the creation quorum: it is the only new tx-sender and its
+    // accounts[7] alone completes the creation quorum: it is the only new signer and its
     // confirmation also covers the previous side's n - t = 1 target (3 nodes, mpc = 2).
-    await activateNewKmsContext(protocolConfig, deployer, resetNodes, resetThresholds, [accounts[2]], [accounts[2]]);
+    await activateNewKmsContext(protocolConfig, deployer, resetNodes, resetThresholds, [accounts[7]]);
     expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(1);
     expect(await kmsVerifier.getKmsSigners()).to.deep.equal([signerAddresses[0]]);
   });
@@ -154,16 +157,44 @@ async function activateNewKmsContext(
   deployer: any,
   nodes: any[],
   thresholds: { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number },
-  contextCreationConfirmers: any[],
-  epochActivationConfirmers: any[],
+  signerAccounts: any[],
 ) {
+  const previousContextId = await protocolConfig.getCurrentKmsContextId();
+  const [, previousEpochId] = await protocolConfig.getCurrentKmsContextAndEpoch();
   const txNewConfig = await protocolConfig.connect(deployer).defineNewKmsContextAndEpoch(nodes, thresholds, '', []);
   const newConfigReceipt = await txNewConfig.wait();
   const contextId = findEventArgs(protocolConfig, newConfigReceipt, 'NewKmsContext').contextId;
+  const domain = await protocolConfigDomain(protocolConfig);
 
+  // nodeConfigHash = keccak256(abi.encode(KmsNode[] nodes, KmsThresholds thresholds)) over the stored node fields.
+  const nodeConfigHash = ethers.keccak256(
+    ethers.AbiCoder.defaultAbiCoder().encode(
+      ['tuple(address,address,string,string)[]', 'tuple(uint256,uint256,uint256,uint256)'],
+      [
+        nodes.map((n) => [n.txSenderAddress, n.signerAddress, n.ipAddress, n.storageUrl]),
+        [thresholds.publicDecryption, thresholds.userDecryption, thresholds.kmsGen, thresholds.mpc],
+      ],
+    ),
+  );
+  const contextCreationTypes = {
+    ContextCreationConfirmation: [
+      { name: 'previousContextId', type: 'uint256' },
+      { name: 'newContextId', type: 'uint256' },
+      { name: 'nodeConfigHash', type: 'bytes32' },
+      { name: 'extraData', type: 'bytes' },
+    ],
+  };
+
+  // Anyone may submit a signer's confirmation, so each signer account submits its own.
   let epochId;
-  for (const signer of contextCreationConfirmers) {
-    const txConfirmContext = await protocolConfig.connect(signer).confirmKmsContextCreation(contextId);
+  for (const signer of signerAccounts) {
+    const signature = await signer.signTypedData(domain, contextCreationTypes, {
+      previousContextId,
+      newContextId: contextId,
+      nodeConfigHash,
+      extraData: '0x',
+    });
+    const txConfirmContext = await protocolConfig.connect(signer).confirmKmsContextCreation(contextId, signature, '0x');
     const confirmReceipt = await txConfirmContext.wait();
     // The pending epoch ID is only known once enough confirmations reach the context-creation quorum,
     // which emits NewKmsEpoch carrying that epoch ID.
@@ -172,26 +203,42 @@ async function activateNewKmsContext(
       epochId = createdEvent.epochId;
     }
   }
-  const allSigners = await ethers.getSigners();
-  for (const txSender of epochActivationConfirmers) {
-    const node = nodes.find((n) => n.txSenderAddress === txSender.address);
-    const signerAccount = allSigners.find((s) => s.address === node.signerAddress);
-    const { keys, crsList } = await buildEpochAttestations(protocolConfig, signerAccount, contextId, epochId);
-    const txConfirmEpoch = await protocolConfig.connect(txSender).confirmEpochActivation(epochId, keys, crsList);
+  for (const signer of signerAccounts) {
+    const { keys, crsList, signature } = await buildEpochAttestations(
+      protocolConfig,
+      signer,
+      contextId,
+      previousEpochId,
+      epochId,
+    );
+    const txConfirmEpoch = await protocolConfig
+      .connect(signer)
+      .confirmEpochActivation(epochId, keys, crsList, signature, '0x');
     await txConfirmEpoch.wait();
   }
 }
 
-// An empty `keys` or `crsList` reverts with EmptyEpochActivationAttestation, so supply one self-signed
-// attestation of each. confirmEpochActivation checks only that the signature recovers to the node signer, so
-// the constant ids need not exist in KMSGeneration, and every signer produces the same dataHash for quorum.
-async function buildEpochAttestations(protocolConfig: any, signerAccount: any, contextId: bigint, epochId: bigint) {
-  const domain = {
+async function protocolConfigDomain(protocolConfig: any) {
+  return {
     name: 'ProtocolConfig',
     version: '1',
     chainId: (await ethers.provider.getNetwork()).chainId,
     verifyingContract: await protocolConfig.getAddress(),
   };
+}
+
+// An empty `keys` or `crsList` reverts with EmptyEpochActivationAttestation, so supply one self-signed
+// attestation of each. confirmEpochActivation checks only that the signatures recover to the node signer, so
+// the constant ids need not exist in KMSGeneration, and every signer produces the same epochMaterialHash for
+// quorum. The returned `signature` is the signer's EpochActivationConfirmation with empty extraData.
+async function buildEpochAttestations(
+  protocolConfig: any,
+  signerAccount: any,
+  contextId: bigint,
+  previousEpochId: bigint,
+  epochId: bigint,
+) {
+  const domain = await protocolConfigDomain(protocolConfig);
   const keygenTypes = {
     KeygenVerification: [
       { name: 'prepKeygenId', type: 'uint256' },
@@ -232,9 +279,40 @@ async function buildEpochAttestations(protocolConfig: any, signerAccount: any, c
     crsDigest,
     extraData,
   });
+  // epochMaterialHash = keccak256(abi.encode(keyHashes, crsHashes)). keyHashes hash the EIP-712 KeyDigest[]
+  // array hash, crsHashes ABI-encode the raw crsDigest.
+  const abi = ethers.AbiCoder.defaultAbiCoder();
+  const keyDigestsHash = ethers.keccak256(
+    ethers.concat(
+      keyDigests.map((d) => ethers.TypedDataEncoder.hashStruct('KeyDigest', { KeyDigest: keygenTypes.KeyDigest }, d)),
+    ),
+  );
+  const epochMaterialHash = ethers.keccak256(
+    abi.encode(
+      ['bytes32[]', 'bytes32[]'],
+      [
+        [ethers.keccak256(abi.encode(['uint256', 'uint256', 'bytes32'], [prepKeygenId, keyId, keyDigestsHash]))],
+        [ethers.keccak256(abi.encode(['uint256', 'uint256', 'bytes'], [crsId, maxBitLength, crsDigest]))],
+      ],
+    ),
+  );
+  const activationSignature = await signerAccount.signTypedData(
+    domain,
+    {
+      EpochActivationConfirmation: [
+        { name: 'contextId', type: 'uint256' },
+        { name: 'previousEpochId', type: 'uint256' },
+        { name: 'epochId', type: 'uint256' },
+        { name: 'epochMaterialHash', type: 'bytes32' },
+        { name: 'extraData', type: 'bytes' },
+      ],
+    },
+    { contextId, previousEpochId, epochId, epochMaterialHash, extraData: '0x' },
+  );
   return {
     keys: [{ prepKeygenId, keyId, keyDigests, signature }],
     crsList: [{ crsId, maxBitLength, crsDigest, signature: crsSignature }],
+    signature: activationSignature,
   };
 }
 

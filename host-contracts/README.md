@@ -103,8 +103,10 @@ deploy `ProtocolConfigReplica` seeded from the `CANONICAL_*` env variables (see 
 **Ethereum is the canonical host — the single source of truth for KMS context/epoch state. The
 lifecycle runs only there.** Governance opens a context/epoch
 (`defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext`) and KMS signers reach
-quorum (`confirmKmsContextCreation`, `confirmEpochActivation`) before it activates. `KMSGeneration`
-is deployed only here.
+quorum (`confirmKmsContextCreation`, `confirmEpochActivation`) before it activates. Each confirmation
+carries the signer's EIP-712 signature, and anyone may submit it. The contract also collects
+destruction confirmations (`confirmKmsContextDestruction`, `confirmKmsEpochDestruction`) from the
+active committee. `KMSGeneration` is deployed only here.
 
 Every other host chain (e.g. Polygon) runs `ProtocolConfigReplica`, a read-replica. Replicas never
 run the lifecycle/quorum path, since KMS resharing and attestations happen once, on Ethereum. They
