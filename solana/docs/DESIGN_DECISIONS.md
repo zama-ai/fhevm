@@ -2337,9 +2337,8 @@ Consequences:
 On-chain, publicness rests on the connectors' leaf check and on the KMS committee's threshold
 honesty (INVARIANTS #21, #23), as on EVM. A program that wants on-chain proof that a handle it did
 not pin is public would need a separate proof-taking entry point; none is wanted today. Consume
-transactions shrink: a legacy redeem with 7 signatures is 1145 bytes, and `disclose_secp` fits one
-packet up to 12 signatures (`runtime-tests/tests/disclose_packet_fit.rs`); clients send both as
-version 1 transactions (4,096 bytes). Removing
+transactions shrink: `redeem_burned_amount` and `disclose_secp` each fit one version 1 transaction
+(4,096 bytes) at the host's maximum of 16 KMS signatures (DD-041). Removing
 `PublicDecryptProofInvalid` renumbered the later Anchor error codes of zama-host and
 confidential-token.
 
