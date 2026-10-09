@@ -166,7 +166,8 @@ function parseVersion(version: string): HostContractVersion {
     contractName !== 'InputVerifier' &&
     contractName !== 'KMSVerifier' &&
     contractName !== 'HCULimit' &&
-    contractName !== 'ProtocolConfig'
+    contractName !== 'ProtocolConfig' &&
+    contractName !== 'ProtocolConfigReplica'
   ) {
     throw new Error(err);
   }

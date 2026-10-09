@@ -5,7 +5,7 @@ import {KmsNode} from "../shared/Structs.sol";
 
 /**
  * @title Interface for the shared ProtocolConfig reads and errors.
- * @notice Declares the read functions and errors that every ProtocolConfig deployment on a host chain shares.
+ * @notice Declares the read functions and errors that ProtocolConfig and ProtocolConfigReplica share.
  */
 interface IProtocolConfigBase {
     // -----------------------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import hre, { ethers, run, upgrades } from 'hardhat';
 
 import { readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
 import { makeEnvHelpers } from '../../tasks/utils/envSnapshot';
+import { EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import {
   applyProtocolConfigCanonicalEnv,
@@ -19,6 +20,7 @@ import {
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
   deployFreshProtocolConfigProxy,
+  deployFreshProtocolConfigReplicaProxy,
   deployFreshUninitializedProtocolConfigProxy,
   initializeProtocolConfigProxy,
   readHostAddress,
@@ -148,7 +150,7 @@ describe('Canonical prepare tasks', function () {
 
       await run('task:deployProtocolConfigFromCanonical');
 
-      const secondary = await ethers.getContractAt('ProtocolConfig', proxyAddress, deployer);
+      const secondary = await ethers.getContractAt('ProtocolConfigReplica', proxyAddress, deployer);
       expect(await secondary.getCurrentKmsContextId()).to.equal(canonicalContextId);
       const secondaryState = await secondary.getCurrentKmsContextAndEpoch();
       expect(secondaryState[0]).to.equal(canonicalContextId);
@@ -190,6 +192,20 @@ describe('Canonical prepare tasks', function () {
         buildProtocolConfigNodes(),
         buildProtocolConfigThresholds(),
       );
+
+      await run('task:assertProtocolConfigReady');
+    });
+
+    it('passes the standalone readiness check when pointed at a ProtocolConfigReplica', async function () {
+      const replicaAddress = await deployFreshProtocolConfigReplicaProxy(
+        deployer,
+        KMS_CONTEXT_COUNTER_BASE + 1n,
+        EPOCH_COUNTER_BASE + 1n,
+        buildProtocolConfigNodes(),
+        buildProtocolConfigThresholds(),
+      );
+
+      patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', replicaAddress);
 
       await run('task:assertProtocolConfigReady');
     });

@@ -82,18 +82,23 @@ export function buildProtocolConfigThresholds() {
   };
 }
 
-export async function deployFreshKMSGenerationProxy(deployer: Wallet): Promise<KMSGeneration> {
-  const emptyProxyFactory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const proxyAddress = await deployEmptyProxy(emptyProxyFactory);
+async function upgradeEmptyProxy(
+  proxyAddress: string,
+  deployer: Wallet,
+  contractName: string,
+  opts?: { call: { fn: string; args?: unknown[] } },
+) {
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const newImplementation = await ethers.getContractFactory('KMSGeneration', deployer);
+  const newImplementation = await ethers.getContractFactory(contractName, deployer);
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-
-  const upgraded = await upgrades.upgradeProxy(proxy, newImplementation, {
-    call: { fn: 'initializeFromEmptyProxy' },
-  });
+  const upgraded = await upgrades.upgradeProxy(proxy, newImplementation, opts);
   await upgraded.waitForDeployment();
+  return upgraded;
+}
 
+export async function deployFreshKMSGenerationProxy(deployer: Wallet): Promise<KMSGeneration> {
+  const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+  await upgradeEmptyProxy(proxyAddress, deployer, 'KMSGeneration', { call: { fn: 'initializeFromEmptyProxy' } });
   return (await ethers.getContractAt('KMSGeneration', proxyAddress, deployer)) as unknown as KMSGeneration;
 }
 
@@ -106,11 +111,7 @@ export async function deployFreshEmptyUUPSProxy(deployer: Wallet): Promise<strin
 // passes the identity check but no KMS context exists (currentKmsContextId=0).
 export async function deployFreshUninitializedProtocolConfigProxy(deployer: Wallet): Promise<string> {
   const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const newImplementation = await ethers.getContractFactory('ProtocolConfig', deployer);
-  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  const upgraded = await upgrades.upgradeProxy(proxy, newImplementation);
-  await upgraded.waitForDeployment();
+  await upgradeEmptyProxy(proxyAddress, deployer, 'ProtocolConfig');
   return proxyAddress;
 }
 
@@ -122,16 +123,12 @@ export async function initializeProtocolConfigProxy(
   kmsNodes: Array<{ txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }>,
   thresholds: { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number },
 ): Promise<Contract> {
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const newImplementation = await ethers.getContractFactory('ProtocolConfig', deployer);
-  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  const upgraded = await upgrades.upgradeProxy(proxy, newImplementation, {
+  const upgraded = await upgradeEmptyProxy(proxyAddress, deployer, 'ProtocolConfig', {
     call: {
       fn: 'initializeFromEmptyProxy',
       args: [kmsNodes, thresholds, '', []],
     },
   });
-  await upgraded.waitForDeployment();
   return upgraded as unknown as Contract;
 }
 
@@ -142,6 +139,20 @@ export async function deployFreshProtocolConfigProxy(
 ): Promise<string> {
   const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
   await initializeProtocolConfigProxy(proxyAddress, deployer, kmsNodes, thresholds);
+  return proxyAddress;
+}
+
+export async function deployFreshProtocolConfigReplicaProxy(
+  deployer: Wallet,
+  contextId: bigint,
+  epochId: bigint,
+  kmsNodes: Array<{ txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }>,
+  thresholds: { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number },
+): Promise<string> {
+  const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+  await upgradeEmptyProxy(proxyAddress, deployer, 'ProtocolConfigReplica', {
+    call: { fn: 'initializeFromCanonical', args: [contextId, epochId, kmsNodes, thresholds] },
+  });
   return proxyAddress;
 }
 

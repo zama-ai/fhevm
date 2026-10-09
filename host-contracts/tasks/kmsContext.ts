@@ -15,11 +15,14 @@ import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 const PROTOCOL_CONFIG_ADDRESS_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
 
-// Builds a calldata-only ABI for ProtocolConfig without a deployer key, so the `build*` tasks never
+// Builds a calldata-only ABI for `contractName` without a deployer key, so the `build*` tasks never
 // need a signer.
-export async function getProtocolConfigInterface(hre: HardhatRuntimeEnvironment): Promise<Interface> {
+export async function getProtocolConfigInterface(
+  hre: HardhatRuntimeEnvironment,
+  contractName = 'ProtocolConfig',
+): Promise<Interface> {
   await hre.run('compile:specific', { contract: 'contracts' });
-  const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
+  const artifact = await hre.artifacts.readArtifact(contractName);
   return new hre.ethers.Interface(artifact.abi);
 }
 
