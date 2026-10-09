@@ -42,6 +42,10 @@ pub struct RevokePermits<'info> {
 /// Raises the caller's invalidation watermark to the current clock.
 pub fn revoke_permits(ctx: Context<RevokePermits>) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
+    require_top_level_unless_pda(
+        &ctx.accounts.user.key(),
+        ZamaHostError::WalletRevokeThroughCpi,
+    )?;
 
     // The clock is refused rather than coerced when it reads before the epoch. The
     // watermark is unsigned seconds, so a cast would land near the top of the range and

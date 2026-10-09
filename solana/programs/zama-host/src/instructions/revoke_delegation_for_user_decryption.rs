@@ -31,6 +31,10 @@ pub fn revoke_delegation_for_user_decryption(
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
     assert_not_paused(&ctx.accounts.host_config, PauseArea::AclWrites)?;
+    require_top_level_unless_pda(
+        &ctx.accounts.delegator.key(),
+        ZamaHostError::WalletRevokeThroughCpi,
+    )?;
     let clock = Clock::get()?;
     require_keys_eq!(
         ctx.accounts.delegator.key(),

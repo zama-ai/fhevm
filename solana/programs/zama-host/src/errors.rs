@@ -307,4 +307,9 @@ pub enum ZamaHostError {
     /// starts at all-zero, so the all-zero id is never accepted.
     #[msg("KMS epoch id must be above the current one")]
     NonIncreasingKmsEpochId,
+    /// A wallet called `revoke_delegation_for_user_decryption` or `revoke_permits` through CPI.
+    /// Its signature reaches every program of the transaction it signed, so it must revoke at the
+    /// top level, as EVM keys a revocation on `msg.sender`.
+    #[msg("a wallet must revoke in a top-level instruction")]
+    WalletRevokeThroughCpi,
 }
