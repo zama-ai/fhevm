@@ -19,6 +19,13 @@ describe('Upgrades', function () {
     this.aclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample');
   });
 
+  const expectThresholds = async (c: any) => {
+    expect(await c.getPublicDecryptionThreshold()).to.equal(1n);
+    expect(await c.getUserDecryptionThreshold()).to.equal(2n);
+    expect(await c.getKmsGenThreshold()).to.equal(3n);
+    expect(await c.getMpcThreshold()).to.equal(4n);
+  };
+
   it('deploy upgradeable ACL', async function () {
     const nonceBef = await ethers.provider.getTransactionCount(this.signers.alice);
     const emptyUUPSACL = await deployEmptyProxy(this.emptyUUPSFactoryACL, [this.signers.alice.address]);
@@ -52,12 +59,6 @@ describe('Upgrades', function () {
     });
     await pc.waitForDeployment();
     expect(await pc.getVersion()).to.equal('ProtocolConfig v0.4.0');
-    const expectThresholds = async (c: any) => {
-      expect(await c.getPublicDecryptionThreshold()).to.equal(1n);
-      expect(await c.getUserDecryptionThreshold()).to.equal(2n);
-      expect(await c.getKmsGenThreshold()).to.equal(3n);
-      expect(await c.getMpcThreshold()).to.equal(4n);
-    };
     await expectThresholds(pc);
     const pc2 = await upgrades.upgradeProxy(pc, factoryUpgraded);
     await pc2.waitForDeployment();
@@ -77,10 +78,7 @@ describe('Upgrades', function () {
 
   const expectV0142State = async (c: any) => {
     expect(await c.getKmsSigners()).to.deep.equal(buildProtocolConfigNodes().map((n) => n.signerAddress));
-    expect(await c.getPublicDecryptionThreshold()).to.equal(1n);
-    expect(await c.getUserDecryptionThreshold()).to.equal(2n);
-    expect(await c.getKmsGenThreshold()).to.equal(3n);
-    expect(await c.getMpcThreshold()).to.equal(4n);
+    await expectThresholds(c);
   };
 
   it('upgrades a v0.14.2 ProtocolConfig proxy in place to ProtocolConfigReplica', async function () {
