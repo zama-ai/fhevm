@@ -215,7 +215,7 @@ The store check compares every recorded store with its account on chain, once at
 
 #### Metric Name: `solana_merkle_proof_server_proof_reads_waiting`
  - **Type**: Gauge
- - **Description**: Requests waiting for a database connection: this replica's backlog. None waits longer than 200 ms, so this bound is the age of the oldest; past it, the request is refused `overloaded`.
+ - **Description**: Requests waiting for a database connection: this replica's backlog. No request waits longer than 200 ms (`PROOF_READ_WAIT`). One that would is refused `overloaded`, so 200 ms bounds the age of the oldest waiting request.
  - **Alarm**: Covered by the `overloaded` alarm on `solana_merkle_proof_server_requests_total`.
 
 #### Metric Name: `solana_merkle_proof_server_proof_reads_in_flight`

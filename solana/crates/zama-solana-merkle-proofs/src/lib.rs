@@ -87,8 +87,8 @@ pub struct MerkleProofResponse {
     pub proofs: Vec<MerkleProofOutcome>,
 }
 
-/// Error codes, in the vocabulary of RFC 033 (Direct HTTP Decryption Endpoint) and RFC 038
-/// (Coprocessor PRF Endpoint). Error bodies are JSON.
+/// Error codes, in the vocabulary of RFC 033 (Direct HTTP Decryption Endpoint). Error bodies are
+/// JSON.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]

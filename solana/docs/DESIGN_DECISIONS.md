@@ -2476,7 +2476,9 @@ together are charged once; an over-rate request is refused and never remembered.
 arrive is answered once, in a task of its own, so a caller that disconnects does not cancel it.
 Every other copy, sent at the same time or later, waits for that answer and gets the same bytes,
 including a refusal the answer ended in. A server therefore charges and reads at most once per
-signed request. A copy that arrives after its request was forgotten is refused as `auth_expired`
+signed request. The exception is `overloaded`: that first copy found no free database connection
+and read nothing, so the server forgets it, and a copy sent after its `Retry-After` is admitted and
+charged again. A copy that arrives after its request was forgotten is refused as `auth_expired`
 rather than charged again. The signing hash names no signer, so KMS nodes that sign the same body
 for the same coprocessor in the same second share one answer. A worker retry signed within the same
 second as the batch it retries has the same signing hash, and gets the earlier answer; the worker

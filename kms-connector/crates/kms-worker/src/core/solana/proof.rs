@@ -149,7 +149,8 @@ const _: () = assert!(AUTHORIZATION_VALIDITY_SECS <= request_authorization::MAX_
 /// coprocessor before the first is asked.
 #[derive(Clone, Debug)]
 pub struct CoprocessorProofClient {
-    /// Each server's URL with the route's path.
+    /// Each coprocessor's server: its URL, set to the route's path, and the signer address its
+    /// requests are signed for.
     servers: Vec<ProofServer>,
     client: reqwest::Client,
     /// The connector's tx-sender wallet.

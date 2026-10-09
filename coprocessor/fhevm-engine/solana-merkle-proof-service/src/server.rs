@@ -11,7 +11,8 @@
 //!
 //! The [`AnswerCache`] answers every copy of a signed request with the answer to
 //! its first copy, so a server charges the signer and reads the record at most
-//! once per signed request (DD-067).
+//! once per signed request (DD-067). An `overloaded` answer read nothing, so it
+//! is not kept: a copy sent after it is admitted again.
 //!
 //! Each KMS tx-sender may ask for [`HttpServer::merkle_proofs`]'s leaves per
 //! second and hold its bytes of requests in the cache; past either it is refused
@@ -128,8 +129,9 @@ static PROOF_READS_WAITING: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
         "solana_merkle_proof_server_proof_reads_waiting",
         format!(
-            "Requests waiting for a database connection. None waits longer than \
-             {PROOF_READ_WAIT:?}: it is then refused overloaded"
+            "Requests waiting for a database connection. No request waits longer than \
+             {PROOF_READ_WAIT:?} (PROOF_READ_WAIT). One that would is refused overloaded, so \
+             {PROOF_READ_WAIT:?} bounds the age of the oldest waiting request"
         )
     )
     .unwrap()
@@ -478,10 +480,15 @@ async fn answer_merkle_proofs(
             // the request's other copies wait for.
             tokio::spawn(async move {
                 let answer = answer_request(&state, queries).await;
-                state.answers.settle(
-                    &authorization.signing_hash,
-                    answer.as_ref().map_or(0, Bytes::len),
-                );
+                let hash = &authorization.signing_hash;
+                match &answer {
+                    Err(error) if error.code == ErrorCode::Overloaded => {
+                        state.answers.forget(hash)
+                    }
+                    answer => state
+                        .answers
+                        .settle(hash, answer.as_ref().map_or(0, Bytes::len)),
+                }
                 sender.send_replace(Some(answer));
             });
             answer
@@ -977,7 +984,9 @@ mod tests {
         answer_cache_bytes_per_signer: usize,
         proof_reads: usize,
     ) -> (String, CancellationToken, tokio::task::JoinHandle<()>) {
+        // Nothing listens there, so a read fails once the acquire times out.
         let pool = PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(100))
             .connect_lazy("postgres://nobody@127.0.0.1:1/none")
             .expect("lazy pool");
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
@@ -1190,7 +1199,7 @@ mod tests {
     }
 
     /// A refusal the connector takes to another coprocessor: its status, code and
-    /// message. It is retryable and sets `Retry-After`.
+    /// message. It is retryable, and a 429 or 503 sets `Retry-After`.
     async fn refusal(
         client: &reqwest::Client,
         url: &str,
@@ -1204,13 +1213,21 @@ mod tests {
             .send()
             .await
             .expect("send");
-        assert_eq!(
-            response.headers()[header::RETRY_AFTER],
-            RETRY_AFTER_SECS.to_string()
-        );
+        let retry_after = response
+            .headers()
+            .get(header::RETRY_AFTER)
+            .map(|value| value.to_str().expect("ASCII").to_owned());
         let status = response.status().as_u16();
         let error = error_of(response).await;
         assert!(error.retryable);
+        let backs_off = matches!(
+            error.code,
+            ErrorCode::RateLimited | ErrorCode::Overloaded
+        );
+        assert_eq!(
+            retry_after,
+            backs_off.then(|| RETRY_AFTER_SECS.to_string())
+        );
         (status, error.code, error.message)
     }
 
@@ -1222,10 +1239,17 @@ mod tests {
         )
     }
 
+    fn read_failed() -> (u16, ErrorCode, String) {
+        (
+            502,
+            ErrorCode::UpstreamTransient,
+            "leaf record read failed".to_owned(),
+        )
+    }
+
     /// Every copy of a signed request, sent at once or later, gets the first copy's
-    /// answer, here its `overloaded` refusal for want of a database connection: only
-    /// the first copy spends the signer's burst, and only a new request is over the
-    /// rate.
+    /// answer, here its failed read: only the first copy spends the signer's burst,
+    /// and only a new request is over the rate.
     #[tokio::test]
     async fn copies_of_a_request_share_its_first_answer_and_cost() {
         let connector = PrivateKeySigner::random();
@@ -1236,7 +1260,7 @@ mod tests {
             }),
             1,
             1 << 20,
-            0,
+            1,
         )
         .await;
         let url = format!("{base}{MERKLE_PROOFS_PATH}");
@@ -1260,11 +1284,11 @@ mod tests {
             });
         }
         while let Some(answer) = copies.join_next().await {
-            assert_eq!(answer.expect("join"), no_connection());
+            assert_eq!(answer.expect("join"), read_failed());
         }
         assert_eq!(
             refusal(&client, &url, &authorization, body).await,
-            no_connection()
+            read_failed()
         );
 
         let other = full_request([0x11; 32]);
@@ -1272,6 +1296,47 @@ mod tests {
             signed(&connector, &other, unix_now_secs() + 30).await;
         assert_eq!(
             refusal(&client, &url, &authorization, other).await,
+            (
+                429,
+                ErrorCode::RateLimited,
+                format!(
+                    "{} is over its leaves per second",
+                    connector.address()
+                )
+            )
+        );
+
+        cancel.cancel();
+        server.await.expect("join");
+    }
+
+    /// An `overloaded` refusal read nothing, so a copy sent after it is admitted
+    /// again: charged anew, which puts this signer at one leaf per second over its
+    /// rate.
+    #[tokio::test]
+    async fn a_copy_after_an_overloaded_refusal_is_admitted_again() {
+        let connector = PrivateKeySigner::random();
+        let (base, cancel, server) = spawn(
+            KmsTxSenders::fixed(KmsTxSenderSet {
+                registry: REGISTRY,
+                senders: HashSet::from([connector.address()]),
+            }),
+            1,
+            1 << 20,
+            0,
+        )
+        .await;
+        let url = format!("{base}{MERKLE_PROOFS_PATH}");
+        let client = reqwest::Client::new();
+        let body = full_request([0x10; 32]);
+        let authorization =
+            signed(&connector, &body, unix_now_secs() + 30).await;
+        assert_eq!(
+            refusal(&client, &url, &authorization, body.clone()).await,
+            no_connection()
+        );
+        assert_eq!(
+            refusal(&client, &url, &authorization, body).await,
             (
                 429,
                 ErrorCode::RateLimited,
@@ -1317,7 +1382,7 @@ mod tests {
             }),
             1,
             ENTRY_OVERHEAD_BYTES,
-            0,
+            1,
         )
         .await;
         let url = format!("{base}{MERKLE_PROOFS_PATH}");
@@ -1344,7 +1409,8 @@ mod tests {
                 refusal(&client, &url, &authorization, body).await
             }
         };
-        assert_eq!(ask(&alice, 0x10).await, no_connection());
+        // A failed read is kept, so it holds Alice's room.
+        assert_eq!(ask(&alice, 0x10).await, read_failed());
         // Alice's burst is spent too: the room is checked first.
         assert_eq!(
             ask(&alice, 0x11).await,
@@ -1357,7 +1423,7 @@ mod tests {
                 )
             )
         );
-        assert_eq!(ask(&bob, 0x12).await, no_connection());
+        assert_eq!(ask(&bob, 0x12).await, read_failed());
 
         cancel.cancel();
         server.await.expect("join");

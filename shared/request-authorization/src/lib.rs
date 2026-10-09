@@ -10,7 +10,8 @@
 //!
 //! `path` starts at the version segment, as sent on the wire. A query string is not signed, so a
 //! route that accepts this scheme refuses a request that carries one. `bodyDigest` is the
-//! keccak-256 of the exact body bytes, so a server checks what it received without re-encoding it.
+//! keccak-256 of the exact body bytes, `keccak256("")` for an empty body, so a server checks what
+//! it received without re-encoding it.
 //! `audience` is the recipient's address: the server rebuilds the request with its own, so a
 //! header signed for another recipient recovers an unrelated address. The server recovers the
 //! signer and decides whether that address may call.
@@ -340,6 +341,8 @@ mod tests {
     /// };
     /// hashTypedData(typed);
     /// privateKeyToAccount("0x3f45…c774").signTypedData(typed);
+    /// // A request without a body signs keccak256 of no bytes.
+    /// const empty = { ...typed, message: { ...typed.message, bodyDigest: keccak256(new Uint8Array()) } };
     /// ```
     #[test]
     fn the_wire_format_matches_viem() {
@@ -358,6 +361,15 @@ mod tests {
         assert_eq!(
             header(NOW + 60),
             "FhevmSig expires=1790950060, sig=0x221e0fdb37848dea9211b3ec72a1ece532dcc4b519099098b3e2bf938dfb214146a40971c7fdb3174f85b5abaa844eb080769b18d7a5cc620d6cd71c6954da4b1c"
+        );
+        let empty = REGISTRY.signing_hash(PATH, b"", NOW + 60, AUDIENCE);
+        assert_eq!(
+            empty.to_string(),
+            "0x7fdba7612e3c0568d59b1274bebb86b6040758b926ce94f52c74d6d33c4b2a2a"
+        );
+        assert_eq!(
+            header_value(NOW + 60, &signer().sign_hash_sync(&empty).unwrap()),
+            "FhevmSig expires=1790950060, sig=0x762f9d2eb58a04a7ff1388c95f44b6b6256e67ae3b2c9da490bb9ea79b56b9e7701a51c190c28d56b436ed29965a644bb475b54f1967a582119725dbd05d33361b"
         );
     }
 }

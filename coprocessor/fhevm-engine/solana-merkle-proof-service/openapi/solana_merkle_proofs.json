@@ -104,7 +104,7 @@
     "schemas": {
       "ErrorCode": {
         "type": "string",
-        "description": "Error codes, in the vocabulary of RFC 033 (Direct HTTP Decryption Endpoint) and RFC 038\n(Coprocessor PRF Endpoint). Error bodies are JSON.",
+        "description": "Error codes, in the vocabulary of RFC 033 (Direct HTTP Decryption Endpoint). Error bodies are\nJSON.",
         "enum": [
           "malformed",
           "auth_expired",

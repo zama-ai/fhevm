@@ -38,7 +38,7 @@ struct Args {
     /// Most connections the server's pool holds. All but one serve requests
     /// reading the record, one at a time each; `/healthz` keeps the last.
     /// Per replica: this bound is what protects the shared database, which sees
-    /// at most replicas × (this − 1) proof reads.
+    /// at most replicas × (this − 1) proof reads at a time.
     #[arg(long, default_value_t = 8, value_parser = clap::value_parser!(u32).range(2..))]
     database_pool_size: u32,
 
@@ -53,11 +53,8 @@ struct Args {
 
     /// MiB of each KMS tx-sender's signed requests and their answers the server
     /// remembers until it stops accepting the signatures; past it, that
-    /// tx-sender's new requests are refused. A 64-leaf request with 20-hash paths
-    /// holds under 48 KiB, so 16 MiB is about 22,000 leaves: 365 per second at the
-    /// connector's 30 s validity plus the 30 s clock skew, and about 225 in 1-leaf
-    /// requests. 13 KMS nodes in two live contexts hold at most 416 MiB.
-    /// Per replica: it bounds this replica's memory.
+    /// tx-sender's new requests are refused. Per replica: it bounds this
+    /// replica's memory. DD-067 gives the sizing.
     #[arg(long, default_value_t = 16)]
     answer_cache_mib_per_kms_tx_sender: usize,
 

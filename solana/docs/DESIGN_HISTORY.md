@@ -1472,7 +1472,7 @@ its checks.
 > A record holds every Store from leaf zero or has not seen it, so a proof answer is `found`,
 > `notFound` or `unknownAccount`; there is no incomplete history.
 
-### DD-067, replaced in part by RFC 038
+### DD-067, revised in place for RFC 038
 
 Aligning with RFC 038's `FhevmSig` signed the recipient coprocessor's address as `audience`, widened
 the accepted window to RFC 038's bounds, moved error bodies to JSON and answered a full pool with

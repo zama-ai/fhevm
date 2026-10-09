@@ -1977,7 +1977,7 @@ solanaHostListener:
     replicas: 1
     httpPort: 8080
     metricsPort: 9100
-    # Per replica: the shared database sees at most replicas × (databasePoolSize − 1) proof reads.
+    # Per replica: the shared database sees at most replicas × (databasePoolSize − 1) proof reads at a time.
     databasePoolSize: 8
     env: []
     podLabels: {}
