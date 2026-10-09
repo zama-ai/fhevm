@@ -33,6 +33,10 @@
 //! epoch's cutover (`drift_superseded`) describes bytes that are gone: it is
 //! marked `superseded_at` and never installed, also when the cutover lands
 //! during its download.
+//!
+//! The installed object's tag also dates the bytes: a row without a
+//! `consensus_version` takes the one `consensus_epoch_history` records for the
+//! uploading epoch; a row that has one keeps it.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -57,7 +61,7 @@ use super::{ExecutionError, ManifestWorkGate};
 mod download;
 mod metrics;
 
-use download::{Ct64Source, S3Ct64Source};
+use download::{Ct64Source, DownloadedCt64, S3Ct64Source};
 
 /// pg_notify channel emitted on `drifted_handle` insert/update.
 pub(crate) const EVENT_HEALING_WORK: &str = "event_healing_work";
@@ -557,7 +561,7 @@ async fn heal_one<S: Ct64Source>(
         return schedule_retry(pool, &job, Failure::Terminal).await;
     };
     if let Some(source_handle) = bridged_source(pool, &job).await? {
-        if let Some((bytes, digest)) =
+        if let Some((ct64, digest)) =
             fetch_from_bridged_source(pool, source, &job, context_id, &source_handle).await?
         {
             info!(
@@ -566,20 +570,20 @@ async fn heal_one<S: Ct64Source>(
                 source_handle = hex::encode(&source_handle),
                 "Downloaded bridged ct64 from its source objects"
             );
-            return install_matching_ct64(pool, &job, &bytes, &digest).await;
+            return install_matching_ct64(pool, &job, &ct64, &digest).await;
         }
     }
     let mut skip_buckets = Vec::new();
     if let Some(target) = job.quorum_ct64_digest.as_deref() {
         for bucket_url in peer_bucket_urls(&job.peer_sources) {
             match source.get_ct64(&bucket_url, &job.handle, context_id).await {
-                Ok(bytes) if keccak256(&bytes).as_slice() == target => {
+                Ok(ct64) if keccak256(&ct64.bytes).as_slice() == target => {
                     info!(
                         finding_id = job.id,
                         handle = hex::encode(&job.handle),
                         "Downloaded ct64 matching the pinned target"
                     );
-                    return install_matching_ct64(pool, &job, &bytes, target).await;
+                    return install_matching_ct64(pool, &job, &ct64, target).await;
                 }
                 Ok(_) => {
                     error!(
@@ -650,7 +654,7 @@ async fn fetch_from_bridged_source<S: Ct64Source>(
     job: &DueHandle,
     context_id: U256,
     source_handle: &[u8],
-) -> Result<Option<(Vec<u8>, Vec<u8>)>, ExecutionError> {
+) -> Result<Option<(DownloadedCt64, Vec<u8>)>, ExecutionError> {
     let pinned = job.quorum_ct64_digest.as_deref();
     let mut tried = Vec::new();
     if let Some(target) = pinned {
@@ -659,8 +663,8 @@ async fn fetch_from_bridged_source<S: Ct64Source>(
                 .get_ct64(&bucket_url, source_handle, context_id)
                 .await
             {
-                Ok(bytes) if keccak256(&bytes).as_slice() == target => {
-                    return Ok(Some((bytes, target.to_vec())));
+                Ok(ct64) if keccak256(&ct64.bytes).as_slice() == target => {
+                    return Ok(Some((ct64, target.to_vec())));
                 }
                 Ok(_) => {}
                 Err(err @ ExecutionError::DbError(_)) => return Err(err),
@@ -722,11 +726,11 @@ async fn fetch_from_bridged_source<S: Ct64Source>(
     }
     for bucket_url in buckets.iter().filter(|bucket| !tried.contains(bucket)) {
         match source.get_ct64(bucket_url, source_handle, context_id).await {
-            Ok(bytes) if keccak256(&bytes).as_slice() == digest.as_slice() => {
+            Ok(ct64) if keccak256(&ct64.bytes).as_slice() == digest.as_slice() => {
                 if pinned.is_none() {
                     persist_live_quorum(pool, job, &digest, &buckets, &peers, threshold).await?;
                 }
-                return Ok(Some((bytes, digest)));
+                return Ok(Some((ct64, digest)));
             }
             Ok(_) => {}
             Err(err @ ExecutionError::DbError(_)) => return Err(err),
@@ -853,14 +857,14 @@ async fn recover_from_attestations<S: Ct64Source>(
         .filter(|bucket| !skip_buckets.iter().any(|skipped| skipped == *bucket))
     {
         match source.get_ct64(bucket_url, &job.handle, context_id).await {
-            Ok(bytes) if keccak256(&bytes).as_slice() == digest => {
+            Ok(ct64) if keccak256(&ct64.bytes).as_slice() == digest => {
                 info!(
                     finding_id = job.id,
                     handle = hex::encode(&job.handle),
                     bucket_url,
                     "Downloaded ct64 matching the pinned target from attestation quorum"
                 );
-                return install_matching_ct64(pool, job, &bytes, &digest).await;
+                return install_matching_ct64(pool, job, &ct64, &digest).await;
             }
             Ok(_) => {
                 error!(
@@ -1107,7 +1111,7 @@ fn majority_digest(
 async fn install_matching_ct64(
     pool: &PgPool,
     job: &DueHandle,
-    bytes: &[u8],
+    ct64: &DownloadedCt64,
     digest: &[u8],
 ) -> Result<bool, ExecutionError> {
     let Ok(ciphertext_type) = get_ct_type(&job.handle) else {
@@ -1199,22 +1203,25 @@ async fn install_matching_ct64(
         trx.rollback().await?;
         return Ok(false);
     }
-    // TODO(follow-up PR): stamp the real consensus_version carried with the
-    // ct64 bytes downloaded from S3, instead of NULL.
+    let consensus_version = uploading_consensus_version(&mut trx, job, ct64).await?;
+    // Healing replaces the bytes, not their producer: a version the row already
+    // holds is kept; the uploader's one only fills a missing value.
     sqlx::query!(
         r#"
         INSERT INTO ciphertexts (
             handle, ciphertext, ciphertext_version, ciphertext_type, consensus_version
-        ) VALUES ($1, $2, $3, $4, NULL)
+        ) VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (handle, ciphertext_version) DO UPDATE
         SET ciphertext = EXCLUDED.ciphertext,
-            consensus_version = NULL
+            consensus_version = COALESCE(ciphertexts.consensus_version, EXCLUDED.consensus_version)
         WHERE ciphertexts.ciphertext IS DISTINCT FROM EXCLUDED.ciphertext
+           OR (ciphertexts.consensus_version IS NULL AND EXCLUDED.consensus_version IS NOT NULL)
         "#,
         &job.handle,
-        bytes,
+        &ct64.bytes,
         CIPHERTEXT_VERSION,
         ciphertext_type,
+        consensus_version,
     )
     .execute(trx.as_mut())
     .await?;
@@ -1250,6 +1257,67 @@ async fn install_matching_ct64(
         );
     }
     Ok(true)
+}
+
+/// Protocol version of the epoch that uploaded the healed object, from its
+/// `consensus-epoch` metadata (absent is `legacy`): the epoch's recorded
+/// `consensus_version`, without its proposal block. `None` when the epoch is
+/// unknown here or its version does not fit the column. Must run with the
+/// finding's schema selected: the existing row is read from its `ciphertexts`.
+async fn uploading_consensus_version(
+    trx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    job: &DueHandle,
+    ct64: &DownloadedCt64,
+) -> Result<Option<i16>, ExecutionError> {
+    let recorded = sqlx::query_scalar!(
+        r#"
+        SELECT consensus_version
+          FROM public.consensus_epoch_history
+         WHERE consensus_epoch = $1
+        "#,
+        ct64.consensus_epoch,
+    )
+    .fetch_optional(trx.as_mut())
+    .await?
+    .flatten();
+    let consensus_version = match recorded.map(i16::try_from) {
+        Some(Ok(version)) => Some(version),
+        Some(Err(_)) => {
+            warn!(
+                finding_id = job.id,
+                uploaded_by = ct64.consensus_epoch,
+                recorded,
+                "Uploading epoch's consensus_version does not fit ciphertexts.consensus_version"
+            );
+            None
+        }
+        None => None,
+    };
+    let existing = sqlx::query_scalar!(
+        r#"
+        SELECT consensus_version
+          FROM ciphertexts
+         WHERE handle = $1 AND ciphertext_version = $2
+        "#,
+        &job.handle,
+        CIPHERTEXT_VERSION,
+    )
+    .fetch_optional(trx.as_mut())
+    .await?
+    .flatten();
+    if let (Some(existing), Some(uploaded)) = (existing, consensus_version) {
+        if existing != uploaded {
+            warn!(
+                finding_id = job.id,
+                handle = hex::encode(&job.handle),
+                existing,
+                uploaded,
+                uploaded_by = ct64.consensus_epoch,
+                "Healed ct64 keeps its row's consensus_version, not the uploader's"
+            );
+        }
+    }
+    Ok(consensus_version)
 }
 
 /// A transient failure is retried until `max_attempts`; a terminal one can
