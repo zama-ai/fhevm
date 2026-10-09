@@ -50,12 +50,12 @@ use zama_solana_test_kit::signing::{
     kms_signing_key, kms_signing_key_n, production_amount_attestation_for, secp_evm_address,
 };
 use zama_solana_test_kit::{
-    anchor_error_check, anchor_ix, coprocessor_signer_address, cost_snapshot,
-    deny_scope_record_account, encrypted_store_account, ensure_system_accounts, event_authority,
-    handle_for_chain, hcu_trusted_app_record_account, host_config_account, kms_context_account,
-    new_encrypted_store, paused_host_config, read_account, read_spl_amount, read_store_handle,
-    readonly, serialized_account, spl_mint_account, spl_token_account, system_account, Ctx,
-    HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
+    anchor_error_check, anchor_framework_error_check, anchor_ix, coprocessor_signer_address,
+    cost_snapshot, deny_scope_record_account, encrypted_store_account, ensure_system_accounts,
+    event_authority, handle_for_chain, hcu_trusted_app_record_account, host_config_account,
+    kms_context_account, new_encrypted_store, paused_host_config, read_account, read_spl_amount,
+    read_store_handle, readonly, serialized_account, spl_mint_account, spl_token_account,
+    system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
 };
 
 const KMS_CONTEXT_ID: [u8; 32] = {
@@ -914,6 +914,56 @@ fn quit_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instr
         batcher::instruction::Quit {},
     );
     fixture.with_deny_records(ix, &[&[fixture.join_app(), keys.app()], &[keys.app()]])
+}
+
+/// A confidential transfer of `amount` from `donor`'s account on `mint` to `recipient`'s account: a
+/// gift the batcher keeps no record of.
+fn donate_ix(
+    fixture: &BatcherFixture,
+    donor: &UserKeys,
+    mint: &ConfidentialMintKeys,
+    recipient: Pubkey,
+    amount_handle: [u8; 32],
+    amount: u64,
+) -> Instruction {
+    let from_account = token::token_account_address(mint.mint, donor.user).0;
+    let to_account = token::token_account_address(mint.mint, recipient).0;
+    let app = token::token_app(mint.mint);
+    let ix = anchor_ix(
+        token::id(),
+        token::accounts::ConfidentialTransfer {
+            transient_store: host::transient_store_address(donor.user).0,
+            instructions: Instructions::id(),
+            owner: donor.user,
+            payer: donor.user,
+            mint: mint.mint,
+            underlying_mint: mint.underlying_mint,
+            from_ata: owner_ata(donor.user, mint.underlying_mint),
+            to_ata: owner_ata(recipient, mint.underlying_mint),
+            from_account,
+            to_account,
+            from_store: token::encrypted_store_address(mint.mint, from_account).0,
+            to_store: token::encrypted_store_address(mint.mint, to_account).0,
+            zama_event_authority: event_authority(host::id()),
+            zama_program: host::id(),
+            host_config: fixture.host_config,
+            system_program: system_program::ID,
+            hcu_block_meter: fixture.hcu_block_meter(app),
+            hcu_trusted_app_record: fixture.hcu_trusted_app_record(app),
+            result_store: None,
+            event_authority: event_authority(token::id()),
+            program: token::id(),
+        },
+        token::instruction::ConfidentialTransfer {
+            amount_attestation: amount_attestation_for(
+                amount_handle,
+                amount,
+                donor.user,
+                token::id(),
+            ),
+        },
+    );
+    fixture.with_deny_records(ix, &[&[app]])
 }
 
 fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
@@ -1790,9 +1840,32 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         &[batcher_error(batcher::BatcherError::JoinRecordStillLive)],
     );
 
-    let quit = quit_ix(&fixture, &keys, &fixture.alice);
+    // A sponsor pays the quit, so the user's balance moves only by the record's rent.
+    let mut quit = quit_ix(&fixture, &keys, &fixture.alice);
+    quit.accounts[1].pubkey = fixture.payer;
+    quit.accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == host::transient_store_address(fixture.alice.user).0)
+        .unwrap()
+        .pubkey = host::transient_store_address(fixture.payer).0;
+    let join_record = keys.join_record(fixture.alice.user);
+    let record_rent = lamports_of(&context, join_record);
+    let user_lamports = lamports_of(&context, fixture.alice.user);
     let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
     assert_eq!(check_fhe_cpis(&context, &result), 2);
+    assert_eq!(lamports_of(&context, join_record), 0);
+    assert_eq!(
+        lamports_of(&context, fixture.alice.user),
+        user_lamports + record_rent
+    );
+    // The refund is single-use: without its record, a second quit cannot run.
+    check_batcher_instruction(
+        &context,
+        &quit,
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::AccountNotInitialized,
+        )],
+    );
     assert_eq!(
         store_u64(
             &context,
@@ -2235,14 +2308,12 @@ fn mollusk_quit_rejects_refund_destination_that_is_not_the_users_account() {
     );
 }
 
-/// A user who quits before dispatch can still run the (permissionless) claim
-/// after the batch settles on the other participants: their reset encrypted store
-/// makes the MulDiv produce an encrypted zero, the all-or-zero transfer moves
-/// nothing, and the record is marked claimed. Deposit direction only: quit,
-/// claim, and the encrypted store reset are direction-free shared code (settle's
-/// vault CPI is the sole direction branch), so one direction pins the class.
+/// A user who quits before dispatch has no join record left, so a claim for them after the batch
+/// settles on the other participants is refused, and the others' claims pay the full batch.
+/// Deposit direction only: quit and claim are direction-free shared code (settle's vault CPI is
+/// the sole direction branch), so one direction pins the class.
 #[test]
-fn mollusk_claim_after_quit_pays_zero() {
+fn mollusk_claim_after_quit_is_refused() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
@@ -2281,9 +2352,25 @@ fn mollusk_claim_after_quit_pays_zero() {
     );
     run_settle(&context, &fixture, &keys, burned_handle, 500);
 
-    // Alice's claim computes 0 * 500 / 500 = encrypted zero and transfers
-    // nothing; her record still flips to claimed (the record survives quit).
-    run_claim(&context, &fixture, &keys, &fixture.alice);
+    // The quit closed Alice's record, so her claim has nothing to claim with.
+    assert_eq!(
+        lamports_of(&context, keys.join_record(fixture.alice.user)),
+        0
+    );
+    ensure_system_accounts(
+        &context,
+        &[
+            owner_ata(keys.batch_authority, fixture.payout_mint().underlying_mint),
+            owner_ata(fixture.alice.user, fixture.payout_mint().underlying_mint),
+        ],
+    );
+    check_batcher_instruction(
+        &context,
+        &claim_ix(&fixture, &keys, &fixture.alice),
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::AccountNotInitialized,
+        )],
+    );
     assert_eq!(
         store_u64(
             &context,
@@ -2292,15 +2379,6 @@ fn mollusk_claim_after_quit_pays_zero() {
         ),
         0
     );
-    assert_eq!(
-        store_u64(
-            &context,
-            keys.pending_join_value(fixture.alice.user),
-            batcher::JOINED_AMOUNT_KEY
-        ),
-        0
-    );
-    assert!(read_join_record(&context, keys.join_record(fixture.alice.user)).claimed);
 
     // Bob's claim still pays the full settled batch.
     run_claim(&context, &fixture, &keys, &fixture.bob);
@@ -3000,8 +3078,8 @@ fn assert_batcher_cost(profile: &str, ix: &Instruction, result: &InstructionResu
 const SETTLE_DEPOSIT_MAX_COMPUTE_UNITS: u64 = 360_000;
 const SETTLE_REDEEM_MAX_COMPUTE_UNITS: u64 = 430_000;
 
-/// One fixed-key run through open/join/dispatch/claim, snapshotting each
-/// instruction's cost profile under `prefix`. Fixed fixture keys keep the PDA
+/// One fixed-key run through open/join/dispatch/settle/claim and the exits (quit, cancel_dispatch),
+/// snapshotting each instruction's cost profile under `prefix`. Fixed fixture keys keep the PDA
 /// bump searches — part of the measured compute — stable across runs.
 fn snapshot_lifecycle(fixture: &BatcherFixture, context: &Ctx, prefix: &str) {
     check_batcher_instruction(
@@ -3091,6 +3169,48 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &Ctx, prefix: &str) {
     let close = close_join_record_ix(&keys, fixture.alice.user);
     let close_result = check_batcher_instruction(context, &close, &[Check::success()]);
     assert_batcher_cost(&format!("{prefix}close_join_record"), &close, &close_result);
+
+    // The exits run on the next batch, so the profiles above keep their measurements: bob quits it
+    // while pending, the authority cancels its dispatch, and alice quits it while refunding.
+    let next = BatchKeys::new(fixture, 1);
+    ensure_open_batch_accounts(context, fixture, &next);
+    check_batcher_instruction(
+        context,
+        &open_batch_ix(fixture, &next, Some(keys.batch)),
+        &[Check::success()],
+    );
+    run_join(
+        context,
+        fixture,
+        &next,
+        &fixture.alice,
+        handle_for_chain(0x72, BALANCE_FHE_TYPE),
+        100,
+    );
+    run_join(
+        context,
+        fixture,
+        &next,
+        &fixture.bob,
+        handle_for_chain(0x73, BALANCE_FHE_TYPE),
+        200,
+    );
+
+    let quit = quit_ix(fixture, &next, &fixture.bob);
+    let quit_result = check_batcher_instruction(context, &quit, &[Check::success()]);
+    check_fhe_cpis(context, &quit_result);
+    assert_batcher_cost(&format!("{prefix}quit"), &quit, &quit_result);
+
+    run_dispatch(context, fixture, &next);
+    let cancel = cancel_dispatch_ix(fixture, &next);
+    let cancel_result = check_batcher_instruction(context, &cancel, &[Check::success()]);
+    check_fhe_cpis(context, &cancel_result);
+    assert_batcher_cost(&format!("{prefix}cancel_dispatch"), &cancel, &cancel_result);
+
+    let refund = quit_ix(fixture, &next, &fixture.alice);
+    let refund_result = check_batcher_instruction(context, &refund, &[Check::success()]);
+    check_fhe_cpis(context, &refund_result);
+    assert_batcher_cost(&format!("{prefix}quit_refunding"), &refund, &refund_result);
 }
 
 #[test]
@@ -3631,5 +3751,69 @@ fn mollusk_preloaded_shares_do_not_poison_the_rate() {
     assert_eq!(
         store_u64(&context, keys.payout_balance_store, token::balance_key()),
         0
+    );
+}
+
+/// Gifts to a batch's token accounts have no join record. A gift to the join account is burned with
+/// the joins and raises the settled total; one to the payout account arrives after settle. Either
+/// way each joiner claims exactly its share, and the gifts' part stays in the batch payout account.
+#[test]
+fn mollusk_donations_to_batch_accounts_leave_claims_exact() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    fixture.seed_values(&context, (1_000, 0), (2_000, 50), (1_000_000, 50));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+
+    let donate = |mint: &ConfidentialMintKeys, handle: u8, amount: u64| {
+        let ix = donate_ix(
+            &fixture,
+            &fixture.bob,
+            mint,
+            keys.batch_authority,
+            handle_for_chain(handle, BALANCE_FHE_TYPE),
+            amount,
+        );
+        zama_solana_test_kit::transaction::process_fhe_instruction(
+            &context,
+            fixture.bob.user,
+            &ix,
+            &[Check::success()],
+        );
+    };
+    donate(fixture.join_mint(), 42, 100);
+    assert_eq!(
+        store_u64(&context, keys.join_balance_store, token::balance_key()),
+        400
+    );
+
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    run_settle(&context, &fixture, &keys, burned_handle, 400);
+    assert_eq!(read_batch(&context, keys.batch).total_joined, 400);
+    donate(fixture.payout_mint(), 43, 50);
+    assert_eq!(
+        store_u64(&context, keys.payout_balance_store, token::balance_key()),
+        450
+    );
+
+    run_claim(&context, &fixture, &keys, &fixture.alice);
+    assert_eq!(
+        store_u64(
+            &context,
+            fixture.alice.shares.balance_store,
+            token::balance_key()
+        ),
+        300
+    );
+    assert_eq!(
+        store_u64(&context, keys.payout_balance_store, token::balance_key()),
+        150
     );
 }
