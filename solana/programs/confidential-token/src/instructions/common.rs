@@ -105,6 +105,13 @@ pub(crate) fn execute_transfer<'info>(
     let mint_key = accounts.mint.key();
     let from = accounts.from_account;
     let to = accounts.to_account;
+    // Every amount source debits `from`. A value spend gate admits the account's own values, so
+    // only this check keeps a stranger from spending another owner's balance.
+    require_keys_eq!(
+        from.owner,
+        accounts.transfer_authority.key(),
+        ConfidentialTokenError::OwnerMismatch
+    );
 
     if let TransferAmountSource::Attested(amount_attestation) = &amount_source {
         // EVM `fromExternal` parity for the amount: the attested input must be authored by the

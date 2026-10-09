@@ -20,7 +20,7 @@
 //! Behavior tests run on the cleartext host build and read balances from the plaintexts it records
 //! in each `EncryptedStore`; cost snapshots run on the production build.
 
-use anchor_lang::{prelude::system_program, AccountDeserialize, Discriminator};
+use anchor_lang::{prelude::system_program, AccountDeserialize, AnchorDeserialize, Discriminator};
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use confidential_token as token;
 use mollusk_svm::{
@@ -121,18 +121,19 @@ fn check_token_instruction(context: &Ctx, ix: &Instruction, checks: &[Check]) ->
     context.process_and_validate_instruction(ix, checks)
 }
 
-fn transfer_event(result: &InstructionResult) -> token::ConfidentialTransferEvent {
-    result
+/// The one `T` event the instruction emitted.
+fn only_event<T: AnchorDeserialize + Discriminator>(result: &InstructionResult) -> T {
+    let mut events = result
         .inner_instructions
         .iter()
-        .find_map(|inner| {
-            decode_anchor_event::<token::ConfidentialTransferEvent>(&inner.instruction.data)
-        })
-        .expect("transfer event")
+        .filter_map(|inner| decode_anchor_event::<T>(&inner.instruction.data));
+    let event = events.next().expect("event emitted");
+    assert!(events.next().is_none(), "event emitted more than once");
+    event
 }
 
 fn transferred_event_handle(result: &InstructionResult) -> [u8; 32] {
-    transfer_event(result).transferred_handle
+    only_event::<token::ConfidentialTransferEvent>(result).transferred_handle
 }
 
 /// Checks the one `fhe_execute` CPI every token instruction is expected to issue and returns the
@@ -480,6 +481,7 @@ fn initialize_mint_ix(
     authority: Pubkey,
     mint: Pubkey,
     underlying_mint: Pubkey,
+    token_program: Pubkey,
     host_config: Pubkey,
 ) -> Instruction {
     anchor_ix(
@@ -490,7 +492,7 @@ fn initialize_mint_ix(
             authority,
             mint,
             underlying_mint,
-            token_program: spl_token::id(),
+            token_program,
             total_supply_authority: token::total_supply_authority_address(mint).0,
             total_supply_encrypted_store: token::encrypted_store_address(
                 mint,
@@ -885,21 +887,13 @@ fn mollusk_mint_authority_allows_total_supply_viewers() {
             &[auditor]
         )
     );
-    let events: Vec<token::TotalSupplyHandleUpdatedEvent> = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].old_handle, fixture.initial_total_supply);
+    let event: token::TotalSupplyHandleUpdatedEvent = only_event(&result);
+    assert_eq!(event.old_handle, fixture.initial_total_supply);
     assert_eq!(
-        events[0].new_handle,
+        event.new_handle,
         store_handle(&value, token::total_supply_key())
     );
-    assert_eq!(
-        events[0].reason,
-        token::TotalSupplyUpdateReason::AllowViewers
-    );
+    assert_eq!(event.reason, token::TotalSupplyUpdateReason::AllowViewers);
 }
 
 #[test]
@@ -939,21 +933,10 @@ fn mollusk_owner_allows_balance_viewers() {
             &[fixture.owner, auditor]
         )
     );
-    let events: Vec<token::BalanceHandleUpdatedEvent> = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(events.len(), 1);
-    assert_eq!(
-        events[0].reason,
-        token::BalanceHandleUpdateReason::AllowViewers
-    );
-    assert_eq!(events[0].old_handle, fixture.alice_initial);
-    assert_eq!(
-        events[0].new_handle,
-        store_handle(&value, token::balance_key())
-    );
+    let event: token::BalanceHandleUpdatedEvent = only_event(&result);
+    assert_eq!(event.reason, token::BalanceHandleUpdateReason::AllowViewers);
+    assert_eq!(event.old_handle, fixture.alice_initial);
+    assert_eq!(event.new_handle, store_handle(&value, token::balance_key()));
 
     // The next balance write allows the owner alone again: the grant covered one handle.
     let transfer = confidential_transfer_ix(
@@ -1145,6 +1128,37 @@ fn deny_enabled_transfer_accounts(
 // initialize_mint / initialize_token_account
 // ---------------------------------------------------------------------------
 
+/// A mint authority, an unused confidential mint address, and `underlying` at `underlying_mint`.
+fn initialize_mint_context(
+    authority: Pubkey,
+    mint: Pubkey,
+    underlying_mint: Pubkey,
+    underlying: Account,
+) -> mollusk_svm::MolluskContext<HashMap<Pubkey, Account>> {
+    fixture_context(
+        mollusk(),
+        HashMap::from([
+            (authority, system_account(5_000_000_000)),
+            (mint, system_account(0)),
+            (underlying_mint, underlying),
+            (
+                token::total_supply_authority_address(mint).0,
+                system_account(0),
+            ),
+            (
+                token::total_supply_slot(mint).0.address(),
+                system_account(0),
+            ),
+            (
+                host::host_config_address().0,
+                host_config_account(authority, [0u8; 20]),
+            ),
+            (event_authority(host::id()), system_account(0)),
+            (event_authority(token::id()), system_account(0)),
+        ]),
+    )
+}
+
 #[test]
 fn mollusk_initialize_mint_creates_total_supply_encrypted_store() {
     let authority = Pubkey::new_unique();
@@ -1152,59 +1166,105 @@ fn mollusk_initialize_mint_creates_total_supply_encrypted_store() {
     let underlying_mint = Pubkey::new_unique();
     let total_supply_authority = token::total_supply_authority_address(mint).0;
     let total_supply_encrypted_store = token::total_supply_slot(mint).0.address();
-    let host_config_key = host::host_config_address().0;
-    let context = fixture_context(
-        mollusk(),
-        HashMap::from([
-            (authority, system_account(5_000_000_000)),
-            (mint, system_account(0)),
-            (
-                underlying_mint,
-                Account {
-                    lamports: 1_000_000_000,
-                    data: {
-                        let mut data = vec![0u8; anchor_spl::token::spl_token::state::Mint::LEN];
-                        anchor_spl::token::spl_token::state::Mint::pack(
-                            anchor_spl::token::spl_token::state::Mint {
-                                mint_authority: solana_sdk::program_option::COption::Some(
-                                    authority,
-                                ),
-                                supply: 0,
-                                decimals: 6,
-                                is_initialized: true,
-                                freeze_authority: solana_sdk::program_option::COption::None,
-                            },
-                            &mut data,
-                        )
-                        .unwrap();
-                        data
-                    },
-                    owner: anchor_spl::token::spl_token::id(),
-                    executable: false,
-                    rent_epoch: 0,
-                },
-            ),
-            (total_supply_authority, system_account(0)),
-            (total_supply_encrypted_store, system_account(0)),
-            (host_config_key, host_config_account(authority, [0u8; 20])),
-            (event_authority(host::id()), system_account(0)),
-            (event_authority(token::id()), system_account(0)),
-        ]),
+    let context = initialize_mint_context(
+        authority,
+        mint,
+        underlying_mint,
+        spl_mint_account(Some(authority), 0),
     );
-    let ix = initialize_mint_ix(authority, mint, underlying_mint, host_config_key);
+    let ix = initialize_mint_ix(
+        authority,
+        mint,
+        underlying_mint,
+        spl_token::id(),
+        host::host_config_address().0,
+    );
 
-    check_token_instruction(&context, &ix, &[Check::success()]);
+    let result = check_token_instruction(&context, &ix, &[Check::success()]);
 
     let stored = read_confidential_mint(&context, mint);
     assert_eq!(stored.authority, authority);
+    assert_eq!(stored.underlying_mint, underlying_mint);
+    assert_eq!(stored.decimals, zama_solana_test_kit::DECIMALS);
     // The supply belongs to the token application in the mint's scope, under the total-supply
     // PDA; nobody is allowed on it by default, so the create seals no leaf.
     let supply_value = read_encrypted_store(&context, total_supply_encrypted_store);
     assert_eq!(supply_value.program, token::id());
     assert_eq!(supply_value.scope, mint);
     assert_eq!(supply_value.authority, total_supply_authority);
-    assert!(supply_value.get(&token::total_supply_key()).is_some());
+    let total_supply = store_handle(&supply_value, token::total_supply_key());
     assert_eq!(supply_value.leaf_count, 0);
+
+    let event: token::TotalSupplyHandleUpdatedEvent = only_event(&result);
+    assert_eq!(event.version, token::APP_EVENT_VERSION);
+    assert_eq!(event.mint, mint);
+    assert_eq!(event.old_handle, [0; 32]);
+    assert_eq!(event.old_encrypted_store, Pubkey::default());
+    assert_eq!(event.new_handle, total_supply);
+    assert_eq!(event.new_encrypted_store, total_supply_encrypted_store);
+    assert_eq!(event.reason, token::TotalSupplyUpdateReason::Initialize);
+}
+
+#[test]
+fn mollusk_initialize_mint_rejects_underlying_mint_of_another_token_program() {
+    let authority = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+    let underlying_mint = Pubkey::new_unique();
+    let context = initialize_mint_context(
+        authority,
+        mint,
+        underlying_mint,
+        spl_mint_account(Some(authority), 0),
+    );
+
+    check_token_instruction(
+        &context,
+        &initialize_mint_ix(
+            authority,
+            mint,
+            underlying_mint,
+            spl_token_2022::id(),
+            host::host_config_address().0,
+        ),
+        &[token_error(
+            token::ConfidentialTokenError::UnderlyingTokenProgramMismatch,
+        )],
+    );
+    assert_eq!(
+        context.account_store.borrow().get(&mint),
+        Some(&system_account(0))
+    );
+}
+
+#[test]
+fn mollusk_initialize_mint_rejects_token_2022_mint_extensions() {
+    let authority = Pubkey::new_unique();
+    let mint = Pubkey::new_unique();
+    let underlying_mint = Pubkey::new_unique();
+    let context = initialize_mint_context(
+        authority,
+        mint,
+        underlying_mint,
+        token_2022_non_transferable_mint_account(6),
+    );
+
+    check_token_instruction(
+        &context,
+        &initialize_mint_ix(
+            authority,
+            mint,
+            underlying_mint,
+            spl_token_2022::id(),
+            host::host_config_address().0,
+        ),
+        &[token_error(
+            token::ConfidentialTokenError::UnsupportedToken2022Extension,
+        )],
+    );
+    assert_eq!(
+        context.account_store.borrow().get(&mint),
+        Some(&system_account(0))
+    );
 }
 
 #[test]
@@ -1244,27 +1304,19 @@ fn mollusk_initialize_token_account_creates_initial_balance_encrypted_store() {
         )
     );
 
-    let balance_events: Vec<token::BalanceHandleUpdatedEvent> = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(balance_events.len(), 1);
-    assert_eq!(balance_events[0].mint, fixture.mint);
-    assert_eq!(balance_events[0].owner, owner);
-    assert_eq!(balance_events[0].token_account, token_account);
-    assert_eq!(balance_events[0].old_handle, [0; 32]);
-    assert_eq!(balance_events[0].old_encrypted_store, Pubkey::default());
+    let balance_event: token::BalanceHandleUpdatedEvent = only_event(&result);
+    assert_eq!(balance_event.mint, fixture.mint);
+    assert_eq!(balance_event.owner, owner);
+    assert_eq!(balance_event.token_account, token_account);
+    assert_eq!(balance_event.old_handle, [0; 32]);
+    assert_eq!(balance_event.old_encrypted_store, Pubkey::default());
     assert_eq!(
-        balance_events[0].new_handle,
+        balance_event.new_handle,
         store_handle(&balance_store, token::balance_key())
     );
+    assert_eq!(balance_event.new_encrypted_store, balance_encrypted_store);
     assert_eq!(
-        balance_events[0].new_encrypted_store,
-        balance_encrypted_store
-    );
-    assert_eq!(
-        balance_events[0].reason,
+        balance_event.reason,
         token::BalanceHandleUpdateReason::Initialize
     );
 }
@@ -1582,7 +1634,7 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     assert_eq!(persistent_outputs, 2);
     assert_eq!(balance(&context, fixture.alice_token), 600);
     assert_eq!(balance(&context, fixture.bob_token), 500);
-    let event = transfer_event(&result);
+    let event: token::ConfidentialTransferEvent = only_event(&result);
     assert_eq!(
         handle_value(
             &context,
@@ -1636,20 +1688,13 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
         )
     );
 
-    let transfer_events: Vec<token::ConfidentialTransferEvent> = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(transfer_events.len(), 1);
-    assert_eq!(transfer_events[0].mint, fixture.mint);
-    assert_eq!(transfer_events[0].from_owner, fixture.owner);
-    assert_eq!(transfer_events[0].from_token_account, fixture.alice_token);
-    assert_eq!(transfer_events[0].to_owner, fixture.bob_owner);
-    assert_eq!(transfer_events[0].to_token_account, fixture.bob_token);
-    assert_eq!(transfer_events[0].transferred_handle, transferred_handle);
+    assert_eq!(event.mint, fixture.mint);
+    assert_eq!(event.from_owner, fixture.owner);
+    assert_eq!(event.from_token_account, fixture.alice_token);
+    assert_eq!(event.to_owner, fixture.bob_owner);
+    assert_eq!(event.to_token_account, fixture.bob_token);
     assert_eq!(
-        transfer_events[0].transferred_encrypted_store,
+        event.transferred_encrypted_store,
         fixture.alice_balance_store
     );
 
@@ -2159,8 +2204,8 @@ fn mollusk_confidential_transfer_rejects_owner_mismatch() {
     let fixture = TokenFixture::new();
     let context = fixture_context(mollusk(), fixture.base_accounts());
     let amount_handle = handle_for_chain(30, BALANCE_FHE_TYPE);
-    // Attestation correctly authored by bob, but bob is not `from_account`'s owner: the
-    // instruction's own owner-signer check must reject this before any ACL work happens.
+    // Attestation correctly authored by bob, but bob is not `from_account`'s owner:
+    // execute_transfer's owner check must reject this before any ACL work happens.
     let attestation = amount_attestation_for(amount_handle, 0, fixture.bob_owner, token::id());
     let mut ix = confidential_transfer_ix(
         &fixture,
@@ -2190,78 +2235,51 @@ fn mollusk_confidential_transfer_rejects_owner_mismatch() {
     );
 }
 
+/// The attested amount must be a euint64 written by the transfer authority for this program. Each
+/// mismatch is refused before either balance changes.
 #[test]
-fn mollusk_confidential_transfer_rejects_attestation_user_mismatch() {
+fn mollusk_confidential_transfer_rejects_misattested_amount() {
     let fixture = TokenFixture::new();
-    let context = fixture_context(mollusk(), fixture.base_accounts());
-    let amount_handle = handle_for_chain(31, BALANCE_FHE_TYPE);
-    // fromExternal binding: an attestation authored by someone other than the transfer authority
-    // (owner) must be rejected before any balance update.
-    let attestation = amount_attestation_for(amount_handle, 0, fixture.bob_owner, token::id());
-    let ix = confidential_transfer_ix(
-        &fixture,
-        fixture.alice_token,
-        fixture.bob_token,
-        fixture.alice_balance_store,
-        fixture.bob_balance_store,
-        attestation,
-    );
-
-    check_token_instruction(
-        &context,
-        &ix,
-        &[token_error(
+    let amount = handle_for_chain(31, BALANCE_FHE_TYPE);
+    for (attestation, error) in [
+        (
+            amount_attestation_for(amount, 0, fixture.bob_owner, token::id()),
             token::ConfidentialTokenError::AttestationUserMismatch,
-        )],
-    );
-
-    let alice_balance = read_encrypted_store(&context, fixture.alice_balance_store);
-    let bob_balance = read_encrypted_store(&context, fixture.bob_balance_store);
-    assert_eq!(
-        store_handle(&alice_balance, token::balance_key()),
-        fixture.alice_initial
-    );
-    assert_eq!(
-        store_handle(&bob_balance, token::balance_key()),
-        fixture.bob_initial
-    );
-}
-
-#[test]
-fn mollusk_confidential_transfer_rejects_attestation_contract_mismatch() {
-    let fixture = TokenFixture::new();
-    let context = fixture_context(mollusk(), fixture.base_accounts());
-    let amount_handle = handle_for_chain(32, BALANCE_FHE_TYPE);
-    // fromExternal binding: an attestation bound to a contract other than this program must be
-    // rejected before any balance update.
-    let attestation = amount_attestation_for(amount_handle, 0, fixture.owner, Pubkey::new_unique());
-    let ix = confidential_transfer_ix(
-        &fixture,
-        fixture.alice_token,
-        fixture.bob_token,
-        fixture.alice_balance_store,
-        fixture.bob_balance_store,
-        attestation,
-    );
-
-    check_token_instruction(
-        &context,
-        &ix,
-        &[token_error(
+        ),
+        (
+            amount_attestation_for(amount, 0, fixture.owner, Pubkey::new_unique()),
             token::ConfidentialTokenError::AttestationContractMismatch,
-        )],
-    );
+        ),
+        (
+            amount_attestation_for(handle_for_chain(31, 0), 0, fixture.owner, token::id()),
+            token::ConfidentialTokenError::AmountHandleTypeMismatch,
+        ),
+    ] {
+        let context = fixture_context(mollusk(), fixture.base_accounts());
 
-    let alice_balance = read_encrypted_store(&context, fixture.alice_balance_store);
-    let bob_balance = read_encrypted_store(&context, fixture.bob_balance_store);
-    assert_eq!(
-        store_handle(&alice_balance, token::balance_key()),
-        fixture.alice_initial
-    );
-    assert_eq!(
-        store_handle(&bob_balance, token::balance_key()),
-        fixture.bob_initial
-    );
+        check_token_instruction(
+            &context,
+            &confidential_transfer_ix(
+                &fixture,
+                fixture.alice_token,
+                fixture.bob_token,
+                fixture.alice_balance_store,
+                fixture.bob_balance_store,
+                attestation,
+            ),
+            &[token_error(error)],
+        );
+
+        for (balance_store, initial) in [
+            (fixture.alice_balance_store, fixture.alice_initial),
+            (fixture.bob_balance_store, fixture.bob_initial),
+        ] {
+            assert_eq!(
+                read_store_handle(&context, balance_store, token::balance_key()),
+                initial
+            );
+        }
+    }
 }
 
 fn assert_transfer_rejects_misbound_balance(
@@ -3016,6 +3034,21 @@ fn seed_pending_burn_in_context(
     address
 }
 
+/// The balance and total-supply handles, which a refused burn must leave unchanged.
+fn burn_state(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    fixture: &BurnRedeemFixture,
+) -> ([u8; 32], [u8; 32]) {
+    (
+        read_store_handle(context, fixture.balance_store, token::balance_key()),
+        read_store_handle(
+            context,
+            fixture.total_supply_store,
+            token::total_supply_key(),
+        ),
+    )
+}
+
 fn prepare_empty_pending_burn(
     context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
     fixture: &BurnRedeemFixture,
@@ -3313,6 +3346,97 @@ fn mollusk_confidential_burn_rejects_frozen_owner_ata() {
     );
 }
 
+/// The attested amount must be a euint64 written by the burning owner for this program. Each
+/// mismatch is refused before the burn touches the balance, the total supply or the pending burn.
+#[test]
+fn mollusk_confidential_burn_rejects_misattested_amount() {
+    let fixture = BurnRedeemFixture::new();
+    let amount = handle_for_chain(41, BALANCE_FHE_TYPE);
+    for (attestation, error) in [
+        (
+            amount_attestation_for(amount, 0, Pubkey::new_unique(), token::id()),
+            token::ConfidentialTokenError::AttestationUserMismatch,
+        ),
+        (
+            amount_attestation_for(amount, 0, fixture.owner, Pubkey::new_unique()),
+            token::ConfidentialTokenError::AttestationContractMismatch,
+        ),
+        (
+            amount_attestation_for(handle_for_chain(41, 0), 0, fixture.owner, token::id()),
+            token::ConfidentialTokenError::AmountHandleTypeMismatch,
+        ),
+    ] {
+        let context = fixture_context(burn_redeem_mollusk(), fixture.accounts(1_000));
+        let pending_burn = prepare_empty_pending_burn(&context, &fixture);
+        let before = burn_state(&context, &fixture);
+
+        check_token_instruction(
+            &context,
+            &confidential_burn_ix(&fixture, attestation, pending_burn),
+            &[token_error(error)],
+        );
+
+        assert_eq!(burn_state(&context, &fixture), before);
+        assert_eq!(
+            context.account_store.borrow().get(&pending_burn),
+            Some(&system_account(0))
+        );
+    }
+}
+
+/// A token account has at most one pending burn: both burn entry points take it only at its
+/// canonical address, so a second burn cannot open another one elsewhere while the first is
+/// unsettled. The burner signs for the other address, as an attacker holding its key would, so
+/// creating the account there would succeed and the seeds constraint is the only refusal.
+#[test]
+fn mollusk_burns_reject_pending_burn_at_non_canonical_address() {
+    let fixture = BurnRedeemFixture::new();
+    let mut accounts = fixture.accounts(1_000);
+    let amount_store = seed_burn_amount_store(
+        &fixture,
+        &mut accounts,
+        fixture.token_account,
+        token::transfer_input_key(),
+        handle_for_chain(42, BALANCE_FHE_TYPE),
+    );
+    let elsewhere = Pubkey::new_unique();
+    accounts.insert(elsewhere, system_account(0));
+    let context = fixture_context(burn_redeem_mollusk(), accounts);
+    seed_pending_burn_in_context(&context, &fixture, handle_for_chain(40, BALANCE_FHE_TYPE));
+    let before = burn_state(&context, &fixture);
+
+    for mut burn in [
+        confidential_burn_ix(&fixture, fixture.owner_attestation(41, 0), elsewhere),
+        confidential_burn_from_value_ix(
+            &fixture,
+            fixture.owner,
+            fixture.owner,
+            amount_store,
+            token::transfer_input_key(),
+            elsewhere,
+        ),
+    ] {
+        for meta in burn
+            .accounts
+            .iter_mut()
+            .filter(|meta| meta.pubkey == elsewhere)
+        {
+            meta.is_signer = true;
+        }
+        check_token_instruction(
+            &context,
+            &burn,
+            &[anchor_error(anchor_lang::error::ErrorCode::ConstraintSeeds)],
+        );
+
+        assert_eq!(burn_state(&context, &fixture), before);
+        assert_eq!(
+            context.account_store.borrow().get(&elsewhere),
+            Some(&system_account(0))
+        );
+    }
+}
+
 #[test]
 fn mollusk_confidential_burn_makes_burned_amount_publicly_decryptable() {
     let fixture = BurnRedeemFixture::new();
@@ -3388,12 +3512,7 @@ fn mollusk_confidential_burn_rejects_occupied_pending_pda_atomically() {
         let mut accounts = fixture.accounts(1_000);
         accounts.insert(pending_burn, occupied.clone());
         let context = fixture_context(burn_redeem_mollusk(), accounts);
-        let old_balance = read_store_handle(&context, fixture.balance_store, token::balance_key());
-        let old_supply = read_store_handle(
-            &context,
-            fixture.total_supply_store,
-            token::total_supply_key(),
-        );
+        let before = burn_state(&context, &fixture);
 
         check_token_instruction(
             &context,
@@ -3403,18 +3522,7 @@ fn mollusk_confidential_burn_rejects_occupied_pending_pda_atomically() {
             )],
         );
 
-        assert_eq!(
-            read_store_handle(&context, fixture.balance_store, token::balance_key()),
-            old_balance
-        );
-        assert_eq!(
-            read_store_handle(
-                &context,
-                fixture.total_supply_store,
-                token::total_supply_key()
-            ),
-            old_supply
-        );
+        assert_eq!(burn_state(&context, &fixture), before);
         let unchanged = context
             .account_store
             .borrow()
@@ -3440,7 +3548,7 @@ fn mollusk_redeem_current_pending_burn_then_rejects_double_settlement() {
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, cleartext_amount);
     let pending_burn = seed_pending_burn_in_context(&context, &fixture, burned_handle);
     let supply_before = context.account_store.borrow()[&fixture.total_supply_store].clone();
-    check_token_instruction(
+    let result = check_token_instruction(
         &context,
         &redeem_burned_amount_ix(
             &fixture,
@@ -3452,6 +3560,15 @@ fn mollusk_redeem_current_pending_burn_then_rejects_double_settlement() {
         ),
         &[Check::success()],
     );
+    let event: token::BurnRedeemedEvent = only_event(&result);
+    assert_eq!(event.version, token::APP_EVENT_VERSION);
+    assert_eq!(event.mint, fixture.mint);
+    assert_eq!(event.owner, fixture.owner);
+    assert_eq!(event.token_account, fixture.token_account);
+    assert_eq!(event.burned_handle, burned_handle);
+    assert_eq!(event.burned_encrypted_store, fixture.burned_amount_store);
+    assert_eq!(event.destination_usdc, fixture.destination_usdc);
+    assert_eq!(event.cleartext_amount, cleartext_amount);
     // The burn already took the amount out of the encrypted supply; redeem only pays it out.
     assert_eq!(
         context.account_store.borrow()[&fixture.total_supply_store],
@@ -4032,6 +4149,18 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
     let burn_result = check_token_instruction(&context, &burn, &[Check::success()]);
     check_fhe_cpi(&context, &burn_result);
     assert_eq!(balance(&context, fixture.token_account), 750);
+    let burned_handle = read_store_handle(
+        &context,
+        fixture.burned_amount_store,
+        token::burned_amount_key(),
+    );
+    let event: token::ConfidentialBurnEvent = only_event(&burn_result);
+    assert_eq!(event.version, token::APP_EVENT_VERSION);
+    assert_eq!(event.mint, fixture.mint);
+    assert_eq!(event.owner, fixture.owner);
+    assert_eq!(event.token_account, fixture.token_account);
+    assert_eq!(event.burned_handle, burned_handle);
+    assert_eq!(event.burned_encrypted_store, fixture.burned_amount_store);
     assert_eq!(
         store_u64(
             &context,
@@ -4069,6 +4198,13 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
     let cancel = cancel_pending_burn_ix(&fixture, pending_burn, Some(deny_record));
     let cancel_result = check_token_instruction(&context, &cancel, &[Check::success()]);
     check_fhe_cpi(&context, &cancel_result);
+    let event: token::PendingBurnCancelledEvent = only_event(&cancel_result);
+    assert_eq!(event.version, token::APP_EVENT_VERSION);
+    assert_eq!(event.mint, fixture.mint);
+    assert_eq!(event.owner, fixture.owner);
+    assert_eq!(event.token_account, fixture.token_account);
+    assert_eq!(event.burned_handle, burned_handle);
+    assert_eq!(event.burned_encrypted_store, fixture.burned_amount_store);
 
     assert_eq!(balance(&context, fixture.token_account), 1_000);
     assert_eq!(
@@ -4086,11 +4222,6 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
     assert!(check_token_instruction(&context, &cancel, &[])
         .raw_result
         .is_err());
-    let burned_handle = read_store_handle(
-        &context,
-        fixture.burned_amount_store,
-        token::burned_amount_key(),
-    );
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 250);
     assert!(check_token_instruction(
         &context,
@@ -4750,15 +4881,10 @@ fn disclose_secp_ix(
 /// Asserts the instruction emitted exactly one `HandleDisclosedEvent` for `handle`. The host
 /// verifier's `return_data` is asserted in `host_mollusk.rs`; the token program consumes it.
 fn assert_disclosed(result: &InstructionResult, handle: [u8; 32], cleartext_amount: u64) {
-    let events: Vec<token::HandleDisclosedEvent> = result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| decode_anchor_event(&inner.instruction.data))
-        .collect();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].version, token::APP_EVENT_VERSION);
-    assert_eq!(events[0].handle, handle);
-    assert_eq!(events[0].cleartext_amount, cleartext_amount);
+    let event: token::HandleDisclosedEvent = only_event(result);
+    assert_eq!(event.version, token::APP_EVENT_VERSION);
+    assert_eq!(event.handle, handle);
+    assert_eq!(event.cleartext_amount, cleartext_amount);
 }
 
 #[test]
@@ -4781,6 +4907,23 @@ fn mollusk_disclose_secp_emits_certified_handle_and_cleartext() {
         &[Check::success()],
     );
     assert_disclosed(&result, handle, cleartext_amount);
+}
+
+/// Disclosure does not check the handle's FHE type, as ERC-7984 does not: a certified ebool
+/// handle is disclosed like an amount.
+#[test]
+fn mollusk_disclose_secp_does_not_check_the_handle_fhe_type() {
+    let fixture = DiscloseFixture::new();
+    let handle = handle_for_chain(43, 0);
+    let context = fixture_context(mollusk(), fixture.base());
+
+    let (signatures, extra_data) = amount_public_decrypt_cert(handle, 1);
+    let result = check_token_instruction(
+        &context,
+        &disclose_secp_ix(&fixture, handle, u256_be(1), signatures, extra_data),
+        &[Check::success()],
+    );
+    assert_disclosed(&result, handle, 1);
 }
 
 #[test]
@@ -5042,7 +5185,7 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
     assert_eq!(persistent_outputs, 2);
     assert_eq!(balance(&context, fixture.alice_token), 750);
     assert_eq!(balance(&context, fixture.bob_token), 350);
-    let event = transfer_event(&result);
+    let event: token::ConfidentialTransferEvent = only_event(&result);
     assert_eq!(
         handle_value(
             &context,
@@ -5234,6 +5377,35 @@ fn mollusk_transfer_from_value_spends_full_balance_with_balance_store_account_as
     assert_eq!(persistent_outputs, 2);
     assert_eq!(balance(&context, fixture.alice_token), 0);
     assert_eq!(balance(&context, fixture.bob_token), 1_100);
+}
+
+/// The spend gate admits a token account's own values, so it cannot stop a stranger who names
+/// another owner's account and its balance as the amount. Only the owner check on `from_account`
+/// rejects the debit.
+#[test]
+fn mollusk_transfer_from_value_rejects_signer_not_from_account_owner() {
+    let fixture = TokenFixture::new();
+    let context = fixture_context(mollusk(), fixture.base_accounts());
+    seed_u64(&context, fixture.alice_initial, 1_000);
+    seed_u64(&context, fixture.bob_initial, 100);
+
+    let transfer = confidential_transfer_from_value_ix(
+        &fixture,
+        fixture.bob_owner,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
+        fixture.alice_balance_store,
+    );
+    check_token_instruction(
+        &context,
+        &transfer,
+        &[token_error(token::ConfidentialTokenError::OwnerMismatch)],
+    );
+
+    assert_eq!(balance(&context, fixture.alice_token), 1_000);
+    assert_eq!(balance(&context, fixture.bob_token), 100);
 }
 
 /// Re-sending a sent amount: the sender spends their own `transferred_amount` value, which is

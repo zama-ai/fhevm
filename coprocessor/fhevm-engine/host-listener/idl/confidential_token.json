@@ -4435,61 +4435,56 @@
     },
     {
       "code": 6019,
-      "name": "PendingBurnAddressMismatch",
-      "msg": "pending burn address does not match"
-    },
-    {
-      "code": 6020,
       "name": "PendingBurnAlreadyInitialized",
       "msg": "pending burn is already initialized"
     },
     {
-      "code": 6021,
+      "code": 6020,
       "name": "PendingBurnHandleNotCurrent",
       "msg": "pending burn handle is not the burned amount current handle"
     },
     {
-      "code": 6022,
+      "code": 6021,
       "name": "PendingBurnMismatch",
       "msg": "pending burn fields do not match"
     },
     {
-      "code": 6023,
+      "code": 6022,
       "name": "UnderlyingTokenProgramMismatch",
       "msg": "underlying token program does not match"
     },
     {
-      "code": 6024,
+      "code": 6023,
       "name": "UnsupportedToken2022Extension",
       "msg": "unsupported Token-2022 extension"
     },
     {
-      "code": 6025,
+      "code": 6024,
       "name": "UnderlyingTokenAccountFrozen",
       "msg": "underlying token account is frozen"
     },
     {
-      "code": 6026,
+      "code": 6025,
       "name": "DisclosedValueBindingMismatch",
       "msg": "disclosed value does not match its declared token state field"
     },
     {
-      "code": 6027,
+      "code": 6026,
       "name": "EncryptedStoreAuthorityMismatch",
       "msg": "encrypted store authority does not match token account"
     },
     {
-      "code": 6028,
+      "code": 6027,
       "name": "TokenEncryptedStoreMismatch",
       "msg": "token encrypted store is not canonical"
     },
     {
-      "code": 6029,
+      "code": 6028,
       "name": "UnderlyingAssociatedAccountMismatch",
       "msg": "underlying associated token account does not match"
     },
     {
-      "code": 6030,
+      "code": 6029,
       "name": "ResultGrantMismatch",
       "msg": "invalid result grant accounts or self-transfer result request"
     }

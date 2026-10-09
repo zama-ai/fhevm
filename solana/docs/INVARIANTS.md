@@ -129,7 +129,8 @@ Related token/Host lifecycle guardrails are:
   `["pending-burn", mint, token_account]`. A second burn is rejected before FHE execution until `redeem_burned_amount`
   or `cancel_pending_burn` closes the account and returns its rent to the owner. Parallel burns for one token account
   are deliberately deferred; applications can aggregate an amount or use separate app-owned token accounts. Pinned by
-  `mollusk_confidential_burn_is_sequential_until_cancelled`.
+  `mollusk_confidential_burn_is_sequential_until_cancelled` and
+  `mollusk_burns_reject_pending_burn_at_non_canonical_address`.
 - **11d [HOLDS].** `cancel_pending_burn` requires the pending burned handle to equal the Store’s current burned-amount
   slot handle. A stale or mismatched pending burn cannot restore value. Pinned by
   `mollusk_cancel_pending_burn_rejects_stale_current_handle_atomically`.
@@ -259,8 +260,8 @@ no allocator was shipped is DD-046 (fhevm-internal#1872).
 
 **19. [HOLDS]** A verified input is consumed only with a threshold-valid
 coprocessor attestation that names the calling program and the host chain id.
-Pinned by `verifies_full_coprocessor_input_flow`, `mollusk_confidential_transfer_rejects_attestation_user_mismatch` and
-`mollusk_confidential_transfer_rejects_attestation_contract_mismatch`.
+Pinned by `verifies_full_coprocessor_input_flow`, `mollusk_confidential_transfer_rejects_misattested_amount` and
+`mollusk_confidential_burn_rejects_misattested_amount`.
 
 **20. [HOLDS]** Verified inputs grant nothing persistent: they are usable only
 inside the carrying execution; persistence requires an explicit output with its
@@ -562,11 +563,13 @@ chain type first.
 
 **55. [HOLDS]** `disclose_secp` verifies a KMS certificate through `verify_public_decrypt` and emits
 `HandleDisclosedEvent { handle, cleartext_amount }`, as ERC-7984 `discloseEncryptedAmount` emits `AmountDisclosed`. It
-reads no token account, no Store and no mint. The event carries no slot key and no token kind; which account and
-operation produced the handle is known from that operation's own event. A certificate stays valid after the slot moves
-on, so an old handle can be disclosed at any time, and disclosing it again emits the same event.
+reads no token account, no Store and no mint. It does not check the handle's FHE type, as ERC-7984 does not. The event
+carries no slot key and no token kind; which account and operation produced the handle is known from that operation's
+own event. A certificate stays valid after the slot moves on, so an old handle can be disclosed at any time, and
+disclosing it again emits the same event.
 Pinned by `mollusk_disclose_secp_emits_certified_handle_and_cleartext`,
-`mollusk_disclose_secp_rejects_cleartext_wider_than_u64` and `mollusk_disclose_secp_is_idempotent_no_replay_marker`.
+`mollusk_disclose_secp_does_not_check_the_handle_fhe_type`, `mollusk_disclose_secp_rejects_cleartext_wider_than_u64`
+and `mollusk_disclose_secp_is_idempotent_no_replay_marker`.
 
 **56. [HOLDS]** An underlying mint's owner pins one token program. Wrap and
 redeem require that program to own the underlying mint and both token
