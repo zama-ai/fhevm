@@ -7,12 +7,10 @@ import {
   createTransactionMessage,
   createTransactionPlanExecutor,
   createTransactionPlanner,
-  fillTransactionMessageProvisoryResourceLimits,
   isSolanaError,
   pipe,
   sequentialInstructionPlan,
   setTransactionMessageFeePayerSigner,
-  setTransactionMessageLoadedAccountsDataSizeLimit,
   SOLANA_ERROR__INSTRUCTION_PLANS__UNEXPECTED_TRANSACTION_PLAN,
   type SolanaError,
   type Instruction,
@@ -38,8 +36,9 @@ const body = (tag: number, size = 1): Instruction => ({
   data: new Uint8Array(size).fill(tag),
 });
 
-// The version-1 planner zama-host's `v1TransactionSigning` uses, built from the same Kit parts: the SDK
-// does not depend on zama-host. The executor records each transaction it is handed.
+// A plain planner over version 1 messages, so the split case below runs at the 4,096-byte limit. The
+// production planner and its resource limits are tested where they live, in zama-host's clients. The
+// executor records each transaction it is handed.
 function recordingClient() {
   const executed: TransactionMessage[] = [];
   const executor = createTransactionPlanExecutor({
@@ -50,12 +49,7 @@ function recordingClient() {
   });
   const planner = createTransactionPlanner({
     createTransactionMessage: () =>
-      pipe(
-        createTransactionMessage({ version: 1 }),
-        (message) => setTransactionMessageFeePayerSigner(payer, message),
-        (message) => setTransactionMessageLoadedAccountsDataSizeLimit(64 * 1024 * 1024, message),
-        fillTransactionMessageProvisoryResourceLimits,
-      ),
+      pipe(createTransactionMessage({ version: 1 }), (message) => setTransactionMessageFeePayerSigner(payer, message)),
   });
   const sending = createClient()
     .use(transactionPlanner(planner))
@@ -120,7 +114,7 @@ describe('prepareTransientStore', () => {
 });
 
 describe('transientStoreTransactions', () => {
-  it('signs and sends the sandwich as one version 1 transaction that ends with the close', async () => {
+  it('signs and sends the sandwich as one transaction that ends with the close', async () => {
     const { client, executed } = recordingClient();
     const transientStore = await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
     for (const instructions of [
@@ -132,8 +126,6 @@ describe('transientStoreTransactions', () => {
       await client.sendFheTransaction(transientStore, instructions);
       expect(executed).toHaveLength(2);
       for (const message of executed) {
-        expect(message.version).toBe(1);
-        // v1 carries the compute limit in the message config, so no ComputeBudget instruction is added.
         expect(message.instructions.slice(1, -1)).toEqual(instructions);
         expect([...message.instructions.at(-1)!.data!.slice(0, 8)]).toEqual([107, 197, 28, 166, 51, 173, 83, 189]);
       }

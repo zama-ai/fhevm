@@ -75,9 +75,10 @@ trusted for authorization.
 - **Transaction size is a design input.** Execution wire data interns
   repeated 32-byte values in a dictionary. The demo, the deployer and the test
   suite send every transaction as version 1 (at most 4,096 bytes and 64 account
-  keys), which the KMS settle at the host's largest threshold needs; only the
-  Squads test harness still executes outside that client. Both bounds are
-  pinned by tests, not assumed.
+  keys), which the KMS settle at the host's largest threshold needs. Two
+  exceptions: the Squads test harness still executes outside that client, and
+  the deployer's program uploads are `solana program deploy`'s own
+  transactions. Both bounds are pinned by tests, not assumed.
 - **The chain-type byte.** Solana chain ids start with `0x01`, which lets 32-byte
   handles ride the shared gateway and coprocessor infrastructure while every
   consumer can branch on chain type where the shapes genuinely differ.

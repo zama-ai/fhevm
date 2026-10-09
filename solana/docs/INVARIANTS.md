@@ -640,8 +640,9 @@ request another can serve, or hold it longer than that delay. Authorization was
 never its to give (#30).
 
 **48. [HOLDS]** The demo, the deployer and the test suite send every
-transaction as version 1 (at most 4,096 bytes and 64 account keys); only the
-Squads test harness still executes outside that client. Settle at the host's
+transaction as version 1 (at most 4,096 bytes and 64 account keys). Two
+exceptions: the Squads test harness still executes outside that client, and the
+deployer's program uploads are `solana program deploy`'s own transactions. Settle at the host's
 largest KMS threshold and join at its largest coprocessor threshold, each with
 every deny and HCU witness, fit one, and that settle stays within the compute a
 transaction may request. Pinned by

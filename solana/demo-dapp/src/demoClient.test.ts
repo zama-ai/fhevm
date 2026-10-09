@@ -12,7 +12,7 @@ import { testDemoClient } from './testDemoClient';
 describe('demo client', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('waits for finalization under the caller abort signal', async () => {
+  it('passes the caller abort signal to the finalized wait', async () => {
     const payer = await generateKeyPairSigner();
     const { client } = testDemoClient(payer);
     const { signal } = new AbortController();

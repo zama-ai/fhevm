@@ -26,7 +26,7 @@ import { rpcTransactionPlanSigningExecutor, type RpcSignContext } from '@solana/
 const MAX_LOADED_ACCOUNTS_DATA_SIZE_LIMIT = 64 * 1024 * 1024;
 
 /** A sent transaction's context: the signing context, with the fee payer's signature always present. */
-export type FinalizedSendContext = RpcSignContext & { readonly signature: Signature };
+type FinalizedSendContext = RpcSignContext & { readonly signature: Signature };
 
 /**
  * Plans every transaction as version 1 and signs it with kit-plugin-rpc's signing executor, which sets
