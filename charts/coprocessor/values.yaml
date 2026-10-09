@@ -227,8 +227,8 @@ dbMigration:
   #
   # Default hooks are disabled because Helm pre-install/pre-upgrade hooks run
   # before normal chart resources. The migration Job can depend on chart-created
-  # ConfigMaps/Secrets (for example the IAM DB auth RDS CA ConfigMap), which
-  # would not exist yet during a hook on fresh installs or first enablement.
+  # ConfigMaps (for example the contract-address ConfigMaps), which would not
+  # exist yet during a hook on fresh installs or first enablement.
   #
   # The wave1 *_branch shadow tables are deprecated in v0.15 (no v0.15 binary
   # reads or writes them) but are only dropped by a v0.16 migration; see
@@ -238,11 +238,12 @@ dbMigration:
   # column this release's migration adds. A green (new release) fleet must start
   # after its migration Job has run: a service that starts earlier exits with an
   # error and restarts. For the green release, enable the hook below so Helm runs
-  # the Job before the Deployments. Every Job dependency must then be
-  # pre-existing or rendered as an earlier hook with a lower hook weight.
+  # the Job before the Deployments. The RDS CA hook runs at the same events with
+  # weight one below the Job; its ConfigMap survives uninstall. Other dependencies
+  # must already exist.
   annotations: {}
   # annotations:
-  #   "helm.sh/hook": "pre-upgrade"
+  #   "helm.sh/hook": "pre-install,pre-upgrade"
   #   "helm.sh/hook-weight": "5"
   #   "helm.sh/hook-delete-policy": "before-hook-creation"
 
