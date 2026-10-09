@@ -256,7 +256,9 @@ async fn apply_block(
 
 /// The block's parent row must be at the height below it. The consensus detector numbers manifest
 /// ranges by height, and `mark_block_as_valid` records an ingested block as finalized without
-/// refusing a parent that disagrees. Only the chain's first row has no parent row.
+/// refusing a parent that disagrees. Only the chain's first row has no parent row. A block that is
+/// already recorded was checked when it was first applied, by this replica or another, and its
+/// replay writes nothing new.
 async fn require_parent_height(
     db_tx: &mut Transaction<'_>,
     chain_id: i64,
@@ -268,16 +270,22 @@ async fn require_parent_height(
             (SELECT block_number FROM host_chain_blocks_valid
               WHERE chain_id = $1 AND block_hash = $2) AS parent_height,
             EXISTS (SELECT 1 FROM host_chain_blocks_valid WHERE chain_id = $1)
-                AS "chain_has_rows!"
+                AS "chain_has_rows!",
+            EXISTS (SELECT 1 FROM host_chain_blocks_valid
+                     WHERE chain_id = $1 AND block_hash = $3) AS "recorded!"
         "#,
         chain_id,
         block.parent_hash.as_slice(),
+        block.hash.as_slice(),
     )
     .fetch_one(db_tx.as_mut())
     .await
     .map_err(|err| {
         IngestFailure::retryable(err).context("read the parent block row")
     })?;
+    if parent.recorded {
+        return Ok(());
+    }
     match parent.parent_height {
         Some(height) if height as u64 + 1 == block.number => Ok(()),
         Some(height) => Err(IngestFailure::fatal(anyhow!(

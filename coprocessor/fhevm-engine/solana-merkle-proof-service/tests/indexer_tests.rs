@@ -392,7 +392,9 @@ async fn only_a_different_hash_at_the_checkpoint_stops_the_indexer() {
 /// overlapping, and concurrently. The record is the one a single run builds, and the checkpoint
 /// never moves back. The replica behind the checkpoint does not stop. The checkpoint is the only
 /// guard: the leaf writes alone would apply a block twice, as
-/// `a_rewound_checkpoint_cannot_reapply_recorded_leaves` shows.
+/// `a_rewound_checkpoint_cannot_reapply_recorded_leaves` shows. Before the first block is recorded
+/// there is no checkpoint row to lock: two replicas can both write that block, and the second
+/// fails retryably on the leaf key and finds it recorded when the follower hands it again.
 #[tokio::test]
 #[serial(db)]
 async fn two_replicas_build_the_single_run_record() {
@@ -441,11 +443,27 @@ async fn two_replicas_build_the_single_run_record() {
     );
     let first = MerkleIndexerSink::new(pool.clone());
     for block in &blocks {
-        let (a, b) = tokio::join!(first.apply(block), second.apply(block));
-        a.unwrap();
-        b.unwrap();
+        tokio::join!(
+            apply_as_the_follower(&first, block),
+            apply_as_the_follower(&second, block)
+        );
     }
     assert_eq!(Record::read(&pool).await, expected);
+}
+
+/// Applies `block` as the follower does: a retryable failure hands the same block again.
+async fn apply_as_the_follower(
+    sink: &MerkleIndexerSink,
+    block: &PreparedBlock,
+) {
+    for _ in 0..3 {
+        match sink.apply(block).await {
+            Ok(()) => return,
+            Err(failure) if !failure.is_fatal() => continue,
+            Err(failure) => panic!("{failure}"),
+        }
+    }
+    panic!("slot {} still fails after 3 attempts", block.block.slot);
 }
 
 /// A store whose first write the record sees already held leaves was created before the

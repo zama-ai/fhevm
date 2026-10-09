@@ -61,7 +61,9 @@ impl IndexerStart {
 /// replicas apply every block, and the checkpoint row, locked here, is the only guard: the leaf
 /// and cursor writes are not idempotent on their own. A block at or below the checkpoint was
 /// already applied, by this replica or another, and writes nothing. A different hash at the
-/// checkpoint's slot stops the indexer because finalized blocks do not change.
+/// checkpoint's slot stops the indexer because finalized blocks do not change. Before the first
+/// block is recorded there is no row to lock: a second replica writing that block fails retryably
+/// on the leaf key, and the follower hands it again.
 async fn apply_block(
     pool: &PgPool,
     prepared: &PreparedBlock,
