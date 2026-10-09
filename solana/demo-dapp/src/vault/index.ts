@@ -54,11 +54,13 @@ export {
   type SolanaVaultSettleAccounts,
 } from './derive.js';
 export {
+  dispatchableAt,
   getBatcher,
   getBatchByIndex,
   getCurrentBatch,
   getEncryptedStore,
   getJoinRecord,
+  settleDeadline,
   type BatcherState,
   type BatchState,
   type JoinRecordState,

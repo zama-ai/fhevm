@@ -10,6 +10,7 @@ import {
 import {
   buildCancelDispatchInstruction,
   buildDispatchBatchInstruction,
+  dispatchableAt,
   getReclaimBatchAuthorityInstructionAsync,
   findJoinRecordPda,
   getBatchByIndex,
@@ -18,6 +19,7 @@ import {
   getCloseJoinRecordInstructionAsync,
   readHostPolicy,
   settleBatch,
+  settleDeadline,
 } from './vault/index.js';
 
 import {
@@ -64,10 +66,10 @@ export const readVaultLifecycle = async (
   if (batch.state.status === BatchStatus.Pending) {
     const batcher = await getBatcher(rpc, vaultRoots(session.config, direction).batcher);
     const { unixTimestamp } = await fetchSysvarClock(rpc);
-    const dispatchableAt = batch.state.openedAt + batcher.minBatchAgeSecs;
+    const from = dispatchableAt(batch.state, batcher);
     return {
       kind: 'awaiting-dispatch',
-      remainingSecs: unixTimestamp >= dispatchableAt ? 0n : dispatchableAt - unixTimestamp,
+      remainingSecs: unixTimestamp >= from ? 0n : from - unixTimestamp,
     };
   }
   if (batch.state.status === BatchStatus.Dispatched) {
@@ -98,7 +100,7 @@ export const dispatchVaultBatch = async (
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
   if (batch.state.status >= BatchStatus.Dispatched) return null;
   const batcher = await getBatcher(rpc, roots.batcher);
-  if ((await fetchSysvarClock(rpc)).unixTimestamp < batch.state.openedAt + batcher.minBatchAgeSecs) {
+  if ((await fetchSysvarClock(rpc)).unixTimestamp < dispatchableAt(batch.state, batcher)) {
     throw new Error('The batch is not old enough to dispatch yet');
   }
   const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
@@ -116,7 +118,7 @@ export const dispatchVaultBatch = async (
     .signature;
 };
 
-export const settleVaultBatch = async (
+export const settleOrCancelVaultBatch = async (
   session: DemoOperatorSession,
   position: BatchTarget,
   direction: VaultDirection,
@@ -132,8 +134,8 @@ export const settleVaultBatch = async (
   if (batch.state.status !== BatchStatus.Dispatched) throw new Error('Dispatch the batch before settlement');
 
   const keeperClient = createDemoClient(session.config, session.keeper);
-  const { settleDeadlineSecs } = await getBatcher(rpc, roots.batcher);
-  if ((await fetchSysvarClock(rpc)).unixTimestamp >= batch.state.dispatchedAt + settleDeadlineSecs) {
+  const batcher = await getBatcher(rpc, roots.batcher);
+  if ((await fetchSysvarClock(rpc)).unixTimestamp >= settleDeadline(batch.state, batcher)) {
     // Settle is refused from the deadline on; cancelling opens the participants' refunds instead.
     const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
     const cancel = await buildCancelDispatchInstruction({

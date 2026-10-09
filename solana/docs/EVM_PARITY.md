@@ -38,7 +38,7 @@ the count (the accepted behavior tracked in #1888 differs from EVM's rejection).
 | Balance / total supply                             | Read the corresponding slot in the token-account or total-supply-authority Store.                                                                                                                                                                                                      |
 | Mint                                               | `wrap_usdc` escrows underlying SPL tokens and increases encrypted balance and supply. This is wrapping rather than arbitrary ERC7984 minting.                                                                                                                                          |
 | Burn / underlying redemption                       | Burn reduces balance/supply, records its result in a slot and creates one PendingBurn per token account. Redemption verifies the exact result/certificate and consumes PendingBurn before another burn can start.                                                                      |
-| Cancel pending burn                                | Restores encrypted balance and supply; cannot also redeem that same pending burn. Anyone may cancel a batch once its settle deadline has passed, which opens refunds.                                                                                                                  |
+| Cancel pending burn                                | Restores encrypted balance and supply; cannot also redeem that same pending burn. A batch past its settle deadline is cancelled and refunded (DD-045).                                                                                                                                 |
 | Rent after a batch                                 | Once a batch is settled, canceled or refunding, the join mint authority reclaims the batch authority's unspent funding (`reclaim_batch_authority`) and a user closes a claimed or canceled-batch join record (`close_join_record`); `quit` closes it in a pending or refunding batch. The demo keeper cranks the reclaim; the demo page closes the user's join record.  |
 | Public disclosure                                  | `disclose_secp` verifies the KMS certificate and emits the certified handle and cleartext, as ERC-7984 `discloseEncryptedAmount` does. It reads no token state and certifies no caller-supplied token-kind label. Original token events identify the account and the operation.        |
 | Later viewers                                      | Authority-gated balance/supply wrappers produce a new output with the requested viewers. They do not grant a new viewer access to an arbitrary history-only handle.                                                                                                                    |
@@ -48,9 +48,13 @@ Classic Token and extension-free Token-2022 are supported. Mint extensions fail 
 the canonical underlying ATAs, with the existing no-ATA/closed-ATA limitation tracked in #1981.
 Wrap and redeem also validate the accounts they move; cancellation is not freeze-gated.
 
-A dust deposit can fail vault settlement with `ZeroShares`. Recovery waits for the settle deadline:
-then anyone may cancel the batch and run each `quit`. The vault and batcher tests cover settlement
-rollback and the cancellation/refund lifecycle.
+A dust deposit can fail vault settlement with `ZeroShares`. Recovery waits for the settle-deadline
+cancellation and refunds (DD-045). The vault and batcher tests cover settlement rollback and the
+cancellation/refund lifecycle.
+
+The batcher caps the minimum batch age at 7 days and the settle deadline at 30 days, as EVM's vault
+batcher does. EVM also accepts a deadline of 0, which cancels every batch when its decryption
+arrives. Solana rejects 0: such a batcher could never settle.
 
 ## Gateway, coprocessor and KMS
 

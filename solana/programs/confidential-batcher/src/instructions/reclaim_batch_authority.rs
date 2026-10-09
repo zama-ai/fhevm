@@ -5,7 +5,7 @@
 //! Once a batch is settled, canceled or refunding, nothing charges the authority any more: claims
 //! and quits pay their own rent through their `payer`, and the authority only signs. The PDA's
 //! whole balance is returned to the join mint's wrapper authority, the operator role that funds
-//! batches and cancels dispatches.
+//! batches.
 
 use super::*;
 

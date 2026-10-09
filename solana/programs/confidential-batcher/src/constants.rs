@@ -6,10 +6,10 @@
 /// reads. Version 3: batch ages and the settle deadline in unix seconds.
 pub const APP_EVENT_VERSION: u8 = 3;
 
-/// Upper bound on `Batcher::min_batch_age_secs`, as on EVM.
+/// Upper bound on `Batcher::min_batch_age_secs`.
 pub const MAX_MIN_BATCH_AGE_SECS: u64 = 7 * 24 * 60 * 60;
 
-/// Upper bound on `Batcher::settle_deadline_secs`, as on EVM.
+/// Upper bound on `Batcher::settle_deadline_secs`.
 pub const MAX_SETTLE_DEADLINE_SECS: u64 = 30 * 24 * 60 * 60;
 
 /// Fixed-point scale of a batch's public payout rate:

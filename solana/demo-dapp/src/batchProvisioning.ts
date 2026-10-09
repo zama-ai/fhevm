@@ -26,7 +26,7 @@ export const RECLAIM_SCAN_WINDOW = 8n;
  * funded at open (and again at cancel/settle) to pay the rent token CPIs charge to the account
  * owner, and keeps whatever is left. Once the batch is settled, canceled or refunding nothing
  * charges the authority any more, so the operator takes the remainder back with
- * `reclaim_batch_authority`. `settleVaultBatch` reclaims eagerly on the happy path; this pass
+ * `reclaim_batch_authority`. `settleOrCancelVaultBatch` reclaims eagerly on the happy path; this pass
  * catches every batch that finished another way (a canceled dispatch, a zero-total cancel at
  * settle, a process that exited between settle and reclaim) and is idempotent: a drained
  * authority is skipped. One batch read and one balance read per batch in the last

@@ -308,8 +308,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // wait for that age explicitly instead of catch-and-retrying an on-chain revert. The dispatch
       // transaction executes no earlier than the finalized clock observed here, so this condition
       // is sufficient, not merely close.
-      const { minBatchAgeSecs } = await vault.getBatcher(rpc, roots.batcher);
-      const dispatchableAt = batchBeforeJoin.state.openedAt + minBatchAgeSecs;
+      const dispatchableAt = vault.dispatchableAt(batchBeforeJoin.state, await vault.getBatcher(rpc, roots.batcher));
       console.log(`deposit-arc dispatch: waiting for batch to reach min dispatch age (unix ${dispatchableAt})...`);
       await until(
         async () => (await fetchSysvarClock(rpc)).unixTimestamp >= dispatchableAt,
@@ -517,7 +516,7 @@ test.skipIf(!runsDemoScenarios)(
   async () => {
     const { env, config } = await loadDemoEnv();
     const authorization = await readDemoAuthorization();
-    const { dispatchVaultBatch, settleVaultBatch } = await import('@demo-dapp/settlement');
+    const { dispatchVaultBatch, settleOrCancelVaultBatch } = await import('@demo-dapp/settlement');
     const aliceBytes = Uint8Array.from(JSON.parse(await fs.readFile(demoKeypairs(env).alice, 'utf8')));
     const alice = await createKeyPairSignerFromBytes(aliceBytes);
     const keeper = await loadSigner(demoKeypairs(env).keeper);
@@ -599,7 +598,7 @@ test.skipIf(!runsDemoScenarios)(
     expect(await readAmount(joinStore, vault.JOINED_AMOUNT_KEY)).toBe(amount);
     const batcher = await vault.getBatcher(rpc, roots.batcher);
     const unixNow = async () => (await fetchSysvarClock(rpc)).unixTimestamp;
-    await until(async () => (await unixNow()) >= current.state.openedAt + batcher.minBatchAgeSecs,
+    await until(async () => (await unixNow()) >= vault.dispatchableAt(current.state, batcher),
       { description: 'refund batch dispatch age', timeoutMs: 120_000 });
     const session = async () => {
       await personas.fund(personas.roles.keeper!, 0.2);
@@ -618,9 +617,9 @@ test.skipIf(!runsDemoScenarios)(
     expect(await dispatchVaultBatch(await session(), position, 'deposit')).toBeNull();
     expect((await account()).value).toEqual(pendingBefore);
     // Nobody settles the batch before its settle deadline, so the keeper's settle pass cancels it.
-    await until(async () => (await unixNow()) >= dispatched.state.dispatchedAt + batcher.settleDeadlineSecs,
+    await until(async () => (await unixNow()) >= vault.settleDeadline(dispatched.state, batcher),
       { description: 'refund batch settle deadline', timeoutMs: 300_000 });
-    expect(await settleVaultBatch(await session(), position, 'deposit')).not.toBeNull();
+    expect(await settleOrCancelVaultBatch(await session(), position, 'deposit')).not.toBeNull();
     expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.status).toBe(vault.BatchStatus.Refunding);
     expect((await account()).value).toBeNull();
     await keeperClient.sendTransaction([await vault.getReclaimBatchAuthorityInstructionAsync({

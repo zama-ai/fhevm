@@ -770,6 +770,18 @@ fn reach_settle_deadline(context: &mut Ctx) {
     context.mollusk.sysvars.clock.unix_timestamp += SETTLE_DEADLINE_SECS as i64;
 }
 
+/// Has `payer` pay for `ix` in place of the account at `payer_index`. The transaction's transient
+/// store belongs to its payer, so it moves too.
+fn with_payer(mut ix: Instruction, payer_index: usize, payer: Pubkey) -> Instruction {
+    let replaced = std::mem::replace(&mut ix.accounts[payer_index].pubkey, payer);
+    ix.accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == host::transient_store_address(replaced).0)
+        .unwrap()
+        .pubkey = host::transient_store_address(payer).0;
+    ix
+}
+
 fn initialize_batcher_ix(fixture: &BatcherFixture, min_batch_age_secs: u64) -> Instruction {
     anchor_ix(
         batcher::id(),
@@ -1731,6 +1743,9 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         300,
     );
 
+    // Dispatch a full deadline after opening, so a deadline counted from anything but the dispatch
+    // would already have passed.
+    context.mollusk.sysvars.clock.unix_timestamp += SETTLE_DEADLINE_SECS as i64;
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
     let burned_handle = run_dispatch(&context, &fixture, &keys);
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 300);
@@ -1755,14 +1770,7 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         .account_store
         .borrow_mut()
         .insert(stranger, system_account(5_000_000_000));
-    let mut cancel = cancel_dispatch_ix(&fixture, &keys);
-    cancel.accounts[0].pubkey = stranger;
-    let transient_store = cancel
-        .accounts
-        .iter_mut()
-        .find(|meta| meta.pubkey == host::transient_store_address(fixture.payer).0)
-        .unwrap();
-    transient_store.pubkey = host::transient_store_address(stranger).0;
+    let cancel = with_payer(cancel_dispatch_ix(&fixture, &keys), 0, stranger);
     context.mollusk.sysvars.clock.unix_timestamp += SETTLE_DEADLINE_SECS as i64 - 1;
     check_batcher_instruction(
         &context,
@@ -1860,14 +1868,28 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
 
     // Anyone may run a refunding batch's quit for the user; the refund and the record's rent still
     // go to the user, whose balance moves only by that rent.
-    let mut quit = quit_ix(&fixture, &keys, &fixture.alice);
+    let mut quit = with_payer(quit_ix(&fixture, &keys, &fixture.alice), 1, fixture.payer);
     quit.accounts[0].is_signer = false;
-    quit.accounts[1].pubkey = fixture.payer;
-    quit.accounts
-        .iter_mut()
-        .find(|meta| meta.pubkey == host::transient_store_address(fixture.alice.user).0)
-        .unwrap()
-        .pubkey = host::transient_store_address(fixture.payer).0;
+    // Whoever runs it cannot redirect the refund to another account.
+    let alice_join = fixture.user_join(&fixture.alice);
+    let bob_join = fixture.user_join(&fixture.bob);
+    let mut redirected = quit.clone();
+    for meta in redirected.accounts.iter_mut() {
+        if meta.pubkey == alice_join.token_account {
+            meta.pubkey = bob_join.token_account;
+        } else if meta.pubkey == alice_join.balance_store {
+            meta.pubkey = bob_join.balance_store;
+        }
+    }
+    check_batcher_instruction(
+        &context,
+        &redirected,
+        &[batcher_error(batcher::BatcherError::DerivedAccountMismatch)],
+    );
+    assert_eq!(
+        store_u64(&context, keys.join_balance_store, token::balance_key()),
+        300
+    );
     let join_record = keys.join_record(fixture.alice.user);
     let record_rent = lamports_of(&context, join_record);
     let user_lamports = lamports_of(&context, fixture.alice.user);
@@ -2762,6 +2784,8 @@ fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
 fn mollusk_dispatch_waits_for_min_batch_age() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let mut context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    // Open well past zero, so an age counted from anything but the opening would already suffice.
+    context.mollusk.sysvars.clock.unix_timestamp += 1_000_000;
     let keys = initialize_and_open_first_batch(&context, &fixture, 1_000);
     ensure_system_accounts(
         &context,
@@ -2803,14 +2827,8 @@ fn mollusk_pending_quit_requires_the_user_signature() {
         300,
     );
 
-    let mut quit = quit_ix(&fixture, &keys, &fixture.alice);
+    let mut quit = with_payer(quit_ix(&fixture, &keys, &fixture.alice), 1, fixture.payer);
     quit.accounts[0].is_signer = false;
-    quit.accounts[1].pubkey = fixture.payer;
-    quit.accounts
-        .iter_mut()
-        .find(|meta| meta.pubkey == host::transient_store_address(fixture.alice.user).0)
-        .unwrap()
-        .pubkey = host::transient_store_address(fixture.payer).0;
     check_batcher_instruction(
         &context,
         &quit,
@@ -2824,8 +2842,8 @@ fn mollusk_pending_quit_requires_the_user_signature() {
     );
 }
 
-/// The batch ages are bounded as on EVM: at most seven days to dispatch, and a settle deadline of
-/// more than zero and at most thirty days.
+/// The batch ages are bounded: at most seven days to dispatch, and a settle deadline of more than
+/// zero and at most thirty days.
 #[test]
 fn mollusk_initialize_batcher_bounds_the_batch_ages() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
@@ -2914,8 +2932,8 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
         &join_ix(&fixture, &keys, &fixture.alice, attestation),
         &[batcher_error(batcher::BatcherError::BatchNotPending)],
     );
-    // Quit after dispatch rejects — the exit is the claim, pro rata. There is
-    // no exit between dispatch and settle (fhevm-internal#1773).
+    // Quit after dispatch rejects — the exit is the claim, pro rata. Before settle, the only exit is
+    // the settle-deadline cancellation and its refunds (DD-045).
     check_batcher_instruction(
         &context,
         &quit_ix(&fixture, &keys, &fixture.alice),
@@ -3280,7 +3298,8 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &mut Ctx, prefix: &str)
     assert_batcher_cost(&format!("{prefix}close_join_record"), &close, &close_result);
 
     // The exits run on the next batch, so the profiles above keep their measurements: bob quits it
-    // while pending, the authority cancels its dispatch, and alice quits it while refunding.
+    // while pending, a keeper cancels its dispatch at the settle deadline, and alice quits it while
+    // refunding.
     let next = BatchKeys::new(fixture, 1);
     ensure_open_batch_accounts(context, fixture, &next);
     check_batcher_instruction(
