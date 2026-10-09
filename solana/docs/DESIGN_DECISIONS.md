@@ -1108,8 +1108,11 @@ accounts are one deny-record slice per execution, in execution order (`lib.rs` l
 instruction's order); `split_deny_records` expects none while `grant_deny_list_enabled` is false and
 rejects any other total with `DenyRecordsMismatch`. Every flow, `quit` and `claim` included, works
 with the deny list on or a binding per-application block cap when the caller passes the witnesses
-(pinned by `batcher_mollusk.rs`). No demo flow passes them yet. The deployer leaves the
-per-application block cap unlimited; the per-transaction caps do bind.
+(pinned by `batcher_mollusk.rs`). The demo's deposit, redeem, claim, settlement and
+batch-provisioning flows read `HostConfig` once with `readHostPolicy` and pass each instruction the
+deny records and HCU accounts of the applications its executions touch; no demo flow runs `quit` or
+`cancel_dispatch`. The deployer leaves the per-application block cap unlimited; the per-transaction
+caps do bind.
 
 ## DD-043: Two Derivation Regimes — Content-Addressed Deterministic Handles, Persistent-Write-Anchored Rand Seeds (`context_id` deleted)
 
