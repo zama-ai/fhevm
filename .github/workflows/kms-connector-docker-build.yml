@@ -50,6 +50,10 @@ on:
       - published
   workflow_dispatch:
     inputs:
+      build-arm:
+        description: "Also build and publish ARM64 for the selected images"
+        type: boolean
+        default: false
       build_db_migration:
         description: "Enable/disable build for KMS Connector's DB Migration"
         type: boolean
@@ -281,7 +285,7 @@ jobs:
   build-db-migration:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.db_migration == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@40f3fad33b8b81967dc95d8b86db919230a36758 # v1.0.13
     secrets: &docker_secrets
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
@@ -297,6 +301,7 @@ jobs:
       id-token: 'write' # Required for OIDC authentication
     with:
       use-cgr-secrets: true
+      build-arm: ${{ inputs.build-arm || false }}
       working-directory: "."
       image-name: "fhevm/kms-connector/db-migration"
       docker-file: "kms-connector/connector-db/Dockerfile"
@@ -326,11 +331,12 @@ jobs:
   build-gw-listener:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.gw_listener == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@40f3fad33b8b81967dc95d8b86db919230a36758 # v1.0.13
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
       use-cgr-secrets: true
+      build-arm: ${{ inputs.build-arm || false }}
       working-directory: "."
       image-name: "fhevm/kms-connector/gw-listener"
       docker-file: "./kms-connector/crates/gw-listener/Dockerfile"
@@ -356,11 +362,12 @@ jobs:
   build-kms-worker:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.kms_worker == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@40f3fad33b8b81967dc95d8b86db919230a36758 # v1.0.13
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
       use-cgr-secrets: true
+      build-arm: ${{ inputs.build-arm || false }}
       working-directory: "."
       image-name: "fhevm/kms-connector/kms-worker"
       docker-file: "./kms-connector/crates/kms-worker/Dockerfile"
@@ -386,11 +393,12 @@ jobs:
   build-tx-sender:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.tx_sender == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@40f3fad33b8b81967dc95d8b86db919230a36758 # v1.0.13
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
       use-cgr-secrets: true
+      build-arm: ${{ inputs.build-arm || false }}
       working-directory: "."
       image-name: "fhevm/kms-connector/tx-sender"
       docker-file: "./kms-connector/crates/tx-sender/Dockerfile"
@@ -416,11 +424,12 @@ jobs:
   build-endpoint:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.endpoint == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@40f3fad33b8b81967dc95d8b86db919230a36758 # v1.0.13
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
       use-cgr-secrets: true
+      build-arm: ${{ inputs.build-arm || false }}
       working-directory: "."
       image-name: "fhevm/kms-connector/endpoint"
       docker-file: "./kms-connector/crates/endpoint/Dockerfile"
@@ -446,11 +455,12 @@ jobs:
   build-proxy:
     needs: build-decisions
     if: always() && needs.build-decisions.outputs.proxy == 'build'
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@40f3fad33b8b81967dc95d8b86db919230a36758 # v1.0.13
     permissions: *docker_permissions
     secrets: *docker_secrets
     with:
       use-cgr-secrets: true
+      build-arm: ${{ inputs.build-arm || false }}
       working-directory: "."
       image-name: "fhevm/kms-connector/proxy"
       docker-file: "./kms-connector/crates/proxy/Dockerfile"
