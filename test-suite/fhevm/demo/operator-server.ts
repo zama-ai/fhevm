@@ -26,7 +26,7 @@ import { claimBatchPayout } from "@demo-dapp/claim";
 import { createDemoClient } from "@demo-dapp/demoClient";
 import { parseRuntimeDemoConfig } from "@demo-dapp/demoConfig";
 import { harvestDemoVault, readDemoVaultMetrics, type UnderlyingMinter } from "@demo-dapp/harvestOperator";
-import { dispatchVaultBatch, settleVaultBatch, type DemoOperatorSession } from "@demo-dapp/settlement";
+import { dispatchVaultBatch, settleOrCancelVaultBatch, type DemoOperatorSession } from "@demo-dapp/settlement";
 import { openProvisioning } from "../e2e/harness/solana/provisioning";
 import { DEMO_OPERATOR_PORT } from "../src/layout";
 import { LOCAL_SOLANA_ENDPOINTS } from "../src/solana/endpoints";
@@ -155,7 +155,7 @@ const main = async (): Promise<void> => {
         const { position, direction } = request;
         if (request.action === "claim") return claimBatchPayout(current, position, direction, request.user);
         if (request.action === "dispatch") return dispatchVaultBatch(current, position, direction);
-        return settleVaultBatch(current, position, direction);
+        return settleOrCancelVaultBatch(current, position, direction);
       },
       harvest: async () => harvestDemoVault((await session()).config, keeper, mintUsdc),
     },

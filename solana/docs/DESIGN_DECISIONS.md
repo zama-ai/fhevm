@@ -1018,8 +1018,9 @@ participant's contribution Store through the transient store (DD-049), so the ba
 deposit into that Store in the same join transaction. Each batch gets its **own token
 account**, so the burned/revealed total is exactly that batch's sum (the EVM code documents the
 inter-batch dust leak this prevents). Lifecycle is Pending -> Dispatched -> Settled/Canceled, or
-Refunding after a cancelled dispatch, with permissionless dispatch/settle/claim and an
-exact-refund `quit` — no operator custody of principal.
+Refunding after a cancelled dispatch, with permissionless dispatch/settle/claim, a permissionless
+cancel once a dispatched batch passes its settle deadline (DD-045), and an exact-refund `quit` — no
+operator custody of principal.
 
 Deliberate non-goals, carrying the EVM team's recorded lessons: **no participant-count gates**
 (trivially defeated by one actor joining N times with encrypted zeros; a single-participant batch
@@ -1057,16 +1058,13 @@ its deposit phase — never the share account's raw balance — because SPL dest
 incoming transfers: a preloaded share balance stays inert instead of inflating the rate past u64 and
 bricking the batch (pinned by `mollusk_preloaded_shares_do_not_poison_the_rate`).
 
-Known deposit-path limitation (open): a batch whose certified total floors to zero shares at the
-vault's current price cannot settle — `demo_vault::deposit` rejects `ZeroShares`, settle reverts
-atomically (retryable but never to success, since the demo vault's price only rises), and the batch
-is stuck Dispatched with its deposits burned. An attacker holding ~all vault shares can brick
-sub-price-P batches near-free by `harvest`-donating P (the donation accrues to their own shares);
-the loss per batch is bounded below one share's worth. Behavior is pinned by
-`mollusk_dust_total_settle_reverts_and_batch_stays_dispatched`. The intended fix is a
-cancel-and-refund settle branch: wrap the redeemed underlying back into the batch's confidential
-account and refund each user's encrypted deposit via `confidential_transfer_from_value` (quit's
-mechanism) — not implemented in the deposit-path PR.
+Known deposit-path limitation: a batch whose certified total floors to zero shares at the vault's
+current price cannot settle — `demo_vault::deposit` rejects `ZeroShares`, settle reverts atomically
+(retryable but never to success, since the demo vault's price only rises), and the batch waits for
+the settle-deadline cancellation and refunds (DD-045). An attacker holding ~all vault shares can
+therefore delay sub-price-P batches by up to the settle deadline near-free by `harvest`-donating P
+(the donation accrues to their own shares); no deposit is lost. Behavior is pinned by
+`mollusk_dust_total_settle_reverts_until_the_deadline_cancel`.
 
 Redeem path implemented (fhevm-internal#1758), as an addendum to the deposit path above. **One
 program serves both directions, with the direction on the `Batcher` config** — each config is a
@@ -1099,10 +1097,10 @@ test). The dust-brick limitation above is deposit-only: the vault's share price 
 1:1 (floor rounding favors the vault; `harvest` only raises the price), so withdrawing any non-zero
 share total always returns at least that many underlying units and `ZeroAssets` is unreachable from
 a redeem batch (pinned by `mollusk_redeem_one_share_dust_settles_at_extreme_price`). Exit rules are
-symmetric too: `quit` returns the exact encrypted share amount while pending; there is NO exit
-between dispatch and settle in either direction — the deadline-cancel path stays out of demo scope
-(fhevm-internal#1773). Operational levers, both directions (fhevm-internal#1774 item 2): every
-token/host CPI forwards the optional HCU accounts (`<app>_hcu_block_meter`,
+symmetric too: `quit` returns the exact encrypted share amount while pending; between dispatch and
+settle a participant exits only through the settle-deadline cancellation and refunds (DD-045).
+Operational levers, both directions (fhevm-internal#1774 item 2):
+every token/host CPI forwards the optional HCU accounts (`<app>_hcu_block_meter`,
 `<app>_hcu_trusted_app_record`) the caller passes for each application it touches. The remaining
 accounts are one deny-record slice per execution, in execution order (`lib.rs` lists each
 instruction's order); `split_deny_records` expects none while `grant_deny_list_enabled` is false and
@@ -1110,9 +1108,9 @@ rejects any other total with `DenyRecordsMismatch`. Every flow, `quit` and `clai
 with the deny list on or a binding per-application block cap when the caller passes the witnesses
 (pinned by `batcher_mollusk.rs`). The demo's deposit, redeem, claim, settlement and
 batch-provisioning flows read `HostConfig` once with `readHostPolicy` and pass each instruction the
-deny records and HCU accounts of the applications its executions touch; no demo flow runs `quit` or
-`cancel_dispatch`. The deployer leaves the per-application block cap unlimited; the per-transaction
-caps do bind.
+deny records and HCU accounts of the applications its executions touch, the settlement flow's
+deadline `cancel_dispatch` included; no demo flow runs `quit`. The deployer leaves the
+per-application block cap unlimited; the per-transaction caps do bind.
 
 ## DD-043: Two Derivation Regimes — Content-Addressed Deterministic Handles, Persistent-Write-Anchored Rand Seeds (`context_id` deleted)
 
@@ -1248,10 +1246,20 @@ One confidential token account has one pending burn. `PendingBurn` is derived fr
 token_account)`, not from a caller-selected identifier. A second burn is rejected before FHE work
 until the first is settled by either `redeem_burned_amount` or `cancel_pending_burn`. Redeem pays the
 certified underlying amount and closes the account. Cancel restores encrypted balance and encrypted
-total supply, then closes it. The batcher exposes the same escape path: only the join mint's
-`ConfidentialMint.authority` (the wrapper policy authority, not the Host upgrade authority) may
-cancel a dispatch. Cancellation enters the terminal, refund-only `Refunding` state so participants
-can quit but the batch cannot be reused.
+total supply, then closes it. The batcher exposes the same escape path, bounded by time rather than
+by a role. Each batcher fixes `settle_deadline_secs` (at most `MAX_SETTLE_DEADLINE_SECS`) when it is
+created, and each dispatch records its `dispatched_at`. Settle runs only before `dispatched_at +
+settle_deadline_secs`; from then on anyone may cancel the dispatch. So a cancel never races a
+settle, and a stuck batch never waits on an operator. Cancellation enters the terminal, refund-only
+`Refunding` state: the batch cannot be reused, and anyone may run a participant's `quit`, which can
+only pay that participant's own token account. A pending batch's `quit` still needs the user's
+signature, since leaving early is the user's choice. EVM's vault batcher also cancels a batch past
+its callback deadline, but only inside its dispatch callback; settle here is a pull rather than a
+callback, so the cancel is its own instruction.
+
+The batcher stays upgradeable while it is a pre-production PoC, a deliberate divergence from EVM's
+immutable DAO-owned batchers. Its upgrade authority can deploy code that signs as every batch PDA,
+so until the program is made immutable that authority is trusted with every batch's funds.
 
 Multiple pending burns for one token account were rejected for this release. They require identifiers,
 ordering rules, and explicit protection against consuming the same burned state twice. No current

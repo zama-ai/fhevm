@@ -19,6 +19,8 @@ import {
   getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
+  getI64Decoder,
+  getI64Encoder,
   getStructDecoder,
   getStructEncoder,
   getU64Decoder,
@@ -59,8 +61,10 @@ export type Batch = {
   index: bigint;
   /** Lifecycle status. */
   status: BatchStatus;
-  /** Slot the batch opened at; dispatch requires `min_batch_age_slots` past. */
-  openedSlot: bigint;
+  /** Unix time the batch opened at; dispatch requires `min_batch_age_secs` past. */
+  openedAt: bigint;
+  /** Unix time the batch was dispatched at (zero before dispatch). */
+  dispatchedAt: bigint;
   /** Number of join calls routed into this batch. */
   joinCount: bigint;
   /** Bump of the per-batch authority PDA. */
@@ -88,8 +92,10 @@ export type BatchArgs = {
   index: number | bigint;
   /** Lifecycle status. */
   status: BatchStatusArgs;
-  /** Slot the batch opened at; dispatch requires `min_batch_age_slots` past. */
-  openedSlot: number | bigint;
+  /** Unix time the batch opened at; dispatch requires `min_batch_age_secs` past. */
+  openedAt: number | bigint;
+  /** Unix time the batch was dispatched at (zero before dispatch). */
+  dispatchedAt: number | bigint;
   /** Number of join calls routed into this batch. */
   joinCount: number | bigint;
   /** Bump of the per-batch authority PDA. */
@@ -118,7 +124,8 @@ export function getBatchEncoder(): FixedSizeEncoder<BatchArgs> {
       ['batcher', getAddressEncoder()],
       ['index', getU64Encoder()],
       ['status', getBatchStatusEncoder()],
-      ['openedSlot', getU64Encoder()],
+      ['openedAt', getI64Encoder()],
+      ['dispatchedAt', getI64Encoder()],
       ['joinCount', getU64Encoder()],
       ['authorityBump', getU8Encoder()],
       ['bump', getU8Encoder()],
@@ -138,7 +145,8 @@ export function getBatchDecoder(): FixedSizeDecoder<Batch> {
     ['batcher', getAddressDecoder()],
     ['index', getU64Decoder()],
     ['status', getBatchStatusDecoder()],
-    ['openedSlot', getU64Decoder()],
+    ['openedAt', getI64Decoder()],
+    ['dispatchedAt', getI64Decoder()],
     ['joinCount', getU64Decoder()],
     ['authorityBump', getU8Decoder()],
     ['bump', getU8Decoder()],
@@ -205,5 +213,5 @@ export async function fetchAllMaybeBatch(
 }
 
 export function getBatchSize(): number {
-  return 123;
+  return 131;
 }

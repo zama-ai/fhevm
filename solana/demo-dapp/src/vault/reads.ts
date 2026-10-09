@@ -24,6 +24,16 @@ export async function getBatcher(rpc: SolanaRpc, batcher: Address): Promise<Batc
   return account.data;
 }
 
+/** Unix time from which a pending batch may be dispatched. */
+export function dispatchableAt(batch: BatchState, batcher: BatcherState): bigint {
+  return batch.openedAt + batcher.minBatchAgeSecs;
+}
+
+/** Unix time from which a dispatched batch can no longer settle and anyone may cancel it. */
+export function settleDeadline(batch: BatchState, batcher: BatcherState): bigint {
+  return batch.dispatchedAt + batcher.settleDeadlineSecs;
+}
+
 /**
  * Reads a `(batch, user)` join record via the generated `JoinRecord` decoder — derive the address
  * with the generated `findJoinRecordPda`. Throws if the record does not exist (the user never joined the

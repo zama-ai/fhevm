@@ -13,8 +13,8 @@
     {
       "name": "cancel_dispatch",
       "docs": [
-        "Cancels a dispatched burn when settlement cannot complete. The join mint's wrapper",
-        "authority authorizes the operation. The burned total is restored to the batch token account",
+        "Cancels a dispatched burn when settlement cannot complete. Anyone may call it once the batch's",
+        "settle deadline has passed, and only then. The burned total is restored to the batch token account",
         "and encrypted total supply, and the batch becomes refund-only so users can retrieve their",
         "recorded joins through `quit`.",
         "Deny records: `(token, join mint)`."
@@ -33,7 +33,7 @@
         {
           "name": "payer",
           "docs": [
-            "Join-mint wrapper authority and optional funding payer."
+            "Pays the cancellation's rent and the optional authority funding. Anyone."
           ],
           "writable": true,
           "signer": true
@@ -1093,7 +1093,11 @@
       ],
       "args": [
         {
-          "name": "min_batch_age_slots",
+          "name": "min_batch_age_secs",
+          "type": "u64"
+        },
+        {
+          "name": "settle_deadline_secs",
           "type": "u64"
         },
         {
@@ -2035,7 +2039,8 @@
         "transfers the user's exact",
         "recorded amount back from the batch account (all-or-nothing) and",
         "resets the joined encrypted store to zero. It also closes the join record, returning its",
-        "rent to the user.",
+        "rent to the user. The user signs a pending batch's quit; anyone may run a refunding batch's",
+        "quit for the user.",
         "Deny records: `(token, join mint)` and `(batcher, batch)` for the refund, then",
         "`(batcher, batch)` again for the reset."
       ],
@@ -2053,10 +2058,10 @@
         {
           "name": "user",
           "docs": [
-            "Quitting user; owner of the refund destination. Receives the join record's rent."
+            "Quitting user; owner of the refund destination. Signs a pending batch's quit. Receives the",
+            "join record's rent."
           ],
-          "writable": true,
-          "signer": true
+          "writable": true
         },
         {
           "name": "payer",
@@ -2480,7 +2485,7 @@
         "(deposit for deposit batchers, withdraw for redeem batchers), wraps",
         "the received payout into confidential payout tokens, and records the",
         "batch's informational public rate. A zero-total batch is canceled",
-        "instead. Permissionless.",
+        "instead. Permissionless, before the batch's settle deadline.",
         "Deny records: `(token, payout mint)`, or none for a zero total, which runs no execution."
       ],
       "discriminator": [
@@ -3226,33 +3231,48 @@
     },
     {
       "code": 6018,
-      "name": "CancelAuthorityMismatch",
-      "msg": "cancel authority does not match the join confidential mint authority"
+      "name": "SettleDeadlineNotReached",
+      "msg": "settle deadline has not passed; the batch can still settle"
     },
     {
       "code": 6019,
+      "name": "SettleDeadlinePassed",
+      "msg": "settle deadline has passed; cancel the dispatch instead"
+    },
+    {
+      "code": 6020,
       "name": "BatchStillLive",
       "msg": "batch is still live; authority funding is reclaimable after settle, cancel or refund"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "name": "ReclaimAuthorityMismatch",
       "msg": "reclaim authority does not match the join confidential mint authority"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "JoinRecordStillLive",
       "msg": "join record is still live; close it after claiming or once the batch is canceled"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "BatchIndexMismatch",
       "msg": "batch index does not match the next batch index"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "DenyRecordsMismatch",
       "msg": "remaining accounts do not match the deny records this instruction needs"
+    },
+    {
+      "code": 6025,
+      "name": "InvalidMinBatchAge",
+      "msg": "minimum batch age exceeds the maximum"
+    },
+    {
+      "code": 6026,
+      "name": "InvalidSettleDeadline",
+      "msg": "settle deadline is zero or exceeds the maximum"
     }
   ],
   "types": [
@@ -3291,11 +3311,18 @@
             }
           },
           {
-            "name": "opened_slot",
+            "name": "opened_at",
             "docs": [
-              "Slot the batch opened at; dispatch requires `min_batch_age_slots` past."
+              "Unix time the batch opened at; dispatch requires `min_batch_age_secs` past."
             ],
-            "type": "u64"
+            "type": "i64"
+          },
+          {
+            "name": "dispatched_at",
+            "docs": [
+              "Unix time the batch was dispatched at (zero before dispatch)."
+            ],
+            "type": "i64"
           },
           {
             "name": "join_count",
@@ -3541,11 +3568,11 @@
             "type": "pubkey"
           },
           {
-            "name": "opened_slot",
+            "name": "opened_at",
             "docs": [
-              "Slot the batch opened at."
+              "Unix time the batch opened at."
             ],
-            "type": "u64"
+            "type": "i64"
           }
         ]
       }
@@ -3669,9 +3696,17 @@
             "type": "pubkey"
           },
           {
-            "name": "min_batch_age_slots",
+            "name": "min_batch_age_secs",
             "docs": [
-              "Minimum slots a batch must stay open before dispatch."
+              "Minimum seconds a batch must stay open before dispatch."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "settle_deadline_secs",
+            "docs": [
+              "Seconds after dispatch during which only `settle` may finish the batch; from then on only",
+              "`cancel_dispatch` may, and anyone can call it."
             ],
             "type": "u64"
           },
@@ -3740,9 +3775,16 @@
             "type": "pubkey"
           },
           {
-            "name": "min_batch_age_slots",
+            "name": "min_batch_age_secs",
             "docs": [
-              "Minimum slots a batch must stay open before dispatch."
+              "Minimum seconds a batch must stay open before dispatch."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "settle_deadline_secs",
+            "docs": [
+              "Seconds after dispatch until anyone may cancel an unsettled batch."
             ],
             "type": "u64"
           }

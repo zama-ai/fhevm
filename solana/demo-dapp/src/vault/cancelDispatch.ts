@@ -13,7 +13,7 @@ import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/
 
 export type SolanaVaultCancelDispatchParameters = HostPolicyParameters & {
   readonly transientStore: TransientStore;
-  /** Join-mint wrapper authority; also pays optional batch-authority funding. */
+  /** Anyone, once the batch's settle deadline has passed; also pays optional batch-authority funding. */
   readonly payer: TransactionSigner;
   readonly batcher: Address;
   readonly batch: Address;
@@ -21,7 +21,7 @@ export type SolanaVaultCancelDispatchParameters = HostPolicyParameters & {
   readonly authorityFundingLamports?: bigint;
 };
 
-/** Builds the wrapper-authorized dispatch cancellation that opens participant refunds. */
+/** Builds the dispatch cancellation that opens participant refunds once the settle deadline has passed. */
 export async function buildCancelDispatchInstruction(
   parameters: SolanaVaultCancelDispatchParameters,
 ): Promise<Instruction> {

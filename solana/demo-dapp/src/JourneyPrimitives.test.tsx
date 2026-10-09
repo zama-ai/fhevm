@@ -9,7 +9,7 @@ describe('SettlementProgress', () => {
     await act(async () => {
       renderer = create(
         <SettlementProgress
-          lifecycle={{ kind: 'awaiting-dispatch', remainingSlots: 3n }}
+          lifecycle={{ kind: 'awaiting-dispatch', remainingSecs: 3n }}
           action={null}
         />,
       );

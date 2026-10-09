@@ -1,6 +1,8 @@
 //! Cancels a dispatched batch burn and opens user refunds.
 //!
 //! This is the liveness path when a KMS certificate is unavailable or settlement cannot succeed.
+//! Anyone may call it once the batch's settle deadline has passed, and only then, so it never races
+//! a settlement.
 //! The confidential-token CPI restores the burned amount to the batch token account and encrypted
 //! total supply, closes the pending burn, and leaves the burned-amount encrypted store
 //! unchanged. The batch becomes refund-only: no new joins or dispatch are accepted, while each user
@@ -11,7 +13,7 @@ use super::*;
 /// Accounts for cancelling a dispatched batch burn.
 #[derive(Accounts)]
 pub struct CancelDispatch<'info> {
-    /// Join-mint wrapper authority and optional funding payer.
+    /// Pays the cancellation's rent and the optional authority funding. Anyone.
     #[account(mut)]
     pub payer: Signer<'info>,
     /// Batcher config.
@@ -82,10 +84,9 @@ pub fn cancel_dispatch<'info>(
         ctx.accounts.batcher.join_confidential_mint,
         BatcherError::ConfidentialMintMismatch
     );
-    require_keys_eq!(
-        ctx.accounts.payer.key(),
-        ctx.accounts.join_confidential_mint.authority,
-        BatcherError::CancelAuthorityMismatch
+    require!(
+        Clock::get()?.unix_timestamp >= ctx.accounts.batch.settle_deadline(&ctx.accounts.batcher),
+        BatcherError::SettleDeadlineNotReached
     );
 
     let mint = ctx.accounts.join_confidential_mint.key();

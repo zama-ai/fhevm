@@ -1159,6 +1159,15 @@ and the measurement that backed it, as first written:
 > u64-scale two-user batch). The exact floor strands at most one unit per claim (pinned by
 > `exact_division_strands_less_than_the_rate_would`).
 
+### DD-042, replaced in part by the settle deadline
+
+zama-ai/fhevm#4385 gave each dispatched batch a settle deadline, after which anyone may cancel it and
+refund its participants (DD-045). Before that, a batch had no exit between dispatch and settle:
+
+> `quit` returns the exact encrypted share amount while pending; there is NO exit between dispatch
+> and settle in either direction — the deadline-cancel path stays out of demo scope
+> (fhevm-internal#1773).
+
 ### DD-044, replaced in part by DD-048, DD-056, DD-058 and DD-061
 
 Status: adopted
@@ -1294,6 +1303,17 @@ include the instruction without reading the account first.
 > `getOrCreateConfidentialTokenAccountInstruction`, which reads the derived PDA and returns either the
 > create instruction or `null` for an already initialized account. This remains demo application code,
 > not a claim that the protocol SDK owns the confidential-token program.
+
+### DD-045, replaced in part by the settle deadline
+
+zama-ai/fhevm#4385 bounded the batcher's escape path by time instead of by a role: once a dispatched
+batch's settle deadline has passed, anyone may cancel it, and anyone may run a refunding batch's
+`quit`. The replaced rule:
+
+> The batcher exposes the same escape path: only the join mint's `ConfidentialMint.authority` (the
+> wrapper policy authority, not the Host upgrade authority) may cancel a dispatch. Cancellation
+> enters the terminal, refund-only `Refunding` state so participants can quit but the batch cannot
+> be reused.
 
 ### DD-048, replaced in part by DD-049
 

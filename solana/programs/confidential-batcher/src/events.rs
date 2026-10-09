@@ -24,8 +24,10 @@ pub struct BatcherInitialized {
     pub payout_confidential_mint: Pubkey,
     /// Public vault the batcher fronts.
     pub vault: Pubkey,
-    /// Minimum slots a batch must stay open before dispatch.
-    pub min_batch_age_slots: u64,
+    /// Minimum seconds a batch must stay open before dispatch.
+    pub min_batch_age_secs: u64,
+    /// Seconds after dispatch until anyone may cancel an unsettled batch.
+    pub settle_deadline_secs: u64,
 }
 
 /// Emitted when a new batch opens.
@@ -41,8 +43,8 @@ pub struct BatchOpened {
     pub index: u64,
     /// Per-batch authority PDA owning the batch's token accounts.
     pub batch_authority: Pubkey,
-    /// Slot the batch opened at.
-    pub opened_slot: u64,
+    /// Unix time the batch opened at.
+    pub opened_at: i64,
 }
 
 /// Emitted when a user joins a batch. The amount stays encrypted; only the

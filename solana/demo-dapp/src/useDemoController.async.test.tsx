@@ -64,8 +64,8 @@ const position = {
   batch: address('11111111111111111111111111111111'),
   amountBaseUnits: 100_000_000n,
 };
-const awaiting = { kind: 'awaiting-dispatch' as const, remainingSlots: 1n };
-const dispatchable = { kind: 'awaiting-dispatch' as const, remainingSlots: 0n };
+const awaiting = { kind: 'awaiting-dispatch' as const, remainingSecs: 1n };
+const dispatchable = { kind: 'awaiting-dispatch' as const, remainingSecs: 0n };
 const proving = { kind: 'dispatched' as const };
 const settled = {
   kind: 'settled' as const,

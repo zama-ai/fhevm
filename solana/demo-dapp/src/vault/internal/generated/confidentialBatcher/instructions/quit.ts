@@ -85,9 +85,7 @@ export type QuitInstruction<
   InstructionWithData<ReadonlyUint8Array> &
   InstructionWithAccounts<
     [
-      TAccountUser extends string
-        ? WritableSignerAccount<TAccountUser> & AccountSignerMeta<TAccountUser>
-        : TAccountUser,
+      TAccountUser extends string ? WritableAccount<TAccountUser> : TAccountUser,
       TAccountPayer extends string
         ? WritableSignerAccount<TAccountPayer> & AccountSignerMeta<TAccountPayer>
         : TAccountPayer,
@@ -160,7 +158,9 @@ export function getQuitInstructionDataCodec(): FixedSizeCodec<QuitInstructionDat
 }
 
 export type QuitAsyncInput<
-  TAccountUser extends InstructionSignerInput = InstructionSignerInput,
+  TAccountUser extends InstructionAccountInput | InstructionSignerInput =
+    | InstructionAccountInput
+    | InstructionSignerInput,
   TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
   TAccountBatcher extends InstructionAccountInput = InstructionAccountInput,
   TAccountBatch extends InstructionAccountInput = InstructionAccountInput,
@@ -188,7 +188,10 @@ export type QuitAsyncInput<
   TAccountBatchHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountBatchHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  /** Quitting user; owner of the refund destination. Receives the join record's rent. */
+  /**
+   * Quitting user; owner of the refund destination. Signs a pending batch's quit. Receives the
+   * join record's rent.
+   */
   user: TAccountUser;
   /** Pays the transfer output rent and the reset execution's ACL rent. */
   payer: TAccountPayer;
@@ -247,7 +250,7 @@ export type QuitAsyncInput<
 };
 
 export async function getQuitInstructionAsync<
-  TAccountUser extends InstructionSignerInput,
+  TAccountUser extends InstructionAccountInput | InstructionSignerInput,
   TAccountPayer extends InstructionSignerInput,
   TAccountBatcher extends InstructionAccountInput,
   TAccountBatch extends InstructionAccountInput,
@@ -309,7 +312,12 @@ export async function getQuitInstructionAsync<
 ): Promise<
   QuitInstruction<
     TProgramAddress,
-    ResolvedInstructionAccountMeta<TAccountUser, InstructionAccountInputAddress<TAccountUser>>,
+    ResolvedInstructionAccountMeta<
+      TAccountUser,
+      InstructionAccountInputAddress<TAccountUser>,
+      WritableSignerAccount<InstructionAccountInputAddress<TAccountUser>> &
+        AccountSignerMeta<InstructionAccountInputAddress<TAccountUser>>
+    >,
     ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
     ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
     ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
@@ -382,7 +390,7 @@ export async function getQuitInstructionAsync<
 
   // Original accounts.
   const originalAccounts = {
-    user: { value: input.user ?? null, isSigner: true, isWritable: true },
+    user: { value: input.user ?? null, isSigner: 'either', isWritable: true },
     payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
     batcher: {
       value: input.batcher ?? null,
@@ -582,7 +590,12 @@ export async function getQuitInstructionAsync<
     programAddress,
   } as QuitInstruction<
     TProgramAddress,
-    ResolvedInstructionAccountMeta<TAccountUser, InstructionAccountInputAddress<TAccountUser>>,
+    ResolvedInstructionAccountMeta<
+      TAccountUser,
+      InstructionAccountInputAddress<TAccountUser>,
+      WritableSignerAccount<InstructionAccountInputAddress<TAccountUser>> &
+        AccountSignerMeta<InstructionAccountInputAddress<TAccountUser>>
+    >,
     ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
     ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
     ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
@@ -649,7 +662,9 @@ export async function getQuitInstructionAsync<
 }
 
 export type QuitInput<
-  TAccountUser extends InstructionSignerInput = InstructionSignerInput,
+  TAccountUser extends InstructionAccountInput | InstructionSignerInput =
+    | InstructionAccountInput
+    | InstructionSignerInput,
   TAccountPayer extends InstructionSignerInput = InstructionSignerInput,
   TAccountBatcher extends InstructionAccountInput = InstructionAccountInput,
   TAccountBatch extends InstructionAccountInput = InstructionAccountInput,
@@ -677,7 +692,10 @@ export type QuitInput<
   TAccountBatchHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountBatchHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  /** Quitting user; owner of the refund destination. Receives the join record's rent. */
+  /**
+   * Quitting user; owner of the refund destination. Signs a pending batch's quit. Receives the
+   * join record's rent.
+   */
   user: TAccountUser;
   /** Pays the transfer output rent and the reset execution's ACL rent. */
   payer: TAccountPayer;
@@ -736,7 +754,7 @@ export type QuitInput<
 };
 
 export function getQuitInstruction<
-  TAccountUser extends InstructionSignerInput,
+  TAccountUser extends InstructionAccountInput | InstructionSignerInput,
   TAccountPayer extends InstructionSignerInput,
   TAccountBatcher extends InstructionAccountInput,
   TAccountBatch extends InstructionAccountInput,
@@ -797,7 +815,12 @@ export function getQuitInstruction<
   config?: { programAddress?: TProgramAddress },
 ): QuitInstruction<
   TProgramAddress,
-  ResolvedInstructionAccountMeta<TAccountUser, InstructionAccountInputAddress<TAccountUser>>,
+  ResolvedInstructionAccountMeta<
+    TAccountUser,
+    InstructionAccountInputAddress<TAccountUser>,
+    WritableSignerAccount<InstructionAccountInputAddress<TAccountUser>> &
+      AccountSignerMeta<InstructionAccountInputAddress<TAccountUser>>
+  >,
   ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
   ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
   ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
@@ -863,7 +886,7 @@ export function getQuitInstruction<
 
   // Original accounts.
   const originalAccounts = {
-    user: { value: input.user ?? null, isSigner: true, isWritable: true },
+    user: { value: input.user ?? null, isSigner: 'either', isWritable: true },
     payer: { value: input.payer ?? null, isSigner: true, isWritable: true },
     batcher: {
       value: input.batcher ?? null,
@@ -1036,7 +1059,12 @@ export function getQuitInstruction<
     programAddress,
   } as QuitInstruction<
     TProgramAddress,
-    ResolvedInstructionAccountMeta<TAccountUser, InstructionAccountInputAddress<TAccountUser>>,
+    ResolvedInstructionAccountMeta<
+      TAccountUser,
+      InstructionAccountInputAddress<TAccountUser>,
+      WritableSignerAccount<InstructionAccountInputAddress<TAccountUser>> &
+        AccountSignerMeta<InstructionAccountInputAddress<TAccountUser>>
+    >,
     ResolvedInstructionAccountMeta<TAccountPayer, InstructionAccountInputAddress<TAccountPayer>>,
     ResolvedInstructionAccountMeta<TAccountBatcher, InstructionAccountInputAddress<TAccountBatcher>>,
     ResolvedInstructionAccountMeta<TAccountBatch, InstructionAccountInputAddress<TAccountBatch>>,
@@ -1108,7 +1136,10 @@ export type ParsedQuitInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Quitting user; owner of the refund destination. Receives the join record's rent. */
+    /**
+     * Quitting user; owner of the refund destination. Signs a pending batch's quit. Receives the
+     * join record's rent.
+     */
     user: TAccountMetas[0];
     /** Pays the transfer output rent and the reset execution's ACL rent. */
     payer: TAccountMetas[1];

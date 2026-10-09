@@ -46,7 +46,7 @@ describe('buildCancelDispatchInstruction', () => {
     host,
   });
 
-  it('pins the wrapper authority, account derivations, roles, and funding argument', async () => {
+  it('pins the payer, account derivations, roles, and funding argument', async () => {
     const instruction = await buildCancelDispatchInstruction({ ...(await input()), authorityFundingLamports: 7n });
 
     const batchAuthority = await pda(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, [

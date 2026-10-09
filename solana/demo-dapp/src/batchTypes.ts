@@ -22,7 +22,7 @@ export type BatchPosition = BatchTarget & {
 };
 
 export type BatchLifecycle =
-  | { readonly kind: 'awaiting-dispatch'; readonly remainingSlots: bigint }
+  | { readonly kind: 'awaiting-dispatch'; readonly remainingSecs: bigint }
   | { readonly kind: 'dispatched' }
   | {
       readonly kind: 'settled';

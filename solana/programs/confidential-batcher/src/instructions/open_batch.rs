@@ -233,12 +233,13 @@ pub fn open_batch<'info>(
         )?;
     }
 
-    let opened_slot = Clock::get()?.slot;
+    let opened_at = Clock::get()?.unix_timestamp;
     let batch = &mut ctx.accounts.batch;
     batch.batcher = ctx.accounts.batcher.key();
     batch.index = index;
     batch.status = BatchStatus::Pending;
-    batch.opened_slot = opened_slot;
+    batch.opened_at = opened_at;
+    batch.dispatched_at = 0;
     batch.join_count = 0;
     batch.authority_bump = ctx.bumps.batch_authority;
     batch.bump = ctx.bumps.batch;
@@ -258,7 +259,7 @@ pub fn open_batch<'info>(
         batch: batch_key,
         index,
         batch_authority: ctx.accounts.batch_authority.key(),
-        opened_slot,
+        opened_at,
     });
     Ok(())
 }

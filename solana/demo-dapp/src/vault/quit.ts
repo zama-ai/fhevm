@@ -29,8 +29,9 @@ export type SolanaVaultQuitParameters = Omit<
 };
 
 /**
- * Builds the batcher `quit` instruction: the user leaves a pending batch and is refunded the exact
- * recorded amount. On-chain this spends the user's joined encrypted value account via
+ * Builds the batcher `quit` instruction: the user leaves a pending batch, or a refunding one, and
+ * is refunded the exact recorded amount. A pending quit needs the user's signature; anyone may run
+ * a refunding quit, so `user` may then be a plain address. On-chain this spends the user's joined encrypted value account via
  * `confidential_transfer_from_value` (the from-value arm) and resets it to zero — the SDK only
  * builds the batcher instruction; the from-value transfer is a CPI the program makes internally.
  */
