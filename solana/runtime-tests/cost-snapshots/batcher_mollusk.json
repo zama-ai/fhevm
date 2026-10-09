@@ -38,7 +38,7 @@
       "max_cpi_instruction_data_bytes": 737
     },
     "open_batch": {
-      "compute_units": 246115,
+      "compute_units": 248075,
       "unique_accounts": 24,
       "instruction_data_bytes": 24,
       "cpi_instructions": 22,
@@ -86,7 +86,7 @@
       "max_cpi_instruction_data_bytes": 737
     },
     "redeem_open_batch": {
-      "compute_units": 244616,
+      "compute_units": 246576,
       "unique_accounts": 24,
       "instruction_data_bytes": 24,
       "cpi_instructions": 22,
