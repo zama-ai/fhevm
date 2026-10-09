@@ -42,3 +42,14 @@ The rules every agent and reviewer applies to the Solana work: the code `AGENTS.
 
 18. Generated code and snapshots are minted only by CI and regenerated after every rebase, never resolved by hand. One snapshot-touching PR per program at a time.
 19. No backward compatibility before deployment, as `AGENTS.md` ("Pre-production") defines. When unsure whether a change needs compatibility or a fallback, ask.
+
+## Scale
+
+20. **Workers scale horizontally.** Adding replicas is how the system absorbs load, so no change may make a worker-type service depend on running as one replica.
+    - Correctness lives in shared state: replicas take work without waiting on one another, and work done twice is idempotent.
+    - A role that must run once states how it stays correct when several replicas start together.
+    - An in-memory cache only saves work; losing it or splitting it across replicas changes no result.
+    - A limit that protects shared capacity holds across replicas; a per-replica limit says so where it is defined.
+    - Each worker exposes its backlog (how much work is pending and how old it is), so scaling and alerts follow pending work, not CPU.
+
+    A service that must run as one replica records why next to its deployment. No change adds a new one.
