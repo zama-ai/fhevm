@@ -145,7 +145,9 @@ async fn apply_block(
         parent_hash: sealed_block.parent_block_hash.into(),
         timestamp: block_timestamp.assume_utc().unix_timestamp() as u64,
     };
-    require_parent_height(&mut db_tx, db.chain_id.as_i64(), &summary).await?;
+    let recorded =
+        require_parent_height(&mut db_tx, db.chain_id.as_i64(), &summary)
+            .await?;
 
     let mut records_by_transaction = Vec::new();
     let mut held_back = Vec::new();
@@ -183,17 +185,21 @@ async fn apply_block(
             IngestFailure::retryable(err).context("insert_solana_block_records")
         })?
     };
-    let held_rows = hold_back_computations(&mut db_tx, &held_back)
-        .await
-        .map_err(|err| {
-            IngestFailure::retryable(err).context("hold back computations")
-        })?;
-    if held_rows != held_back.len() as u64 {
-        return Err(IngestFailure::fatal(anyhow!(
-            "slot {}: {} held-back steps but {held_rows} computation rows",
-            sealed_block.slot,
-            held_back.len()
-        )));
+    // A recorded block's steps were held back when it was first applied, and consensus may have
+    // healed one since, so a replay leaves them as they are.
+    if !recorded {
+        let held_rows = hold_back_computations(&mut db_tx, &held_back)
+            .await
+            .map_err(|err| {
+                IngestFailure::retryable(err).context("hold back computations")
+            })?;
+        if held_rows != held_back.len() as u64 {
+            return Err(IngestFailure::fatal(anyhow!(
+                "slot {}: {} held-back steps but {held_rows} computation rows",
+                sealed_block.slot,
+                held_back.len()
+            )));
+        }
     }
 
     // The listener reads at finalized (DD-070), so every block is final when it is recorded.
@@ -256,30 +262,38 @@ async fn apply_block(
 
 /// The block's parent row must be at the height below it. The consensus detector numbers manifest
 /// ranges by height, and `mark_block_as_valid` records an ingested block as finalized without
-/// refusing a parent that disagrees. Only the chain's first row has no parent row.
+/// refusing a parent that disagrees. Only the chain's first row has no parent row. Returns whether
+/// the block is already recorded: such a block was checked when it was first applied, by this
+/// replica or another.
 async fn require_parent_height(
     db_tx: &mut Transaction<'_>,
     chain_id: i64,
     block: &BlockSummary,
-) -> std::result::Result<(), IngestFailure> {
+) -> std::result::Result<bool, IngestFailure> {
     let parent = sqlx::query!(
         r#"
         SELECT
             (SELECT block_number FROM host_chain_blocks_valid
               WHERE chain_id = $1 AND block_hash = $2) AS parent_height,
             EXISTS (SELECT 1 FROM host_chain_blocks_valid WHERE chain_id = $1)
-                AS "chain_has_rows!"
+                AS "chain_has_rows!",
+            EXISTS (SELECT 1 FROM host_chain_blocks_valid
+                     WHERE chain_id = $1 AND block_hash = $3) AS "recorded!"
         "#,
         chain_id,
         block.parent_hash.as_slice(),
+        block.hash.as_slice(),
     )
     .fetch_one(db_tx.as_mut())
     .await
     .map_err(|err| {
         IngestFailure::retryable(err).context("read the parent block row")
     })?;
+    if parent.recorded {
+        return Ok(true);
+    }
     match parent.parent_height {
-        Some(height) if height as u64 + 1 == block.number => Ok(()),
+        Some(height) if height as u64 + 1 == block.number => Ok(false),
         Some(height) => Err(IngestFailure::fatal(anyhow!(
             "block {} at height {} has its parent at height {height}",
             block.hash,
@@ -291,7 +305,7 @@ async fn require_parent_height(
             block.number,
             block.parent_hash
         ))),
-        None => Ok(()),
+        None => Ok(false),
     }
 }
 
@@ -884,25 +898,28 @@ mod apply_block_tests {
 
     async fn new_db() -> (test_harness::instance::DBInstance, Database) {
         let instance = setup_test_db(ImportMode::None).await.expect("test db");
-        let db = Database::new(
+        let db = replica(&instance).await;
+        (instance, db)
+    }
+
+    /// A listener replica on `instance`'s database, with caches of its own.
+    async fn replica(
+        instance: &test_harness::instance::DBInstance,
+    ) -> Database {
+        Database::new(
             &instance.db_url,
             ChainId::from_canonical_u64(config().chain_id),
             100,
         )
         .await
-        .unwrap();
-        (instance, db)
+        .unwrap()
     }
 
-    /// Slots 40, 41, 43 and 44, with slot 42 skipped, are heights 38 to 41: the rows step by
-    /// one and each names its parent, as the manifest ranges require. The output stored at
-    /// slot 43 is produced at height 40, the block number the detector joins on.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn rows_are_numbered_by_height_across_a_skipped_slot() {
-        let (_instance, db) = new_db().await;
+    /// A trivial encryption written to the store, which also requests its material.
+    fn stored_execution() -> DecodedInstruction {
         let mut accounts = vec![[0; 32]; zama_host::FHE_EXECUTE_FIXED_ACCOUNTS];
         accounts.push(STATE);
-        let stored = DecodedInstruction {
+        DecodedInstruction {
             accounts,
             data: encoded_execution(FheExecuteArgs {
                 execution_store_index: 0,
@@ -926,12 +943,20 @@ mod apply_block_tests {
                 }],
                 returned_results: vec![],
             }),
-        };
+        }
+    }
+
+    /// Slots 40, 41, 43 and 44, with slot 42 skipped, are heights 38 to 41: the rows step by
+    /// one and each names its parent, as the manifest ranges require. The output stored at
+    /// slot 43 is produced at height 40, the block number the detector joins on.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn rows_are_numbered_by_height_across_a_skipped_slot() {
+        let (_instance, db) = new_db().await;
         let mut slot_43 = empty(43, 40, [0x43; 32], [0x41; 32]);
         slot_43.transactions = vec![PreparedTransaction {
             signature: Signature::from([1; 64]),
             index: 0,
-            instructions: with_events([stored]),
+            instructions: with_events([stored_execution()]),
         }];
         for block in [
             empty(40, 38, [0x40; 32], [0x39; 32]),
@@ -1210,5 +1235,177 @@ mod apply_block_tests {
         assert!(ingested.contains(&consumer.to_vec()));
         assert_eq!(load_checkpoint(&pool).await.unwrap().unwrap().slot, 42);
         assert_eq!(handle_check_failures() - failures_before, 1.0);
+    }
+
+    /// Every row a block writes, as sorted JSON, without the columns no result depends on: the
+    /// dependence chain a computation joins is scheduling, and each replica assigns it from its
+    /// own caches, as the EVM listener does.
+    async fn rows_without_chain_topology(pool: &sqlx::PgPool) -> Vec<String> {
+        let mut tables = Vec::new();
+        for table in [
+            "computations",
+            "pbs_computations",
+            "allowed_handles",
+            "handle_producer_block",
+            "host_chain_blocks_valid",
+            "solana_listener_checkpoint",
+        ] {
+            tables.push(
+                sqlx::query_scalar(&format!(
+                    "SELECT coalesce(jsonb_agg(row ORDER BY row::text), '[]')::text FROM \
+                     (SELECT to_jsonb(t) - ARRAY['dependence_chain_id', 'created_at', \
+                     'updated_at', 'last_updated_at'] AS row FROM {table} t) rows"
+                ))
+                .fetch_one(pool)
+                .await
+                .unwrap(),
+            );
+        }
+        tables
+    }
+
+    /// The database holds `expected`, and every computation belongs to a chain row.
+    async fn assert_single_run_rows(pool: &sqlx::PgPool, expected: &[String]) {
+        assert_eq!(rows_without_chain_topology(pool).await, expected);
+        let unchained: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM computations c WHERE NOT EXISTS \
+             (SELECT 1 FROM dependence_chain d WHERE d.dependence_chain_id = c.dependence_chain_id)",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(unchained, 0);
+    }
+
+    /// Two replicas, each with its own caches, apply every block to one database: one after the
+    /// other, overlapping, and concurrently. The rows are those of a single run apart from chain
+    /// topology, every computation belongs to a chain, and the checkpoint never moves back.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[serial(handle_check_failures)]
+    async fn two_replicas_write_the_single_run_rows() {
+        let transaction = |signature: u8, instructions| PreparedTransaction {
+            signature: Signature::from([signature; 64]),
+            index: 0,
+            instructions,
+        };
+        let mut tampered = with_events([two_steps([2; 32], vec![SCALAR])]);
+        tamper(&mut tampered);
+        let blocks = [
+            PreparedBlock {
+                block: sealed(41, [0x41; 32], [0x40; 32]),
+                transactions: vec![transaction(
+                    1,
+                    with_events([two_steps([1; 32], vec![SCALAR])]),
+                )],
+            },
+            PreparedBlock {
+                block: sealed(42, [0x42; 32], [0x41; 32]),
+                transactions: vec![transaction(2, tampered)],
+            },
+            PreparedBlock {
+                block: sealed(43, [0x43; 32], [0x42; 32]),
+                transactions: vec![transaction(
+                    3,
+                    with_events([stored_execution()]),
+                )],
+            },
+        ];
+
+        let (_reference_instance, reference) = new_db().await;
+        for block in &blocks {
+            apply_block(&reference, &config(), block).await.unwrap();
+        }
+        let expected =
+            rows_without_chain_topology(&reference.pool().await).await;
+        assert_single_run_rows(&reference.pool().await, &expected).await;
+
+        let all = 0..blocks.len();
+        let schedules: [Vec<(usize, usize)>; 2] = [
+            all.clone()
+                .map(|i| (0, i))
+                .chain(all.map(|i| (1, i)))
+                .collect(),
+            [(0, 0), (1, 0), (1, 1), (1, 2), (0, 1), (0, 2)].into(),
+        ];
+        for schedule in schedules {
+            let (instance, first) = new_db().await;
+            let second = replica(&instance).await;
+            let replicas = [&first, &second];
+            let pool = first.pool().await;
+            let mut highest = 0;
+            for (replica, index) in schedule {
+                apply_block(replicas[replica], &config(), &blocks[index])
+                    .await
+                    .unwrap();
+                let slot = load_checkpoint(&pool).await.unwrap().unwrap().slot;
+                assert!(
+                    slot >= highest,
+                    "checkpoint moved back from {highest} to {slot}"
+                );
+                highest = slot;
+            }
+            assert_single_run_rows(&pool, &expected).await;
+        }
+
+        let (instance, first) = new_db().await;
+        let second = replica(&instance).await;
+        let config = config();
+        for block in &blocks {
+            let (a, b) = tokio::join!(
+                apply_block(&first, &config, block),
+                apply_block(&second, &config, block)
+            );
+            a.unwrap();
+            b.unwrap();
+        }
+        assert_single_run_rows(&first.pool().await, &expected).await;
+    }
+    /// A replica that lags replays a block after consensus healed the step that block held back.
+    /// The step stays completed: only the first apply of a block holds steps back.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[serial(handle_check_failures)]
+    async fn a_lagging_replica_leaves_a_healed_step_completed() {
+        let mut tampered = with_events([two_steps([2; 32], vec![SCALAR])]);
+        tamper(&mut tampered);
+        let block = PreparedBlock {
+            block: sealed(42, [0x42; 32], [0x41; 32]),
+            transactions: vec![PreparedTransaction {
+                signature: Signature::from([2; 64]),
+                index: 0,
+                instructions: tampered,
+            }],
+        };
+        let (instance, first) = new_db().await;
+        let lagging = replica(&instance).await;
+        let pool = first.pool().await;
+        let step = || async {
+            sqlx::query_as::<_, (bool, bool)>(
+                "SELECT is_completed, is_error FROM computations WHERE output_handle = $1",
+            )
+            .bind(WRONG.to_vec())
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        };
+
+        apply_block(&first, &config(), &block).await.unwrap();
+        assert_eq!(step().await, (false, true), "held back");
+        // The healing worker's update once consensus stored the step's ciphertext.
+        sqlx::query(
+            "UPDATE computations SET is_completed = true, is_error = false, error_message = NULL \
+             WHERE output_handle = $1 AND is_completed = false",
+        )
+        .bind(WRONG.to_vec())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        apply_block(&lagging, &config(), &block).await.unwrap();
+        assert_eq!(
+            step().await,
+            (true, false),
+            "the replay undid the healed step"
+        );
+        assert_eq!(load_checkpoint(&pool).await.unwrap().unwrap().slot, 42);
     }
 }

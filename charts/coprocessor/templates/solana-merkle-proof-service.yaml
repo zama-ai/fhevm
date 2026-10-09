@@ -83,10 +83,11 @@ kind: Deployment
 metadata:
   name: {{ $indexerName }}
 spec:
-  # The record's checkpoint is a singleton: one writer at a time.
-  replicas: 1
+  replicas: {{ $indexer.replicas }}
+  {{- with $indexer.updateStrategy }}
   strategy:
-    type: Recreate
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ $indexerName }}

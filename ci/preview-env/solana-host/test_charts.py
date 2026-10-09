@@ -72,7 +72,14 @@ class SolanaCharts(unittest.TestCase):
         for name in [LISTENER, INDEXER]:
             writer, writer_env = deployments[name]
             self.assertEqual(writer["spec"]["replicas"], 1)
-            self.assertEqual(writer["spec"]["strategy"]["type"], "Recreate")
+            self.assertEqual(writer["spec"]["strategy"],
+                             {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0}})
+        scaled = render("coprocessor-1", "coprocessor", COPROCESSOR, *START_SLOT,
+                        "--set", "solanaHostListener.replicas=2",
+                        "--set", "solanaHostListener.merkleIndexer.replicas=2")
+        for name in [LISTENER, INDEXER]:
+            writer = next(d for d in scaled if d and d["kind"] == "Deployment" and d["metadata"]["name"] == name)
+            self.assertEqual(writer["spec"]["replicas"], 2)
         indexer, indexer_env = deployments[INDEXER]
         indexer_container = indexer["spec"]["template"]["spec"]["containers"][0]
         self.assertEqual(indexer_container["command"], ["solana_merkle_indexer"])

@@ -1888,7 +1888,7 @@ upgradeController:
       maxSurge: 1
       maxUnavailable: 0
 
-# One Solana stream writer per coprocessor database, alongside the EVM consumers.
+# The Solana stream writers of one coprocessor database, alongside the EVM consumers.
 # The Merkle proof service runs from the same image: `merkleIndexer` records the
 # leaves into its own database and `proofServer` serves their proofs.
 solanaHostListener:
@@ -1896,6 +1896,13 @@ solanaHostListener:
   image:
     name: ghcr.io/zama-ai/fhevm/coprocessor/host-listener
     tag: latest
+  # Every replica applies every finalized block; DD-064 has the cost of more than one.
+  replicas: 1
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   httpPort: 8080
   metricsPort: 9100
   serviceMonitor:
@@ -1936,6 +1943,13 @@ solanaHostListener:
   # zama-host deployment slot. A store first seen above leaf zero stops it.
   merkleIndexer:
     startSlot: ""
+    # Every replica applies every finalized block, one at a time under a lock (DD-064).
+    replicas: 1
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 1
+        maxUnavailable: 0
     httpPort: 8080
     metricsPort: 9100
     podLabels: {}

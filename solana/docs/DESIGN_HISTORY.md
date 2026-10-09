@@ -1456,6 +1456,14 @@ after another.
 
 > The connector's proof routes name the proof server's Service.
 
+### DD-064, replaced in part by #4363
+
+#4363 made the listener and the Merkle indexer run as several replicas, as the EVM listeners can:
+the listener's checkpoint only moves forward, and the indexer skips a block below its checkpoint.
+
+> The Merkle indexer, which writes that database, stays one replica with `Recreate`, as does the
+> listener, which serves only `/healthz` and `/liveness`.
+
 ### DD-066, replaced in part by DD-068
 
 DD-068 added the `inconsistent` answer for a leaf of a quarantined store, or a leaf whose row fails

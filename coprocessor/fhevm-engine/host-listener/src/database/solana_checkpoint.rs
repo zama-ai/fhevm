@@ -1,5 +1,6 @@
 //! The Solana listener's resume checkpoint: the last sealed block whose compute rows were
-//! committed, written in that block's transaction.
+//! committed, written in that block's transaction. It only moves forward, so a replica that
+//! replays a block another replica already applied leaves it in place.
 
 use solana_host_follower::BlockCheckpoint;
 use sqlx::Error as SqlxError;
@@ -21,6 +22,7 @@ pub async fn store_checkpoint(
             slot = EXCLUDED.slot,
             block_hash = EXCLUDED.block_hash,
             updated_at = NOW()
+        WHERE solana_listener_checkpoint.slot < EXCLUDED.slot
         "#,
         slot,
         &checkpoint.block_hash[..],
