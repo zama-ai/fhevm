@@ -40,7 +40,8 @@ macro_rules! stack_version {
     };
 }
 
-/// Local runs only: the release comes from `BUILD_STACK_VERSION`.
+/// The release comes from `BUILD_STACK_VERSION`. See the feature pair in
+/// `Cargo.toml` for who builds this way and why.
 #[cfg(feature = "stack-version-override")]
 macro_rules! stack_version {
     () => {
@@ -85,7 +86,8 @@ pub const HANDLE_VERSION: i16 = 0;
 #[cfg(not(feature = "consensus-version-override"))]
 pub const CONSENSUS_PROTOCOL_VERSION: u32 = 2;
 
-/// Local runs only: the value comes from `BUILD_CONSENSUS_VERSION`.
+/// The value comes from `BUILD_CONSENSUS_VERSION`. See the feature pair in
+/// `Cargo.toml` for who builds this way and why.
 #[cfg(feature = "consensus-version-override")]
 pub const CONSENSUS_PROTOCOL_VERSION: u32 = match u32::from_str_radix(
     env!(
