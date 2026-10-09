@@ -5,6 +5,14 @@
     "solana": "solana-cli 4.3.0 (src:825efd18; feat:c9ad34d2, client:Agave)"
   },
   "measurements": {
+    "cancel_dispatch": {
+      "compute_units": 137077,
+      "unique_accounts": 19,
+      "instruction_data_bytes": 16,
+      "cpi_instructions": 7,
+      "total_cpi_instruction_data_bytes": 1067,
+      "max_cpi_instruction_data_bytes": 321
+    },
     "claim": {
       "compute_units": 220036,
       "unique_accounts": 24,
@@ -45,6 +53,22 @@
       "total_cpi_instruction_data_bytes": 1732,
       "max_cpi_instruction_data_bytes": 242
     },
+    "quit": {
+      "compute_units": 221551,
+      "unique_accounts": 23,
+      "instruction_data_bytes": 8,
+      "cpi_instructions": 8,
+      "total_cpi_instruction_data_bytes": 1647,
+      "max_cpi_instruction_data_bytes": 376
+    },
+    "quit_refunding": {
+      "compute_units": 208079,
+      "unique_accounts": 23,
+      "instruction_data_bytes": 8,
+      "cpi_instructions": 9,
+      "total_cpi_instruction_data_bytes": 1659,
+      "max_cpi_instruction_data_bytes": 376
+    },
     "reclaim_batch_authority": {
       "compute_units": 6291,
       "unique_accounts": 7,
@@ -52,6 +76,14 @@
       "cpi_instructions": 1,
       "total_cpi_instruction_data_bytes": 12,
       "max_cpi_instruction_data_bytes": 12
+    },
+    "redeem_cancel_dispatch": {
+      "compute_units": 141578,
+      "unique_accounts": 19,
+      "instruction_data_bytes": 16,
+      "cpi_instructions": 7,
+      "total_cpi_instruction_data_bytes": 1067,
+      "max_cpi_instruction_data_bytes": 321
     },
     "redeem_claim": {
       "compute_units": 230537,
@@ -92,6 +124,22 @@
       "cpi_instructions": 22,
       "total_cpi_instruction_data_bytes": 1732,
       "max_cpi_instruction_data_bytes": 242
+    },
+    "redeem_quit": {
+      "compute_units": 221552,
+      "unique_accounts": 23,
+      "instruction_data_bytes": 8,
+      "cpi_instructions": 8,
+      "total_cpi_instruction_data_bytes": 1647,
+      "max_cpi_instruction_data_bytes": 376
+    },
+    "redeem_quit_refunding": {
+      "compute_units": 202080,
+      "unique_accounts": 23,
+      "instruction_data_bytes": 8,
+      "cpi_instructions": 9,
+      "total_cpi_instruction_data_bytes": 1659,
+      "max_cpi_instruction_data_bytes": 376
     },
     "redeem_reclaim_batch_authority": {
       "compute_units": 6292,
