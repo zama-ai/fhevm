@@ -16,7 +16,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     s3_migration::{
-        fetch_old_format_handles, migrate_handle_0_to_1, run_startup_migrations, S3MigrationConfig,
+        backfill_s3_format_version, fetch_old_format_handles, migrate_handle_0_to_1,
+        run_startup_migrations, S3MigrationConfig,
     },
     Ciphertext128Format, Config, S3MigrationMode, S3_FORMAT_VERSION_V0, S3_FORMAT_VERSION_V1,
 };
@@ -28,10 +29,74 @@ use super::{
 #[tokio::test]
 #[serial(db)]
 #[cfg(not(feature = "gpu"))]
-async fn test_before_and_quit_returns_s3_migration_error() {
+async fn test_startup_backfill_only_schedules_null_versions_with_digests() {
+    let db_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
+    let pool = sqlx::PgPool::connect(db_instance.db_url.as_str())
+        .await
+        .expect("connect test db");
+    let digest = vec![0x24u8; 32];
+    let cases = [
+        (None, Some(&digest), None, Some(S3_FORMAT_VERSION_V0)),
+        (None, None, Some(&digest), Some(S3_FORMAT_VERSION_V0)),
+        (
+            None,
+            Some(&digest),
+            Some(&digest),
+            Some(S3_FORMAT_VERSION_V0),
+        ),
+        (None, None, None, None),
+        (
+            Some(S3_FORMAT_VERSION_V0),
+            Some(&digest),
+            None,
+            Some(S3_FORMAT_VERSION_V0),
+        ),
+        (
+            Some(S3_FORMAT_VERSION_V1),
+            Some(&digest),
+            None,
+            Some(S3_FORMAT_VERSION_V1),
+        ),
+    ];
+    for (index, (version, ct64, ct128, _)) in cases.iter().enumerate() {
+        sqlx::query("INSERT INTO ciphertext_digest (host_chain_id, key_id_gw, handle, ciphertext, ciphertext128, s3_format_version) VALUES (1, $1, $2, $3, $4, $5)")
+            .bind(vec![0x07u8; 32])
+            .bind(vec![index as u8; 32])
+            .bind(ct64)
+            .bind(ct128)
+            .bind(version)
+            .execute(&pool).await.expect("insert backfill candidate");
+    }
+    assert_eq!(
+        backfill_s3_format_version(&pool).await.expect("backfill"),
+        3
+    );
+    assert_eq!(
+        backfill_s3_format_version(&pool)
+            .await
+            .expect("repeat backfill"),
+        0
+    );
+    for (index, (_, _, _, expected)) in cases.iter().enumerate() {
+        let actual: Option<i16> =
+            sqlx::query_scalar("SELECT s3_format_version FROM ciphertext_digest WHERE handle = $1")
+                .bind(vec![index as u8; 32])
+                .fetch_one(&pool)
+                .await
+                .expect("read version");
+        assert_eq!(actual, *expected);
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+#[cfg(not(feature = "gpu"))]
+async fn test_before_and_quit_backfills_null_version_and_returns_s3_migration_error() {
     init_tracing();
 
-    let db_instance = setup_test_db(ImportMode::WithAllKeys)
+    let db_instance = setup_test_db(ImportMode::None)
         .await
         .expect("valid db instance");
     let mut conf = build_test_config(db_instance.db_url.clone(), true);
@@ -55,8 +120,8 @@ async fn test_before_and_quit_returns_s3_migration_error() {
 
     let handle = vec![0x42; 32];
     let ct64_digest = vec![0x24; 32];
-    let key_id_gw = fetch_latest_key_id_gw(&pool).await;
-    let host_chain_id = fetch_host_chain_id(&pool).await;
+    let key_id_gw = vec![0x07u8; 32];
+    let host_chain_id = 1_i64;
     sqlx::query!(
         r#"
         INSERT INTO ciphertext_digest(
@@ -72,7 +137,7 @@ async fn test_before_and_quit_returns_s3_migration_error() {
         &key_id_gw,
         &handle,
         &ct64_digest,
-        S3_FORMAT_VERSION_V0,
+        Option::<i16>::None,
     )
     .execute(&pool)
     .await
@@ -117,10 +182,10 @@ async fn test_before_and_quit_returns_s3_migration_error() {
 #[tokio::test]
 #[serial(db)]
 #[cfg(not(feature = "gpu"))]
-async fn test_before_and_quit_migrates_ct64_from_legacy_digest_key() {
+async fn test_before_and_quit_backfills_null_version_and_migrates_ct64_from_legacy_digest_key() {
     init_tracing();
 
-    let db_instance = setup_test_db(ImportMode::WithAllKeys)
+    let db_instance = setup_test_db(ImportMode::None)
         .await
         .expect("valid db instance");
     let mut conf = build_test_config(db_instance.db_url.clone(), true);
@@ -145,8 +210,8 @@ async fn test_before_and_quit_migrates_ct64_from_legacy_digest_key() {
     let handle = vec![0x42; 32];
     let ct64_bytes = b"legacy ct64 object bytes".to_vec();
     let ct64_digest = crate::aws_upload::compute_digest(&ct64_bytes);
-    let key_id_gw = fetch_latest_key_id_gw(&pool).await;
-    let host_chain_id = fetch_host_chain_id(&pool).await;
+    let key_id_gw = vec![0x07u8; 32];
+    let host_chain_id = 1_i64;
     sqlx::query!(
         r#"
         INSERT INTO ciphertext_digest(
@@ -162,7 +227,7 @@ async fn test_before_and_quit_migrates_ct64_from_legacy_digest_key() {
         &key_id_gw,
         &handle,
         &ct64_digest,
-        S3_FORMAT_VERSION_V0,
+        Option::<i16>::None,
     )
     .execute(&pool)
     .await
