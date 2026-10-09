@@ -79,12 +79,12 @@ describe('Upgrades', function () {
     });
     await pc.waitForDeployment();
     const [contextId, epochId] = await pc.getCurrentKmsContextAndEpoch();
-    // Production converts only released v0.3.0 proxies, initialized at version 4. A fresh ProtocolConfig
+    // Production converts released v0.14.2 proxies, initialized at version 3. A fresh ProtocolConfig
     // is initialized at 5, at the replica's reinitializer version, so pin the released value.
     await ethers.provider.send('hardhat_setStorageAt', [
       await pc.getAddress(),
       INITIALIZABLE_STORAGE_SLOT,
-      ethers.toBeHex(4, 32),
+      ethers.toBeHex(3, 32),
     ]);
 
     const replica = await upgrades.upgradeProxy(pc, replicaFactory, { call: { fn: 'reinitializeV4' } });
