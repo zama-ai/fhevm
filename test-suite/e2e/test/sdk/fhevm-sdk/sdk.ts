@@ -104,13 +104,14 @@ export class FhevmSdk implements SdkInstance {
       chainId,
       auth,
     } = parameters;
-    let sanitizedRelayerUrl = relayerUrl;
-    if (relayerUrl.endsWith('/v1') || relayerUrl.endsWith('/v2')) {
-      sanitizedRelayerUrl = relayerUrl.slice(0, -3);
+    let sanitizedRelayerUrl = relayerUrl.replace(/\/+$/, '');
+    if (sanitizedRelayerUrl.endsWith('/v1') || sanitizedRelayerUrl.endsWith('/v2')) {
+      sanitizedRelayerUrl = sanitizedRelayerUrl.slice(0, -3);
     }
     if (!hasFhevmRuntimeConfig()) {
       setFhevmRuntimeConfig({
         singleThread: false,
+        ...(auth ? { auth: toSdkAuth(auth) } : {}),
         logger: {
           debug: (message: string) => console.log(`[debug] ${message}`),
           warn: (message: string) => console.log(`[warn] ${message}`),
@@ -217,7 +218,12 @@ export class FhevmSdk implements SdkInstance {
     readonly contractAddress: string;
     readonly signer: Signer & { readonly address: string };
   }): Promise<ClearValueType | undefined> {
-    if (!(await canUseUnifiedDecryptionPermit(this.#fullClient))) {
+    if (
+      !(await canUseUnifiedDecryptionPermit(
+        this.#fullClient,
+        this.#auth ? { options: { auth: toSdkAuth(this.#auth) } } : undefined,
+      ))
+    ) {
       return undefined;
     }
     const { handle, contractAddress, signer } = parameters;
