@@ -142,7 +142,9 @@ export async function decryptPublicValues(
     throw error;
   });
   checkAbort();
-  const config = getHostConfigDecoder().decode(hostAccountData(configAccount, programAddress, HOST_CONFIG_DISCRIMINATOR));
+  const config = getHostConfigDecoder().decode(
+    hostAccountData(configAccount, programAddress, HOST_CONFIG_DISCRIMINATOR),
+  );
   if (config.bump !== configBump || config.chainId !== client.chain.id)
     throw new Error('Host configuration does not match the client');
   if (config.decryptionContract.every((byte) => byte === 0))
