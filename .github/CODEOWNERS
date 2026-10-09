@@ -5,6 +5,7 @@
 
 # Shared ownership
 /shared/ciphertext-attestation/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
+/shared/fhevm-sig-auth/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
 /shared/user-decryption-signature/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
 /test-suite/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
 
