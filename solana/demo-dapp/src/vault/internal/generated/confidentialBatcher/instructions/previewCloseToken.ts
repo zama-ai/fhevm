@@ -126,6 +126,7 @@ export type PreviewCloseTokenInput<
   authority: TAccountAuthority;
   account: TAccountAccount;
   mint: TAccountMint;
+  /** Classic SPL Token or Token-2022; the token program refuses an account it does not own. */
   tokenProgram?: TAccountTokenProgram;
   seeds: PreviewCloseTokenInstructionDataArgs['seeds'];
 };
@@ -232,6 +233,7 @@ export type ParsedPreviewCloseTokenInstruction<
     authority: TAccountMetas[2];
     account: TAccountMetas[3];
     mint: TAccountMetas[4];
+    /** Classic SPL Token or Token-2022; the token program refuses an account it does not own. */
     tokenProgram: TAccountMetas[5];
   };
   data: PreviewCloseTokenInstructionData;

@@ -407,7 +407,9 @@
         },
         {
           "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "docs": [
+            "Classic SPL Token or Token-2022; the token program refuses an account it does not own."
+          ]
         }
       ],
       "args": [
