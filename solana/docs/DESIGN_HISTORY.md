@@ -1388,6 +1388,14 @@ does.
 The KMS certificate no longer commits to the Store. It never bound it: the host verifier checks
 the public leaf against the Store it is given (INVARIANTS #22). The Solana entry …
 
+### DD-060, replaced in part by zama-ai/fhevm#4357
+
+zama-ai/fhevm#4357 gave `HostConfig` the active KMS epoch, so the SDK sends v2 routing. A v1 request
+left the epoch to the KMS default, which only the bring-up context has, so public decrypt failed
+after a context switch.
+
+> The SDK sends v1, `0x01 ‖ contextId`, because the host `KmsContext` has no epoch.
+
 ### DD-062, replaced in part by DD-066
 
 DD-066 moved the stop at a Store write that does not continue the record from the listener to the

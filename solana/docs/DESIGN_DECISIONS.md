@@ -2020,7 +2020,7 @@ archive's history.
 
 Status: adopted
 
-Recorded in zama-ai/fhevm#4120.
+Recorded in zama-ai/fhevm#4120 and zama-ai/fhevm#4357.
 
 `extraData` is the KMS routing field on EVM, and the KMS signs it. A Store carried inside it would
 become part of a signed field whose version space EVM owns, and every layer (relayer, Gateway,
