@@ -20,12 +20,12 @@ import {
 import { getTransferSolInstruction, SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import { getCloseInstruction, LOADER_V3_PROGRAM_ADDRESS } from '@solana-program/loader-v3';
 import {
-  TOKEN_PROGRAM_ADDRESS as TOKEN,
+  TOKEN_2022_PROGRAM_ADDRESS,
+  TOKEN_PROGRAM_ADDRESS,
   getBurnInstruction,
   getCloseAccountInstruction,
   getTokenDecoder,
-  getTokenSize,
-} from '@solana-program/token';
+} from '@solana-program/token-2022';
 import { uploadBufferBytes } from './deploy-programs';
 import { programDataAddressFor } from './bootstrap';
 import { deployedProgramIds, type SolanaEnvironment } from './environment';
@@ -76,6 +76,8 @@ import {
 
 const decodeAddress = (b: Uint8Array, offset: number) => getAddressDecoder().decode(b, offset);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// The Token-2022 client also builds classic SPL Token instructions when given its program address.
+const TOKEN_PROGRAMS: Address[] = [TOKEN_PROGRAM_ADDRESS, TOKEN_2022_PROGRAM_ADDRESS];
 
 export async function recoverPreview(
   context: HostDeployContext,
@@ -137,6 +139,19 @@ export async function recoverPreview(
   await journal.persist('inventory-recovery.json', JSON.stringify({ mints: [...knownMints] }));
   const send = (instruction: Instruction) => context.sendTransaction(payer, [instruction]);
   const retained: { address: string; lamports: string; reason: string }[] = [];
+  // Classic SPL mints cannot be closed. Confidential-token accepts only Token-2022 mints without
+  // extensions, so none has the close authority that closing one requires.
+  const retainMint = async (mint: Address) => {
+    const info = (await context.rpc.getAccountInfo(mint, { encoding: 'base64' }).send()).value;
+    if (info && TOKEN_PROGRAMS.includes(info.owner))
+      retained.push({ address: mint, lamports: info.lamports.toString(), reason: 'SPL mint has no close authority' });
+  };
+  const tokenAccountsOwnedBy = async (owner: Address) => {
+    const accounts = [];
+    for (const programId of TOKEN_PROGRAMS)
+      accounts.push(...(await context.rpc.getTokenAccountsByOwner(owner, { programId }, { encoding: 'base64' }).send()).value);
+    return accounts;
+  };
   const authorities: { program: Address; address: Address; seeds: Uint8Array[] }[] = [];
   if (reset) {
     // Derive all external signing authorities while their discovery accounts still exist.
@@ -170,16 +185,7 @@ export async function recoverPreview(
         : isTokenMint
           ? getConfidentialMintDecoder().decode(data).underlyingMint
           : undefined;
-      if (mint) {
-        const info = (await context.rpc.getAccountInfo(mint, { encoding: 'base64' }).send())
-          .value;
-        if (info?.owner === TOKEN)
-          retained.push({
-            address: mint,
-            lamports: info.lamports.toString(),
-            reason: 'classic SPL mint has no close instruction',
-          });
-      }
+      if (mint) await retainMint(mint);
     }
     for (const authority of authorities) {
       const programData = await programDataAddressFor(authority.program);
@@ -190,14 +196,7 @@ export async function recoverPreview(
       const drain = authority.program === programs.confidential_batcher
         ? getBatcherPreviewDrainInstruction
         : getVaultPreviewDrainInstruction;
-      const tokens = await context.rpc
-        .getTokenAccountsByOwner(
-          authority.address,
-          { programId: TOKEN },
-          { encoding: 'base64' },
-        )
-        .send();
-      for (const token of tokens.value) {
+      for (const token of await tokenAccountsOwnedBy(authority.address)) {
         const { mint } = getTokenDecoder().decode(Buffer.from(token.account.data[0], 'base64'));
         await send(closeToken({
           admin: payer,
@@ -205,7 +204,7 @@ export async function recoverPreview(
           authority: authority.address,
           account: token.pubkey,
           mint,
-          tokenProgram: TOKEN,
+          tokenProgram: token.account.owner,
           seeds: authority.seeds,
         }, { programAddress: authority.program }));
       }
@@ -293,10 +292,7 @@ export async function recoverPreview(
     }
   }
   for (const wallet of fundingOnly ? [] : wallets.values()) {
-    const tokens = await context.rpc
-      .getTokenAccountsByOwner(wallet.address, { programId: TOKEN }, { encoding: 'base64' })
-      .send();
-    for (const token of tokens.value) {
+    for (const token of await tokenAccountsOwnedBy(wallet.address)) {
       const { mint, amount } = getTokenDecoder().decode(Buffer.from(token.account.data[0], 'base64'));
       if (legacyWallets.has(wallet.address) && !knownMints.has(mint)) continue;
       if (amount > 0n && !reset) {
@@ -307,9 +303,10 @@ export async function recoverPreview(
         });
         continue;
       }
+      const programAddress = token.account.owner;
       if (amount > 0n)
-        await send(getBurnInstruction({ account: token.pubkey, mint, authority: wallet, amount }));
-      await send(getCloseAccountInstruction({ account: token.pubkey, destination: payer.address, owner: wallet }));
+        await send(getBurnInstruction({ account: token.pubkey, mint, authority: wallet, amount }, { programAddress }));
+      await send(getCloseAccountInstruction({ account: token.pubkey, destination: payer.address, owner: wallet }, { programAddress }));
     }
   }
   // Recover interrupted uploads; these are loader Buffer accounts, never ProgramData.
@@ -356,17 +353,7 @@ export async function recoverPreview(
   for (const name of await readdir(directory)) {
     if (!/^inventory-.+\.json$/.test(name)) continue;
     const entry = JSON.parse(await readFile(path.join(directory, name), 'utf8')) as { mints?: string[] };
-    for (const mint of entry.mints ?? []) {
-      const info = (
-        await context.rpc.getAccountInfo(address(mint), { encoding: 'base64' }).send()
-      ).value;
-      if (info?.owner === TOKEN)
-        retained.push({
-          address: mint,
-          lamports: info.lamports.toString(),
-          reason: 'classic SPL mint has no close instruction',
-        });
-    }
+    for (const mint of entry.mints ?? []) await retainMint(address(mint));
   }
   for (const program of Object.values(programs)) {
     for (const account of [program, await programDataAddressFor(program)]) {
@@ -393,21 +380,23 @@ export async function recoverPreview(
         });
     }
   if (reset)
-    for (const mint of knownMints) {
-      const remaining = await context.rpc
-        .getProgramAccounts(TOKEN, {
-          encoding: 'base64',
-          // Token.mint starts at byte 0; the client exposes no field offsets.
-          filters: [{ dataSize: BigInt(getTokenSize()) }, { memcmp: { offset: 0n, bytes: mint, encoding: 'base58' } }],
-        })
-        .send();
-      for (const item of remaining)
-        retained.push({
-          address: item.pubkey,
-          lamports: item.account.lamports.toString(),
-          reason: 'preview mint token account has no recovered signing key',
-        });
-    }
+    for (const mint of knownMints)
+      for (const programAddress of TOKEN_PROGRAMS) {
+        const remaining = await context.rpc
+          .getProgramAccounts(programAddress, {
+            encoding: 'base64',
+            // Token.mint starts at byte 0; the client exposes no field offsets. No size filter: a
+            // Token-2022 account grows with its extensions.
+            filters: [{ memcmp: { offset: 0n, bytes: mint, encoding: 'base58' } }],
+          })
+          .send();
+        for (const item of remaining)
+          retained.push({
+            address: item.pubkey,
+            lamports: item.account.lamports.toString(),
+            reason: 'preview mint token account has no recovered signing key',
+          });
+      }
   const after = (await context.rpc.getBalance(payer.address).send()).value;
   const transactions = [];
   let fees = 0n;
