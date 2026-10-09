@@ -18,7 +18,9 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  * @dev Ethereum is the canonical host and the single source of truth: the context/epoch lifecycle
  *      (`defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext`, then
  *      `confirmKmsContextCreation` / `confirmEpochActivation`) runs only there, alongside
- *      `KMSGeneration`. Every other host chain (e.g. Polygon) runs `ProtocolConfigReplica` instead.
+ *      `KMSGeneration`. Every other host chain runs `ProtocolConfigReplica` instead.
+ *      Anyone may submit a KMS signer's EIP-712 lifecycle confirmation. The contract checks the
+ *      recovered signer, not the caller. Replicas verify the same signatures (RFC 037).
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableEmptyProxy, ACLOwnable {
@@ -28,17 +30,17 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     string private constant CONTRACT_NAME = "ProtocolConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 4;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @dev Shared between `initializeFromEmptyProxy` and `reinitializeV3`.
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    /// @dev Shared between `initializeFromEmptyProxy` and `reinitializeV4`.
+    uint64 private constant REINITIALIZER_VERSION = 5;
 
     // -----------------------------------------------------------------------------------------
     // EIP-712 type hashes
     //
-    // Used to recover the KMS signer from the keygen/CRS attestations supplied to
-    // `confirmEpochActivation`.
+    // Used to recover the KMS signer from the lifecycle confirmations and from the keygen/CRS
+    // attestations supplied to `confirmEpochActivation`.
     // -----------------------------------------------------------------------------------------
 
     /// @dev Hash of the EIP-712 domain separator type.
@@ -58,6 +60,58 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /// @dev Hash of the CrsgenVerification type.
     bytes32 private constant EIP712_CRSGEN_TYPE_HASH =
         keccak256("CrsgenVerification(uint256 crsId,uint256 maxBitLength,bytes crsDigest,bytes extraData)");
+
+    /// @dev Hash of the ContextCreationConfirmation type.
+    bytes32 private constant EIP712_CONTEXT_CREATION_TYPE_HASH =
+        keccak256(
+            "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)"
+        );
+
+    /// @dev Hash of the EpochActivationConfirmation type.
+    bytes32 private constant EIP712_EPOCH_ACTIVATION_TYPE_HASH =
+        keccak256(
+            "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)"
+        );
+
+    /// @dev Hash of the ContextDestructionConfirmation type.
+    bytes32 private constant EIP712_CONTEXT_DESTRUCTION_TYPE_HASH =
+        keccak256(
+            "ContextDestructionConfirmation(uint256 destroyedContextId,uint256[] destroyedEpochIds,bytes extraData)"
+        );
+
+    /// @dev Hash of the EpochDestructionConfirmation type.
+    bytes32 private constant EIP712_EPOCH_DESTRUCTION_TYPE_HASH =
+        keccak256("EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)");
+
+    // -----------------------------------------------------------------------------------------
+    // ERC-7201 namespaced storage
+    // -----------------------------------------------------------------------------------------
+
+    /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfigCanonical
+    struct ProtocolConfigCanonicalStorage {
+        /// @notice Hash of the stored node set and thresholds, signed in ContextCreationConfirmation.
+        mapping(uint256 contextId => bytes32) nodeConfigHashForContext;
+        /// @notice Context creation confirmations per signer (one digest per signer per context).
+        mapping(uint256 contextId => mapping(address signer => bool confirmed)) contextCreationConfirmedBySigner;
+        /// @notice Previous-committee context creation confirmations grouped by digest.
+        mapping(uint256 contextId => mapping(bytes32 digest => uint256 confirmations)) contextCreationPreviousConfirmationCountForDigest;
+        /// @notice New-committee context creation confirmations grouped by digest.
+        mapping(uint256 contextId => mapping(bytes32 digest => uint256 confirmations)) contextCreationNewConfirmationCountForDigest;
+        /// @notice Context destruction confirmations per signer.
+        mapping(uint256 contextId => mapping(address signer => bool confirmed)) contextDestructionConfirmedBySigner;
+        /// @notice Epoch destruction confirmations per signer.
+        mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochDestructionConfirmedBySigner;
+    }
+
+    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ProtocolConfigCanonical")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant PROTOCOL_CONFIG_CANONICAL_STORAGE_LOCATION =
+        0x98bc32bb4045abd79f66305d47272679087ff12d8a03152ce14a0954b7709c00;
+
+    function _getProtocolConfigCanonicalStorage() internal pure returns (ProtocolConfigCanonicalStorage storage $) {
+        assembly {
+            $.slot := PROTOCOL_CONFIG_CANONICAL_STORAGE_LOCATION
+        }
+    }
 
     // -----------------------------------------------------------------------------------------
     // Constructor
@@ -112,11 +166,11 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     }
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes the contract from V3.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions
@@ -144,13 +198,19 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         _storeKmsContext(contextId, kmsNodeParams, thresholds);
         $.contextState[contextId] = ContextState.Pending;
 
+        // Commit to the stored node set and thresholds. Both committees sign it in ContextCreationConfirmation.
+        KmsNode[] memory nodes = $.kmsNodesForContext[contextId];
+        _getProtocolConfigCanonicalStorage().nodeConfigHashForContext[contextId] = keccak256(
+            abi.encode(nodes, thresholds)
+        );
+
         // Cache the number of previous-committee confirmations confirmKmsContextCreation requires.
         // The previous committee has `n` nodes, of which at most `t` (its MPC threshold) are assumed
         // faulty — crashed, offline, or malicious. The quorum must be:
         //   - more than `t`, so faulty nodes can never approve a switch on their own;
         //   - at most `n - t`, because if `t` nodes stay silent only `n - t` confirmations ever
         //     arrive — anything higher lets a dead node block the switch forever.
-        // `n - t` satisfies `n - t >= t + 1` under the `n = 3t + 1` topology the KMS core
+        // `n - t` satisfies `n - t >= t + 1` under the `n >= 3t + 1` topology the KMS core
         // requires; the contract itself does not enforce the topology.
         // Floored at 1 so the degenerate `t = n` config cannot make the quorum zero.
         uint256 previousQuorum = $.kmsNodesForContext[previousContextId].length -
@@ -188,39 +248,60 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     }
 
     /// @inheritdoc IProtocolConfig
-    /// @dev Context-switch: previous+new committee tx senders confirm on split-threshold quorum.
-    function confirmKmsContextCreation(uint256 kmsContextId) external virtual {
+    /// @dev Context-switch: previous+new committee signers confirm on split-threshold quorum.
+    ///      Confirmations count per digest, so a completed quorum always signs one `extraData`, which
+    ///      is the signature set a replica verifies.
+    function confirmKmsContextCreation(
+        uint256 kmsContextId,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        ProtocolConfigCanonicalStorage storage canonical$ = _getProtocolConfigCanonicalStorage();
         if ($.contextState[kmsContextId] != ContextState.Pending) {
             revert KmsContextNotPending(kmsContextId);
         }
 
-        // Caller must belong to the outgoing or incoming committee and confirm only once.
+        // The signer must belong to the outgoing or incoming committee and confirm only once.
         uint256 previousContextId = $.latestActiveKmsContextId;
-        bool isPreviousTxSender = $.isKmsTxSenderForContext[previousContextId][msg.sender];
-        bool isNewTxSender = $.isKmsTxSenderForContext[kmsContextId][msg.sender];
-        if (!isPreviousTxSender && !isNewTxSender) {
-            revert KmsContextCreationUnauthorized(msg.sender, kmsContextId);
+        bytes32 digest = _hashTypedData(
+            keccak256(
+                abi.encode(
+                    EIP712_CONTEXT_CREATION_TYPE_HASH,
+                    previousContextId,
+                    kmsContextId,
+                    canonical$.nodeConfigHashForContext[kmsContextId],
+                    keccak256(extraData)
+                )
+            )
+        );
+        address signer = ECDSA.recover(digest, signature);
+        bool isPreviousSigner = $.isKmsSignerForContext[previousContextId][signer];
+        bool isNewSigner = $.isKmsSignerForContext[kmsContextId][signer];
+        if (!isPreviousSigner && !isNewSigner) {
+            revert KmsContextCreationUnauthorized(signer, kmsContextId);
         }
-        if ($.contextCreationConfirmedByTxSender[kmsContextId][msg.sender]) {
-            revert KmsContextCreationAlreadyConfirmed(msg.sender, kmsContextId);
+        if (canonical$.contextCreationConfirmedBySigner[kmsContextId][signer]) {
+            revert KmsContextCreationAlreadyConfirmed(signer, kmsContextId);
         }
 
-        // Record the confirmation and counts separately for the split quorum.
-        $.contextCreationConfirmedByTxSender[kmsContextId][msg.sender] = true;
-        if (isPreviousTxSender) {
-            ++$.contextCreationPreviousTxSenderConfirmationCount[kmsContextId];
+        // Record the confirmation and counts separately for the split quorum. A signer in both
+        // committees counts toward both.
+        canonical$.contextCreationConfirmedBySigner[kmsContextId][signer] = true;
+        if (isPreviousSigner) {
+            ++canonical$.contextCreationPreviousConfirmationCountForDigest[kmsContextId][digest];
         }
-        if (isNewTxSender) {
-            ++$.contextCreationNewTxSenderConfirmationCount[kmsContextId];
+        if (isNewSigner) {
+            ++canonical$.contextCreationNewConfirmationCountForDigest[kmsContextId][digest];
         }
 
-        emit KmsContextCreationConfirmation(kmsContextId, msg.sender, isPreviousTxSender, isNewTxSender);
+        emit KmsContextCreationConfirmation(kmsContextId, signer, signature, extraData);
 
-        // Context creation quorum: all new nodes and (n - t) previous nodes confirmed.
+        // Context creation quorum: all new nodes and (n - t) previous nodes confirmed the same digest.
         if (
-            $.contextCreationNewTxSenderConfirmationCount[kmsContextId] == $.kmsNodesForContext[kmsContextId].length &&
-            $.contextCreationPreviousTxSenderConfirmationCount[kmsContextId] >=
+            canonical$.contextCreationNewConfirmationCountForDigest[kmsContextId][digest] ==
+            $.kmsNodesForContext[kmsContextId].length &&
+            canonical$.contextCreationPreviousConfirmationCountForDigest[kmsContextId][digest] >=
             $.contextCreationPreviousTxSenderThreshold[kmsContextId]
         ) {
             $.contextState[kmsContextId] = ContextState.Created;
@@ -237,74 +318,27 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     function confirmEpochActivation(
         uint256 epochId,
         EpochKeyResult[] calldata keys,
-        EpochCrsResult[] calldata crsList
+        EpochCrsResult[] calldata crsList,
+        bytes calldata signature,
+        bytes calldata extraData
     ) external virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-
-        // Validate epoch activation: Verify EIP-712 keygen/CRS attestations and derive the consensus hash all signers must agree on.
-        if ($.epochState[epochId] != EpochState.Pending) {
-            revert InvalidKmsEpoch(epochId);
-        }
-
-        uint256 contextId = $.contextForEpoch[epochId];
-        if (!$.isKmsTxSenderForContext[contextId][msg.sender]) {
-            revert EpochActivationUnauthorized(msg.sender, epochId);
-        }
-
-        // Activation requires one key and one CRS attestation from the signer. An empty array skips its loop
-        // below, so the vote would be recorded without checking that attestation.
-        if (keys.length == 0 || crsList.length == 0) {
-            revert EmptyEpochActivationAttestation(epochId);
-        }
-
-        address signer = $.kmsNodeByTxSenderForContext[contextId][msg.sender].signerAddress;
-        bytes32 dataHash;
+        bool allSignersAgreed;
+        uint256 contextId;
         {
-            bytes memory extraData = abi.encodePacked(EXTRA_DATA_V2, contextId, epochId);
-
-            bytes32[] memory keyHashes = new bytes32[](keys.length);
-            for (uint256 i = 0; i < keys.length; i++) {
-                bytes32 keyDigestsHash = _hashKeyDigests(keys[i].keyDigests);
-                bytes32 digest = _hashKeygenVerification(
-                    keys[i].prepKeygenId,
-                    keys[i].keyId,
-                    keyDigestsHash,
-                    extraData
-                );
-                _requireExpectedSigner(signer, digest, keys[i].signature);
-                keyHashes[i] = keccak256(abi.encode(keys[i].prepKeygenId, keys[i].keyId, keyDigestsHash));
-            }
-
-            bytes32[] memory crsHashes = new bytes32[](crsList.length);
-            for (uint256 i = 0; i < crsList.length; i++) {
-                bytes32 digest = _hashCrsgenVerification(
-                    crsList[i].crsId,
-                    crsList[i].maxBitLength,
-                    crsList[i].crsDigest,
-                    extraData
-                );
-                _requireExpectedSigner(signer, digest, crsList[i].signature);
-                crsHashes[i] = keccak256(abi.encode(crsList[i].crsId, crsList[i].maxBitLength, crsList[i].crsDigest));
-            }
-
-            dataHash = keccak256(abi.encode(keyHashes, crsHashes));
+            (address signer, bytes32 epochMaterialHash, bytes32 digest) = _verifyEpochActivation(
+                epochId,
+                keys,
+                crsList,
+                signature,
+                extraData
+            );
+            (allSignersAgreed, contextId) = _recordEpochVote(epochId, signer, digest);
+            emit EpochActivationConfirmation(epochId, signer, epochMaterialHash, signature, extraData);
         }
-
-        // Confirm epoch activation: add this signer's vote under that hash, activate the epoch once all signers agree.
-        // Record one confirmation per signer, counted by data hash so quorum requires all signers on the same result.
-        // Unanimity is required by design: a single divergent dataHash splits the vote so no hash reaches quorum.
-        // Confirmations are one-shot per signer, so a divergent vote can never converge — the epoch stays
-        // Pending until governance settles it with destroyKmsEpoch() and re-triggers the rotation.
-        if ($.epochActivationConfirmedBySigner[epochId][signer]) {
-            revert EpochActivationAlreadyConfirmed(signer, epochId);
-        }
-        $.epochActivationConfirmedBySigner[epochId][signer] = true;
-        uint256 digestCount = ++$.epochActivationConfirmationCountForDigest[epochId][dataHash];
-
-        emit EpochActivationConfirmation(epochId, signer, dataHash);
 
         // All signers agreed, promote context and epoch to Active.
-        if (digestCount == $.kmsSignerAddressesForContext[contextId].length) {
+        if (allSignersAgreed) {
+            ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
             $.contextState[contextId] = ContextState.Active;
             $.latestActiveKmsContextId = contextId;
             _activateEpoch(epochId, contextId);
@@ -341,8 +375,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             _clearEpoch(latestEpochId);
         }
         delete $.contextCreationPreviousTxSenderThreshold[kmsContextId];
-        delete $.contextCreationNewTxSenderConfirmationCount[kmsContextId];
-        delete $.contextCreationPreviousTxSenderConfirmationCount[kmsContextId];
 
         emit KmsContextDestroyed(kmsContextId);
     }
@@ -373,7 +405,74 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
 
         _clearEpoch(epochId);
+        $.destroyedEpochs[epochId] = true;
         emit KmsEpochDestroyed(epochId);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    /// @dev Collects signatures only. Replicas need `n - t` of them over one digest. The canonical
+    ///      keeps no quorum and accepts signers of the active committee until the next rotation.
+    function confirmKmsContextDestruction(
+        uint256 destroyedContextId,
+        uint256[] calldata destroyedEpochIds,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external virtual {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        if (!$.destroyedContexts[destroyedContextId]) {
+            revert KmsContextNotDestroyed(destroyedContextId);
+        }
+
+        address signer = _recoverSigner(
+            keccak256(
+                abi.encode(
+                    EIP712_CONTEXT_DESTRUCTION_TYPE_HASH,
+                    destroyedContextId,
+                    keccak256(abi.encodePacked(destroyedEpochIds)),
+                    keccak256(extraData)
+                )
+            ),
+            signature
+        );
+        if (!$.isKmsSignerForContext[$.latestActiveKmsContextId][signer]) {
+            revert KmsContextDestructionUnauthorized(signer, destroyedContextId);
+        }
+        ProtocolConfigCanonicalStorage storage canonical$ = _getProtocolConfigCanonicalStorage();
+        if (canonical$.contextDestructionConfirmedBySigner[destroyedContextId][signer]) {
+            revert KmsContextDestructionAlreadyConfirmed(signer, destroyedContextId);
+        }
+        canonical$.contextDestructionConfirmedBySigner[destroyedContextId][signer] = true;
+
+        emit KmsContextDestructionConfirmed(destroyedContextId, destroyedEpochIds, signer, signature, extraData);
+    }
+
+    /// @inheritdoc IProtocolConfig
+    /// @dev Collects signatures only, like confirmKmsContextDestruction. An epoch cleared by
+    ///      destroyKmsContext is confirmed through confirmKmsContextDestruction instead.
+    function confirmKmsEpochDestruction(
+        uint256 destroyedEpochId,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external virtual {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        if (!$.destroyedEpochs[destroyedEpochId]) {
+            revert KmsEpochNotDestroyed(destroyedEpochId);
+        }
+
+        address signer = _recoverSigner(
+            keccak256(abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData))),
+            signature
+        );
+        if (!$.isKmsSignerForContext[$.latestActiveKmsContextId][signer]) {
+            revert KmsEpochDestructionUnauthorized(signer, destroyedEpochId);
+        }
+        ProtocolConfigCanonicalStorage storage canonical$ = _getProtocolConfigCanonicalStorage();
+        if (canonical$.epochDestructionConfirmedBySigner[destroyedEpochId][signer]) {
+            revert KmsEpochDestructionAlreadyConfirmed(signer, destroyedEpochId);
+        }
+        canonical$.epochDestructionConfirmedBySigner[destroyedEpochId][signer] = true;
+
+        emit KmsEpochDestructionConfirmed(destroyedEpochId, signer, signature, extraData);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -450,15 +549,139 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     // Internal
     // -----------------------------------------------------------------------------------------
 
-    function _requireExpectedSigner(
+    /**
+     * @dev Validates an epoch activation submission and returns its signer, `epochMaterialHash`, and
+     *      EpochActivationConfirmation digest. Every key and CRS signature and the aggregate signature
+     *      must recover to one signer of the epoch's committee.
+     */
+    function _verifyEpochActivation(
+        uint256 epochId,
+        EpochKeyResult[] calldata keys,
+        EpochCrsResult[] calldata crsList,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) internal view virtual returns (address signer, bytes32 epochMaterialHash, bytes32 digest) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        if ($.epochState[epochId] != EpochState.Pending) {
+            revert InvalidKmsEpoch(epochId);
+        }
+
+        // Activation requires one key and one CRS attestation from the signer. An empty array skips its loop
+        // in _verifyEpochResults, so the vote would be recorded without checking that attestation.
+        if (keys.length == 0 || crsList.length == 0) {
+            revert EmptyEpochActivationAttestation(epochId);
+        }
+
+        uint256 contextId = $.contextForEpoch[epochId];
+        (signer, epochMaterialHash) = _verifyEpochResults(contextId, epochId, keys, crsList);
+        digest = _hashEpochActivationConfirmation(contextId, epochId, epochMaterialHash, extraData);
+        signer = _requireSameSigner(signer, digest, signature);
+        if (!$.isKmsSignerForContext[contextId][signer]) {
+            revert EpochActivationUnauthorized(signer, epochId);
+        }
+    }
+
+    /**
+     * @dev Verifies the key and CRS results of one signer and returns that signer and `epochMaterialHash`.
+     *      Every result signature must recover to the same signer.
+     */
+    function _verifyEpochResults(
+        uint256 contextId,
+        uint256 epochId,
+        EpochKeyResult[] calldata keys,
+        EpochCrsResult[] calldata crsList
+    ) internal view virtual returns (address signer, bytes32 epochMaterialHash) {
+        bytes memory resultExtraData = abi.encodePacked(EXTRA_DATA_V2, contextId, epochId);
+
+        bytes32[] memory keyHashes = new bytes32[](keys.length);
+        for (uint256 i = 0; i < keys.length; i++) {
+            bytes32 keyDigestsHash = _hashKeyDigests(keys[i].keyDigests);
+            bytes32 resultDigest = _hashKeygenVerification(
+                keys[i].prepKeygenId,
+                keys[i].keyId,
+                keyDigestsHash,
+                resultExtraData
+            );
+            signer = _requireSameSigner(signer, resultDigest, keys[i].signature);
+            keyHashes[i] = keccak256(abi.encode(keys[i].prepKeygenId, keys[i].keyId, keyDigestsHash));
+        }
+
+        bytes32[] memory crsHashes = new bytes32[](crsList.length);
+        for (uint256 i = 0; i < crsList.length; i++) {
+            bytes32 resultDigest = _hashCrsgenVerification(
+                crsList[i].crsId,
+                crsList[i].maxBitLength,
+                crsList[i].crsDigest,
+                resultExtraData
+            );
+            signer = _requireSameSigner(signer, resultDigest, crsList[i].signature);
+            crsHashes[i] = keccak256(abi.encode(crsList[i].crsId, crsList[i].maxBitLength, crsList[i].crsDigest));
+        }
+
+        epochMaterialHash = keccak256(abi.encode(keyHashes, crsHashes));
+    }
+
+    /**
+     * @dev Records `signer`'s vote for `digest`. Returns whether every signer of the epoch's context
+     *      voted for it, and that context.
+     *      Unanimity is required by design: a single divergent epochMaterialHash or extraData splits the
+     *      vote so no digest reaches quorum. Confirmations are one-shot per signer, so a divergent vote can
+     *      never converge. The epoch stays Pending until governance settles it with destroyKmsEpoch()
+     *      and re-triggers the rotation.
+     */
+    function _recordEpochVote(
+        uint256 epochId,
+        address signer,
+        bytes32 digest
+    ) internal virtual returns (bool complete, uint256 contextId) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        if ($.epochActivationConfirmedBySigner[epochId][signer]) {
+            revert EpochActivationAlreadyConfirmed(signer, epochId);
+        }
+        $.epochActivationConfirmedBySigner[epochId][signer] = true;
+        uint256 digestCount = ++$.epochActivationConfirmationCountForDigest[epochId][digest];
+        contextId = $.contextForEpoch[epochId];
+        complete = digestCount == $.kmsSignerAddressesForContext[contextId].length;
+    }
+
+    /**
+     * @dev Recovers the signer of `digest` and requires it to equal `expectedSigner`, unless
+     *      `expectedSigner` is zero (first signature of a submission).
+     */
+    function _requireSameSigner(
         address expectedSigner,
         bytes32 digest,
         bytes calldata signature
-    ) internal view virtual {
-        address recoveredSigner = ECDSA.recover(digest, signature);
-        if (recoveredSigner != expectedSigner) {
-            revert EpochActivationSignerDoesNotMatchTxSender(recoveredSigner, msg.sender);
+    ) internal pure virtual returns (address recoveredSigner) {
+        recoveredSigner = ECDSA.recover(digest, signature);
+        if (expectedSigner != address(0) && recoveredSigner != expectedSigner) {
+            revert EpochResultSignerMismatch(expectedSigner, recoveredSigner);
         }
+    }
+
+    function _hashEpochActivationConfirmation(
+        uint256 contextId,
+        uint256 epochId,
+        bytes32 epochMaterialHash,
+        bytes calldata extraData
+    ) internal view virtual returns (bytes32) {
+        return
+            _hashTypedData(
+                keccak256(
+                    abi.encode(
+                        EIP712_EPOCH_ACTIVATION_TYPE_HASH,
+                        contextId,
+                        _getProtocolConfigStorage().latestActiveEpochId,
+                        epochId,
+                        epochMaterialHash,
+                        keccak256(extraData)
+                    )
+                )
+            );
+    }
+
+    function _recoverSigner(bytes32 structHash, bytes calldata signature) internal view virtual returns (address) {
+        return ECDSA.recover(_hashTypedData(structHash), signature);
     }
 
     function _hashKeygenVerification(

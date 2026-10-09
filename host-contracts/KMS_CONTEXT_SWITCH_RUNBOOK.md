@@ -41,10 +41,10 @@ full protocol identity — how the chain authenticates it, how the other parties
 cores reach it, and where it publishes its public key material:
 
 - **two distinct wallets**: the _tx-sender_ is the **KMS connector's** wallet (it
-  pays gas and authenticates on-chain confirmations); the _signer_ is the
-  **KMS core's** signing key (it signs key-material attestations and the core's
-  responses to gRPC commands — keygens, decryptions). A common mistake is
-  swapping them;
+  pays gas and submits on-chain confirmations). The _signer_ is the
+  **KMS core's** signing key (it signs key-material attestations, the lifecycle
+  confirmations and the core's responses to gRPC commands — keygens, decryptions).
+  A common mistake is swapping them;
 - **network endpoints**: the core's MPC endpoint (peer-to-peer between parties) and
   the public vault (S3 bucket) where the core publishes its verification address and
   TLS CA cert;
@@ -55,16 +55,16 @@ Most fields only the party itself can provide — collect them with the question
 (§2.1), verify each answer against the party's public storage (Annex B.2), then
 assemble and validate the env file (Annex B.3).
 
-| Field             | Format                                                                                                                                                                                                                                           | Provided by                      | Used for (end to end)                                                                                                                                                                                                                       | Validation                                                                                                |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `txSenderAddress` | 20-byte EVM address (`0x` + 40 hex)                                                                                                                                                                                                              | **KMS party**                    | The **connector's** wallet. Host chain: authenticates the switch confirmations (creation quorum counts by tx-sender). Gateway chain: broadcasts decryption responses — `Decryption` requires the response sender to be this registered node | Party signs a message with it, or sends a test tx; must be funded on the host chain **and** gateway chain |
-| `signerAddress`   | 20-byte EVM address of the **core's** signing key                                                                                                                                                                                                | **KMS party** (verifiable by us) | Signs key/CRS attestations (epoch activation is unanimous per signer) and EIP-712 decryption responses (verified per pinned context on the gateway). The core publishes it at `<storageUrl>/<storagePrefix>/VerfAddress/<handle>`           | Fetch from their public storage and compare (Annex B.2)                                                   |
-| `ipAddress`       | URL `scheme://host:port` — host may be a **DNS name** or IP; the **port is mandatory and must be non-default** (`:443`/`:80` are normalized away by the core's URL parser and rejected as "missing port"). E.g. `http://kms.party.example:50001` | **KMS party**                    | The core's MPC endpoint. Consumed **only by the other parties' cores**: each peer parses host+port and dials it for MPC traffic (reshares, decryption sessions).                                                                            | Reachable from every _other_ party's core (peer-to-peer, not from us)                                     |
-| `storageUrl`      | Base URL of the party's public vault (S3-compatible bucket)                                                                                                                                                                                      | **KMS party**                    | Where the core publishes its public material. Emitted in `ActivateEpoch` and served per key/CRS result by `KMSGeneration` → the relayer's `/v2/keyurl`, so clients know where to download public keys and CRS                               | `curl` returns objects (Annex B.2)                                                                        |
-| `partyId`         | `int32`, contiguous `1..n`, **positional**                                                                                                                                                                                                       | **Coordinator (us)**             | The party's MPC role index (the core builds its role map from it and rejects out-of-range or duplicate ids). A swap keeps the dropped node's id                                                                                             | Annex B.3 validator checks contiguity + duplicates                                                        |
-| `mpcIdentity`     | Free-form string; must **byte-match** the `mpc_identity` in the party's core config                                                                                                                                                              | **KMS party**                    | The party's logical identity in the MPC layer: self-recognition (which roster slot is "me" — a mismatch aborts the reshare), TLS trust-root lookup (peer cert verification is keyed by it), and message routing                             | Must byte-match their config — ask them to paste it, do not derive it                                     |
-| `caCert`          | `bytes` = the party's TLS CA as a regular PEM file, verbatim (`-----BEGIN CERTIFICATE-----` … `-----END CERTIFICATE-----`, usually newline-terminated); carried as `0x` + hex of those exact bytes in the env                                    | **KMS party** (verifiable)       | The party's **long-lived** CA: peers verify mutual-TLS MPC connections against it (looked up by `mpcIdentity`). Published at `<storagePrefix>/CACert/<handle>`; **not** regenerated by reshares or context switches                         | Fetch + `openssl x509` parse (Annex B.2); the hex must be byte-exact — it feeds the context anchor        |
-| `storagePrefix`   | String key prefix inside the vault (e.g. `PUB-p3`)                                                                                                                                                                                               | **KMS party**                    | Namespaces the party's objects in its vault: `<storageUrl>/<storagePrefix>/VerfAddress/<handle>`, `…/CACert/<handle>`, and the public key material clients download                                                                         | The `VerfAddress`/`CACert` fetches above implicitly validate it                                           |
+| Field             | Format                                                                                                                                                                                                                                           | Provided by                      | Used for (end to end)                                                                                                                                                                                                             | Validation                                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `txSenderAddress` | 20-byte EVM address (`0x` + 40 hex)                                                                                                                                                                                                              | **KMS party**                    | The **connector's** wallet. Host chain: submits the switch confirmations. Gateway chain: broadcasts decryption responses — `Decryption` requires the response sender to be this registered node                                   | Party signs a message with it, or sends a test tx; must be funded on the host chain **and** gateway chain |
+| `signerAddress`   | 20-byte EVM address of the **core's** signing key                                                                                                                                                                                                | **KMS party** (verifiable by us) | Signs key/CRS attestations (epoch activation is unanimous per signer) and EIP-712 decryption responses (verified per pinned context on the gateway). The core publishes it at `<storageUrl>/<storagePrefix>/VerfAddress/<handle>` | Fetch from their public storage and compare (Annex B.2)                                                   |
+| `ipAddress`       | URL `scheme://host:port` — host may be a **DNS name** or IP; the **port is mandatory and must be non-default** (`:443`/`:80` are normalized away by the core's URL parser and rejected as "missing port"). E.g. `http://kms.party.example:50001` | **KMS party**                    | The core's MPC endpoint. Consumed **only by the other parties' cores**: each peer parses host+port and dials it for MPC traffic (reshares, decryption sessions).                                                                  | Reachable from every _other_ party's core (peer-to-peer, not from us)                                     |
+| `storageUrl`      | Base URL of the party's public vault (S3-compatible bucket)                                                                                                                                                                                      | **KMS party**                    | Where the core publishes its public material. Emitted in `ActivateEpoch` and served per key/CRS result by `KMSGeneration` → the relayer's `/v2/keyurl`, so clients know where to download public keys and CRS                     | `curl` returns objects (Annex B.2)                                                                        |
+| `partyId`         | `int32`, contiguous `1..n`, **positional**                                                                                                                                                                                                       | **Coordinator (us)**             | The party's MPC role index (the core builds its role map from it and rejects out-of-range or duplicate ids). A swap keeps the dropped node's id                                                                                   | Annex B.3 validator checks contiguity + duplicates                                                        |
+| `mpcIdentity`     | Free-form string; must **byte-match** the `mpc_identity` in the party's core config                                                                                                                                                              | **KMS party**                    | The party's logical identity in the MPC layer: self-recognition (which roster slot is "me" — a mismatch aborts the reshare), TLS trust-root lookup (peer cert verification is keyed by it), and message routing                   | Must byte-match their config — ask them to paste it, do not derive it                                     |
+| `caCert`          | `bytes` = the party's TLS CA as a regular PEM file, verbatim (`-----BEGIN CERTIFICATE-----` … `-----END CERTIFICATE-----`, usually newline-terminated); carried as `0x` + hex of those exact bytes in the env                                    | **KMS party** (verifiable)       | The party's **long-lived** CA: peers verify mutual-TLS MPC connections against it (looked up by `mpcIdentity`). Published at `<storagePrefix>/CACert/<handle>`; **not** regenerated by reshares or context switches               | Fetch + `openssl x509` parse (Annex B.2); the hex must be byte-exact — it feeds the context anchor        |
+| `storagePrefix`   | String key prefix inside the vault (e.g. `PUB-p3`)                                                                                                                                                                                               | **KMS party**                    | Namespaces the party's objects in its vault: `<storageUrl>/<storagePrefix>/VerfAddress/<handle>`, `…/CACert/<handle>`, and the public key material clients download                                                               | The `VerfAddress`/`CACert` fetches above implicitly validate it                                           |
 
 Committee-level values (set once, not per node):
 
@@ -128,8 +128,8 @@ receiver.
 3. **Everything after the broadcast is automatic**: the contract emits `NewKmsEpoch`
    (same context — `kmsContextId == previousContextId`); each connector drives its
    core through the reshare, then submits `confirmEpochActivation` with its signed
-   key/CRS attestations; once the attestations are unanimous the contract emits
-   `ActivateEpoch`.
+   key/CRS attestations and its signed `EpochActivationConfirmation`. Once the
+   signatures are unanimous the contract emits `ActivateEpoch`.
 4. **Watch**: `task:kmsContextSwitchStatus` (Annex B.1) until "fully live". The
    task labels what it sees on-chain — `same-set-rotation` is _this_ flow (a new
    epoch issued under the same, still-active context), as opposed to
@@ -227,20 +227,21 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
      recover by registering the retry's (higher) context id.
 
 4. **Automatic phase 1 — creation quorum**: every connector (old and new
-   committees) submits `confirmKmsContextCreation`. When **all new + (n − t) old**
-   tx-senders have confirmed, the context flips to CREATED and the contract emits
-   the `NewKmsEpoch` that starts the reshare.
+   committees) submits its signer's `ContextCreationConfirmation` signature through
+   `confirmKmsContextCreation`. When **all new + (n − t) old** signers have confirmed
+   the same digest, the context flips to CREATED and the contract emits the
+   `NewKmsEpoch` that starts the reshare.
 5. **Automatic phase 2 — reshare + activation**: outgoing nodes send (Set 1),
    incoming nodes receive (Set 2), continuing nodes do both. Then every
    **new-committee** connector submits `confirmEpochActivation`; unanimity on the
-   same result hash triggers `ActivateEpoch` — the context becomes ACTIVE and
+   same `epochMaterialHash` and `extraData` triggers `ActivateEpoch`. The context becomes ACTIVE and
    `getCurrentKmsContextAndEpoch` advances.
 6. **Watch throughout**:
    ```bash
    npx hardhat task:kmsContextSwitchStatus --network <network> --from-block <block>
    ```
-   While PENDING it lists exactly which new tx-senders are outstanding and the
-   old-side `n − t` target — this tells you _which party_ to chase.
+   While PENDING it lists exactly which new signers are outstanding and the
+   old-side `n − t` target. This tells you _which party_ to chase.
 
 ### 4.3 Verify
 
@@ -262,7 +263,7 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
 ## 5. Mirroring onto non-canonical hosts (replicas)
 
 Ethereum is the canonical host: §3 and §4 run there and nowhere else. Every other host
-chain (e.g. Polygon) runs `ProtocolConfigReplica`, which has no lifecycle — no quorum, no
+chain runs `ProtocolConfigReplica`, which has no lifecycle — no quorum, no
 reshare, no `KMSGeneration`. Its only write path is the two mirror methods, which import
 state Ethereum has already finalized and land it as immediately `Active`.
 **Bringing each replica forward after a canonical rotation is the operator's job** —
@@ -402,6 +403,11 @@ Worth knowing: the bootstrap path (`initializeFromCanonical`) could not recover 
 filled placeholders, so the first mirrored switch is where a replica's event history starts
 carrying the real values.
 
+**Upgrade precondition (ProtocolConfig v0.4.0)**: settle any in-flight lifecycle operation
+first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. v0.3.0 votes do not count
+toward the signed quorums. An epoch destroyed before the upgrade cannot collect signed destruction
+confirmations. The replica owner applies it through the mirror path.
+
 `task:kmsContextSwitchStatus` is a canonical-side tool. Pointed at a replica it reports
 `idle`, because it tracks the pending/quorum path that replicas never run — that is the
 expected output, not a problem.
@@ -433,8 +439,9 @@ Gateway tasks (gateway-contracts/, reads GATEWAY_CONFIG_ADDRESS, KMS_CONTEXT_ID)
   task:updateKmsContext                           direct broadcast
 
 Quorum cheat-sheet:
-  context creation  = ALL new tx-senders + (n - t) old tx-senders
-  epoch activation  = ALL new-committee signers, unanimous on one result hash
+  context creation  = ALL new signers + (n - t) old signers, on one digest
+  epoch activation  = ALL new-committee signers, unanimous on one digest
+  destruction       = canonical collects active-committee signatures, replicas need n - t
   committee size    = 3 * MPC_THRESHOLD + 1, party ids contiguous 1..n
 ```
 
@@ -449,12 +456,18 @@ Quorum cheat-sheet:
   Governance only _opens_ a switch; all confirmations are submitted **automatically by
   the KMS connectors** reacting to events. Operators broadcast one transaction and watch.
 - **Node identity is a `(txSenderAddress, signerAddress)` pair.**
-  `confirmKmsContextCreation` authenticates, deduplicates and counts **by tx-sender**.
-  `confirmEpochActivation` authenticates by tx-sender and records the vote under the
-  node's **signer** (resolved from the on-chain node record).
+  All four confirmation functions (`confirmKmsContextCreation`, `confirmEpochActivation`,
+  `confirmKmsContextDestruction`, `confirmKmsEpochDestruction`) authenticate the node by
+  the EIP-712 signature of its **signer** (RFC 037). Anyone may submit the signature, and
+  the contract deduplicates and counts **by signer**.
+- **Destruction confirmations**: after `destroyKmsContext` or `destroyKmsEpoch`, each signer
+  of the active committee signs a `ContextDestructionConfirmation` or
+  `EpochDestructionConfirmation`. The canonical only collects them. A replica applies the
+  destruction with `n − t` of them over one digest, so do not rotate the committee before
+  the destruction reaches `n − t` confirmations.
 - **Quorums**:
-  - Context creation: **ALL new-committee tx-senders** + **(n − t)
-    previous-committee tx-senders** (n = previous committee size, t = previous MPC
+  - Context creation: **ALL new-committee signers** + **(n − t)
+    previous-committee signers** (n = previous committee size, t = previous MPC
     threshold; floored at 1). More than `t` so faulty nodes can never approve a
     switch alone; at most `n − t` because anything higher would let a dead node
     block the switch forever. Under the `n = 3t + 1` topology this quorum works
@@ -462,8 +475,8 @@ Quorum cheat-sheet:
     committee.
   - The MPC reshare needs the same `n − t` old-committee senders, so both phases
     tolerate up to **t** dead-or-silent previous nodes.
-  - Epoch activation: **unanimous** — every new-committee signer must attest the _same_
-    key/CRS result hash. One divergent attestation splits the vote and the epoch stays
+  - Epoch activation: **unanimous** — every new-committee signer must sign the _same_
+    digest (`epochMaterialHash` and `extraData`). One divergent signature splits the vote and the epoch stays
     Pending until governance destroys it (`destroyKmsEpoch`).
 - **One switch in flight at a time — by convention, not by contract check.**
   `defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext` do not revert
@@ -517,11 +530,13 @@ cd host-contracts
 npx hardhat task:kmsContextSwitchStatus --network <network> --from-block <recent-block>
 # flow: idle (nothing in flight) | context-switch (pending context newer than the
 #       active one) | same-set-rotation (new epoch under the same active context)
-# contextState: PENDING (lists outstanding new tx-senders + the n-t old-side target)
+# contextState: PENDING (lists outstanding new signers + the n-t old-side target)
 #               CREATED (creation quorum reached, epoch still PENDING)
 # epochState:   PENDING | ACTIVE ("fully live")
 # aborted:      true + reason if governance destroyed the pending context/epoch
 #               (destroyKmsContext / destroyKmsEpoch)
+# destruction:  active-committee destruction confirmations of a destroyed context or
+#               epoch, against the n-t target a replica needs
 ```
 
 ### B.2 Verify a party's claimed parameters (coordinator-side)

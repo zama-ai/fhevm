@@ -8,7 +8,7 @@ import { broadcast, getProtocolConfigInterface, requireProtocolConfigAddress } f
 import { type KmsThresholds, readCanonicalSnapshot } from './protocolConfigMirror';
 
 // This file defines tasks that mirror the canonical (Ethereum) ProtocolConfig's active KMS context
-// and epoch onto a non-canonical replica (e.g. Polygon) after a rotation has gone active on
+// and epoch onto a non-canonical replica after a rotation has gone active on
 // canonical. It follows the same build-calldata (DAO path, never broadcasts) / broadcast (no-DAO
 // path for devnet / test-suite) convention as kmsContext.ts, calling the replica's
 // `mirrorKmsContextAndEpoch` (context switch) or `mirrorKmsEpoch` (same-set epoch rotation).

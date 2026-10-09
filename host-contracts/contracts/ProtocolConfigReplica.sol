@@ -12,7 +12,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
  * @title ProtocolConfigReplica
- * @notice Read-replica of the canonical ProtocolConfig on the non-canonical host chains (e.g. Polygon).
+ * @notice Read-replica of the canonical ProtocolConfig on the non-canonical host chains.
  * @dev Ethereum is the canonical host and the single source of truth.
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
@@ -26,9 +26,8 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @dev Shared between `initializeFromCanonical` and `reinitializeV4`. Existing replica proxies
-    ///      run `ProtocolConfig` at initialized version 3 (v0.14.x release) or 4 (later builds).
-    ///      Version 5 is above both, so `reinitializeV4` works from either.
+    /// @dev Shared between `initializeFromCanonical` and `reinitializeV4`.
+    ///      Replica proxies convert from the v0.14.2 release, initialized at version 3.
     uint64 private constant REINITIALIZER_VERSION = 5;
 
     // -----------------------------------------------------------------------------------------
