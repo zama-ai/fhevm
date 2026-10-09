@@ -76,7 +76,7 @@ class SolanaCharts(unittest.TestCase):
             self.assertEqual(writer["spec"]["replicas"], 1)
             self.assertEqual(writer["spec"]["strategy"],
                              {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0}})
-        scaled = render("coprocessor-1", "coprocessor", COPROCESSOR, *START_SLOT,
+        scaled = render("coprocessor-1", "coprocessor", COPROCESSOR, *START_SLOT, *SIGNER,
                         "--set", "solanaHostListener.replicas=2",
                         "--set", "solanaHostListener.merkleIndexer.replicas=2")
         for name in [LISTENER, INDEXER]:
