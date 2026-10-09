@@ -679,8 +679,6 @@ impl Database {
             return Ok(0);
         }
 
-        // Wait for locked rows: skipping the last Slow row would falsely finish the reset.
-        // The pool's statement_timeout bounds each batch, including its row-lock wait.
         let mut total_promoted: u64 = 0;
         loop {
             let updated = sqlx::query!(
@@ -691,7 +689,7 @@ impl Database {
                     WHERE schedule_priority <> $1
                     ORDER BY dependence_chain_id
                     LIMIT $2
-                    FOR UPDATE
+                    FOR UPDATE SKIP LOCKED
                 )
                 UPDATE dependence_chain dc
                 SET schedule_priority = $1
