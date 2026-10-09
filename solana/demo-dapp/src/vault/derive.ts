@@ -41,7 +41,6 @@ export interface VaultDemoRoots {
   readonly joinUnderlyingMint: Address;
   /** SPL mint `payoutConfidentialMint` wraps. */
   readonly payoutUnderlyingMint: Address;
-  readonly kmsContext: Address;
 }
 
 /** Every batch-scoped address derivable from the roots and a batch index — no chain reads. */
@@ -109,7 +108,6 @@ export interface SolanaVaultSettleAccounts {
   /** The batch join token account's single pending burn, known before dispatch. */
   readonly pendingBurn: Address;
   readonly hostConfig: Address;
-  readonly kmsContext: Address;
   readonly vault: Address;
   readonly vaultAuthority: Address;
   readonly vaultTokenAccount: Address;
@@ -157,7 +155,6 @@ export async function deriveSettleAccounts(
     batchBurnedAmountStore: batch.batchBurnedAmountStore,
     pendingBurn: (await findPendingBurnPda({ mint: roots.joinConfidentialMint, tokenAccount: batch.batchJoinTokenAccount }))[0],
     hostConfig: (await findHostConfigPda())[0],
-    kmsContext: roots.kmsContext,
     vault: roots.vault,
     vaultAuthority,
     vaultTokenAccount,

@@ -23,7 +23,7 @@ import { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
 import { deriveBatchAddresses, type VaultDemoRoots } from './derive.js';
 import { getSettleInstructionDataDecoder, parseSettleInstruction } from './internal/generated/confidentialBatcher/instructions/settle.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
-import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
+import { findDenyScopeRecordPda, findKmsContextPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import { encodedSize, messageOf, testDemoClient } from '../testDemoClient';
 
@@ -57,7 +57,6 @@ function roots(): VaultDemoRoots {
     payoutConfidentialMint: addr(13),
     joinUnderlyingMint: addr(5),
     payoutUnderlyingMint: addr(14),
-    kmsContext: addr(9),
   };
 }
 
@@ -128,6 +127,9 @@ describe('settleBatch', () => {
     ]);
     const parsed = parseSettleInstruction({ ...settle!, accounts: settle!.accounts!, data: settle!.data! });
     expect(parsed.accounts.batch.address).toBe(addresses.batch);
+    // The host account of the context the certificate names, not a context fixed at seed time.
+    const [certificateContext] = await findKmsContextPda({ contextId: new Uint8Array(32).fill(0x07) });
+    expect(parsed.accounts.kmsContext.address).toBe(certificateContext);
     expect(open!.accounts?.[1]?.address).toBe(parsed.accounts.transientStore.address);
     expect(close!.accounts?.[1]?.address).toBe(parsed.accounts.transientStore.address);
     // The certified 32-byte cleartext was decoded to the u64 settle argument.

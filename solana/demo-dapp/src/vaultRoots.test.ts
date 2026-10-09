@@ -16,7 +16,6 @@ const config = {
     payoutConfidential: "cshares",
   },
   vault: "vault",
-  kmsContext: "kms-context",
 } as unknown as DemoConfig;
 
 describe("vaultRoots", () => {

@@ -17,6 +17,5 @@ export const vaultRoots = (config: DemoConfig, direction: VaultDirection): Vault
     joinUnderlyingMint: redeem ? config.mints.payoutUnderlying : config.mints.joinUnderlying,
     payoutUnderlyingMint: redeem ? config.mints.joinUnderlying : config.mints.payoutUnderlying,
     vault: config.vault,
-    kmsContext: config.kmsContext,
   };
 };

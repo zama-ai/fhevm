@@ -24,7 +24,6 @@ function roots(): VaultDemoRoots {
     payoutConfidentialMint: addr(13),
     joinUnderlyingMint: addr(5),
     payoutUnderlyingMint: addr(14),
-    kmsContext: addr(9),
   };
 }
 
@@ -58,7 +57,6 @@ describe('deriveSettleAccounts', () => {
       batchBurnedAmountStore: 'BFahaYhwFQvt2cHGeHg4ujaWcC52RWgHdiEQuV7PT2oA',
       pendingBurn: 'BgV6GmgySEincRffgdRA8qLX8nUxpuSfjRF76WGrTAPy',
       hostConfig: '8FL98RBTQ8LviLQ6c9F5j6pdtJPFSbnnTJgh3VVcLeKC',
-      kmsContext: 'cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN',
       vault: 'gBxS1f6uyyGPuW5MzGBukidSb71jdsCb5fZaoSzULE5',
       vaultAuthority: 'CxnAjXqMPmT5xT8dmsFbMgVNgA8HPVa4WVWhCm3gZNL9',
       vaultTokenAccount: '3kdEZ36hPkUH2Hq2XhjBCdKVn7xBbpWLtbd9ePxSBf1o',

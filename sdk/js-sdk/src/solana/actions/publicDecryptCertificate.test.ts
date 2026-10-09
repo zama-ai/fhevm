@@ -4,6 +4,7 @@ import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAs
 import { bytesToHex } from '../../core/base/bytes.js';
 import {
   publicDecryptCertificate,
+  solanaPublicDecryptContextId,
   solanaPublicDecryptExtraData,
   type SolanaPublicDecryptBatch,
 } from './publicDecryptCertificate.js';
@@ -46,6 +47,19 @@ describe('solanaPublicDecryptExtraData', () => {
     await expect(
       publicDecryptCertificate(context, { ...parameters(), entries: [{ handle, encryptedStore: new Uint8Array(33) }] }),
     ).rejects.toThrow('encryptedStore must be 32 bytes');
+  });
+});
+
+describe('solanaPublicDecryptContextId', () => {
+  it('reads the context id back from the v2 routing', () => {
+    expect(solanaPublicDecryptContextId({ extraData: requestExtraData() })).toEqual(contextId);
+  });
+
+  it.each([
+    ['version 0', '0x00'],
+    ['version 1', `0x01${'05'.repeat(32)}`],
+  ])('rejects %s routing', (_name, extraData) => {
+    expect(() => solanaPublicDecryptContextId({ extraData })).toThrow('must be the v2 KMS routing');
   });
 });
 

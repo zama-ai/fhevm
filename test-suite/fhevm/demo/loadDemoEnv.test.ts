@@ -27,7 +27,6 @@ const sampleConfig = (): SolanaDemoConfig => ({
   gatewayDecryptionContract: `0x${"aa".repeat(20)}` as `0x${string}`,
   authorityFundingLamports: "100000000",
   programs: { batcher: addr(30), token: addr(31), vault: addr(32), host: addr(33) } as SolanaDemoConfig["programs"],
-  kmsContext: addr(9) as SolanaDemoConfig["kmsContext"],
   vault: addr(10) as SolanaDemoConfig["vault"],
   mints: {
     joinUnderlying: addr(5),

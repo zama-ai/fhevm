@@ -33,7 +33,6 @@ const sampleConfig = (): SolanaDemoConfig => ({
   gatewayDecryptionContract: `0x${"aa".repeat(20)}` as `0x${string}`,
   authorityFundingLamports: "100000000",
   programs: { batcher: address(addr(30)), token: address(addr(31)), vault: address(addr(32)), host: address(addr(33)) },
-  kmsContext: address(addr(9)),
   vault: address(addr(10)),
   mints: {
     joinUnderlying: address(addr(5)),
@@ -66,8 +65,8 @@ describe("demo-config parse", () => {
   });
 
   test("rejects a malformed field with the field named", () => {
-    const broken = { ...sampleConfig(), kmsContext: "not-base58!!" } as unknown;
-    expect(() => parseDemoConfig(broken)).toThrow(/kmsContext/);
+    const broken = { ...sampleConfig(), vault: "not-base58!!" } as unknown;
+    expect(() => parseDemoConfig(broken)).toThrow(/vault/);
   });
 
   test("rejects a chain id that is not decimal", () => {

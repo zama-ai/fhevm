@@ -27,7 +27,6 @@ describe('openBatchForBatcher', () => {
         payoutConfidentialMint: addr(13),
         joinUnderlyingMint: addr(5),
         payoutUnderlyingMint: addr(14),
-        kmsContext: addr(9),
       },
       batchIndex: 0n,
       payer,

@@ -1,4 +1,5 @@
-import { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore } from '@fhevm/sdk/solana';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore, solanaPublicDecryptContextId } from '@fhevm/sdk/solana';
+import { findKmsContextPda } from '@fhevm/solana-zama-host';
 import type { Signature } from '@solana/kit';
 import { base58 } from '@scure/base';
 
@@ -69,6 +70,9 @@ export async function settleBatch(
       options: options.certificateOptions,
   });
 
+  // zama-host checks the certificate against the KmsContext account it is given, so settle passes the
+  // account of the context the certificate names.
+  const [kmsContext] = await findKmsContextPda({ contextId: solanaPublicDecryptContextId(claim) });
   const cleartextTotal = settleTotalFromCleartext(hexToBytes(claim.abiEncodedCleartext));
 
   const signatures = claim.signatures.map((signature, index) => {
@@ -83,6 +87,7 @@ export async function settleBatch(
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     payer: keeperClient.payer,
     ...accounts,
+    kmsContext,
     cleartextTotal,
     signatures,
     extraData: hexToBytes(claim.extraData),

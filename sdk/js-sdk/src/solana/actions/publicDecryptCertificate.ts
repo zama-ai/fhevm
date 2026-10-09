@@ -2,9 +2,10 @@ import type { EncryptedValueLike } from '../../core/types/encryptedTypes.js';
 import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
-import { bytesToBigInt, bytesToHex, unsafeBytesEquals } from '../../core/base/bytes.js';
-import { createKmsExtraDataV2 } from '../../core/kms/kmsExtraData-p.js';
-import type { BytesHex, Uint256BigInt } from '../../core/types/primitives.js';
+import { asBytesHex, bytesToBigInt, bytesToHex, unsafeBytesEquals } from '../../core/base/bytes.js';
+import { uint256ToBytes32 } from '../../core/base/uint.js';
+import { createKmsExtraDataFromBytesHex, createKmsExtraDataV2, EXTRA_DATA_V2 } from '../../core/kms/kmsExtraData-p.js';
+import type { Bytes32, BytesHex, Uint256BigInt } from '../../core/types/primitives.js';
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
@@ -155,6 +156,21 @@ export function solanaPublicDecryptExtraData(contextId: Uint8Array, epochId: Uin
     kmsContextId: bytesToBigInt(contextId) as Uint256BigInt,
     kmsEpochId: bytesToBigInt(epochId) as Uint256BigInt,
   }).bytesHex;
+}
+
+/**
+ * The KMS context id a Solana public-decrypt certificate commits to, read back from its signed
+ * `extraData`: the inverse of {@link solanaPublicDecryptExtraData}. An on-chain consumer passes the
+ * host `KmsContext` account for this id, because the verifier checks the certificate against it.
+ *
+ * @param claim - The certificate.
+ */
+export function solanaPublicDecryptContextId(claim: Pick<SolanaPublicDecryptCertificateClaim, 'extraData'>): Bytes32 {
+  const routing = createKmsExtraDataFromBytesHex(asBytesHex(claim.extraData, { subject: 'extraData' }));
+  if (routing.version !== EXTRA_DATA_V2) {
+    throw new Error('Solana public-decrypt extraData must be the v2 KMS routing 0x02 ‖ contextId ‖ epochId');
+  }
+  return uint256ToBytes32(routing.kmsContextId);
 }
 
 function assertFieldLen(name: string, bytes: Uint8Array, len: number): void {
