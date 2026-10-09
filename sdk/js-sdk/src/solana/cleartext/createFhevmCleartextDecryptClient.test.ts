@@ -46,7 +46,7 @@ describe('createFhevmCleartextDecryptClient', () => {
     vi.spyOn(zamaHost, 'fetchKmsContext').mockResolvedValue({
       data: { destroyed: false, signers: [kmsSigner] },
     } as unknown as Awaited<ReturnType<typeof zamaHost.fetchKmsContext>>);
-    vi.spyOn(authorization, 'solanaRelayerDelegationRefusal').mockResolvedValue(undefined);
+    vi.spyOn(authorization, 'solanaRelayerPrecheckRefusal').mockResolvedValue(undefined);
     vi.spyOn(authorization, 'judgeSolanaUserDecryption').mockResolvedValue({ authorized: true });
     vi.spyOn(storeValues, 'fetchCleartextStoreValue').mockResolvedValue(Uint8Array.of(42));
     const client = createFhevmCleartextDecryptClient({

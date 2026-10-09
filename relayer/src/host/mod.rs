@@ -6,7 +6,7 @@ pub mod handle_chain_id;
 pub mod keyurl_poller;
 pub mod provider;
 pub mod signature_prechecker;
-pub mod solana_delegation_precheck;
+pub mod solana_user_decrypt_precheck;
 pub mod threshold_resolver;
 
 pub use acl_checker::{HostAclChecker, HostAclError};

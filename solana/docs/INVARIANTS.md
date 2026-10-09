@@ -656,15 +656,17 @@ the maximum coprocessor threshold with every witness` (`joinBatch.test.ts`) and
 `mollusk_settle_at_the_largest_kms_certificate_fits_the_compute_budget`.
 
 **50. [OPERATIONAL]** The relayer's ACL preflight covers EVM host chains and,
-advisorily, Solana delegated entries: a delegation row that is dead at the
-host Clock of the read (absent, revoked, expired) is refused before the gateway
-fee (`relayer/src/host/solana_delegation_precheck.rs`); every ambiguity of
-data passes. A direct Solana entry is not pre-checked — its authorization
-is an allow leaf the connector fetches, and there is no cheaper reading of
-it — so an unauthorized one is rejected by the KMS connectors after the
-gateway fee is paid. This does not affect authorization (#42, #45); for
-now we accept that a rejected request can still cost a fee, and that
-this leaves room for spam.
+advisorily, Solana user-decrypt entries (`relayer/src/host/solana_user_decrypt_precheck.rs`).
+Before the gateway fee it refuses an entry whose encrypted store's application
+lies outside the permit's allowed scopes, as EVM's `Decryption.sol` refuses a
+contract outside the signed contract addresses, and a delegated entry whose
+delegation rows are dead at the host Clock of the read (absent, revoked,
+expired); every ambiguity of data passes. Allow leaves and the permit
+watermark are not pre-checked — the connector fetches the leaf, and there is
+no cheaper reading of it — so a request refused on them is rejected by the
+KMS connectors after the gateway fee is paid. This does not affect
+authorization (#42, #45); for now we accept that a rejected request can still
+cost a fee, and that this leaves room for spam.
 
 **54. [HOLDS]** `FheExecution::build` enforces three typed resource ceilings:
 

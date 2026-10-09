@@ -1,27 +1,34 @@
-//! Advisory, negative-only pre-check of Solana delegated user-decrypt entries, the Solana analogue
-//! of the EVM host-ACL pre-check: it saves a gateway transaction the KMS connectors would refuse.
-//! The connectors' check stays authoritative, so this one only refuses what they cannot authorize:
+//! Advisory, negative-only pre-check of a Solana user-decrypt request, the Solana analogue of the
+//! EVM host-ACL pre-check: it saves a gateway transaction the KMS connectors would refuse. The
+//! connectors' check stays authoritative, so this one only refuses what they cannot authorize:
 //!
-//! * it refuses an entry whose delegation rows are both dead (absent, revoked, or expired at the
-//!   host's Clock) in this read. A lagging node can show a fresh grant as absent; the caller then
-//!   resubmits, the same exposure the EVM pre-check accepts;
+//! * it refuses an entry whose encrypted store's application `(program, scope)` the permit's
+//!   allowed scopes do not cover, as EVM's `Decryption.sol` refuses a contract outside the signed
+//!   contract addresses before the fee. A store's application is its seeds, so no later read can
+//!   change this answer;
+//! * it refuses a delegated entry whose delegation rows are both dead (absent, revoked, or expired
+//!   at the host's Clock) in this read. A lagging node can show a fresh grant as absent; the caller
+//!   then resubmits, the same exposure the EVM pre-check accepts;
 //! * any account it cannot judge passes: an invalid row, a misshapen account, an unresolvable
 //!   encrypted store;
 //! * a transport failure refuses (`HostAclError::CallFailed`), as on EVM. A node behind the first
 //!   read's slot is not a failure: the row read requires that slot (`minContextSlot`) and passes if
 //!   the node never reaches it.
 //!
-//! Direct entries are not pre-checked: their allow leaf comes from the coprocessors, and the
+//! The allow leaf of a direct entry is not pre-checked: it comes from the coprocessors, and the
 //! connector reads it no more cheaply than this would.
 //!
-//! The store validation and the row verdicts are `zama-solana-acl`'s, the functions the connector
-//! judges the same bytes with. Everything but the two RPC reads in `acl_checker` is pure here.
+//! The store validation and the row verdicts are `zama-solana-acl`'s, and the scope rule is
+//! `zama-solana-permit`'s: the functions the connector judges the same bytes with. Everything but
+//! the two RPC reads in `acl_checker` is pure here.
 
+use solana_pubkey::Pubkey;
 use zama_solana_acl::{
     decode_clock_unix_timestamp, find_delegation_record_address, judge_delegation,
     judge_delegation_row, validate_store, AccountView, DelegationVerdict, CLOCK_SYSVAR_ID,
     WILDCARD_APP,
 };
+use zama_solana_permit::{AllowedScopes, Identity};
 
 /// One fetched account, exactly as the RPC returned it.
 #[derive(Clone, Debug)]
@@ -127,16 +134,17 @@ pub(crate) fn entry_verdict(
     }
 }
 
-/// One delegated entry as admission handed it over: the claimed identities, plus the handle
-/// for refusal attribution.
-pub(crate) struct DelegatedEntry {
+/// One entry as admission handed it over: the claimed identities, plus the handle for refusal
+/// attribution.
+pub(crate) struct RequestEntry {
     pub handle_hex: String,
-    /// The entry's owner address, which on a delegated entry is the delegator.
-    pub delegator: [u8; 32],
+    /// The entry's owner address: the requester on a direct entry, the delegator on a delegated
+    /// one.
+    pub owner: [u8; 32],
     pub encrypted_store: [u8; 32],
 }
 
-/// An entry whose encrypted store resolved to an application, with the two rows that
+/// A delegated entry whose encrypted store resolved to an application, with the two rows that
 /// application gives it.
 pub(crate) struct PlannedEntry {
     pub handle_hex: String,
@@ -144,7 +152,7 @@ pub(crate) struct PlannedEntry {
     pub rows: [RowAddress; 2],
 }
 
-/// What the encrypted-state read planned for the row read: `entries[i]`'s rows sit at
+/// What the encrypted-store read planned for the row read: `entries[i]`'s rows sit at
 /// `addresses[2i]` (application) and `addresses[2i + 1]` (wildcard), and the Clock sysvar is
 /// last — built by [`plan_row_reads`], consumed by [`judge_planned_entries`]. The Clock rides in
 /// the same read so liveness is judged at the time of the slot the rows were read at.
@@ -153,7 +161,7 @@ pub(crate) struct RowReadPlan {
     pub addresses: Vec<[u8; 32]>,
 }
 
-/// One refused entry: the handle and the reason the rows are definitively dead.
+/// One refused entry: the handle and the reason the connectors cannot authorize it.
 pub(crate) struct EntryRefusal {
     pub handle_hex: String,
     pub reason: String,
@@ -169,48 +177,90 @@ pub(crate) enum ReadDefect {
     Clock,
 }
 
-/// The addresses of the encrypted-state read, one per entry in order: the entry names
-/// the account by address, and the account's own fields are checked against it once read.
-pub(crate) fn encrypted_store_read_addresses(entries: &[DelegatedEntry]) -> Vec<[u8; 32]> {
+/// The addresses of the encrypted-store read, one per entry in order: the entry names the
+/// account by address, and the account's own fields are checked against it once read.
+pub(crate) fn encrypted_store_read_addresses(entries: &[RequestEntry]) -> Vec<[u8; 32]> {
     entries.iter().map(|entry| entry.encrypted_store).collect()
 }
 
-/// Plans the row read from the encrypted-state read's result. Entries this check cannot
-/// judge from their encrypted store drop out here (indeterminate — the connector
-/// decides); each surviving entry contributes its two row addresses in the interleaving
-/// [`RowReadPlan`] documents.
-pub(crate) fn plan_row_reads(
+/// The application of each entry's encrypted store, in entry order ([`store_application`]; `None`
+/// where this check cannot judge the store).
+pub(crate) fn entry_applications(
     program_id: [u8; 32],
-    delegate: [u8; 32],
-    entries: Vec<DelegatedEntry>,
+    entries: &[RequestEntry],
     encrypted_stores: Vec<Option<RawAccount>>,
-) -> Result<RowReadPlan, ReadDefect> {
+) -> Result<Vec<Option<AppScope>>, ReadDefect> {
     if encrypted_stores.len() != entries.len() {
         return Err(ReadDefect::EncryptedStores {
             entries: entries.len(),
             accounts: encrypted_stores.len(),
         });
     }
+    Ok(entries
+        .iter()
+        .zip(encrypted_stores)
+        .map(|(entry, encrypted_store)| {
+            store_application(program_id, entry.encrypted_store, encrypted_store.as_ref())
+        })
+        .collect())
+}
+
+/// The entries whose store's application the permit's allowed scopes do not cover, by the rule
+/// the connector applies (`AllowedScopes::admits`). An entry whose store this check cannot judge
+/// is not refused.
+pub(crate) fn scope_refusals(
+    scopes: &AllowedScopes,
+    entries: &[RequestEntry],
+    applications: &[Option<AppScope>],
+) -> Vec<EntryRefusal> {
+    entries
+        .iter()
+        .zip(applications)
+        .filter_map(|(entry, application)| {
+            let app = (*application)?;
+            (!scopes.admits(&Identity::new(app.program), &Identity::new(app.scope))).then(|| {
+                EntryRefusal {
+                    handle_hex: entry.handle_hex.clone(),
+                    reason: format!(
+                        "the permit's allowed scopes do not cover the encrypted store's \
+                         application (program {}, scope {})",
+                        Pubkey::new_from_array(app.program),
+                        Pubkey::new_from_array(app.scope),
+                    ),
+                }
+            })
+        })
+        .collect()
+}
+
+/// Plans the row read for the delegated entries, those whose owner is not `delegate`. A delegated
+/// entry whose encrypted store this check cannot judge drops out here (indeterminate — the
+/// connector decides); each surviving entry contributes its two row addresses in the interleaving
+/// [`RowReadPlan`] documents.
+pub(crate) fn plan_row_reads(
+    program_id: [u8; 32],
+    delegate: [u8; 32],
+    entries: Vec<RequestEntry>,
+    applications: Vec<Option<AppScope>>,
+) -> RowReadPlan {
     let mut plan = RowReadPlan {
         entries: Vec::new(),
         addresses: Vec::new(),
     };
-    for (entry, encrypted_store) in entries.into_iter().zip(encrypted_stores) {
-        let Some(app) =
-            store_application(program_id, entry.encrypted_store, encrypted_store.as_ref())
-        else {
+    for (entry, application) in entries.into_iter().zip(applications) {
+        let Some(app) = application.filter(|_| entry.owner != delegate) else {
             continue;
         };
-        let rows = delegation_rows(&entry.delegator, &delegate, app, program_id);
+        let rows = delegation_rows(&entry.owner, &delegate, app, program_id);
         plan.addresses.extend(rows.map(|row| row.address));
         plan.entries.push(PlannedEntry {
             handle_hex: entry.handle_hex,
-            delegator: entry.delegator,
+            delegator: entry.owner,
             rows,
         });
     }
     plan.addresses.push(CLOCK_SYSVAR_ID);
-    Ok(plan)
+    plan
 }
 
 /// Pairs the fetched rows back to their entries and collects the refusals. The pairing is the
@@ -532,12 +582,18 @@ pub(crate) mod tests {
 
     // ---- the plan and the pairing ----
 
-    fn entry(handle: &str, encrypted_store: [u8; 32]) -> DelegatedEntry {
-        DelegatedEntry {
+    fn entry(handle: &str, encrypted_store: [u8; 32]) -> RequestEntry {
+        RequestEntry {
             handle_hex: handle.to_string(),
-            delegator: DELEGATOR,
+            owner: DELEGATOR,
             encrypted_store,
         }
+    }
+
+    fn plan(entries: Vec<RequestEntry>, stores: Vec<Option<RawAccount>>) -> RowReadPlan {
+        let applications =
+            entry_applications(PROGRAM_ID, &entries, stores).expect("aligned inputs resolve");
+        plan_row_reads(PROGRAM_ID, DELEGATE, entries, applications)
     }
 
     fn planned(handle: &str) -> PlannedEntry {
@@ -556,17 +612,14 @@ pub(crate) mod tests {
         let (value_a, id_a) = encrypted_store_for(APP_PROGRAM, [0x41; 32]);
         let (value_c, id_c) = encrypted_store_for(APP_PROGRAM, [0x43; 32]);
 
-        let plan = plan_row_reads(
-            PROGRAM_ID,
-            DELEGATE,
+        let plan = plan(
             vec![
                 entry("0xaa", id_a),
                 entry("0xbb", [0xbb; 32]),
                 entry("0xcc", id_c),
             ],
             vec![Some(value_a), None, Some(value_c)],
-        )
-        .expect("aligned inputs plan");
+        );
 
         let handles: Vec<&str> = plan
             .entries
@@ -597,6 +650,64 @@ pub(crate) mod tests {
             vec![rows_a[0], rows_a[1], rows_c[0], rows_c[1], CLOCK_SYSVAR_ID],
             "each surviving entry keeps its own rows, application before wildcard"
         );
+    }
+
+    /// A direct entry has no delegation row to read.
+    #[test]
+    fn the_plan_reads_rows_for_delegated_entries_only() {
+        let (store, id) = encrypted_store_for(APP_PROGRAM, SCOPE);
+        let direct = RequestEntry {
+            owner: DELEGATE,
+            ..entry("0xd1", id)
+        };
+        let plan = plan(
+            vec![direct, entry("0xde", id)],
+            vec![Some(store.clone()), Some(store)],
+        );
+        let handles: Vec<&str> = plan
+            .entries
+            .iter()
+            .map(|planned| planned.handle_hex.as_str())
+            .collect();
+        assert_eq!(handles, ["0xde"]);
+    }
+
+    // ---- the permit's scopes ----
+
+    fn scopes(applications: &[AppScope]) -> AllowedScopes {
+        AllowedScopes::new(
+            applications
+                .iter()
+                .map(|app| {
+                    zama_solana_permit::ApplicationScope::new(
+                        Identity::new(app.program),
+                        Identity::new(app.scope),
+                    )
+                })
+                .collect(),
+        )
+        .expect("one scope is a valid list")
+    }
+
+    /// The connector's rule (`AllowedScopes::admits`): a signed list admits exactly its pairs, an
+    /// empty one admits every application, and an entry this check cannot judge is never refused.
+    #[test]
+    fn an_entry_is_refused_only_when_its_known_application_is_outside_signed_scopes() {
+        let other = AppScope {
+            program: APP_PROGRAM,
+            scope: [0x99; 32],
+        };
+        let entries = [entry("0xaa", [0xaa; 32]), entry("0xbb", [0xbb; 32])];
+        let refused = |allowed: &[AppScope], applications: &[Option<AppScope>]| {
+            scope_refusals(&scopes(allowed), &entries, applications)
+                .into_iter()
+                .map(|refusal| refusal.handle_hex)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(refused(&[APP], &[Some(APP), Some(other)]), ["0xbb"]);
+        assert_eq!(refused(&[other], &[Some(APP), Some(other)]), ["0xaa"]);
+        assert!(refused(&[], &[Some(APP), Some(other)]).is_empty());
+        assert!(refused(&[other], &[None, Some(other)]).is_empty());
     }
 
     /// A refusal lands on the entry whose rows are dead, wherever it sits in the batch.
@@ -718,7 +829,7 @@ pub(crate) mod tests {
 
         let (_, id) = encrypted_store_for(APP_PROGRAM, [0x41; 32]);
         assert_eq!(
-            plan_row_reads(PROGRAM_ID, DELEGATE, vec![entry("0xaa", id)], vec![]).err(),
+            entry_applications(PROGRAM_ID, &[entry("0xaa", id)], vec![]).err(),
             Some(ReadDefect::EncryptedStores {
                 entries: 1,
                 accounts: 0

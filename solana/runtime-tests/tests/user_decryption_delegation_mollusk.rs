@@ -1520,7 +1520,7 @@ fn the_shared_clock_decoder_reads_the_runtimes_clock() {
 }
 
 /// The relayer's advisory pre-check derives the same addresses from raw seeds
-/// (`relayer/src/host/solana_delegation_precheck.rs`), where these literals are asserted against
+/// (`relayer/src/host/solana_user_decrypt_precheck.rs`), where these literals are asserted against
 /// the same inputs — a seed-order drift on either side breaks both suites on the same bytes.
 #[test]
 fn relayer_fixture_wildcard_row_and_encrypted_store_addresses() {

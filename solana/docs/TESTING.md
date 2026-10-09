@@ -252,7 +252,7 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
 - **User decrypt.** The permit and request are built as in production, except the transport key:
   no share is signcrypted to it, so the permit commits to random bytes of its length
   (`PERMIT_TRANSPORT_KEY_LEN`) and no KMS WASM loads, as in EVM's cleartext decrypt module.
-  Each attempt then runs the relayer's submission checks and delegation pre-check, the gateway's
+  Each attempt then runs the relayer's submission checks and pre-check, the gateway's
   validity window, and the KMS Connector's authorization, in the real stack's order and with its
   labels (the header of
   `sdk/js-sdk/src/solana/cleartext/decrypt.ts` lists them). A failure the Connector would retry
@@ -263,7 +263,7 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
   user and public decryptions and writes each one's accounts, Merkle proof batch with the record's
   answers, and verdict to `solana/test-fixtures/authorization/decrypt_cases_v1.json`, and the SDK
   test requires the client to match. The relayer and gateway part is copied from their code
-  (`relayer/src/host/solana_delegation_precheck.rs`, the relayer's user-decrypt admission,
+  (`relayer/src/host/solana_user_decrypt_precheck.rs`, the relayer's user-decrypt admission,
   `Decryption.sol`) and nothing generated pins it, so a change there needs a matching change here.
 - **Public decrypt.** The store and the handle's public leaf are judged by the Connector's rules,
   and a failure the Connector would retry is judged again, up to 20 times. The certificate is
@@ -317,8 +317,9 @@ failures: a transaction that fits on the cleartext build always fits in producti
   `ZAMA_UPDATE_AUTHORIZATION_CASES=1 cargo test -p kms-worker --test solana_authorization_cases`
   from `kms-connector/`. The SDK's `authorization.test.ts` then fails until
   `cleartext/authorization.ts` reaches the same verdicts. Add a case there for a new rule.
-- **A change to the relayer's admission or delegation pre-check, or to the gateway's validity
-  window,** has no generated check. Mirror it by hand in `cleartext/decrypt.ts` and its test.
+- **A change to the relayer's admission or user-decrypt pre-check, or to the gateway's validity
+  window,** has no generated check. Mirror it by hand in `cleartext/decrypt.ts` or
+  `cleartext/authorization.ts` (`solanaRelayerPrecheckRefusal`) and its test.
 
 ## Where the two decrypt leaves are tested
 

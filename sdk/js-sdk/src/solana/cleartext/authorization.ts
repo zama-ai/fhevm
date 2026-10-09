@@ -2,7 +2,7 @@
 // (kms-connector/crates/kms-worker/src/core/solana/pipeline.rs and public_decrypt.rs), over the same
 // host accounts, read in the same order and judged by the same rules, and the leaf proofs of one
 // leaf record, asked and verified as the Connector asks and verifies a coprocessor's. The relayer's
-// delegation pre-check, which runs before the Connector sees a request, is here too.
+// scope and delegation pre-check, which runs before the Connector sees a request, is here too.
 //
 // solana/test-fixtures/authorization/decrypt_cases_v1.json holds the Connector's verdicts on a set
 // of cases; authorization.test.ts holds this module to them.
@@ -295,12 +295,23 @@ function verdictOf(error: unknown): ConnectorVerdict {
 }
 
 /**
- * The relayer's advisory pre-check of delegated entries (`relayer/src/host/solana_delegation_precheck.rs`),
- * run before it spends a gateway transaction: why an entry's two delegation rows are both dead at
- * the host's Clock, or `undefined`. What it cannot judge, a store that does not resolve or a row
- * the host could not have written, passes for the Connector to decide.
+ * Whether a permit signed for `fields.allowedScopes` leaves out `store`'s application, by the
+ * Connector's rule (`AllowedScopes::admits`): an empty list admits every application.
  */
-export async function solanaRelayerDelegationRefusal({
+function outsideSignedScopes(fields: SolanaPermitFields, store: SolanaEncryptedStore): boolean {
+  if (fields.allowedScopes.length === 0) return false;
+  const application = bytesToHex(concatBytes(encodeAddress(store.program), encodeAddress(store.scope)));
+  return !fields.allowedScopes.some((scope) => bytesToHex(scope) === application);
+}
+
+/**
+ * The relayer's advisory pre-check (`relayer/src/host/solana_user_decrypt_precheck.rs`), run before
+ * it spends a gateway transaction: why an entry's store lies outside the permit's scopes, or why a
+ * delegated entry's two delegation rows are both dead at the host's Clock, or `undefined`. What it
+ * cannot judge, a store that does not resolve or a row the host could not have written, passes for
+ * the Connector to decide.
+ */
+export async function solanaRelayerPrecheckRefusal({
   programAddress,
   fields,
   entries,
@@ -312,27 +323,33 @@ export async function solanaRelayerDelegationRefusal({
   readonly readAccounts: SolanaHostAccountsReader;
 }): Promise<string | undefined> {
   const delegate = decodeAddress(fields.userAddress);
-  const delegated = entries
-    .map((entry) => ({
-      key: decodeAddress(entry.encryptedStore),
-      delegator: decodeAddress(entry.ownerAddress),
-    }))
-    .filter(({ delegator }) => delegator !== delegate);
-  if (delegated.length === 0) return undefined;
+  const requested = entries.map((entry) => ({
+    key: decodeAddress(entry.encryptedStore),
+    owner: decodeAddress(entry.ownerAddress),
+  }));
+  if (fields.allowedScopes.length === 0 && requested.every(({ owner }) => owner === delegate)) return undefined;
 
-  const first = await readAccounts(delegated.map(({ key }) => key));
+  const first = await readAccounts(requested.map(({ key }) => key));
   const nextStore = cursor(first.accounts, 'the host read');
-  const planned = [];
-  for (const [index, { key, delegator }] of delegated.entries()) {
+  const stores = [];
+  for (const [index, { key, owner }] of requested.entries()) {
     const account = nextStore();
-    let store: SolanaEncryptedStore;
     try {
-      store = await resolveStore(account, programAddress, key, index);
+      stores.push({ owner, store: await resolveStore(account, programAddress, key, index) });
     } catch (error) {
-      if (error instanceof ConnectorRefusal) continue;
-      throw error;
+      if (!(error instanceof ConnectorRefusal)) throw error;
     }
-    planned.push({ delegator, rows: await delegationRows(delegator, delegate, store, programAddress) });
+  }
+  // A store's application is its seeds, so a scope refusal needs no second read.
+  const outside = stores.find(({ store }) => outsideSignedScopes(fields, store));
+  if (outside !== undefined) {
+    return `the permit's allowed scopes do not cover the application (${outside.store.program}, ${outside.store.scope})`;
+  }
+
+  const planned = [];
+  for (const { owner, store } of stores) {
+    if (owner === delegate) continue;
+    planned.push({ delegator: owner, rows: await delegationRows(owner, delegate, store, programAddress) });
   }
   if (planned.length === 0) return undefined;
 
@@ -490,12 +507,10 @@ export async function judgeSolanaUserDecryption({
     }
 
     // Every host rule is judged before any leaf.
-    const allowedScopes = new Set(fields.allowedScopes.map((scope) => bytesToHex(scope)));
     const resolved = [];
     for (const { index, handle, storeKey, owner, account, delegation } of judged) {
       const store = await resolveStore(account, programAddress, storeKey, index);
-      const application = bytesToHex(concatBytes(encodeAddress(store.program), encodeAddress(store.scope)));
-      if (allowedScopes.size > 0 && !allowedScopes.has(application)) {
+      if (outsideSignedScopes(fields, store)) {
         refuse('ScopeNotAllowed', `application (${store.program}, ${store.scope}) is outside the signed scope`, index);
       }
       if (delegation !== undefined) {
