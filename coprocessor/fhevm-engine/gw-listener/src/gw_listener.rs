@@ -6,7 +6,7 @@ use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEventInterface;
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
 use fhevm_engine_common::chain_id::ChainId;
-use fhevm_engine_common::database::connect_options_for_database_url;
+use fhevm_engine_common::database::{connect_options_for_database_url, GCS_SCHEMA_QUOTED};
 use fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::to_hex;
@@ -210,6 +210,38 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                     }).inspect_err(|_| {
                         GET_BLOCK_NUM_FAIL_COUNTER.inc();
                     })?;
+
+                    // GCS only: the dry-run window start must be *scanned*, not merely passed.
+                    // The moment a proposal's `gw_start_block` becomes known (UpgradeActivated),
+                    // rewind the scan cursor so the window is (re)ingested from its start. A
+                    // listener that first booted after activation — a late-joining operator, or
+                    // one restarted onto a fresh gcs schema — would otherwise tail from the
+                    // Gateway tip, never scan `[gw_start_block, tip)`, and still reach
+                    // `gw_listener_last_block >= gw_start_block`: a false "window scanned"
+                    // signal to the consensus-detector's upload gate and the controller's
+                    // gateway readiness gate. The lowered watermark is persisted before any
+                    // further processing so those gates stay closed until the window really is
+                    // covered. Triggered off the durable `upgrade_state` row (checked each
+                    // tick), not the activation NOTIFY, which is a pure wake-up; the
+                    // `gw_window_rewound` latch on that row keeps the rewind to once per
+                    // proposal, so a restart never discards scan progress by rewinding again.
+                    if self.stack_mode.gcs_mode() {
+                        match align_cursor_to_active_window(
+                            db_pool,
+                            last_processed_block_num,
+                            current_block,
+                            drift_detector.earliest_open_block(),
+                        )
+                        .await
+                        {
+                            Ok(Some(cursor)) => last_processed_block_num = Some(cursor),
+                            Ok(None) => {}
+                            Err(e) => {
+                                error!(error = %e, "GCS: window alignment check failed; skipping this tick");
+                                continue;
+                            }
+                        }
+                    }
 
                     let from_block = if let Some(last) = last_processed_block_num {
                         if last >= current_block {
@@ -584,15 +616,23 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         // visible (we cannot gate on a `gw_start_block` we have not read yet).
         if self.stack_mode.gcs_mode() {
             if let Some(bn) = block_number {
-                if let Some(gw_start_block) = active_gcs_gw_start_block(db_pool).await? {
-                    if bn < gw_start_block {
+                match active_gcs_window(db_pool).await {
+                    Ok(Some(window)) if bn < window.gw_start_block => {
                         info!(
                             zk_proof_id = %request.zkProofId,
                             block_number = bn,
-                            gw_start_block,
+                            gw_start_block = window.gw_start_block,
                             "GCS: proof precedes gw_start_block; skipping pre-window verify_proofs insert"
                         );
                         return Ok(());
+                    }
+                    Ok(_) => {}
+                    // Non-fatal: if the window can't be read, do not skip - insert the proof and
+                    // let the one-shot pre-window prune (the documented backstop) drop it if it is
+                    // pre-snapshot. Tearing down the listener on a transient DB error would be
+                    // worse than a little extra churn.
+                    Err(e) => {
+                        warn!(error = %e, "GCS: pre-window gate check failed; inserting and relying on the prune backstop");
                     }
                 }
             }
@@ -890,27 +930,173 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
     }
 }
 
-/// `gw_start_block` of the active in-progress GCS dry-run window, or `None` when no proposal is
-/// activated. Gates pre-window `verify_proofs` ingestion on green, matching the host-listener's
-/// pre-`start_block` gate. Runtime query, so it needs no compile-time sqlx cache entry (mirrors
+/// The active in-progress GCS dry-run window, as the listener needs it.
+struct ActiveGcsWindow {
+    gw_start_block: i64,
+    /// Durable per-proposal latch: the listener already aligned its persisted
+    /// watermark to this window's start (see [`window_rewind_cursor`]).
+    gw_window_rewound: bool,
+}
+
+/// The active in-progress GCS dry-run window, or `None` when no proposal is activated.
+/// `gw_start_block` gates pre-window `verify_proofs` ingestion on green, matching the
+/// host-listener's pre-`start_block` gate, and drives the window-start cursor rewind (see
+/// [`align_cursor_to_active_window`]).
+///
+/// Proposal-level fields are repeated on every per-chain row and transitions update the whole
+/// proposal atomically, so the rows must agree on `gw_start_block`. If the in-progress rows
+/// carry two distinct values the proposal is corrupt (a bad seed, a partial write): this logs
+/// an error and returns `None`, so neither the rewind nor the pre-window ingestion gate acts
+/// on an arbitrary one of them. `gw_window_rewound` is `BOOL_AND`ed for the same reason: any
+/// unlatched row means the (idempotent) latch update must run again.
+///
+/// Runtime query, so it needs no compile-time sqlx cache entry (mirrors
 /// `read_synthetic_input_plan`).
-async fn active_gcs_gw_start_block(db_pool: &Pool<Postgres>) -> anyhow::Result<Option<i64>> {
+async fn active_gcs_window(db_pool: &Pool<Postgres>) -> anyhow::Result<Option<ActiveGcsWindow>> {
     let row = sqlx::query(
-        "SELECT gw_start_block
+        "SELECT COUNT(DISTINCT gw_start_block) AS distinct_starts,
+                MIN(gw_start_block) AS min_gw_start_block,
+                MAX(gw_start_block) AS max_gw_start_block,
+                BOOL_AND(gw_window_rewound) AS gw_window_rewound
            FROM upgrade_state
           WHERE stack_role = 'GCS'
             AND status = 'in_progress'
             AND state IN ('UpgradeActivated', 'DryRunStarted')
-            AND gw_start_block IS NOT NULL
-          ORDER BY host_chain_id
-          LIMIT 1",
+            AND gw_start_block IS NOT NULL",
     )
-    .fetch_optional(db_pool)
+    .fetch_one(db_pool)
     .await?;
-    match row {
-        Some(row) => Ok(Some(row.try_get::<i64, _>("gw_start_block")?)),
-        None => Ok(None),
+    match row.try_get::<i64, _>("distinct_starts")? {
+        0 => Ok(None),
+        1 => Ok(Some(ActiveGcsWindow {
+            gw_start_block: row.try_get("min_gw_start_block")?,
+            gw_window_rewound: row.try_get("gw_window_rewound")?,
+        })),
+        distinct_starts => {
+            error!(
+                distinct_starts,
+                min_gw_start_block = row.try_get::<i64, _>("min_gw_start_block")?,
+                max_gw_start_block = row.try_get::<i64, _>("max_gw_start_block")?,
+                "in-progress GCS upgrade_state rows disagree on gw_start_block; ignoring the window until the proposal is consistent"
+            );
+            Ok(None)
+        }
     }
+}
+
+/// Decide whether the scan cursor must be rewound so the active dry-run
+/// window's start (`gw_start_block`) is guaranteed to be scanned, and to where.
+///
+/// Returns the new `last_processed_block_num` (always `gw_start_block - 1`)
+/// when the current cursor would leave a gap at the window start:
+///   - the cursor is at or past `gw_start_block` and the window has not been
+///     aligned to yet: the listener may have started tailing only after the
+///     window opened (late join), so the window's first blocks may never have
+///     been scanned;
+///   - there is no cursor yet (first boot, fresh gcs schema) and the window
+///     start is already below the Gateway tip: first boot would jump to the
+///     tip, skipping `[gw_start_block, tip)`.
+///
+/// `already_aligned` is the durable per-proposal `gw_window_rewound` latch. It
+/// suppresses a second rewind only when a persisted cursor exists: the latch is
+/// written in the same transaction as the watermark rewind, so latch plus
+/// surviving watermark proves contiguous coverage from `gw_start_block` and a
+/// restart must not discard that progress by rewinding again. With no cursor
+/// (the watermark row is gone - a fresh gcs schema) the latch vouches for
+/// nothing and the rewind fires regardless.
+///
+/// Returns `None` when coverage is already contiguous from the window start: a
+/// cursor below `gw_start_block` scans through it naturally, and a first boot
+/// with `gw_start_block` at or beyond the tip starts tailing at or below it.
+/// A degenerate `gw_start_block <= 0` also returns `None`: no cursor can point
+/// before block 0, and a real window never starts there.
+fn window_rewind_cursor(
+    last_processed_block_num: Option<u64>,
+    gw_start_block: i64,
+    current_block: u64,
+    already_aligned: bool,
+) -> Option<u64> {
+    let gw_start = u64::try_from(gw_start_block).ok()?;
+    let rewound = gw_start.checked_sub(1)?;
+    match last_processed_block_num {
+        Some(last) if last >= gw_start && !already_aligned => Some(rewound),
+        Some(_) => None,
+        None if current_block > gw_start => Some(rewound),
+        None => None,
+    }
+}
+
+/// Align the scan cursor to the active GCS dry-run window, once per proposal.
+///
+/// Reads the active window and, when the current cursor would leave a gap at
+/// its start, rewinds: persists the lowered watermark and latches
+/// `gw_window_rewound` on the proposal's rows in one guarded transaction, then
+/// returns the new cursor (`gw_start_block - 1`). When no rewind is needed the
+/// latch is still set (once), so a later restart whose persisted cursor has
+/// moved past `gw_start_block` is not mistaken for a late join and rewound
+/// again - the watermark only advances contiguously once aligned. Returns
+/// `None` when the cursor is unchanged.
+async fn align_cursor_to_active_window(
+    db_pool: &Pool<Postgres>,
+    last_processed_block_num: Option<u64>,
+    current_block: u64,
+    earliest_open_ct_commits_block: Option<u64>,
+) -> anyhow::Result<Option<u64>> {
+    let Some(window) = active_gcs_window(db_pool).await? else {
+        return Ok(None);
+    };
+
+    let cursor = window_rewind_cursor(
+        last_processed_block_num,
+        window.gw_start_block,
+        current_block,
+        window.gw_window_rewound,
+    );
+    if cursor.is_none() && window.gw_window_rewound {
+        return Ok(None);
+    }
+
+    // Same write fence as every other listener write; the latch and the
+    // lowered watermark must land atomically, or a crash in between could
+    // leave a latched proposal whose window start was never scanned.
+    let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+        db_pool,
+        true,
+        fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+    )
+    .await?
+    .into_tx() else {
+        info!("Cutover completed — gw-listener skipping window alignment on retired stack");
+        return Ok(None);
+    };
+
+    if let Some(cursor) = cursor {
+        info!(
+            gw_start_block = window.gw_start_block,
+            previous_cursor = ?last_processed_block_num,
+            cursor,
+            "GCS: dry-run window activated; rewinding Gateway scan cursor to (re)ingest the window from its start"
+        );
+        write_gcs_rewound_watermark(&mut tx, cursor, earliest_open_ct_commits_block).await?;
+    }
+
+    if !window.gw_window_rewound {
+        // Scoped to the exact window that was read, so a racing newer proposal
+        // (different gw_start_block) is never latched by mistake.
+        sqlx::query(
+            "UPDATE upgrade_state
+                SET gw_window_rewound = TRUE
+              WHERE stack_role = 'GCS'
+                AND status = 'in_progress'
+                AND state IN ('UpgradeActivated', 'DryRunStarted')
+                AND gw_start_block = $1",
+        )
+        .bind(window.gw_start_block)
+        .execute(tx.as_mut())
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(cursor)
 }
 
 fn apply_gateway_config_event(
@@ -955,6 +1141,42 @@ fn apply_gateway_config_event(
         .block_hash
         .ok_or_else(|| anyhow::anyhow!("GatewayConfig update log has no block hash"))?;
     Ok(Some(RegistryRefreshBlock { number, hash }))
+}
+
+/// Write the rewound watermark on an open guarded transaction - into the
+/// **GCS schema only**. Every query here targets the GCS namespace by its
+/// qualified name ([`GCS_SCHEMA_QUOTED`]), never through the connection's
+/// `search_path`: the rewind exists solely for the green stack's dry-run
+/// window, so it must be structurally unable to touch blue's
+/// `public.gw_listener_last_block`, whatever pool it happens to run on.
+/// Deliberately no `pg_notify` - the channel is database-global, not
+/// schema-scoped, and a lowered watermark cannot satisfy the controller's
+/// `>= gw_start_block` gate anyway; the ordinary per-tick progress updates
+/// fire the notify as the re-scan advances. Runtime-built SQL (the schema
+/// name is compile-time, the statement is not), so it needs no sqlx offline
+/// cache entry.
+async fn write_gcs_rewound_watermark(
+    tx: &mut sqlx::Transaction<'static, Postgres>,
+    cursor: u64,
+    earliest_open_ct_commits_block: Option<u64>,
+) -> anyhow::Result<()> {
+    let last_block_num = i64::try_from(cursor)?;
+    let earliest_open_ct_commits_block = earliest_open_ct_commits_block
+        .map(i64::try_from)
+        .transpose()?;
+    sqlx::query(&format!(
+        "INSERT INTO {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+             (dummy_id, last_block_num, earliest_open_ct_commits_block)
+         VALUES (true, $1, $2)
+         ON CONFLICT (dummy_id) DO UPDATE SET
+             last_block_num = EXCLUDED.last_block_num,
+             earliest_open_ct_commits_block = EXCLUDED.earliest_open_ct_commits_block"
+    ))
+    .bind(last_block_num)
+    .bind(earliest_open_ct_commits_block)
+    .execute(tx.as_mut())
+    .await?;
+    Ok(())
 }
 
 async fn update_listener_progress(
@@ -1132,6 +1354,191 @@ mod tests {
         log.block_hash = None;
 
         assert!(apply_gateway_config_event(&mut detector, &log).is_err());
+    }
+
+    /// The rewind must fire exactly when the current cursor leaves a gap at the
+    /// dry-run window start, and must never move the cursor forward.
+    #[test]
+    fn rewind_cursor_covers_window_start_gaps() {
+        // First boot after activation: the default cursor would jump to the
+        // tip, skipping [gw_start, tip) — rewind to gw_start - 1.
+        assert_eq!(window_rewind_cursor(None, 100, 150, false), Some(99));
+        // First boot with the window start at or beyond the tip: tailing
+        // starts at or below gw_start, coverage is contiguous — no rewind.
+        assert_eq!(window_rewind_cursor(None, 100, 100, false), None);
+        assert_eq!(window_rewind_cursor(None, 100, 50, false), None);
+        // Cursor at or past the window start: a late-joining listener may have
+        // a gap at the start it cannot prove absent — rewind.
+        assert_eq!(window_rewind_cursor(Some(100), 100, 150, false), Some(99));
+        assert_eq!(window_rewind_cursor(Some(140), 100, 150, false), Some(99));
+        // Cursor already at gw_start - 1 or below: the window start is scanned
+        // on the ordinary path — never move the cursor forward.
+        assert_eq!(window_rewind_cursor(Some(99), 100, 150, false), None);
+        assert_eq!(window_rewind_cursor(Some(42), 100, 150, false), None);
+        // Degenerate window start at block 0 (or invalid): nothing can precede
+        // block 0, so there is no cursor to rewind to.
+        assert_eq!(window_rewind_cursor(None, 0, 150, false), None);
+        assert_eq!(window_rewind_cursor(Some(5), 0, 150, false), None);
+        assert_eq!(window_rewind_cursor(Some(5), -1, 150, false), None);
+    }
+
+    /// The durable `gw_window_rewound` latch keeps the rewind to once per
+    /// proposal when a persisted cursor exists; a missing cursor (fresh gcs
+    /// schema) rewinds regardless, because then the latch vouches for nothing.
+    #[test]
+    fn rewind_cursor_honors_per_proposal_latch() {
+        // Already aligned, cursor survived: a restart must keep its progress.
+        assert_eq!(window_rewind_cursor(Some(140), 100, 150, true), None);
+        assert_eq!(window_rewind_cursor(Some(100), 100, 150, true), None);
+        // Already aligned, but the watermark row is gone: rewind anyway.
+        assert_eq!(window_rewind_cursor(None, 100, 150, true), Some(99));
+        // The latch never moves the cursor forward either.
+        assert_eq!(window_rewind_cursor(Some(42), 100, 150, true), None);
+        assert_eq!(window_rewind_cursor(None, 100, 50, true), None);
+    }
+
+    /// Full alignment lifecycle against the database: first sight of the
+    /// window rewinds and latches, a restart with a surviving watermark does
+    /// not rewind again, and a fresh schema (watermark row gone) re-rewinds
+    /// despite the latch. The rewound watermark lands in the GCS schema only;
+    /// blue's `public.gw_listener_last_block` is never touched.
+    #[tokio::test]
+    #[serial(db)]
+    async fn align_cursor_latches_once_per_proposal() -> anyhow::Result<()> {
+        let db_instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let db_pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db_instance.db_url.as_str())
+            .await?;
+        // A minimal green schema: the one table the rewind writes, shaped like
+        // the production copy (the controller's create_gcs_schema uses LIKE too).
+        sqlx::query(&format!(
+            "DROP SCHEMA IF EXISTS {GCS_SCHEMA_QUOTED} CASCADE"
+        ))
+        .execute(&db_pool)
+        .await?;
+        sqlx::query(&format!("CREATE SCHEMA {GCS_SCHEMA_QUOTED}"))
+            .execute(&db_pool)
+            .await?;
+        sqlx::query(&format!(
+            "CREATE TABLE {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+                 (LIKE public.gw_listener_last_block INCLUDING ALL)"
+        ))
+        .execute(&db_pool)
+        .await?;
+        sqlx::query("TRUNCATE gw_listener_last_block")
+            .execute(&db_pool)
+            .await?;
+        sqlx::query("DELETE FROM upgrade_state")
+            .execute(&db_pool)
+            .await?;
+        sqlx::query(
+            "INSERT INTO upgrade_state (stack_role, host_chain_id, state, status, gw_start_block)
+             VALUES ('GCS', 1, 'UpgradeActivated', 'in_progress', 100)",
+        )
+        .execute(&db_pool)
+        .await?;
+
+        let gcs_watermark = || async {
+            sqlx::query_scalar::<_, Option<i64>>(&format!(
+                "SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+                  WHERE dummy_id = true"
+            ))
+            .fetch_optional(&db_pool)
+            .await
+        };
+        let public_watermark_rows = || async {
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM public.gw_listener_last_block")
+                .fetch_one(&db_pool)
+                .await
+        };
+        let latched = || async {
+            sqlx::query_scalar::<_, bool>(
+                "SELECT gw_window_rewound FROM upgrade_state WHERE stack_role = 'GCS'",
+            )
+            .fetch_one(&db_pool)
+            .await
+        };
+
+        // Late join: the cursor is past the window start — rewind and latch.
+        assert_eq!(
+            align_cursor_to_active_window(&db_pool, Some(140), 150, None).await?,
+            Some(99)
+        );
+        assert_eq!(gcs_watermark().await?, Some(Some(99)));
+        assert!(latched().await?);
+        // Only the GCS namespace is written; blue's watermark stays untouched.
+        assert_eq!(public_watermark_rows().await?, 0);
+
+        // Restart mid-window with a surviving watermark: the latch suppresses
+        // a second rewind, the cursor keeps its progress.
+        assert_eq!(
+            align_cursor_to_active_window(&db_pool, Some(140), 150, None).await?,
+            None
+        );
+        assert_eq!(gcs_watermark().await?, Some(Some(99)));
+
+        // Fresh gcs schema: the watermark row is gone, so the latch vouches
+        // for nothing — rewind again.
+        sqlx::query(&format!(
+            "TRUNCATE {GCS_SCHEMA_QUOTED}.gw_listener_last_block"
+        ))
+        .execute(&db_pool)
+        .await?;
+        assert_eq!(
+            align_cursor_to_active_window(&db_pool, None, 150, None).await?,
+            Some(99)
+        );
+        assert_eq!(gcs_watermark().await?, Some(Some(99)));
+        assert!(latched().await?);
+        assert_eq!(public_watermark_rows().await?, 0);
+
+        // No active window: a no-op.
+        sqlx::query("DELETE FROM upgrade_state")
+            .execute(&db_pool)
+            .await?;
+        assert_eq!(
+            align_cursor_to_active_window(&db_pool, Some(140), 150, None).await?,
+            None
+        );
+
+        // Corrupt proposal: per-chain rows disagreeing on gw_start_block must
+        // disable the window entirely - no rewind, no latch, no watermark
+        // write on an arbitrarily picked value.
+        sqlx::query(
+            "INSERT INTO upgrade_state (stack_role, host_chain_id, state, status, gw_start_block)
+             VALUES ('GCS', 1, 'UpgradeActivated', 'in_progress', 100),
+                    ('GCS', 2, 'UpgradeActivated', 'in_progress', 200)",
+        )
+        .execute(&db_pool)
+        .await?;
+        sqlx::query(&format!(
+            "TRUNCATE {GCS_SCHEMA_QUOTED}.gw_listener_last_block"
+        ))
+        .execute(&db_pool)
+        .await?;
+        assert!(active_gcs_window(&db_pool).await?.is_none());
+        assert_eq!(
+            align_cursor_to_active_window(&db_pool, Some(140), 150, None).await?,
+            None
+        );
+        assert_eq!(gcs_watermark().await?, None);
+        let any_latched = sqlx::query_scalar::<_, bool>(
+            "SELECT BOOL_OR(gw_window_rewound) FROM upgrade_state WHERE stack_role = 'GCS'",
+        )
+        .fetch_one(&db_pool)
+        .await?;
+        assert!(!any_latched, "a divergent proposal must never be latched");
+        sqlx::query("DELETE FROM upgrade_state")
+            .execute(&db_pool)
+            .await?;
+
+        sqlx::query(&format!("DROP SCHEMA {GCS_SCHEMA_QUOTED} CASCADE"))
+            .execute(&db_pool)
+            .await?;
+        Ok(())
     }
 
     #[tokio::test]

@@ -121,6 +121,10 @@ pub fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
             if bits > 256 && !op.supports_ebytes_inputs() {
                 continue;
             }
+            // FHEVMExecutor does not allow shifts and rotations on 160-bit types.
+            if bits == 160 && bit_shift_ops.contains(&op) {
+                continue;
+            }
             if bits == 1 {
                 if !op.supports_bool_inputs() {
                     continue;

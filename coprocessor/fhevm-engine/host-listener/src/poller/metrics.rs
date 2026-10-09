@@ -1,4 +1,7 @@
-use prometheus::{register_int_counter_vec, IntCounterVec};
+use prometheus::{
+    register_int_counter_vec, register_int_gauge_vec, IntCounterVec,
+    IntGaugeVec,
+};
 use std::sync::LazyLock;
 
 pub(crate) static BLOCKS_PROCESSED: LazyLock<IntCounterVec> = LazyLock::new(
@@ -42,4 +45,19 @@ pub(crate) static RPC_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
 
 pub(crate) fn inc_rpc_errors(chain_id: &str, count: u64) {
     RPC_ERRORS.with_label_values(&[chain_id]).inc_by(count);
+}
+
+pub(crate) static RECEIVED_BLOCK: LazyLock<IntGaugeVec> = LazyLock::new(|| {
+    register_int_gauge_vec!(
+        "host_poller_received_block_number",
+        "Most recent block number fetched from the host chain RPC by the host-listener poller, recorded before ingest is attempted",
+        &["chain_id"]
+    )
+    .expect("host_poller_received_block_number metric must register")
+});
+
+pub(crate) fn set_received_block(chain_id: &str, block_number: u64) {
+    RECEIVED_BLOCK
+        .with_label_values(&[chain_id])
+        .set(block_number as i64);
 }

@@ -116,6 +116,9 @@ fi
 
 echo hardhat test ${HARDHAT_OPTS} --grep "$GREP_TEXT" --network "$NETWORK"
 
+# Parallel mocha workers import() test files first; with native TS stripping they load as ESM instead of ts-node CJS.
+export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--no-experimental-strip-types"
+
 # Run the tests
 if npx hardhat test ${HARDHAT_OPTS} --grep "$GREP_TEXT" --network "$NETWORK"; then
   echo -e "\n${GREEN}✓ Tests completed successfully!${RESET}"
