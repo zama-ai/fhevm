@@ -213,6 +213,15 @@ The store check compares every recorded store with its account on chain, once at
  - **Type**: Histogram
  - **Description**: Time to answer a Merkle proof request, refusals included. The KMS connector asks the next coprocessor after 250 ms without an answer.
 
+#### Metric Name: `solana_merkle_proof_server_proof_reads_waiting`
+ - **Type**: Gauge
+ - **Description**: Requests waiting for a database connection: this replica's backlog. None waits longer than 200 ms, so this bound is the age of the oldest; past it, the request is refused `overloaded`.
+ - **Alarm**: Covered by the `overloaded` alarm on `solana_merkle_proof_server_requests_total`.
+
+#### Metric Name: `solana_merkle_proof_server_proof_reads_in_flight`
+ - **Type**: Gauge
+ - **Description**: Requests reading the leaf record on this replica, at most `--database-pool-size` minus one. Summed over replicas, it is the proof server's read load on the shared database.
+
 #### Metric Name: `solana_merkle_proof_server_requests_by_signer_total`
  - **Type**: Counter (labeled by `signer`)
  - **Description**: Authenticated requests, by the KMS tx-sender that signed them: each KMS node's load on this server. One series per KMS node of the live contexts.

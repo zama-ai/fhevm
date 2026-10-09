@@ -43,7 +43,8 @@ use axum::{
 };
 use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
 use prometheus::{
-    register_histogram, register_int_counter_vec, Histogram, IntCounterVec,
+    register_histogram, register_int_counter_vec, register_int_gauge,
+    Histogram, IntCounterVec, IntGauge,
 };
 use request_authorization::{Authorization, AuthorizationError};
 use serde::{de::DeserializeOwned, Serialize};
@@ -119,6 +120,25 @@ static LEAVES: LazyLock<IntCounterVec> = LazyLock::new(|| {
         "Queried leaves, by outcome: found, not_found, unknown_store, quarantined, \
          inconsistent or read_failed",
         &["outcome"]
+    )
+    .unwrap()
+});
+
+static PROOF_READS_WAITING: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "solana_merkle_proof_server_proof_reads_waiting",
+        format!(
+            "Requests waiting for a database connection. None waits longer than \
+             {PROOF_READ_WAIT:?}: it is then refused overloaded"
+        )
+    )
+    .unwrap()
+});
+
+static PROOF_READS_IN_FLIGHT: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "solana_merkle_proof_server_proof_reads_in_flight",
+        "Requests reading the leaf record, at most the database pool size minus one"
     )
     .unwrap()
 });
@@ -211,10 +231,13 @@ fn merkle_proofs_router(
     answer_cache_bytes_per_signer: usize,
     proof_reads: usize,
 ) -> Router {
-    // The outcomes alerts watch exist before the first one is counted.
+    // The outcomes alerts watch and the backlog gauges exist before the first
+    // request.
     for outcome in ["inconsistent", "quarantined"] {
         LEAVES.with_label_values(&[outcome]);
     }
+    LazyLock::force(&PROOF_READS_WAITING);
+    LazyLock::force(&PROOF_READS_IN_FLIGHT);
     // A burst always fits the largest request.
     let burst = leaves_per_second
         .max(NonZeroU32::new(MAX_LEAVES_PER_REQUEST as u32).expect("not zero"));
@@ -516,18 +539,27 @@ fn parse_request(body: &[u8]) -> Result<Vec<ParsedQuery>, HttpError> {
 }
 
 async fn answer_request(state: &AppState, queries: Vec<ParsedQuery>) -> Answer {
-    let Ok(Ok(_proof_read)) =
+    PROOF_READS_WAITING.inc();
+    let proof_read =
         tokio::time::timeout(PROOF_READ_WAIT, state.proof_reads.acquire())
-            .await
-    else {
+            .await;
+    PROOF_READS_WAITING.dec();
+    let Ok(Ok(_proof_read)) = proof_read else {
         return Err(HttpError::new(
             ErrorCode::Overloaded,
             format!("no database connection free within {PROOF_READ_WAIT:?}"),
         ));
     };
+    PROOF_READS_IN_FLIGHT.inc();
+    let answer = read_proofs(&state.pool, queries).await;
+    PROOF_READS_IN_FLIGHT.dec();
+    answer
+}
+
+async fn read_proofs(pool: &PgPool, queries: Vec<ParsedQuery>) -> Answer {
     let mut proofs = Vec::with_capacity(queries.len());
     for query in queries {
-        let Ok(proof) = prove(&state.pool, &query).await else {
+        let Ok(proof) = prove(pool, &query).await else {
             return Err(HttpError::new(
                 ErrorCode::UpstreamTransient,
                 "leaf record read failed",

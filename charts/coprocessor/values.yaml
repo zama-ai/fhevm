@@ -1972,9 +1972,12 @@ solanaHostListener:
     # Required: this coprocessor's registered signer address. A request must be signed for it
     # (`FhevmSig` audience, RFC 038), so a request signed for another coprocessor is refused.
     coprocessorSignerAddress: ""
+    # Each replica keeps its own per-KMS-tx-sender rate and answer cache, so N replicas
+    # allow each tx-sender N times both.
     replicas: 1
     httpPort: 8080
     metricsPort: 9100
+    # Per replica: the shared database sees at most replicas × (databasePoolSize − 1) proof reads.
     databasePoolSize: 8
     env: []
     podLabels: {}
