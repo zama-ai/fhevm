@@ -24,11 +24,12 @@
 //!
 //! Settle runs only before the batch's settle deadline; from then on anyone may `cancel_dispatch`.
 //!
-//! Deposit batches below one share's worth revert with `ZeroShares`; settlement rolls back
-//! atomically and leaves the batch Dispatched. Retrying at the same or higher price cannot
-//! succeed, so the batch waits for its settle deadline, after which anyone can cancel it and
-//! open `quit` refunds.
-//! `mollusk_dust_total_settle_reverts_until_the_deadline_cancel` pins the settlement failure.
+//! A deposit batch below one share's worth would make the vault deposit fail with `ZeroShares`.
+//! A failed CPI aborts the whole transaction, so settle predicts that outcome with the vault's own
+//! `assets_to_shares` on the vault's live balances, before the deposit CPI. On zero shares it wraps
+//! the redeemed total back into the batch's join account and the batch becomes Refunding, where
+//! `quit` returns each participant's exact contribution. Any other vault failure still reverts
+//! settle, and the batch waits for its settle deadline, after which anyone may `cancel_dispatch`.
 //!
 //! REDEEM batches have no analog: the vault's share price never drops below
 //! 1:1 (floor rounding favors the vault; `harvest` only raises the price), so
@@ -57,9 +58,12 @@ pub struct Settle<'info> {
     pub batch_authority: UncheckedAccount<'info>,
 
     // --- phase 1: redeem the KMS-certified burned total ---
-    /// Confidential mint the batch total was burned on.
+    /// Confidential mint the batch total was burned on. Mutable for the zero-shares refund wrap.
+    #[account(mut)]
     pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
-    /// CHECK: batch's confidential join token account; validated by the token CPI.
+    /// CHECK: batch's confidential join token account; validated by the token CPI. Mutable for the
+    /// zero-shares refund wrap.
+    #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
     /// SPL mint the join confidential mint wraps (vault underlying for deposit
     /// batchers, vault shares for redeem batchers). Mutable because it is the
@@ -75,7 +79,9 @@ pub struct Settle<'info> {
     /// Batch's plain SPL account receiving the redeemed batch total.
     #[account(mut, seeds = [BATCH_JOIN_UNDERLYING_SEED, batch.key().as_ref()], bump)]
     pub batch_join_underlying: Box<Account<'info, TokenAccount>>,
-    /// CHECK: batch's burned-amount encrypted store; validated by the token CPI.
+    /// CHECK: the batch join token account's encrypted store, holding the burned amount; validated
+    /// by the token CPI. Mutable because the zero-shares refund wrap replaces its balance slot.
+    #[account(mut)]
     pub batch_burned_amount_store: UncheckedAccount<'info>,
     /// CHECK: pending-burn PDA for the batch token account; closed by the token redeem CPI.
     #[account(mut)]
@@ -91,9 +97,13 @@ pub struct Settle<'info> {
     pub vault: Box<Account<'info, demo_vault::Vault>>,
     /// CHECK: demo-vault authority PDA; validated by the vault CPI.
     pub vault_authority: UncheckedAccount<'info>,
-    /// CHECK: vault's underlying token account; validated by the vault CPI.
-    #[account(mut)]
-    pub vault_token_account: UncheckedAccount<'info>,
+    /// Vault's underlying token account. Pinned here, not only by the vault CPI, because the share
+    /// prediction reads its balance even when no vault CPI follows.
+    #[account(
+        mut,
+        address = vault.vault_token_account @ demo_vault::errors::DemoVaultError::VaultTokenAccountMismatch,
+    )]
+    pub vault_token_account: Box<Account<'info, TokenAccount>>,
     /// Batch's plain SPL account receiving the vault phase's output.
     #[account(mut, seeds = [BATCH_PAYOUT_UNDERLYING_SEED, batch.key().as_ref()], bump)]
     pub batch_payout_underlying: Box<Account<'info, TokenAccount>>,
@@ -125,6 +135,13 @@ pub struct Settle<'info> {
     #[account(mut)]
     pub payout_total_supply_store: UncheckedAccount<'info>,
 
+    // --- zero-shares refund: wrap the redeemed total back into the join account ---
+    /// CHECK: join mint total-supply authority PDA; validated by the token CPI.
+    pub join_total_supply_authority: UncheckedAccount<'info>,
+    /// CHECK: join mint's total-supply encrypted store; replaced by the refund wrap.
+    #[account(mut)]
+    pub join_total_supply_store: UncheckedAccount<'info>,
+
     /// CHECK: Anchor event CPI authority for the Zama host program.
     #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
     pub zama_event_authority: UncheckedAccount<'info>,
@@ -154,10 +171,19 @@ pub struct Settle<'info> {
     /// application is trusted.
     /// CHECK: validated by ZamaHost.
     pub payout_mint_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+    /// The join mint's HCU block meter for the refund wrap. Supplied while the block cap binds and
+    /// the application is not trusted.
+    /// CHECK: validated by ZamaHost.
+    #[account(mut)]
+    pub join_mint_hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// The join mint's HCU trust record for the refund wrap. Supplied while the block cap binds and
+    /// the application is trusted.
+    /// CHECK: validated by ZamaHost.
+    pub join_mint_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
 /// Redeems, moves the total through the vault, wraps, and records the rate —
-/// or cancels on zero total.
+/// or cancels on zero total, or opens refunds when a deposit would mint zero shares.
 pub fn settle<'info>(
     ctx: Context<'info, Settle<'info>>,
     cleartext_total: u64,
@@ -200,11 +226,14 @@ pub fn settle<'info>(
     );
     let batch_key = ctx.accounts.batch.key();
     let burned_total_handle = ctx.accounts.batch.burned_total_handle;
-    // A zero-total batch is canceled before the wrap, so it runs no execution and takes no records.
-    let [wrap_deny_records] = split_deny_records(
+    // A zero-total batch is canceled before any wrap, so it runs no execution and takes no records.
+    // Otherwise settle takes the payout mint's record and the join mint's, for the zero-shares
+    // refund wrap, so a client need not predict which wrap runs.
+    let wraps = usize::from(cleartext_total > 0);
+    let [wrap_deny_records, refund_deny_records] = split_deny_records(
         &ctx.accounts.host_config,
         ctx.remaining_accounts,
-        [usize::from(cleartext_total > 0)],
+        [wraps, wraps],
     )?;
 
     fund_batch_authority(
@@ -281,24 +310,39 @@ pub fn settle<'info>(
     // (inert).
     let payout_balance_before = ctx.accounts.batch_payout_underlying.amount;
     match ctx.accounts.batcher.direction {
-        BatchDirection::Deposit => demo_vault::cpi::deposit(
-            CpiContext::new_with_signer(
-                ctx.accounts.demo_vault_program.key(),
-                demo_vault::cpi::accounts::Deposit {
-                    depositor: ctx.accounts.batch_authority.to_account_info(),
-                    vault: ctx.accounts.vault.to_account_info(),
-                    vault_authority: ctx.accounts.vault_authority.to_account_info(),
-                    underlying_mint: ctx.accounts.join_underlying_mint.to_account_info(),
-                    share_mint: ctx.accounts.payout_underlying_mint.to_account_info(),
-                    depositor_underlying: ctx.accounts.batch_join_underlying.to_account_info(),
-                    vault_token_account: ctx.accounts.vault_token_account.to_account_info(),
-                    depositor_shares: ctx.accounts.batch_payout_underlying.to_account_info(),
-                    token_program: ctx.accounts.token_program.to_account_info(),
-                },
-                &[&authority_seeds],
-            ),
-            cleartext_total,
-        )?,
+        BatchDirection::Deposit => {
+            if demo_vault::state::assets_to_shares(
+                cleartext_total,
+                ctx.accounts.vault_token_account.amount,
+                ctx.accounts.payout_underlying_mint.supply,
+            )? == 0
+            {
+                return refund_zero_shares(
+                    ctx,
+                    cleartext_total,
+                    refund_deny_records,
+                    &authority_seeds,
+                );
+            }
+            demo_vault::cpi::deposit(
+                CpiContext::new_with_signer(
+                    ctx.accounts.demo_vault_program.key(),
+                    demo_vault::cpi::accounts::Deposit {
+                        depositor: ctx.accounts.batch_authority.to_account_info(),
+                        vault: ctx.accounts.vault.to_account_info(),
+                        vault_authority: ctx.accounts.vault_authority.to_account_info(),
+                        underlying_mint: ctx.accounts.join_underlying_mint.to_account_info(),
+                        share_mint: ctx.accounts.payout_underlying_mint.to_account_info(),
+                        depositor_underlying: ctx.accounts.batch_join_underlying.to_account_info(),
+                        vault_token_account: ctx.accounts.vault_token_account.to_account_info(),
+                        depositor_shares: ctx.accounts.batch_payout_underlying.to_account_info(),
+                        token_program: ctx.accounts.token_program.to_account_info(),
+                    },
+                    &[&authority_seeds],
+                ),
+                cleartext_total,
+            )?
+        }
         BatchDirection::Redeem => demo_vault::cpi::withdraw(
             CpiContext::new_with_signer(
                 ctx.accounts.demo_vault_program.key(),
@@ -390,6 +434,67 @@ pub fn settle<'info>(
         total_joined: cleartext_total,
         payout_received,
         payout_rate,
+    });
+    Ok(())
+}
+
+/// Wraps the redeemed deposit total back into the batch's join account and opens refunds, as
+/// `cancel_dispatch` does: the vault would mint zero shares for it.
+fn refund_zero_shares<'info>(
+    ctx: Context<'info, Settle<'info>>,
+    cleartext_total: u64,
+    deny_records: &[AccountInfo<'info>],
+    authority_seeds: &[&[u8]],
+) -> Result<()> {
+    ct::cpi::wrap_usdc(
+        CpiContext::new_with_signer(
+            ctx.accounts.confidential_token_program.key(),
+            ct::cpi::accounts::WrapUsdc {
+                owner: ctx.accounts.batch_authority.to_account_info(),
+                mint: ctx.accounts.join_confidential_mint.to_account_info(),
+                token_account: ctx.accounts.batch_join_token_account.to_account_info(),
+                underlying_mint: ctx.accounts.join_underlying_mint.to_account_info(),
+                user_usdc: ctx.accounts.batch_join_underlying.to_account_info(),
+                vault_usdc: ctx.accounts.join_mint_vault_underlying.to_account_info(),
+                vault_authority: ctx.accounts.join_mint_vault_authority.to_account_info(),
+                total_supply_authority: ctx.accounts.join_total_supply_authority.to_account_info(),
+                balance_store: ctx.accounts.batch_burned_amount_store.to_account_info(),
+                total_supply_store: ctx.accounts.join_total_supply_store.to_account_info(),
+                zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                transient_store: ctx.accounts.transient_store.to_account_info(),
+                instructions: ctx.accounts.instructions.to_account_info(),
+                zama_program: ctx.accounts.zama_program.to_account_info(),
+                host_config: ctx.accounts.host_config.to_account_info(),
+                token_program: ctx.accounts.token_program.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                hcu_block_meter: ctx
+                    .accounts
+                    .join_mint_hcu_block_meter
+                    .as_ref()
+                    .map(|account| account.to_account_info()),
+                hcu_trusted_app_record: ctx
+                    .accounts
+                    .join_mint_hcu_trusted_app_record
+                    .as_ref()
+                    .map(|account| account.to_account_info()),
+                event_authority: ctx
+                    .accounts
+                    .confidential_token_event_authority
+                    .to_account_info(),
+                program: ctx.accounts.confidential_token_program.to_account_info(),
+            },
+            &[authority_seeds],
+        )
+        .with_remaining_accounts(deny_records.to_vec()),
+        cleartext_total,
+    )?;
+
+    let batch = &mut ctx.accounts.batch;
+    batch.status = BatchStatus::Refunding;
+    batch.burned_total_handle = [0; 32];
+    emit!(BatchDispatchCancelled {
+        version: APP_EVENT_VERSION,
+        batch: batch.key(),
     });
     Ok(())
 }

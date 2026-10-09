@@ -68,6 +68,8 @@ describe('deriveSettleAccounts', () => {
       payoutTotalSupplyAuthority: '2K4784bFHReRcc7juUMW2N12NQbxMsL35i33Hcxy4zGk',
       batchPayoutBalanceStore: 'yjr2mdF8iyACXP41AAugk3NqyTmfa8HqjtRaNYQTj56',
       payoutTotalSupplyStore: '5fZHscRuBSv8Kxnt1cCkBZC1zGX21eJhPar216jZMupZ',
+      joinTotalSupplyAuthority: 'DsaavuNH2btNESBMAmD8uCWz5DZNvozkMYMqVdkpNJb9',
+      joinTotalSupplyStore: '9HxM82Nsb6nvcCWonzJwwE6Tsm2h4qyQ4kyyw47MDwiv',
       batchAuthority: '7r6dp55LMSc1dKRiMzgizmrogFcB4bkkbC7ia9jpk1Fo',
       batchJoinUnderlying: 'Gv5fMGCo3efrXa83JnBJf1jTE2sJqvmDp4wSDAT16U4C',
       batchPayoutUnderlying: 'CW2QJ6TvQLBzm9T8zT26YMPZZMvC1pwkEUh2zGV7qUAp',

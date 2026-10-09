@@ -19,4 +19,17 @@ describe('SettlementProgress', () => {
     expect(renderer.root.findByType('progress').props.value).toBe(1);
     expect(renderer.root.findByProps({ role: 'status' }).children).toEqual(['Waiting for batch close']);
   });
+
+  test.each([
+    [false, 'Refunding your contribution'],
+    [true, 'Contribution refunded'],
+  ])('shows a refunding batch (refunded: %s) as the last phase', async (refunded, title) => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<SettlementProgress lifecycle={{ kind: 'refunding', refunded }} action={null} />);
+    });
+
+    expect(renderer.root.findByType('progress').props.value).toBe(3);
+    expect(renderer.root.findByProps({ role: 'status' }).children).toEqual([title]);
+  });
 });

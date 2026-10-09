@@ -37,10 +37,10 @@ export function SettlementProgress({
   lifecycle,
   action,
 }: {
-  readonly lifecycle: Extract<BatchLifecycle, { kind: 'awaiting-dispatch' | 'dispatched' }>;
+  readonly lifecycle: Extract<BatchLifecycle, { kind: 'awaiting-dispatch' | 'dispatched' | 'refunding' }>;
   readonly action: OperatorAction | null;
 }) {
-  const phase = lifecycle.kind === 'awaiting-dispatch' ? 1 : 2;
+  const phase = lifecycle.kind === 'awaiting-dispatch' ? 1 : lifecycle.kind === 'dispatched' ? 2 : 3;
   const title =
     lifecycle.kind === 'awaiting-dispatch'
       ? action === 'dispatch'
@@ -48,13 +48,21 @@ export function SettlementProgress({
         : lifecycle.remainingSecs > 0n
           ? 'Waiting for batch close'
           : 'Batch ready'
-      : 'Verifying settlement on Solana';
+      : lifecycle.kind === 'dispatched'
+        ? 'Verifying settlement on Solana'
+        : lifecycle.refunded
+          ? 'Contribution refunded'
+          : 'Refunding your contribution';
   const detail =
     lifecycle.kind === 'awaiting-dispatch'
       ? lifecycle.remainingSecs > 0n
         ? `Batch closes in ~${lifecycle.remainingSecs.toString()}s`
         : 'The local keeper is advancing the batch automatically'
-      : 'The encrypted batch result is being certified and finalized on-chain';
+      : lifecycle.kind === 'dispatched'
+        ? 'The encrypted batch result is being certified and finalized on-chain'
+        : lifecycle.refunded
+          ? 'The batch could not settle, so your exact amount is back in your private balance'
+          : 'The batch could not settle, so the local keeper is returning your exact amount';
 
   return (
     <div className="settlement-progress">

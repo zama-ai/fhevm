@@ -78,10 +78,14 @@ export async function settleBatch(
   });
 
   const transientStore = await prepareTransientStore({ payer: keeperClient.payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
-  // A zero total cancels the batch without the wrap, the one execution on the payout mint.
+  // A zero total cancels the batch before any wrap. Otherwise settle wraps on the payout mint, or, for a
+  // deposit worth zero vault shares, wraps the total back on the join mint; the program takes both
+  // mints' accounts so the client need not predict which runs.
   const payoutMint = tokenApp(roots.payoutConfidentialMint);
+  const joinMint = tokenApp(roots.joinConfidentialMint);
   const wraps = cleartextTotal !== 0n;
   const payoutMintHcu = wraps ? await options.host.hcuAccounts(payoutMint) : {};
+  const joinMintHcu = wraps ? await options.host.hcuAccounts(joinMint) : {};
   const settleWithoutDenyRecords = await getSettleInstructionAsync({
     transientStore: transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
@@ -94,8 +98,10 @@ export async function settleBatch(
     authorityFundingLamports: options.authorityFundingLamports,
     payoutMintHcuBlockMeter: payoutMintHcu.hcuBlockMeter,
     payoutMintHcuTrustedAppRecord: payoutMintHcu.hcuTrustedAppRecord,
+    joinMintHcuBlockMeter: joinMintHcu.hcuBlockMeter,
+    joinMintHcuTrustedAppRecord: joinMintHcu.hcuTrustedAppRecord,
   });
-  const settleInstruction = await withDenyRecords(settleWithoutDenyRecords, options.host.denyListEnabled, wraps ? [payoutMint] : []);
+  const settleInstruction = await withDenyRecords(settleWithoutDenyRecords, options.host.denyListEnabled, wraps ? [payoutMint, joinMint] : []);
 
   return (await keeperClient.sendFheTransaction(transientStore, [settleInstruction])).context.signature;
 }

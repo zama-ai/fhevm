@@ -616,7 +616,8 @@ test.skipIf(!runsDemoScenarios)(
     // Reconstruct every operator input from persisted state, as after losing the response/process.
     expect(await dispatchVaultBatch(await session(), position, 'deposit')).toBeNull();
     expect((await account()).value).toEqual(pendingBefore);
-    // Nobody settles the batch before its settle deadline, so the keeper's settle pass cancels it.
+    // Nobody settles the batch before its settle deadline, so the keeper's settle pass cancels it and
+    // then runs every participant's quit.
     await until(async () => (await unixNow()) >= vault.settleDeadline(dispatched.state, batcher),
       { description: 'refund batch settle deadline', timeoutMs: 300_000 });
     expect(await settleOrCancelVaultBatch(await session(), position, 'deposit')).not.toBeNull();
@@ -626,6 +627,14 @@ test.skipIf(!runsDemoScenarios)(
       authority: keeper, batcher: roots.batcher, batch, batchAuthority, joinConfidentialMint: mint,
     })]);
     expect((await rpc.getBalance(batchAuthority).send()).value === 0n).toBe(true);
+    // Alice signed nothing since her join: the keeper's quit restored her exact balance and closed her record.
+    expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
+    expect(await readAmount(joinStore, vault.JOINED_AMOUNT_KEY)).toBe(0n);
+    const joinRecord = (await vault.findJoinRecordPda({ batch, user: alice.address }))[0];
+    expect((await rpc.getAccountInfo(joinRecord, { encoding: 'base64' }).send()).value).toBeNull();
+    // A second pass finds no one left to refund, and a direct retry of the quit is rejected on-chain:
+    // neither can credit the contribution twice.
+    expect(await settleOrCancelVaultBatch(await session(), position, 'deposit')).toBeNull();
     const quit = await vault.buildQuitInstruction({
       transientStore, user: alice, payer: alice, batcher: roots.batcher, batch,
       joinConfidentialMint: mint, joinUnderlyingMint: roots.joinUnderlyingMint,
@@ -642,16 +651,10 @@ test.skipIf(!runsDemoScenarios)(
       batchJoinTokenAccount, userTokenAccount, batchBalanceStore: await vault.tokenStoreAddress(mint, batchJoinTokenAccount),
       userBalanceStore, joinStore, confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0], host,
     });
-    await aliceClient.sendFheTransaction(transientStore, [quit]);
-    expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
-    expect(await readAmount(joinStore, vault.JOINED_AMOUNT_KEY)).toBe(0n);
-    // The quit closed the join record, so a retry is rejected and cannot credit the contribution twice.
-    const joinRecord = (await vault.findJoinRecordPda({ batch, user: alice.address }))[0];
-    expect((await rpc.getAccountInfo(joinRecord, { encoding: 'base64' }).send()).value).toBeNull();
     await expectProgramError('a retry of the refunding quit', ANCHOR_ACCOUNT_NOT_INITIALIZED, () =>
       aliceClient.sendFheTransaction(transientStore, [quit]),
     );
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
-    console.log(`refund acceptance passed: batch=${batch}; joined=${amount}; restored exactly; join record closed by the quit`);
+    console.log(`refund acceptance passed: batch=${batch}; joined=${amount}; keeper refunded exactly without alice signing`);
   }, SCENARIO_TIMEOUT_MS,
 );

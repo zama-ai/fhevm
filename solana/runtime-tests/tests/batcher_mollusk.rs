@@ -1096,6 +1096,8 @@ fn settle_ix(
             payout_total_supply_authority: fixture.payout_mint().total_supply_authority,
             batch_payout_balance_store: keys.payout_balance_store,
             payout_total_supply_store: fixture.payout_mint().total_supply_store,
+            join_total_supply_authority: fixture.join_mint().total_supply_authority,
+            join_total_supply_store: fixture.join_mint().total_supply_store,
             zama_event_authority: event_authority(host::id()),
             zama_program: host::id(),
             confidential_token_event_authority: event_authority(token::id()),
@@ -1106,6 +1108,8 @@ fn settle_ix(
             payout_mint_hcu_block_meter: fixture.hcu_block_meter(fixture.payout_app()),
             payout_mint_hcu_trusted_app_record: fixture
                 .hcu_trusted_app_record(fixture.payout_app()),
+            join_mint_hcu_block_meter: fixture.hcu_block_meter(fixture.join_app()),
+            join_mint_hcu_trusted_app_record: fixture.hcu_trusted_app_record(fixture.join_app()),
         },
         batcher::instruction::Settle {
             cleartext_total,
@@ -1114,9 +1118,12 @@ fn settle_ix(
             authority_funding_lamports: AUTHORITY_FUNDING,
         },
     );
-    let payout = [fixture.payout_app()];
-    let wrap: &[host::AppScope] = if cleartext_total == 0 { &[] } else { &payout };
-    fixture.with_deny_records(ix, &[wrap])
+    let wraps: &[host::AppScope] = if cleartext_total == 0 {
+        &[]
+    } else {
+        &[fixture.payout_app(), fixture.join_app()]
+    };
+    fixture.with_deny_records(ix, &[wraps])
 }
 
 fn claim_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instruction {
@@ -3617,17 +3624,17 @@ fn mollusk_claim_rejects_missing_or_wrong_witnesses() {
 }
 
 // ---------------------------------------------------------------------------
-// Dust settlement rollback and recovery after the settle deadline.
+// Dust settlement refunds.
 // ---------------------------------------------------------------------------
 
-/// A deposit below one share's worth cannot settle; once the settle deadline passes, anyone's
-/// cancellation restores the encrypted burn and lets the participant retrieve their contribution.
+/// A deposit below one share's worth would mint zero shares, so settle wraps the redeemed total
+/// back and opens refunds instead of reverting; the participant gets their exact contribution back.
 #[test]
-fn mollusk_dust_total_settle_reverts_until_the_deadline_cancel() {
+fn mollusk_dust_total_settle_opens_exact_refunds() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     // Share price ~20_000 underlying per share (e.g. after an adversarial
     // harvest donation): 2_000_000 assets backing 100 shares.
-    let mut context = fixture_context(mollusk(), fixture.accounts(2_000_000, 100));
+    let context = fixture_context(mollusk(), fixture.accounts(2_000_000, 100));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
@@ -3643,40 +3650,41 @@ fn mollusk_dust_total_settle_reverts_until_the_deadline_cancel() {
         100,
     );
     let burned_handle = run_dispatch(&context, &fixture, &keys);
+    let join_vault_before = read_spl_amount(&context, fixture.join_mint().vault_underlying);
 
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 100);
     let pending_burn = keys.pending_burn(fixture.join_mint().mint);
-    let ix = settle_ix(&fixture, &keys, 100, signatures, extra_data, pending_burn);
-    check_batcher_instruction(
-        &context,
-        &ix,
-        &[Check::err(ProgramError::Custom(
-            anchor_lang::error::ERROR_CODE_OFFSET + vault::DemoVaultError::ZeroShares as u32,
-        ))],
-    );
+    let settle = settle_ix(&fixture, &keys, 100, signatures, extra_data, pending_burn);
+    let result = check_batcher_instruction(&context, &settle, &[Check::success()]);
+    check_fhe_cpis(&context, &result);
 
-    // Atomic revert: still Dispatched, the pending burn remains unsettled, no
-    // underlying is released, and the vault is untouched.
+    // The redeemed total went straight back into the join mint's vault, the batch's confidential
+    // join balance holds it again, and the demo vault was never touched.
     let batch = read_batch(&context, keys.batch);
-    assert_eq!(batch.status, batcher::BatchStatus::Dispatched);
-    assert_eq!(batch.total_joined, 0);
+    assert_eq!(batch.status, batcher::BatchStatus::Refunding);
+    assert_eq!(batch.burned_total_handle, [0; 32]);
     assert_eq!(read_spl_amount(&context, keys.join_underlying), 0);
+    assert_eq!(
+        read_spl_amount(&context, fixture.join_mint().vault_underlying),
+        join_vault_before
+    );
+    assert_eq!(
+        store_u64(&context, keys.join_balance_store, token::balance_key()),
+        100
+    );
     assert_eq!(
         read_spl_amount(&context, fixture.vault_token_account),
         2_000_000
     );
-    // The batch can only wait for its settle deadline, after which anyone cancels it.
-    reach_settle_deadline(&mut context);
-    let result = check_batcher_instruction(
+    assert_eq!(read_spl_amount(&context, keys.payout_underlying), 0);
+
+    // A refunding batch can be neither settled nor cancelled again.
+    check_batcher_instruction(
         &context,
-        &cancel_dispatch_ix(&fixture, &keys),
-        &[Check::success()],
+        &settle,
+        &[batcher_error(batcher::BatcherError::BatchNotDispatched)],
     );
-    check_fhe_cpis(&context, &result);
-    assert_eq!(
-        read_batch(&context, keys.batch).status,
-        batcher::BatchStatus::Refunding
-    );
+
     let result = check_batcher_instruction(
         &context,
         &quit_ix(&fixture, &keys, &fixture.alice),
@@ -3691,9 +3699,105 @@ fn mollusk_dust_total_settle_reverts_until_the_deadline_cancel() {
         ),
         1_000
     );
+}
+
+/// Settle predicts only `ZeroShares`: any other vault failure still reverts it, and the batch is
+/// recovered by the deadline cancel and its refunds.
+#[test]
+fn mollusk_settle_overflow_waits_for_the_deadline_cancel() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    // An empty vault with the largest share supply: any deposit's share count overflows u64.
+    let mut context = fixture_context(mollusk(), fixture.accounts(0, u64::MAX));
+    fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        100,
+    );
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 100);
+    let pending_burn = keys.pending_burn(fixture.join_mint().mint);
+    let settle = settle_ix(&fixture, &keys, 100, signatures, extra_data, pending_burn);
+    check_batcher_instruction(
+        &context,
+        &settle,
+        &[Check::err(ProgramError::Custom(
+            anchor_lang::error::ERROR_CODE_OFFSET + vault::DemoVaultError::MathOverflow as u32,
+        ))],
+    );
     assert_eq!(
-        read_spl_amount(&context, fixture.vault_token_account),
-        2_000_000
+        read_batch(&context, keys.batch).status,
+        batcher::BatchStatus::Dispatched
+    );
+
+    reach_settle_deadline(&mut context);
+    let result = check_batcher_instruction(
+        &context,
+        &cancel_dispatch_ix(&fixture, &keys),
+        &[Check::success()],
+    );
+    check_fhe_cpis(&context, &result);
+    run_quit(&context, &fixture, &keys, &fixture.alice);
+    assert_eq!(
+        store_u64(
+            &context,
+            fixture.alice.underlying.balance_store,
+            token::balance_key(),
+        ),
+        1_000
+    );
+}
+
+/// Settle predicts zero shares from the vault token account's balance, so it accepts only the
+/// vault's own account: a planted account holding a huge balance cannot force a batch into refunds.
+#[test]
+fn mollusk_settle_rejects_a_planted_vault_token_account() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        100,
+    );
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    let planted = Pubkey::new_unique();
+    context.account_store.borrow_mut().insert(
+        planted,
+        spl_token_account(fixture.underlying_mint, fixture.vault_authority, u64::MAX),
+    );
+
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 100);
+    let pending_burn = keys.pending_burn(fixture.join_mint().mint);
+    let settle = settle_ix(&fixture, &keys, 100, signatures, extra_data, pending_burn);
+    let mut planted_settle = settle.clone();
+    for meta in &mut planted_settle.accounts {
+        if meta.pubkey == fixture.vault_token_account {
+            meta.pubkey = planted;
+        }
+    }
+    check_batcher_instruction(
+        &context,
+        &planted_settle,
+        &[Check::err(ProgramError::Custom(
+            anchor_lang::error::ERROR_CODE_OFFSET
+                + vault::DemoVaultError::VaultTokenAccountMismatch as u32,
+        ))],
+    );
+
+    check_batcher_instruction(&context, &settle, &[Check::success()]);
+    assert_eq!(
+        read_batch(&context, keys.batch).status,
+        batcher::BatchStatus::Settled
     );
 }
 

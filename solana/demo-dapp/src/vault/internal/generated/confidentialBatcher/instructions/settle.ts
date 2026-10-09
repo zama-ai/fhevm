@@ -86,6 +86,8 @@ export type SettleInstruction<
   TAccountPayoutTotalSupplyAuthority extends string | AccountMeta<string> = string,
   TAccountBatchPayoutBalanceStore extends string | AccountMeta<string> = string,
   TAccountPayoutTotalSupplyStore extends string | AccountMeta<string> = string,
+  TAccountJoinTotalSupplyAuthority extends string | AccountMeta<string> = string,
+  TAccountJoinTotalSupplyStore extends string | AccountMeta<string> = string,
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
@@ -98,6 +100,8 @@ export type SettleInstruction<
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountPayoutMintHcuBlockMeter extends string | AccountMeta<string> = string,
   TAccountPayoutMintHcuTrustedAppRecord extends string | AccountMeta<string> = string,
+  TAccountJoinMintHcuBlockMeter extends string | AccountMeta<string> = string,
+  TAccountJoinMintHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -110,10 +114,10 @@ export type SettleInstruction<
       TAccountBatch extends string ? WritableAccount<TAccountBatch> : TAccountBatch,
       TAccountBatchAuthority extends string ? WritableAccount<TAccountBatchAuthority> : TAccountBatchAuthority,
       TAccountJoinConfidentialMint extends string
-        ? ReadonlyAccount<TAccountJoinConfidentialMint>
+        ? WritableAccount<TAccountJoinConfidentialMint>
         : TAccountJoinConfidentialMint,
       TAccountBatchJoinTokenAccount extends string
-        ? ReadonlyAccount<TAccountBatchJoinTokenAccount>
+        ? WritableAccount<TAccountBatchJoinTokenAccount>
         : TAccountBatchJoinTokenAccount,
       TAccountJoinUnderlyingMint extends string
         ? WritableAccount<TAccountJoinUnderlyingMint>
@@ -128,7 +132,7 @@ export type SettleInstruction<
         ? WritableAccount<TAccountBatchJoinUnderlying>
         : TAccountBatchJoinUnderlying,
       TAccountBatchBurnedAmountStore extends string
-        ? ReadonlyAccount<TAccountBatchBurnedAmountStore>
+        ? WritableAccount<TAccountBatchBurnedAmountStore>
         : TAccountBatchBurnedAmountStore,
       TAccountPendingBurn extends string ? WritableAccount<TAccountPendingBurn> : TAccountPendingBurn,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
@@ -163,6 +167,12 @@ export type SettleInstruction<
       TAccountPayoutTotalSupplyStore extends string
         ? WritableAccount<TAccountPayoutTotalSupplyStore>
         : TAccountPayoutTotalSupplyStore,
+      TAccountJoinTotalSupplyAuthority extends string
+        ? ReadonlyAccount<TAccountJoinTotalSupplyAuthority>
+        : TAccountJoinTotalSupplyAuthority,
+      TAccountJoinTotalSupplyStore extends string
+        ? WritableAccount<TAccountJoinTotalSupplyStore>
+        : TAccountJoinTotalSupplyStore,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
@@ -184,6 +194,12 @@ export type SettleInstruction<
       TAccountPayoutMintHcuTrustedAppRecord extends string
         ? ReadonlyAccount<TAccountPayoutMintHcuTrustedAppRecord>
         : TAccountPayoutMintHcuTrustedAppRecord,
+      TAccountJoinMintHcuBlockMeter extends string
+        ? WritableAccount<TAccountJoinMintHcuBlockMeter>
+        : TAccountJoinMintHcuBlockMeter,
+      TAccountJoinMintHcuTrustedAppRecord extends string
+        ? ReadonlyAccount<TAccountJoinMintHcuTrustedAppRecord>
+        : TAccountJoinMintHcuTrustedAppRecord,
       ...TRemainingAccounts,
     ]
   >;
@@ -257,6 +273,8 @@ export type SettleAsyncInput<
   TAccountPayoutTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountBatchPayoutBalanceStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountPayoutTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
@@ -268,6 +286,8 @@ export type SettleAsyncInput<
   TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays the batch authority funding. Anyone. */
   payer: TAccountPayer;
@@ -281,8 +301,9 @@ export type SettleAsyncInput<
    * charge to the owner; redemption closes the already-open pending burn.
    */
   batchAuthority?: TAccountBatchAuthority;
-  /** Confidential mint the batch total was burned on. */
+  /** Confidential mint the batch total was burned on. Mutable for the zero-shares refund wrap. */
   joinConfidentialMint: TAccountJoinConfidentialMint;
+  /** zero-shares refund wrap. */
   batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
   /**
    * SPL mint the join confidential mint wraps (vault underlying for deposit
@@ -295,6 +316,7 @@ export type SettleAsyncInput<
   joinMintVaultAuthority: TAccountJoinMintVaultAuthority;
   /** Batch's plain SPL account receiving the redeemed batch total. */
   batchJoinUnderlying?: TAccountBatchJoinUnderlying;
+  /** by the token CPI. Mutable because the zero-shares refund wrap replaces its balance slot. */
   batchBurnedAmountStore: TAccountBatchBurnedAmountStore;
   pendingBurn: TAccountPendingBurn;
   hostConfig?: TAccountHostConfig;
@@ -303,6 +325,10 @@ export type SettleAsyncInput<
   /** Public vault the batcher fronts. */
   vault: TAccountVault;
   vaultAuthority: TAccountVaultAuthority;
+  /**
+   * Vault's underlying token account. Pinned here, not only by the vault CPI, because the share
+   * prediction reads its balance even when no vault CPI follows.
+   */
   vaultTokenAccount: TAccountVaultTokenAccount;
   /** Batch's plain SPL account receiving the vault phase's output. */
   batchPayoutUnderlying?: TAccountBatchPayoutUnderlying;
@@ -321,6 +347,8 @@ export type SettleAsyncInput<
   payoutTotalSupplyAuthority: TAccountPayoutTotalSupplyAuthority;
   batchPayoutBalanceStore: TAccountBatchPayoutBalanceStore;
   payoutTotalSupplyStore: TAccountPayoutTotalSupplyStore;
+  joinTotalSupplyAuthority: TAccountJoinTotalSupplyAuthority;
+  joinTotalSupplyStore: TAccountJoinTotalSupplyStore;
   zamaEventAuthority?: TAccountZamaEventAuthority;
   transientStore: TAccountTransientStore;
   instructions: TAccountInstructions;
@@ -345,6 +373,16 @@ export type SettleAsyncInput<
    * application is trusted.
    */
   payoutMintHcuTrustedAppRecord?: TAccountPayoutMintHcuTrustedAppRecord;
+  /**
+   * The join mint's HCU block meter for the refund wrap. Supplied while the block cap binds and
+   * the application is not trusted.
+   */
+  joinMintHcuBlockMeter?: TAccountJoinMintHcuBlockMeter;
+  /**
+   * The join mint's HCU trust record for the refund wrap. Supplied while the block cap binds and
+   * the application is trusted.
+   */
+  joinMintHcuTrustedAppRecord?: TAccountJoinMintHcuTrustedAppRecord;
   cleartextTotal: SettleInstructionDataArgs['cleartextTotal'];
   signatures: SettleInstructionDataArgs['signatures'];
   extraData: SettleInstructionDataArgs['extraData'];
@@ -378,6 +416,8 @@ export async function getSettleInstructionAsync<
   TAccountPayoutTotalSupplyAuthority extends InstructionAccountInput,
   TAccountBatchPayoutBalanceStore extends InstructionAccountInput,
   TAccountPayoutTotalSupplyStore extends InstructionAccountInput,
+  TAccountJoinTotalSupplyAuthority extends InstructionAccountInput,
+  TAccountJoinTotalSupplyStore extends InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
@@ -389,6 +429,8 @@ export async function getSettleInstructionAsync<
   TAccountSystemProgram extends InstructionAccountInput,
   TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput,
   TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput,
+  TAccountJoinMintHcuBlockMeter extends InstructionAccountInput,
+  TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: SettleAsyncInput<
@@ -418,6 +460,8 @@ export async function getSettleInstructionAsync<
     TAccountPayoutTotalSupplyAuthority,
     TAccountBatchPayoutBalanceStore,
     TAccountPayoutTotalSupplyStore,
+    TAccountJoinTotalSupplyAuthority,
+    TAccountJoinTotalSupplyStore,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
@@ -428,7 +472,9 @@ export async function getSettleInstructionAsync<
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountPayoutMintHcuBlockMeter,
-    TAccountPayoutMintHcuTrustedAppRecord
+    TAccountPayoutMintHcuTrustedAppRecord,
+    TAccountJoinMintHcuBlockMeter,
+    TAccountJoinMintHcuTrustedAppRecord
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -512,6 +558,14 @@ export async function getSettleInstructionAsync<
       InstructionAccountInputAddress<TAccountPayoutTotalSupplyStore>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountJoinTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountJoinTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinTotalSupplyStore,
+      InstructionAccountInputAddress<TAccountJoinTotalSupplyStore>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
     >,
@@ -536,6 +590,14 @@ export async function getSettleInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountPayoutMintHcuTrustedAppRecord,
       InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountJoinMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountJoinMintHcuTrustedAppRecord>
     >
   >
 > {
@@ -562,12 +624,12 @@ export async function getSettleInstructionAsync<
     joinConfidentialMint: {
       value: input.joinConfidentialMint ?? null,
       isSigner: false,
-      isWritable: false,
+      isWritable: true,
     },
     batchJoinTokenAccount: {
       value: input.batchJoinTokenAccount ?? null,
       isSigner: false,
-      isWritable: false,
+      isWritable: true,
     },
     joinUnderlyingMint: {
       value: input.joinUnderlyingMint ?? null,
@@ -592,7 +654,7 @@ export async function getSettleInstructionAsync<
     batchBurnedAmountStore: {
       value: input.batchBurnedAmountStore ?? null,
       isSigner: false,
-      isWritable: false,
+      isWritable: true,
     },
     pendingBurn: {
       value: input.pendingBurn ?? null,
@@ -665,6 +727,16 @@ export async function getSettleInstructionAsync<
       isSigner: false,
       isWritable: true,
     },
+    joinTotalSupplyAuthority: {
+      value: input.joinTotalSupplyAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    joinTotalSupplyStore: {
+      value: input.joinTotalSupplyStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isSigner: false,
@@ -717,6 +789,16 @@ export async function getSettleInstructionAsync<
     },
     payoutMintHcuTrustedAppRecord: {
       value: input.payoutMintHcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    joinMintHcuBlockMeter: {
+      value: input.joinMintHcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    joinMintHcuTrustedAppRecord: {
+      value: input.joinMintHcuTrustedAppRecord ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -809,6 +891,8 @@ export async function getSettleInstructionAsync<
       getAccountMeta('payoutTotalSupplyAuthority', accounts.payoutTotalSupplyAuthority),
       getAccountMeta('batchPayoutBalanceStore', accounts.batchPayoutBalanceStore),
       getAccountMeta('payoutTotalSupplyStore', accounts.payoutTotalSupplyStore),
+      getAccountMeta('joinTotalSupplyAuthority', accounts.joinTotalSupplyAuthority),
+      getAccountMeta('joinTotalSupplyStore', accounts.joinTotalSupplyStore),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
@@ -820,6 +904,8 @@ export async function getSettleInstructionAsync<
       getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('payoutMintHcuBlockMeter', accounts.payoutMintHcuBlockMeter),
       getAccountMeta('payoutMintHcuTrustedAppRecord', accounts.payoutMintHcuTrustedAppRecord),
+      getAccountMeta('joinMintHcuBlockMeter', accounts.joinMintHcuBlockMeter),
+      getAccountMeta('joinMintHcuTrustedAppRecord', accounts.joinMintHcuTrustedAppRecord),
     ],
     data: getSettleInstructionDataEncoder().encode(args as SettleInstructionDataArgs),
     programAddress,
@@ -903,6 +989,14 @@ export async function getSettleInstructionAsync<
       InstructionAccountInputAddress<TAccountPayoutTotalSupplyStore>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountJoinTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountJoinTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinTotalSupplyStore,
+      InstructionAccountInputAddress<TAccountJoinTotalSupplyStore>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
     >,
@@ -927,6 +1021,14 @@ export async function getSettleInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountPayoutMintHcuTrustedAppRecord,
       InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountJoinMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountJoinMintHcuTrustedAppRecord>
     >
   >);
 }
@@ -958,6 +1060,8 @@ export type SettleInput<
   TAccountPayoutTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountBatchPayoutBalanceStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountPayoutTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
@@ -969,6 +1073,8 @@ export type SettleInput<
   TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Pays the batch authority funding. Anyone. */
   payer: TAccountPayer;
@@ -982,8 +1088,9 @@ export type SettleInput<
    * charge to the owner; redemption closes the already-open pending burn.
    */
   batchAuthority: TAccountBatchAuthority;
-  /** Confidential mint the batch total was burned on. */
+  /** Confidential mint the batch total was burned on. Mutable for the zero-shares refund wrap. */
   joinConfidentialMint: TAccountJoinConfidentialMint;
+  /** zero-shares refund wrap. */
   batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
   /**
    * SPL mint the join confidential mint wraps (vault underlying for deposit
@@ -996,6 +1103,7 @@ export type SettleInput<
   joinMintVaultAuthority: TAccountJoinMintVaultAuthority;
   /** Batch's plain SPL account receiving the redeemed batch total. */
   batchJoinUnderlying: TAccountBatchJoinUnderlying;
+  /** by the token CPI. Mutable because the zero-shares refund wrap replaces its balance slot. */
   batchBurnedAmountStore: TAccountBatchBurnedAmountStore;
   pendingBurn: TAccountPendingBurn;
   hostConfig: TAccountHostConfig;
@@ -1004,6 +1112,10 @@ export type SettleInput<
   /** Public vault the batcher fronts. */
   vault: TAccountVault;
   vaultAuthority: TAccountVaultAuthority;
+  /**
+   * Vault's underlying token account. Pinned here, not only by the vault CPI, because the share
+   * prediction reads its balance even when no vault CPI follows.
+   */
   vaultTokenAccount: TAccountVaultTokenAccount;
   /** Batch's plain SPL account receiving the vault phase's output. */
   batchPayoutUnderlying: TAccountBatchPayoutUnderlying;
@@ -1022,6 +1134,8 @@ export type SettleInput<
   payoutTotalSupplyAuthority: TAccountPayoutTotalSupplyAuthority;
   batchPayoutBalanceStore: TAccountBatchPayoutBalanceStore;
   payoutTotalSupplyStore: TAccountPayoutTotalSupplyStore;
+  joinTotalSupplyAuthority: TAccountJoinTotalSupplyAuthority;
+  joinTotalSupplyStore: TAccountJoinTotalSupplyStore;
   zamaEventAuthority: TAccountZamaEventAuthority;
   transientStore: TAccountTransientStore;
   instructions: TAccountInstructions;
@@ -1046,6 +1160,16 @@ export type SettleInput<
    * application is trusted.
    */
   payoutMintHcuTrustedAppRecord?: TAccountPayoutMintHcuTrustedAppRecord;
+  /**
+   * The join mint's HCU block meter for the refund wrap. Supplied while the block cap binds and
+   * the application is not trusted.
+   */
+  joinMintHcuBlockMeter?: TAccountJoinMintHcuBlockMeter;
+  /**
+   * The join mint's HCU trust record for the refund wrap. Supplied while the block cap binds and
+   * the application is trusted.
+   */
+  joinMintHcuTrustedAppRecord?: TAccountJoinMintHcuTrustedAppRecord;
   cleartextTotal: SettleInstructionDataArgs['cleartextTotal'];
   signatures: SettleInstructionDataArgs['signatures'];
   extraData: SettleInstructionDataArgs['extraData'];
@@ -1079,6 +1203,8 @@ export function getSettleInstruction<
   TAccountPayoutTotalSupplyAuthority extends InstructionAccountInput,
   TAccountBatchPayoutBalanceStore extends InstructionAccountInput,
   TAccountPayoutTotalSupplyStore extends InstructionAccountInput,
+  TAccountJoinTotalSupplyAuthority extends InstructionAccountInput,
+  TAccountJoinTotalSupplyStore extends InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
@@ -1090,6 +1216,8 @@ export function getSettleInstruction<
   TAccountSystemProgram extends InstructionAccountInput,
   TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput,
   TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput,
+  TAccountJoinMintHcuBlockMeter extends InstructionAccountInput,
+  TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: SettleInput<
@@ -1119,6 +1247,8 @@ export function getSettleInstruction<
     TAccountPayoutTotalSupplyAuthority,
     TAccountBatchPayoutBalanceStore,
     TAccountPayoutTotalSupplyStore,
+    TAccountJoinTotalSupplyAuthority,
+    TAccountJoinTotalSupplyStore,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
@@ -1129,7 +1259,9 @@ export function getSettleInstruction<
     TAccountTokenProgram,
     TAccountSystemProgram,
     TAccountPayoutMintHcuBlockMeter,
-    TAccountPayoutMintHcuTrustedAppRecord
+    TAccountPayoutMintHcuTrustedAppRecord,
+    TAccountJoinMintHcuBlockMeter,
+    TAccountJoinMintHcuTrustedAppRecord
   >,
   config?: { programAddress?: TProgramAddress },
 ): SettleInstruction<
@@ -1209,6 +1341,14 @@ export function getSettleInstruction<
     InstructionAccountInputAddress<TAccountPayoutTotalSupplyStore>
   >,
   ResolvedInstructionAccountMeta<
+    TAccountJoinTotalSupplyAuthority,
+    InstructionAccountInputAddress<TAccountJoinTotalSupplyAuthority>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountJoinTotalSupplyStore,
+    InstructionAccountInputAddress<TAccountJoinTotalSupplyStore>
+  >,
+  ResolvedInstructionAccountMeta<
     TAccountZamaEventAuthority,
     InstructionAccountInputAddress<TAccountZamaEventAuthority>
   >,
@@ -1233,6 +1373,14 @@ export function getSettleInstruction<
   ResolvedInstructionAccountMeta<
     TAccountPayoutMintHcuTrustedAppRecord,
     InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountJoinMintHcuBlockMeter,
+    InstructionAccountInputAddress<TAccountJoinMintHcuBlockMeter>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountJoinMintHcuTrustedAppRecord,
+    InstructionAccountInputAddress<TAccountJoinMintHcuTrustedAppRecord>
   >
 > {
   // Program address.
@@ -1258,12 +1406,12 @@ export function getSettleInstruction<
     joinConfidentialMint: {
       value: input.joinConfidentialMint ?? null,
       isSigner: false,
-      isWritable: false,
+      isWritable: true,
     },
     batchJoinTokenAccount: {
       value: input.batchJoinTokenAccount ?? null,
       isSigner: false,
-      isWritable: false,
+      isWritable: true,
     },
     joinUnderlyingMint: {
       value: input.joinUnderlyingMint ?? null,
@@ -1288,7 +1436,7 @@ export function getSettleInstruction<
     batchBurnedAmountStore: {
       value: input.batchBurnedAmountStore ?? null,
       isSigner: false,
-      isWritable: false,
+      isWritable: true,
     },
     pendingBurn: {
       value: input.pendingBurn ?? null,
@@ -1361,6 +1509,16 @@ export function getSettleInstruction<
       isSigner: false,
       isWritable: true,
     },
+    joinTotalSupplyAuthority: {
+      value: input.joinTotalSupplyAuthority ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    joinTotalSupplyStore: {
+      value: input.joinTotalSupplyStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isSigner: false,
@@ -1413,6 +1571,16 @@ export function getSettleInstruction<
     },
     payoutMintHcuTrustedAppRecord: {
       value: input.payoutMintHcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    joinMintHcuBlockMeter: {
+      value: input.joinMintHcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    joinMintHcuTrustedAppRecord: {
+      value: input.joinMintHcuTrustedAppRecord ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -1471,6 +1639,8 @@ export function getSettleInstruction<
       getAccountMeta('payoutTotalSupplyAuthority', accounts.payoutTotalSupplyAuthority),
       getAccountMeta('batchPayoutBalanceStore', accounts.batchPayoutBalanceStore),
       getAccountMeta('payoutTotalSupplyStore', accounts.payoutTotalSupplyStore),
+      getAccountMeta('joinTotalSupplyAuthority', accounts.joinTotalSupplyAuthority),
+      getAccountMeta('joinTotalSupplyStore', accounts.joinTotalSupplyStore),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
@@ -1482,6 +1652,8 @@ export function getSettleInstruction<
       getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('payoutMintHcuBlockMeter', accounts.payoutMintHcuBlockMeter),
       getAccountMeta('payoutMintHcuTrustedAppRecord', accounts.payoutMintHcuTrustedAppRecord),
+      getAccountMeta('joinMintHcuBlockMeter', accounts.joinMintHcuBlockMeter),
+      getAccountMeta('joinMintHcuTrustedAppRecord', accounts.joinMintHcuTrustedAppRecord),
     ],
     data: getSettleInstructionDataEncoder().encode(args as SettleInstructionDataArgs),
     programAddress,
@@ -1565,6 +1737,14 @@ export function getSettleInstruction<
       InstructionAccountInputAddress<TAccountPayoutTotalSupplyStore>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountJoinTotalSupplyAuthority,
+      InstructionAccountInputAddress<TAccountJoinTotalSupplyAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinTotalSupplyStore,
+      InstructionAccountInputAddress<TAccountJoinTotalSupplyStore>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
     >,
@@ -1589,6 +1769,14 @@ export function getSettleInstruction<
     ResolvedInstructionAccountMeta<
       TAccountPayoutMintHcuTrustedAppRecord,
       InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountJoinMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountJoinMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountJoinMintHcuTrustedAppRecord>
     >
   >);
 }
@@ -1611,8 +1799,9 @@ export type ParsedSettleInstruction<
      * charge to the owner; redemption closes the already-open pending burn.
      */
     batchAuthority: TAccountMetas[3];
-    /** Confidential mint the batch total was burned on. */
+    /** Confidential mint the batch total was burned on. Mutable for the zero-shares refund wrap. */
     joinConfidentialMint: TAccountMetas[4];
+    /** zero-shares refund wrap. */
     batchJoinTokenAccount: TAccountMetas[5];
     /**
      * SPL mint the join confidential mint wraps (vault underlying for deposit
@@ -1625,6 +1814,7 @@ export type ParsedSettleInstruction<
     joinMintVaultAuthority: TAccountMetas[8];
     /** Batch's plain SPL account receiving the redeemed batch total. */
     batchJoinUnderlying: TAccountMetas[9];
+    /** by the token CPI. Mutable because the zero-shares refund wrap replaces its balance slot. */
     batchBurnedAmountStore: TAccountMetas[10];
     pendingBurn: TAccountMetas[11];
     hostConfig: TAccountMetas[12];
@@ -1633,6 +1823,10 @@ export type ParsedSettleInstruction<
     /** Public vault the batcher fronts. */
     vault: TAccountMetas[14];
     vaultAuthority: TAccountMetas[15];
+    /**
+     * Vault's underlying token account. Pinned here, not only by the vault CPI, because the share
+     * prediction reads its balance even when no vault CPI follows.
+     */
     vaultTokenAccount: TAccountMetas[16];
     /** Batch's plain SPL account receiving the vault phase's output. */
     batchPayoutUnderlying: TAccountMetas[17];
@@ -1651,30 +1845,42 @@ export type ParsedSettleInstruction<
     payoutTotalSupplyAuthority: TAccountMetas[23];
     batchPayoutBalanceStore: TAccountMetas[24];
     payoutTotalSupplyStore: TAccountMetas[25];
-    zamaEventAuthority: TAccountMetas[26];
-    transientStore: TAccountMetas[27];
-    instructions: TAccountMetas[28];
+    joinTotalSupplyAuthority: TAccountMetas[26];
+    joinTotalSupplyStore: TAccountMetas[27];
+    zamaEventAuthority: TAccountMetas[28];
+    transientStore: TAccountMetas[29];
+    instructions: TAccountMetas[30];
     /** ZamaHost program (FHE compute + ACL). */
-    zamaProgram: TAccountMetas[29];
-    confidentialTokenEventAuthority: TAccountMetas[30];
+    zamaProgram: TAccountMetas[31];
+    confidentialTokenEventAuthority: TAccountMetas[32];
     /** confidential-token program composed via CPI. */
-    confidentialTokenProgram: TAccountMetas[31];
+    confidentialTokenProgram: TAccountMetas[33];
     /** demo-vault program composed via CPI. */
-    demoVaultProgram: TAccountMetas[32];
+    demoVaultProgram: TAccountMetas[34];
     /** SPL token program. */
-    tokenProgram: TAccountMetas[33];
+    tokenProgram: TAccountMetas[35];
     /** System program used for account creation. */
-    systemProgram: TAccountMetas[34];
+    systemProgram: TAccountMetas[36];
     /**
      * The payout mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
      * application is not trusted.
      */
-    payoutMintHcuBlockMeter?: TAccountMetas[35] | undefined;
+    payoutMintHcuBlockMeter?: TAccountMetas[37] | undefined;
     /**
      * The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
      * application is trusted.
      */
-    payoutMintHcuTrustedAppRecord?: TAccountMetas[36] | undefined;
+    payoutMintHcuTrustedAppRecord?: TAccountMetas[38] | undefined;
+    /**
+     * The join mint's HCU block meter for the refund wrap. Supplied while the block cap binds and
+     * the application is not trusted.
+     */
+    joinMintHcuBlockMeter?: TAccountMetas[39] | undefined;
+    /**
+     * The join mint's HCU trust record for the refund wrap. Supplied while the block cap binds and
+     * the application is trusted.
+     */
+    joinMintHcuTrustedAppRecord?: TAccountMetas[40] | undefined;
   };
   data: SettleInstructionData;
 };
@@ -1682,10 +1888,10 @@ export type ParsedSettleInstruction<
 export function parseSettleInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedSettleInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 37) {
+  if (instruction.accounts.length < 41) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 37,
+      expectedAccountMetas: 41,
     });
   }
   let accountIndex = 0;
@@ -1727,6 +1933,8 @@ export function parseSettleInstruction<TProgram extends string, TAccountMetas ex
       payoutTotalSupplyAuthority: getNextAccount(),
       batchPayoutBalanceStore: getNextAccount(),
       payoutTotalSupplyStore: getNextAccount(),
+      joinTotalSupplyAuthority: getNextAccount(),
+      joinTotalSupplyStore: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       transientStore: getNextAccount(),
       instructions: getNextAccount(),
@@ -1738,6 +1946,8 @@ export function parseSettleInstruction<TProgram extends string, TAccountMetas ex
       systemProgram: getNextAccount(),
       payoutMintHcuBlockMeter: getNextOptionalAccount(),
       payoutMintHcuTrustedAppRecord: getNextOptionalAccount(),
+      joinMintHcuBlockMeter: getNextOptionalAccount(),
+      joinMintHcuTrustedAppRecord: getNextOptionalAccount(),
     },
     data: getSettleInstructionDataDecoder().decode(instruction.data),
   };

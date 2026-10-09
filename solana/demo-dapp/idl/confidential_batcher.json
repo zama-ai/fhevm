@@ -2485,8 +2485,10 @@
         "(deposit for deposit batchers, withdraw for redeem batchers), wraps",
         "the received payout into confidential payout tokens, and records the",
         "batch's informational public rate. A zero-total batch is canceled",
-        "instead. Permissionless, before the batch's settle deadline.",
-        "Deny records: `(token, payout mint)`, or none for a zero total, which runs no execution."
+        "instead, and a deposit worth zero vault shares is wrapped back and opens",
+        "refunds. Permissionless, before the batch's settle deadline.",
+        "Deny records: `(token, payout mint)` then `(token, join mint)` for the zero-shares refund, or",
+        "none for a zero total, which runs no execution."
       ],
       "discriminator": [
         175,
@@ -2560,11 +2562,16 @@
         {
           "name": "join_confidential_mint",
           "docs": [
-            "Confidential mint the batch total was burned on."
-          ]
+            "Confidential mint the batch total was burned on. Mutable for the zero-shares refund wrap."
+          ],
+          "writable": true
         },
         {
-          "name": "batch_join_token_account"
+          "name": "batch_join_token_account",
+          "docs": [
+            "zero-shares refund wrap."
+          ],
+          "writable": true
         },
         {
           "name": "join_underlying_mint",
@@ -2627,7 +2634,11 @@
           }
         },
         {
-          "name": "batch_burned_amount_store"
+          "name": "batch_burned_amount_store",
+          "docs": [
+            "by the token CPI. Mutable because the zero-shares refund wrap replaces its balance slot."
+          ],
+          "writable": true
         },
         {
           "name": "pending_burn",
@@ -2710,6 +2721,10 @@
         },
         {
           "name": "vault_token_account",
+          "docs": [
+            "Vault's underlying token account. Pinned here, not only by the vault CPI, because the share",
+            "prediction reads its balance even when no vault CPI follows."
+          ],
           "writable": true
         },
         {
@@ -2794,6 +2809,13 @@
         },
         {
           "name": "payout_total_supply_store",
+          "writable": true
+        },
+        {
+          "name": "join_total_supply_authority"
+        },
+        {
+          "name": "join_total_supply_store",
           "writable": true
         },
         {
@@ -2921,6 +2943,23 @@
           "docs": [
             "The payout mint's HCU trust record for the token CPI. Supplied while the block cap binds and the",
             "application is trusted."
+          ],
+          "optional": true
+        },
+        {
+          "name": "join_mint_hcu_block_meter",
+          "docs": [
+            "The join mint's HCU block meter for the refund wrap. Supplied while the block cap binds and",
+            "the application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "join_mint_hcu_trusted_app_record",
+          "docs": [
+            "The join mint's HCU trust record for the refund wrap. Supplied while the block cap binds and",
+            "the application is trusted."
           ],
           "optional": true
         }

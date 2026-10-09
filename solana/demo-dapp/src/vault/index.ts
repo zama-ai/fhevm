@@ -57,6 +57,7 @@ export {
   dispatchableAt,
   getBatcher,
   getBatchByIndex,
+  getBatchJoinRecords,
   getCurrentBatch,
   getEncryptedStore,
   getJoinRecord,

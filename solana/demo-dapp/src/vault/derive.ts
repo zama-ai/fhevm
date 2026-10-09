@@ -119,6 +119,8 @@ export interface SolanaVaultSettleAccounts {
   readonly payoutTotalSupplyAuthority: Address;
   readonly batchPayoutBalanceStore: Address;
   readonly payoutTotalSupplyStore: Address;
+  readonly joinTotalSupplyAuthority: Address;
+  readonly joinTotalSupplyStore: Address;
   readonly batchAuthority: Address;
   readonly batchJoinUnderlying: Address;
   readonly batchPayoutUnderlying: Address;
@@ -133,6 +135,7 @@ export async function deriveSettleAccounts(
   const [joinMintVaultAuthority] = await findMintVaultAuthorityPda({ mint: roots.joinConfidentialMint });
   const [payoutMintVaultAuthority] = await findMintVaultAuthorityPda({ mint: roots.payoutConfidentialMint });
   const [payoutTotalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint: roots.payoutConfidentialMint });
+  const [joinTotalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint: roots.joinConfidentialMint });
   const [vaultAuthority] = await findDemoVaultAuthorityPda({ vault: roots.vault });
   const [vaultTokenAccount] = await findVaultTokenAccountPda({ vault: roots.vault });
   return {
@@ -173,5 +176,7 @@ export async function deriveSettleAccounts(
     // authority, encrypted value label =
     // `total_supply`.
     payoutTotalSupplyStore: await tokenStoreAddress(roots.payoutConfidentialMint, payoutTotalSupplyAuthority),
+    joinTotalSupplyAuthority,
+    joinTotalSupplyStore: await tokenStoreAddress(roots.joinConfidentialMint, joinTotalSupplyAuthority),
   };
 }
