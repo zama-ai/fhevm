@@ -3,7 +3,7 @@ import { type Address, getAddressDecoder } from '@solana/kit';
 
 import type { SolanaPublicDecryptCertificateClaim } from './publicDecryptCertificate.js';
 import { buildVerifyPublicDecryptInstruction, verifyPublicDecryptArgsFromClaim } from './verifyPublicDecrypt.js';
-import { getVerifyPublicDecryptInstructionDataDecoder } from '@fhevm/solana-zama-host';
+import { findHostConfigPda, getVerifyPublicDecryptInstructionDataDecoder } from '@fhevm/solana-zama-host';
 
 function addr(fill: number): Address {
   return getAddressDecoder().decode(new Uint8Array(32).fill(fill));
@@ -61,9 +61,9 @@ describe('verifyPublicDecryptArgsFromClaim', () => {
 describe('buildVerifyPublicDecryptInstruction', () => {
   it('maps a claim onto the raw host verify_public_decrypt instruction', async () => {
     const kmsContext = addr(2);
-    const hostConfig = addr(4);
     const programAddress = addr(9);
-    const instruction = await buildVerifyPublicDecryptInstruction({ hostConfig, kmsContext, programAddress }, claim());
+    const [hostConfig] = await findHostConfigPda({ programAddress });
+    const instruction = await buildVerifyPublicDecryptInstruction({ kmsContext, programAddress }, claim());
 
     expect(instruction.programAddress).toBe(programAddress);
     expect(instruction.accounts?.map((a: { readonly address: Address }) => a.address)).toEqual([

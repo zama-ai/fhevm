@@ -323,12 +323,18 @@ only the wildcard row can be granted for them (DD-047). Either row authorizes th
 A dead row cannot veto a live one; a row the host program could not have written fails the entry closed, whatever
 the other row says. The connector then requires the delegator's allow leaf
 (`kms-worker/src/core/solana/delegation.rs`). The relayer refuses dead rows advisorily before the gateway fee (#50).
-Delegation emits no event; readers read the record (DD-044). A wallet delegator must call
-`delegate_for_user_decryption` as a top-level instruction (`WalletDelegationThroughCpi`). A wallet's signature reaches
-every CPI of the transaction it signed, so without that rule any program the user calls could delegate the user's
-decryption rights. A PDA delegator may delegate through CPI: only its own program can sign for it, and #68 covers
-where that program may pass it. Pinned by `a_wallet_grant_forwarded_through_another_program_is_rejected`
-and `a_vault_pda_grants_a_delegation_via_cpi` (fhevm-internal#2084); the connector half by
+Delegation emits no event; readers read the record (DD-044). A wallet must call `delegate_for_user_decryption`,
+`revoke_delegation_for_user_decryption`, `revoke_permits` and `pause` (#36) as top-level instructions
+(`WalletDelegationThroughCpi`, `WalletRevokeThroughCpi`, `WalletPauseThroughCpi`). A wallet's signature reaches every
+CPI of the transaction it signed, so without that rule any program the user calls could grant the user's decryption
+rights, end the user's delegations or permits, or charge the user the rent of a new watermark account. EVM keys each of
+these on `msg.sender`, which a called contract cannot be. A PDA may delegate, revoke a delegation and pause through
+CPI: only its own program can sign for it, and #68 covers where that program may pass it. Pinned by
+`a_wallet_grant_forwarded_through_another_program_is_rejected` and `a_vault_pda_grants_a_delegation_via_cpi`
+(fhevm-internal#2084); `a_wallet_revoke_forwarded_through_another_program_is_rejected` (in both
+`user_decryption_delegation_mollusk` and `permit_invalidation_mollusk`), `a_vault_pda_revokes_its_delegation_via_cpi`,
+`a_revocation_zeroes_the_expiry` and `first_revocation_creates_the_account_and_records_the_clock`; pause's pins under
+#36; the connector half by
 `a_second_read_from_a_node_behind_the_first_is_refused_transiently`,
 `a_node_below_the_minimum_context_slot_is_reported_as_behind` and
 `an_invalid_row_fails_the_entry_even_beside_a_live_row`; the scope rule by
@@ -432,7 +438,7 @@ build lets the upgrade authority close `HostConfig` and the KMS contexts (`AUTHO
 pause stops `revokeDelegationForUserDecryption`. A flag stops only its own area, and no flag stops
 `verify_public_decrypt`, as no pause stops EVM's `KMSVerifier`. Any signer with an enabled `PauserRecord` sets flags;
 only the admin clears them, and only the admin creates, enables or disables pauser records. A wallet pauser must call
-`pause` as a top-level instruction (`WalletPauseThroughCpi`), as a wallet delegator must delegate (#27): otherwise any
+`pause` as a top-level instruction (`WalletPauseThroughCpi`), as a wallet must delegate and revoke (#27): otherwise any
 program the pauser calls could pause the host. A PDA pauser, such as a Squads vault, may pause through CPI. Admin
 setters are never paused, and `revoke_permits` takes no config account, so it runs under every flag. Pinned by
 `mollusk_each_pause_flag_stops_only_its_area`, `mollusk_no_pause_flag_stops_verify_public_decrypt`, the token tests of
@@ -656,15 +662,17 @@ the maximum coprocessor threshold with every witness` (`joinBatch.test.ts`) and
 `mollusk_settle_at_the_largest_kms_certificate_fits_the_compute_budget`.
 
 **50. [OPERATIONAL]** The relayer's ACL preflight covers EVM host chains and,
-advisorily, Solana delegated entries: a delegation row that is dead at the
-host Clock of the read (absent, revoked, expired) is refused before the gateway
-fee (`relayer/src/host/solana_delegation_precheck.rs`); every ambiguity of
-data passes. A direct Solana entry is not pre-checked — its authorization
-is an allow leaf the connector fetches, and there is no cheaper reading of
-it — so an unauthorized one is rejected by the KMS connectors after the
-gateway fee is paid. This does not affect authorization (#42, #45); for
-now we accept that a rejected request can still cost a fee, and that
-this leaves room for spam.
+advisorily, Solana user-decrypt entries (`relayer/src/host/solana_user_decrypt_precheck.rs`).
+Before the gateway fee it refuses an entry whose encrypted store's application
+lies outside the permit's allowed scopes, as EVM's `Decryption.sol` refuses a
+contract outside the signed contract addresses, and a delegated entry whose
+delegation rows are dead at the host Clock of the read (absent, revoked,
+expired); every ambiguity of data passes. Allow leaves and the permit
+watermark are not pre-checked — the connector fetches the leaf, and there is
+no cheaper reading of it — so a request refused on them is rejected by the
+KMS connectors after the gateway fee is paid. This does not affect
+authorization (#42, #45); for now we accept that a rejected request can still
+cost a fee, and that this leaves room for spam.
 
 **54. [HOLDS]** `FheExecution::build` enforces three typed resource ceilings:
 

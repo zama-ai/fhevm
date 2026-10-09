@@ -70,7 +70,7 @@ user-decryption-signature = { path = "../shared/user-decryption-signature" }
 zama-solana-permit = { path = "../solana/crates/zama-solana-permit" }
 zama-solana-request = { path = "../solana/crates/zama-solana-request" }
 # Solana ACL: the encrypted value account and delegation record decoders the advisory
-# delegation pre-check reads host state through — the connector's own crate, so one decoder.
+# user-decrypt pre-check reads host state through — the connector's own crate, so one decoder.
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 # Off-chain Coprocessor attestation consensus, backing the ciphertext readiness check.
 ciphertext-attestation = { path = "../shared/ciphertext-attestation", features = ["client"] }

@@ -1404,6 +1404,34 @@ fn a_wallet_grant_forwarded_through_another_program_is_rejected() {
     );
 }
 
+/// Nor can it revoke the user's delegation: on EVM a revocation is keyed on `msg.sender`, which
+/// a contract the user calls is not. The forwarded wallet signature reaches the host, and only
+/// the top-level rule stops the revoke.
+#[test]
+fn a_wallet_revoke_forwarded_through_another_program_is_rejected() {
+    let actors = actors();
+    let revoke = revoke_ix(actors.delegator, actors.record_key);
+    let mut forwarded = zama_solana_test_kit::anchor_ix(
+        vault::id(),
+        vault::accounts::CheckCpiReturn { callee: host::id() },
+        vault::instruction::CheckCpiReturn {
+            instruction_data: revoke.data,
+            expected: Vec::new(),
+        },
+    );
+    forwarded.accounts.extend(revoke.accounts);
+    let mut accounts = revoke_accounts(&actors, record_account(&live_record(&actors)), false);
+    accounts.push((host::id(), host_program_account()));
+
+    mollusk_with_vault().process_and_validate_instruction(
+        &forwarded,
+        &accounts,
+        &[custom_error(
+            host::errors::ZamaHostError::WalletRevokeThroughCpi,
+        )],
+    );
+}
+
 /// An executor cannot act through somebody else's vault: the wrapper holds the vault account
 /// to the seeds of *its own* executor, so the substitution dies before any CPI.
 #[test]
@@ -1520,7 +1548,7 @@ fn the_shared_clock_decoder_reads_the_runtimes_clock() {
 }
 
 /// The relayer's advisory pre-check derives the same addresses from raw seeds
-/// (`relayer/src/host/solana_delegation_precheck.rs`), where these literals are asserted against
+/// (`relayer/src/host/solana_user_decrypt_precheck.rs`), where these literals are asserted against
 /// the same inputs — a seed-order drift on either side breaks both suites on the same bytes.
 #[test]
 fn relayer_fixture_wildcard_row_and_encrypted_store_addresses() {

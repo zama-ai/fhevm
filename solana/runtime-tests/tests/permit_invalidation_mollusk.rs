@@ -29,6 +29,7 @@ use solana_sdk::{
     account::Account,
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
+    signature::{Keypair, Signer},
 };
 use std::{ops::Range, path::PathBuf};
 use zama_host::{self as host, PermitInvalidation};
@@ -36,6 +37,8 @@ use zama_solana_test_kit::{
     empty_system_account, funded_system_account as funded_wallet, serialized_account as serialized,
     system_program_account,
 };
+
+mod host_fixtures;
 
 // The schema lives with the fixture rather than in this crate, because the KMS Connector
 // includes the same file from its own test target.
@@ -400,6 +403,38 @@ fn revocation_requires_the_users_signature() {
     assert!(
         result.program_result.is_err(),
         "an unsigned revocation must fail"
+    );
+}
+
+/// A program the user calls cannot revoke the user's permits, nor charge the user the
+/// watermark's rent: on EVM a revocation is keyed on `msg.sender`, which a contract the user
+/// calls is not. `check_cpi_return` forwards every account with its signer flag, as a
+/// malicious program would, so only the top-level rule stops the revoke.
+#[test]
+fn a_wallet_revoke_forwarded_through_another_program_is_rejected() {
+    // A wallet key is on the curve; `new_unique` may yield an off-curve key, which reads as a PDA.
+    let user = Keypair::new().pubkey();
+    let (invalidation, mut accounts) = accounts_with_absent_watermark(user);
+    let revoke = revoke_ix(user, invalidation);
+    let mut forwarded = zama_solana_test_kit::anchor_ix(
+        delegator_vault::id(),
+        delegator_vault::accounts::CheckCpiReturn { callee: host::id() },
+        delegator_vault::instruction::CheckCpiReturn {
+            instruction_data: revoke.data,
+            expected: Vec::new(),
+        },
+    );
+    forwarded.accounts.extend(revoke.accounts);
+    accounts.push((host::id(), host_fixtures::host_program_account()));
+
+    let mut mollusk = host_fixtures::vault_and_host_svm();
+    mollusk.sysvars.clock.unix_timestamp = REVOCATION_TIME;
+    mollusk.process_and_validate_instruction(
+        &forwarded,
+        &accounts,
+        &[zama_solana_test_kit::anchor_error_check(
+            host::errors::ZamaHostError::WalletRevokeThroughCpi as u32,
+        )],
     );
 }
 

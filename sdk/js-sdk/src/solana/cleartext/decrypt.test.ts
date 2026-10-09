@@ -239,7 +239,7 @@ describe('cleartextUserDecryptExecution', () => {
     vi.spyOn(zamaHost, 'fetchKmsContext').mockResolvedValue(kmsContext(false));
     vi.spyOn(storeValues, 'fetchCleartextStoreValue').mockResolvedValue(new Uint8Array([1]));
     vi.spyOn(envelope, 'verifySolanaPermitSignature').mockReturnValue(undefined);
-    vi.spyOn(authorization, 'solanaRelayerDelegationRefusal').mockResolvedValue(undefined);
+    vi.spyOn(authorization, 'solanaRelayerPrecheckRefusal').mockResolvedValue(undefined);
     vi.spyOn(authorization, 'judgeSolanaUserDecryption').mockResolvedValue({ authorized: true });
   });
 
@@ -285,20 +285,20 @@ describe('cleartextUserDecryptExecution', () => {
     expect(await firstRejection()).toMatchObject({ kind: 'refused', label: 'validation_failed' });
   });
 
-  it('refuses handles on another host chain before the delegation pre-check', async () => {
+  it("refuses handles on another host chain before the relayer's pre-check", async () => {
     hostOnChain(hostChainId + 1n);
     expect(await firstRejection()).toMatchObject({ kind: 'refused', label: 'host_chain_id_not_supported' });
-    expect(authorization.solanaRelayerDelegationRefusal).not.toHaveBeenCalled();
+    expect(authorization.solanaRelayerPrecheckRefusal).not.toHaveBeenCalled();
   });
 
-  it('refuses a bad signature at submission, before the delegation pre-check', async () => {
+  it("refuses a bad signature at submission, before the relayer's pre-check", async () => {
     badSignature();
     expect(await firstRejection()).toMatchObject({ kind: 'refused', label: 'validation_failed' });
-    expect(authorization.solanaRelayerDelegationRefusal).not.toHaveBeenCalled();
+    expect(authorization.solanaRelayerPrecheckRefusal).not.toHaveBeenCalled();
   });
 
-  it("gives up on the relayer's delegation pre-check before the gateway's window", async () => {
-    vi.mocked(authorization.solanaRelayerDelegationRefusal).mockResolvedValue('no live delegation');
+  it("gives up on the relayer's pre-check before the gateway's window", async () => {
+    vi.mocked(authorization.solanaRelayerPrecheckRefusal).mockResolvedValue('no live delegation');
     expect(await firstRejection(now + 600n)).toEqual({
       kind: 'failed',
       label: 'not_allowed_on_host_acl',

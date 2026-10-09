@@ -8,7 +8,7 @@ import {
   CONNECTOR_FAILURE_RECOVERABLE,
   judgeSolanaPublicDecryption,
   judgeSolanaUserDecryption,
-  solanaRelayerDelegationRefusal,
+  solanaRelayerPrecheckRefusal,
   type ConnectorVerdict,
   type SolanaHostAccountsReader,
 } from './authorization.js';
@@ -245,19 +245,30 @@ describe('the cleartext client judges a public decryption as the KMS Connector d
   }
 });
 
-// The relayer judges delegation rows by the Connector's rules, over the same worlds, but refuses
-// only what the Connector could never authorize.
-describe("the relayer's delegation pre-check", () => {
-  const precheck = (name: string) => {
-    const testCase = userCase(name);
-    const { fields, entries } = requestOf(testCase);
-    return solanaRelayerDelegationRefusal({
-      programAddress,
-      fields,
-      entries,
-      readAccounts: accountsReader(testCase.accounts),
-    });
+// The relayer judges scopes and delegation rows by the Connector's rules, over the same worlds, but
+// refuses only what the Connector could never authorize.
+describe("the relayer's pre-check", () => {
+  const precheck = (name: string, readAccounts = accountsReader(userCase(name).accounts)) => {
+    const { fields, entries } = requestOf(userCase(name));
+    return solanaRelayerPrecheckRefusal({ programAddress, fields, entries, readAccounts });
   };
+
+  it('never refuses a request the Connector authorizes', async () => {
+    for (const testCase of fixture.user_decrypt_cases.filter(({ verdict }) => verdict.authorized)) {
+      await expect(precheck(testCase.name), testCase.name).resolves.toBeUndefined();
+    }
+  });
+
+  it("refuses an entry outside the permit's scopes on the store read, direct or delegated", async () => {
+    for (const name of [
+      "a store outside the permit's scopes",
+      "a delegated entry outside the permit's scopes, with no delegation row",
+    ]) {
+      const readAccounts = vi.fn(accountsReader(userCase(name).accounts));
+      await expect(precheck(name, readAccounts), name).resolves.toMatch(/allowed scopes do not cover the application/);
+      expect(readAccounts, name).toHaveBeenCalledTimes(1);
+    }
+  });
 
   it('refuses a delegated entry whose rows are both dead at the host Clock', async () => {
     for (const name of [
@@ -280,12 +291,9 @@ describe("the relayer's delegation pre-check", () => {
     }
   });
 
-  it('reads nothing for direct entries', async () => {
-    const { fields, entries } = requestOf(userCase("a direct entry with the signer's allow leaf"));
+  it('reads nothing for direct entries under a permissive permit', async () => {
     const readAccounts = vi.fn<SolanaHostAccountsReader>();
-    await expect(
-      solanaRelayerDelegationRefusal({ programAddress, fields, entries, readAccounts }),
-    ).resolves.toBeUndefined();
+    await expect(precheck('a permissive permit and a store of any application', readAccounts)).resolves.toBeUndefined();
     expect(readAccounts).not.toHaveBeenCalled();
   });
 });

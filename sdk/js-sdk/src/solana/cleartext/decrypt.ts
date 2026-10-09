@@ -4,12 +4,12 @@
 // the client signs with the registered cleartext KMS key.
 //
 // Before answering a user decryption, the client runs the real stack's checks in its order: the
-// relayer's at submission and its delegation pre-check, the gateway's validity window, then the KMS
-// Connector's authorization over the same host state (./authorization.ts). A public decryption is
-// judged by the Connector's rules for one. What the client does not reproduce is the KMS itself: no
-// signcryption, no response signatures, and so no check of the FHE parameter or the KMS epoch. A
-// refusal reaches the caller as it does on the real stack, except that a request the Connector will
-// never answer fails at once instead of timing out.
+// relayer's at submission and its scope and delegation pre-check, the gateway's validity window,
+// then the KMS Connector's authorization over the same host state (./authorization.ts). A public
+// decryption is judged by the Connector's rules for one. What the client does not reproduce is the
+// KMS itself: no signcryption, no response signatures, and so no check of the FHE parameter or the
+// KMS epoch. A refusal reaches the caller as it does on the real stack, except that a request the
+// Connector will never answer fails at once instead of timing out.
 import { getAddressDecoder, parseBase64RpcAccount, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaRpc } from '../encryptedStore.js';
@@ -46,7 +46,7 @@ import {
   CONNECTOR_FAILURE_RECOVERABLE,
   judgeSolanaPublicDecryption,
   judgeSolanaUserDecryption,
-  solanaRelayerDelegationRefusal,
+  solanaRelayerPrecheckRefusal,
   type ConnectorVerdict,
   type SolanaHostAccountsReader,
 } from './authorization.js';
@@ -97,16 +97,16 @@ export function cleartextUserDecryptExecution(
             return { ok: false, rejection: { kind: 'refused', label: 'host_chain_id_not_supported', message } };
           }
           // The relayer's pre-check, before it spends a gateway transaction.
-          const delegationRefusal = await solanaRelayerDelegationRefusal({
+          const precheckRefusal = await solanaRelayerPrecheckRefusal({
             programAddress,
             fields,
             entries,
             readAccounts,
           });
-          if (delegationRefusal !== undefined) {
+          if (precheckRefusal !== undefined) {
             return {
               ok: false,
-              rejection: { kind: 'failed', label: 'not_allowed_on_host_acl', message: delegationRefusal },
+              rejection: { kind: 'failed', label: 'not_allowed_on_host_acl', message: precheckRefusal },
             };
           }
           // The gateway reverts a request outside its window, and the relayer reports the revert as its own error.

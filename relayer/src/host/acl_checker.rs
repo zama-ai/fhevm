@@ -7,9 +7,9 @@ use crate::{
     host::{
         error_redact::{redact_alloy_error, redact_error},
         handle_chain_id::{extract_chain_id_from_handle, extract_chain_id_from_u256},
-        solana_delegation_precheck::{
-            encrypted_store_read_addresses, judge_planned_entries, plan_row_reads, DelegatedEntry,
-            RawAccount,
+        solana_user_decrypt_precheck::{
+            encrypted_store_read_addresses, entry_applications, judge_planned_entries,
+            plan_row_reads, scope_refusals, EntryRefusal, RawAccount, RequestEntry,
         },
     },
 };
@@ -94,15 +94,9 @@ struct SolanaHostChain {
 /// Checks handle permissions against host chain ACL contracts via multicall.
 pub struct HostAclChecker {
     chains: HashMap<u64, HostChainAcl>,
-    /// RFC-021 Solana host chains (type byte `0x01`), keyed by chain id. A Solana
-    /// host carries a base58 `acl_address` (the zama-host program) and has no EVM ACL
-    /// contract to `eth_call`; its ACL is enforced authoritatively by the KMS Connector.
-    /// Direct entries and public decrypts are not pre-checked here — their authorization
-    /// is an allow leaf sealed on the write, and this checker has no cheaper reading of it
-    /// than the connector's own. Delegated user-decrypt entries ARE: the v3 request names
-    /// the owner address and the encrypted store, which is everything the advisory
-    /// negative-only pre-check (`check_solana_delegated_user_decrypt`) needs to read the
-    /// delegation rows.
+    /// RFC-021 Solana host chains (type byte `0x01`), keyed by chain id; each carries the
+    /// zama-host program as a base58 `acl_address`. What is pre-checked for them is
+    /// [`super::solana_user_decrypt_precheck`]'s module doc.
     solana_chains: HashMap<u64, SolanaHostChain>,
     retry_config: RetrySettings,
 }
@@ -565,13 +559,12 @@ impl HostAclChecker {
         }
     }
 
-    /// Execute a multicall against a host chain ACL contract with retry on RPC errors.
-    /// Advisory, negative-only pre-check of a Solana delegated user-decrypt request
-    /// ([`super::solana_delegation_precheck`] holds the rule). Two `getMultipleAccounts` reads at
+    /// Advisory, negative-only pre-check of a Solana user-decrypt request
+    /// ([`super::solana_user_decrypt_precheck`] holds the rule). Two `getMultipleAccounts` reads at
     /// `finalized`: the encrypted stores, to learn each entry's application, then the delegation
     /// rows with the Clock at or after the first read's slot. The chain read is the permit's
     /// `chain_id`, which every handle embeds and the signature covers.
-    pub async fn check_solana_delegated_user_decrypt(
+    pub async fn check_solana_user_decrypt(
         &self,
         job_id: &JobId,
         request: &SolanaUserDecryptRequest,
@@ -581,38 +574,27 @@ impl HostAclChecker {
             return Err(HostAclError::UnsupportedChain { chain_id });
         };
         let user_address = *request.permit().user_address().as_bytes();
+        let scopes = request.permit().allowed_scopes();
 
-        let delegated: Vec<DelegatedEntry> = request
+        let entries: Vec<RequestEntry> = request
             .entries()
             .iter()
-            .filter(|entry| entry.owner_address != user_address)
-            .map(|entry| DelegatedEntry {
+            .map(|entry| RequestEntry {
                 handle_hex: format!("0x{}", hex::encode(entry.handle)),
-                delegator: entry.owner_address,
+                owner: entry.owner_address,
                 encrypted_store: entry.encrypted_store,
             })
             .collect();
-        if delegated.is_empty() {
+        // A permissive permit admits every application, and a direct entry has no row to read.
+        if scopes.is_permissive() && entries.iter().all(|entry| entry.owner == user_address) {
             return Ok(());
         }
-        self.check_delegated_entries(job_id, chain, chain_id, user_address, delegated)
-            .await
-    }
 
-    /// The two reads of the pre-check and its verdict, for entries already known to be delegated.
-    async fn check_delegated_entries(
-        &self,
-        job_id: &JobId,
-        chain: &SolanaHostChain,
-        chain_id: u64,
-        user_address: [u8; 32],
-        delegated: Vec<DelegatedEntry>,
-    ) -> Result<(), HostAclError> {
         // Round 1: the encrypted stores the entries name, to learn each entry's application. Its
         // slot is the floor the row read must be served at or after — otherwise a load-balanced
         // RPC can answer round 2 from a replica behind round 1, and a grant finalized between the
         // two reads as absent.
-        let encrypted_store_addresses = encrypted_store_read_addresses(&delegated);
+        let encrypted_store_addresses = encrypted_store_read_addresses(&entries);
         let (discovery_slot, encrypted_stores) = match self
             .solana_accounts_with_retry(job_id, chain, chain_id, &encrypted_store_addresses, None)
             .await?
@@ -622,22 +604,28 @@ impl HostAclChecker {
             // that impossibility from becoming a refusal.
             SolanaRead::NodeBehindRequiredSlot => return Ok(()),
         };
-
-        // Entries whose encrypted store this check cannot judge drop out of the plan
-        // (indeterminate).
-        let plan = match plan_row_reads(chain.program_id, user_address, delegated, encrypted_stores)
-        {
-            Ok(plan) => plan,
+        let applications = match entry_applications(chain.program_id, &entries, encrypted_stores) {
+            Ok(applications) => applications,
             Err(defect) => {
                 warn!(
                     int_job_id = %job_id,
                     chain_id,
                     ?defect,
-                    "Solana delegation pre-check cannot judge its own reads; passing"
+                    "Solana user-decrypt pre-check cannot judge its own reads; passing"
                 );
                 return Ok(());
             }
         };
+
+        // A store's application is its seeds, so a scope refusal needs no second read.
+        let refusals = scope_refusals(scopes, &entries, &applications);
+        if !refusals.is_empty() {
+            return Err(not_allowed(refusals));
+        }
+
+        // Delegated entries whose encrypted store this check cannot judge drop out of the plan
+        // (indeterminate).
+        let plan = plan_row_reads(chain.program_id, user_address, entries, applications);
         if plan.entries.is_empty() {
             return Ok(());
         }
@@ -663,7 +651,7 @@ impl HostAclChecker {
                     chain_id,
                     required_slot = floor,
                     row_slot = slot,
-                    "Solana delegation pre-check read the rows behind its required slot; passing"
+                    "Solana user-decrypt pre-check read the rows behind its required slot; passing"
                 );
                 return Ok(());
             }
@@ -680,7 +668,7 @@ impl HostAclChecker {
                         int_job_id = %job_id,
                         chain_id,
                         ?defect,
-                        "Solana delegation pre-check cannot judge its own reads; passing"
+                        "Solana user-decrypt pre-check cannot judge its own reads; passing"
                     );
                     return Ok(());
                 }
@@ -689,24 +677,14 @@ impl HostAclChecker {
                 return Ok(());
             }
             if attempt >= self.retry_config.max_attempts {
-                let failures: Vec<AclFailure> = refusals
-                    .into_iter()
-                    .map(|refusal| AclFailure {
-                        handle: refusal.handle_hex,
-                        check: refusal.reason,
-                    })
-                    .collect();
-                return Err(HostAclError::NotAllowed {
-                    count: failures.len(),
-                    failures,
-                });
+                return Err(not_allowed(refusals));
             }
             warn!(
                 int_job_id = %job_id,
                 chain_id,
                 attempt,
                 refused = refusals.len(),
-                "Solana delegation pre-check found no live delegation; reading the rows again"
+                "Solana user-decrypt pre-check found no live delegation; reading the rows again"
             );
             tokio::time::sleep(Duration::from_millis(self.retry_config.retry_interval_ms)).await;
             floor = slot;
@@ -747,7 +725,7 @@ impl HostAclChecker {
                             attempt = attempt + 1,
                             max_attempts,
                             error = %last_error,
-                            "Solana delegation pre-check read failed, retrying"
+                            "Solana user-decrypt pre-check read failed, retrying"
                         );
                         tokio::time::sleep(retry_interval).await;
                     }
@@ -762,7 +740,7 @@ impl HostAclChecker {
                 int_job_id = %job_id,
                 chain_id,
                 error = %last_error,
-                "Solana delegation pre-check RPC stayed behind the first read's slot; passing"
+                "Solana user-decrypt pre-check RPC stayed behind the first read's slot; passing"
             );
             return Ok(SolanaRead::NodeBehindRequiredSlot);
         }
@@ -770,7 +748,7 @@ impl HostAclChecker {
             int_job_id = %job_id,
             chain_id,
             error = %last_error,
-            "Solana delegation pre-check read failed after retries"
+            "Solana user-decrypt pre-check read failed after retries"
         );
         Err(HostAclError::CallFailed {
             chain_id,
@@ -851,6 +829,21 @@ fn group_handle_entries_by_chain(handles: &[HandleEntry]) -> HashMap<u64, Vec<Ha
         grouped.entry(chain_id).or_default().push(entry.clone());
     }
     grouped
+}
+
+/// The Solana pre-check's refusals as the error the EVM pre-check reports.
+fn not_allowed(refusals: Vec<EntryRefusal>) -> HostAclError {
+    let failures: Vec<AclFailure> = refusals
+        .into_iter()
+        .map(|refusal| AclFailure {
+            handle: refusal.handle_hex,
+            check: refusal.reason,
+        })
+        .collect();
+    HostAclError::NotAllowed {
+        count: failures.len(),
+        failures,
+    }
 }
 
 /// What one retried read produced.
@@ -1276,16 +1269,24 @@ mod tests {
         (format!("http://{addr}"), required_slots)
     }
 
-    /// Runs the delegated-entry check for one entry against `answers`, with `max_attempts`. Read
-    /// `n` answers at slot `100 + n`. Returns the outcome and the `minContextSlot` of each read.
-    async fn check_one_delegated_entry(
+    /// Runs the user-decrypt pre-check on a one-entry request of `owner`, signed by `DELEGATE` for
+    /// `allowed_scopes`, against `answers`, with `max_attempts`. Read `n` answers at slot
+    /// `100 + n`; the store read is answered with a store of `(APP_PROGRAM, SCOPE)`. Returns the
+    /// outcome and the `minContextSlot` of each read.
+    async fn check_one_entry(
         max_attempts: u32,
+        owner: [u8; 32],
+        allowed_scopes: Vec<zama_solana_permit::ApplicationScope>,
         rows: Vec<Vec<Option<RawAccount>>>,
     ) -> (Result<(), HostAclError>, Vec<Option<u64>>) {
-        use super::super::solana_delegation_precheck::tests::{
-            encrypted_store_for, APP_PROGRAM, DELEGATE, DELEGATOR, PROGRAM_ID, SCOPE,
+        use super::super::solana_user_decrypt_precheck::tests::{
+            encrypted_store_for, APP_PROGRAM, DELEGATE, PROGRAM_ID, SCOPE,
         };
         use crate::config::settings::HostChainConfig;
+        use zama_solana_permit::{
+            KMS_ROUTING_EXTRA_DATA_LEN, KMS_ROUTING_VERSION_BYTE, TRANSPORT_KEY_LEN,
+        };
+        use zama_solana_request::{SolanaEntryClaims, SolanaRequestBlob, SolanaUserDecryptFields};
 
         let (store, store_address) = encrypted_store_for(APP_PROGRAM, SCOPE);
         let answers = std::iter::once(vec![Some(store)])
@@ -1304,19 +1305,36 @@ mod tests {
             &host_acl_check_config(max_attempts, 10_000),
         )
         .expect("checker builds");
-        let chain = &checker.solana_chains[&chain_id];
-        let outcome = checker
-            .check_delegated_entries(
-                &JobId::from([0u8; 32]),
-                chain,
-                chain_id,
-                DELEGATE,
-                vec![DelegatedEntry {
-                    handle_hex: "0x01".to_string(),
-                    delegator: DELEGATOR,
+
+        let mut handle = [1; 32];
+        handle[22..30].copy_from_slice(&chain_id.to_be_bytes());
+        let mut extra_data = vec![7; KMS_ROUTING_EXTRA_DATA_LEN];
+        extra_data[0] = KMS_ROUTING_VERSION_BYTE;
+        let request = SolanaUserDecryptRequest::assemble(
+            SolanaUserDecryptFields {
+                handles: vec![handle],
+                transport_key: vec![2; TRANSPORT_KEY_LEN],
+                start_timestamp: 4,
+                duration_seconds: 5,
+                extra_data,
+            },
+            SolanaRequestBlob {
+                user_address: DELEGATE,
+                allowed_scopes: allowed_scopes
+                    .iter()
+                    .map(|scope| *scope.as_bytes())
+                    .collect(),
+                verifying_program_id: PROGRAM_ID,
+                signature: [9; 64],
+                entries: vec![SolanaEntryClaims {
+                    owner_address: owner,
                     encrypted_store: store_address,
                 }],
-            )
+            },
+        )
+        .expect("the request assembles");
+        let outcome = checker
+            .check_solana_user_decrypt(&JobId::from([0u8; 32]), &request)
             .await;
         let required_slots = required_slots.lock().expect("required slots lock").clone();
         (outcome, required_slots)
@@ -1327,10 +1345,14 @@ mod tests {
     /// row read requires the slot of the read before it.
     #[tokio::test]
     async fn a_grant_that_finalizes_after_the_first_row_read_passes() {
-        use super::super::solana_delegation_precheck::tests::{clock, live_exact, row, NOW};
+        use super::super::solana_user_decrypt_precheck::tests::{
+            clock, live_exact, row, DELEGATOR, NOW,
+        };
 
-        let (outcome, required_slots) = check_one_delegated_entry(
+        let (outcome, required_slots) = check_one_entry(
             3,
+            DELEGATOR,
+            vec![],
             vec![
                 vec![None, None, Some(clock(NOW))],
                 vec![Some(row(&live_exact())), None, Some(clock(NOW))],
@@ -1348,14 +1370,74 @@ mod tests {
     /// Rows still dead on the last attempt the retry policy allows refuse the entry.
     #[tokio::test]
     async fn rows_still_dead_on_the_last_attempt_refuse() {
-        use super::super::solana_delegation_precheck::tests::{clock, NOW};
+        use super::super::solana_user_decrypt_precheck::tests::{clock, DELEGATOR, NOW};
 
         let dead = || vec![None, None, Some(clock(NOW))];
-        let (outcome, required_slots) = check_one_delegated_entry(2, vec![dead(), dead()]).await;
+        let (outcome, required_slots) =
+            check_one_entry(2, DELEGATOR, vec![], vec![dead(), dead()]).await;
         assert!(
             matches!(outcome, Err(HostAclError::NotAllowed { count: 1, .. })),
             "{outcome:?}"
         );
         assert_eq!(required_slots.len(), 3, "the store read and two row reads");
+    }
+
+    /// A direct entry whose store's application the permit's scopes leave out is refused after
+    /// the store read, as the connector refuses it after the gateway fee (`ScopeNotAllowed`).
+    #[tokio::test]
+    async fn a_direct_entry_outside_the_permit_scopes_is_refused_before_the_fee() {
+        use super::super::solana_user_decrypt_precheck::tests::{
+            scope_entry, APP_PROGRAM, DELEGATE,
+        };
+
+        let (outcome, required_slots) = check_one_entry(
+            3,
+            DELEGATE,
+            vec![scope_entry(APP_PROGRAM, [0x99; 32])],
+            vec![],
+        )
+        .await;
+        assert!(
+            matches!(outcome, Err(HostAclError::NotAllowed { count: 1, .. })),
+            "{outcome:?}"
+        );
+        assert_eq!(required_slots, [None], "the store read alone decides");
+    }
+
+    /// The same direct entry passes once its application is among the signed scopes, without a
+    /// row read.
+    #[tokio::test]
+    async fn a_direct_entry_inside_the_permit_scopes_passes_on_the_store_read() {
+        use super::super::solana_user_decrypt_precheck::tests::{
+            scope_entry, APP_PROGRAM, DELEGATE, SCOPE,
+        };
+
+        let (outcome, required_slots) =
+            check_one_entry(3, DELEGATE, vec![scope_entry(APP_PROGRAM, SCOPE)], vec![]).await;
+        assert!(outcome.is_ok(), "{outcome:?}");
+        assert_eq!(required_slots, [None]);
+    }
+
+    /// A delegated entry outside the scopes is refused on the scope, with no row read, as the
+    /// connector judges the scope before the delegation.
+    #[tokio::test]
+    async fn a_delegated_entry_outside_the_permit_scopes_is_refused_without_a_row_read() {
+        use super::super::solana_user_decrypt_precheck::tests::{
+            clock, live_exact, row, scope_entry, APP_PROGRAM, DELEGATOR, NOW,
+        };
+
+        // A live row is on offer, so only the scope can refuse the entry.
+        let (outcome, required_slots) = check_one_entry(
+            3,
+            DELEGATOR,
+            vec![scope_entry(APP_PROGRAM, [0x99; 32])],
+            vec![vec![Some(row(&live_exact())), None, Some(clock(NOW))]],
+        )
+        .await;
+        assert!(
+            matches!(outcome, Err(HostAclError::NotAllowed { count: 1, .. })),
+            "{outcome:?}"
+        );
+        assert_eq!(required_slots, [None]);
     }
 }

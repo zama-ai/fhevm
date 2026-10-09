@@ -1525,8 +1525,8 @@ Consequences:
 - `fhe_execute` wire: `allow_indexes` per Store effect and no subject lists; the deny record an
   execution passes is its application's.
 - The connector pipeline is one explicit sequence with one observation point
-  (`kms-worker/src/core/solana/pipeline.rs`); the relayer pre-checks dead delegation rows
-  advisorily and nothing else (INVARIANTS #50).
+  (`kms-worker/src/core/solana/pipeline.rs`); the relayer pre-checks scopes and dead delegation
+  rows advisorily and nothing else (INVARIANTS #50).
 - Delegation records are consumed (INVARIANTS #27 closed).
 - A handle with no allows and no public leaf is undecryptable by everyone, including its author;
   that is the author's choice, not a stranding.
@@ -2704,7 +2704,7 @@ assumes Alpenglow on every cluster it runs on. This covers:
   checkpoint read (`block_checkpoint`) and the `solana_host_follower_finalized_slot` metric;
 - the Merkle indexer's store check (DD-068);
 - the KMS connector's account snapshot (`kms-worker/src/core/solana/snapshot.rs`);
-- the relayer's delegation pre-check (`relayer/src/host/acl_checker.rs`);
+- the relayer's user-decrypt pre-check (`relayer/src/host/acl_checker.rs`);
 - the SDK, the demo dapp, `solana/deploy`, the test suite and the preview scripts: account reads,
   blockhashes, simulation and confirmation waits.
 
