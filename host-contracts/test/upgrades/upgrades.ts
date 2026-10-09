@@ -8,6 +8,8 @@ import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 const KEY_COUNTER_BASE = BigInt(4) << BigInt(248);
 const CRS_COUNTER_BASE = BigInt(5) << BigInt(248);
+// OpenZeppelin Initializable ERC-7201 slot.
+const INITIALIZABLE_STORAGE_SLOT = '0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00';
 
 describe('Upgrades', function () {
   before(async function () {
@@ -51,7 +53,7 @@ describe('Upgrades', function () {
       },
     });
     await pc.waitForDeployment();
-    expect(await pc.getVersion()).to.equal('ProtocolConfig v0.3.0');
+    expect(await pc.getVersion()).to.equal('ProtocolConfig v0.4.0');
     const expectThresholds = async (c: any) => {
       expect(await c.getPublicDecryptionThreshold()).to.equal(1n);
       expect(await c.getUserDecryptionThreshold()).to.equal(2n);
@@ -61,7 +63,7 @@ describe('Upgrades', function () {
     await expectThresholds(pc);
     const pc2 = await upgrades.upgradeProxy(pc, factoryUpgraded);
     await pc2.waitForDeployment();
-    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.4.0');
+    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.5.0');
     await expectThresholds(pc2);
   });
 
@@ -77,6 +79,13 @@ describe('Upgrades', function () {
     });
     await pc.waitForDeployment();
     const [contextId, epochId] = await pc.getCurrentKmsContextAndEpoch();
+    // Production converts only released v0.3.0 proxies, initialized at version 4. A fresh ProtocolConfig
+    // is initialized at 5, at the replica's reinitializer version, so pin the released value.
+    await ethers.provider.send('hardhat_setStorageAt', [
+      await pc.getAddress(),
+      INITIALIZABLE_STORAGE_SLOT,
+      ethers.toBeHex(4, 32),
+    ]);
 
     const replica = await upgrades.upgradeProxy(pc, replicaFactory, { call: { fn: 'reinitializeV4' } });
     await replica.waitForDeployment();

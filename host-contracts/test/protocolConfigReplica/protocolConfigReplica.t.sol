@@ -46,6 +46,8 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
     function _setupCanonical() internal returns (ProtocolConfig pc) {
         _deployACL(owner);
         (pc, ) = _deployProtocolConfig(owner, _makeKmsNodeParams(2), _defaultThresholds());
+        // Production converts only released v0.3.0 proxies, initialized at 4.
+        vm.store(protocolConfigAdd, INITIALIZABLE_STORAGE, bytes32(uint256(4)));
     }
 
     function _upgradeToReplica(ProtocolConfig pc) internal returns (ProtocolConfigReplica) {
