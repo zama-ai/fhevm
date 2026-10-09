@@ -2,14 +2,13 @@
 //!
 //! Both producer and consumer must encode, sign, and verify attestations byte-identically.
 //! This crate is the single source of truth for that encoding.
-//!
-//! See RFC-023 (Off-chain ciphertext commits handling).
 
 use alloy_primitives::{Address, B256};
 use sha3::{Digest, Keccak256};
 
 pub mod ciphertext;
 pub mod consensus;
+pub mod prf;
 
 pub use ciphertext::{
     COPROCESSOR_CONTEXT_ID_V1, CiphertextAttestation, CiphertextAttestationPayload,
@@ -21,6 +20,10 @@ pub use ciphertext::{
 pub use consensus::{
     Attestation, ConsensusCheckError, ConsensusOutcome, ConsensusRound, CoprocessorEntry,
     ResolvedConsensus,
+};
+pub use prf::{
+    PrfOutputAttestation, PrfOutputAttestationPayload,
+    consensus::{PrfMaterial, PrfOutputRef},
 };
 
 #[cfg(feature = "client")]
