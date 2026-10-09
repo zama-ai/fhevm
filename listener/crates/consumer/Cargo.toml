@@ -16,6 +16,7 @@ serde              = { workspace = true }
 serde_json.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 redis = { version = "0.29", features = ["tokio-comp", "aio"] }
