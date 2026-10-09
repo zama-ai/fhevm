@@ -1112,8 +1112,8 @@ per-application block cap unlimited; the per-transaction caps do bind.
 
 Status: adopted
 
-Decision (fhevm-internal#1853 W3+W4). Handle derivation is unified on keccak (the recorded
-2026-07-06 team position: EVM-side handle math is keccak, and both are same-price syscalls) and
+Decision (fhevm-internal#1853 W3+W4). Handle derivation is unified on keccak (EVM-side handle
+math is keccak, and both are same-price syscalls) and
 split into exactly two regimes, mirroring `FHEVMExecutor`:
 
 1. **Deterministic ops** (binary, ternary, unary, sum, is-in, mul-div, trivial-encrypt) are
@@ -1343,9 +1343,9 @@ CPI are independent and neither can donate capacity to the other.
 
 Why not ship an allocator:
 
-1. The guild precedent (Pinocchio, 2026-06-25): a low-level win bought with permanent complexity
-   is not worth it while the executor "doesn't do much compute at all" — stay on the framework
-   default for now, revisit with a benchmark of the application that needs more heap.
+1. A low-level win bought with permanent complexity is not worth it while the executor does little
+   compute: stay on the framework default for now, revisit with a benchmark of the application that
+   needs more heap.
 2. The builder has typed limits for steps (`TooManySteps`), CPI instruction data
    (`ExceedsCpiInstructionDataLimit`) and its own requested heap
    (`ExceedsBuildHeapBudget`). Counting-allocator tests cover build, packet and invoke tables.
@@ -1773,7 +1773,7 @@ of that handler, not a step towards leaving the framework.
 
 | Option | Why not |
 |---|---|
-| Hand-written Pinocchio | The guild precedent of 2026-06-25 (DD-046): permanent complexity for programs that do little compute. |
+| Hand-written Pinocchio | Permanent complexity for programs that do little compute (DD-046). |
 | Anchor v2 (`lang-v2` on `anchor-next`) | Alpha: not audited, not on crates.io, APIs break between commits. It is the planned successor. |
 | Quasar | Beta, unaudited, no release. Not a production candidate. |
 
