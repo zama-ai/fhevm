@@ -38,6 +38,7 @@ import {
   type TransactionSigner,
 } from "@solana/kit";
 import { getCreateAccountInstruction } from "@solana-program/system";
+import { findKmsContextPda } from "@fhevm/solana-zama-host";
 import {
   TOKEN_PROGRAM_ADDRESS as SPL_TOKEN_PROGRAM_ADDRESS,
   getMintSize,
@@ -53,7 +54,6 @@ import {
 } from "../src/solana/addresses";
 import { loadKeypairSigner } from "../src/solana/provision";
 import { buildVaultUnderlyingEscrowAtaInstruction } from "../src/solana/spl";
-import { kmsContextAddress } from "../src/solana/token-vertical";
 import { ensureDemoRecoveryKey, mirrorRecoveryKeys, recoveryDirectory } from "../src/solana/recovery";
 import { demoKeypairs } from "./loadDemoEnv";
 import {
@@ -128,7 +128,7 @@ const main = async (): Promise<void> => {
   const redeemBatcher = await generateKeyPairSigner();
 
   // Deterministic host root: the bring-up KMS context PDA.
-  const kmsContext = await kmsContextAddress();
+  const [kmsContext] = await findKmsContextPda({ contextId: BRINGUP_KMS_CONTEXT_ID });
   // The kms-context account is provisioned by the HOST BRING-UP, not by this seeder — the seeder
   // must never create it (it has neither the authority nor the key material to). But the smoke's
   // settle phase consumes it on-chain, so a missing account is a bring-up failure this seed can catch

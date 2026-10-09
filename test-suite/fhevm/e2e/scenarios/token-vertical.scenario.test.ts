@@ -1,9 +1,12 @@
 // Live token consume arc: wrap -> burn -> publish -> certified decrypt -> redeem -> disclose.
-// Also checks that changing the certificate's context id is rejected before signature verification.
+// Also checks that a certificate whose context id was changed is refused: with the live context
+// account, by the host's InvalidKmsContext before signature verification; with the account of the
+// context it names, which does not exist, by AccountNotInitialized.
 
 import { describe, expect, test } from "bun:test";
 
-import { getAddressEncoder, isSolanaError, SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM, type Address } from "@solana/kit";
+import { getAddressEncoder, type Address } from "@solana/kit";
+import { ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT } from "@fhevm/solana-zama-host";
 
 import { certifiedPublicDecrypt, currentHandle, publicDecryptValues } from "../../src/solana/fhe-vertical";
 import {
@@ -14,6 +17,7 @@ import {
   wrapUnderlying,
 } from "../../src/solana/provision";
 import {
+  certificateKmsContext,
   confidentialBurn,
   confidentialBurnTarget,
   discloseCertifiedHandle,
@@ -23,6 +27,8 @@ import {
   totalSupplyStore,
 } from "../../src/solana/token-vertical";
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from "@demo-dapp/vault/index.js";
+import { vaultModule } from "../../src/solana/lazy-modules";
+import { ANCHOR_ACCOUNT_NOT_INITIALIZED, expectProgramError } from "../../src/solana/program-error";
 import { timed } from "../../src/utils/timing";
 import { submitUint64InputProof } from "../harness/solana/sdkEncrypt";
 import { verticalSetup } from "../harness/solana/vertical";
@@ -32,30 +38,15 @@ const SCENARIO_TIMEOUT_MS = 20 * 60_000;
 
 const WRAP_AMOUNT = 1000n;
 const BURN_AMOUNT = 7n;
-const hostIdl: { errors: readonly { name: string; code: number }[] } = await Bun.file(
-  new URL("../../../../coprocessor/fhevm-engine/host-listener/idl/zama_host.json", import.meta.url),
-).json();
 
 const hex = (bytes: Uint8Array): string => `0x${Buffer.from(bytes).toString("hex")}`;
 const hexToBytes = (value: string): Uint8Array => Uint8Array.from(Buffer.from(value.replace(/^0x/, ""), "hex"));
 const asBytes32Hex = (value: Address): `0x${string}` =>
   `0x${Buffer.from(getAddressEncoder().encode(value)).toString("hex")}` as `0x${string}`;
 
-/**
- * Walks a kit SolanaError cause chain (preflight failure -> transaction error -> instruction
- * error) to the custom program error code, if one is there.
- */
-const customProgramErrorCode = (error: unknown): number | undefined => {
-  for (let current = error, depth = 0; current && depth < 8; depth++) {
-    if (isSolanaError(current, SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM)) return Number(current.context.code);
-    current = (current as { cause?: unknown }).cause;
-  }
-  return undefined;
-};
-
 describe("solana confidential-token consume vertical", () => {
   test(
-    "wrap 1000 -> burn attested 7 -> seal -> public-decrypt == 7, batch with supply == [7, 993] -> redeem releases 7 (leaf 1 of 3) -> disclose",
+    "wrap 1000 -> burn attested 7 -> seal -> public-decrypt == 7, batch with supply == [7, 993] -> redeem releases 7 (leaf 1 of 3) -> disclose; a context-tampered certificate is refused (InvalidKmsContext, AccountNotInitialized)",
     async () => {
       const { env, stack, context, wallets, wallet, config, walletHex } = await verticalSetup();
 
@@ -160,26 +151,31 @@ describe("solana confidential-token consume vertical", () => {
       await discloseCertifiedHandle(context, { payer: wallet.signer, certificate });
 
       // Keep the v2 KMS routing intact; change only the committed context id (bytes 1..33).
-      // The host must reject the context mismatch before checking the certificate signature.
       const wrongContextExtraData = hexToBytes(certificate.extraData);
       expect(wrongContextExtraData.length).toBe(65);
       expect(wrongContextExtraData[0]).toBe(2);
       wrongContextExtraData[32] = wrongContextExtraData[32]! ^ 1;
       const wrongContextCertificate = { ...certificate, extraData: hex(wrongContextExtraData) };
-      const rejection = await discloseCertifiedHandle(context, {
-        payer: wallet.signer,
-        certificate: wrongContextCertificate,
-      }).then(
-        () => undefined,
-        (error: unknown) => error,
+      // The attack: the live context account beside a certificate that names another context. The
+      // host must reject the mismatch before checking the certificate signature.
+      const vault = await vaultModule();
+      const liveContextInstruction = await vault.buildDiscloseSecpInstruction(
+        { kmsContext: await certificateKmsContext(certificate) },
+        wrongContextCertificate,
       );
-      if (rejection === undefined) {
-        throw new Error("SECURITY: context-mismatched certificate was disclosed on-chain");
-      }
-      // Pin the named rejection (zama_host IDL: InvalidKmsContext), not any transaction failure.
-      const contextError = hostIdl.errors.find(({ name }) => name === "InvalidKmsContext");
-      expect(contextError).toBeDefined();
-      expect(customProgramErrorCode(rejection)).toBe(contextError!.code);
+      await expectProgramError(
+        "SECURITY: the live context account with a certificate naming another context",
+        ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT,
+        async () => (await context.client(wallet.signer)).sendTransaction([liveContextInstruction]),
+      );
+      // The account of the context the certificate names does not exist, so the token program
+      // refuses it before any host CPI. The certificate names the bring-up context, so the flipped
+      // id is below it, and define_kms_context only accepts ids above the current one.
+      await expectProgramError(
+        "SECURITY: the account of a context that was never defined",
+        ANCHOR_ACCOUNT_NOT_INITIALIZED,
+        () => discloseCertifiedHandle(context, { payer: wallet.signer, certificate: wrongContextCertificate }),
+      );
       await wallets.sweep();
     },
     SCENARIO_TIMEOUT_MS,

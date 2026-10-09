@@ -58,6 +58,11 @@
  * Disruptive and single-run: the profile advances the KMS context/epoch and destroys the retired
  * ones, so it expects a pristine stack. Re-up between runs
  * (`fhevm-cli down && fhevm-cli up --scenario five-party-swap-threshold-kms`).
+ *
+ * On a scenario with a Solana host (`solana-five-party-swap-threshold-kms`), the Solana leg
+ * (`../solana/kms-context-switch`) mirrors each activated context and epoch onto zama-host, checks the
+ * Solana decrypts after the first switch and after the node swap, and destroys the baseline context
+ * there after step 3.
  */
 import { PreflightError } from "../errors";
 import { castBool, castCall, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
@@ -65,6 +70,7 @@ import { stepComposeTask } from "../flow/runtime-compose";
 import { columnQuery, checkConnectorsDbColumn } from "../kms-connector-db";
 import { castSend, getEventTopic, callContractAndExpectRevert, keccakTopic, loadHostOwner, type Owner } from "../kms-onchain";
 import { kmsTxSenderName, reconstructionThreshold } from "../kms-party";
+import type { prepareSolanaKmsContextLeg } from "../solana/kms-context-switch";
 import type { State } from "../types";
 import {
   type DecryptionRunner,
@@ -613,6 +619,7 @@ export const runKmsContextSwitchProfile = async (
   state: State,
   runDecryption: DecryptionRunner,
   runSmoke: SmokeRunner,
+  prepareSolanaLeg?: typeof prepareSolanaKmsContextLeg,
 ) => {
   // The node-swap step needs a spare core, and the swap env files only exist when the cluster has
   // one — on a spare-less cluster the profile would only fail later, at the swap broadcast.
@@ -635,6 +642,7 @@ export const runKmsContextSwitchProfile = async (
 
   // Baseline app smoke first, so a later failure is attributable to the transition it follows.
   await runSmoke("kms-context-switch: input-proof at baseline (before any switch)");
+  const solana = await prepareSolanaLeg?.(state, baseline);
 
   // 1) Same-committee context switch (NewKmsContext).
   const afterSwitch = await switchKmsContext(
@@ -642,6 +650,8 @@ export const runKmsContextSwitchProfile = async (
     { rpcUrl, configAddress, where },
     baseline, false,
   );
+  await solana?.mirrorContext(afterSwitch);
+  await solana?.checkDecrypts(afterSwitch.contextId);
 
   // 2) Same-committee key resharing (NewKmsEpoch). Then probes the new epoch ID activates.
   console.log("[kms-context-switch] broadcasting defineNewEpochForCurrentKmsContext (NewKmsEpoch)…");
@@ -656,6 +666,7 @@ export const runKmsContextSwitchProfile = async (
   console.log(
     `[kms-context-switch] epoch rotated: epochId ${afterSwitch.epochId} -> ${afterEpoch.epochId} (contextId=${afterEpoch.contextId})`,
   );
+  await solana?.mirrorEpoch(afterEpoch);
   const decryptionSuccessAfterEpoch = await runDecryption(`kms-context-switch: decrypt after epoch rotation (epochId=${afterEpoch.epochId})`);
   if (!decryptionSuccessAfterEpoch) {
     throw new PreflightError(
@@ -678,6 +689,7 @@ export const runKmsContextSwitchProfile = async (
     runDecryption,
     runSmoke,
   );
+  await solana?.destroyBaseline(afterEpoch.contextId);
 
   // 4a) A context switch must still work after a destroy. The connector reads the previous
   //     key/CRS material via getCrsMaterials, which resolves the context that material was
@@ -691,6 +703,7 @@ export const runKmsContextSwitchProfile = async (
     { rpcUrl, configAddress, where },
     afterEpoch, false,
   );
+  await solana?.mirrorContext(afterDestroySwitch);
   console.log(
     `[kms-context-switch] post-destroy switch activated: contextId ${afterEpoch.contextId} -> ${afterDestroySwitch.contextId} (epochId=${afterDestroySwitch.epochId})`,
   );
@@ -701,14 +714,19 @@ export const runKmsContextSwitchProfile = async (
   const recovered = await abortStuckRotation(
     state, { rpcUrl, configAddress, where }, owner, afterDestroySwitch, runDecryption,
   );
+  // A replica mirrors only what the EVM host activated, so the aborted epoch never reaches
+  // zama-host; the recovery epoch does.
+  await solana?.mirrorEpoch(recovered);
 
   // 5) Node swap: drop a committee node, promote the spare. Running it after every destroy and
   //    abort above also proves the lifecycle never left the system unable to switch.
-  await switchKmsContext(
+  const afterSwap = await switchKmsContext(
     state, runDecryption, runSmoke,
     { rpcUrl, configAddress, where },
     recovered, true,
   );
+  await solana?.mirrorContext(afterSwap);
+  await solana?.checkDecrypts(afterSwap.contextId);
 
   // 5b) Prove the promoted spare actually holds a working reshared key.
   await proveSpareInQuorum(state, runDecryption);

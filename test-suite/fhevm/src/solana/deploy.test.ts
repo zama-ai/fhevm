@@ -3,8 +3,12 @@ import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { BRINGUP_KMS_CONTEXT_ID, BRINGUP_KMS_EPOCH_ID, type GatewayBootstrapInputs } from './addresses';
+import { hexToBytes } from '@fhevm/sdk/base';
+
+import { BRINGUP_KMS_CONTEXT_ID, BRINGUP_KMS_EPOCH_ID, type GatewayBootstrapInputs, bytes32HexFromId } from './addresses';
 import {
+  assertActiveKmsPairMatches,
+  assertKmsSignersMatch,
   assertKmsThresholdsMatch,
   bootstrapThresholdsForState,
   bootstrapZamaHost,
@@ -178,6 +182,28 @@ describe('host bootstrap thresholds', () => {
     const evm = { publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 1 };
     expect(() => assertKmsThresholdsMatch(evm, evm)).not.toThrow();
     expect(() => assertKmsThresholdsMatch({ ...evm, userDecryption: 1 }, evm)).toThrow('userDecryption: solana=1 evm=3');
+  });
+
+  test("zama-host's active pair must be the EVM host's: mirroring the aborted epoch fails", () => {
+    const context = 0x07n << 248n;
+    const epoch = 0x08n << 248n;
+    const id = (value: bigint) => hexToBytes(bytes32HexFromId(value));
+    // Step 4b: the EVM host's active pair is the recovery epoch …254; the aborted epoch is …253.
+    const evm = { kmsContextId: context + 3n, kmsEpochId: epoch + 254n };
+    const recovery = { currentKmsContextId: id(context + 3n), currentKmsEpochId: id(epoch + 254n) };
+    const aborted = { currentKmsContextId: id(context + 3n), currentKmsEpochId: id(epoch + 253n) };
+    expect(() => assertActiveKmsPairMatches(recovery, evm)).not.toThrow();
+    expect(() => assertActiveKmsPairMatches(aborted, evm)).toThrow(
+      "differs from the EVM ProtocolConfig's",
+    );
+  });
+
+  test('a Solana KMS context with the EVM signers in another order fails', () => {
+    const evm = [1, 2, 3, 4].map((party) => new Uint8Array(20).fill(party));
+    expect(() => assertKmsSignersMatch([...evm], evm)).not.toThrow();
+    expect(() => assertKmsSignersMatch([evm[1]!, evm[0]!, evm[2]!, evm[3]!], evm)).toThrow(
+      'Solana KMS context signers differ from the EVM ProtocolConfig',
+    );
   });
 });
 

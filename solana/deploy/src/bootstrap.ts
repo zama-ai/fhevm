@@ -55,6 +55,42 @@ export const kmsCertificateThreshold = (kmsCorruptionThreshold: number, register
   return 2 * kmsCorruptionThreshold + 1;
 };
 
+/**
+ * The `define_kms_context` instruction that makes `contextId`, with its active epoch `epochId`, the
+ * active KMS context, for a committee of `signers` with corruption threshold t. Every certificate
+ * threshold is 2t+1.
+ */
+export const defineKmsContextInstruction = (
+  params: {
+    readonly admin: TransactionSigner;
+    readonly contextId: Uint8Array;
+    readonly epochId: Uint8Array;
+    readonly signers: readonly Uint8Array[];
+    readonly kmsCorruptionThreshold: number;
+  },
+  config?: { readonly programAddress?: Address },
+): Promise<Instruction> => {
+  const certificateThreshold = kmsCertificateThreshold(params.kmsCorruptionThreshold, params.signers.length);
+  return getDefineKmsContextInstructionAsync(
+    {
+      admin: params.admin,
+      contextId: params.contextId,
+      epochId: params.epochId,
+      signers: [...params.signers],
+      thresholds: {
+        publicDecryption: certificateThreshold,
+        userDecryption: certificateThreshold,
+        kmsGen: certificateThreshold,
+        // Mirrors the gateway's MPC_THRESHOLD, which is t itself and NOT 2t+1 (fhevm-cli
+        // generates MPC_THRESHOLD=t alongside the =2t+1 decryption thresholds). Stored for
+        // fidelity, never gates on-chain verification.
+        mpc: params.kmsCorruptionThreshold,
+      },
+    },
+    config,
+  );
+};
+
 /** BPF upgradeable loader `ProgramData` PDA (`[program_id]` under the loader). */
 export const programDataAddressFor = async (programAddress: Address): Promise<Address> => {
   const [programData] = await getProgramDerivedAddress({
@@ -221,29 +257,18 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
 
   if (params.validateOnly) return;
 
-  const instructions: Instruction[] = [
-    await getDefineKmsContextInstructionAsync(
+  await context.sendTransaction(params.payer, [
+    await defineKmsContextInstruction(
       {
         admin: params.payer,
         contextId: BRINGUP_KMS_CONTEXT_ID,
         epochId: BRINGUP_KMS_EPOCH_ID,
-        signers: [...params.gateway.kmsSigners],
-        thresholds: {
-          publicDecryption: certificateThreshold,
-          userDecryption: certificateThreshold,
-          kmsGen: certificateThreshold,
-          // Mirrors the gateway's MPC_THRESHOLD, which is t itself and NOT 2t+1 (fhevm-cli
-          // generates MPC_THRESHOLD=t alongside the =2t+1 decryption thresholds). Stored for
-          // fidelity, never gates on-chain verification.
-          mpc: kmsCorruptionThreshold,
-        },
-        kmsContext,
-        ...shared,
+        signers: params.gateway.kmsSigners,
+        kmsCorruptionThreshold,
       },
       ixConfig,
     ),
-  ];
-  await context.sendTransaction(params.payer, instructions);
+  ]);
   console.log(
     `OK define_kms_context (signers: ${params.gateway.kmsSigners.length}, ` +
       `t=${kmsCorruptionThreshold}, cert_threshold=${certificateThreshold})`,

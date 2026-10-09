@@ -12,8 +12,16 @@
 import { closeSync, openSync } from 'node:fs';
 import path from 'node:path';
 
-import { type KmsThresholds, createFinalizedRpc, fetchKmsContext, findKmsContextPda } from '@fhevm/solana-zama-host';
-import type { Address } from '@solana/kit';
+import { bytesToHex } from '@fhevm/sdk/base';
+import {
+  type KmsThresholds,
+  createFinalizedRpc,
+  fetchHostConfig,
+  fetchKmsContext,
+  findHostConfigPda,
+  findKmsContextPda,
+} from '@fhevm/solana-zama-host';
+import type { Address, ReadonlyUint8Array } from '@solana/kit';
 
 import { registerSolanaCoprocessorSql } from '../../../../solana/deploy/src/coprocessor';
 import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
@@ -45,7 +53,11 @@ import { readEnvFile } from '../utils/fs';
 import { run, runStreaming } from '../utils/process';
 import { until } from '../utils/until';
 import {
+  type ActiveKmsPair,
   BRINGUP_KMS_CONTEXT_ID,
+  bytes32HexFromId,
+  readActiveKmsPair,
+  readEvmKmsSignersForContext,
   readEvmKmsThresholds,
   readGatewayBootstrapInputs,
   readProtocolConfigAddress,
@@ -90,7 +102,7 @@ const deployPrograms = async (
     gateway,
     ...thresholds,
   });
-  await assertKmsThresholdsMatchEvmHost(ids.zama_host!);
+  await assertKmsContextMatchesEvmHost(ids.zama_host!, BRINGUP_KMS_CONTEXT_ID);
   await deployProgramArtifacts({
     rpcUrl: VALIDATOR_RPC_URL,
     deployerKeypairPath,
@@ -132,6 +144,15 @@ export const readStackState = async (): Promise<State> => {
 };
 
 /**
+ * The deployer and fee-payer wallet, which is also the HostConfig admin: airdrop, program deploy,
+ * the bootstrap and later admin instructions all sign with it. Every caller passes it explicitly,
+ * so the side stack never depends on or mutates the developer's global `solana config` (URL or
+ * keypair). Same override the demo deployer honors (deploy-demo-programs.sh).
+ */
+export const solanaDeployerKeypairPath = (): string =>
+  process.env.SOLANA_DEPLOYER_KEYPAIR ?? `${process.env.HOME}/.config/solana/id.json`;
+
+/**
  * The host bootstrap thresholds, from the scenario the EVM stack was rendered from: the
  * coprocessor topology and the KMS corruption threshold t.
  */
@@ -150,17 +171,64 @@ export const assertKmsThresholdsMatch = (solana: KmsThresholds, evm: KmsThreshol
   }
 };
 
+/** Codama decodes account bytes as `ReadonlyUint8Array`, which the SDK's `bytesToHex` does not take. */
+const accountBytesHex = (bytes: ReadonlyUint8Array): `0x${string}` => `0x${Buffer.from(bytes).toString('hex')}`;
+
 /**
- * Both hosts accept certificates from the same KMS, so they must ask for the same number of
- * signatures. A threshold set too low still passes every functional test, so it is checked here.
+ * Throws unless the Solana KMS context lists the EVM context's signers in the same order. zama-host's
+ * certificate check counts distinct members of the set and ignores the order, but SDK user decrypt
+ * maps KMS party ids to positions in this list (fhevm-internal#2182), so the order must be
+ * ProtocolConfig's.
  */
-const assertKmsThresholdsMatchEvmHost = async (zamaHostId: string): Promise<void> => {
-  const [kmsContext] = await findKmsContextPda(
-    { contextId: BRINGUP_KMS_CONTEXT_ID },
-    { programAddress: zamaHostId as Address },
-  );
-  const solana = (await fetchKmsContext(createFinalizedRpc(VALIDATOR_RPC_URL), kmsContext)).data.thresholds;
-  assertKmsThresholdsMatch(solana, await readEvmKmsThresholds({ hostRpcUrl: LOCAL_SOLANA_ENDPOINTS.hostRpc }));
+export const assertKmsSignersMatch = (
+  solana: readonly ReadonlyUint8Array[],
+  evm: readonly ReadonlyUint8Array[],
+): void => {
+  const hex = (signers: readonly ReadonlyUint8Array[]) => signers.map(accountBytesHex);
+  if (hex(solana).join() !== hex(evm).join()) {
+    throw new Error(
+      `Solana KMS context signers differ from the EVM ProtocolConfig: solana=[${hex(solana)}] evm=[${hex(evm)}]`,
+    );
+  }
+};
+
+/**
+ * Both hosts accept certificates from the same KMS, so zama-host must hold the EVM context's
+ * signers, in ProtocolConfig's order, and its thresholds. A threshold set too low or a wrong signer
+ * list still passes every functional test, so both are checked here.
+ */
+export const assertKmsContextMatchesEvmHost = async (zamaHostId: string, contextId: Uint8Array): Promise<void> => {
+  const [kmsContext] = await findKmsContextPda({ contextId }, { programAddress: zamaHostId as Address });
+  const solana = (await fetchKmsContext(createFinalizedRpc(VALIDATOR_RPC_URL), kmsContext)).data;
+  const hostRpcUrl = LOCAL_SOLANA_ENDPOINTS.hostRpc;
+  const [evmThresholds, evmSigners] = await Promise.all([
+    readEvmKmsThresholds({ hostRpcUrl }),
+    readEvmKmsSignersForContext({ hostRpcUrl, contextId: BigInt(bytesToHex(contextId)) }),
+  ]);
+  assertKmsThresholdsMatch(solana.thresholds, evmThresholds);
+  assertKmsSignersMatch(solana.signers, evmSigners);
+};
+
+/** Throws unless zama-host's active KMS context and epoch are the EVM ProtocolConfig's active pair. */
+export const assertActiveKmsPairMatches = (
+  solana: { readonly currentKmsContextId: ReadonlyUint8Array; readonly currentKmsEpochId: ReadonlyUint8Array },
+  evm: ActiveKmsPair,
+): void => {
+  const active = `${accountBytesHex(solana.currentKmsContextId)}/${accountBytesHex(solana.currentKmsEpochId)}`;
+  const expected = `${bytes32HexFromId(evm.kmsContextId)}/${bytes32HexFromId(evm.kmsEpochId)}`;
+  if (active !== expected) {
+    throw new Error(`zama-host's active KMS context/epoch ${active} differs from the EVM ProtocolConfig's ${expected}`);
+  }
+};
+
+/** Reads zama-host's HostConfig back after a mirror and checks its active pair against the EVM host's. */
+export const assertActiveKmsPairMatchesEvmHost = async (zamaHostId: string): Promise<void> => {
+  const [hostConfig] = await findHostConfigPda({ programAddress: zamaHostId as Address });
+  const [solana, evm] = await Promise.all([
+    fetchHostConfig(createFinalizedRpc(VALIDATOR_RPC_URL), hostConfig),
+    readActiveKmsPair({ hostRpcUrl: LOCAL_SOLANA_ENDPOINTS.hostRpc }),
+  ]);
+  assertActiveKmsPairMatches(solana.data, evm);
 };
 
 /** Both Postgres containers read their credentials from the generated `database.env`. */
@@ -494,11 +562,7 @@ export const provisionSolanaHostNode = async (state: State): Promise<{ zamaHostI
   }
   const composeProject = lifecycleComposeProject(lifecycleDir);
   const logDir = process.env.SOLANA_LOG_DIR ?? '/tmp';
-  // Deployer/fee-payer wallet: airdrop, program deploy, and the bootstrap all sign with it, and it
-  // is passed explicitly everywhere so this setup never depends on or mutates the developer's
-  // global `solana config` (URL or keypair). Same override the demo deployer honors
-  // (deploy-demo-programs.sh).
-  const deployerKeypairPath = process.env.SOLANA_DEPLOYER_KEYPAIR ?? `${process.env.HOME}/.config/solana/id.json`;
+  const deployerKeypairPath = solanaDeployerKeypairPath();
 
   // The gateway reads come first: a missing .env.gateway or a down gateway RPC should fail here,
   // not after the multi-minute program build. The resolved values go to the log — on a bootstrap

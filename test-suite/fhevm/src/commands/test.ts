@@ -2086,7 +2086,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       return runKmsGenerationAbortProfile(state);
     }
     if (name === "kms-context-switch") {
-      return runKmsContextSwitchProfile(state, runUserDecryption, runInputProofSmoke);
+      // A scenario with a Solana host also runs the Solana leg; the EVM host runs it alone otherwise.
+      const solanaHost = hostChainsForState(state).some((chain) => chain.type === "solana");
+      return runKmsContextSwitchProfile(
+        state, runUserDecryption, runInputProofSmoke,
+        solanaHost ? (await import("../solana/kms-context-switch")).prepareSolanaKmsContextLeg : undefined,
+      );
     }
     if (name === "blue-green") {
       return runBlueGreenProfile(state, options);
