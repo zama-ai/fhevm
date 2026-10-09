@@ -265,12 +265,12 @@ export const permitWalletFromWalletAccount = (account: UiWalletAccount): SolanaP
 
 type SignTransactionFeature = SolanaSignTransactionFeature[typeof SolanaSignTransaction];
 
-const signsVersion1 = (feature: SignTransactionFeature): boolean => feature.supportedTransactionVersions.includes(1);
+const featureSignsVersion1 = (feature: SignTransactionFeature): boolean => feature.supportedTransactionVersions.includes(1);
 
 /** Whether the demo can offer this wallet: every transaction it sends is version 1. */
 export const signsVersion1Transactions = (wallet: UiWallet): boolean =>
   wallet.features.includes(SolanaSignTransaction) &&
-  signsVersion1(getWalletFeature(wallet, SolanaSignTransaction) as SignTransactionFeature);
+  featureSignsVersion1(getWalletFeature(wallet, SolanaSignTransaction) as SignTransactionFeature);
 
 export const assertWalletAccountCapabilities = (account: UiWalletAccount, walletName: string, network: 'localnet' | 'devnet' = 'localnet'): void => {
   if (!account.chains.includes(`solana:${network}`)) {
@@ -282,7 +282,7 @@ export const assertWalletAccountCapabilities = (account: UiWalletAccount, wallet
     throw new Error(`${walletName} does not support transaction signing`);
   }
   // The wallet list is filtered on the same rule, but a wallet can change its features after that.
-  if (!signsVersion1(getWalletAccountFeature(account, SolanaSignTransaction) as SignTransactionFeature)) {
+  if (!featureSignsVersion1(getWalletAccountFeature(account, SolanaSignTransaction) as SignTransactionFeature)) {
     throw new Error(`${walletName} cannot sign Solana version 1 transactions, which the demo sends. Use the demo wallet instead.`);
   }
   if (!account.features.includes('solana:signMessage')) {

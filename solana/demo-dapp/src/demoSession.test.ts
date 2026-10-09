@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import type { Wallet, WalletAccount } from '@wallet-standard/base';
 import { SolanaSignOffchainMessage } from '@solana/wallet-standard-features';
 import {
@@ -13,6 +13,7 @@ import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 import {
   assertWalletAccountCapabilities,
+  connectWalletSession,
   describeWalletError,
   parseDemoConfigResponse,
   permitWalletFromWalletAccount,
@@ -179,15 +180,25 @@ describe('Wallet Standard boundary', () => {
     ).toThrow('does not support message signing');
   });
 
-  test('refuses at connect a wallet that cannot sign version 1 transactions', () => {
-    expect(() =>
-      assertWalletAccountCapabilities(
-        testUiWalletAccount({ supportedTransactionVersions: ['legacy', 0] }),
-        'Legacy wallet',
-      ),
-    ).toThrow(
-      'Legacy wallet cannot sign Solana version 1 transactions, which the demo sends. Use the demo wallet instead.',
-    );
+  test('refuses at connect, before funding, a wallet that cannot sign version 1 transactions', async () => {
+    const fetch = vi.fn(async (_path: string) => new Response(JSON.stringify(validResponse)));
+    vi.stubGlobal('fetch', fetch);
+    try {
+      await expect(
+        connectWalletSession(
+          testUiWalletAccount({ supportedTransactionVersions: ['legacy', 0] }),
+          'Legacy wallet',
+          'legacy-account',
+          () => true,
+        ),
+      ).rejects.toThrow(
+        'Legacy wallet cannot sign Solana version 1 transactions, which the demo sends. Use the demo wallet instead.',
+      );
+      // Only the demo config was read: nothing was funded.
+      expect(fetch.mock.calls.map(([path]) => path)).toEqual(['/api/demo-config']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   test.each([

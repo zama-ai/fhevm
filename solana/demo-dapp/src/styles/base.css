@@ -97,6 +97,7 @@ button {
 .wallet-button {
   justify-self: end;
   padding: 10px 16px;
+  white-space: nowrap;
   cursor: pointer;
   font-weight: 650;
 }

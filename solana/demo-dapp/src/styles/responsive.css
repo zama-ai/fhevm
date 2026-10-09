@@ -11,9 +11,13 @@
   }
 
   .brand > span:last-child,
-  .wallet-version-note,
   .wallet-demo-button {
     display: none;
+  }
+
+  .wallet-version-note {
+    font-size: 11px;
+    line-height: 1.3;
   }
 
   main {

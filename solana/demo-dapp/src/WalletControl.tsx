@@ -16,7 +16,14 @@ type Props = {
 const walletNamed = (wallets: readonly UiWallet[], name: string): UiWallet | undefined =>
   wallets.find((wallet) => wallet.name === name);
 
-function WalletConnect({
+// useConnect and useDisconnect look their features up while rendering, so a wallet without them
+// would take the page down.
+const isOffered = (wallet: UiWallet): boolean =>
+  wallet.features.includes('standard:connect') &&
+  wallet.features.includes('standard:disconnect') &&
+  signsVersion1Transactions(wallet);
+
+function ConnectWallet({
   wallet,
   disabled,
   onConnect,
@@ -69,7 +76,7 @@ function DisconnectAuthorizedWallet({
         void disconnect().finally(onDisconnect);
       }}
     >
-      {isDisconnecting ? 'Disconnecting…' : 'Disconnect'}
+      {isDisconnecting ? 'Disconnecting…' : `Disconnect ${wallet.name}`}
     </button>
   );
 }
@@ -128,7 +135,7 @@ export function WalletControl({
   onDisconnect,
 }: Props) {
   const wallets = useWallets();
-  const offeredWallets = wallets.filter(signsVersion1Transactions);
+  const offeredWallets = wallets.filter(isOffered);
 
   if (connection.kind === 'ready') {
     if (connection.session.wallet.kind === 'wallet-standard') {
@@ -168,15 +175,17 @@ export function WalletControl({
     );
   }
 
-  const authorizedWallet =
-    connection.kind === 'error' ? offeredWallets.find((wallet) => wallet.accounts.length > 0) : undefined;
+  const authorizedWallets =
+    connection.kind === 'error' ? offeredWallets.filter((wallet) => wallet.accounts.length > 0) : [];
   return (
     <div className="wallet-connect-options">
       {offeredWallets.map((wallet) => (
-        <WalletConnect key={wallet.name} wallet={wallet} disabled={disabled} onConnect={onConnect} />
+        <ConnectWallet key={wallet.name} wallet={wallet} disabled={disabled} onConnect={onConnect} />
       ))}
-      {authorizedWallet !== undefined ? (
-        <DisconnectAuthorizedWallet wallet={authorizedWallet} disabled={disabled} onDisconnect={onDisconnect} />
+      {authorizedWallets.length > 0 ? (
+        authorizedWallets.map((wallet) => (
+          <DisconnectAuthorizedWallet key={wallet.name} wallet={wallet} disabled={disabled} onDisconnect={onDisconnect} />
+        ))
       ) : (
         <button
           className="wallet-demo-button"

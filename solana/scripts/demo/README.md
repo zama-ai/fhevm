@@ -42,6 +42,7 @@ advertise version 1 signing. The expected wallet interactions are:
 5. one message-sign approval when the received cUSDC balance is revealed.
 
 A wallet may label a transaction as unsafe when its remote scanner cannot reach `127.0.0.1`.
+The dApp simulates each transaction against the local validator before opening the wallet.
 Confirm that the wallet shows `127.0.0.1:5173`; never approve the rehearsal against a different
 site or network.
 

@@ -230,21 +230,18 @@ const actions = {
   deposit: vi.fn(),
 };
 
-const walletController = (
-  wallet: DemoSession['wallet'],
-  deposit: DemoController['state']['deposit'] = { kind: 'idle' },
-): DemoController =>
+const walletController = (wallet: DemoSession['wallet']): DemoController =>
   ({
     state: {
       ...initialDemoState,
       connection: { kind: 'ready', session: { wallet } as DemoSession },
-      deposit,
+      deposit: { kind: 'idle' },
       hasConfidentialShares: false,
     },
     derived: {
       connected: true,
-      depositJoined: deposit.kind === 'joined',
-      depositRunning: deposit.kind === 'running',
+      depositJoined: false,
+      depositRunning: false,
       hasPrivateShares: false,
       hasConfidentialShares: false,
       sharePrice: null,

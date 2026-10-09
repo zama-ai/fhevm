@@ -16,9 +16,9 @@ cd fhevm
 bun run demo:start
 ```
 
-Open `http://127.0.0.1:5173/`. The built-in wallet works immediately. The demo sends only Solana
-version 1 transactions, so it also offers each installed wallet that advertises version 1 signing.
-That wallet must have Solana Localnet enabled. The demo gives it fee SOL and test USDC.
+Open `http://127.0.0.1:5173/`. The built-in wallet works immediately. The demo also offers each
+installed wallet that advertises version 1 signing, because it sends only Solana version 1
+transactions. Enable Solana Localnet in that wallet. The demo gives the wallet fee SOL and test USDC.
 The scrolling architecture walkthrough is at `http://127.0.0.1:5173/architecture.html`.
 
 ```sh
