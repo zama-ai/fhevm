@@ -131,7 +131,8 @@ const targets = [
         'setMaxHcuDepthPerTx',
         'setMaxHcuPerTx',
         'defineKmsContext',
-        // The kms-context-switch profile retires a context on the Solana host.
+        // The kms-context-switch profile mirrors each EVM epoch and retires a context on the Solana host.
+        'defineKmsEpoch',
         'destroyKmsContext',
       ]),
       // Read back live: the SDK's decrypt trust inputs, the deployment's chain-id cross-check, the

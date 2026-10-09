@@ -166,7 +166,7 @@ describe("solana confidential-token consume vertical", () => {
       await expectProgramError(
         "SECURITY: the live context account with a certificate naming another context",
         ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT,
-        () => context.sendTransaction(wallet.signer, [liveContextInstruction]),
+        async () => (await context.client(wallet.signer)).sendTransaction([liveContextInstruction]),
       );
       // The account of the context the certificate names does not exist, so the token program
       // refuses it before any host CPI. The certificate names the bring-up context, so the flipped

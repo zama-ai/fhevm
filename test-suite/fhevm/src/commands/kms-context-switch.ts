@@ -60,9 +60,9 @@
  * (`fhevm-cli down && fhevm-cli up --scenario five-party-swap-threshold-kms`).
  *
  * On a scenario with a Solana host (`solana-five-party-swap-threshold-kms`), the Solana leg
- * (`../solana/kms-context-switch`) defines each activated context on zama-host, checks the Solana
- * decrypts after the first switch and after the node swap, and destroys the baseline context there
- * after step 3.
+ * (`../solana/kms-context-switch`) mirrors each activated context and epoch onto zama-host, checks the
+ * Solana decrypts after the first switch and after the node swap, and destroys the baseline context
+ * there after step 3.
  */
 import { PreflightError } from "../errors";
 import { castBool, castCall, resolveKmsGenerationTarget, waitForContainer } from "../flow/readiness";
@@ -642,7 +642,7 @@ export const runKmsContextSwitchProfile = async (
 
   // Baseline app smoke first, so a later failure is attributable to the transition it follows.
   await runSmoke("kms-context-switch: input-proof at baseline (before any switch)");
-  const solana = await prepareSolanaLeg?.(state, baseline.contextId);
+  const solana = await prepareSolanaLeg?.(state, baseline);
 
   // 1) Same-committee context switch (NewKmsContext).
   const afterSwitch = await switchKmsContext(
@@ -650,7 +650,7 @@ export const runKmsContextSwitchProfile = async (
     { rpcUrl, configAddress, where },
     baseline, false,
   );
-  await solana?.mirrorContext(afterSwitch.contextId);
+  await solana?.mirrorContext(afterSwitch);
   await solana?.checkDecrypts(afterSwitch.contextId);
 
   // 2) Same-committee key resharing (NewKmsEpoch). Then probes the new epoch ID activates.
@@ -666,6 +666,7 @@ export const runKmsContextSwitchProfile = async (
   console.log(
     `[kms-context-switch] epoch rotated: epochId ${afterSwitch.epochId} -> ${afterEpoch.epochId} (contextId=${afterEpoch.contextId})`,
   );
+  await solana?.mirrorEpoch(afterEpoch);
   const decryptionSuccessAfterEpoch = await runDecryption(`kms-context-switch: decrypt after epoch rotation (epochId=${afterEpoch.epochId})`);
   if (!decryptionSuccessAfterEpoch) {
     throw new PreflightError(
@@ -702,7 +703,7 @@ export const runKmsContextSwitchProfile = async (
     { rpcUrl, configAddress, where },
     afterEpoch, false,
   );
-  await solana?.mirrorContext(afterDestroySwitch.contextId);
+  await solana?.mirrorContext(afterDestroySwitch);
   console.log(
     `[kms-context-switch] post-destroy switch activated: contextId ${afterEpoch.contextId} -> ${afterDestroySwitch.contextId} (epochId=${afterDestroySwitch.epochId})`,
   );
@@ -713,6 +714,9 @@ export const runKmsContextSwitchProfile = async (
   const recovered = await abortStuckRotation(
     state, { rpcUrl, configAddress, where }, owner, afterDestroySwitch, runDecryption,
   );
+  // A replica mirrors only what the EVM host activated, so the aborted epoch never reaches
+  // zama-host; the recovery epoch does.
+  await solana?.mirrorEpoch(recovered);
 
   // 5) Node swap: drop a committee node, promote the spare. Running it after every destroy and
   //    abort above also proves the lifecycle never left the system unable to switch.
@@ -721,7 +725,7 @@ export const runKmsContextSwitchProfile = async (
     { rpcUrl, configAddress, where },
     recovered, true,
   );
-  await solana?.mirrorContext(afterSwap.contextId);
+  await solana?.mirrorContext(afterSwap);
   await solana?.checkDecrypts(afterSwap.contextId);
 
   // 5b) Prove the promoted spare actually holds a working reshared key.

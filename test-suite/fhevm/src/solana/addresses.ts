@@ -25,9 +25,11 @@ export { evmAddressBytes, type GatewayBootstrapInputs };
  * live from the gateway RPC.
  */
 // The ProtocolConfig getters the Solana side reads: the active KMS context/epoch pair the KMS
-// Connector validates every signed permit route against, and that context's thresholds.
+// Connector validates every signed permit route against, that context's thresholds, and a
+// context's KMS signers.
 const PROTOCOL_CONFIG_ABI = parseAbi([
   "function getCurrentKmsContextAndEpoch() view returns (uint256 contextId, uint256 epochId)",
+  "function getKmsSignersForContext(uint256 kmsContextId) view returns (address[])",
   "function getPublicDecryptionThreshold() view returns (uint256)",
   "function getUserDecryptionThreshold() view returns (uint256)",
   "function getKmsGenThreshold() view returns (uint256)",
@@ -84,7 +86,10 @@ export const readEvmKmsThresholds = async (parameters: {
   const address = (await readProtocolConfigAddress(parameters.addressesPath)) as `0x${string}`;
   const client = createPublicClient({ transport: http(parameters.hostRpcUrl) });
   const read = async (
-    functionName: Exclude<ContractFunctionName<typeof PROTOCOL_CONFIG_ABI>, "getCurrentKmsContextAndEpoch">,
+    functionName: Exclude<
+      ContractFunctionName<typeof PROTOCOL_CONFIG_ABI>,
+      "getCurrentKmsContextAndEpoch" | "getKmsSignersForContext"
+    >,
   ) => Number(await client.readContract({ address, abi: PROTOCOL_CONFIG_ABI, functionName }));
   const [publicDecryption, userDecryption, kmsGen, mpc] = await Promise.all([
     read("getPublicDecryptionThreshold"),
@@ -93,6 +98,26 @@ export const readEvmKmsThresholds = async (parameters: {
     read("getMpcThreshold"),
   ]);
   return { publicDecryption, userDecryption, kmsGen, mpc };
+};
+
+/**
+ * The KMS signers of `contextId` in the primary host chain's `ProtocolConfig`, in party order: the
+ * signer at index i is KMS party i+1.
+ */
+export const readEvmKmsSignersForContext = async (parameters: {
+  readonly hostRpcUrl: string;
+  readonly contextId: bigint;
+  readonly addressesPath?: string;
+}): Promise<Uint8Array[]> => {
+  const address = (await readProtocolConfigAddress(parameters.addressesPath)) as `0x${string}`;
+  const client = createPublicClient({ transport: http(parameters.hostRpcUrl) });
+  const signers = await client.readContract({
+    address,
+    abi: PROTOCOL_CONFIG_ABI,
+    functionName: "getKmsSignersForContext",
+    args: [parameters.contextId],
+  });
+  return signers.map(evmAddressBytes);
 };
 
 /** The primary host chain's `ProtocolConfig`, from the fhevm-cli address artifact. */
@@ -122,11 +147,4 @@ export const readGatewayBootstrapInputs = async (parameters: {
     inputVerificationAddress: required("INPUT_VERIFICATION_ADDRESS"),
     decryptionAddress: required("DECRYPTION_ADDRESS"),
   });
-};
-
-/** The gateway's `GatewayConfig`, from the fhevm-cli address artifact. */
-export const readGatewayConfigAddress = async (): Promise<string> => {
-  const gatewayConfig = (await readEnvFile(gatewayAddressesPath))["GATEWAY_CONFIG_ADDRESS"];
-  if (!gatewayConfig) throw new Error("missing GATEWAY_CONFIG_ADDRESS in the gateway address artifact");
-  return gatewayConfig;
 };

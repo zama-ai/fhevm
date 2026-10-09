@@ -13,7 +13,7 @@ import { closeSync, openSync } from 'node:fs';
 import path from 'node:path';
 
 import { type KmsThresholds, createFinalizedRpc, fetchKmsContext, findKmsContextPda } from '@fhevm/solana-zama-host';
-import type { Address } from '@solana/kit';
+import type { Address, ReadonlyUint8Array } from '@solana/kit';
 
 import { registerSolanaCoprocessorSql } from '../../../../solana/deploy/src/coprocessor';
 import { deployHostProgram } from '../../../../solana/deploy/src/deploy-host';
@@ -46,6 +46,7 @@ import { run, runStreaming } from '../utils/process';
 import { until } from '../utils/until';
 import {
   BRINGUP_KMS_CONTEXT_ID,
+  readEvmKmsSignersForContext,
   readEvmKmsThresholds,
   readGatewayBootstrapInputs,
   readProtocolConfigAddress,
@@ -90,7 +91,7 @@ const deployPrograms = async (
     gateway,
     ...thresholds,
   });
-  await assertKmsThresholdsMatchEvmHost(ids.zama_host!, BRINGUP_KMS_CONTEXT_ID);
+  await assertKmsContextMatchesEvmHost(ids.zama_host!, BRINGUP_KMS_CONTEXT_ID);
   await deployProgramArtifacts({
     rpcUrl: VALIDATOR_RPC_URL,
     deployerKeypairPath,
@@ -150,13 +151,37 @@ export const assertKmsThresholdsMatch = (solana: KmsThresholds, evm: KmsThreshol
 };
 
 /**
- * Both hosts accept certificates from the same KMS, so they must ask for the same number of
- * signatures. A threshold set too low still passes every functional test, so it is checked here.
+ * Throws unless the Solana KMS context lists the EVM context's signers in the same order. KMS party
+ * ids are positional (party i signs with the i-th signer), so a reordered list makes honest shares
+ * fail verification.
  */
-export const assertKmsThresholdsMatchEvmHost = async (zamaHostId: string, contextId: Uint8Array): Promise<void> => {
+export const assertKmsSignersMatch = (
+  solana: readonly ReadonlyUint8Array[],
+  evm: readonly ReadonlyUint8Array[],
+): void => {
+  const hex = (signers: readonly ReadonlyUint8Array[]) => signers.map((signer) => `0x${Buffer.from(signer).toString('hex')}`);
+  if (hex(solana).join() !== hex(evm).join()) {
+    throw new Error(
+      `Solana KMS context signers differ from the EVM ProtocolConfig: solana=[${hex(solana)}] evm=[${hex(evm)}]`,
+    );
+  }
+};
+
+/**
+ * Both hosts accept certificates from the same KMS, so they must ask for the same number of
+ * signatures from the same signers in the same order. A threshold set too low or a reordered signer
+ * list still passes every functional test, so both are checked here.
+ */
+export const assertKmsContextMatchesEvmHost = async (zamaHostId: string, contextId: Uint8Array): Promise<void> => {
   const [kmsContext] = await findKmsContextPda({ contextId }, { programAddress: zamaHostId as Address });
-  const solana = (await fetchKmsContext(createFinalizedRpc(VALIDATOR_RPC_URL), kmsContext)).data.thresholds;
-  assertKmsThresholdsMatch(solana, await readEvmKmsThresholds({ hostRpcUrl: LOCAL_SOLANA_ENDPOINTS.hostRpc }));
+  const solana = (await fetchKmsContext(createFinalizedRpc(VALIDATOR_RPC_URL), kmsContext)).data;
+  const hostRpcUrl = LOCAL_SOLANA_ENDPOINTS.hostRpc;
+  const [evmThresholds, evmSigners] = await Promise.all([
+    readEvmKmsThresholds({ hostRpcUrl }),
+    readEvmKmsSignersForContext({ hostRpcUrl, contextId: BigInt(`0x${Buffer.from(contextId).toString('hex')}`) }),
+  ]);
+  assertKmsThresholdsMatch(solana.thresholds, evmThresholds);
+  assertKmsSignersMatch(solana.signers, evmSigners);
 };
 
 /** Both Postgres containers read their credentials from the generated `database.env`. */

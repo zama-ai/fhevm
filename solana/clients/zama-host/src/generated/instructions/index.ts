@@ -8,6 +8,7 @@
 
 export * from './closeTransientStore.js';
 export * from './defineKmsContext.js';
+export * from './defineKmsEpoch.js';
 export * from './delegateForUserDecryption.js';
 export * from './destroyKmsContext.js';
 export * from './fheExecute.js';
