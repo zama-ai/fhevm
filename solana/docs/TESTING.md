@@ -90,7 +90,7 @@ cargo test -p zama-solana-runtime-tests --test token_mollusk -- --nocapture
 cargo test -p zama-solana-runtime-tests --test batcher_mollusk -- --nocapture
 cargo test -p zama-solana-runtime-tests --test vault_mollusk -- --nocapture
 cargo test -p zama-solana-runtime-tests --test permit_invalidation_mollusk -- --nocapture
-# Disclosure packet sizing: the largest disclose payload still fits its transport budget.
+# Disclosure sizing: how many KMS signatures fit a 1,232-byte legacy packet (clients send version 1, 4,096 bytes).
 cargo test -p zama-solana-runtime-tests --test disclose_packet_fit -- --nocapture
 # Admin and Store-authority properties over random instruction sequences, then the planted bugs
 # they must catch (rebuilds zama-host per patch and restores it).
@@ -287,11 +287,9 @@ What the cleartext target does not prove, so these parts skip there
 
 The input `extra_data` of the cleartext build is up to 256 bytes per attestation, where production's
 is the one byte `0x00`. An execution that only just fits the production heap, or a transaction that
-only just fits the 1232-byte packet, can fail on the cleartext build. Mollusk does not check
+only just fits the 4,096-byte version 1 limit, can fail on the cleartext build. Mollusk does not check
 transaction size, so only the validator stack catches the second. The gap only causes false
-failures: a transaction that fits on the cleartext build always fits in production. v1 transactions
-(SIMD-0385) raise the limit to 4096 bytes for both builds, so they move this wall rather than remove
-it.
+failures: a transaction that fits on the cleartext build always fits in production.
 
 ### Extending the cleartext target
 

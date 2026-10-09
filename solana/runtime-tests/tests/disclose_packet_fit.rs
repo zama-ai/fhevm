@@ -4,7 +4,8 @@
 //! Kept out of `token_mollusk.rs` so wire-size measurements do not grow the behavioral suite.
 //! Signatures are placeholders; account and payload lengths match the current ABI.
 //! Bincode-serialized legacy transaction length vs
-//! `PACKET_DATA_SIZE` is asserted.
+//! `PACKET_DATA_SIZE` is asserted. Clients send version 1 transactions (4,096 bytes, 64 account
+//! keys), so a row that fits this packet also fits the transaction clients send.
 
 use anchor_lang::prelude::Pubkey;
 use confidential_token as token;
@@ -82,7 +83,7 @@ fn redeem_burned_amount_tx_size(sig_count: usize) -> usize {
     )
 }
 
-/// Asserts each `(threshold, expected_fits)` row against the 1232-byte packet limit.
+/// Asserts each `(threshold, expected_fits)` row against the 1232-byte legacy packet limit.
 fn assert_fit_table(name: &str, tx_size: fn(usize) -> usize, cases: &[(usize, bool)]) {
     let limit = solana_packet::PACKET_DATA_SIZE;
     eprintln!("{name} threshold fit table (packet limit = {limit} bytes):");

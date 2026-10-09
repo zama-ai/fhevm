@@ -40,8 +40,8 @@ export type DemoConfig = {
     readonly payoutConfidential: Address;
   };
   readonly batchers: {
-    readonly deposit: { readonly batcher: Address; readonly lookupTable: Address };
-    readonly redeem: { readonly batcher: Address; readonly lookupTable: Address };
+    readonly deposit: { readonly batcher: Address };
+    readonly redeem: { readonly batcher: Address };
   };
   readonly personas: {
     readonly keeper: Address;
@@ -156,11 +156,9 @@ export const parseDemoConfig = (value: unknown): DemoConfig => {
     batchers: {
       deposit: {
         batcher: address(string(deposit.batcher, "demo config.batchers.deposit.batcher")),
-        lookupTable: address(string(deposit.lookupTable, "demo config.batchers.deposit.lookupTable")),
       },
       redeem: {
         batcher: address(string(redeem.batcher, "demo config.batchers.redeem.batcher")),
-        lookupTable: address(string(redeem.lookupTable, "demo config.batchers.redeem.lookupTable")),
       },
     },
     personas: {

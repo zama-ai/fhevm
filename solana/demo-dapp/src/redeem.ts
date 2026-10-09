@@ -2,7 +2,6 @@ import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import {
   address,
-  createSolanaRpcSubscriptions,
   getAddressEncoder,
   type Address,
   type Signature,
@@ -18,6 +17,7 @@ import {
 } from './vault/index.js';
 
 import { BatchStatus, type BatchPosition } from './batchTypes';
+import { createDemoClient } from './demoClient';
 import type { DemoSession } from './demoSession';
 import { loadDemoEncryptionKey } from './encryptionKey';
 import { recordTransactionEvidence } from './evidenceStore';
@@ -27,7 +27,6 @@ import { vaultRoots } from './vaultRoots';
 export type RedeemStage = 'proving' | 'joining' | 'joined';
 
 type Bytes32Hex = Parameters<typeof joinBatch>[0]['aclProgramAddress'];
-const JOIN_COMPUTE_UNIT_LIMIT = 800_000;
 const RECENT_BATCH_SCAN_LIMIT = 32n;
 const addressEncoder = getAddressEncoder();
 
@@ -286,7 +285,6 @@ export const joinRedeemBatch = async (
   if (amountBaseUnits <= 0n) throw new Error('Redeem amount must be positive');
   const { config, signer } = session;
   const rpc = createFinalizedRpc(config.rpcUrl);
-  const rpcSubscriptions = createSolanaRpcSubscriptions(config.wsUrl);
   const roots = vaultRoots(config, 'redeem');
   let saved = readActiveRedeem(session);
   if (saved !== null) {
@@ -376,19 +374,16 @@ export const joinRedeemBatch = async (
   let joinSignature: Signature | undefined;
   await joinBatch(
     { solanaChain: chain, aclProgramAddress: config.aclProgram as Bytes32Hex },
+    createDemoClient(config, signer),
     {
-      rpc,
-      rpcSubscriptions,
       inputProof,
       inputIndex: 0,
       user: signer,
-      payer: signer,
       batcher: roots.batcher,
       batch: batch.addresses.batch,
       joinConfidentialMint: roots.joinConfidentialMint,
       joinUnderlyingMint: roots.joinUnderlyingMint,
       tokenProgram: TOKEN_PROGRAM_ADDRESS,
-      computeUnitLimit: JOIN_COMPUTE_UNIT_LIMIT,
       onTransactionSigned: (transaction) => {
         session.assertActive();
         joinSignature = transaction.signature as Signature;

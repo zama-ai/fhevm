@@ -128,63 +128,6 @@ export interface SolanaVaultSettleAccounts {
   readonly confidentialTokenEventAuthority: Address;
 }
 
-/**
- * The ordered address set the settle Address Lookup Table holds — every settle account derivable at
- * `open_batch`. The payer, transient store, sysvar and fixed program IDs stay static. The demo seeder creates
- * the on-chain ALT from this exact ordered list and `settleBatch` compresses against the same list, so
- * the two agree by construction — the v0 message's table indices line up with the on-chain entries.
- */
-export async function deriveSettleLookupTableAddresses(
-  roots: VaultDemoRoots,
-  batch: BatchAddresses,
-): Promise<Address[]> {
-  const accounts = await deriveSettleAccounts(roots, batch);
-  return settleAccountsToLookupTableAddresses(accounts);
-}
-
-/**
- * The ALT field order, stated explicitly rather than inferred from `Object.entries` insertion order.
- * This tuple — not the runtime key order of a `SolanaVaultSettleAccounts` object — is the single
- * source of truth the on-chain table and the `settleBatch` compression both index against, so a field
- * reorder in the interface can never silently shift the table without also editing this list (which
- * the golden test in `derive.test.ts` pins). It is every settle account in the on-chain table's exact
- * order.
- */
-export const SETTLE_ALT_FIELD_ORDER = [
-  'batcher',
-  'batch',
-  'joinConfidentialMint',
-  'batchJoinTokenAccount',
-  'joinUnderlyingMint',
-  'joinMintVaultUnderlying',
-  'joinMintVaultAuthority',
-  'batchBurnedAmountStore',
-  'pendingBurn',
-  'hostConfig',
-  'kmsContext',
-  'vault',
-  'vaultAuthority',
-  'vaultTokenAccount',
-  'payoutConfidentialMint',
-  'payoutUnderlyingMint',
-  'batchPayoutTokenAccount',
-  'payoutMintVaultUnderlying',
-  'payoutMintVaultAuthority',
-  'payoutTotalSupplyAuthority',
-  'batchPayoutBalanceStore',
-  'payoutTotalSupplyStore',
-  'batchAuthority',
-  'batchJoinUnderlying',
-  'batchPayoutUnderlying',
-  'zamaEventAuthority',
-  'confidentialTokenEventAuthority',
-] as const satisfies ReadonlyArray<keyof SolanaVaultSettleAccounts>;
-
-/** Flattens a settle account set into its ALT ordering. */
-export function settleAccountsToLookupTableAddresses(accounts: SolanaVaultSettleAccounts): Address[] {
-  return SETTLE_ALT_FIELD_ORDER.map((name) => accounts[name]);
-}
-
 export async function deriveSettleAccounts(
   roots: VaultDemoRoots,
   batch: BatchAddresses,

@@ -1,7 +1,7 @@
 import { SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import { findTokenAccountPda } from '@fhevm/confidential-token';
 import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
-import { appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
+import { prepareTransientStore, type TransientStore } from '@fhevm/sdk/solana';
 import { type Address, type Instruction, type Signature, type TransactionSigner } from '@solana/kit';
 import {
   buildClaimInstruction as buildVaultClaimInstruction,
@@ -13,10 +13,8 @@ import {
 import { BatchStatus, type BatchTarget, type VaultDirection } from './batchTypes';
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import type { DemoConfig } from './demoConfig';
-import { sendTransaction } from './sendTransaction';
+import { createDemoClient } from './demoClient';
 import { vaultRoots } from './vaultRoots';
-
-const CLAIM_COMPUTE_UNIT_LIMIT = 1_200_000;
 
 type ClaimSession = {
   readonly config: DemoConfig;
@@ -49,7 +47,11 @@ const buildClaimInstructions = async (
   position: BatchTarget,
   direction: VaultDirection,
   user: Address,
-): Promise<{ readonly instructions: readonly Instruction[]; readonly initializesAccount: boolean } | null> => {
+): Promise<{
+  readonly transientStore: TransientStore;
+  readonly instructions: readonly Instruction[];
+  readonly initializesAccount: boolean;
+} | null> => {
   const { rpc, roots, claimed } = await readClaimStore(session, position, direction, user);
   if (claimed) return null;
 
@@ -85,7 +87,7 @@ const buildClaimInstructions = async (
       tokenProgram: TOKEN_PROGRAM_ADDRESS,
     }),
   );
-  return { instructions: appendTransientStoreInstructions(transientStore, instructions), initializesAccount };
+  return { transientStore, instructions, initializesAccount };
 };
 
 /**
@@ -98,15 +100,18 @@ export const claimBatchPayout = async (
   direction: VaultDirection,
   user: Address,
 ): Promise<Signature | null> => {
-  const plan = await buildClaimInstructions(session, position, direction, user);
-  if (plan === null) return null;
+  const client = createDemoClient(session.config, session.keeper);
+  const send = async (claim: NonNullable<Awaited<ReturnType<typeof buildClaimInstructions>>>) =>
+    (await client.sendFheTransaction(claim.transientStore, claim.instructions)).context.signature;
+  const claim = await buildClaimInstructions(session, position, direction, user);
+  if (claim === null) return null;
   try {
-    return await sendTransaction(session.config, session.keeper, plan.instructions, CLAIM_COMPUTE_UNIT_LIMIT);
+    return await send(claim);
   } catch (error) {
-    if (!plan.initializesAccount) throw error;
-    const retryPlan = await buildClaimInstructions(session, position, direction, user);
-    if (retryPlan === null) return null;
-    if (retryPlan.initializesAccount) throw error;
-    return sendTransaction(session.config, session.keeper, retryPlan.instructions, CLAIM_COMPUTE_UNIT_LIMIT);
+    if (!claim.initializesAccount) throw error;
+    const retry = await buildClaimInstructions(session, position, direction, user);
+    if (retry === null) return null;
+    if (retry.initializesAccount) throw error;
+    return send(retry);
   }
 };

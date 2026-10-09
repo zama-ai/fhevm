@@ -3,7 +3,7 @@ import { ZAMA_HOST_PROGRAM_ADDRESS } from "@fhevm/solana-zama-host";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { recordRunWallet } from "./recovery";
 
-import { address, createSolanaRpcSubscriptions, getAddressEncoder, type Address, type TransactionSigner } from "@solana/kit";
+import { address, getAddressEncoder, type Address, type TransactionSigner } from "@solana/kit";
 import { fetchSysvarClock } from "@solana/sysvars";
 
 import { bytes32HexFromId } from "./addresses";
@@ -189,13 +189,11 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
       );
       await vault.confidentialTransfer(
         { solanaChain: chain, aclProgramAddress },
+        await context().client(owner),
         {
-          rpc,
-          rpcSubscriptions: createSolanaRpcSubscriptions(cfg.wsUrl),
           inputProof,
           inputIndex: 0,
           owner,
-          feePayer: owner,
           mint: address(scenario.mint),
           underlyingMint: address(scenario.underlyingMint),
           tokenProgram: TOKEN_PROGRAM_ADDRESS,
@@ -213,7 +211,7 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
       const alice = signers.get(scenario.alice.owner);
       if (alice === undefined) throw new Error("two-holder transfer: Alice's signer was not provisioned here");
       const { buildDelegateForUserDecryptionInstruction } = await loadSolanaSdk();
-      const { rpc, sendTransaction } = context();
+      const { rpc, client } = context();
       // The host compares the expiry with its Clock sysvar.
       const { unixTimestamp } = await fetchSysvarClock(rpc);
       const grant = await buildDelegateForUserDecryptionInstruction({
@@ -226,7 +224,7 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
         scope: address(scenario.mint),
         expiresAt: unixTimestamp + seconds,
       });
-      await sendTransaction(alice, [grant]);
+      await (await client(alice)).sendTransaction([grant]);
     },
     async cleanup() {
       // Transfer-funded holders give their unspent SOL back; airdropped ones keep it (it is free).

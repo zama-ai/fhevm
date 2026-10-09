@@ -1,4 +1,4 @@
-import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/sdk/solana";
+import { prepareTransientStore, type TransientStore } from "@fhevm/sdk/solana";
 // seed — the `demo:seed` entrypoint (#1760). Brings a freshly-deployed demo stack to the state the
 // dApp (#1761), the deposit-arc smoke and the rehearsal (#1762) expect, then writes the demo-config
 // JSON that every consumer reads.
@@ -27,15 +27,13 @@ import { appendTransientStoreInstructions, prepareTransientStore } from "@fhevm/
 //      on-chain with 3012 AccountNotInitialized. Both directions' escrows are created up front.
 //   4. `initialize_batcher` ×2 (confidential_batcher): the deposit batcher (join cUSDC → payout
 //      cShares) and the redeem batcher (the reverse), each with a slot-denominated min batch age.
-//   5. `open_batch` ×2 (via `openBatchForBatcher`): opens each batcher's first batch and stands up its
-//      per-batch settle Address Lookup Table; the derived table address goes into the config.
+//   5. `open_batch` ×2 (via `openBatchForBatcher`): opens each batcher's first batch.
 //   6. fund the personas (keeper/alice/bob) — and the deployer payer — with SOL for fees.
 //   7. derive host/kms roots and write the demo-config JSON (`writeDemoConfig`, which re-parses).
 
 import fs from "node:fs/promises";
 import {
   generateKeyPairSigner,
-  type Address,
   type Instruction,
   type TransactionSigner,
 } from "@solana/kit";
@@ -67,9 +65,6 @@ import {
 import * as vault from "@demo-dapp/vault/index.js";
 
 const MOCK_USDC_DECIMALS = 6;
-// The confidential-token instructions emit FHE-handle CPIs; the default 200k CU limit is too low, so
-// every provisioning transaction requests the same generous ceiling the SDK's live actions use.
-const SEED_COMPUTE_UNIT_LIMIT = 800_000;
 // ~10s live window before a batch may dispatch, at ~400ms/slot on the local validator.
 const DEMO_MIN_BATCH_AGE_SLOTS = 25n;
 // Lamports the batch authority is funded with (from the payer) to cover its owner-charged rent.
@@ -92,11 +87,18 @@ const main = async (): Promise<void> => {
     await mirrorRecoveryKeys();
   }
 
-  // The shared provisioning send/confirm/fund closures, at the seeder's own CU ceiling.
-  const provisioning = await openProvisioning(env, { computeUnitLimit: SEED_COMPUTE_UNIT_LIMIT });
+  // The shared provisioning clients and fund closures.
+  const provisioning = await openProvisioning(env);
   const { rpc } = provisioning;
   const send = async (payer: TransactionSigner, instructions: readonly Instruction[]): Promise<void> => {
-    await provisioning.sendTransaction(payer, instructions);
+    await (await provisioning.client(payer)).sendTransaction(instructions);
+  };
+  const sendFhe = async (
+    payer: TransactionSigner,
+    transientStore: TransientStore,
+    instructions: readonly Instruction[],
+  ): Promise<void> => {
+    await (await provisioning.client(payer)).sendFheTransaction(transientStore, instructions);
   };
 
   // Actors. The deployer drives provisioning; the keeper pays confidential-mint account rent and
@@ -178,22 +180,22 @@ const main = async (): Promise<void> => {
 
   const mintTransientStore = await prepareTransientStore({ payer: deployer, host: vault.ZAMA_HOST_PROGRAM_ADDRESS });
   // 3. Confidential mints: cUSDC wraps mock USDC, cShares wraps the share mint.
-  await send(deployer, appendTransientStoreInstructions(mintTransientStore, [
+  await sendFhe(deployer, mintTransientStore, [
     await vault.buildInitializeMintInstruction({
       transientStore: mintTransientStore,
       authority: keeper,
       mint: cUsdcMint,
       underlyingMint: mockUsdcMint.address,
     }),
-  ]));
-  await send(deployer, appendTransientStoreInstructions(mintTransientStore, [
+  ]);
+  await sendFhe(deployer, mintTransientStore, [
     await vault.buildInitializeMintInstruction({
       transientStore: mintTransientStore,
       authority: keeper,
       mint: cSharesMint,
       underlyingMint: shareMint,
     }),
-  ]));
+  ]);
 
   // 3b. Underlying-token escrows. `wrap_usdc` and `redeem_burned_amount` both take the confidential
   // mint's `vault_usdc` = ATA(vault_authority(mint), underlyingMint) and require it to already exist
@@ -263,33 +265,21 @@ const main = async (): Promise<void> => {
     payoutUnderlyingMint: mockUsdcMint.address,
   };
 
-  // 5. Open the first batch on each batcher and stand up its settle lookup table. open_batch carries
-  // ~24 accounts, so it goes in its own transaction. The vault builder returns the extend already
-  // chunked at the wire limit: the table's create rides with the FIRST extend chunk, and each later
-  // chunk is confirmed on its own, so the table is fully populated before `settle` ever reads it.
-  const openFirstBatch = async (roots: VaultDemoRoots): Promise<Address> => {
-    const recentSlot = await rpc.getSlot().send();
+  // 5. Open the first batch on each batcher.
+  const openFirstBatch = async (roots: VaultDemoRoots): Promise<void> => {
     const transientStore = await prepareTransientStore({ payer: keeper, host: vault.ZAMA_HOST_PROGRAM_ADDRESS });
-    const opened = await vault.openBatchForBatcher({
-      transientStore: transientStore,
-      roots,
-      batchIndex: 0n,
-      payer: keeper,
-      recentSlot,
-      authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS,
-    });
-    const [openBatchInstruction, createLookupTable, firstExtend, ...laterExtends] = opened.instructions;
-    await send(keeper, appendTransientStoreInstructions(transientStore, [openBatchInstruction!]));
-    // The create must land in the same transaction that first extends the table (or immediately
-    // before it); pair it with the first chunk, then send each later chunk on its own.
-    await send(keeper, [createLookupTable!, firstExtend!]);
-    for (const extendLookupTable of laterExtends) {
-      await send(keeper, [extendLookupTable]);
-    }
-    return opened.lookupTableAddress;
+    await sendFhe(keeper, transientStore, [
+      await vault.openBatchForBatcher({
+        transientStore,
+        roots,
+        batchIndex: 0n,
+        payer: keeper,
+        authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS,
+      }),
+    ]);
   };
-  const depositLookupTable = await openFirstBatch(depositRoots);
-  const redeemLookupTable = await openFirstBatch(redeemRoots);
+  await openFirstBatch(depositRoots);
+  await openFirstBatch(redeemRoots);
 
   // The permit path's trust inputs, read live from the deployed stack: the KMS signer set (party
   // ids follow this registry order) and the Decryption contract KMS node signatures verify under
@@ -339,8 +329,8 @@ const main = async (): Promise<void> => {
       payoutConfidential: cSharesMint.address,
     },
     batchers: {
-      deposit: { batcher: depositBatcher.address, lookupTable: depositLookupTable },
-      redeem: { batcher: redeemBatcher.address, lookupTable: redeemLookupTable },
+      deposit: { batcher: depositBatcher.address },
+      redeem: { batcher: redeemBatcher.address },
     },
     mintAuthority: mintAuthority.address,
     personas: { keeper: keeper.address, alice: alice.address, bob: bob.address },

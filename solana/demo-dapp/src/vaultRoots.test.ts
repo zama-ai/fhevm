@@ -6,8 +6,8 @@ import { vaultRoots } from "./vaultRoots";
 const config = {
   programs: { batcher: "batcher-program", token: "token-program", vault: "vault-program", host: "host-program" },
   batchers: {
-    deposit: { batcher: "deposit-batcher", lookupTable: "deposit-table" },
-    redeem: { batcher: "redeem-batcher", lookupTable: "redeem-table" },
+    deposit: { batcher: "deposit-batcher" },
+    redeem: { batcher: "redeem-batcher" },
   },
   mints: {
     joinUnderlying: "usdc",

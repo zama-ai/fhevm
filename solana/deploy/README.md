@@ -123,7 +123,7 @@ so the command fails against a program built without that feature.
 Preview namespace reset and destruction run recovery **before** deleting signing keys.
 The recovery Job first returns saved-wallet SOL and deterministic upload-buffer rent,
 installs current cleanup instructions if needed, then recovers disposable application
-accounts, token accounts and lookup tables before wiping host state. A failure blocks
+accounts and token accounts before wiping host state. A failure blocks
 namespace deletion and preserves signing keys for retry. Executable accounts remain
 funded: closing these programs would permanently retire their stable IDs.
 

@@ -22,7 +22,6 @@ export {
   type SolanaVaultHarvestParameters,
   type SolanaVaultMetrics,
 } from './harvest.js';
-export { openBatch, type SolanaVaultOpenBatchParameters, type SolanaVaultOpenBatchResult } from './openBatch.js';
 
 // One-time provisioning builders the demo seeder drives (fhevm-internal#1760). Each derives its
 // encrypted store/event PDAs internally so the seeder passes semantic roots, never hand-rolled accounts.
@@ -51,8 +50,6 @@ export { DEMO_VAULT_PROGRAM_ADDRESS } from './internal/generated/demoVault/progr
 export {
   deriveBatchAddresses,
   deriveSettleAccounts,
-  deriveSettleLookupTableAddresses,
-  settleAccountsToLookupTableAddresses,
   type VaultDemoRoots,
   type BatchAddresses,
   type SolanaVaultSettleAccounts,
@@ -70,10 +67,6 @@ export {
 
 export { settleTotalFromCleartext } from './internal/cleartext.js';
 export { joinStoreAddress, tokenStoreAddress } from './internal/encryptedStores.js';
-export {
-  MAX_EXTEND_ADDRESSES_PER_TRANSACTION,
-  getExtendLookupTableInstructions,
-} from './internal/addressLookupTable.js';
 export { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 
 export { findShareMintPda } from './internal/generated/demoVault/pdas/index.js';

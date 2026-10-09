@@ -1,7 +1,11 @@
-import { describe, expect, test } from 'vitest';
-import type { UiWalletAccount } from '@wallet-standard/react';
+import { describe, expect, test, vi } from 'vitest';
 import type { Wallet, WalletAccount } from '@wallet-standard/base';
 import { SolanaSignOffchainMessage } from '@solana/wallet-standard-features';
+import {
+  SOLANA_ERROR__FAILED_TO_SIGN_TRANSACTION,
+  SOLANA_ERROR__TRANSACTION__FAILED_WHEN_SIMULATING_TO_ESTIMATE_RESOURCE_LIMITS,
+  SolanaError,
+} from '@solana/kit';
 import { getOrCreateUiWalletAccountForStandardWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
 import { solanaPermitWalletFromSecretKey } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
@@ -9,13 +13,16 @@ import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 import {
   assertWalletAccountCapabilities,
+  connectWalletSession,
   describeWalletError,
   parseDemoConfigResponse,
   permitWalletFromWalletAccount,
   planDemoFunding,
   readExactMessageSignature,
+  signsVersion1Transactions,
 } from './demoSession';
 import { parseRuntimeDemoConfig } from './demoConfig';
+import { testUiWallet, testUiWalletAccount } from './testWallet';
 
 const validResponse = {
   config: {
@@ -51,11 +58,9 @@ const validResponse = {
     batchers: {
       deposit: {
         batcher: '11111111111111111111111111111111',
-        lookupTable: '11111111111111111111111111111111',
       },
       redeem: {
         batcher: '11111111111111111111111111111111',
-        lookupTable: '11111111111111111111111111111111',
       },
     },
     personas: {
@@ -130,7 +135,7 @@ describe('the permit adapter', () => {
   const standardAccount: WalletAccount = headless.account;
   const standardWallet: Wallet = {
     version: '1.0.0',
-    name: 'Fake Phantom',
+    name: 'Test wallet',
     icon: 'data:image/svg+xml;base64,',
     chains: ['solana:localnet'],
     features: { [SolanaSignOffchainMessage]: feature },
@@ -162,30 +167,55 @@ describe('the permit adapter', () => {
 });
 
 describe('Wallet Standard boundary', () => {
-  const walletAccount = (overrides: Partial<UiWalletAccount> = {}): UiWalletAccount =>
-    ({
-      address: '11111111111111111111111111111111',
-      chains: ['solana:localnet'],
-      features: ['solana:signTransaction', 'solana:signMessage'],
-      ...overrides,
-    }) as UiWalletAccount;
-
   test('requires localnet transaction and exact-message capabilities before funding', () => {
-    expect(() => assertWalletAccountCapabilities(walletAccount(), 'Phantom')).not.toThrow();
-    expect(() => assertWalletAccountCapabilities(walletAccount({ chains: ['solana:devnet'] }), 'Phantom')).toThrow(
-      'has not enabled Solana localnet',
-    );
+    expect(() => assertWalletAccountCapabilities(testUiWalletAccount(), 'Test wallet')).not.toThrow();
     expect(() =>
-      assertWalletAccountCapabilities(walletAccount({ features: ['solana:signMessage'] }), 'Phantom'),
+      assertWalletAccountCapabilities(testUiWalletAccount({ chains: ['solana:devnet'] }), 'Test wallet'),
+    ).toThrow('has not enabled Solana localnet');
+    expect(() =>
+      assertWalletAccountCapabilities(testUiWalletAccount({ accountFeatures: ['solana:signMessage'] }), 'Test wallet'),
     ).toThrow('does not support transaction signing');
     expect(() =>
-      assertWalletAccountCapabilities(walletAccount({ features: ['solana:signTransaction'] }), 'Phantom'),
+      assertWalletAccountCapabilities(testUiWalletAccount({ accountFeatures: ['solana:signTransaction'] }), 'Test wallet'),
     ).toThrow('does not support message signing');
   });
 
+  test('refuses at connect, before funding, a wallet that cannot sign version 1 transactions', async () => {
+    const fetch = vi.fn(async (_path: string) => new Response(JSON.stringify(validResponse)));
+    vi.stubGlobal('fetch', fetch);
+    try {
+      await expect(
+        connectWalletSession(
+          testUiWalletAccount({ supportedTransactionVersions: ['legacy', 0] }),
+          'Legacy wallet',
+          'legacy-account',
+          () => true,
+        ),
+      ).rejects.toThrow(
+        'Legacy wallet cannot sign Solana version 1 transactions, which the demo sends. Use the demo wallet instead.',
+      );
+      // Only the demo config was read: nothing was funded.
+      expect(fetch.mock.calls.map(([path]) => path)).toEqual(['/api/demo-config']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test.each([
+    [['legacy', 0], false],
+    [[0, 1], true],
+    [['legacy', 0, 1], true],
+  ] as const)('offers a wallet advertising %j: %s', (supportedTransactionVersions, offered) => {
+    expect(signsVersion1Transactions(testUiWallet({ supportedTransactionVersions }))).toBe(offered);
+  });
+
   test('requires the selected devnet chain before funding', () => {
-    expect(() => assertWalletAccountCapabilities(walletAccount({ chains: ['solana:devnet'] }), 'Phantom', 'devnet')).not.toThrow();
-    expect(() => assertWalletAccountCapabilities(walletAccount(), 'Phantom', 'devnet')).toThrow('has not enabled Solana devnet');
+    expect(() =>
+      assertWalletAccountCapabilities(testUiWalletAccount({ chains: ['solana:devnet'] }), 'Test wallet', 'devnet'),
+    ).not.toThrow();
+    expect(() => assertWalletAccountCapabilities(testUiWalletAccount(), 'Test wallet', 'devnet')).toThrow(
+      'has not enabled Solana devnet',
+    );
   });
 
   test('accepts an unchanged decrypt preimage and copies its signature', () => {
@@ -238,6 +268,20 @@ describe('Wallet Standard boundary', () => {
         'transaction',
       ),
     ).toBe('TransientStoreNotOpened: transient store must be opened for this transaction and closed last');
+  });
+
+  // The shape joinBatch.test.ts pins for a failed estimate: Kit's sign error, logs on its cause.
+  test('decodes host logs carried by the cause of a failed signing', () => {
+    const estimate = new SolanaError(SOLANA_ERROR__TRANSACTION__FAILED_WHEN_SIMULATING_TO_ESTIMATE_RESOURCE_LIMITS, {
+      logs: [
+        'Program log: AnchorError caused by account: transient_store. Error Code: TransientStoreNotOpened. Error Number: 6076. Error Message: transient store must be opened for this transaction and closed last.',
+        `Program ${ZAMA_HOST_PROGRAM_ADDRESS} failed: custom program error: 0x17bc`,
+      ],
+    } as never);
+    const signing = new SolanaError(SOLANA_ERROR__FAILED_TO_SIGN_TRANSACTION, { cause: estimate, causeMessage: '' } as never);
+    expect(describeWalletError(signing, 'transaction')).toBe(
+      'TransientStoreNotOpened: transient store must be opened for this transaction and closed last',
+    );
   });
 
   test('leaves a token OwnerMismatch as the original diagnostic', () => {

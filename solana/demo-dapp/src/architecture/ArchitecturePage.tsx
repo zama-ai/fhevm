@@ -185,7 +185,7 @@ flowchart TB
     diagram: String.raw`
 sequenceDiagram
     box User device
-        participant Wallet as Phantom
+        participant Wallet
         participant SDK
     end
     box Protocol services

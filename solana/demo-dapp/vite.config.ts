@@ -36,6 +36,9 @@ export default defineConfig(async ({ command, mode }) => ({
   // `process.env.NODE_ENV` in place, where an installed dependency would have it replaced.
   // Its generated Solana code reads it, following the @solana/kit convention.
   define: { 'process.env.NODE_ENV': JSON.stringify(mode) },
+  // The linked packages would each load their own Kit. One copy keeps a single Kit in the bundle and
+  // lets a test mock Kit's send for the zama-host client too.
+  resolve: { dedupe: ['@solana/kit'] },
   server: {
     host: '127.0.0.1',
     port: Number(dappUrl.port),

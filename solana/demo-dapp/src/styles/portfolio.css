@@ -349,13 +349,6 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
-.wallet-scan-note {
-  margin: 0;
-  color: #9c9ca4;
-  font-size: 11px;
-  line-height: 1.5;
-}
-
 .primary-action {
   width: 100%;
   padding: 13px 18px;

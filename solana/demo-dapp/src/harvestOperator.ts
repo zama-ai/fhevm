@@ -3,14 +3,12 @@ import { buildHarvestInstruction, getVaultMetrics } from "./vault/index.js";
 
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import type { DemoConfig } from "./demoConfig";
-import { sendTransaction } from "./sendTransaction";
+import { createDemoClient } from "./demoClient";
 import type { VaultMetrics } from "./batchTypes";
 import {
   DEMO_YEAR_GROWTH_DENOMINATOR,
   DEMO_YEAR_GROWTH_NUMERATOR,
 } from "./yieldPolicy";
-
-const HARVEST_COMPUTE_UNIT_LIMIT = 200_000;
 
 export const donationForOneYear = (metrics: VaultMetrics): bigint => {
   if (metrics.totalShares === 0n) throw new Error("the vault has no shares to accrue yield to");
@@ -39,11 +37,8 @@ export const harvestDemoVault = async (
   const donation = donationForOneYear(before);
 
   await mintUnderlying(keeper.address, donation);
-  await sendTransaction(
-    config,
-    keeper,
-    [await buildHarvestInstruction(rpc, { donor: keeper, vault: config.vault, amount: donation })],
-    HARVEST_COMPUTE_UNIT_LIMIT,
-  );
+  await createDemoClient(config, keeper).sendTransaction([
+    await buildHarvestInstruction(rpc, { donor: keeper, vault: config.vault, amount: donation }),
+  ]);
   return { before, after: await readDemoVaultMetrics(config) };
 };

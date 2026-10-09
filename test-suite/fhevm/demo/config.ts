@@ -1,9 +1,9 @@
 // demo-config — the runtime artifact the confidential-vault demo publishes after seeding, and the
 // single source of truth the dApp (#1761), the smoke (deposit arc) and the rehearsal (#1762) read.
 //
-// It carries ROOTS ONLY (program ids, the two batchers + their per-batch settle lookup tables, the
-// vault, the four mints, host/kms context, persona pubkeys, endpoints, chain id). Everything a
-// caller needs to reach a vault-module action — including settle's full 34-account set — is DERIVED
+// It carries ROOTS ONLY (program ids, the two batchers, the vault, the four mints, host/kms context,
+// persona pubkeys, endpoints, chain id). Everything a caller needs to reach a vault-module action —
+// including settle's full 34-account set — is DERIVED
 // from these roots by the SDK's `deriveBatchAddresses`/`deriveSettleAccounts` and its on-chain reads
 // (`getCurrentBatch`, the generated `EncryptedValue` decoder). An address dump would be a confession
 // that the SDK cannot serve a real integrator, so nothing derivable belongs here.
@@ -51,12 +51,10 @@ export type VaultDemoRoots = {
  */
 export const resolveDemoConfigPath = (): string => process.env.DEMO_CONFIG_PATH ?? solanaDemoConfigPath;
 
-/** Roots for one batcher instance: its account plus the settle lookup table `open_batch` created. */
+/** Roots for one batcher instance. */
 export type DemoBatcher = {
   /** The `Batcher` account address (`initialize_batcher`). */
   readonly batcher: Address;
-  /** The per-batch settle address lookup table `open_batch` created for the current batch. */
-  readonly lookupTable: Address;
 };
 
 /** Persona pubkeys, labeled by demo role. Keys sign from committed keypairs, not from this file. */
@@ -222,8 +220,8 @@ export const parseDemoConfig = (raw: unknown): SolanaDemoConfig => {
       payoutConfidential: asAddress(mints.payoutConfidential, "mints.payoutConfidential"),
     },
     batchers: {
-      deposit: { batcher: asAddress(deposit.batcher, "batchers.deposit.batcher"), lookupTable: asAddress(deposit.lookupTable, "batchers.deposit.lookupTable") },
-      redeem: { batcher: asAddress(redeem.batcher, "batchers.redeem.batcher"), lookupTable: asAddress(redeem.lookupTable, "batchers.redeem.lookupTable") },
+      deposit: { batcher: asAddress(deposit.batcher, "batchers.deposit.batcher") },
+      redeem: { batcher: asAddress(redeem.batcher, "batchers.redeem.batcher") },
     },
     mintAuthority: asAddress(o.mintAuthority, "mintAuthority"),
     personas: {

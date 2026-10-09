@@ -15,6 +15,11 @@
     display: none;
   }
 
+  .wallet-version-note {
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
   main {
     width: min(100% - 28px, 620px);
     padding-top: 56px;

@@ -623,7 +623,7 @@ not when the threat model changes.
 ## I. Sizes, limits, and operations
 
 **14. [HOLDS]** Executions are capped at 32 steps. Packet size and CU cost depend on the shape; the cap does not imply a
-fit in a 1,232-byte transaction or 200k CU. `runtime-tests/cost-snapshots/fhe_execute_boundary.json` pins each shape's
+fit in a 4,096-byte version 1 transaction or 200k CU. `runtime-tests/cost-snapshots/fhe_execute_boundary.json` pins each shape's
 instruction-data bytes and CU at its largest passing size. These are host-instruction measurements, before transaction
 overhead and application CPIs.
 Pinned by `rejects_more_than_max_ops`, `cost_snapshot_fhe_execute_max_steps` and `cost_snapshot_boundary_sweeps`.
@@ -639,9 +639,17 @@ asks the next coprocessor as soon as one answers without a proof, fails or refus
 request another can serve, or hold it longer than that delay. Authorization was
 never its to give (#30).
 
-**48. [HOLDS]** Settle transactions at production KMS thresholds fit one packet
-only as v0 + one address lookup table; a legacy settle never fits. Pinned by
-`settle_transaction_size_needs_v0_lookup_table_and_fits` and `redeem_settle_transaction_size_needs_v0_lookup_table_and_fits`.
+**48. [HOLDS]** The demo, the deployer and the test suite send every
+transaction as version 1 (at most 4,096 bytes and 64 account keys). Two
+exceptions: the Squads test harness still executes outside that client, and the
+deployer's program uploads are `solana program deploy`'s own transactions. Settle at the host's
+largest KMS threshold and join at its largest coprocessor threshold, each with
+every deny and HCU witness, fit one, and that settle stays within the compute a
+transaction may request. Pinned by
+`fits one v1 transaction at the maximum KMS threshold with every witness`
+(`solana/demo-dapp/src/vault/settleBatch.test.ts`), `fits one v1 transaction at
+the maximum coprocessor threshold with every witness` (`joinBatch.test.ts`) and
+`mollusk_settle_at_the_largest_kms_certificate_fits_the_compute_budget`.
 
 **50. [OPERATIONAL]** The relayer's ACL preflight covers EVM host chains and,
 advisorily, Solana delegated entries: a delegation row that is dead at the
@@ -654,21 +662,11 @@ gateway fee is paid. This does not affect authorization (#42, #45); for
 now we accept that a rejected request can still cost a fee, and that
 this leaves room for spam.
 
-**52. [OPERATIONAL]** Every batch gets its own settle address lookup table, and
-the demo runs the full table lifecycle: create + extend at `open_batch`
-(chunked so no extend can exceed the transaction wire limit), deactivate
-immediately after settlement, close once the ~513-slot deactivation
-cooldown has elapsed, refunding rent to the keeper. Deactivate and close
-are best-effort rent hygiene — a failure never fails a settlement, and the
-close crank retries on the next batch preparation. One composition function
-fills the table and compresses against it, so provisioned and consumed
-membership cannot diverge (`solana/demo-dapp/src/vault`).
-
 **54. [HOLDS]** `FheExecution::build` enforces three typed resource ceilings:
 
 - **Steps** — at most the host's `MAX_FHE_EXECUTION_STEPS` (32), or `TooManySteps`.
 - **CPI packet** — serialized instruction data, including its discriminator, fits `CPI_INSTRUCTION_DATA_LIMIT` (10 KiB),
-  or `ExceedsCpiInstructionDataLimit`. A transaction's 1,232-byte wire limit is separate: a compact app instruction can
+  or `ExceedsCpiInstructionDataLimit`. A transaction's wire limit (4,096 bytes as version 1) is separate: a compact app instruction can
   construct a larger host CPI.
 - **Build heap** — allocations requested by build, packet serialization, account resolution and invoke tables stay
   within `BUILD_HEAP_BUDGET_BYTES` (24 KiB), or `ExceedsBuildHeapBudget`. `HeapBudget` charges allocations before they
@@ -692,8 +690,8 @@ maximum-width sums reach 6. These shape measurements do not guarantee that an ar
 **66. [HOLDS]** TransientStore has fixed storage for 112 result occurrences and 32 explicit grants (10,168 bytes including
 discriminator). Repeated handles count as occurrences to preserve step/output references. Each execution admits at most
 32 steps and 32 effects; return selection admits 32 handles, including repeated selections. Capacity overflow fails
-atomically. SBF capacity is not packet capacity: application CPIs can construct payloads larger than the outer 1,232-byte
-transaction. The SDK heap model, runtime shape sweeps and packet-fit tests measure these separate limits.
+atomically. SBF capacity is not packet capacity: application CPIs can construct payloads larger than the outer 4,096-byte
+version 1 transaction. The SDK heap model, runtime shape sweeps and packet-fit tests measure these separate limits.
 Pinned by `result_journal_capacity_is_shared_across_calls_and_fails_atomically` and
 `maximum_result_grants_fit_one_execution_and_leave_no_account`.
 

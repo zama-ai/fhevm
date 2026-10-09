@@ -836,10 +836,10 @@ fn cost_snapshot_solana_ceilings() {
         (
             "solana/transaction_bytes".to_string(),
             ceiling(
-                1_232,
+                4_096,
                 false,
-                "IPv6-MTU packet limit; address lookup tables compress account keys, not \
-                 instruction data",
+                "version 1 transaction limit (SIMD-0385), which also allows at most 64 account \
+                 keys; clients send every transaction as version 1",
             ),
         ),
         (

@@ -97,6 +97,7 @@ button {
 .wallet-button {
   justify-self: end;
   padding: 10px 16px;
+  white-space: nowrap;
   cursor: pointer;
   font-weight: 650;
 }
@@ -116,6 +117,11 @@ button {
   justify-self: end;
   align-items: center;
   gap: 8px;
+}
+
+.wallet-version-note {
+  color: #a9a9b2;
+  font-size: 12px;
 }
 
 .wallet-demo-button {

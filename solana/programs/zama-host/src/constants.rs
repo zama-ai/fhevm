@@ -37,7 +37,8 @@ pub const MAX_KMS_SIGNERS: u8 = 16;
 /// Maximum number of FHE operations accepted by one composed execution.
 ///
 /// The runtime boundary suite measures whole transactions, including transient store
-/// open/close, under the fixed 32 KiB heap and 1,232-byte packet limit. Dependent
+/// open/close, under the fixed 32 KiB heap. The max-op transaction also fits a 1,232-byte
+/// legacy packet, inside the 4,096-byte version 1 transaction clients send. Dependent
 /// chains reach this cap; wide permissions and Store histories can hit a lower
 /// limit. See `runtime-tests/cost-snapshots/fhe_execute_boundary.json` for each
 /// measured shape and its binding resource. Raising this cap requires new

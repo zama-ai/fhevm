@@ -676,11 +676,10 @@ if run_check 3; then
     'deliberately not a batch' -iE '\bbatch(es|ed|ing)?\b'
   # "plan" is CORE-only: test-suite/fhevm threads a docker-compose `plan: StackSpec` through every
   # generator. Inside the FHE core an execution is the only thing a "plan" could be. The one
-  # exception is the demo dapp's claim helper, where a plan is a list of Solana instructions to send
-  # — an unrelated meaning — so the four lines that name it are spelled out rather than exempting
-  # every sentence that happens to end in "plan".
+  # exception is the name of Kit's `@solana/kit-plugin-instruction-plan` package, whose instruction
+  # plans are lists of Solana instructions to send — an unrelated meaning.
   check_alias 'plan — one fhe_execute invocation is an execution' core \
-    'const plan = await|plan === null|plan\.instructions|plan\.initializesAccount' \
+    'kit-plugin-instruction-plan' \
     -iE '\bplans?\b'
   # dictionary <- pool. CORE-only: the listener is full of Postgres connection
   # pools, and it is not swept here. Inside the FHE core the only collection that could be called a
@@ -742,7 +741,7 @@ if run_check 3; then
   check_alias 'Fhe*Event — the per-op value types are decoded op records' all \
     'FheExecutedEvent' -E '\bFhe[A-Za-z0-9]*Event\b'
   # "lookup table" is banned for the interning dictionary. The Solana Address Lookup Table keeps its
-  # name and is very often written as a bare "lookup table" ("the settle lookup table"), so a bare
+  # name and is often written as a bare "lookup table" ("loaded from a lookup table"), so a bare
   # match cannot be the rule. The old exception list went the other way and waved through any line
   # containing `batch`, `settle`, `slot`, or `addresses` — which is exactly the phrasing the check
   # exists to catch. The rule is now what it should always have been: a lookup table OF handles, keys,

@@ -974,13 +974,15 @@ signatures over the attestation; the coprocessor sends `t`, not `n`. This holds 
 attestation families — coprocessor `CiphertextVerification` inputs and KMS `PublicDecryptVerification`
 certs — so the carried EIP-712 signature payload scales with `t` (t x 65 bytes), independent of how
 many signers are registered. A threshold-4 `confidential_transfer` transaction (4 x 65B sigs over the
-real token account list) serializes to **989 bytes**, well inside the 1232-byte
-(`solana_packet::PACKET_DATA_SIZE`) single-packet limit.
+real token account list) serializes to **989 bytes** as a legacy transaction, inside the 1232-byte
+(`solana_packet::PACKET_DATA_SIZE`) single packet. Clients send version 1 transactions, which allow
+4,096 bytes and 64 account keys.
 
 Public-decrypt consume transactions carry the certificate and no Merkle proof (DD-065), so their size
 grows only with the threshold. As legacy transactions, `disclose_secp` fits one packet up to 12
 signatures and `redeem_burned_amount` up to 8, against the production KMS threshold of 7
-(`runtime-tests/tests/disclose_packet_fit.rs`).
+(`runtime-tests/tests/disclose_packet_fit.rs`). Clients send them as version 1 transactions, so the
+legacy packet is a stricter bound than the one they face.
 
 Relates to DD-007 (input verification model).
 
@@ -2329,7 +2331,8 @@ On-chain, publicness rests on the connectors' leaf check and on the KMS committe
 honesty (INVARIANTS #21, #23), as on EVM. A program that wants on-chain proof that a handle it did
 not pin is public would need a separate proof-taking entry point; none is wanted today. Consume
 transactions shrink: a legacy redeem with 7 signatures is 1145 bytes, and `disclose_secp` fits one
-packet up to 12 signatures (`runtime-tests/tests/disclose_packet_fit.rs`). Removing
+packet up to 12 signatures (`runtime-tests/tests/disclose_packet_fit.rs`); clients send both as
+version 1 transactions (4,096 bytes). Removing
 `PublicDecryptProofInvalid` renumbered the later Anchor error codes of zama-host and
 confidential-token.
 
@@ -2896,8 +2899,7 @@ Consequences:
   is a deliberate edit.
 - fhevm-internal#2108 task 2 moves the off-chain Rust derivations behind `zama-solana-acl` seed-list
   functions. It also replaces other programs' PDAs with their maintained clients:
-  `findAssociatedTokenPda` from `@solana-program/token` and `findAddressLookupTablePda` from
-  `@solana-program/address-lookup-table`. The BPF loader's program data address is stored in the
+  `findAssociatedTokenPda` from `@solana-program/token`. The BPF loader's program data address is stored in the
   program account, so the chain is its source and a client reads it rather than derives it.
   `@solana-program/loader-v3` 0.7.0 ships no decoder for that account, so until one does, a single
   helper in `solana/deploy` derives it and the test suite imports that helper.

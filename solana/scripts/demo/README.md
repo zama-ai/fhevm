@@ -21,7 +21,7 @@ bun run demo reseed [--direct]
 bun run demo down
 ```
 
-## Phantom rehearsal
+## Wallet rehearsal
 
 Start the complete stack and keep the command running:
 
@@ -29,8 +29,9 @@ Start the complete stack and keep the command running:
 bun run demo serve --observability
 ```
 
-Then open `http://127.0.0.1:5173/` and connect Phantom with Solana Localnet enabled. The expected
-wallet interactions are:
+Then open `http://127.0.0.1:5173/` and connect a wallet the demo lists, with Solana Localnet
+enabled. The demo sends only Solana version 1 transactions, so it lists only installed wallets that
+advertise version 1 signing. The expected wallet interactions are:
 
 1. one connection approval; fee SOL and mock USDC are funded automatically;
 2. two announced transaction approvals for **Shield & deposit**;
@@ -40,11 +41,10 @@ wallet interactions are:
    automatically;
 5. one message-sign approval when the received cUSDC balance is revealed.
 
-Phantom may label a locally simulated transaction as unsafe because its remote scanner cannot
-reach `127.0.0.1`. The dApp independently simulates the unsigned transaction against that exact
-local validator before opening Phantom, then verifies the wallet signature and simulates the
-signed transaction before submission. Confirm that Phantom shows `127.0.0.1:5173`; never approve
-the rehearsal against a different site or network.
+A wallet may label a transaction as unsafe when its remote scanner cannot reach `127.0.0.1`.
+The dApp simulates each transaction against the local validator before opening the wallet.
+Confirm that the wallet shows `127.0.0.1:5173`; never approve the rehearsal against a different
+site or network.
 
 The **Developer evidence** panel exposes the exact local signatures, compute consumption,
 ciphertext handles, and encrypted store. Its links open the matching transaction,
@@ -117,9 +117,8 @@ exact boot's token file.
 
 All demo state lives under the fhevm layout root (`FHEVM_STATE_DIR`, default `.fhevm`), in
 `runtime/solana/`: the published config `demo-config.json`, lifecycle boots under `demo/` (manifest,
-lock, one directory per boot with its logs), the keeper's settle lookup tables in
-`batch-lookup-tables.json` and the smoke marker. Only the validator ledger stays under `/tmp`, because
-the validator needs a short path. Point `FHEVM_STATE_DIR` elsewhere (a preview deployment's state dir,
+lock, one directory per boot with its logs) and the smoke marker. Only the validator ledger stays
+under `/tmp`, because the validator needs a short path. Point `FHEVM_STATE_DIR` elsewhere (a preview deployment's state dir,
 a test's temp dir) and every producer and consumer follows.
 
 On Apple Silicon, the KMS containers (`kms-core-gen-keys`, the four cores and `kms-core-init`) run

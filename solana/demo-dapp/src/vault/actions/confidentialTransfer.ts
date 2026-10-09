@@ -1,28 +1,6 @@
 import { findAssociatedTokenPda } from '@solana-program/token';
-import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore } from '@fhevm/sdk/solana';
-import {
-  AccountRole,
-  address,
-  assertIsFullySignedTransaction,
-  assertIsTransactionWithBlockhashLifetime,
-  assertIsTransactionWithinSizeLimit,
-  createTransactionMessage,
-  getBase64EncodedWireTransaction,
-  getSignatureFromTransaction,
-  pipe,
-  sendAndConfirmTransactionFactory,
-  setTransactionMessageComputeUnitLimit,
-  setTransactionMessageFeePayerSigner,
-  setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
-  type Address,
-  type Rpc,
-  type RpcSubscriptions,
-  type Signature,
-  type SolanaRpcApi,
-  type SolanaRpcSubscriptionsApi,
-  type TransactionSigner,
-} from '@solana/kit';
+import { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore } from '@fhevm/sdk/solana';
+import { AccountRole, address, type Address, type Signature, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
 
 import { hexToBytes } from '@fhevm/sdk/base';
@@ -32,15 +10,13 @@ import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
 import { getConfidentialTransferInstructionAsync,
   findEventAuthorityPda, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import type { DemoClient } from '../../demoClient';
 
 export type SolanaConfidentialTransferParameters = {
-  readonly rpc: Rpc<SolanaRpcApi>;
-  readonly rpcSubscriptions: RpcSubscriptions<SolanaRpcSubscriptionsApi>;
   readonly inputProof: SolanaInputProof;
 
   readonly inputIndex: number;
   readonly owner: TransactionSigner;
-  readonly feePayer: TransactionSigner;
   readonly mint: Address;
   /** SPL mint wrapped by `mint`. Freeze checks the owners' ATAs on this mint. */
   readonly underlyingMint: Address;
@@ -57,12 +33,13 @@ export type SolanaConfidentialTransferParameters = {
   readonly denyRecords?: readonly Address[] | undefined;
 };
 
-/** Builds, simulates, sends, and confirms one confidential-token transfer. */
+/** Builds, sends, and confirms one confidential-token transfer; `client.payer` pays the fee and transientStore rent. */
 export async function confidentialTransfer(
   fhevm: { readonly solanaChain: FhevmSolanaChain; readonly aclProgramAddress: Bytes32Hex },
+  client: DemoClient,
   parameters: SolanaConfidentialTransferParameters,
 ): Promise<Signature> {
-  const { inputProof, inputIndex, owner, feePayer, mint } = parameters;
+  const { inputProof, inputIndex, owner, mint } = parameters;
   const zamaHostProgramAddress = address(base58.encode(hexToBytes(fhevm.aclProgramAddress)));
   if (zamaHostProgramAddress !== ZAMA_HOST_PROGRAM_ADDRESS) {
     throw new Error('configured ACL program does not match the host compiled into confidential-token');
@@ -102,12 +79,12 @@ export async function confidentialTransfer(
   }
 
   const tokenEventAuthority = (await findEventAuthorityPda())[0];
-  const transientStore = await prepareTransientStore({ payer: feePayer, host: zamaHostProgramAddress });
+  const transientStore = await prepareTransientStore({ payer: client.payer, host: zamaHostProgramAddress });
   const transferInstruction = await getConfidentialTransferInstructionAsync({
     transientStore: transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     owner,
-    payer: feePayer,
+    payer: client.payer,
     mint,
     underlyingMint: parameters.underlyingMint,
     fromAta: (await findAssociatedTokenPda({
@@ -154,47 +131,5 @@ export async function confidentialTransfer(
           ],
         }
       : transferInstruction;
-  const { value: latestBlockhash } = await parameters.rpc.getLatestBlockhash().send();
-  const message = pipe(
-    createTransactionMessage({ version: 0 }),
-    (m) => setTransactionMessageFeePayerSigner(feePayer, m),
-    (m) => setTransactionMessageLifetimeUsingBlockhash(latestBlockhash, m),
-    // A live transfer has been observed to exceed 400k CU (PDA bump search and
-    // emit_cpi! overhead vary per run); 800k keeps headroom under the 1.4M/tx cap.
-    (m) => setTransactionMessageComputeUnitLimit(800_000, m),
-    (m) => appendTransientStoreInstructions(transientStore, [instruction], m),
-  );
-  const transaction = await signTransactionMessageWithSigners(message);
-  assertIsFullySignedTransaction(transaction);
-  assertIsTransactionWithBlockhashLifetime(transaction);
-  assertIsTransactionWithinSizeLimit(transaction);
-  const wireTransaction = getBase64EncodedWireTransaction(transaction);
-  const simulation = await parameters.rpc
-    .simulateTransaction(wireTransaction, {
-      commitment: 'finalized',
-      encoding: 'base64',
-      sigVerify: true,
-    })
-    .send();
-  if (simulation.value.err !== null) {
-    // @solana/kit InstructionError payloads can contain bigint Custom codes;
-    // plain JSON.stringify throws and hides the real on-chain failure.
-    const err = JSON.stringify(simulation.value.err, (_key: string, value: unknown) =>
-      typeof value === 'bigint' ? value.toString() : value,
-    );
-    const logs = simulation.value.logs?.join('\n') ?? '';
-    throw new Error(
-      logs.length > 0
-        ? `confidential transfer simulation failed: ${err}\n${logs}`
-        : `confidential transfer simulation failed: ${err}`,
-    );
-  }
-  await sendAndConfirmTransactionFactory({ rpc: parameters.rpc, rpcSubscriptions: parameters.rpcSubscriptions })(
-    transaction,
-    {
-      commitment: 'finalized',
-      skipPreflight: true,
-    },
-  );
-  return getSignatureFromTransaction(transaction);
+  return (await client.sendFheTransaction(transientStore, [instruction])).context.signature;
 }

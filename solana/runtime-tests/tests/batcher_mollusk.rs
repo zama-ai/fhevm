@@ -46,8 +46,8 @@ use zama_host as host;
 use zama_solana_test_kit::cleartext::{fixture_context, seed_u64, store_u64};
 use zama_solana_test_kit::executions;
 use zama_solana_test_kit::signing::{
-    amount_attestation_for, amount_public_decrypt_cert, kms_signing_key,
-    production_amount_attestation_for, secp_evm_address,
+    amount_attestation_for, amount_public_decrypt_cert, amount_public_decrypt_cert_signed_by,
+    kms_signing_key, kms_signing_key_n, production_amount_attestation_for, secp_evm_address,
 };
 use zama_solana_test_kit::{
     anchor_error_check, anchor_ix, coprocessor_signer_address, cost_snapshot,
@@ -3313,105 +3313,65 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
 }
 
 // ---------------------------------------------------------------------------
-// Settle transaction wire size: legacy vs v0 + address lookup table
+// Settle at the largest KMS certificate
 // ---------------------------------------------------------------------------
 
-/// Serializes the REAL settle instruction (the full account list and a
-/// realistically shaped certificate) as (a) a legacy `Transaction` and (b) a v0
-/// `VersionedTransaction` whose non-payer accounts load through one address
-/// lookup table, across cert thresholds. Legacy settle never fits one packet
-/// (the ~35-account meta list alone approaches the limit); v0+ALT fits up to
-/// the production KMS threshold.
-fn assert_settle_wire_sizes(fixture: &BatcherFixture) {
-    let keys = BatchKeys::new(fixture, 0);
-    let pending_burn = keys.pending_burn(fixture.join_mint().mint);
-
-    let settle_with = |threshold: usize| -> Instruction {
-        settle_ix(
-            fixture,
-            &keys,
-            800,
-            vec![[0u8; 65]; threshold],
-            vec![0x00],
-            pending_burn,
-        )
-    };
-
-    let legacy_size = |ix: &Instruction| -> usize {
-        let message = solana_sdk::message::Message::new(
-            &zama_solana_test_kit::transaction::fhe_transaction(fixture.payer, [ix.clone()]),
-            Some(&fixture.payer),
-        );
-        bincode::serialize(&solana_sdk::transaction::Transaction::new_unsigned(message))
-            .unwrap()
-            .len()
-    };
-    let v0_with_lookup_table_size = |ix: &Instruction| -> usize {
-        // One ALT carrying every instruction account except the fee payer.
-        // `try_compile` keeps the payer and the invoked program id static and
-        // loads the rest (CPI target programs included) through the table.
-        let mut addresses: Vec<Pubkey> = Vec::new();
-        for meta in &ix.accounts {
-            if meta.pubkey != fixture.payer && !addresses.contains(&meta.pubkey) {
-                addresses.push(meta.pubkey);
-            }
-        }
-        let table = solana_sdk::message::AddressLookupTableAccount {
-            key: Pubkey::new_from_array([0xAA; 32]),
-            addresses,
-        };
-        let message = solana_sdk::message::v0::Message::try_compile(
-            &fixture.payer,
-            &zama_solana_test_kit::transaction::fhe_transaction(fixture.payer, [ix.clone()]),
-            &[table],
-            solana_sdk::hash::Hash::default(),
-        )
-        .expect("settle compiles to a v0 message");
-        let transaction = solana_sdk::transaction::VersionedTransaction {
-            signatures: vec![solana_sdk::signature::Signature::default()],
-            message: solana_sdk::message::VersionedMessage::V0(message),
-        };
-        bincode::serialize(&transaction).unwrap().len()
-    };
-
-    // The Mollusk fixture's threshold and the production cert (7-of-13 majority).
-    // JavaScript tests separately measure the table actually provisioned by the demo.
-    for threshold in [1usize, 7] {
-        let ix = settle_with(threshold);
-        let legacy = legacy_size(&ix);
-        let v0 = v0_with_lookup_table_size(&ix);
-        println!(
-            "settle wire size ({:?}) t={threshold}: legacy={legacy}B v0+ALT={v0}B \
-             (packet limit {})",
-            fixture.direction,
-            solana_packet::PACKET_DATA_SIZE
-        );
-        // Legacy settle never fits: a legacy transaction is impossible.
-        assert!(
-            legacy > solana_packet::PACKET_DATA_SIZE,
-            "legacy settle t={threshold} unexpectedly fits: {legacy}B"
-        );
-        assert!(
-            v0 <= solana_packet::PACKET_DATA_SIZE,
-            "v0+ALT settle t={threshold} overflows: {v0}B"
-        );
-    }
-}
-
+/// Settle with a certificate at the host's largest KMS threshold, every witness present, stays
+/// within the compute a transaction may request. The client sets each transaction's compute limit
+/// from a simulation of it, so this cost is what that limit must cover. The transaction size at this
+/// threshold is checked with Kit's version 1 encoder in `solana/demo-dapp/src/vault/settleBatch.test.ts`.
 #[test]
-fn settle_transaction_size_needs_v0_lookup_table_and_fits() {
-    assert_settle_wire_sizes(&BatcherFixture::fixed(
-        batcher::BatchDirection::Deposit,
-        0x91,
-    ));
-}
+fn mollusk_settle_at_the_largest_kms_certificate_fits_the_compute_budget() {
+    let fixture = BatcherFixture {
+        levers: HostLevers {
+            deny_list: true,
+            block_cap: BlockCap::Metered,
+        },
+        ..BatcherFixture::new(batcher::BatchDirection::Deposit)
+    };
+    let kms_keys: Vec<_> = (0..host::constants::MAX_KMS_SIGNERS)
+        .map(|i| kms_signing_key_n(0x60 + i))
+        .collect();
+    let mut accounts = fixture.accounts(0, 0);
+    accounts.insert(
+        fixture.kms_context,
+        kms_context_account(
+            KMS_CONTEXT_ID,
+            kms_keys.iter().map(secp_evm_address).collect(),
+            host::constants::MAX_KMS_SIGNERS,
+        )
+        .1,
+    );
+    let context = production_mollusk().with_context(accounts);
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
 
-#[test]
-fn redeem_settle_transaction_size_needs_v0_lookup_table_and_fits() {
-    assert_settle_wire_sizes(&BatcherFixture::fixed(
-        batcher::BatchDirection::Redeem,
-        0x81,
-    ));
+    let (signatures, extra_data) =
+        amount_public_decrypt_cert_signed_by(burned_handle, 300, &kms_keys);
+    let ix = settle_ix(
+        &fixture,
+        &keys,
+        300,
+        signatures,
+        extra_data,
+        keys.pending_burn(fixture.join_mint().mint),
+    );
+    let result = check_batcher_instruction(&context, &ix, &[Check::success()]);
+    println!(
+        "settle at {} KMS signatures: {} CU",
+        host::constants::MAX_KMS_SIGNERS,
+        result.compute_units_consumed
+    );
+    // The most compute a transaction may request (solana-compute-budget MAX_COMPUTE_UNIT_LIMIT).
+    assert!(result.compute_units_consumed <= 1_400_000);
 }
 
 // ---------------------------------------------------------------------------

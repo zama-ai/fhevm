@@ -54,10 +54,6 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
   const settled = depositLifecycle?.kind === 'settled';
   const currentDepositClaimed = settled && depositLifecycle.claimed;
   const canDeposit = deposit.kind === 'idle' || deposit.kind === 'error' || currentDepositClaimed;
-  const phantomLocalnet =
-    state.connection.kind === 'ready' &&
-    state.connection.session.wallet.kind === 'wallet-standard' &&
-    state.connection.session.wallet.name.toLowerCase() === 'phantom';
   const externalWallet =
     state.connection.kind === 'ready' && state.connection.session.wallet.kind === 'wallet-standard';
   const status =
@@ -335,11 +331,6 @@ export function PortfolioOverview({ controller }: { readonly controller: DemoCon
                   : '1 · Deposit'}
               </span>
             </div>
-            {phantomLocalnet && (
-              <p className="wallet-scan-note">
-                Phantom may show an unresolved simulation warning because its scanner cannot reach this local validator.
-              </p>
-            )}
             <button
               className="primary-action"
               type="button"

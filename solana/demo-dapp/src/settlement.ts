@@ -1,14 +1,7 @@
 import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
+import type { Signature, TransactionSigner } from '@solana/kit';
 import {
-  createSolanaRpcSubscriptions,
-  type Address,
-  type Signature,
-  type TransactionSigner,
-} from '@solana/kit';
-import { getDeactivateLookupTableInstruction } from '@solana-program/address-lookup-table';
-import {
-  appendTransientStoreInstructions,
   createFhevmPublicDecryptClient,
   defineFhevmSolanaChain,
   prepareTransientStore,
@@ -33,11 +26,8 @@ import {
 } from './batchTypes';
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import type { DemoConfig } from './demoConfig';
-import { sendTransaction } from './sendTransaction';
+import { createDemoClient } from './demoClient';
 import { vaultRoots } from './vaultRoots';
-
-const DISPATCH_COMPUTE_UNIT_LIMIT = 600_000;
-const SETTLE_HYGIENE_COMPUTE_UNIT_LIMIT = 100_000;
 
 export type DemoOperatorSession = {
   readonly relayerApiKey: string;
@@ -121,32 +111,23 @@ export const dispatchVaultBatch = async (
     throw new Error('The batch is not old enough to dispatch yet');
   }
   const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
-  return sendTransaction(
-    session.config,
-    session.keeper,
-    appendTransientStoreInstructions(transientStore, [
-      await buildDispatchBatchInstruction({
-        transientStore: transientStore,
-        payer: session.keeper,
-        batcher: roots.batcher,
-        batch: position.batch,
-        joinConfidentialMint: roots.joinConfidentialMint,
-        joinUnderlyingMint: roots.joinUnderlyingMint,
-        tokenProgram: TOKEN_PROGRAM_ADDRESS,
-      }),
-    ]),
-    DISPATCH_COMPUTE_UNIT_LIMIT,
-  );
+  const dispatch = await buildDispatchBatchInstruction({
+    transientStore,
+    payer: session.keeper,
+    batcher: roots.batcher,
+    batch: position.batch,
+    joinConfidentialMint: roots.joinConfidentialMint,
+    joinUnderlyingMint: roots.joinUnderlyingMint,
+    tokenProgram: TOKEN_PROGRAM_ADDRESS,
+  });
+  return (await createDemoClient(session.config, session.keeper).sendFheTransaction(transientStore, [dispatch])).context
+    .signature;
 };
 
 export const settleVaultBatch = async (
   session: DemoOperatorSession,
   position: BatchTarget,
   direction: VaultDirection,
-  // Required, not defaulted to the config's table: this address also names the table this
-  // function deactivates on success, so falling back to the batch-0 table would retire a table
-  // belonging to a different batch. Callers get it from `lookupTableForBatch`.
-  lookupTableAddress: Address,
 ): Promise<Signature | null> => {
   const roots = vaultRoots(session.config, direction);
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
@@ -158,48 +139,36 @@ export const settleVaultBatch = async (
     return null;
   if (batch.state.status !== BatchStatus.Dispatched) throw new Error('Dispatch the batch before settlement');
 
-  const rpcSubscriptions = createSolanaRpcSubscriptions(session.config.wsUrl);
+  const keeperClient = createDemoClient(session.config, session.keeper);
   setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: session.relayerApiKey } });
   const chain = defineFhevmSolanaChain({
     id: BigInt(session.config.chainId),
     fhevm: { relayerUrl: session.config.relayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
   });
   const publicDecryptClient = createFhevmPublicDecryptClient({ chain, rpc });
-  const signature = await settleBatch(publicDecryptClient, session.keeper, {
-    rpc,
-    rpcSubscriptions,
+  const signature = await settleBatch(publicDecryptClient, keeperClient, {
     roots,
     batchIndex: position.batchIndex,
     contextId: asBytes32BigEndian(session.config.userDecryptContextId),
-    lookupTableAddress,
     authorityFundingLamports: BigInt(session.config.authorityFundingLamports),
     certificateOptions: { timeout: 60_000 },
   });
-  // The batch is settled, so its per-batch table has served its one purpose and its authority PDA
-  // has paid its last owner-charged rent: deactivate the table (the crank in prepareNextBatch
-  // closes it once the cooldown has elapsed) and take the authority's unspent funding back. A
-  // failure here is a rent-hygiene miss, never a settlement failure — and not a permanent one:
-  // the cranks deactivate any table and drain any authority whose batch is finished, so this eager
-  // attempt is a shortcut on the happy path rather than the only chance either gets.
+  // The batch is settled, so its authority PDA has paid its last owner-charged rent: take its unspent
+  // funding back. A failure here is a rent-hygiene miss, never a settlement failure, and not a
+  // permanent one: the reclaim pass in prepareNextBatch drains any authority whose batch is finished.
   try {
-    await sendTransaction(
-      session.config,
-      session.keeper,
-      [
-        getDeactivateLookupTableInstruction({ address: lookupTableAddress, authority: session.keeper }),
-        await getReclaimBatchAuthorityInstructionAsync({
-          authority: session.keeper,
-          batcher: roots.batcher,
-          batch: batch.addresses.batch,
-          batchAuthority: batch.addresses.batchAuthority,
-          joinConfidentialMint: roots.joinConfidentialMint,
-        }),
-      ],
-      SETTLE_HYGIENE_COMPUTE_UNIT_LIMIT,
-    );
+    await keeperClient.sendTransaction([
+      await getReclaimBatchAuthorityInstructionAsync({
+        authority: session.keeper,
+        batcher: roots.batcher,
+        batch: batch.addresses.batch,
+        batchAuthority: batch.addresses.batchAuthority,
+        joinConfidentialMint: roots.joinConfidentialMint,
+      }),
+    ]);
   } catch (error) {
     console.warn(
-      `settled, but retiring lookup table ${lookupTableAddress} and reclaiming the batch authority failed (the next prepare retries): ${error instanceof Error ? error.message : String(error)}`,
+      `settled, but reclaiming the batch authority failed (the next prepare retries): ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   return signature;
@@ -210,5 +179,7 @@ export const closeSpentJoinRecord = async (session: DemoUserSession, position: B
   const rpc = createFinalizedRpc(session.config.rpcUrl);
   const record = (await findJoinRecordPda({ batch: position.batch, user: session.signer.address }))[0];
   if ((await rpc.getAccountInfo(record, { encoding: 'base64' }).send()).value === null) return;
-  await sendTransaction(session.config, session.signer, [await getCloseJoinRecordInstructionAsync({ user: session.signer, batch: position.batch, joinRecord: record })], 100_000);
+  await createDemoClient(session.config, session.signer).sendTransaction([
+    await getCloseJoinRecordInstructionAsync({ user: session.signer, batch: position.batch, joinRecord: record }),
+  ]);
 };

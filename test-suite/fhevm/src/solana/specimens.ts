@@ -1,4 +1,4 @@
-import { INSTRUCTIONS_SYSVAR_ADDRESS, appendTransientStoreInstructions, prepareTransientStore, type TransientStore } from "@fhevm/sdk/solana";
+import { INSTRUCTIONS_SYSVAR_ADDRESS, prepareTransientStore, type TransientStore } from "@fhevm/sdk/solana";
 // specimens — the typed drivers for the two specimen consumer programs the live scenarios stand
 // their encrypted values up through: encrypted-counter (the smallest complete consumer) and
 // dep-chain (the 32-step dependent-chain load shape).
@@ -107,11 +107,7 @@ export const buildIncrementCounterInstruction = async (owner: TransactionSigner,
     amount,
   });
 
-/**
- * Sends one specimen write signed by the owner and returns the handle it installed. Preflight is
- * skipped: the result-handle entropy reads the SlotHashes sysvar via `sol_get_sysvar`, which real
- * execution populates but preflight simulation does not.
- */
+/** Sends one specimen write signed by the owner and returns the handle it installed. */
 const writeSpecimenValue = async (
   context: SolanaProvisioningContext,
   owner: TransactionSigner,
@@ -120,9 +116,7 @@ const writeSpecimenValue = async (
 ): Promise<SpecimenHandle> => {
   const transientStore = await prepareTransientStore({ payer: owner, host: ZAMA_HOST_PROGRAM_ADDRESS });
   const instruction = await buildInstruction(transientStore);
-  const signature = await context.sendTransaction(owner, appendTransientStoreInstructions(transientStore, [instruction]), {
-    skipPreflight: true,
-  });
+  const { signature } = (await (await context.client(owner)).sendFheTransaction(transientStore, [instruction])).context;
   return { value, handle: await currentHandle(context, value.encryptedStore, value.key), signature };
 };
 

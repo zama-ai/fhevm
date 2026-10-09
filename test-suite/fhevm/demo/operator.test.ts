@@ -35,7 +35,7 @@ const stubActions = () => ({
     crsBase64: "AA==",
   })),
   vaultMetrics: mock(async () => METRICS),
-  prepareBatch: mock(async (_direction: "deposit" | "redeem") => ({ batchIndex: 3n, batch: BATCH, lookupTable: BATCH })),
+  prepareBatch: mock(async (_direction: "deposit" | "redeem") => ({ batchIndex: 3n, batch: BATCH })),
   runOperator: mock(async () => "sig-op"),
   harvest: mock(async () => ({ before: METRICS, after: { totalAssets: 107n, totalShares: 50n } })),
 });

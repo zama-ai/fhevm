@@ -7,8 +7,7 @@ export type VaultDirection = 'deposit' | 'redeem';
 
 /**
  * The generated `BatchStatus` enum is the source of truth shared by the operator flow, settlement,
- * and the lookup-table crank. A batch in one of these states will never send another transaction
- * against its lookup table.
+ * and the authority reclaim pass. Nothing charges the authority of a batch in one of these states.
  */
 export const isBatchFinished = (status: BatchStatus): boolean =>
   status === BatchStatus.Settled || status === BatchStatus.Canceled || status === BatchStatus.Refunding;

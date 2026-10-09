@@ -138,10 +138,12 @@ The encrypt client provides `encryptValue` and `encryptValues` to build and subm
 They return shared typed encrypted values and an `inputProof` containing the submitted
 attestation fields needed by Solana instructions. The local proving object is not retained.
 `generateZkProof` and `submitInputProof` remain available separately. Applications
-compose instructions through Solana Kit and their own program clients, then sign
-and send through their wallet transport. `prepareTransientStore` returns the payer's
-journal PDA; `appendTransientStoreInstructions` surrounds application instructions
-with the required open and close. The SDK does not send that transaction.
+compose instructions through Solana Kit and their own program clients.
+`prepareTransientStore` returns the payer's journal PDA. The
+`transientStoreTransactions` Kit plugin adds `signFheTransaction` and
+`sendFheTransaction`, which surround application instructions with the required
+open and close and hand them to the client's own signing and sending as one
+transaction.
 
 The private-decrypt client requires `SolanaDecryptTrust` and exposes `signPermit` and
 `decryptValues`: sign once, then reuse the permit across requests. The public-only

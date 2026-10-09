@@ -72,10 +72,13 @@ trusted for authorization.
   order; empty selection returns none. It grants no permission. The transient store carries
   all result occurrences, implicit producer-Store permission and explicit consumer grants.
   One signed top-level open and exact final close delimit the shared transaction context.
-- **The 1,232-byte packet is a design input.** Execution wire data interns
-  repeated 32-byte values in a dictionary; the KMS settle transaction requires
-  a v0 transaction plus one address lookup table. Both bounds are pinned by
-  tests, not assumed.
+- **Transaction size is a design input.** Execution wire data interns
+  repeated 32-byte values in a dictionary. The demo, the deployer and the test
+  suite send every transaction as version 1 (at most 4,096 bytes and 64 account
+  keys), which the KMS settle at the host's largest threshold needs. Two
+  exceptions: the Squads test harness still executes outside that client, and
+  the deployer's program uploads are `solana program deploy`'s own
+  transactions. Both bounds are pinned by tests, not assumed.
 - **The chain-type byte.** Solana chain ids start with `0x01`, which lets 32-byte
   handles ride the shared gateway and coprocessor infrastructure while every
   consumer can branch on chain type where the shapes genuinely differ.
@@ -210,16 +213,20 @@ An app program drives compute by CPI into `zama-host`, using
   receiver-callback path — that EVM workaround is unnecessary on Solana.
 
 The transaction owner prepares the transient store once, forwards it to all app
-builders, and appends the complete body before signing:
+builders, and sends the complete body through a Kit client extended with
+`transientStoreTransactions()`. Its `sendFheTransaction` adds the open and close
+around the body and sends all of it as one transaction:
 
 ```ts
-import { appendTransientStoreInstructions, prepareTransientStore, solanaHostProgram } from '@fhevm/sdk/solana';
+import { prepareTransientStore, solanaHostProgram, transientStoreTransactions } from '@fhevm/sdk/solana';
 
+// `client` signs and sends Kit transactions, for example through the zama-host
+// client's `finalizedTransactionSending()`.
+const fheClient = client.use(transientStoreTransactions());
 const transientStore = await prepareTransientStore({ payer, host: solanaHostProgram(chain) });
 const initialize = await buildInitialize({ ...inputs, transientStore });
 const join = await buildJoin({ ...inputs, transientStore });
-const instructions = appendTransientStoreInstructions(transientStore, [initialize, join]);
-// Sign and send through the application's existing transaction transport.
+await fheClient.sendFheTransaction(transientStore, [initialize, join]);
 ```
 
 `buildInitialize` and `buildJoin` stand for the app's instruction builders. Every
@@ -229,8 +236,8 @@ For a stored multisig proposal, declare that transient store payer up front and 
 its signature on the outer execution transaction. Transient store rent is refunded to
 that payer by the final close. Its fixed capacity is 112 result occurrences and
 32 explicit grants; packet and compute limits may bind earlier.
-Omitting `appendTransientStoreInstructions` fails the first FHE instruction as
-`TransientStoreNotOpened`. The generated host client identifies that error when
+A transaction whose FHE instructions are not preceded by the open fails the
+first one as `TransientStoreNotOpened`. The generated host client identifies that error when
 the failed instruction is the host; the demo formats it only then.
 
 ## Documentation
