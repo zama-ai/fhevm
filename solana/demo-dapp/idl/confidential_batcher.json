@@ -2034,8 +2034,8 @@
         "Leaves a pending batch before dispatch, or a refunding batch after dispatch cancellation:",
         "transfers the user's exact",
         "recorded amount back from the batch account (all-or-nothing) and",
-        "resets the joined encrypted store to zero. In a refunding batch it also closes the join",
-        "record, returning its rent to the user.",
+        "resets the joined encrypted store to zero. It also closes the join record, returning its",
+        "rent to the user.",
         "Deny records: `(token, join mint)` and `(batcher, batch)` for the refund, then",
         "`(batcher, batch)` again for the reset."
       ],
@@ -2053,8 +2053,7 @@
         {
           "name": "user",
           "docs": [
-            "Quitting user; owner of the refund destination. Receives the join record's rent when the",
-            "batch is refunding."
+            "Quitting user; owner of the refund destination. Receives the join record's rent."
           ],
           "writable": true,
           "signer": true
@@ -2076,7 +2075,7 @@
         {
           "name": "batch",
           "docs": [
-            "The pending batch being quit."
+            "The pending or refunding batch being quit."
           ]
         },
         {
@@ -2116,7 +2115,7 @@
         {
           "name": "join_record",
           "docs": [
-            "The user's join record for this batch."
+            "The user's join record for this batch; closed to the user."
           ],
           "writable": true,
           "pda": {
@@ -4272,8 +4271,8 @@
     {
       "name": "QuitBatch",
       "docs": [
-        "Emitted when a user quits a pending batch: the exact recorded amount was",
-        "transferred back and the joined encrypted store reset to zero."
+        "Emitted when a user quits a pending or refunding batch: the exact recorded amount was",
+        "transferred back, the joined encrypted store reset to zero and the join record closed."
       ],
       "type": {
         "kind": "struct",

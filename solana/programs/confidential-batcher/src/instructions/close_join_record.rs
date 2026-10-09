@@ -2,8 +2,7 @@
 //!
 //! A join record is the user's ticket in a batch: `quit` reads it for the refund, `claim` marks it
 //! claimed. It is spent once the payout is claimed, or as soon as the batch is canceled (nothing to
-//! claim). In a refunding batch the record still authorizes `quit`, and the program cannot tell a
-//! refunded record from a live one without decrypting the join store, so `quit` closes it there. The
+//! claim). In a refunding batch the record authorizes `quit`, which closes it. The
 //! joined-amount encrypted store keeps its ACL grants to the user and is not closed here.
 
 use super::*;

@@ -61,6 +61,7 @@ const DECRYPT_ROUNDTRIP_TIMEOUT_MS = 180_000;
 
 import * as vault from "@demo-dapp/vault/index.js";
 import type { Bytes32Hex } from "@fhevm/sdk/types";
+import { ANCHOR_ACCOUNT_NOT_INITIALIZED, expectProgramError } from "../../src/solana/program-error";
 
 /** Loads a 64-byte Solana keypair file into a kit `TransactionSigner`. */
 const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {
@@ -647,7 +648,9 @@ test.skipIf(!runsDemoScenarios)(
     // The quit closed the join record, so a retry is rejected and cannot credit the contribution twice.
     const joinRecord = (await vault.findJoinRecordPda({ batch, user: alice.address }))[0];
     expect((await rpc.getAccountInfo(joinRecord, { encoding: 'base64' }).send()).value).toBeNull();
-    await expect(aliceClient.sendFheTransaction(transientStore, [quit])).rejects.toThrow();
+    await expectProgramError('a retry of the refunding quit', ANCHOR_ACCOUNT_NOT_INITIALIZED, () =>
+      aliceClient.sendFheTransaction(transientStore, [quit]),
+    );
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);
     console.log(`refund acceptance passed: batch=${batch}; joined=${amount}; restored exactly; join record closed by the quit`);
   }, SCENARIO_TIMEOUT_MS,

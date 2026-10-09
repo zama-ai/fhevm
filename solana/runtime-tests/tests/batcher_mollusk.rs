@@ -50,12 +50,12 @@ use zama_solana_test_kit::signing::{
     kms_signing_key, kms_signing_key_n, production_amount_attestation_for, secp_evm_address,
 };
 use zama_solana_test_kit::{
-    anchor_error_check, anchor_ix, coprocessor_signer_address, cost_snapshot,
-    deny_scope_record_account, encrypted_store_account, ensure_system_accounts, event_authority,
-    handle_for_chain, hcu_trusted_app_record_account, host_config_account, kms_context_account,
-    new_encrypted_store, paused_host_config, read_account, read_spl_amount, read_store_handle,
-    readonly, serialized_account, spl_mint_account, spl_token_account, system_account, Ctx,
-    HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
+    anchor_error_check, anchor_framework_error_check, anchor_ix, coprocessor_signer_address,
+    cost_snapshot, deny_scope_record_account, encrypted_store_account, ensure_system_accounts,
+    event_authority, handle_for_chain, hcu_trusted_app_record_account, host_config_account,
+    kms_context_account, new_encrypted_store, paused_host_config, read_account, read_spl_amount,
+    read_store_handle, readonly, serialized_account, spl_mint_account, spl_token_account,
+    system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
 };
 
 const KMS_CONTEXT_ID: [u8; 32] = {
@@ -1862,9 +1862,9 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
     check_batcher_instruction(
         &context,
         &quit,
-        &[Check::err(ProgramError::Custom(
-            anchor_lang::error::ErrorCode::AccountNotInitialized as u32,
-        ))],
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::AccountNotInitialized,
+        )],
     );
     assert_eq!(
         store_u64(
@@ -1885,74 +1885,6 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
             batcher::JOINED_AMOUNT_KEY
         ),
         0
-    );
-}
-
-/// Gifts to a batch's token accounts have no join record. A gift to the join account is burned with
-/// the joins and raises the settled total; one to the payout account arrives after settle. Either
-/// way each joiner claims exactly its share, and the gifts' part stays in the batch payout account.
-#[test]
-fn mollusk_donations_to_batch_accounts_leave_claims_exact() {
-    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
-    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    fixture.seed_values(&context, (1_000, 0), (2_000, 50), (1_000_000, 50));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    run_join(
-        &context,
-        &fixture,
-        &keys,
-        &fixture.alice,
-        handle_for_chain(41, BALANCE_FHE_TYPE),
-        300,
-    );
-
-    let donate = |mint: &ConfidentialMintKeys, handle: u8, amount: u64| {
-        let ix = donate_ix(
-            &fixture,
-            &fixture.bob,
-            mint,
-            keys.batch_authority,
-            handle_for_chain(handle, BALANCE_FHE_TYPE),
-            amount,
-        );
-        ensure_system_accounts(
-            &context,
-            &[owner_ata(keys.batch_authority, mint.underlying_mint)],
-        );
-        zama_solana_test_kit::transaction::process_fhe_instruction(
-            &context,
-            fixture.bob.user,
-            &ix,
-            &[Check::success()],
-        );
-    };
-    donate(fixture.join_mint(), 42, 100);
-    assert_eq!(
-        store_u64(&context, keys.join_balance_store, token::balance_key()),
-        400
-    );
-
-    let burned_handle = run_dispatch(&context, &fixture, &keys);
-    run_settle(&context, &fixture, &keys, burned_handle, 400);
-    assert_eq!(read_batch(&context, keys.batch).total_joined, 400);
-    donate(fixture.payout_mint(), 43, 50);
-    assert_eq!(
-        store_u64(&context, keys.payout_balance_store, token::balance_key()),
-        450
-    );
-
-    run_claim(&context, &fixture, &keys, &fixture.alice);
-    assert_eq!(
-        store_u64(
-            &context,
-            fixture.alice.shares.balance_store,
-            token::balance_key()
-        ),
-        300
-    );
-    assert_eq!(
-        store_u64(&context, keys.payout_balance_store, token::balance_key()),
-        150
     );
 }
 
@@ -2376,14 +2308,12 @@ fn mollusk_quit_rejects_refund_destination_that_is_not_the_users_account() {
     );
 }
 
-/// A user who quits before dispatch can still run the (permissionless) claim
-/// after the batch settles on the other participants: their reset encrypted store
-/// makes the MulDiv produce an encrypted zero, the all-or-zero transfer moves
-/// nothing, and the record is marked claimed. Deposit direction only: quit,
-/// claim, and the encrypted store reset are direction-free shared code (settle's
-/// vault CPI is the sole direction branch), so one direction pins the class.
+/// A user who quits before dispatch has no join record left, so a claim for them after the batch
+/// settles on the other participants is refused, and the others' claims pay the full batch.
+/// Deposit direction only: quit and claim are direction-free shared code (settle's vault CPI is
+/// the sole direction branch), so one direction pins the class.
 #[test]
-fn mollusk_claim_after_quit_pays_zero() {
+fn mollusk_claim_after_quit_is_refused() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
@@ -2422,9 +2352,25 @@ fn mollusk_claim_after_quit_pays_zero() {
     );
     run_settle(&context, &fixture, &keys, burned_handle, 500);
 
-    // Alice's claim computes 0 * 500 / 500 = encrypted zero and transfers
-    // nothing; her record still flips to claimed (the record survives quit).
-    run_claim(&context, &fixture, &keys, &fixture.alice);
+    // The quit closed Alice's record, so her claim has nothing to claim with.
+    assert_eq!(
+        lamports_of(&context, keys.join_record(fixture.alice.user)),
+        0
+    );
+    ensure_system_accounts(
+        &context,
+        &[
+            owner_ata(keys.batch_authority, fixture.payout_mint().underlying_mint),
+            owner_ata(fixture.alice.user, fixture.payout_mint().underlying_mint),
+        ],
+    );
+    check_batcher_instruction(
+        &context,
+        &claim_ix(&fixture, &keys, &fixture.alice),
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::AccountNotInitialized,
+        )],
+    );
     assert_eq!(
         store_u64(
             &context,
@@ -2433,15 +2379,6 @@ fn mollusk_claim_after_quit_pays_zero() {
         ),
         0
     );
-    assert_eq!(
-        store_u64(
-            &context,
-            keys.pending_join_value(fixture.alice.user),
-            batcher::JOINED_AMOUNT_KEY
-        ),
-        0
-    );
-    assert!(read_join_record(&context, keys.join_record(fixture.alice.user)).claimed);
 
     // Bob's claim still pays the full settled batch.
     run_claim(&context, &fixture, &keys, &fixture.bob);
@@ -3242,46 +3179,29 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &Ctx, prefix: &str) {
         &open_batch_ix(fixture, &next, Some(keys.batch)),
         &[Check::success()],
     );
-    for (user, handle) in [(&fixture.alice, 0x72), (&fixture.bob, 0x73)] {
-        ensure_system_accounts(
-            context,
-            &[
-                next.join_record(user.user),
-                fixture.user_join(user).transferred_value,
-                next.pending_join_value(user.user),
-                owner_ata(user.user, fixture.join_mint().underlying_mint),
-                owner_ata(next.batch_authority, fixture.join_mint().underlying_mint),
-            ],
-        );
-        let join = join_ix(
-            fixture,
-            &next,
-            user,
-            production_amount_attestation_for(
-                handle_for_chain(handle, BALANCE_FHE_TYPE),
-                user.user,
-                token::id(),
-            ),
-        );
-        let join_result = check_batcher_instruction(context, &join, &[Check::success()]);
-        check_fhe_cpis(context, &join_result);
-    }
+    run_join(
+        context,
+        fixture,
+        &next,
+        &fixture.alice,
+        handle_for_chain(0x72, BALANCE_FHE_TYPE),
+        100,
+    );
+    run_join(
+        context,
+        fixture,
+        &next,
+        &fixture.bob,
+        handle_for_chain(0x73, BALANCE_FHE_TYPE),
+        200,
+    );
 
     let quit = quit_ix(fixture, &next, &fixture.bob);
     let quit_result = check_batcher_instruction(context, &quit, &[Check::success()]);
     check_fhe_cpis(context, &quit_result);
     assert_batcher_cost(&format!("{prefix}quit"), &quit, &quit_result);
 
-    ensure_system_accounts(
-        context,
-        &[
-            next.burned_amount_store,
-            next.pending_burn(fixture.join_mint().mint),
-        ],
-    );
-    let dispatch = dispatch_ix(fixture, &next);
-    let dispatch_result = check_batcher_instruction(context, &dispatch, &[Check::success()]);
-    check_fhe_cpis(context, &dispatch_result);
+    run_dispatch(context, fixture, &next);
     let cancel = cancel_dispatch_ix(fixture, &next);
     let cancel_result = check_batcher_instruction(context, &cancel, &[Check::success()]);
     check_fhe_cpis(context, &cancel_result);
@@ -3290,7 +3210,7 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &Ctx, prefix: &str) {
     let refund = quit_ix(fixture, &next, &fixture.alice);
     let refund_result = check_batcher_instruction(context, &refund, &[Check::success()]);
     check_fhe_cpis(context, &refund_result);
-    assert_batcher_cost(&format!("{prefix}refunding_quit"), &refund, &refund_result);
+    assert_batcher_cost(&format!("{prefix}quit_refunding"), &refund, &refund_result);
 }
 
 #[test]
@@ -3831,5 +3751,69 @@ fn mollusk_preloaded_shares_do_not_poison_the_rate() {
     assert_eq!(
         store_u64(&context, keys.payout_balance_store, token::balance_key()),
         0
+    );
+}
+
+/// Gifts to a batch's token accounts have no join record. A gift to the join account is burned with
+/// the joins and raises the settled total; one to the payout account arrives after settle. Either
+/// way each joiner claims exactly its share, and the gifts' part stays in the batch payout account.
+#[test]
+fn mollusk_donations_to_batch_accounts_leave_claims_exact() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    fixture.seed_values(&context, (1_000, 0), (2_000, 50), (1_000_000, 50));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+
+    let donate = |mint: &ConfidentialMintKeys, handle: u8, amount: u64| {
+        let ix = donate_ix(
+            &fixture,
+            &fixture.bob,
+            mint,
+            keys.batch_authority,
+            handle_for_chain(handle, BALANCE_FHE_TYPE),
+            amount,
+        );
+        zama_solana_test_kit::transaction::process_fhe_instruction(
+            &context,
+            fixture.bob.user,
+            &ix,
+            &[Check::success()],
+        );
+    };
+    donate(fixture.join_mint(), 42, 100);
+    assert_eq!(
+        store_u64(&context, keys.join_balance_store, token::balance_key()),
+        400
+    );
+
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    run_settle(&context, &fixture, &keys, burned_handle, 400);
+    assert_eq!(read_batch(&context, keys.batch).total_joined, 400);
+    donate(fixture.payout_mint(), 43, 50);
+    assert_eq!(
+        store_u64(&context, keys.payout_balance_store, token::balance_key()),
+        450
+    );
+
+    run_claim(&context, &fixture, &keys, &fixture.alice);
+    assert_eq!(
+        store_u64(
+            &context,
+            fixture.alice.shares.balance_store,
+            token::balance_key()
+        ),
+        300
+    );
+    assert_eq!(
+        store_u64(&context, keys.payout_balance_store, token::balance_key()),
+        150
     );
 }

@@ -1,4 +1,4 @@
-//! Leaves a pending batch: exact refund of the recorded joined amount,
+//! Leaves a pending or refunding batch: exact refund of the recorded joined amount,
 //! all-or-nothing. Direction-free, and the demo's only exit before claims:
 //! quit-before-dispatch and refunds after `cancel_dispatch` are in scope. A Refunding batch accepts
 //! quits only; it cannot return to Pending or proceed to settlement.
@@ -9,16 +9,15 @@
 //! The refund can never partially fail: the batch account's balance is the sum
 //! of all recorded joins, so `ge(balance, joined)` always holds pending.
 //!
-//! A refunding batch never takes another join, so its quit closes the JoinRecord to the user: the
-//! record has nothing left to authorize, and `close_join_record` cannot tell it is spent.
+//! Every quit closes the JoinRecord to the user. A later join in a pending batch recreates the
+//! record at the same address and reuses the reset join store.
 
 use super::*;
 
 /// Accounts for quitting a batch.
 #[derive(Accounts)]
 pub struct Quit<'info> {
-    /// Quitting user; owner of the refund destination. Receives the join record's rent when the
-    /// batch is refunding.
+    /// Quitting user; owner of the refund destination. Receives the join record's rent.
     #[account(mut)]
     pub user: Signer<'info>,
     /// Pays the transfer output rent and the reset execution's ACL rent.
@@ -26,16 +25,17 @@ pub struct Quit<'info> {
     pub payer: Signer<'info>,
     /// Batcher config.
     pub batcher: Box<Account<'info, Batcher>>,
-    /// The pending batch being quit.
+    /// The pending or refunding batch being quit.
     #[account(constraint = batch.batcher == batcher.key() @ BatcherError::BatchBatcherMismatch)]
     pub batch: Box<Account<'info, Batch>>,
     /// Owns the token account funding the refund.
     /// CHECK: canonical per-batch authority PDA, checked by seeds below.
     #[account(seeds = [BATCH_AUTHORITY_SEED, batch.key().as_ref()], bump = batch.authority_bump)]
     pub batch_authority: UncheckedAccount<'info>,
-    /// The user's join record for this batch.
+    /// The user's join record for this batch; closed to the user.
     #[account(
         mut,
+        close = user,
         seeds = [JOIN_RECORD_SEED, batch.key().as_ref(), user.key().as_ref()],
         bump = join_record.bump,
     )]
@@ -104,7 +104,8 @@ pub struct Quit<'info> {
     pub batch_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
-/// Refunds the exact recorded amount and resets the joined encrypted store to zero.
+/// Refunds the exact recorded amount, resets the joined encrypted store to zero and closes the join
+/// record.
 pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     require!(
         matches!(
@@ -188,12 +189,6 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
             .map(|account| account.to_account_info()),
     }
     .invoke(execution, vec![ctx.accounts.join_store.to_account_info()])?;
-
-    if ctx.accounts.batch.status == BatchStatus::Refunding {
-        ctx.accounts
-            .join_record
-            .close(ctx.accounts.user.to_account_info())?;
-    }
 
     emit!(QuitBatch {
         version: APP_EVENT_VERSION,

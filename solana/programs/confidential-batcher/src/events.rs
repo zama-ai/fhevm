@@ -61,8 +61,8 @@ pub struct JoinedBatch {
     pub joined_handle: [u8; 32],
 }
 
-/// Emitted when a user quits a pending batch: the exact recorded amount was
-/// transferred back and the joined encrypted store reset to zero.
+/// Emitted when a user quits a pending or refunding batch: the exact recorded amount was
+/// transferred back, the joined encrypted store reset to zero and the join record closed.
 #[event]
 pub struct QuitBatch {
     /// Event schema version.

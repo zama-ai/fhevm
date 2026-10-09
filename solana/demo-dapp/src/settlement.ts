@@ -165,7 +165,7 @@ export const settleVaultBatch = async (
   return signature;
 };
 
-/** User-signed rent return after claim/cancel. A refunding batch's quit closes its record itself. */
+/** User-signed rent return after claim/cancel. A quit closes its record itself. */
 export const closeSpentJoinRecord = async (session: DemoUserSession, position: BatchTarget): Promise<void> => {
   const rpc = createFinalizedRpc(session.config.rpcUrl);
   const record = (await findJoinRecordPda({ batch: position.batch, user: session.signer.address }))[0];
