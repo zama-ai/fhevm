@@ -1,0 +1,29 @@
+[package]
+authors = ["Zama"]
+name = "fhevm-sig-auth"
+version = "0.1.0"
+edition = "2024"
+license = "BSD-3-Clause-Clear"
+description = "FhevmSig HTTP request authentication: EIP-712 signature over path, body digest, expiry and audience"
+
+[features]
+# `http::HeaderValue` conversions, for consumers built on the `http` crate (pingora, reqwest, axum).
+http = ["dep:http"]
+
+[dependencies]
+alloy = { version = "2", default-features = false, features = [
+    "k256",
+    "signers",
+    "sol-types",
+] }
+http = { version = "1", default-features = false, optional = true }
+thiserror = { version = "2.0", default-features = false }
+
+[dev-dependencies]
+alloy = { version = "2", default-features = false, features = [
+    "signer-local",
+] }
+tokio = { version = "1", default-features = false, features = [
+    "macros",
+    "rt",
+] }

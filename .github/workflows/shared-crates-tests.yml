@@ -26,6 +26,7 @@ jobs:
       changes-ciphertext-attestation: ${{ steps.filter.outputs.ciphertext-attestation }}
       changes-block-manifest: ${{ steps.filter.outputs.block-manifest }}
       changes-user-decryption-signature: ${{ steps.filter.outputs.user-decryption-signature }}
+      changes-fhevm-sig-auth: ${{ steps.filter.outputs.fhevm-sig-auth }}
       changes-gateway-contracts-bindings: ${{ steps.filter.outputs.gateway-contracts-bindings }}
       changes-host-contracts-bindings: ${{ steps.filter.outputs.host-contracts-bindings }}
     steps:
@@ -48,6 +49,8 @@ jobs:
             - shared/ciphertext-attestation/**
           user-decryption-signature:
             - shared/user-decryption-signature/**
+          fhevm-sig-auth:
+            - shared/fhevm-sig-auth/**
           gateway-contracts-bindings:
             - gateway-contracts/rust_bindings/**
           host-contracts-bindings:
@@ -86,6 +89,17 @@ jobs:
       - name: Run Tests
         run: |
           RUST_BACKTRACE=full cargo test --all-features
+
+  test-fhevm-sig-auth:
+    name: test-fhevm-sig-auth
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-fhevm-sig-auth == 'true' }}
+    permissions: *shared-crate-test-permissions
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared/fhevm-sig-auth
+    steps: *shared-crate-test-steps
 
   test-block-manifest:
     name: test-block-manifest
