@@ -14,6 +14,7 @@ pub const DENY_SCOPE_SEED: &[u8] = b"deny-scope";
 /// Seed prefix for HCU trust-registry records (per-application block-cap bypass).
 pub const HCU_TRUSTED_APP_SEED: &[u8] = b"hcu-trusted";
 /// Seed prefix for per-application HCU block meter PDAs.
+#[constant]
 pub const HCU_BLOCK_METER_SEED: &[u8] = b"hcu-block-meter";
 /// Seed of the singleton random-seed nonce PDA.
 pub const RAND_NONCE_SEED: &[u8] = b"rand-nonce";

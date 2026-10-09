@@ -1,4 +1,6 @@
 import { tokenStoreAddress } from './internal/encryptedStores.js';
+import { type HostPolicyParameters } from './internal/hostPolicy.js';
+import { tokenApp, withDenyRecords } from './internal/denyRecords.js';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import {
@@ -7,7 +9,7 @@ import {
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 } from '@fhevm/confidential-token';
 
-export type SolanaVaultInitializeTokenAccountParameters = {
+export type SolanaVaultInitializeTokenAccountParameters = HostPolicyParameters & {
   readonly transientStore: TransientStore;
   /** Signer funding the new confidential account and encrypted balance. */
   readonly payer: TransactionSigner;
@@ -27,7 +29,9 @@ export async function buildInitializeTokenAccountInstruction(
   parameters: SolanaVaultInitializeTokenAccountParameters,
 ): Promise<Instruction> {
   const [tokenAccount] = await findTokenAccountPda({ mint: parameters.mint, owner: parameters.owner });
-  return getInitializeTokenAccountInstructionAsync({
+  const app = tokenApp(parameters.mint);
+  const hcu = await parameters.host?.hcuAccounts(app);
+  const instruction = await getInitializeTokenAccountInstructionAsync({
     transientStore: parameters.transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     payer: parameters.payer,
@@ -36,5 +40,8 @@ export async function buildInitializeTokenAccountInstruction(
     tokenAccount,
     balanceEncryptedStore: await tokenStoreAddress(parameters.mint, tokenAccount),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
+    hcuBlockMeter: hcu?.hcuBlockMeter,
+    hcuTrustedAppRecord: hcu?.hcuTrustedAppRecord,
   });
+  return withDenyRecords(instruction, parameters.host?.denyListEnabled, [app]);
 }

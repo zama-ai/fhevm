@@ -34,6 +34,7 @@ import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import { encodedSize, TEST_BLOCKHASH, messageOf, testDemoClient } from '../testDemoClient';
+import { testHostPolicy } from './testHostPolicy.js';
 
 const CHAIN_ID = 72057594037940281n;
 const CANONICAL_ACL = bytesToHex(base58.decode(ZAMA_HOST_PROGRAM_ADDRESS));
@@ -149,7 +150,7 @@ describe('joinBatch (attested arm)', () => {
 
   it('appends, under the deny list, the join mint then the batch deny record', async () => {
     const submittedJoinAccounts = async (denyListEnabled: boolean): Promise<Address[]> => {
-      const { client, params } = await sendable({ denyListEnabled });
+      const { client, params } = await sendable({ host: testHostPolicy(denyListEnabled) });
       await joinBatch(context, client, params);
       const join = messageOf(sent()).instructions[1]!;
       return Array.from(join.accounts ?? [], (account) => account.address);
@@ -166,13 +167,13 @@ describe('joinBatch (attested arm)', () => {
   // the deny records and both HCU witnesses of each app. A v1 transaction is at most 4,096 bytes
   // and 64 account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
   it('fits one v1 transaction at the maximum coprocessor threshold with every witness', async () => {
+    const { joinConfidentialMint, batch } = await parameters();
     const { client, params } = await sendable(
       {
-        denyListEnabled: true,
-        joinMintHcuBlockMeter: key(30),
-        joinMintHcuTrustedAppRecord: key(31),
-        batchHcuBlockMeter: key(32),
-        batchHcuTrustedAppRecord: key(33),
+        host: testHostPolicy(true, {
+          [joinConfidentialMint]: { hcuBlockMeter: key(30), hcuTrustedAppRecord: key(31) },
+          [batch]: { hcuBlockMeter: key(32), hcuTrustedAppRecord: key(33) },
+        }),
       },
       8,
     );

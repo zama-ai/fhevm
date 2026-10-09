@@ -26,6 +26,7 @@ import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confi
 import { findDenyScopeRecordPda, findKmsContextPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import { encodedSize, messageOf, testDemoClient } from '../testDemoClient';
+import { testHostPolicy } from './testHostPolicy.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -144,9 +145,9 @@ describe('settleBatch', () => {
     const { client, opts } = await setup();
     await settleBatch({ publicDecryptCertificate: certificate }, client, {
       ...opts,
-      payoutMintHcuBlockMeter: addr(40),
-      payoutMintHcuTrustedAppRecord: addr(41),
-      denyListEnabled: true,
+      host: testHostPolicy(true, {
+        [roots().payoutConfidentialMint]: { hcuBlockMeter: addr(40), hcuTrustedAppRecord: addr(41) },
+      }),
     });
     const size = encodedSize(sent());
     expect(size.version).toBe(1);
@@ -158,7 +159,7 @@ describe('settleBatch', () => {
   async function submittedSettleAccounts(total: bigint, denyListEnabled: boolean): Promise<Address[]> {
     certificate.mockResolvedValue(claim(cleartextHex(total)));
     const { client, opts } = await setup();
-    await settleBatch({ publicDecryptCertificate: certificate }, client, { ...opts, denyListEnabled });
+    await settleBatch({ publicDecryptCertificate: certificate }, client, { ...opts, host: testHostPolicy(denyListEnabled) });
     const settle = messageOf(sent()).instructions[1]!;
     return Array.from(settle.accounts ?? [], (account) => account.address);
   }

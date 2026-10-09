@@ -12,6 +12,7 @@ import {
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import { testHostPolicy } from './testHostPolicy.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -161,7 +162,7 @@ describe('buildClaimInstruction', () => {
       tokenProgram: SPL_TOKEN,
     };
     const plain = await buildClaimInstruction(input);
-    const instruction = await buildClaimInstruction({ ...input, denyListEnabled: true });
+    const instruction = await buildClaimInstruction({ ...input, host: testHostPolicy(true) });
     const [batchRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, scope: batch });
     const [payoutMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: payoutConfidentialMint });
     // The MulDiv runs as the batch; the payout transfer runs as the payout mint.

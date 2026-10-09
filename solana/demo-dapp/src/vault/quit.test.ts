@@ -12,6 +12,7 @@ import {
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import { findDenyScopeRecordPda } from '@fhevm/solana-zama-host';
+import { testHostPolicy } from './testHostPolicy.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -58,15 +59,14 @@ describe('buildQuitInstruction', () => {
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(QUIT_DISCRIMINATOR));
   });
 
-  it('carries the HCU accounts it is given and, under the deny list, its deny records in program order', async () => {
+  it('carries each application\'s HCU accounts and, under the deny list, its deny records in program order', async () => {
     const input = await quitInput();
     const instruction = await buildQuitInstruction({
       ...input,
-      joinMintHcuBlockMeter: addr(20),
-      joinMintHcuTrustedAppRecord: addr(21),
-      batchHcuBlockMeter: addr(22),
-      batchHcuTrustedAppRecord: addr(23),
-      denyListEnabled: true,
+      host: testHostPolicy(true, {
+        [input.joinConfidentialMint]: { hcuBlockMeter: addr(20), hcuTrustedAppRecord: addr(21) },
+        [input.batch]: { hcuBlockMeter: addr(22), hcuTrustedAppRecord: addr(23) },
+      }),
     });
     const accounts = instruction.accounts!;
     expect(accounts.slice(23, 27).map((a) => a.address)).toEqual([addr(20), addr(21), addr(22), addr(23)]);

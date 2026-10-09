@@ -1,4 +1,6 @@
 import { tokenStoreAddress } from './internal/encryptedStores.js';
+import { type HostPolicyParameters } from './internal/hostPolicy.js';
+import { tokenApp, withDenyRecords } from './internal/denyRecords.js';
 import { findAssociatedTokenPda } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
@@ -10,7 +12,7 @@ import {
   CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
 } from '@fhevm/confidential-token';
 
-export type SolanaVaultWrapUsdcParameters = {
+export type SolanaVaultWrapUsdcParameters = HostPolicyParameters & {
   readonly transientStore: TransientStore;
   /** Token owner and transfer authority. */
   readonly owner: TransactionSigner;
@@ -37,7 +39,9 @@ export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcPa
   const [tokenAccount] = await findTokenAccountPda({ mint, owner: owner.address });
   const [mintVaultAuthority] = await findMintVaultAuthorityPda({ mint });
   const [totalSupplyAuthority] = await findTotalSupplyAuthorityPda({ mint });
-  return getWrapUsdcInstructionAsync({
+  const app = tokenApp(mint);
+  const hcu = await parameters.host?.hcuAccounts(app);
+  const instruction = await getWrapUsdcInstructionAsync({
     transientStore: parameters.transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     owner,
@@ -59,5 +63,8 @@ export async function buildWrapUsdcInstruction(parameters: SolanaVaultWrapUsdcPa
     tokenProgram: parameters.tokenProgram,
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     amount: parameters.amount,
+    hcuBlockMeter: hcu?.hcuBlockMeter,
+    hcuTrustedAppRecord: hcu?.hcuTrustedAppRecord,
   });
+  return withDenyRecords(instruction, parameters.host?.denyListEnabled, [app]);
 }

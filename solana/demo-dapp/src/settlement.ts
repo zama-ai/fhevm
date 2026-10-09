@@ -15,6 +15,7 @@ import {
   getBatcher,
   getJoinRecord,
   getCloseJoinRecordInstructionAsync,
+  readHostPolicy,
   settleBatch,
 } from './vault/index.js';
 
@@ -108,6 +109,7 @@ export const dispatchVaultBatch = async (
     joinConfidentialMint: roots.joinConfidentialMint,
     joinUnderlyingMint: roots.joinUnderlyingMint,
     tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    host: await readHostPolicy(rpc),
   });
   return (await createDemoClient(session.config, session.keeper).sendFheTransaction(transientStore, [dispatch])).context
     .signature;
@@ -140,6 +142,7 @@ export const settleVaultBatch = async (
     batchIndex: position.batchIndex,
     authorityFundingLamports: BigInt(session.config.authorityFundingLamports),
     certificateOptions: { timeout: 60_000 },
+    host: await readHostPolicy(rpc),
   });
   // The batch is settled, so its authority PDA has paid its last owner-charged rent: take its unspent
   // funding back. A failure here is a rent-hygiene miss, never a settlement failure, and not a

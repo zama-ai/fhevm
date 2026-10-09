@@ -15,15 +15,10 @@ export const batchApp = (batch: Address): DenyScopeRecordSeeds => ({
   scope: batch,
 });
 
-export type DenyListParameters = {
-  /** The host's `grant_deny_list_enabled`: the instruction then carries its deny records. */
-  readonly denyListEnabled?: boolean | undefined;
-};
-
 /**
- * Appends, while the host's deny list is on, the deny records a batcher instruction takes as its
- * remaining accounts: one per application each execution touches, in the order the instruction
- * documents (`confidential-batcher/src/lib.rs`).
+ * Appends, while the host's deny list is on, the deny records an instruction takes as its remaining
+ * accounts: one per application each execution touches, in the order the instruction documents
+ * (`confidential-batcher/src/lib.rs`, `confidential-token/src/fhe/mod.rs`).
  */
 export async function withDenyRecords(
   instruction: Instruction,

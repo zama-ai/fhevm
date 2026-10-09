@@ -1,12 +1,13 @@
 import { prepareTransientStore } from '@fhevm/sdk/solana';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
+import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { describe, expect, it } from 'vitest';
-import { address, type Address, type TransactionSigner } from '@solana/kit';
+import { AccountRole, address, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
 
 import { buildInitializeMintInstruction } from './initializeMint.js';
 import { buildInitializeTokenAccountInstruction } from './initializeTokenAccount.js';
 import { buildWrapUsdcInstruction } from './wrapUsdc.js';
+import { testHostPolicy } from './testHostPolicy.js';
 import { INITIALIZE_MINT_DISCRIMINATOR, getInitializeMintInstructionDataDecoder, INITIALIZE_TOKEN_ACCOUNT_DISCRIMINATOR, getInitializeTokenAccountInstructionDataDecoder, WRAP_USDC_DISCRIMINATOR, getWrapUsdcInstructionDataDecoder, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 function addr(fill: number): Address {
@@ -58,5 +59,45 @@ describe('vault provisioning builders', () => {
     const decoded = getWrapUsdcInstructionDataDecoder().decode(instruction.data!);
     expect(Array.from(decoded.discriminator)).toEqual(Array.from(WRAP_USDC_DISCRIMINATOR));
     expect(decoded.amount).toBe(1_000_000n);
+  });
+
+  it.each([
+    [
+      'initialize_token_account',
+      async (host?: ReturnType<typeof testHostPolicy>) =>
+        buildInitializeTokenAccountInstruction({
+          transientStore: await prepareTransientStore({ payer: signer(addr(1)), host: ZAMA_HOST_PROGRAM_ADDRESS }),
+          payer: signer(addr(1)),
+          owner: addr(2),
+          mint: addr(3),
+          host,
+        }),
+    ],
+    [
+      'wrap_usdc',
+      async (host?: ReturnType<typeof testHostPolicy>) =>
+        buildWrapUsdcInstruction({
+          transientStore: await prepareTransientStore({ payer: signer(addr(1)), host: ZAMA_HOST_PROGRAM_ADDRESS }),
+          owner: signer(addr(1)),
+          mint: addr(3),
+          underlyingMint: addr(4),
+          tokenProgram: address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
+          amount: 1n,
+          host,
+        }),
+    ],
+  ])('%s: carries the mint\'s HCU accounts and, under the deny list, its deny record', async (_, build) => {
+    const plain = (await build()).accounts!;
+    const accounts = (await build(testHostPolicy(true, { [addr(3)]: { hcuBlockMeter: addr(40), hcuTrustedAppRecord: addr(41) } })))
+      .accounts!;
+    const [mintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: addr(3) });
+
+    // Absent optional accounts hold the program id; the host policy fills the two HCU slots.
+    const filled = accounts.slice(0, plain.length).filter((account, index) => account.address !== plain[index]!.address);
+    expect(filled).toEqual([
+      { address: addr(40), role: AccountRole.WRITABLE },
+      { address: addr(41), role: AccountRole.READONLY },
+    ]);
+    expect(accounts.slice(plain.length)).toEqual([{ address: mintRecord, role: AccountRole.READONLY }]);
   });
 });

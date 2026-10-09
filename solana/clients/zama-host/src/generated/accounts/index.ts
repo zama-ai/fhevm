@@ -7,6 +7,7 @@
  */
 
 export * from './encryptedStore.js';
+export * from './hcuTrustedAppRecord.js';
 export * from './hostConfig.js';
 export * from './kmsContext.js';
 export * from './permitInvalidation.js';

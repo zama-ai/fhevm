@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getCurrentBatch: vi.fn(),
   openBatchForBatcher: vi.fn(),
   reclaim: vi.fn((input: { batch: string }) => ({ kind: 'reclaim', ...input })),
+  readHostPolicy: vi.fn(),
 }));
 
 vi.mock('./demoClient', () => ({
@@ -25,6 +26,7 @@ vi.mock('./vault/index.js', () => ({
   getBatchByIndex: mocks.getBatchByIndex,
   getCurrentBatch: mocks.getCurrentBatch,
   openBatchForBatcher: mocks.openBatchForBatcher,
+  readHostPolicy: mocks.readHostPolicy,
 }));
 vi.mock('./vaultRoots', () => ({ vaultRoots: () => ({ batcher: 'batcher-1' }) }));
 
@@ -40,6 +42,7 @@ const config = {
   batchers: { deposit: { batcher: 'batcher-1' }, redeem: { batcher: 'batcher-2' } },
 } as never;
 
+const host = { denyListEnabled: true, hcuAccounts: vi.fn() };
 const keeper = createNoopSigner(address('5bV6jUfhDHCQVA1WfKBUnXUsboJgoKgkzkKcxr3joew5'));
 
 const reclaimedBatches = (): string[] =>
@@ -56,6 +59,7 @@ beforeEach(() => {
   mocks.sendTransaction.mockResolvedValue({});
   mocks.sendFheTransaction.mockResolvedValue({});
   mocks.openBatchForBatcher.mockResolvedValue({ kind: 'open' });
+  mocks.readHostPolicy.mockResolvedValue(host);
 });
 
 describe('the authority-reclaim crank drains every finished batch once', () => {
@@ -137,7 +141,7 @@ describe('prepareNextBatch', () => {
 
       await expect(prepareNextBatch(config, keeper, 'deposit')).resolves.toEqual({ batchIndex: 1n, batch: 'batch-1' });
       expect(mocks.openBatchForBatcher).toHaveBeenCalledWith(
-        expect.objectContaining({ batchIndex: 1n, payer: keeper, authorityFundingLamports: 1000n }),
+        expect.objectContaining({ batchIndex: 1n, payer: keeper, authorityFundingLamports: 1000n, host }),
       );
       const [transientStore, instructions] = mocks.sendFheTransaction.mock.calls[0]!;
       expect(mocks.openBatchForBatcher.mock.calls[0]![0].transientStore).toBe(transientStore);

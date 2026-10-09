@@ -5,15 +5,24 @@ import {
   getQuitInstructionAsync,
   type QuitAsyncInput,
 } from './internal/generated/confidentialBatcher/instructions/quit.js';
-import { batchApp, tokenApp, withDenyRecords, type DenyListParameters } from './internal/denyRecords.js';
+import { batchApp, tokenApp, withDenyRecords } from './internal/denyRecords.js';
+import { type HostPolicyParameters } from './internal/hostPolicy.js';
 
 /**
  * Accounts for the batcher `quit` instruction. `batchAuthority`, `joinRecord`, `hostConfig` and
  * `zamaEventAuthority` default to their PDAs; the batcher/token/system program ids default to their
  * compiled addresses.
  */
-export type SolanaVaultQuitParameters = Omit<QuitAsyncInput, 'transientStore' | 'instructions'> &
-  DenyListParameters & {
+export type SolanaVaultQuitParameters = Omit<
+  QuitAsyncInput,
+  | 'transientStore'
+  | 'instructions'
+  | 'joinMintHcuBlockMeter'
+  | 'joinMintHcuTrustedAppRecord'
+  | 'batchHcuBlockMeter'
+  | 'batchHcuTrustedAppRecord'
+> &
+  HostPolicyParameters & {
   readonly transientStore: TransientStore;
   /** Plain addresses: the deny records are derived from them. */
   readonly batch: Address;
@@ -27,12 +36,18 @@ export type SolanaVaultQuitParameters = Omit<QuitAsyncInput, 'transientStore' | 
  * builds the batcher instruction; the from-value transfer is a CPI the program makes internally.
  */
 export async function buildQuitInstruction(parameters: SolanaVaultQuitParameters): Promise<Instruction> {
-  const { transientStore, denyListEnabled, ...accounts } = parameters;
+  const { transientStore, host, ...accounts } = parameters;
+  const joinMint = tokenApp(accounts.joinConfidentialMint);
+  const batch = batchApp(accounts.batch);
+  const [joinMintHcu, batchHcu] = await Promise.all([host?.hcuAccounts(joinMint), host?.hcuAccounts(batch)]);
   const instruction = await getQuitInstructionAsync({
     ...accounts,
     transientStore: transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
+    joinMintHcuBlockMeter: joinMintHcu?.hcuBlockMeter,
+    joinMintHcuTrustedAppRecord: joinMintHcu?.hcuTrustedAppRecord,
+    batchHcuBlockMeter: batchHcu?.hcuBlockMeter,
+    batchHcuTrustedAppRecord: batchHcu?.hcuTrustedAppRecord,
   });
-  const batch = batchApp(accounts.batch);
-  return withDenyRecords(instruction, denyListEnabled, [tokenApp(accounts.joinConfidentialMint), batch, batch]);
+  return withDenyRecords(instruction, host?.denyListEnabled, [joinMint, batch, batch]);
 }

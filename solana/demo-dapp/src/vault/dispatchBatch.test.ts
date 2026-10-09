@@ -12,6 +12,7 @@ import {
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import { testHostPolicy } from './testHostPolicy.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -145,7 +146,7 @@ describe('buildDispatchBatchInstruction', () => {
       tokenProgram: SPL_TOKEN,
     };
     const plain = await buildDispatchBatchInstruction(input);
-    const instruction = await buildDispatchBatchInstruction({ ...input, denyListEnabled: true });
+    const instruction = await buildDispatchBatchInstruction({ ...input, host: testHostPolicy(true) });
     const [joinMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: joinConfidentialMint });
     expect(instruction.accounts!.slice(plain.accounts!.length)).toEqual([{ address: joinMintRecord, role: 0 }]);
   });

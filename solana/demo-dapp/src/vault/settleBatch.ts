@@ -6,11 +6,9 @@ import { base58 } from '@scure/base';
 import { bytesToHex, hexToBytes } from '@fhevm/sdk/base';
 import type { FhevmSolanaPublicDecryptClient } from '@fhevm/sdk/solana';
 import type { RelayerPublicDecryptOptions } from '@fhevm/sdk/types';
-import {
-  getSettleInstructionAsync,
-  type SettleAsyncInput,
-} from './internal/generated/confidentialBatcher/instructions/settle.js';
-import { tokenApp, withDenyRecords, type DenyListParameters } from './internal/denyRecords.js';
+import { getSettleInstructionAsync } from './internal/generated/confidentialBatcher/instructions/settle.js';
+import { tokenApp, withDenyRecords } from './internal/denyRecords.js';
+import { type HostPolicyParameters } from './internal/hostPolicy.js';
 import { fetchBatch } from './internal/generated/confidentialBatcher/accounts/batch.js';
 import { settleTotalFromCleartext } from './internal/cleartext.js';
 import { deriveBatchAddresses, deriveSettleAccounts, type BatchAddresses, type VaultDemoRoots } from './derive.js';
@@ -22,8 +20,7 @@ import type { DemoClient } from '../demoClient';
 const ZERO_HANDLE = new Uint8Array(32);
 
 /** What `settleBatch` needs beyond the certificate phase and the keeper's client. */
-export type SolanaVaultSettleOptions = Pick<SettleAsyncInput, 'payoutMintHcuBlockMeter' | 'payoutMintHcuTrustedAppRecord'> &
-  DenyListParameters & {
+export type SolanaVaultSettleOptions = HostPolicyParameters & {
   /** The batcher's demo topology; every settle account is derived from these. */
   readonly roots: VaultDemoRoots;
   /** Which batch to settle; defaults to the batcher's current (most-recently-opened) batch. */
@@ -82,6 +79,10 @@ export async function settleBatch(
   });
 
   const transientStore = await prepareTransientStore({ payer: keeperClient.payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
+  // A zero total cancels the batch without the wrap, the one execution on the payout mint.
+  const payoutMint = tokenApp(roots.payoutConfidentialMint);
+  const wraps = cleartextTotal !== 0n;
+  const payoutMintHcu = wraps ? await options.host?.hcuAccounts(payoutMint) : undefined;
   const settleWithoutDenyRecords = await getSettleInstructionAsync({
     transientStore: transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
@@ -92,14 +93,10 @@ export async function settleBatch(
     signatures,
     extraData: hexToBytes(claim.extraData),
     authorityFundingLamports: options.authorityFundingLamports,
-    payoutMintHcuBlockMeter: options.payoutMintHcuBlockMeter,
-    payoutMintHcuTrustedAppRecord: options.payoutMintHcuTrustedAppRecord,
+    payoutMintHcuBlockMeter: payoutMintHcu?.hcuBlockMeter,
+    payoutMintHcuTrustedAppRecord: payoutMintHcu?.hcuTrustedAppRecord,
   });
-  const settleInstruction = await withDenyRecords(
-    settleWithoutDenyRecords,
-    options.denyListEnabled,
-    cleartextTotal === 0n ? [] : [tokenApp(roots.payoutConfidentialMint)],
-  );
+  const settleInstruction = await withDenyRecords(settleWithoutDenyRecords, options.host?.denyListEnabled, wraps ? [payoutMint] : []);
 
   return (await keeperClient.sendFheTransaction(transientStore, [settleInstruction])).context.signature;
 }

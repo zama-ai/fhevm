@@ -6,6 +6,7 @@ import { address, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
 
 import { openBatchForBatcher } from './openBatchForBatcher.js';
+import { testHostPolicy } from './testHostPolicy.js';
 
 const addr = (fill: number): Address => address(base58.encode(new Uint8Array(32).fill(fill)));
 const signer = (value: Address): TransactionSigner =>
@@ -33,7 +34,7 @@ describe('openBatchForBatcher', () => {
       authorityFundingLamports: 0n,
     };
     const plain = await openBatchForBatcher(input);
-    const instruction = await openBatchForBatcher({ ...input, denyListEnabled: true });
+    const instruction = await openBatchForBatcher({ ...input, host: testHostPolicy(true) });
     const [joinMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: addr(4) });
     const [payoutMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: addr(13) });
     // Each token account initialization runs as its mint.
