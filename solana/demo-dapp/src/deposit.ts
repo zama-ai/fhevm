@@ -18,6 +18,7 @@ import {
   getBatchByIndex,
   getCurrentBatch,
   joinBatch,
+  readHostPolicy,
 } from './vault/index.js';
 
 import type { BatchPosition, BatchTarget } from './batchTypes';
@@ -290,6 +291,7 @@ export async function depositToVault(
     const currentHandle = await readClaimedUsdcHandle(session);
     assertDepositSourceHandle(expectedSourceHandle, currentHandle);
   }
+  const host = await readHostPolicy(rpc);
 
   const send = async (
     transientStore: TransientStore,
@@ -351,9 +353,11 @@ export async function depositToVault(
         payer: signer,
         owner: signer.address,
         mint: config.mints.joinConfidential,
+        host,
       }),
       await buildWrapUsdcInstruction({
         transientStore: transientStore,
+        host,
         owner: signer,
         mint: config.mints.joinConfidential,
         underlyingMint: config.mints.joinUnderlying,
@@ -419,6 +423,7 @@ export async function depositToVault(
       joinConfidentialMint: roots.joinConfidentialMint,
       joinUnderlyingMint: roots.joinUnderlyingMint,
       tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      host,
       onTransactionSigned: (transaction) => {
         session.assertActive();
         joinSignature = transaction.signature;

@@ -34,12 +34,10 @@ async function check(
 }
 
 describe("program-owned PDA golden", () => {
-  it("pins available zama-host recipes through generated finders", async () => {
+  it("pins every zama-host recipe through generated finders", async () => {
     expect(key("program")).toBe(token.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
     expect(key("scope")).toBe(key("mint"));
-    // The generic host HCU-meter finder is deferred; the Rust golden still pins that recipe.
-    const { hcuBlockMeter: _deferred, ...pdas } = fixture.programs.zamaHost.pdas;
-    await check({ ...fixture.programs.zamaHost, pdas }, host.ZAMA_HOST_PROGRAM_ADDRESS, {
+    await check(fixture.programs.zamaHost, host.ZAMA_HOST_PROGRAM_ADDRESS, {
       hostConfig: host.findHostConfigPda(),
       kmsContext: host.findKmsContextPda({ contextId: new Uint8Array(input.contextId) }),
       randNonce: host.findRandNoncePda(),
@@ -49,6 +47,7 @@ describe("program-owned PDA golden", () => {
       invalidation: host.findInvalidationPda({ user: key("user") }),
       denyScopeRecord: host.findDenyScopeRecordPda({ appProgram: key("program"), scope: key("scope") }),
       hcuTrustedAppRecord: host.findHcuTrustedAppRecordPda({ appProgram: key("program"), scope: key("scope") }),
+      hcuBlockMeter: host.findHcuBlockMeterPda({ appProgram: key("program"), scope: key("scope") }),
       pauserRecord: host.findPauserRecordPda({ pauser: key("user") }),
       eventAuthority: host.findEventAuthorityPda(),
     });

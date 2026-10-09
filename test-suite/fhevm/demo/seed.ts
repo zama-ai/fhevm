@@ -271,6 +271,7 @@ const main = async (): Promise<void> => {
         batchIndex: 0n,
         payer: keeper,
         authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS,
+        host: await vault.readHostPolicy(rpc),
       }),
     ]);
   };

@@ -6,34 +6,39 @@ import { address, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
 
 import { openBatchForBatcher } from './openBatchForBatcher.js';
+import { parseOpenBatchInstruction } from './internal/generated/confidentialBatcher/instructions/openBatch.js';
+import { tokenApp } from './internal/hostPolicy.js';
+import { hcuSlots, testHostPolicy } from './testHostPolicy.js';
 
 const addr = (fill: number): Address => address(base58.encode(new Uint8Array(32).fill(fill)));
 const signer = (value: Address): TransactionSigner =>
   ({ address: value, signTransactions: async () => [] }) as unknown as TransactionSigner;
 
 describe('openBatchForBatcher', () => {
+  const payer = signer(addr(1));
+  const input = async (host = testHostPolicy(false)) => ({
+    transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
+    roots: {
+      batcherProgram: addr(30),
+      tokenProgram: addr(31),
+      vaultProgram: addr(32),
+      hostProgram: addr(33),
+      batcher: addr(2),
+      vault: addr(10),
+      joinConfidentialMint: addr(4),
+      payoutConfidentialMint: addr(13),
+      joinUnderlyingMint: addr(5),
+      payoutUnderlyingMint: addr(14),
+    },
+    batchIndex: 0n,
+    payer,
+    authorityFundingLamports: 0n,
+    host,
+  });
+
   it('appends, under the deny list, the join then the payout mint deny record to open_batch', async () => {
-    const payer = signer(addr(1));
-    const input = {
-      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
-      roots: {
-        batcherProgram: addr(30),
-        tokenProgram: addr(31),
-        vaultProgram: addr(32),
-        hostProgram: addr(33),
-        batcher: addr(2),
-        vault: addr(10),
-        joinConfidentialMint: addr(4),
-        payoutConfidentialMint: addr(13),
-        joinUnderlyingMint: addr(5),
-        payoutUnderlyingMint: addr(14),
-      },
-      batchIndex: 0n,
-      payer,
-      authorityFundingLamports: 0n,
-    };
-    const plain = await openBatchForBatcher(input);
-    const instruction = await openBatchForBatcher({ ...input, denyListEnabled: true });
+    const plain = await openBatchForBatcher(await input());
+    const instruction = await openBatchForBatcher(await input(testHostPolicy(true)));
     const [joinMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: addr(4) });
     const [payoutMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: addr(13) });
     // Each token account initialization runs as its mint.
@@ -41,5 +46,14 @@ describe('openBatchForBatcher', () => {
       { address: joinMintRecord, role: 0 },
       { address: payoutMintRecord, role: 0 },
     ]);
+  });
+
+  it("puts the join and the payout mint's HCU accounts in their slots", async () => {
+    const instruction = await openBatchForBatcher(await input(testHostPolicy(false, true)));
+    const { actual, expected } = await hcuSlots(parseOpenBatchInstruction(instruction as never).accounts, {
+      joinMint: tokenApp(addr(4)),
+      payoutMint: tokenApp(addr(13)),
+    });
+    expect(actual).toEqual(expected);
   });
 });

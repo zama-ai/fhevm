@@ -27,6 +27,7 @@ import {
   getKmsContextDecoder,
   getSetMaxHcuDepthPerTxInstructionAsync,
   getSetMaxHcuPerTxInstructionAsync,
+  HCU_UNLIMITED,
   HOST_CONFIG_DISCRIMINATOR,
   KMS_CONTEXT_DISCRIMINATOR,
   MAX_COPROCESSOR_SIGNERS,
@@ -151,9 +152,6 @@ export const validateBootstrapInputs = (params: BootstrapZamaHostParams): void =
   kmsCertificateThreshold(params.kmsCorruptionThreshold, params.gateway.kmsSigners.length);
 };
 
-// The program's unlimited HCU sentinel.
-const UNLIMITED_HCU = 2n ** 64n - 1n;
-
 export const bootstrapZamaHost = async (context: HostDeployContext, params: BootstrapZamaHostParams): Promise<void> => {
   validateBootstrapInputs(params);
   const programAddress = params.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
@@ -193,7 +191,7 @@ export const bootstrapZamaHost = async (context: HostDeployContext, params: Boot
     }
     // Initialization sets both limits in one transaction, so both unlimited means the host was
     // never bootstrapped. Any other values are an admin's tuning and stay as they are.
-    if (config.maxHcuPerTx === UNLIMITED_HCU && config.maxHcuDepthPerTx === UNLIMITED_HCU) {
+    if (config.maxHcuPerTx === HCU_UNLIMITED && config.maxHcuDepthPerTx === HCU_UNLIMITED) {
       throw new Error(
         'existing HostConfig still has unlimited HCU limits (never bootstrapped); set them with the HCU setters first',
       );

@@ -5,21 +5,11 @@ import {
 } from '@fhevm/confidential-token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Instruction, TransactionSigner } from '@solana/kit';
-import { tokenApp, withDenyRecords, type DenyListParameters } from './internal/denyRecords.js';
-import {
-  getOpenBatchInstructionAsync,
-  type OpenBatchAsyncInput,
-} from './internal/generated/confidentialBatcher/instructions/openBatch.js';
+import { tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
+import { getOpenBatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/openBatch.js';
 import { deriveBatchAddresses, type VaultDemoRoots } from './derive.js';
 
-export type SolanaVaultOpenBatchForBatcherParameters = Pick<
-  OpenBatchAsyncInput,
-  | 'joinMintHcuBlockMeter'
-  | 'joinMintHcuTrustedAppRecord'
-  | 'payoutMintHcuBlockMeter'
-  | 'payoutMintHcuTrustedAppRecord'
-> &
-  DenyListParameters & {
+export type SolanaVaultOpenBatchForBatcherParameters = HostPolicyParameters & {
   readonly transientStore: TransientStore;
   /** The batcher's immutable topology (from the demo-config projection). */
   readonly roots: VaultDemoRoots;
@@ -44,6 +34,12 @@ export async function openBatchForBatcher(parameters: SolanaVaultOpenBatchForBat
   const batch = await deriveBatchAddresses(roots, batchIndex);
   // The first batch has no predecessor; a later batch must name the immediately preceding one.
   const previousBatch = batchIndex === 0n ? undefined : (await findBatchPda({ batcher: roots.batcher, index: batchIndex - 1n }))[0];
+  const joinMint = tokenApp(roots.joinConfidentialMint);
+  const payoutMint = tokenApp(roots.payoutConfidentialMint);
+  const [joinMintHcu, payoutMintHcu] = await Promise.all([
+    parameters.host.hcuAccounts(joinMint),
+    parameters.host.hcuAccounts(payoutMint),
+  ]);
   const instruction = await getOpenBatchInstructionAsync({
     transientStore: parameters.transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
@@ -62,13 +58,10 @@ export async function openBatchForBatcher(parameters: SolanaVaultOpenBatchForBat
     payoutUnderlyingMint: roots.payoutUnderlyingMint,
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
     authorityFundingLamports: parameters.authorityFundingLamports,
-    joinMintHcuBlockMeter: parameters.joinMintHcuBlockMeter,
-    joinMintHcuTrustedAppRecord: parameters.joinMintHcuTrustedAppRecord,
-    payoutMintHcuBlockMeter: parameters.payoutMintHcuBlockMeter,
-    payoutMintHcuTrustedAppRecord: parameters.payoutMintHcuTrustedAppRecord,
+    joinMintHcuBlockMeter: joinMintHcu.hcuBlockMeter,
+    joinMintHcuTrustedAppRecord: joinMintHcu.hcuTrustedAppRecord,
+    payoutMintHcuBlockMeter: payoutMintHcu.hcuBlockMeter,
+    payoutMintHcuTrustedAppRecord: payoutMintHcu.hcuTrustedAppRecord,
   });
-  return withDenyRecords(instruction, parameters.denyListEnabled, [
-    tokenApp(roots.joinConfidentialMint),
-    tokenApp(roots.payoutConfidentialMint),
-  ]);
+  return withDenyRecords(instruction, parameters.host.denyListEnabled, [joinMint, payoutMint]);
 }

@@ -8,11 +8,8 @@ import {
 import { findAssociatedTokenPda } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
 import type { Address, Instruction, TransactionSigner } from '@solana/kit';
-import {
-  getDispatchInstructionAsync,
-  type DispatchAsyncInput,
-} from './internal/generated/confidentialBatcher/instructions/dispatch.js';
-import { tokenApp, withDenyRecords, type DenyListParameters } from './internal/denyRecords.js';
+import { getDispatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/dispatch.js';
+import { tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/pdas/index.js';
 
 
@@ -23,11 +20,7 @@ import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/
  * and both event authorities — is derived internally from these, so callers never hand-build the
  * account map.
  */
-export type SolanaVaultDispatchParameters = Pick<
-  DispatchAsyncInput,
-  'joinMintHcuBlockMeter' | 'joinMintHcuTrustedAppRecord'
-> &
-  DenyListParameters & {
+export type SolanaVaultDispatchParameters = HostPolicyParameters & {
   readonly transientStore: TransientStore;
   /** Pays the rent for the burn's output encrypted store. Anyone — dispatch is permissionless. */
   readonly payer: TransactionSigner;
@@ -53,6 +46,8 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
   const [batchAuthority] = await findBatchAuthorityPda({ batch: parameters.batch });
   const batchJoinTokenAccount = (await findTokenAccountPda({ mint: joinConfidentialMint, owner: batchAuthority }))[0];
   const totalSupplyAuthority = (await findTotalSupplyAuthorityPda({ mint: joinConfidentialMint }))[0];
+  const joinMint = tokenApp(joinConfidentialMint);
+  const joinMintHcu = await parameters.host.hcuAccounts(joinMint);
   const instruction = await getDispatchInstructionAsync({
     transientStore: parameters.transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
@@ -73,8 +68,8 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
     totalSupplyStore: await tokenStoreAddress(joinConfidentialMint, totalSupplyAuthority),
     pendingBurn: (await findPendingBurnPda({ mint: joinConfidentialMint, tokenAccount: batchJoinTokenAccount }))[0],
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
-    joinMintHcuBlockMeter: parameters.joinMintHcuBlockMeter,
-    joinMintHcuTrustedAppRecord: parameters.joinMintHcuTrustedAppRecord,
+    joinMintHcuBlockMeter: joinMintHcu.hcuBlockMeter,
+    joinMintHcuTrustedAppRecord: joinMintHcu.hcuTrustedAppRecord,
   });
-  return withDenyRecords(instruction, parameters.denyListEnabled, [tokenApp(joinConfidentialMint)]);
+  return withDenyRecords(instruction, parameters.host.denyListEnabled, [joinMint]);
 }

@@ -1,6 +1,7 @@
 /** Demo vault workflows composed through the public SDK and generated application clients. */
 
 export { joinBatch, type SolanaVaultJoinParameters } from './joinBatch.js';
+export { readHostPolicy, type HostPolicy } from './internal/hostPolicy.js';
 export { buildQuitInstruction, type SolanaVaultQuitParameters } from './quit.js';
 export { buildDispatchBatchInstruction, type SolanaVaultDispatchParameters } from './dispatchBatch.js';
 export { buildCancelDispatchInstruction, type SolanaVaultCancelDispatchParameters } from './cancelDispatch.js';

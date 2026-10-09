@@ -8,10 +8,13 @@ import { buildCancelDispatchInstruction } from './cancelDispatch.js';
 import {
   CANCEL_DISPATCH_DISCRIMINATOR,
   getCancelDispatchInstructionDataDecoder,
+  parseCancelDispatchInstruction,
 } from './internal/generated/confidentialBatcher/instructions/cancelDispatch.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import { tokenApp } from './internal/hostPolicy.js';
+import { hcuSlots, testHostPolicy } from './testHostPolicy.js';
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 const addr = (fill: number): Address => address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -30,19 +33,21 @@ const tokenValuePda = (mint: Address, authority: Address): Promise<Address> =>
   ]);
 
 describe('buildCancelDispatchInstruction', () => {
+  const payer = signer(addr(1));
+  const batcher = addr(2);
+  const batch = addr(3);
+  const mint = addr(4);
+  const input = async (host = testHostPolicy(false)) => ({
+    transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
+    payer,
+    batcher,
+    batch,
+    joinConfidentialMint: mint,
+    host,
+  });
+
   it('pins the wrapper authority, account derivations, roles, and funding argument', async () => {
-    const payer = signer(addr(1));
-    const batcher = addr(2);
-    const batch = addr(3);
-    const mint = addr(4);
-    const instruction = await buildCancelDispatchInstruction({
-      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
-      payer,
-      batcher,
-      batch,
-      joinConfidentialMint: mint,
-      authorityFundingLamports: 7n,
-    });
+    const instruction = await buildCancelDispatchInstruction({ ...(await input()), authorityFundingLamports: 7n });
 
     const batchAuthority = await pda(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, [
       utf8('batch-authority'),
@@ -97,17 +102,17 @@ describe('buildCancelDispatchInstruction', () => {
   });
 
   it('appends, under the deny list, the join mint deny record for the restored burn', async () => {
-    const payer = signer(addr(1));
-    const input = {
-      transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
-      payer,
-      batcher: addr(2),
-      batch: addr(3),
-      joinConfidentialMint: addr(4),
-    };
-    const plain = await buildCancelDispatchInstruction(input);
-    const instruction = await buildCancelDispatchInstruction({ ...input, denyListEnabled: true });
-    const [joinMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: addr(4) });
+    const plain = await buildCancelDispatchInstruction(await input());
+    const instruction = await buildCancelDispatchInstruction(await input(testHostPolicy(true)));
+    const [joinMintRecord] = await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope: mint });
     expect(instruction.accounts!.slice(plain.accounts!.length)).toEqual([{ address: joinMintRecord, role: 0 }]);
+  });
+
+  it("puts the join mint's HCU accounts in its slots", async () => {
+    const instruction = await buildCancelDispatchInstruction(await input(testHostPolicy(false, true)));
+    const { actual, expected } = await hcuSlots(parseCancelDispatchInstruction(instruction as never).accounts, {
+      joinMint: tokenApp(mint),
+    });
+    expect(actual).toEqual(expected);
   });
 });

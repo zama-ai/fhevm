@@ -7,6 +7,7 @@ import {
   findJoinRecordPda,
   getBatchByIndex,
   getJoinRecord,
+  readHostPolicy,
 } from './vault/index.js';
 import { BatchStatus, type BatchTarget, type VaultDirection } from './batchTypes';
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
@@ -37,7 +38,7 @@ const readClaimStore = async (
   if (joinRecord.batch !== position.batch || joinRecord.user !== user) {
     throw new Error('The join record does not match the requested batch and user');
   }
-  return { roots, claimed: joinRecord.claimed };
+  return { rpc, roots, claimed: joinRecord.claimed };
 };
 
 /**
@@ -50,8 +51,9 @@ export const claimBatchPayout = async (
   direction: VaultDirection,
   user: Address,
 ): Promise<Signature | null> => {
-  const { roots, claimed } = await readClaimStore(session, position, direction, user);
+  const { rpc, roots, claimed } = await readClaimStore(session, position, direction, user);
   if (claimed) return null;
+  const host = await readHostPolicy(rpc);
 
   const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
   const instructions = [
@@ -60,6 +62,7 @@ export const claimBatchPayout = async (
       payer: session.keeper,
       owner: user,
       mint: roots.payoutConfidentialMint,
+      host,
     }),
     await buildVaultClaimInstruction({
       transientStore: transientStore,
@@ -70,6 +73,7 @@ export const claimBatchPayout = async (
       payoutConfidentialMint: roots.payoutConfidentialMint,
       payoutUnderlyingMint: roots.payoutUnderlyingMint,
       tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      host,
     }),
   ];
   return (await createDemoClient(session.config, session.keeper).sendFheTransaction(transientStore, instructions)).context

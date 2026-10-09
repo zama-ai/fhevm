@@ -6,6 +6,7 @@ import {
   getBatcher,
   getCurrentBatch,
   openBatchForBatcher,
+  readHostPolicy,
 } from './vault/index.js';
 
 import { BatchStatus, isBatchFinished, type VaultDirection } from './batchTypes';
@@ -94,6 +95,7 @@ export const prepareNextBatch = async (
       batchIndex,
       payer: keeper,
       authorityFundingLamports: BigInt(config.authorityFundingLamports),
+      host: await readHostPolicy(rpc),
     });
     await client.sendFheTransaction(transientStore, [openBatchInstruction]);
   }

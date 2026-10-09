@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   send: vi.fn(),
   joinBatch: vi.fn(),
   readHandle: vi.fn(),
+  readHostPolicy: vi.fn(),
 }));
 
 const rpc = {
@@ -58,6 +59,7 @@ vi.mock('./vault/index.js', () => ({
   }),
   getJoinRecord: vi.fn(),
   joinBatch: mocks.joinBatch,
+  readHostPolicy: mocks.readHostPolicy,
 }));
 
 vi.mock('./encryptionKey', () => ({
@@ -74,7 +76,9 @@ vi.mock('./vaultRoots', () => ({
 
 import type { DemoSession } from './demoSession';
 import { depositToVault } from './deposit';
+import { testHostPolicy } from './vault/testHostPolicy';
 
+const host = testHostPolicy(true);
 const session = {
   config: {
     chainId: '2147483648',
@@ -101,6 +105,7 @@ beforeEach(() => {
   });
   mocks.encryptValues.mockResolvedValue({ inputProof: { proof: true }, result: true });
   mocks.joinBatch.mockResolvedValue(undefined);
+  mocks.readHostPolicy.mockResolvedValue(host);
 });
 
 describe('direct cUSDC deposit', () => {
@@ -164,5 +169,10 @@ describe('public USDC deposit', () => {
     expect(body[0]!.accounts?.[1]?.address).toBe(wrapContext.address);
     expect(body.at(-1)!.accounts?.[1]?.address).toBe(wrapContext.address);
     expect(mocks.joinBatch).toHaveBeenCalledOnce();
+    // One host policy read at the start of the flow shapes all three instructions.
+    expect(mocks.readHostPolicy).toHaveBeenCalledOnce();
+    expect(mocks.buildInitialize.mock.calls[0]![0].host).toBe(host);
+    expect(mocks.buildWrap.mock.calls[0]![0].host).toBe(host);
+    expect(mocks.joinBatch.mock.calls[0]![2].host).toBe(host);
   });
 });

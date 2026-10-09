@@ -25,11 +25,13 @@ import {
   pdaNode,
   pdaSeedValueNode,
   pdaValueNode,
+  publicKeyTypeNode,
   publicKeyValueNode,
   programIdValueNode,
   deleteNodesVisitor,
   updateInstructionsVisitor,
   updateProgramsVisitor,
+  variablePdaSeedNode,
 } from 'codama';
 import { format, resolveConfig } from 'prettier';
 import { renderProgramConstants } from './render-solana-constants.mjs';
@@ -136,8 +138,16 @@ const targets = [
         'destroyKmsContext',
       ]),
       // Read back live: the SDK's decrypt trust inputs, the deployment's chain-id cross-check, the
-      // encrypted stores, the user-decryption delegation records and the permit watermarks.
-      accounts: new Set(['hostConfig', 'kmsContext', 'encryptedStore', 'userDecryptionDelegation', 'permitInvalidation']),
+      // encrypted stores, the user-decryption delegation records, the permit watermarks and the
+      // HCU trust records a client checks before it passes an application's block meter.
+      accounts: new Set([
+        'hostConfig',
+        'kmsContext',
+        'encryptedStore',
+        'userDecryptionDelegation',
+        'permitInvalidation',
+        'hcuTrustedAppRecord',
+      ]),
       definedTypes: new Set([
         'encryptedSlot',
         'kmsThresholds',
@@ -287,6 +297,20 @@ const eventAuthority = pdaNode({
   ],
 });
 
+// zama-host derives an app's meter from the app its stores name at run time (block_cap.rs), so no
+// instruction declares the meter's seeds. Only the prefix comes from the IDL; the (appProgram, scope)
+// order is typed here and checked by pda-golden.test.ts.
+const hcuBlockMeterSeed = hostIdl.constants.find(({ name }) => name === 'HCU_BLOCK_METER_SEED');
+if (!hcuBlockMeterSeed) throw new Error('HCU_BLOCK_METER_SEED is missing from the committed zama-host IDL');
+const hcuBlockMeter = pdaNode({
+  name: 'hcuBlockMeter',
+  seeds: [
+    constantPdaSeedNodeFromBytes('base58', getBase58Decoder().decode(Uint8Array.from(JSON.parse(hcuBlockMeterSeed.value)))),
+    variablePdaSeedNode('appProgram', publicKeyTypeNode()),
+    variablePdaSeedNode('scope', publicKeyTypeNode()),
+  ],
+});
+
 let stale = false;
 const deploymentProgramIds = {};
 for (const target of targets) {
@@ -301,7 +325,13 @@ for (const target of targets) {
   if (product) {
     codama.update(
       updateProgramsVisitor({
-        [codama.getRoot().program.name]: { pdas: [...codama.getRoot().program.pdas, eventAuthority] },
+        [codama.getRoot().program.name]: {
+          pdas: [
+            ...codama.getRoot().program.pdas,
+            eventAuthority,
+            ...(target === hostTarget ? [hcuBlockMeter] : []),
+          ],
+        },
       }),
     );
     codama.update(

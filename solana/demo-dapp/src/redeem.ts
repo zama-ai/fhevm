@@ -14,6 +14,7 @@ import {
   getBatchByIndex,
   getJoinRecord,
   joinBatch,
+  readHostPolicy,
 } from './vault/index.js';
 
 import { BatchStatus, type BatchPosition } from './batchTypes';
@@ -371,6 +372,7 @@ export const joinRedeemBatch = async (
 
   onStage('joining');
   session.assertActive();
+  const host = await readHostPolicy(rpc);
   let joinSignature: Signature | undefined;
   await joinBatch(
     { solanaChain: chain, aclProgramAddress: config.aclProgram as Bytes32Hex },
@@ -384,6 +386,7 @@ export const joinRedeemBatch = async (
       joinConfidentialMint: roots.joinConfidentialMint,
       joinUnderlyingMint: roots.joinUnderlyingMint,
       tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      host,
       onTransactionSigned: (transaction) => {
         session.assertActive();
         joinSignature = transaction.signature as Signature;

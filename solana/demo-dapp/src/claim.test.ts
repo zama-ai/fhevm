@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getJoinRecord: vi.fn(),
   createClient: vi.fn(),
   send: vi.fn(),
+  readHostPolicy: vi.fn(),
 }));
 
 vi.mock('@fhevm/solana-zama-host', async (importOriginal) => ({
@@ -23,11 +24,13 @@ vi.mock('./vault/index.js', () => ({
   findJoinRecordPda: vi.fn(async () => [address('SysvarC1ock11111111111111111111111111111111'), 255]),
   getBatchByIndex: mocks.getBatch,
   getJoinRecord: mocks.getJoinRecord,
+  readHostPolicy: mocks.readHostPolicy,
 }));
 vi.mock('./demoClient', () => ({ createDemoClient: mocks.createClient }));
 
 import type { DemoConfig } from './demoConfig';
 import { claimBatchPayout } from './claim';
+import { testHostPolicy } from './vault/testHostPolicy';
 
 const batch = address('11111111111111111111111111111111');
 const user = address('SysvarC1ock11111111111111111111111111111111');
@@ -49,6 +52,7 @@ const config = {
   },
 } as unknown as DemoConfig;
 const position = { batchIndex: 1n, batch, amountBaseUnits: 100_000_000n };
+const host = testHostPolicy(true);
 const initializeInstruction = { programAddress: tokenProgram, accounts: [], data: new Uint8Array([1]) };
 const claimInstruction = { programAddress: tokenProgram, accounts: [], data: new Uint8Array([2]) };
 let keeperStore: string;
@@ -63,16 +67,17 @@ describe('sponsored payout claim', () => {
     mocks.buildInitialize.mockResolvedValue(initializeInstruction);
     mocks.buildClaim.mockResolvedValue(claimInstruction);
     mocks.send.mockResolvedValue({ context: { signature: 'claim-signature' } });
+    mocks.readHostPolicy.mockResolvedValue(host);
   });
 
   test('initializes the payout account in the claim transaction, sent by the keeper', async () => {
     await claimBatchPayout({ config, keeper } as never, position, 'deposit', user);
 
     expect(mocks.buildInitialize).toHaveBeenCalledWith(
-      expect.objectContaining({ payer: keeper, owner: user, mint: config.mints.payoutConfidential }),
+      expect.objectContaining({ payer: keeper, owner: user, mint: config.mints.payoutConfidential, host }),
     );
     expect(mocks.buildClaim).toHaveBeenCalledWith(
-      expect.objectContaining({ payer: keeper, user, batch }),
+      expect.objectContaining({ payer: keeper, user, batch, host }),
     );
     expect(mocks.createClient).toHaveBeenCalledWith(config, keeper);
     expect(mocks.send.mock.calls[0]?.[0]).toMatchObject({ address: keeperStore });

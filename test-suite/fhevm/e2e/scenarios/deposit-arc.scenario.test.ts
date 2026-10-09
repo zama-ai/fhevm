@@ -147,6 +147,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       }
 
       const rpc = createFinalizedRpc(env.rpcUrl);
+      const host = await vault.readHostPolicy(rpc);
       // The demo's own clients: every transaction version 1, each wait at finalized.
       const aliceClient = createDemoClient(env, alice);
       const keeperClient = createDemoClient(env, keeper);
@@ -167,6 +168,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
             payer: alice,
             owner: alice.address,
             mint,
+            host,
           }),
         )),
       );
@@ -182,6 +184,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
           underlyingMint: config.mints.joinUnderlying,
           tokenProgram: TOKEN_PROGRAM_ADDRESS,
           amount: wrapBaseUnits,
+          host,
         }),
       ]);
 
@@ -270,6 +273,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
             joinConfidentialMint: joinMint,
             joinUnderlyingMint: roots.joinUnderlyingMint,
             tokenProgram: TOKEN_PROGRAM_ADDRESS,
+            host,
           },
         );
 
@@ -325,6 +329,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
           joinConfidentialMint: joinMint,
           joinUnderlyingMint: roots.joinUnderlyingMint,
           tokenProgram: TOKEN_PROGRAM_ADDRESS,
+          host,
         }),
       ]);
 
@@ -361,6 +366,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       await vault.settleBatch(publicDecryptClient, keeperClient, {
         roots,
         authorityFundingLamports: BigInt(config.authorityFundingLamports),
+        host,
       });
 
       // Step 14: on-chain assertions for the settle phase. A settled batch publishes its certified
@@ -452,6 +458,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
           payoutConfidentialMint: payoutMint,
           payoutUnderlyingMint: roots.payoutUnderlyingMint,
           tokenProgram: TOKEN_PROGRAM_ADDRESS,
+          host,
         }),
       ]);
 
@@ -519,6 +526,7 @@ test.skipIf(!runsDemoScenarios)(
     );
     const dappConfig = await readConfig();
     const rpc = createFinalizedRpc(env.rpcUrl);
+    const host = await vault.readHostPolicy(rpc);
     const aliceClient = createDemoClient(env, alice);
     const keeperClient = createDemoClient(env, keeper);
     const roots = depositRoots(config);
@@ -543,11 +551,11 @@ test.skipIf(!runsDemoScenarios)(
     const transientStore = await prepareTransientStore({ payer: alice, host: config.programs.host });
     const mint = roots.joinConfidentialMint;
     await aliceClient.sendFheTransaction(transientStore, [await vault.buildInitializeTokenAccountInstruction({
-      transientStore, payer: alice, owner: alice.address, mint,
+      transientStore, payer: alice, owner: alice.address, mint, host,
     })]);
     await aliceClient.sendFheTransaction(transientStore, [await vault.buildWrapUsdcInstruction({
       transientStore, owner: alice, mint, underlyingMint: roots.joinUnderlyingMint,
-      tokenProgram: TOKEN_PROGRAM_ADDRESS, amount,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS, amount, host,
     })]);
     setFhevmRuntimeConfig({ auth: relayerAuth() });
     const chain = defineFhevmSolanaChain({ id: BigInt(config.chainId), fhevm: {
@@ -580,7 +588,7 @@ test.skipIf(!runsDemoScenarios)(
       await vault.joinBatch({ solanaChain: chain, aclProgramAddress: asBytes32Hex(config.aclProgram) }, aliceClient, {
         inputProof: inputProof as never, inputIndex: 0, user: alice,
         batcher: roots.batcher, batch, joinConfidentialMint: mint, joinUnderlyingMint: roots.joinUnderlyingMint,
-        tokenProgram: TOKEN_PROGRAM_ADDRESS,
+        tokenProgram: TOKEN_PROGRAM_ADDRESS, host,
       });
     });
     expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.joinCount).toBe(1n);
@@ -609,7 +617,7 @@ test.skipIf(!runsDemoScenarios)(
     const keeperTransientStore = await prepareTransientStore({ payer: keeper, host: config.programs.host });
     await keeperClient.sendFheTransaction(keeperTransientStore, [await vault.buildCancelDispatchInstruction({
       transientStore: keeperTransientStore, payer: keeper, batcher: roots.batcher, batch, joinConfidentialMint: mint,
-      authorityFundingLamports: BigInt(config.authorityFundingLamports),
+      authorityFundingLamports: BigInt(config.authorityFundingLamports), host,
     })]);
     expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.status).toBe(vault.BatchStatus.Refunding);
     expect((await account()).value).toBeNull();
@@ -631,7 +639,7 @@ test.skipIf(!runsDemoScenarios)(
         mint: roots.joinUnderlyingMint,
       }))[0],
       batchJoinTokenAccount, userTokenAccount, batchBalanceStore: await vault.tokenStoreAddress(mint, batchJoinTokenAccount),
-      userBalanceStore, joinStore, confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
+      userBalanceStore, joinStore, confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0], host,
     });
     await aliceClient.sendFheTransaction(transientStore, [quit]);
     expect(await readAmount(userBalanceStore)).toBe(beforeJoin);

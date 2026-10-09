@@ -8,6 +8,7 @@ use anchor_lang::solana_program::{
 };
 
 use crate::{
+    constants::HCU_UNLIMITED,
     errors::ZamaHostError,
     state::{
         deny_scope_address, host_config_address, AppScope, DenyScopeRecord, HostConfig, PauseArea,
@@ -175,7 +176,10 @@ pub(super) fn emit_config_updated(
 /// unlimited, so the guard is vacuous.
 pub(super) fn check_block_cap_ordering(value: u64, max_hcu_per_tx: u64) -> Result<()> {
     require!(
-        value == 0 || value == u64::MAX || max_hcu_per_tx == u64::MAX || value >= max_hcu_per_tx,
+        value == 0
+            || value == HCU_UNLIMITED
+            || max_hcu_per_tx == HCU_UNLIMITED
+            || value >= max_hcu_per_tx,
         ZamaHostError::HcuBlockCapBelowMaxPerTx
     );
     Ok(())
@@ -187,7 +191,7 @@ pub(super) fn check_block_cap_ordering(value: u64, max_hcu_per_tx: u64) -> Resul
 /// `set_max_hcu_depth_per_tx(v)` calls `check_hcu_ordering(cfg.max_hcu_per_tx, v)`.
 pub(super) fn check_hcu_ordering(total: u64, depth: u64) -> Result<()> {
     require!(
-        depth == u64::MAX || total >= depth,
+        depth == HCU_UNLIMITED || total >= depth,
         ZamaHostError::HcuLimitOrderingInvalid
     );
     Ok(())

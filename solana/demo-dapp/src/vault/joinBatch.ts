@@ -15,11 +15,8 @@ import { bytes32HexToHandle, isSolanaHostChainId } from '@fhevm/sdk/solana';
 import type { FhevmSolanaChain } from '@fhevm/sdk/solana';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
 import type { SolanaInputProof } from '@fhevm/sdk/solana';
-import {
-  getJoinInstructionAsync,
-  type JoinAsyncInput,
-} from './internal/generated/confidentialBatcher/instructions/join.js';
-import { batchApp, tokenApp, withDenyRecords, type DenyListParameters } from './internal/denyRecords.js';
+import { getJoinInstructionAsync } from './internal/generated/confidentialBatcher/instructions/join.js';
+import { batchApp, tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/pdas/index.js';
 import { joinStoreAddress, tokenStoreAddress } from './internal/encryptedStores.js';
 import { findTokenAccountPda, ZAMA_HOST_PROGRAM_ADDRESS, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
@@ -35,11 +32,7 @@ import type { DemoClient } from '../demoClient';
  * from-value arm: the join amount is a new encrypted input the user authorizes, so the same proof
  * plumbing and binding checks as {@link confidentialTransfer} apply and are copied here.
  */
-export type SolanaVaultJoinParameters = Pick<
-  JoinAsyncInput,
-  'joinMintHcuBlockMeter' | 'joinMintHcuTrustedAppRecord' | 'batchHcuBlockMeter' | 'batchHcuTrustedAppRecord'
-> &
-  DenyListParameters & {
+export type SolanaVaultJoinParameters = HostPolicyParameters & {
   readonly inputProof: SolanaInputProof;
 
   readonly inputIndex: number;
@@ -105,6 +98,12 @@ export async function joinBatch(
   const batchJoinTokenAccount = (await findTokenAccountPda({ mint: joinConfidentialMint, owner: batchAuthority }))[0];
   const joinStore = await joinStoreAddress(parameters.batch, user.address);
   const transientStore = await prepareTransientStore({ payer: client.payer, host: zamaHostProgramAddress });
+  const joinMint = tokenApp(joinConfidentialMint);
+  const batch = batchApp(parameters.batch);
+  const [joinMintHcu, batchHcu] = await Promise.all([
+    parameters.host.hcuAccounts(joinMint),
+    parameters.host.hcuAccounts(batch),
+  ]);
   const joinInstruction = await getJoinInstructionAsync({
     user,
     payer: client.payer,
@@ -138,15 +137,12 @@ export async function joinBatch(
     contractChainId: inputProof.chainId,
     extraData: hexToBytes(inputProof.extraData),
     signatures,
-    joinMintHcuBlockMeter: parameters.joinMintHcuBlockMeter,
-    joinMintHcuTrustedAppRecord: parameters.joinMintHcuTrustedAppRecord,
-    batchHcuBlockMeter: parameters.batchHcuBlockMeter,
-    batchHcuTrustedAppRecord: parameters.batchHcuTrustedAppRecord,
+    joinMintHcuBlockMeter: joinMintHcu.hcuBlockMeter,
+    joinMintHcuTrustedAppRecord: joinMintHcu.hcuTrustedAppRecord,
+    batchHcuBlockMeter: batchHcu.hcuBlockMeter,
+    batchHcuTrustedAppRecord: batchHcu.hcuTrustedAppRecord,
   });
-  const instruction = await withDenyRecords(joinInstruction, parameters.denyListEnabled, [
-    tokenApp(joinConfidentialMint),
-    batchApp(parameters.batch),
-  ]);
+  const instruction = await withDenyRecords(joinInstruction, parameters.host.denyListEnabled, [joinMint, batch]);
 
   const signed = await client.signFheTransaction(transientStore, [instruction]);
   const { message, transaction } = signed.context;

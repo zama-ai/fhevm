@@ -187,6 +187,7 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
           toOwner: address(scenario.bob.owner),
           fromStore: address(alice.encryptedStore),
           toStore: address(bob.encryptedStore),
+          host: await vault.readHostPolicy(rpc),
         },
       );
     },
