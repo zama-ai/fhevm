@@ -1,4 +1,4 @@
-use super::download::AttestedCt64;
+use super::download::{AttestedCt64, DownloadedCt64};
 use super::*;
 use crate::manifest_consensus::ManifestWorkGate;
 use alloy_primitives::{keccak256, Address, B256, U256};
@@ -268,7 +268,7 @@ impl Ct64Source for FakeCt64 {
         bucket_url: &str,
         handle: &[u8],
         _coprocessor_context_id: U256,
-    ) -> Result<Vec<u8>, ExecutionError> {
+    ) -> Result<DownloadedCt64, ExecutionError> {
         self.gets.fetch_add(1, Ordering::SeqCst);
         if let Some(held) = &self.held_gets {
             self.get_started.notify_one();
@@ -288,7 +288,10 @@ impl Ct64Source for FakeCt64 {
             .lock()
             .unwrap()
             .get(&(bucket_url.to_owned(), handle.to_vec()))
-            .and_then(|object| object.body.clone())
+            .and_then(|object| {
+                let body = object.body.clone()?;
+                Some(DownloadedCt64::new(body, object.epoch.as_deref()))
+            })
             .ok_or_else(|| ExecutionError::S3ObjectNotFound(bucket_url.to_owned()))
     }
 
@@ -350,6 +353,86 @@ async fn pass_downloads_matching_ct64_from_peer_bucket() {
     assert_eq!(source.gets.load(Ordering::SeqCst), 1);
     assert_eq!(stored_ct64(&pool, 1).await, body);
     assert_eq!(healed(&pool, id).await, (false, true));
+}
+
+async fn stored_consensus_version(pool: &PgPool, handle: u8) -> Option<i16> {
+    sqlx::query_scalar(
+        "SELECT consensus_version FROM ciphertexts WHERE handle = $1 AND ciphertext_version = 0",
+    )
+    .bind(bytes(handle))
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Healing replaces the bytes, not their producer: the row's version stays,
+/// even when the uploader's epoch records another one.
+#[tokio::test]
+#[serial(db)]
+async fn healed_ct64_keeps_the_rows_consensus_version() {
+    let (_db, pool) = setup().await;
+    let body = vec![7u8; 8];
+    let id = insert_healable(&pool, 1, "s3://peer-a", &body).await;
+    sqlx::query("UPDATE ciphertexts SET consensus_version = 5 WHERE handle = $1")
+        .bind(bytes(1))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let source = FakeCt64::default();
+    source.put("s3://peer-a", 1, body.clone());
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, id).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 1).await, body);
+    assert_eq!(stored_consensus_version(&pool, 1).await, Some(5));
+}
+
+/// A missing version is filled from the healed object's `consensus-epoch`
+/// metadata: the epoch's recorded protocol version, without its proposal
+/// block. No metadata is `legacy`, whose version a new database sets to the
+/// compiled one.
+#[tokio::test]
+#[serial(db)]
+async fn healed_ct64_fills_a_missing_consensus_version_from_its_uploader() {
+    let (_db, pool) = setup().await;
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (consensus_epoch, consensus_version, outcome, completed_at)
+         VALUES ('7/block_3', 7, 'succeeded', NOW())",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let source = FakeCt64::default();
+
+    // Missing row, object uploaded by an upgrade epoch.
+    let inserted_body = vec![7u8; 8];
+    let inserted = insert_healable(&pool, 1, "s3://peer-a", &inserted_body).await;
+    sqlx::query("DELETE FROM ciphertexts WHERE handle = $1")
+        .bind(bytes(1))
+        .execute(&pool)
+        .await
+        .unwrap();
+    source.put_in_epoch("s3://peer-a", 1, inserted_body.clone(), "7/block_3");
+
+    // Row without a version, object without the epoch tag.
+    let filled_body = vec![8u8; 8];
+    let filled = insert_healable(&pool, 2, "s3://peer-a", &filled_body).await;
+    sqlx::query("UPDATE ciphertexts SET consensus_version = NULL WHERE handle = $1")
+        .bind(bytes(2))
+        .execute(&pool)
+        .await
+        .unwrap();
+    source.put("s3://peer-a", 2, filled_body.clone());
+
+    pass(&pool, &source).await;
+    assert_eq!(healed(&pool, inserted).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 1).await, inserted_body);
+    assert_eq!(stored_consensus_version(&pool, 1).await, Some(7));
+    assert_eq!(healed(&pool, filled).await, (false, true));
+    assert_eq!(stored_ct64(&pool, 2).await, filled_body);
+    assert_eq!(
+        stored_consensus_version(&pool, 2).await,
+        Some(i16::try_from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION).unwrap())
+    );
 }
 
 async fn attempts(pool: &PgPool, outcome: &str) -> u64 {
@@ -1453,11 +1536,10 @@ async fn parked_epoch_takes_no_attestation_target() {
     seed_registry(&pool, &["s3://peer-a", "s3://peer-b"], 2).await;
     let body = vec![3u8; 8];
     let id = insert_healable_from(&pool, 6, None, &body, false).await;
-    sqlx::query(
+    sqlx::query(&format!(
         "INSERT INTO consensus_epoch_history
-             (consensus_epoch, proposal_id, proposal_block, stack_version, outcome)
-         VALUES ('v1/block_3', $1, 3, 'test-green', 'pending')",
-    )
+             (consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome)
+         VALUES ('v1/block_3', $1, 3, 'test-green', {}, 'pending')", fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION))
     .bind(bytes(0x91))
     .execute(&pool)
     .await
