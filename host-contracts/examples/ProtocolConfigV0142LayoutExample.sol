@@ -22,7 +22,6 @@ contract ProtocolConfigV0142LayoutExample is UUPSUpgradeableEmptyProxy, ACLOwnab
         Active
     }
 
-    /// @dev Copied verbatim from v0.14.2.
     /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfig
     struct ProtocolConfigStorage {
         uint256 currentKmsContextId;
@@ -71,7 +70,7 @@ contract ProtocolConfigV0142LayoutExample is UUPSUpgradeableEmptyProxy, ACLOwnab
     function initializeFromEmptyProxy(
         KmsNodeParams[] calldata kmsNodeParams,
         KmsThresholds calldata thresholds
-    ) public virtual onlyFromEmptyProxy reinitializer(3) {
+    ) public onlyFromEmptyProxy reinitializer(3) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
         uint256 epochId = EPOCH_COUNTER_BASE + 1;
@@ -90,9 +89,6 @@ contract ProtocolConfigV0142LayoutExample is UUPSUpgradeableEmptyProxy, ACLOwnab
                 storageUrl: kmsNodeParams[i].storageUrl
             });
             $.kmsNodesForContext[contextId].push(node);
-            $.isKmsTxSenderForContext[contextId][node.txSenderAddress] = true;
-            $.isKmsSignerForContext[contextId][node.signerAddress] = true;
-            $.kmsNodeByTxSenderForContext[contextId][node.txSenderAddress] = node;
             $.kmsSignerAddressesForContext[contextId].push(node.signerAddress);
         }
         $.publicDecryptionThresholdForContext[contextId] = thresholds.publicDecryption;
@@ -101,5 +97,5 @@ contract ProtocolConfigV0142LayoutExample is UUPSUpgradeableEmptyProxy, ACLOwnab
         $.mpcThresholdForContext[contextId] = thresholds.mpc;
     }
 
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal override onlyACLOwner {}
 }
