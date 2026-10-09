@@ -34,8 +34,11 @@ pub struct Batcher {
     pub payout_confidential_mint: Pubkey,
     /// Public `demo_vault::Vault` the batcher fronts.
     pub vault: Pubkey,
-    /// Minimum slots a batch must stay open before dispatch.
-    pub min_batch_age_slots: u64,
+    /// Minimum seconds a batch must stay open before dispatch.
+    pub min_batch_age_secs: u64,
+    /// Seconds after dispatch during which only `settle` may finish the batch; from then on only
+    /// `cancel_dispatch` may, and anyone can call it.
+    pub settle_deadline_secs: u64,
     /// Index the next `open_batch` creates.
     pub next_batch_index: u64,
 }
@@ -66,8 +69,10 @@ pub struct Batch {
     pub index: u64,
     /// Lifecycle status.
     pub status: BatchStatus,
-    /// Slot the batch opened at; dispatch requires `min_batch_age_slots` past.
-    pub opened_slot: u64,
+    /// Unix time the batch opened at; dispatch requires `min_batch_age_secs` past.
+    pub opened_at: i64,
+    /// Unix time the batch was dispatched at (zero before dispatch).
+    pub dispatched_at: i64,
     /// Number of join calls routed into this batch.
     pub join_count: u64,
     /// Bump of the per-batch authority PDA.
@@ -84,6 +89,15 @@ pub struct Batch {
     /// saturating at u64::MAX (settle). Claims use exact proportional division
     /// instead — never this field.
     pub payout_rate: u64,
+}
+
+impl Batch {
+    /// Unix time from which a dispatched batch can no longer settle and anyone may cancel it.
+    pub fn settle_deadline(&self, batcher: &Batcher) -> i64 {
+        // Bounded by `MAX_SETTLE_DEADLINE_SECS` at initialization, so the cast cannot wrap.
+        self.dispatched_at
+            .saturating_add(batcher.settle_deadline_secs as i64)
+    }
 }
 
 /// Per-(batch, user) join record. The encrypted amount itself lives in the batcher-owned

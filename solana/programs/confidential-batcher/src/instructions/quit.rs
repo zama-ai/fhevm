@@ -11,15 +11,20 @@
 //!
 //! Every quit closes the JoinRecord to the user. A later join in a pending batch recreates the
 //! record at the same address and reuses the reset join store.
+//!
+//! Leaving a pending batch is the user's choice, so the user signs. A refunding batch can only pay
+//! back, to the user's own account, so anyone may run its quit for the user.
 
 use super::*;
 
 /// Accounts for quitting a batch.
 #[derive(Accounts)]
 pub struct Quit<'info> {
-    /// Quitting user; owner of the refund destination. Receives the join record's rent.
+    /// Quitting user; owner of the refund destination. Signs a pending batch's quit. Receives the
+    /// join record's rent.
+    /// CHECK: the join record and the refund destination are derived from this key below.
     #[account(mut)]
-    pub user: Signer<'info>,
+    pub user: UncheckedAccount<'info>,
     /// Pays the transfer output rent and the reset execution's ACL rent.
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -114,6 +119,9 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         ),
         BatcherError::BatchNotRefundable
     );
+    if ctx.accounts.batch.status == BatchStatus::Pending {
+        require!(ctx.accounts.user.is_signer, ErrorCode::AccountNotSigner);
+    }
     require_keys_eq!(
         ctx.accounts.join_confidential_mint.key(),
         ctx.accounts.batcher.join_confidential_mint,

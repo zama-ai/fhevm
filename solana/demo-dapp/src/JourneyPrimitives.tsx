@@ -45,14 +45,14 @@ export function SettlementProgress({
     lifecycle.kind === 'awaiting-dispatch'
       ? action === 'dispatch'
         ? 'Starting encrypted settlement'
-        : lifecycle.remainingSlots > 0n
+        : lifecycle.remainingSecs > 0n
           ? 'Waiting for batch close'
           : 'Batch ready'
       : 'Verifying settlement on Solana';
   const detail =
     lifecycle.kind === 'awaiting-dispatch'
-      ? lifecycle.remainingSlots > 0n
-        ? `Batch closes in ~${lifecycle.remainingSlots.toString()} slots`
+      ? lifecycle.remainingSecs > 0n
+        ? `Batch closes in ~${lifecycle.remainingSecs.toString()}s`
         : 'The local keeper is advancing the batch automatically'
       : 'The encrypted batch result is being certified and finalized on-chain';
 

@@ -613,12 +613,15 @@ power; no governance or authority-rotation mechanism is implied here.
 Holds by construction: the token program checks only `ConfidentialMint.authority` for mint-authority actions and reads
 neither the Host upgrade authority nor `HostConfig.admin`.
 
-**60. [HOLDS]** A dispatched confidential batch can be cancelled by its join
-mint's `ConfidentialMint.authority` while the burn is pending. This is the wrapper policy
-authority from #59, not the Zama Host upgrade authority. Cancellation restores the batch's confidential join balance and
+**60. [HOLDS]** A dispatched confidential batch settles only before its settle
+deadline (`dispatched_at + settle_deadline_secs`, fixed per batcher) and can be
+cancelled by anyone only from that deadline on, so a cancel never races a settle.
+Cancellation restores the batch's confidential join balance and
 encrypted total supply, closes the pending burn, and moves the batch to the
-refund-only `Refunding` state. That state accepts user quits but rejects new
-joins, dispatch, settlement, and repeated cancellation, so recovery from failed KMS or vault settlement requires that authority’s cooperation. Redeem and cancellation cannot consume the same pending burn twice.
+refund-only `Refunding` state. That state accepts quits, which anyone may run and which pay only
+the participant's own token account, but rejects new joins, dispatch, settlement, and repeated
+cancellation, so recovery from failed KMS or vault settlement needs no one's cooperation. Redeem and
+cancellation cannot consume the same pending burn twice.
 Pinned by `mollusk_cancel_dispatch_restores_burn_and_allows_refunds` and
 `mollusk_redeem_current_pending_burn_then_rejects_double_settlement`.
 

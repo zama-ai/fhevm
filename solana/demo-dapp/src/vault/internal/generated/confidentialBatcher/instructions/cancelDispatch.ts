@@ -177,7 +177,7 @@ export type CancelDispatchAsyncInput<
   TAccountJoinMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  /** Join-mint wrapper authority and optional funding payer. */
+  /** Pays the cancellation's rent and the optional authority funding. Anyone. */
   payer: TAccountPayer;
   /** Batcher config. */
   batcher: TAccountBatcher;
@@ -550,7 +550,7 @@ export type CancelDispatchInput<
   TAccountJoinMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  /** Join-mint wrapper authority and optional funding payer. */
+  /** Pays the cancellation's rent and the optional authority funding. Anyone. */
   payer: TAccountPayer;
   /** Batcher config. */
   batcher: TAccountBatcher;
@@ -884,7 +884,7 @@ export type ParsedCancelDispatchInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Join-mint wrapper authority and optional funding payer. */
+    /** Pays the cancellation's rent and the optional authority funding. Anyone. */
     payer: TAccountMetas[0];
     /** Batcher config. */
     batcher: TAccountMetas[1];

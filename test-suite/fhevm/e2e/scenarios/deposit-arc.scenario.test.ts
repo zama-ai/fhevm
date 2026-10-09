@@ -28,6 +28,7 @@ import {
 import fs from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 import { createKeyPairSignerFromBytes, getAddressEncoder, type Address, type TransactionSigner } from "@solana/kit";
+import { fetchSysvarClock } from "@solana/sysvars";
 import { loadPersonas, until } from "../harness";
 import { withHostReachableFetch } from "../../src/utils/fs";
 import { waitForSnsCommit } from "../../src/solana/sns";
@@ -303,16 +304,16 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       });
 
       // Step 9: wait until the batch is old enough to dispatch. dispatch.rs rejects with
-      // BatchTooYoung until the current slot reaches openedSlot + minBatchAgeSlots (the seeder sets
-      // 25 slots, ~10s live), so wait for the slot age explicitly instead of catch-and-retrying an
-      // on-chain revert. The dispatch transaction executes at a slot >= the finalized slot observed
-      // here, so this condition is sufficient, not merely close.
-      const { minBatchAgeSlots } = await vault.getBatcher(rpc, roots.batcher);
-      const dispatchableAtSlot = batchBeforeJoin.state.openedSlot + minBatchAgeSlots;
-      console.log(`deposit-arc dispatch: waiting for batch to reach min dispatch age (slot ${dispatchableAtSlot})...`);
+      // BatchTooYoung until the clock reaches openedAt + minBatchAgeSecs (the seeder sets 10s), so
+      // wait for that age explicitly instead of catch-and-retrying an on-chain revert. The dispatch
+      // transaction executes no earlier than the finalized clock observed here, so this condition
+      // is sufficient, not merely close.
+      const { minBatchAgeSecs } = await vault.getBatcher(rpc, roots.batcher);
+      const dispatchableAt = batchBeforeJoin.state.openedAt + minBatchAgeSecs;
+      console.log(`deposit-arc dispatch: waiting for batch to reach min dispatch age (unix ${dispatchableAt})...`);
       await until(
-        async () => (await rpc.getSlot().send()) >= dispatchableAtSlot,
-        { description: `batch reaches its minimum dispatch age (slot ${dispatchableAtSlot})`, timeoutMs: 120_000 },
+        async () => (await fetchSysvarClock(rpc)).unixTimestamp >= dispatchableAt,
+        { description: `batch reaches its minimum dispatch age (unix ${dispatchableAt})`, timeoutMs: 120_000 },
       );
 
       // Step 10: dispatch. Permissionless on-chain; the demo has the keeper play it (and pay the
@@ -516,7 +517,7 @@ test.skipIf(!runsDemoScenarios)(
   async () => {
     const { env, config } = await loadDemoEnv();
     const authorization = await readDemoAuthorization();
-    const { dispatchVaultBatch } = await import('@demo-dapp/settlement');
+    const { dispatchVaultBatch, settleVaultBatch } = await import('@demo-dapp/settlement');
     const aliceBytes = Uint8Array.from(JSON.parse(await fs.readFile(demoKeypairs(env).alice, 'utf8')));
     const alice = await createKeyPairSignerFromBytes(aliceBytes);
     const keeper = await loadSigner(demoKeypairs(env).keeper);
@@ -597,8 +598,9 @@ test.skipIf(!runsDemoScenarios)(
     const joinStore = await vault.joinStoreAddress(batch, alice.address);
     expect(await readAmount(joinStore, vault.JOINED_AMOUNT_KEY)).toBe(amount);
     const batcher = await vault.getBatcher(rpc, roots.batcher);
-    await until(async () => (await rpc.getSlot().send()) >=
-      current.state.openedSlot + batcher.minBatchAgeSlots, { description: 'refund batch dispatch age', timeoutMs: 120_000 });
+    const unixNow = async () => (await fetchSysvarClock(rpc)).unixTimestamp;
+    await until(async () => (await unixNow()) >= current.state.openedAt + batcher.minBatchAgeSecs,
+      { description: 'refund batch dispatch age', timeoutMs: 120_000 });
     const session = async () => {
       await personas.fund(personas.roles.keeper!, 0.2);
       return { config: await readConfig(), keeper: await loadSigner(demoKeypairs(env).keeper),
@@ -615,11 +617,10 @@ test.skipIf(!runsDemoScenarios)(
     // Reconstruct every operator input from persisted state, as after losing the response/process.
     expect(await dispatchVaultBatch(await session(), position, 'deposit')).toBeNull();
     expect((await account()).value).toEqual(pendingBefore);
-    const keeperTransientStore = await prepareTransientStore({ payer: keeper, host: config.programs.host });
-    await keeperClient.sendFheTransaction(keeperTransientStore, [await vault.buildCancelDispatchInstruction({
-      transientStore: keeperTransientStore, payer: keeper, batcher: roots.batcher, batch, joinConfidentialMint: mint,
-      authorityFundingLamports: BigInt(config.authorityFundingLamports), host,
-    })]);
+    // Nobody settles the batch before its settle deadline, so the keeper's settle pass cancels it.
+    await until(async () => (await unixNow()) >= dispatched.state.dispatchedAt + batcher.settleDeadlineSecs,
+      { description: 'refund batch settle deadline', timeoutMs: 300_000 });
+    expect(await settleVaultBatch(await session(), position, 'deposit')).not.toBeNull();
     expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.status).toBe(vault.BatchStatus.Refunding);
     expect((await account()).value).toBeNull();
     await keeperClient.sendTransaction([await vault.getReclaimBatchAuthorityInstructionAsync({

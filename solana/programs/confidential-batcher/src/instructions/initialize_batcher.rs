@@ -26,9 +26,18 @@ pub struct InitializeBatcher<'info> {
 /// Validates the direction's mint/vault wiring and records the batcher config.
 pub fn initialize_batcher(
     ctx: Context<InitializeBatcher>,
-    min_batch_age_slots: u64,
+    min_batch_age_secs: u64,
+    settle_deadline_secs: u64,
     direction: BatchDirection,
 ) -> Result<()> {
+    require!(
+        min_batch_age_secs <= MAX_MIN_BATCH_AGE_SECS,
+        BatcherError::InvalidMinBatchAge
+    );
+    require!(
+        settle_deadline_secs > 0 && settle_deadline_secs <= MAX_SETTLE_DEADLINE_SECS,
+        BatcherError::InvalidSettleDeadline
+    );
     // The join mint must wrap what the batch total goes INTO the vault as,
     // and the payout mint what comes back OUT.
     let (join_vault_mint, payout_vault_mint) = match direction {
@@ -57,7 +66,8 @@ pub fn initialize_batcher(
     batcher.join_confidential_mint = ctx.accounts.join_confidential_mint.key();
     batcher.payout_confidential_mint = ctx.accounts.payout_confidential_mint.key();
     batcher.vault = ctx.accounts.vault.key();
-    batcher.min_batch_age_slots = min_batch_age_slots;
+    batcher.min_batch_age_secs = min_batch_age_secs;
+    batcher.settle_deadline_secs = settle_deadline_secs;
     batcher.next_batch_index = 0;
 
     emit!(BatcherInitialized {
@@ -67,7 +77,8 @@ pub fn initialize_batcher(
         join_confidential_mint: batcher.join_confidential_mint,
         payout_confidential_mint: batcher.payout_confidential_mint,
         vault: batcher.vault,
-        min_batch_age_slots,
+        min_batch_age_secs,
+        settle_deadline_secs,
     });
     Ok(())
 }

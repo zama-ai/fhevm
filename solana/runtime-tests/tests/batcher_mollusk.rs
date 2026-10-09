@@ -761,7 +761,16 @@ impl BatcherFixture {
 // Instruction builders
 // ---------------------------------------------------------------------------
 
-fn initialize_batcher_ix(fixture: &BatcherFixture, min_batch_age_slots: u64) -> Instruction {
+/// The settle deadline every test batcher uses.
+const SETTLE_DEADLINE_SECS: u64 = 3_600;
+
+/// Moves the clock to the settle deadline of a batch dispatched at the current time: settle is
+/// refused from then on, and anyone may cancel the dispatch.
+fn reach_settle_deadline(context: &mut Ctx) {
+    context.mollusk.sysvars.clock.unix_timestamp += SETTLE_DEADLINE_SECS as i64;
+}
+
+fn initialize_batcher_ix(fixture: &BatcherFixture, min_batch_age_secs: u64) -> Instruction {
     anchor_ix(
         batcher::id(),
         batcher::accounts::InitializeBatcher {
@@ -773,7 +782,8 @@ fn initialize_batcher_ix(fixture: &BatcherFixture, min_batch_age_slots: u64) -> 
             system_program: system_program::ID,
         },
         batcher::instruction::InitializeBatcher {
-            min_batch_age_slots,
+            min_batch_age_secs,
+            settle_deadline_secs: SETTLE_DEADLINE_SECS,
             direction: fixture.direction,
         },
     )
@@ -877,7 +887,7 @@ fn join_ix(
 
 fn quit_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instruction {
     let user_join = fixture.user_join(user);
-    let ix = anchor_ix(
+    let mut ix = anchor_ix(
         batcher::id(),
         batcher::accounts::Quit {
             transient_store: host::transient_store_address(user.user).0,
@@ -913,6 +923,8 @@ fn quit_ix(fixture: &BatcherFixture, keys: &BatchKeys, user: &UserKeys) -> Instr
         },
         batcher::instruction::Quit {},
     );
+    // The user may sign; a pending batch's quit requires it.
+    ix.accounts[0].is_signer = true;
     fixture.with_deny_records(ix, &[&[fixture.join_app(), keys.app()], &[keys.app()]])
 }
 
@@ -1202,11 +1214,11 @@ fn run_reclaim_batch_authority(context: &Ctx, fixture: &BatcherFixture, keys: &B
 fn initialize_and_open_first_batch(
     context: &Ctx,
     fixture: &BatcherFixture,
-    min_batch_age_slots: u64,
+    min_batch_age_secs: u64,
 ) -> BatchKeys {
     check_batcher_instruction(
         context,
-        &initialize_batcher_ix(fixture, min_batch_age_slots),
+        &initialize_batcher_ix(fixture, min_batch_age_secs),
         &[Check::success()],
     );
     let keys = BatchKeys::new(fixture, 0);
@@ -1706,7 +1718,7 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
 #[test]
 fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
-    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    let mut context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
@@ -1736,27 +1748,34 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         999_700
     );
 
-    // A public watcher cannot front-run settlement by forcing the terminal refund path. Only the
-    // join mint's wrapper authority may cancel the dispatch.
+    // Before the settle deadline nobody can force the terminal refund path, so a watcher cannot
+    // front-run settlement. From the deadline on, settle is refused and anyone may cancel.
     let stranger = Pubkey::new_unique();
     context
         .account_store
         .borrow_mut()
         .insert(stranger, system_account(5_000_000_000));
-    let mut unauthorized_cancel = cancel_dispatch_ix(&fixture, &keys);
-    unauthorized_cancel.accounts[0].pubkey = stranger;
-    let transient_store = unauthorized_cancel
+    let mut cancel = cancel_dispatch_ix(&fixture, &keys);
+    cancel.accounts[0].pubkey = stranger;
+    let transient_store = cancel
         .accounts
         .iter_mut()
         .find(|meta| meta.pubkey == host::transient_store_address(fixture.payer).0)
         .unwrap();
     transient_store.pubkey = host::transient_store_address(stranger).0;
+    context.mollusk.sysvars.clock.unix_timestamp += SETTLE_DEADLINE_SECS as i64 - 1;
     check_batcher_instruction(
         &context,
-        &unauthorized_cancel,
+        &cancel,
         &[batcher_error(
-            batcher::BatcherError::CancelAuthorityMismatch,
+            batcher::BatcherError::SettleDeadlineNotReached,
         )],
+    );
+    context.mollusk.sysvars.clock.unix_timestamp += 1;
+    check_batcher_instruction(
+        &context,
+        &settle,
+        &[batcher_error(batcher::BatcherError::SettleDeadlinePassed)],
     );
     assert_eq!(
         read_batch(&context, keys.batch).status,
@@ -1775,7 +1794,6 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         999_700
     );
 
-    let cancel = cancel_dispatch_ix(&fixture, &keys);
     let result = check_batcher_instruction(&context, &cancel, &[Check::success()]);
     assert_eq!(check_fhe_cpis(&context, &result), 1);
     let batch = read_batch(&context, keys.batch);
@@ -1840,8 +1858,10 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
         &[batcher_error(batcher::BatcherError::JoinRecordStillLive)],
     );
 
-    // A sponsor pays the quit, so the user's balance moves only by the record's rent.
+    // Anyone may run a refunding batch's quit for the user; the refund and the record's rent still
+    // go to the user, whose balance moves only by that rent.
     let mut quit = quit_ix(&fixture, &keys, &fixture.alice);
+    quit.accounts[0].is_signer = false;
     quit.accounts[1].pubkey = fixture.payer;
     quit.accounts
         .iter_mut()
@@ -2736,13 +2756,12 @@ fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
 // Lifecycle-gate rejects
 // ---------------------------------------------------------------------------
 
-/// Dispatch before `min_batch_age_slots` is rejected — the aggregation window
-/// is the only time gate in the flow.
+/// Dispatch before `min_batch_age_secs` of wall-clock time is rejected, and succeeds from then on.
+/// Slots alone do not age a batch.
 #[test]
-fn mollusk_dispatch_before_min_batch_age_rejects() {
+fn mollusk_dispatch_waits_for_min_batch_age() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
-    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    // Batch opens at slot 100 and must age 1_000 slots.
+    let mut context = fixture_context(mollusk(), fixture.accounts(0, 0));
     let keys = initialize_and_open_first_batch(&context, &fixture, 1_000);
     ensure_system_accounts(
         &context,
@@ -2755,6 +2774,95 @@ fn mollusk_dispatch_before_min_batch_age_rejects() {
         &context,
         &dispatch_ix(&fixture, &keys),
         &[batcher_error(batcher::BatcherError::BatchTooYoung)],
+    );
+    context.mollusk.sysvars.clock.slot += 10_000;
+    context.mollusk.sysvars.clock.unix_timestamp += 999;
+    check_batcher_instruction(
+        &context,
+        &dispatch_ix(&fixture, &keys),
+        &[batcher_error(batcher::BatcherError::BatchTooYoung)],
+    );
+    context.mollusk.sysvars.clock.unix_timestamp += 1;
+    check_batcher_instruction(&context, &dispatch_ix(&fixture, &keys), &[Check::success()]);
+}
+
+/// Leaving a pending batch is the user's choice: a quit the user does not sign rejects, even when
+/// someone else pays for it.
+#[test]
+fn mollusk_pending_quit_requires_the_user_signature() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+
+    let mut quit = quit_ix(&fixture, &keys, &fixture.alice);
+    quit.accounts[0].is_signer = false;
+    quit.accounts[1].pubkey = fixture.payer;
+    quit.accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == host::transient_store_address(fixture.alice.user).0)
+        .unwrap()
+        .pubkey = host::transient_store_address(fixture.payer).0;
+    check_batcher_instruction(
+        &context,
+        &quit,
+        &[Check::err(ProgramError::Custom(
+            anchor_lang::error::ErrorCode::AccountNotSigner as u32,
+        ))],
+    );
+    assert_eq!(
+        store_u64(&context, keys.join_balance_store, token::balance_key()),
+        300
+    );
+}
+
+/// The batch ages are bounded as on EVM: at most seven days to dispatch, and a settle deadline of
+/// more than zero and at most thirty days.
+#[test]
+fn mollusk_initialize_batcher_bounds_the_batch_ages() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    let with_ages = |min_batch_age_secs, settle_deadline_secs| {
+        let mut ix = initialize_batcher_ix(&fixture, 0);
+        ix.data = anchor_lang::InstructionData::data(&batcher::instruction::InitializeBatcher {
+            min_batch_age_secs,
+            settle_deadline_secs,
+            direction: fixture.direction,
+        });
+        ix
+    };
+    for (ages, error) in [
+        (
+            (batcher::MAX_MIN_BATCH_AGE_SECS + 1, SETTLE_DEADLINE_SECS),
+            batcher::BatcherError::InvalidMinBatchAge,
+        ),
+        ((0, 0), batcher::BatcherError::InvalidSettleDeadline),
+        (
+            (0, batcher::MAX_SETTLE_DEADLINE_SECS + 1),
+            batcher::BatcherError::InvalidSettleDeadline,
+        ),
+    ] {
+        check_batcher_instruction(
+            &context,
+            &with_ages(ages.0, ages.1),
+            &[batcher_error(error)],
+        );
+    }
+    check_batcher_instruction(
+        &context,
+        &with_ages(
+            batcher::MAX_MIN_BATCH_AGE_SECS,
+            batcher::MAX_SETTLE_DEADLINE_SECS,
+        ),
+        &[Check::success()],
     );
 }
 
@@ -3051,7 +3159,8 @@ fn mollusk_initialize_batcher_rejects_swapped_direction_wiring() {
             system_program: system_program::ID,
         },
         batcher::instruction::InitializeBatcher {
-            min_batch_age_slots: 0,
+            min_batch_age_secs: 0,
+            settle_deadline_secs: SETTLE_DEADLINE_SECS,
             direction: batcher::BatchDirection::Redeem,
         },
     );
@@ -3081,7 +3190,7 @@ const SETTLE_REDEEM_MAX_COMPUTE_UNITS: u64 = 430_000;
 /// One fixed-key run through open/join/dispatch/settle/claim and the exits (quit, cancel_dispatch),
 /// snapshotting each instruction's cost profile under `prefix`. Fixed fixture keys keep the PDA
 /// bump searches — part of the measured compute — stable across runs.
-fn snapshot_lifecycle(fixture: &BatcherFixture, context: &Ctx, prefix: &str) {
+fn snapshot_lifecycle(fixture: &BatcherFixture, context: &mut Ctx, prefix: &str) {
     check_batcher_instruction(
         context,
         &initialize_batcher_ix(fixture, 0),
@@ -3202,6 +3311,7 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &Ctx, prefix: &str) {
     assert_batcher_cost(&format!("{prefix}quit"), &quit, &quit_result);
 
     run_dispatch(context, fixture, &next);
+    reach_settle_deadline(context);
     let cancel = cancel_dispatch_ix(fixture, &next);
     let cancel_result = check_batcher_instruction(context, &cancel, &[Check::success()]);
     check_fhe_cpis(context, &cancel_result);
@@ -3216,15 +3326,16 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &Ctx, prefix: &str) {
 #[test]
 fn cost_snapshot_batcher_lifecycle() {
     let fixture = BatcherFixture::fixed(batcher::BatchDirection::Deposit, 0x61);
-    let context = production_mollusk().with_context(fixture.accounts(0, 0));
-    snapshot_lifecycle(&fixture, &context, "");
+    let mut context = production_mollusk().with_context(fixture.accounts(0, 0));
+    snapshot_lifecycle(&fixture, &mut context, "");
 }
 
 #[test]
 fn cost_snapshot_batcher_redeem_lifecycle() {
     let fixture = BatcherFixture::fixed(batcher::BatchDirection::Redeem, 0x51);
-    let context = production_mollusk().with_context(redeem_accounts(&fixture, 1_000, 1_000, 1_000));
-    snapshot_lifecycle(&fixture, &context, "redeem_");
+    let mut context =
+        production_mollusk().with_context(redeem_accounts(&fixture, 1_000, 1_000, 1_000));
+    snapshot_lifecycle(&fixture, &mut context, "redeem_");
 }
 
 // ---------------------------------------------------------------------------
@@ -3240,7 +3351,7 @@ fn run_every_flow(levers: HostLevers) -> (BatcherFixture, Ctx) {
         levers,
         ..BatcherFixture::new(batcher::BatchDirection::Deposit)
     };
-    let context = production_mollusk().with_context(fixture.accounts(0, 0));
+    let mut context = production_mollusk().with_context(fixture.accounts(0, 0));
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
     run_join(
         &context,
@@ -3280,6 +3391,7 @@ fn run_every_flow(levers: HostLevers) -> (BatcherFixture, Ctx) {
         200,
     );
     run_dispatch(&context, &fixture, &next);
+    reach_settle_deadline(&mut context);
     let result = check_batcher_instruction(
         &context,
         &cancel_dispatch_ix(&fixture, &next),
@@ -3486,17 +3598,17 @@ fn mollusk_claim_rejects_missing_or_wrong_witnesses() {
 }
 
 // ---------------------------------------------------------------------------
-// Dust settlement rollback and authority-assisted recovery.
+// Dust settlement rollback and recovery after the settle deadline.
 // ---------------------------------------------------------------------------
 
-/// A deposit below one share's worth cannot settle, but mint-authority cancellation
-/// restores the encrypted burn and lets the participant retrieve their contribution.
+/// A deposit below one share's worth cannot settle; once the settle deadline passes, anyone's
+/// cancellation restores the encrypted burn and lets the participant retrieve their contribution.
 #[test]
-fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
+fn mollusk_dust_total_settle_reverts_until_the_deadline_cancel() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     // Share price ~20_000 underlying per share (e.g. after an adversarial
     // harvest donation): 2_000_000 assets backing 100 shares.
-    let context = fixture_context(mollusk(), fixture.accounts(2_000_000, 100));
+    let mut context = fixture_context(mollusk(), fixture.accounts(2_000_000, 100));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
@@ -3534,6 +3646,8 @@ fn mollusk_dust_total_settle_reverts_and_batch_stays_dispatched() {
         read_spl_amount(&context, fixture.vault_token_account),
         2_000_000
     );
+    // The batch can only wait for its settle deadline, after which anyone cancels it.
+    reach_settle_deadline(&mut context);
     let result = check_batcher_instruction(
         &context,
         &cancel_dispatch_ix(&fixture, &keys),

@@ -65,8 +65,13 @@ export type Batcher = {
   payoutConfidentialMint: Address;
   /** Public `demo_vault::Vault` the batcher fronts. */
   vault: Address;
-  /** Minimum slots a batch must stay open before dispatch. */
-  minBatchAgeSlots: bigint;
+  /** Minimum seconds a batch must stay open before dispatch. */
+  minBatchAgeSecs: bigint;
+  /**
+   * Seconds after dispatch during which only `settle` may finish the batch; from then on only
+   * `cancel_dispatch` may, and anyone can call it.
+   */
+  settleDeadlineSecs: bigint;
   /** Index the next `open_batch` creates. */
   nextBatchIndex: bigint;
 };
@@ -86,8 +91,13 @@ export type BatcherArgs = {
   payoutConfidentialMint: Address;
   /** Public `demo_vault::Vault` the batcher fronts. */
   vault: Address;
-  /** Minimum slots a batch must stay open before dispatch. */
-  minBatchAgeSlots: number | bigint;
+  /** Minimum seconds a batch must stay open before dispatch. */
+  minBatchAgeSecs: number | bigint;
+  /**
+   * Seconds after dispatch during which only `settle` may finish the batch; from then on only
+   * `cancel_dispatch` may, and anyone can call it.
+   */
+  settleDeadlineSecs: number | bigint;
   /** Index the next `open_batch` creates. */
   nextBatchIndex: number | bigint;
 };
@@ -101,7 +111,8 @@ export function getBatcherEncoder(): FixedSizeEncoder<BatcherArgs> {
       ['joinConfidentialMint', getAddressEncoder()],
       ['payoutConfidentialMint', getAddressEncoder()],
       ['vault', getAddressEncoder()],
-      ['minBatchAgeSlots', getU64Encoder()],
+      ['minBatchAgeSecs', getU64Encoder()],
+      ['settleDeadlineSecs', getU64Encoder()],
       ['nextBatchIndex', getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: BATCHER_DISCRIMINATOR }),
@@ -116,7 +127,8 @@ export function getBatcherDecoder(): FixedSizeDecoder<Batcher> {
     ['joinConfidentialMint', getAddressDecoder()],
     ['payoutConfidentialMint', getAddressDecoder()],
     ['vault', getAddressDecoder()],
-    ['minBatchAgeSlots', getU64Decoder()],
+    ['minBatchAgeSecs', getU64Decoder()],
+    ['settleDeadlineSecs', getU64Decoder()],
     ['nextBatchIndex', getU64Decoder()],
   ]);
 }
@@ -177,5 +189,5 @@ export async function fetchAllMaybeBatcher(
 }
 
 export function getBatcherSize(): number {
-  return 121;
+  return 129;
 }

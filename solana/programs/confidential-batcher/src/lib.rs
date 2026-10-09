@@ -104,10 +104,11 @@ pub mod confidential_batcher {
     /// holds no admin role afterwards.
     pub fn initialize_batcher(
         ctx: Context<InitializeBatcher>,
-        min_batch_age_slots: u64,
+        min_batch_age_secs: u64,
+        settle_deadline_secs: u64,
         direction: BatchDirection,
     ) -> Result<()> {
-        instructions::initialize_batcher(ctx, min_batch_age_slots, direction)
+        instructions::initialize_batcher(ctx, min_batch_age_secs, settle_deadline_secs, direction)
     }
 
     /// Opens the next batch: creates the `Batch` account, its per-batch
@@ -146,7 +147,8 @@ pub mod confidential_batcher {
     /// transfers the user's exact
     /// recorded amount back from the batch account (all-or-nothing) and
     /// resets the joined encrypted store to zero. It also closes the join record, returning its
-    /// rent to the user.
+    /// rent to the user. The user signs a pending batch's quit; anyone may run a refunding batch's
+    /// quit for the user.
     /// Deny records: `(token, join mint)` and `(batcher, batch)` for the refund, then
     /// `(batcher, batch)` again for the reset.
     pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
@@ -161,8 +163,8 @@ pub mod confidential_batcher {
         instructions::dispatch(ctx)
     }
 
-    /// Cancels a dispatched burn when settlement cannot complete. The join mint's wrapper
-    /// authority authorizes the operation. The burned total is restored to the batch token account
+    /// Cancels a dispatched burn when settlement cannot complete. Anyone may call it once the batch's
+    /// settle deadline has passed, and only then. The burned total is restored to the batch token account
     /// and encrypted total supply, and the batch becomes refund-only so users can retrieve their
     /// recorded joins through `quit`.
     /// Deny records: `(token, join mint)`.
@@ -178,7 +180,7 @@ pub mod confidential_batcher {
     /// (deposit for deposit batchers, withdraw for redeem batchers), wraps
     /// the received payout into confidential payout tokens, and records the
     /// batch's informational public rate. A zero-total batch is canceled
-    /// instead. Permissionless.
+    /// instead. Permissionless, before the batch's settle deadline.
     /// Deny records: `(token, payout mint)`, or none for a zero total, which runs no execution.
     pub fn settle<'info>(
         ctx: Context<'info, Settle<'info>>,

@@ -62,9 +62,12 @@ pub enum BatcherError {
     /// Quitting is allowed only while a batch is pending or refunding after a cancelled dispatch.
     #[msg("batch does not accept refunds")]
     BatchNotRefundable,
-    /// Dispatch cancellation is reserved to the join mint's wrapper authority.
-    #[msg("cancel authority does not match the join confidential mint authority")]
-    CancelAuthorityMismatch,
+    /// A dispatched batch can be cancelled only once its settle deadline has passed.
+    #[msg("settle deadline has not passed; the batch can still settle")]
+    SettleDeadlineNotReached,
+    /// A dispatched batch cannot settle once its settle deadline has passed.
+    #[msg("settle deadline has passed; cancel the dispatch instead")]
+    SettleDeadlinePassed,
     /// Authority funding is reclaimable only once the batch is settled, canceled or refunding.
     #[msg("batch is still live; authority funding is reclaimable after settle, cancel or refund")]
     BatchStillLive,
@@ -80,4 +83,10 @@ pub enum BatcherError {
     /// The remaining accounts must be exactly the deny records the instruction's executions need.
     #[msg("remaining accounts do not match the deny records this instruction needs")]
     DenyRecordsMismatch,
+    /// The minimum batch age exceeds `MAX_MIN_BATCH_AGE_SECS`.
+    #[msg("minimum batch age exceeds the maximum")]
+    InvalidMinBatchAge,
+    /// The settle deadline is zero or exceeds `MAX_SETTLE_DEADLINE_SECS`.
+    #[msg("settle deadline is zero or exceeds the maximum")]
+    InvalidSettleDeadline,
 }

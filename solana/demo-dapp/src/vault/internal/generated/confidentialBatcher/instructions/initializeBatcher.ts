@@ -87,12 +87,14 @@ export type InitializeBatcherInstruction<
 
 export type InitializeBatcherInstructionData = {
   discriminator: ReadonlyUint8Array;
-  minBatchAgeSlots: bigint;
+  minBatchAgeSecs: bigint;
+  settleDeadlineSecs: bigint;
   direction: BatchDirection;
 };
 
 export type InitializeBatcherInstructionDataArgs = {
-  minBatchAgeSlots: number | bigint;
+  minBatchAgeSecs: number | bigint;
+  settleDeadlineSecs: number | bigint;
   direction: BatchDirectionArgs;
 };
 
@@ -100,7 +102,8 @@ export function getInitializeBatcherInstructionDataEncoder(): FixedSizeEncoder<I
   return transformEncoder(
     getStructEncoder([
       ['discriminator', fixEncoderSize(getBytesEncoder(), 8)],
-      ['minBatchAgeSlots', getU64Encoder()],
+      ['minBatchAgeSecs', getU64Encoder()],
+      ['settleDeadlineSecs', getU64Encoder()],
       ['direction', getBatchDirectionEncoder()],
     ]),
     (value) => ({ ...value, discriminator: INITIALIZE_BATCHER_DISCRIMINATOR }),
@@ -110,7 +113,8 @@ export function getInitializeBatcherInstructionDataEncoder(): FixedSizeEncoder<I
 export function getInitializeBatcherInstructionDataDecoder(): FixedSizeDecoder<InitializeBatcherInstructionData> {
   return getStructDecoder([
     ['discriminator', fixDecoderSize(getBytesDecoder(), 8)],
-    ['minBatchAgeSlots', getU64Decoder()],
+    ['minBatchAgeSecs', getU64Decoder()],
+    ['settleDeadlineSecs', getU64Decoder()],
     ['direction', getBatchDirectionDecoder()],
   ]);
 }
@@ -145,7 +149,8 @@ export type InitializeBatcherInput<
   vault: TAccountVault;
   /** System program used for account creation. */
   systemProgram?: TAccountSystemProgram;
-  minBatchAgeSlots: InitializeBatcherInstructionDataArgs['minBatchAgeSlots'];
+  minBatchAgeSecs: InitializeBatcherInstructionDataArgs['minBatchAgeSecs'];
+  settleDeadlineSecs: InitializeBatcherInstructionDataArgs['settleDeadlineSecs'];
   direction: InitializeBatcherInstructionDataArgs['direction'];
 };
 

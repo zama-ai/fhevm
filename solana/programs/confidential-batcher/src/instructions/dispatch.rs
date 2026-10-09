@@ -2,7 +2,7 @@
 //! Direction-free — the burn is always on the join mint (confidential
 //! underlying for deposit batchers, confidential shares for redeem batchers).
 //!
-//! Permissionless after `min_batch_age_slots`. The batch account's own balance
+//! Permissionless after `min_batch_age_secs`. The batch account's own balance
 //! encrypted store IS the burn amount (`confidential_burn_from_value`'s whole-balance
 //! alias, deduped inside the token program), so the created-public burned handle
 //! certifies exactly this batch's sum and nothing else.
@@ -86,13 +86,14 @@ pub fn dispatch<'info>(ctx: Context<'info, Dispatch<'info>>) -> Result<()> {
         ctx.accounts.batcher.join_confidential_mint,
         BatcherError::ConfidentialMintMismatch
     );
-    let now = Clock::get()?.slot;
+    let now = Clock::get()?.unix_timestamp;
+    // Bounded by `MAX_MIN_BATCH_AGE_SECS` at initialization, so the cast cannot wrap.
     require!(
         now >= ctx
             .accounts
             .batch
-            .opened_slot
-            .saturating_add(ctx.accounts.batcher.min_batch_age_slots),
+            .opened_at
+            .saturating_add(ctx.accounts.batcher.min_batch_age_secs as i64),
         BatcherError::BatchTooYoung
     );
     let mint_key = ctx.accounts.join_confidential_mint.key();
@@ -162,6 +163,7 @@ pub fn dispatch<'info>(ctx: Context<'info, Dispatch<'info>>) -> Result<()> {
         .ok_or(BatcherError::EncryptedStoreInvalid)?;
     let batch = &mut ctx.accounts.batch;
     batch.status = BatchStatus::Dispatched;
+    batch.dispatched_at = now;
     batch.burned_total_handle = burned_total_handle;
 
     emit!(BatchDispatched {

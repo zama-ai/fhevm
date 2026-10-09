@@ -249,7 +249,7 @@ const targets = [
       // pruned (account-only).
       definedTypes: new Set(['batchDirection', 'batchStatus']),
       // Keep the three account decoders the vault-module reads consume: Batcher (direction + mints +
-      // vault + min_batch_age_slots + next_batch_index), Batch (status + opened_slot + join_count +
+      // vault + batch ages + next_batch_index), Batch (status + opened_at + dispatched_at + join_count +
       // burned_total_handle), and JoinRecord (per-user claim state).
       accounts: new Set(['batch', 'batcher', 'joinRecord']),
       pdas: new Set(['batch', 'batchAuthority', 'joinRecord', 'batchJoinUnderlying', 'batchPayoutUnderlying']),
@@ -482,6 +482,12 @@ for (const target of targets) {
         ),
       ),
     );
+  }
+
+  // quit's user signs a pending batch's quit but not a refunding batch's (quit.rs), which the IDL
+  // cannot express: the client takes a signer or an address.
+  if (target.idlPath === demoIdlUrl('confidential_batcher.json')) {
+    codama.update(updateInstructionsVisitor({ quit: { accounts: { user: { isSigner: 'either' } } } }));
   }
 
   await codama.accept(

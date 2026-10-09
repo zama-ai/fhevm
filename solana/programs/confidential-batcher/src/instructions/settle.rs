@@ -22,11 +22,13 @@
 //! A zero-total batch cancels after phase 1: the certificate still proves the
 //! total (so cancellation is trustless), and the division never happens.
 //!
+//! Settle runs only before the batch's settle deadline; from then on anyone may `cancel_dispatch`.
+//!
 //! Deposit batches below one share's worth revert with `ZeroShares`; settlement rolls back
 //! atomically and leaves the batch Dispatched. Retrying at the same or higher price cannot
-//! succeed. The join mint authority can call `cancel_dispatch`, restoring the burn and opening
-//! `quit` refunds. Users cannot trigger this recovery without that authority's cooperation.
-//! `mollusk_dust_total_settle_reverts_and_batch_stays_dispatched` pins the settlement failure.
+//! succeed, so the batch waits for its settle deadline, after which anyone can cancel it and
+//! open `quit` refunds.
+//! `mollusk_dust_total_settle_reverts_until_the_deadline_cancel` pins the settlement failure.
 //!
 //! REDEEM batches have no analog: the vault's share price never drops below
 //! 1:1 (floor rounding favors the vault; `harvest` only raises the price), so
@@ -166,6 +168,10 @@ pub fn settle<'info>(
     require!(
         ctx.accounts.batch.status == BatchStatus::Dispatched,
         BatcherError::BatchNotDispatched
+    );
+    require!(
+        Clock::get()?.unix_timestamp < ctx.accounts.batch.settle_deadline(&ctx.accounts.batcher),
+        BatcherError::SettleDeadlinePassed
     );
     require_keys_eq!(
         ctx.accounts.join_confidential_mint.key(),

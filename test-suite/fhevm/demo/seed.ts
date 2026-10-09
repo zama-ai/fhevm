@@ -62,8 +62,11 @@ import {
 import * as vault from "@demo-dapp/vault/index.js";
 
 const MOCK_USDC_DECIMALS = 6;
-// ~10s live window before a batch may dispatch, at ~400ms/slot on the local validator.
-const DEMO_MIN_BATCH_AGE_SLOTS = 25n;
+// A ~10s live window before a batch may dispatch.
+const DEMO_MIN_BATCH_AGE_SECS = 10n;
+// Time a dispatched batch has to settle before anyone may cancel it: twice the keeper's 60s
+// certificate wait, and short enough that the refund scenario's wait for it stays cheap.
+const DEMO_SETTLE_DEADLINE_SECS = 120n;
 // Lamports the batch authority is funded with (from the payer) to cover its owner-charged rent.
 const BATCH_AUTHORITY_FUNDING_LAMPORTS = 100_000_000n;
 
@@ -99,8 +102,8 @@ const main = async (): Promise<void> => {
   };
 
   // Actors. The deployer drives provisioning; the keeper pays confidential-mint account rent and
-  // is the wrapper authority used by settlement/cancellation. The separate mock-USDC mint
-  // authority backs the operator's faucet, and Alice/Bob are end users.
+  // is the wrapper authority that reclaims the batch authorities' funding. The separate mock-USDC
+  // mint authority backs the operator's faucet, and Alice/Bob are end users.
   const deployer = await loadKeypairSigner(env.roots.deployerKeypairPath);
   const mintAuthority = await loadKeypairSigner(demoKeypairs(env).mintAuthority);
   const keeper = await loadKeypairSigner(demoKeypairs(env).keeper);
@@ -221,7 +224,8 @@ const main = async (): Promise<void> => {
       joinConfidentialMint: cUsdcMint.address,
       payoutConfidentialMint: cSharesMint.address,
       vault: vaultAccount.address,
-      minBatchAgeSlots: DEMO_MIN_BATCH_AGE_SLOTS,
+      minBatchAgeSecs: DEMO_MIN_BATCH_AGE_SECS,
+      settleDeadlineSecs: DEMO_SETTLE_DEADLINE_SECS,
       direction: vault.BatchDirection.Deposit,
     }),
   ]);
@@ -232,7 +236,8 @@ const main = async (): Promise<void> => {
       joinConfidentialMint: cSharesMint.address,
       payoutConfidentialMint: cUsdcMint.address,
       vault: vaultAccount.address,
-      minBatchAgeSlots: DEMO_MIN_BATCH_AGE_SLOTS,
+      minBatchAgeSecs: DEMO_MIN_BATCH_AGE_SECS,
+      settleDeadlineSecs: DEMO_SETTLE_DEADLINE_SECS,
       direction: vault.BatchDirection.Redeem,
     }),
   ]);

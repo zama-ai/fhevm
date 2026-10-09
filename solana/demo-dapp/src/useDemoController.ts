@@ -287,7 +287,7 @@ export function useDemoController() {
         const next = await readVaultLifecycle(session, position, 'deposit');
         if (!canceled) {
           commit(generation, { depositLifecycle: next, depositLifecycleError: null });
-          if (next.kind === 'awaiting-dispatch' && next.remainingSlots === 0n) {
+          if (next.kind === 'awaiting-dispatch' && next.remainingSecs === 0n) {
             await advanceOperator(session, position, 'deposit', 'dispatch', generation);
           } else if (next.kind === 'dispatched') {
             await advanceOperator(session, position, 'deposit', 'settle', generation);
@@ -339,7 +339,7 @@ export function useDemoController() {
             return;
           }
           commit(generation, { redeemLifecycle: next, redeemOperatorError: null });
-          if (next.kind === 'awaiting-dispatch' && next.remainingSlots === 0n) {
+          if (next.kind === 'awaiting-dispatch' && next.remainingSecs === 0n) {
             await advanceOperator(session, position, 'redeem', 'dispatch', generation);
           } else if (next.kind === 'dispatched') {
             await advanceOperator(session, position, 'redeem', 'settle', generation);
