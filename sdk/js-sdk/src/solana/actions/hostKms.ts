@@ -1,5 +1,11 @@
-/** Public API surface: the Solana decrypt clients, and the SDK's tests through `clearSolanaHostKmsReads`. */
-import { fetchEncodedAccount, fetchEncodedAccounts, type Address, type MaybeEncodedAccount } from '@solana/kit';
+/** Public API surface: the SDK's tests, through `clearSolanaHostKmsReads`. */
+import {
+  fetchEncodedAccount,
+  fetchEncodedAccounts,
+  type Address,
+  type MaybeEncodedAccount,
+  type ReadonlyUint8Array,
+} from '@solana/kit';
 import {
   findHostConfigPda,
   findKmsContextPda,
@@ -17,7 +23,6 @@ import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import type { SolanaUserDecryptVerification } from '../userDecrypt/execute.js';
 import { solanaHostProgram, type SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
-import { hostAccountData, publicDecryptAbortCheck } from './publicDecryptCertificate.js';
 
 /**
  * The KMS trust a client reads from the host program: `HostConfig` and the `KmsContext` accounts,
@@ -29,9 +34,11 @@ import { hostAccountData, publicDecryptAbortCheck } from './publicDecryptCertifi
  */
 export type SolanaHostKmsReads = {
   readonly config: () => Promise<HostConfig>;
-  /** The live context `contextId` names; a missing or destroyed one throws. */
-  readonly kmsContext: (contextId: Uint8Array) => Promise<KmsContext>;
+  /** The live context `contextId` names, with the `HostConfig` read beside it; see `readHostKmsContext`. */
+  readonly kmsContext: (contextId: Uint8Array) => Promise<HostKmsContext>;
 };
+
+type HostKmsContext = { readonly config: HostConfig; readonly kms: KmsContext };
 
 type HostReadContext = { readonly client: SolanaClientParameters; readonly runtime: FhevmRuntime };
 
@@ -51,13 +58,8 @@ const cachedHostConfig = createCachedFetch<HostReadContext, Record<never, never>
   ttlMs: CACHE_TTL_15MIN,
 });
 
-const cachedKmsContext = createCachedFetch<HostReadContext, { readonly contextId: Uint8Array }, KmsContext>({
-  executeFn: async ({ client }, { contextId }) => {
-    const programAddress = solanaHostProgram(client.chain);
-    const [address, bump] = await findKmsContextPda({ contextId }, { programAddress });
-    const [account] = await fetchEncodedAccounts(client.rpc, [address], { commitment: 'finalized' });
-    return liveKmsContext(account, programAddress, contextId, bump);
-  },
+const cachedKmsContext = createCachedFetch<HostReadContext, { readonly contextId: Uint8Array }, HostKmsContext>({
+  executeFn: ({ client }, { contextId }) => readHostKmsContext(client, contextId),
   cacheKeyFn: (context, { contextId }) => `${hostKey(context)}:${bytesToHex(contextId)}`,
   ttlMs: CACHE_TTL_15MIN,
 });
@@ -78,10 +80,33 @@ export function clearSolanaHostKmsReads(): void {
 }
 
 /**
+ * `HostConfig` and the live `KmsContext` `contextId` names, from one finalized read. A `KmsContext`
+ * records no chain, so the `HostConfig` beside it is what proves both come from the client's
+ * cluster. Verification needs the decryption contract, so an unset one is refused here.
+ */
+export async function readHostKmsContext(
+  client: SolanaClientParameters,
+  contextId: Uint8Array,
+  abortSignal?: AbortSignal,
+): Promise<HostKmsContext> {
+  const programAddress = solanaHostProgram(client.chain);
+  const [configAddress, configBump] = await findHostConfigPda({ programAddress });
+  const [contextAddress, contextBump] = await findKmsContextPda({ contextId }, { programAddress });
+  const [configAccount, contextAccount] = await fetchEncodedAccounts(client.rpc, [configAddress, contextAddress], {
+    commitment: 'finalized',
+    ...(abortSignal === undefined ? {} : { abortSignal }),
+  });
+  const config = clientHostConfig(configAccount, programAddress, configBump, client.chain);
+  if (config.decryptionContract.every((byte) => byte === 0))
+    throw new Error('Host decryption contract is not configured');
+  return { config, kms: liveKmsContext(contextAccount, programAddress, contextId, contextBump) };
+}
+
+/**
  * The `HostConfig` in `account`, if it is the one at `bump` and records the client's chain. A
  * client whose RPC reaches another cluster fails here instead of caching that cluster's config.
  */
-export function clientHostConfig(
+function clientHostConfig(
   account: MaybeEncodedAccount | undefined,
   programAddress: Address,
   bump: number,
@@ -94,7 +119,7 @@ export function clientHostConfig(
 }
 
 /** The `KmsContext` in `account`, if it is the live context `contextId` names at `bump`. */
-export function liveKmsContext(
+function liveKmsContext(
   account: MaybeEncodedAccount | undefined,
   programAddress: Address,
   contextId: Uint8Array,
@@ -106,20 +131,32 @@ export function liveKmsContext(
   return kms;
 }
 
+/** Data of a host account, after checking that it exists, belongs to the host and has `discriminator`. */
+function hostAccountData(
+  account: MaybeEncodedAccount | undefined,
+  programAddress: Address,
+  discriminator: ReadonlyUint8Array,
+): Uint8Array {
+  if (
+    account === undefined ||
+    !account.exists ||
+    account.programAddress !== programAddress ||
+    account.executable ||
+    !discriminator.every((byte, index) => account.data[index] === byte)
+  ) {
+    throw new Error(`Invalid host account ${account?.address ?? 'missing'}`);
+  }
+  return new Uint8Array(account.data);
+}
+
 /**
  * The host's active KMS context and epoch. A decryption routes to this pair, as an EVM one routes to
  * `ProtocolConfig.getCurrentKmsContextAndEpoch()`.
  */
 export async function readActiveKmsRouting(
-  chain: FhevmSolanaChain,
   host: SolanaHostKmsReads,
-  abortSignal?: AbortSignal,
 ): Promise<{ readonly contextId: Uint8Array; readonly epochId: Uint8Array }> {
-  // A shared read cannot carry one caller's signal, so cancellation is checked around it.
-  const checkAbort = publicDecryptAbortCheck(chain, abortSignal);
-  checkAbort();
   const config = await host.config();
-  checkAbort();
   const contextId = new Uint8Array(config.currentKmsContextId);
   const epochId = new Uint8Array(config.currentKmsEpochId);
   if (contextId.every((byte) => byte === 0) || epochId.every((byte) => byte === 0))
@@ -140,7 +177,7 @@ export async function userDecryptVerification(
   kmsContextId: Uint8Array,
   fheParameter: string,
 ): Promise<SolanaUserDecryptVerification> {
-  const [config, kms] = await Promise.all([host.config(), host.kmsContext(kmsContextId)]);
+  const { config, kms } = await host.kmsContext(kmsContextId);
   return {
     signers: kms.signers.map((signer, index) => ({ partyId: index + 1, address: bytesToHex(new Uint8Array(signer)) })),
     fheParameter,

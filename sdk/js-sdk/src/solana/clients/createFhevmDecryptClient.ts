@@ -8,11 +8,10 @@ import type {
 } from './decorators/permitDecrypt.js';
 import type { SolanaUserDecryptExecution } from './decorators/permitDecrypt.js';
 import type { FhevmSolanaPublicDecryptClient } from './createFhevmPublicDecryptClient.js';
-import { createSolanaPublicDecryptClient } from './createFhevmPublicDecryptClient.js';
+import { createFhevmPublicDecryptClient } from './createFhevmPublicDecryptClient.js';
 import { getSolanaRuntime } from '../internal/runtime.js';
 import { relayerUserDecryptExecution, solanaPermitDecryptActions } from './decorators/permitDecrypt.js';
 import { createSolanaHostKmsReads, type SolanaHostKmsReads } from '../actions/hostKms.js';
-import { publicDecryptCertificate } from '../actions/publicDecryptCertificate.js';
 
 export type FhevmSolanaDecryptClient<C extends FhevmSolanaChain = FhevmSolanaChain> =
   FhevmSolanaPublicDecryptClient<C> &
@@ -34,11 +33,8 @@ export function createFhevmDecryptClient<C extends FhevmSolanaChain>(
 ): FhevmSolanaDecryptClient<C> {
   const runtime = getSolanaRuntime();
   const host = createSolanaHostKmsReads(parameters, runtime);
-  const base = createSolanaPublicDecryptClient(parameters, runtime, host, (batch) =>
-    publicDecryptCertificate({ chain: parameters.chain, runtime }, batch),
-  );
   return withPermitDecrypt(
-    base,
+    createFhevmPublicDecryptClient(parameters),
     host,
     relayerUserDecryptExecution(parameters.chain, host, runtime, parameters.fheParameter),
   );

@@ -2976,9 +2976,12 @@ The SDK reads decryption trust from zama-host, as the EVM SDK reads it from Ethe
   cache, so callers that build a client per operation still read once. A destroyed context can keep
   verifying user-decrypt responses for up to 15 minutes, the revocation window EVM has.
 - EVM keys these caches by runtime and contract address. Solana adds the chain id, because a program
-  id can repeat across clusters and the chain id names the cluster (DD-052). A `HostConfig` whose
-  `chain_id` is not the client's is refused before it is cached, so a client whose RPC reaches
-  another cluster fails instead of filling the entry with that cluster's trust.
+  id can repeat across clusters and the chain id names the cluster (DD-052).
+- A `KmsContext` records no chain, and every fresh stack defines the same first context id. So each
+  `KmsContext` is read in one request together with `HostConfig`, and nothing is cached unless that
+  `HostConfig` records the client's chain id. A client whose RPC reaches another cluster fails
+  instead of filling an entry with that cluster's signers. An unset decryption contract is refused
+  in the same read.
 
 This answers RFC 036 open question 1.
 

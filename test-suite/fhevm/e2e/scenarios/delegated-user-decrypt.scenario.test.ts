@@ -23,6 +23,7 @@
 // wallet's.
 
 import { describe, expect, test } from "bun:test";
+import { asBytes32Hex } from "@fhevm/sdk/base";
 import { Connection } from "@solana/web3.js";
 import {
   address,
@@ -83,7 +84,6 @@ const addressBytes = (address: Address): Uint8Array => new Uint8Array(getAddress
 
 /** How long past the host's current time every grant here lives: well beyond one arc. */
 const EXPIRY_SECONDS_AHEAD = 3_600n;
-type Bytes32Hex = FhevmSolanaChain["fhevm"]["programs"]["host"]["address"];
 
 /** The delegate's decrypt of the delegator's value: the permit is the delegate's, `ownerAddress` names whose allow. */
 const delegatedDecrypt = (
@@ -129,7 +129,7 @@ describe("solana delegated user-decrypt", () => {
       const { stack, context, wallet, config } = setup;
       const chain = defineFhevmSolanaChain({
         id: BigInt(config.chainId),
-        fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: config.verifyingProgramId as Bytes32Hex } } },
+        fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: asBytes32Hex(config.verifyingProgramId) } } },
       });
       const hostProgram = solanaHostProgram(chain);
 
@@ -257,7 +257,7 @@ describe("solana delegated user-decrypt", () => {
       const hostProgram = solanaHostProgram(
         defineFhevmSolanaChain({
           id: BigInt(config.chainId),
-          fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: config.verifyingProgramId as Bytes32Hex } } },
+          fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: asBytes32Hex(config.verifyingProgramId) } } },
         }),
       );
       const connection = new Connection(env.rpcUrl, "finalized");

@@ -171,7 +171,7 @@ export function solanaPermitDecryptActions(
       const invalidationWatermark = await fetchPermitInvalidation(
         getAddressDecoder().decode(parameters.wallet.account.publicKey),
       );
-      const { contextId, epochId } = await readActiveKmsRouting(chain, host);
+      const { contextId, epochId } = await readActiveKmsRouting(host);
       const keyPair = await transportKeyPair();
       const now = BigInt(Math.floor(Date.now() / 1000));
       const startTimestamp = normalizeSolanaPermitStart({

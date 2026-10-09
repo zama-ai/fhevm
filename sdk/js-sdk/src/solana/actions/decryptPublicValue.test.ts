@@ -425,10 +425,21 @@ describe('public decrypt client account-to-plaintext flow', () => {
 });
 
 describe('the host KMS reads', () => {
-  const contextServed = (f: Awaited<ReturnType<typeof accountFixture>>) =>
-    vi
-      .spyOn(f.rpc, 'getMultipleAccounts')
-      .mockImplementation(() => ({ send: async () => ({ value: [f.contextAccount()] }) }) as never);
+  const servedByAddress = (f: Awaited<ReturnType<typeof accountFixture>>) =>
+    vi.spyOn(f.rpc, 'getMultipleAccounts').mockImplementation(
+      (addresses: readonly string[]) =>
+        ({
+          send: async () => ({
+            value: addresses.map((address) =>
+              address === f.configAddress
+                ? f.configAccount()
+                : address === f.contextAddress
+                  ? f.contextAccount()
+                  : null,
+            ),
+          }),
+        }) as never,
+    );
 
   it('routes repeated decryptions through one HostConfig read, and verifies each against a fresh one', async () => {
     const f = await accountFixture();
@@ -457,18 +468,20 @@ describe('the host KMS reads', () => {
   });
   it('refuses a destroyed context, and reads it again on the next call', async () => {
     const f = await accountFixture();
-    const read = contextServed(f);
+    const read = servedByAddress(f);
     const host = createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
     f.kms.destroyed = true;
     await expect(host.kmsContext(contextId)).rejects.toThrow('Invalid or destroyed KMS context');
     f.kms.destroyed = false;
-    await expect(host.kmsContext(contextId)).resolves.toMatchObject({ destroyed: false });
+    await expect(host.kmsContext(contextId)).resolves.toMatchObject({ kms: { destroyed: false } });
     await host.kmsContext(contextId);
     expect(read).toHaveBeenCalledTimes(2);
   });
   it('refuses a context the host never defined', async () => {
     const f = await accountFixture();
-    vi.spyOn(f.rpc, 'getMultipleAccounts').mockReturnValue({ send: async () => ({ value: [null] }) } as never);
+    vi.spyOn(f.rpc, 'getMultipleAccounts').mockReturnValue({
+      send: async () => ({ value: [f.configAccount(), null] }),
+    } as never);
     const host = createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
     await expect(host.kmsContext(contextId)).rejects.toThrow('Invalid host account');
   });
@@ -492,7 +505,9 @@ describe('the host KMS reads', () => {
       bump,
       signers: [bob, alice].map(({ address }) => hexToBytes(address)),
     });
-    const read = contextServed(f);
+    const read = vi
+      .spyOn(f.rpc, 'getMultipleAccounts')
+      .mockImplementation(() => ({ send: async () => ({ value: [f.configAccount(), f.contextAccount()] }) }) as never);
     const host = createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
 
     await expect(userDecryptVerification(host, permitContextId, 'test')).resolves.toEqual({
@@ -508,6 +523,36 @@ describe('the host KMS reads', () => {
         verifyingContract: signingDomain.verifyingContract,
       },
     });
-    expect(read).toHaveBeenCalledWith([permitContext], expect.objectContaining({ commitment: 'finalized' }));
+    expect(read).toHaveBeenCalledWith(
+      [f.configAddress, permitContext],
+      expect.objectContaining({ commitment: 'finalized' }),
+    );
+  });
+  // A KmsContext records no chain, and a fresh stack defines the same first context id on every
+  // cluster. Only the HostConfig read beside it shows which cluster answered.
+  it('refuses a KmsContext read from another cluster, and never trusts it for the right one', async () => {
+    const f = await accountFixture();
+    const other = await accountFixture();
+    other.config.chainId = chain.id + 1n;
+    other.kms.signers = [new Uint8Array(20).fill(0x02)];
+    const ownRead = servedByAddress(f);
+    servedByAddress(other);
+    const reads = (rpc: SolanaRpc) => createSolanaHostKmsReads({ chain, rpc }, getSolanaRuntime());
+
+    await expect(userDecryptVerification(reads(other.rpc), contextId, 'test')).rejects.toThrow(
+      'Host configuration does not match the client',
+    );
+    const { signers } = await userDecryptVerification(reads(f.rpc), contextId, 'test');
+    expect(signers.map(({ address }) => address)).toEqual([alice.address, bob.address].map((a) => a.toLowerCase()));
+    expect(ownRead).toHaveBeenCalledTimes(1);
+  });
+  it('refuses to verify under a HostConfig with no decryption contract', async () => {
+    const f = await accountFixture();
+    f.config.decryptionContract = new Uint8Array(20);
+    servedByAddress(f);
+    const host = createSolanaHostKmsReads({ chain, rpc: f.rpc }, getSolanaRuntime());
+    await expect(userDecryptVerification(host, contextId, 'test')).rejects.toThrow(
+      'Host decryption contract is not configured',
+    );
   });
 });

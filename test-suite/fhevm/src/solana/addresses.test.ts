@@ -11,7 +11,6 @@ import {
   readGatewayBootstrapInputs,
 } from "./addresses";
 import { SOLANA_HOST_CHAIN_ID } from "../layout";
-import { BRINGUP_KMS_CONTEXT_HEX } from "../../../../solana/deploy/src/constants";
 
 const ADDRESS_A = "0x000000000000000000000000000000000000aaaa";
 const ADDRESS_B = "0x1111111111111111111111111111111111111111";

@@ -9,8 +9,9 @@
 // response, with t = (n - 1)/3 from the signer count. A set that fails any of them yields nothing
 // rather than a partial answer.
 //
-// Every input passed to the client is the client's own: the permit's fields, the requested handles
-// and the trust configuration. None comes from the response, which is why this module's parameters
+// Every input passed to the client is the client's own: the permit's fields, the requested handles,
+// the signers of the permit's `KmsContext` and the gateway domain from `HostConfig`. None comes from
+// the response, which is why this module's parameters
 // have no field a response could supply. The request's `extra_data`, the KMS route the permit
 // signed, is not a link input; the node signature on each share covers it.
 //
@@ -87,8 +88,9 @@ export interface SolanaUserDecryptPlaintext {
  * The gateway `Decryption` contract's EIP-712 domain: the domain the link is hashed under, and the
  * domain a KMS node signed the response's external signature under.
  *
- * Trusted configuration, like the signer set: a domain taken from the response would let the
- * response choose both the link it is held to and the key it is verified against.
+ * Read from `HostConfig`, as the signer set is read from the permit's `KmsContext`: a domain taken
+ * from the response would let the response choose both the link it is held to and the key it is
+ * verified against.
  */
 export interface SolanaGatewayEip712Domain {
   readonly name: string;
@@ -172,8 +174,8 @@ export async function verifySolanaUserDecryptResponse(response: {
 
   const scope = new WasmScope();
   try {
-    // The trust anchor: the registered signer set, from configuration the caller read on chain. A
-    // key carried inside the response acts only under its binding to one of these addresses. The
+    // The trust anchor: the signer set of the permit's `KmsContext`, read on chain. A key carried
+    // inside the response acts only under its binding to one of these addresses. The
     // server ids are moved into new_client, so only the client is tracked.
     const client = scope.track(
       kmsLib.new_client(
@@ -257,7 +259,7 @@ export function verifySolanaUserDecryptPlaintexts(
 /**
  * The domain in the client's JS shape: the chain id as 32 big-endian bytes, no salt.
  *
- * @param domain - The configured gateway domain.
+ * @param domain - The gateway domain from `HostConfig`.
  */
 function gatewayDomainWasmArg(domain: SolanaGatewayEip712Domain): {
   readonly name: string;

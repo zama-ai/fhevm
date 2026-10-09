@@ -139,11 +139,17 @@ function conformingWallet() {
 }
 
 // No permit-invalidation record: every account but the host's KMS trust is absent.
+const hostAccounts = (config: ReturnType<typeof hostAccount>) => (address: Address) =>
+  address === HOST_CONFIG_ADDRESS ? config : address === KMS_CONTEXT_ADDRESS ? kmsContextAccount : null;
+const servingHostConfig = (config: ReturnType<typeof hostAccount>) => ({
+  getAccountInfo: (address: Address) => ({ send: async () => ({ value: hostAccounts(config)(address) }) }),
+  getMultipleAccounts: (addresses: readonly Address[]) => ({
+    send: async () => ({ value: addresses.map(hostAccounts(config)) }),
+  }),
+});
 const rpc = {
-  getAccountInfo: vi.fn((address: Address) => ({
-    send: async () => ({ value: address === HOST_CONFIG_ADDRESS ? hostConfigAccount : null }),
-  })),
-  getMultipleAccounts: vi.fn(() => ({ send: async () => ({ value: [kmsContextAccount] }) })),
+  getAccountInfo: vi.fn(servingHostConfig(hostConfigAccount).getAccountInfo),
+  getMultipleAccounts: vi.fn(servingHostConfig(hostConfigAccount).getMultipleAccounts),
 } as unknown as SolanaRpc;
 
 function client() {
@@ -381,19 +387,15 @@ describe('running a user decryption through the client', () => {
     ]);
   });
   // A permit stays answerable after the host switches context: its response is verified against
-  // the context the permit names, not the one HostConfig now holds.
+  // the context the permit names, not the one HostConfig now holds. The cache is emptied after
+  // signing, so the decryption reads the switched HostConfig.
   it('verifies a permit against its own KMS context after the host switches to another', async () => {
     const { wallet } = conformingWallet();
     const session = await client().signPermit({ wallet, durationSeconds: 3_600n });
-    vi.spyOn(rpc, 'getAccountInfo').mockImplementation(
-      (address: Address) =>
-        ({
-          send: async () => ({
-            value: address === HOST_CONFIG_ADDRESS ? hostConfigAccountFor(new Uint8Array(32).fill(0x55)) : null,
-          }),
-        }) as never,
-    );
-    const contextRead = vi.spyOn(rpc, 'getMultipleAccounts');
+    hostKms.clearSolanaHostKmsReads();
+    const switched = servingHostConfig(hostConfigAccountFor(new Uint8Array(32).fill(0x55)));
+    vi.spyOn(rpc, 'getAccountInfo').mockImplementation(switched.getAccountInfo as never);
+    const hostRead = vi.spyOn(rpc, 'getMultipleAccounts').mockImplementation(switched.getMultipleAccounts as never);
     const relayer = vi.fn(async () =>
       jsonResponse(
         {
@@ -417,7 +419,7 @@ describe('running a user decryption through the client', () => {
       }),
     ).rejects.toThrow('refused');
 
-    expect(contextRead).toHaveBeenCalledWith([KMS_CONTEXT_ADDRESS], expect.anything());
+    expect(hostRead).toHaveBeenCalledWith([HOST_CONFIG_ADDRESS, KMS_CONTEXT_ADDRESS], expect.anything());
     expect(relayer).toHaveBeenCalled();
   });
 

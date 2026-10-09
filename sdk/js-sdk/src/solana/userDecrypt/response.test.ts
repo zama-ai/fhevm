@@ -217,11 +217,13 @@ describe('the response verification', () => {
     const inPartyOrder = [...signers].sort((a, b) => a.partyId - b.partyId).map(({ address }) => hexToBytes(address));
     const trustedUnder = async (registered: readonly Uint8Array[]) => {
       const host = {
-        config: async () => ({
-          gatewayChainId: request.gatewayEip712Domain.chainId,
-          decryptionContract: hexToBytes(request.gatewayEip712Domain.verifyingContract),
+        kmsContext: async () => ({
+          config: {
+            gatewayChainId: request.gatewayEip712Domain.chainId,
+            decryptionContract: hexToBytes(request.gatewayEip712Domain.verifyingContract),
+          },
+          kms: { signers: registered },
         }),
-        kmsContext: async () => ({ signers: registered }),
       } as unknown as SolanaHostKmsReads;
       // The transcript is signed under the KMS test's own domain, so only the signer table is taken.
       const { signers: trusted } = await userDecryptVerification(host, new Uint8Array(32), transcript.fhe_parameter);

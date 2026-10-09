@@ -155,11 +155,6 @@ const solanaChainId = (value: string): bigint => {
   return id;
 };
 
-const decimalString = (value: string, name: string): string => {
-  if (!/^\d+$/.test(value)) throw new Error(`${name} must be an unsigned decimal integer, got ${value}`);
-  return value;
-};
-
 /** Reads TestEnv overrides from the process environment (the "now" source). */
 export const envOverrides = (env: NodeJS.ProcessEnv): Partial<TestEnvOverrides> => {
   const pick = <K extends keyof TestEnvOverrides>(key: K, name: string): Partial<Pick<TestEnvOverrides, K>> => {

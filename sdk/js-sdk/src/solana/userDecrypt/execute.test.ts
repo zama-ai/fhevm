@@ -2,11 +2,11 @@
 //
 // `solanaUserDecryptRequestInputs` is the substantive piece: every permit-owned field must come from
 // the signed permit itself — the KMS routing from the extraData the wallet signed, never from
-// configuration — and the one field the permit does not carry, the gateway domain, from the trust
-// configuration handed in beside the signer set. So the link this client computes can only disagree
-// with the KMS if the permit does, or if the configured domain is not the gateway's. The execute
-// wiring around it: an answered transport feeds verification (which refuses garbage shares), and an
-// unanswered one surfaces the session's own error untouched.
+// `HostConfig` again — and the one field the permit does not carry, the gateway domain, from
+// `HostConfig`, handed in beside the signer set of the permit's `KmsContext`. So the link this
+// client computes can only disagree with the KMS if the permit does, or if `HostConfig`'s domain is
+// not the gateway's. The execute wiring around it: an answered transport feeds verification (which
+// refuses garbage shares), and an unanswered one surfaces the session's own error untouched.
 
 import type { SolanaSigncryptedShare, SolanaUserDecryptHandleEntry } from './index.js';
 import type { SolanaPermitFields, SolanaSignedPermit } from '../permit/index.js';

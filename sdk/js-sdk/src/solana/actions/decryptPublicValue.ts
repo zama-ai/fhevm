@@ -1,13 +1,11 @@
 import { assertKmsDecryptionBitLimit } from '../../core/kms/utils.js';
-import { fetchEncodedAccounts, type ReadonlyUint8Array } from '@solana/kit';
+import type { ReadonlyUint8Array } from '@solana/kit';
 import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
-import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
 import type { SolanaPublicDecryptCertifier, SolanaPublicHandleEntry } from './publicDecryptCertificate.js';
 import { MAX_SOLANA_DECRYPT_HANDLES } from '../userDecrypt/request.js';
 import { publicDecryptAbortCheck, solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
-import { clientHostConfig, liveKmsContext, readActiveKmsRouting, type SolanaHostKmsReads } from './hostKms.js';
-import { findHostConfigPda, findKmsContextPda } from '@fhevm/solana-zama-host';
+import { readActiveKmsRouting, readHostKmsContext, type SolanaHostKmsReads } from './hostKms.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { bytesToHex, concatBytes, hexToBytes, unsafeBytesEquals } from '../../core/base/bytes.js';
 import { recoverAddress } from '../../core/base/sign.js';
@@ -118,8 +116,8 @@ export async function decryptPublicValues(
   assertKmsDecryptionBitLimit(handles);
   if (handles.some((handle) => BigInt(handle.chainId) !== client.chain.id))
     throw new Error('Public decrypt handle belongs to another chain');
-  const programAddress = solanaHostProgram(client.chain);
-  const routing = await readActiveKmsRouting(client.chain, host, signal);
+  const routing = await readActiveKmsRouting(host);
+  checkAbort();
   const { contextId, epochId } = routing;
   const claim = await certify({ ...routing, entries: parameters.entries, options: parameters.options });
   // Whatever certified it, the certificate must name the context and epoch requested.
@@ -128,20 +126,11 @@ export async function decryptPublicValues(
     throw new Error('Public decrypt certificate does not name the requested KMS context and epoch');
   // Read the requested context after the response. A rotation preserves an old live context;
   // destruction invalidates it. Do not substitute the new current context for the signed one.
-  const [configAddress, configBump] = await findHostConfigPda({ programAddress });
-  const [contextAddress, contextBump] = await findKmsContextPda({ contextId }, { programAddress });
-  const [configAccount, contextAccount] = await fetchEncodedAccounts(client.rpc, [configAddress, contextAddress], {
-    commitment: 'finalized',
-    ...(signal === undefined ? {} : { abortSignal: signal }),
-  }).catch((error: unknown) => {
+  const { config, kms } = await readHostKmsContext(client, contextId, signal).catch((error: unknown) => {
     checkAbort();
     throw error;
   });
   checkAbort();
-  const config = clientHostConfig(configAccount, programAddress, configBump, client.chain);
-  if (config.decryptionContract.every((byte) => byte === 0))
-    throw new Error('Host decryption contract is not configured');
-  const kms = liveKmsContext(contextAccount, programAddress, contextId, contextBump);
   // One 32-byte ABI word per handle, in request order.
   const cleartext = hexToBytes(claim.abiEncodedCleartext);
   if (cleartext.length !== 32 * handles.length) throw new Error('Public decrypt cleartext must be 32 bytes per handle');

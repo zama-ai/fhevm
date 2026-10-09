@@ -147,13 +147,8 @@ transaction.
 
 The private-decrypt client takes the deployment's FHE parameter and exposes `signPermit` and
 `decryptValues`: sign once, then reuse the permit across requests. Both decrypt clients read their
-KMS trust from zama-host, as the EVM SDK reads it from `ProtocolConfig` and `KMSVerifier`. A permit
-or a public decrypt is routed to the context and epoch `HostConfig` holds. A user-decrypt response
-is verified against the signers of the `KmsContext` the permit names, as parties `1..n` in their
-registered order, under the gateway domain `HostConfig` records. These reads are cached for 15
-minutes, keyed like the EVM caches by runtime and program, plus the chain id that names the cluster.
-A `HostConfig` recording another chain id, or a destroyed context, is refused and never cached. The
-`decryptPublicValue(s)` actions also read HostConfig and KmsContext afresh after the certificate
+KMS trust from zama-host, as the EVM SDK reads it from `ProtocolConfig` and `KMSVerifier`; see
+DD-073 in `solana/docs/DESIGN_DECISIONS.md`. The `decryptPublicValue(s)` actions also read HostConfig and KmsContext afresh after the certificate
 arrives, authenticate distinct KMS signatures, and return shared `TypedValue` results. The
 lower-level `publicDecryptCertificate` returns the raw claim for on-chain consumers, which verify
 only the certificate and compare its handle with one they pinned.
