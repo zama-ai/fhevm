@@ -9,7 +9,7 @@
 // certificate is refused, and the current context still serves).
 import { address } from '@solana/kit';
 
-import { hexToBytes } from '@fhevm/sdk/base';
+import { bytesToHex, hexToBytes } from '@fhevm/sdk/base';
 import { TOTAL_SUPPLY_KEY } from '@fhevm/confidential-token';
 import {
   ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT,
@@ -24,7 +24,12 @@ import type { ContextAndEpoch } from '../commands/kms-context-switch';
 import { SOLANA_ACL_PROGRAM } from '../layout';
 import type { State } from '../types';
 import { bytes32HexFromId, readEvmKmsSignersForContext } from './addresses';
-import { assertKmsContextMatchesEvmHost, bootstrapThresholdsForState, solanaDeployerKeypairPath } from './deploy';
+import {
+  assertActiveKmsPairMatchesEvmHost,
+  assertKmsContextMatchesEvmHost,
+  bootstrapThresholdsForState,
+  solanaDeployerKeypairPath,
+} from './deploy';
 import { LOCAL_SOLANA_ENDPOINTS } from './endpoints';
 import { type FheVerticalConfig, certifiedPublicDecrypt, currentHandle, userDecryptExpect } from './fhe-vertical';
 import { expectProgramError } from './program-error';
@@ -48,18 +53,20 @@ import { discloseCertifiedHandle, sealTotalSupplyHandle, totalSupplyStore } from
 const WRAP_AMOUNT = 1000n;
 const HOLDER_SOL = 5;
 
-const hex = (bytes: Uint8Array): `0x${string}` => `0x${Buffer.from(bytes).toString('hex')}`;
 /** A KMS context or epoch id as zama-host stores it: the EVM uint256, 32 bytes big-endian. */
 const idBytes = (id: bigint): Uint8Array => hexToBytes(bytes32HexFromId(id));
 
 export type SolanaKmsContextLeg = {
   /**
    * Defines the context of `pair`, just activated on the EVM host, on zama-host with `pair`'s epoch
-   * and the EVM context's signers. Then checks that zama-host holds those signers in the same order
-   * and the EVM thresholds.
+   * and the EVM context's signers. Then checks that zama-host holds those signers in the same order,
+   * the EVM thresholds, and the EVM host's active pair.
    */
   readonly mirrorContext: (pair: ContextAndEpoch) => Promise<void>;
-  /** Makes the epoch of `pair`, just activated on the EVM host, the active epoch on zama-host. */
+  /**
+   * Makes the epoch of `pair`, just activated on the EVM host, the active epoch on zama-host, then
+   * checks that zama-host's active pair is the EVM host's.
+   */
   readonly mirrorEpoch: (pair: ContextAndEpoch) => Promise<void>;
   /**
    * Steps 1 and 5: values written at the baseline decrypt under `contextId`. zama-host accepts the
@@ -101,7 +108,7 @@ export const prepareSolanaKmsContextLeg = async (
 
   const supplyStore = await totalSupplyStore(mint);
   const supplyHandle = await currentHandle(context, supplyStore, TOTAL_SUPPLY_KEY);
-  await waitForSnsCommit(hex(supplyHandle));
+  await waitForSnsCommit(bytesToHex(supplyHandle));
   await sealTotalSupplyHandle(context, { authority: holder.signer, mint, handle: supplyHandle });
   const balance = await readTokenBalanceStore(context, { mint, owner: holder.signer.address });
   await waitForSnsCommit(balance.currentHandle);
@@ -134,7 +141,7 @@ export const prepareSolanaKmsContextLeg = async (
     });
     if (cleartext !== WRAP_AMOUNT) throw new Error(`Solana total supply decrypted to ${cleartext}, expected ${WRAP_AMOUNT}`);
     const { solanaPublicDecryptContextId } = await sdkVerifyModule();
-    const namedContext = hex(solanaPublicDecryptContextId(certificate));
+    const namedContext = bytesToHex(solanaPublicDecryptContextId(certificate));
     if (namedContext !== bytes32HexFromId(contextId)) {
       throw new Error(`the certificate names KMS context ${namedContext}, expected ${bytes32HexFromId(contextId)}`);
     }
@@ -177,9 +184,10 @@ export const prepareSolanaKmsContextLeg = async (
       const signers = await evmSigners(pair.contextId);
       await defineContext(pair, signers);
       await assertKmsContextMatchesEvmHost(ZAMA_HOST_PROGRAM_ADDRESS, idBytes(pair.contextId));
+      await assertActiveKmsPairMatchesEvmHost(ZAMA_HOST_PROGRAM_ADDRESS);
       console.log(
-        `[kms-context-switch] solana: defined context ${pair.contextId} with epoch ${pair.epochId}; its ` +
-          `${signers.length} signers, in order, and its thresholds match the EVM context`,
+        `[kms-context-switch] solana: defined context ${pair.contextId} with epoch ${pair.epochId}, the EVM ` +
+          `active pair; its ${signers.length} signers, in order, and its thresholds match the EVM context`,
       );
     },
 
@@ -187,7 +195,10 @@ export const prepareSolanaKmsContextLeg = async (
       await adminClient.sendTransaction([
         await getDefineKmsEpochInstructionAsync({ admin, contextId: idBytes(contextId), epochId: idBytes(epochId) }),
       ]);
-      console.log(`[kms-context-switch] solana: epoch ${epochId} is active under context ${contextId}`);
+      await assertActiveKmsPairMatchesEvmHost(ZAMA_HOST_PROGRAM_ADDRESS);
+      console.log(
+        `[kms-context-switch] solana: epoch ${epochId} is active under context ${contextId}, the EVM active pair`,
+      );
     },
 
     checkDecrypts: async (contextId) => {
@@ -196,7 +207,7 @@ export const prepareSolanaKmsContextLeg = async (
       await userDecryptExpect(await decryptConfig(), {
         encryptedStore: address(balance.encryptedStore),
         handle: Buffer.from(balance.currentHandle.slice(2), 'hex'),
-        secretKey: hex(holder.bytes.subarray(0, 32)),
+        secretKey: bytesToHex(holder.bytes.subarray(0, 32)),
         expected: WRAP_AMOUNT,
       });
       console.log(

@@ -28,10 +28,11 @@
 #                         (a per-service subset leaves stock services expecting newer columns)
 #   - relayer           : bytes32 host identity, Solana user-decrypt calldata + ed25519 seam
 #   - kms-connector     : Solana user-decrypt vertical (gw-listener + kms-worker)
-#   - test-suite        : the hardhat e2e image that fhevm-cli test profiles run in. It bundles
-#                         this tree's sdk/js-sdk, so its tfhe and kms_lib WASM match the stack.
-#                         The pinned image predates the SDK's tfhe 1.8.1 and cannot read the
-#                         stack's FHE public key.
+#   - test-suite        : the hardhat e2e image that fhevm-cli test profiles run in, built only
+#                         when TEST_PROFILE is set (solana-e2e.yml sets it on a profile run). It
+#                         bundles this tree's sdk/js-sdk, so its tfhe and kms_lib WASM match the
+#                         stack. The pinned image predates the SDK's tfhe 1.8.1 and cannot read
+#                         the stack's FHE public key.
 #
 # `kms-signer` discovers each kms-core's ACTUAL signer and registers it on-chain, and
 # `bootstrap` triggers keygen into those kms-cores. MAINNET-safe: validator pinned to
@@ -43,9 +44,13 @@ FHEVM="$ROOT/test-suite/fhevm"
 
 # CI seam (#1766): which of the six source-built groups build from THIS worktree (--override),
 # and optional KEY=TAG lock-env pins pointing the remaining groups at branch-published images
-# (select-overrides.sh computes both in CI). Local runs keep the build-everything default; set
+# (select-overrides.sh computes both in CI). Local runs build every group by default; set
 # SOLANA_E2E_OVERRIDES to "none" for an explicit empty override list.
-SOLANA_E2E_OVERRIDES="${SOLANA_E2E_OVERRIDES:-gateway-contracts host-contracts coprocessor relayer kms-connector test-suite}"
+DEFAULT_OVERRIDES="gateway-contracts host-contracts coprocessor relayer kms-connector"
+if [ -n "${TEST_PROFILE:-}" ]; then
+  DEFAULT_OVERRIDES="$DEFAULT_OVERRIDES test-suite"
+fi
+SOLANA_E2E_OVERRIDES="${SOLANA_E2E_OVERRIDES:-$DEFAULT_OVERRIDES}"
 # The fhevm-cli scenario. It also sets the threshold KMS topology (4 parties, t=1 by default).
 SOLANA_E2E_SCENARIO="${SOLANA_E2E_SCENARIO:-solana}"
 SOLANA_E2E_LOCK_PINS="${SOLANA_E2E_LOCK_PINS:-}"

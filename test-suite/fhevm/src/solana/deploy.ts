@@ -12,7 +12,15 @@
 import { closeSync, openSync } from 'node:fs';
 import path from 'node:path';
 
-import { type KmsThresholds, createFinalizedRpc, fetchKmsContext, findKmsContextPda } from '@fhevm/solana-zama-host';
+import { bytesToHex } from '@fhevm/sdk/base';
+import {
+  type KmsThresholds,
+  createFinalizedRpc,
+  fetchHostConfig,
+  fetchKmsContext,
+  findHostConfigPda,
+  findKmsContextPda,
+} from '@fhevm/solana-zama-host';
 import type { Address, ReadonlyUint8Array } from '@solana/kit';
 
 import { registerSolanaCoprocessorSql } from '../../../../solana/deploy/src/coprocessor';
@@ -45,7 +53,10 @@ import { readEnvFile } from '../utils/fs';
 import { run, runStreaming } from '../utils/process';
 import { until } from '../utils/until';
 import {
+  type ActiveKmsPair,
   BRINGUP_KMS_CONTEXT_ID,
+  bytes32HexFromId,
+  readActiveKmsPair,
   readEvmKmsSignersForContext,
   readEvmKmsThresholds,
   readGatewayBootstrapInputs,
@@ -150,16 +161,20 @@ export const assertKmsThresholdsMatch = (solana: KmsThresholds, evm: KmsThreshol
   }
 };
 
+/** Codama decodes account bytes as `ReadonlyUint8Array`, which the SDK's `bytesToHex` does not take. */
+const accountBytesHex = (bytes: ReadonlyUint8Array): `0x${string}` => `0x${Buffer.from(bytes).toString('hex')}`;
+
 /**
- * Throws unless the Solana KMS context lists the EVM context's signers in the same order. KMS party
- * ids are positional (party i signs with the i-th signer), so a reordered list makes honest shares
- * fail verification.
+ * Throws unless the Solana KMS context lists the EVM context's signers in the same order. zama-host's
+ * certificate check counts distinct members of the set and ignores the order, but SDK user decrypt
+ * maps KMS party ids to positions in this list (fhevm-internal#2182), so the order must be
+ * ProtocolConfig's.
  */
 export const assertKmsSignersMatch = (
   solana: readonly ReadonlyUint8Array[],
   evm: readonly ReadonlyUint8Array[],
 ): void => {
-  const hex = (signers: readonly ReadonlyUint8Array[]) => signers.map((signer) => `0x${Buffer.from(signer).toString('hex')}`);
+  const hex = (signers: readonly ReadonlyUint8Array[]) => signers.map(accountBytesHex);
   if (hex(solana).join() !== hex(evm).join()) {
     throw new Error(
       `Solana KMS context signers differ from the EVM ProtocolConfig: solana=[${hex(solana)}] evm=[${hex(evm)}]`,
@@ -168,8 +183,8 @@ export const assertKmsSignersMatch = (
 };
 
 /**
- * Both hosts accept certificates from the same KMS, so they must ask for the same number of
- * signatures from the same signers in the same order. A threshold set too low or a reordered signer
+ * Both hosts accept certificates from the same KMS, so zama-host must hold the EVM context's
+ * signers, in ProtocolConfig's order, and its thresholds. A threshold set too low or a wrong signer
  * list still passes every functional test, so both are checked here.
  */
 export const assertKmsContextMatchesEvmHost = async (zamaHostId: string, contextId: Uint8Array): Promise<void> => {
@@ -178,10 +193,32 @@ export const assertKmsContextMatchesEvmHost = async (zamaHostId: string, context
   const hostRpcUrl = LOCAL_SOLANA_ENDPOINTS.hostRpc;
   const [evmThresholds, evmSigners] = await Promise.all([
     readEvmKmsThresholds({ hostRpcUrl }),
-    readEvmKmsSignersForContext({ hostRpcUrl, contextId: BigInt(`0x${Buffer.from(contextId).toString('hex')}`) }),
+    readEvmKmsSignersForContext({ hostRpcUrl, contextId: BigInt(bytesToHex(contextId)) }),
   ]);
   assertKmsThresholdsMatch(solana.thresholds, evmThresholds);
   assertKmsSignersMatch(solana.signers, evmSigners);
+};
+
+/** Throws unless zama-host's active KMS context and epoch are the EVM ProtocolConfig's active pair. */
+export const assertActiveKmsPairMatches = (
+  solana: { readonly currentKmsContextId: ReadonlyUint8Array; readonly currentKmsEpochId: ReadonlyUint8Array },
+  evm: ActiveKmsPair,
+): void => {
+  const active = `${accountBytesHex(solana.currentKmsContextId)}/${accountBytesHex(solana.currentKmsEpochId)}`;
+  const expected = `${bytes32HexFromId(evm.kmsContextId)}/${bytes32HexFromId(evm.kmsEpochId)}`;
+  if (active !== expected) {
+    throw new Error(`zama-host's active KMS context/epoch ${active} differs from the EVM ProtocolConfig's ${expected}`);
+  }
+};
+
+/** Reads zama-host's HostConfig back after a mirror and checks its active pair against the EVM host's. */
+export const assertActiveKmsPairMatchesEvmHost = async (zamaHostId: string): Promise<void> => {
+  const [hostConfig] = await findHostConfigPda({ programAddress: zamaHostId as Address });
+  const [solana, evm] = await Promise.all([
+    fetchHostConfig(createFinalizedRpc(VALIDATOR_RPC_URL), hostConfig),
+    readActiveKmsPair({ hostRpcUrl: LOCAL_SOLANA_ENDPOINTS.hostRpc }),
+  ]);
+  assertActiveKmsPairMatches(solana.data, evm);
 };
 
 /** Both Postgres containers read their credentials from the generated `database.env`. */
