@@ -11,12 +11,12 @@ import {
 } from '@solana/kit';
 import { createFhevmEncryptClient, defineFhevmSolanaChain, setFhevmRuntimeConfig } from '@fhevm/sdk/solana';
 import {
+  buildInitializeTokenAccountInstruction,
   buildWrapUsdcInstruction,
   deriveBatchAddresses,
   findJoinRecordPda,
   getBatchByIndex,
   getCurrentBatch,
-  getOrCreateConfidentialTokenAccountInstruction,
   joinBatch,
 } from './vault/index.js';
 
@@ -345,14 +345,13 @@ export async function depositToVault(
   if (needsShieldTransaction(source) && !shieldAlreadyConfirmed) {
     onStage('preparing');
     const transientStore = await prepareTransientStore({ payer: signer, host: config.programs.host });
-    const initializeJoinTokenAccount = await getOrCreateConfidentialTokenAccountInstruction(rpc, {
-      transientStore: transientStore,
-      payer: signer,
-      owner: signer.address,
-      mint: config.mints.joinConfidential,
-    });
-    const shieldInstructions: Instruction[] = initializeJoinTokenAccount === null ? [] : [initializeJoinTokenAccount];
-    shieldInstructions.push(
+    const shieldInstructions = [
+      await buildInitializeTokenAccountInstruction({
+        transientStore: transientStore,
+        payer: signer,
+        owner: signer.address,
+        mint: config.mints.joinConfidential,
+      }),
       await buildWrapUsdcInstruction({
         transientStore: transientStore,
         owner: signer,
@@ -361,7 +360,7 @@ export async function depositToVault(
         tokenProgram: TOKEN_PROGRAM_ADDRESS,
         amount: amountBaseUnits,
       }),
-    );
+    ];
 
     onStage('shielding');
     let submittedJournal: ShieldJournal | undefined;

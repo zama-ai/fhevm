@@ -16,7 +16,7 @@ pub struct InitializeTokenAccount<'info> {
     /// Confidential mint this account belongs to.
     pub mint: Account<'info, ConfidentialMint>,
     #[account(
-        init,
+        init_if_needed,
         payer = payer,
         space = 8 + ConfidentialTokenAccount::SPACE,
         seeds = [b"token-account", mint.key().as_ref(), owner.key().as_ref()],
@@ -52,11 +52,18 @@ pub struct InitializeTokenAccount<'info> {
     pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
-/// Initializes a token account and creates its zero confidential balance handle.
+/// Initializes a token account and creates its zero confidential balance handle, or leaves an
+/// existing one unchanged.
 pub fn initialize_token_account<'info>(
     ctx: Context<'info, InitializeTokenAccount<'info>>,
 ) -> Result<()> {
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
+    // An account this call creates is zeroed; one that existed holds its mint. The owner need not
+    // sign, so anyone can create an account first: `open_batch` must still succeed, and the existing
+    // balance must not be replaced by a new zero.
+    if ctx.accounts.token_account.mint == ctx.accounts.mint.key() {
+        return Ok(());
+    }
     {
         let token_account = &mut ctx.accounts.token_account;
         token_account.owner = ctx.accounts.owner.key();

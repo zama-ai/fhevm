@@ -1299,17 +1299,31 @@ fn mollusk_initialize_token_account_allows_distinct_sponsor_and_owner() {
             &[owner]
         )
     );
+}
 
-    let retry = check_token_instruction(&context, &ix, &[]);
-    assert!(retry.raw_result.is_err());
-    let stored_after_retry = read_token_account(&context, token_account);
-    let balance_after_retry = read_encrypted_store(&context, balance_encrypted_store);
-    assert_eq!(stored_after_retry.owner, stored.owner);
-    assert_eq!(
-        store_handle(&balance_after_retry, token::balance_key()),
-        store_handle(&balance_store, token::balance_key())
+/// Initializing an account that already holds a balance succeeds and writes nothing: the balance,
+/// its store and the token account stay as they are.
+#[test]
+fn mollusk_initialize_token_account_keeps_an_existing_balance() {
+    let fixture = BurnRedeemFixture::new();
+    let context = fixture_context(burn_redeem_mollusk(), fixture.accounts(0));
+    seed_u64(&context, fixture.initial_balance, 100);
+    let snapshot = |address: Pubkey| context.account_store.borrow().get(&address).cloned();
+    let token_account_before = snapshot(fixture.token_account);
+    let balance_store_before = snapshot(fixture.balance_store);
+
+    let ix = initialize_token_account_ix(
+        fixture.owner,
+        fixture.owner,
+        fixture.mint,
+        fixture.host_config,
     );
-    assert_eq!(balance_after_retry.peaks, balance_store.peaks);
+    let result = check_token_instruction(&context, &ix, &[Check::success()]);
+
+    assert!(result.inner_instructions.is_empty());
+    assert_eq!(snapshot(fixture.token_account), token_account_before);
+    assert_eq!(snapshot(fixture.balance_store), balance_store_before);
+    assert_eq!(balance(&context, fixture.token_account), 100);
 }
 
 // ---------------------------------------------------------------------------

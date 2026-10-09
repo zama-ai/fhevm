@@ -241,7 +241,7 @@ export const createConfidentialMint = async (
   return mint.address;
 };
 
-/** Creates `owner`'s canonical zero-balance confidential token account if it does not exist yet. */
+/** Creates `owner`'s canonical zero-balance confidential token account; an existing one is left as it is. */
 export const initializeConfidentialTokenAccount = async (
   context: SolanaProvisioningContext,
   params: { readonly payer: TransactionSigner; readonly owner: Address; readonly mint: Address },
@@ -249,13 +249,13 @@ export const initializeConfidentialTokenAccount = async (
   const vault = await vaultModule();
   const { prepareTransientStore } = await sdkVerifyModule();
   const transientStore = await prepareTransientStore({ payer: params.payer, host: ZAMA_HOST_PROGRAM_ADDRESS });
-  const instruction = await vault.getOrCreateConfidentialTokenAccountInstruction(context.rpc, {
+  const instruction = await vault.buildInitializeTokenAccountInstruction({
     transientStore: transientStore,
     payer: params.payer,
     owner: params.owner,
     mint: params.mint,
   });
-  if (instruction) await (await context.client(params.payer)).sendFheTransaction(transientStore, [instruction]);
+  await (await context.client(params.payer)).sendFheTransaction(transientStore, [instruction]);
 };
 
 /** Escrows a public `amount` of the underlying and rotates it into `owner`'s confidential balance. */

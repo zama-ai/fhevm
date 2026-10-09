@@ -1284,6 +1284,17 @@ Disclosure names a token state kind and validates its entire binding before emit
 canonical Store, Store authority, slot key and handle proof. Scope-only validation was rejected
 because two fields within the same mint would remain interchangeable in downstream events.
 
+### DD-045, replaced in part by zama-ai/fhevm#4368
+
+zama-ai/fhevm#4368 made `initialize_token_account` idempotent. Anyone could create the next batch
+authority's token account before `open_batch`, whose `init` then failed on every retry. Clients now
+include the instruction without reading the account first.
+
+> Confidential accounts expose ATA-like demo UX: canonical derivation, permissionless create-for, and
+> `getOrCreateConfidentialTokenAccountInstruction`, which reads the derived PDA and returns either the
+> create instruction or `null` for an already initialized account. This remains demo application code,
+> not a claim that the protocol SDK owns the confidential-token program.
+
 ### DD-048, replaced in part by DD-049
 
 DD-049 replaced the per-value account and its `PersistentOutput` API with the shared

@@ -45,6 +45,7 @@ vi.mock('@fhevm/sdk/solana', async (importOriginal) => ({
 
 vi.mock('./vault/index.js', () => ({
   TOKEN_PROGRAM_ADDRESS: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+  buildInitializeTokenAccountInstruction: mocks.buildInitialize,
   buildWrapUsdcInstruction: mocks.buildWrap,
   deriveBatchAddresses: vi.fn(),
   findJoinRecordPda: vi.fn().mockResolvedValue(['11111111111111111111111111111111', 255]),
@@ -55,7 +56,6 @@ vi.mock('./vault/index.js', () => ({
     addresses: { batch: '11111111111111111111111111111111' },
     state: { status: 0 },
   }),
-  getOrCreateConfidentialTokenAccountInstruction: mocks.buildInitialize,
   getJoinRecord: vi.fn(),
   joinBatch: mocks.joinBatch,
 }));
@@ -142,11 +142,11 @@ describe('direct cUSDC deposit', () => {
 
 
 describe('public USDC deposit', () => {
-  test.each([true, false])('shares one transaction context through shielding (initialize=%s)', async (initialize) => {
+  test('initializes the join account and wraps in one transaction context', async () => {
     const signer = await generateKeyPairSigner();
     const init = { programAddress: SYSTEM_PROGRAM_ADDRESS, data: new Uint8Array([1]) };
     const wrap = { ...init, data: new Uint8Array([2]) };
-    mocks.buildInitialize.mockResolvedValue(initialize ? init : null);
+    mocks.buildInitialize.mockResolvedValue(init);
     mocks.buildWrap.mockResolvedValue(wrap);
     await depositToVault({ ...session, signer }, 5, vi.fn());
     expect(mocks.send).toHaveBeenCalledOnce();
@@ -156,9 +156,9 @@ describe('public USDC deposit', () => {
     expect(message.version).toBe(1);
     const body = [...message.instructions];
     expect([...body[0]!.data!]).toEqual([...OPEN_TRANSIENT_STORE_DISCRIMINATOR]);
-    expect(body.slice(1, -1).map(ix => [...ix.data!])).toEqual(initialize ? [[1], [2]] : [[2]]);
+    expect(body.slice(1, -1).map(ix => [...ix.data!])).toEqual([[1], [2]]);
     expect([...body.at(-1)!.data!]).toEqual([...CLOSE_TRANSIENT_STORE_DISCRIMINATOR]);
-    const initContext = mocks.buildInitialize.mock.calls[0]![1].transientStore;
+    const initContext = mocks.buildInitialize.mock.calls[0]![0].transientStore;
     const wrapContext = mocks.buildWrap.mock.calls[0]![0].transientStore;
     expect(initContext).toEqual(wrapContext);
     expect(body[0]!.accounts?.[1]?.address).toBe(wrapContext.address);

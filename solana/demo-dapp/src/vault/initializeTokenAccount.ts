@@ -1,7 +1,6 @@
-import { SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import { tokenStoreAddress } from './internal/encryptedStores.js';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
-import type { Address, GetAccountInfoApi, Instruction, Rpc, TransactionSigner } from '@solana/kit';
+import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import {
   getInitializeTokenAccountInstructionAsync,
   findTokenAccountPda,
@@ -18,18 +17,11 @@ export type SolanaVaultInitializeTokenAccountParameters = {
   readonly mint: Address;
 };
 
-/** Returns whether the canonical account is absent or only carries attacker-pre-funded lamports. */
-export function needsConfidentialTokenAccountInitialization(accountOwner: Address | null): boolean {
-  if (accountOwner === null || accountOwner === SYSTEM_PROGRAM_ADDRESS) return true;
-  if (accountOwner === CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS) return false;
-  throw new Error('The canonical confidential token account is owned by an unexpected program');
-}
-
 /**
  * Builds `confidential_token::initialize_token_account`: creates the owner's confidential token
- * account PDA for `mint` and its zero balance handle. The account PDA, its balance encrypted store, and
- * the two Anchor event authorities are derived here from `(mint, owner)`. The seeder assembles and
- * sends the returned instruction.
+ * account PDA for `mint` and its zero balance handle, or leaves an existing account unchanged, so a
+ * caller can always include it. The account PDA, its balance encrypted store, and the two Anchor
+ * event authorities are derived here from `(mint, owner)`.
  */
 export async function buildInitializeTokenAccountInstruction(
   parameters: SolanaVaultInitializeTokenAccountParameters,
@@ -45,20 +37,4 @@ export async function buildInitializeTokenAccountInstruction(
     balanceEncryptedStore: await tokenStoreAddress(parameters.mint, tokenAccount),
     program: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
   });
-}
-
-/**
- * ATA-like get-or-create helper for a confidential token account. It derives and reads the
- * canonical `(mint, owner)` PDA, returns `null` when it already exists with the expected owner, and
- * otherwise returns the permissionless create-for instruction for the caller to submit. A
- * System-owned pre-funded PDA remains creatable by the on-chain instruction.
- */
-export async function getOrCreateConfidentialTokenAccountInstruction(
-  rpc: Rpc<GetAccountInfoApi>,
-  parameters: SolanaVaultInitializeTokenAccountParameters,
-): Promise<Instruction | null> {
-  const [tokenAccount] = await findTokenAccountPda({ mint: parameters.mint, owner: parameters.owner });
-  const account = await rpc.getAccountInfo(tokenAccount, { encoding: 'base64' }).send();
-  if (!needsConfidentialTokenAccountInitialization(account.value?.owner ?? null)) return null;
-  return buildInitializeTokenAccountInstruction(parameters);
 }

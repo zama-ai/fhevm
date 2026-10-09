@@ -159,26 +159,18 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // one-time initialization the join mint gets, keeping the claim phase a pure claim. initialize
       // + wrap both revert on failure, so their confirmation IS the assertion for these phases.
       // On a persistent cluster (devnet behind a preview namespace) the accounts outlive the run
-      // that created them, so only the missing ones are initialized.
-      const missingTokenAccountMints: Address[] = [];
-      for (const mint of [config.mints.joinConfidential, config.mints.payoutConfidential]) {
-        const tokenAccount = (await findTokenAccountPda({ mint, owner: alice.address }))[0];
-        const existing = await rpc.getAccountInfo(tokenAccount, { encoding: "base64" }).send();
-        if (existing.value === null) missingTokenAccountMints.push(mint);
-      }
-      if (missingTokenAccountMints.length > 0) {
-        await aliceClient.sendFheTransaction(
-          aliceTransientStore,
-          await Promise.all(missingTokenAccountMints.map((mint) =>
-            vault.buildInitializeTokenAccountInstruction({
-              transientStore: aliceTransientStore,
-              payer: alice,
-              owner: alice.address,
-              mint,
-            }),
-          )),
-        );
-      }
+      // that created them; initializing an existing account leaves it unchanged.
+      await aliceClient.sendFheTransaction(
+        aliceTransientStore,
+        await Promise.all([config.mints.joinConfidential, config.mints.payoutConfidential].map((mint) =>
+          vault.buildInitializeTokenAccountInstruction({
+            transientStore: aliceTransientStore,
+            payer: alice,
+            owner: alice.address,
+            mint,
+          }),
+        )),
+      );
 
       // Step 3: wrap the funded mock USDC into alice's confidential cUSDC balance. wrap_usdc escrows a
       // PUBLIC amount and needs no input proof, which is why it wires cheaply here.
@@ -563,10 +555,9 @@ test.skipIf(!runsDemoScenarios)(
     if (!mintResponse.ok) throw new Error(`refund fixture mint failed (${mintResponse.status})`);
     const transientStore = await prepareTransientStore({ payer: alice, host: config.programs.host });
     const mint = roots.joinConfidentialMint;
-    const init = await vault.getOrCreateConfidentialTokenAccountInstruction(rpc, {
+    await aliceClient.sendFheTransaction(transientStore, [await vault.buildInitializeTokenAccountInstruction({
       transientStore, payer: alice, owner: alice.address, mint,
-    });
-    if (init) await aliceClient.sendFheTransaction(transientStore, [init]);
+    })]);
     await aliceClient.sendFheTransaction(transientStore, [await vault.buildWrapUsdcInstruction({
       transientStore, owner: alice, mint, underlyingMint: roots.joinUnderlyingMint,
       tokenProgram: TOKEN_PROGRAM_ADDRESS, amount,

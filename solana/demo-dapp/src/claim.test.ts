@@ -1,11 +1,9 @@
-import { SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system';
 import { prepareTransientStore } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { address, createNoopSigner } from '@solana/kit';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  accountInfo: vi.fn(),
   buildClaim: vi.fn(),
   buildInitialize: vi.fn(),
   getBatch: vi.fn(),
@@ -16,9 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@fhevm/solana-zama-host', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@fhevm/solana-zama-host')>()),
-  createFinalizedRpc: () => ({
-      getAccountInfo: () => ({ send: mocks.accountInfo }),
-    }),
+  createFinalizedRpc: () => ({}),
 }));
 vi.mock('./vault/index.js', () => ({
   TOKEN_PROGRAM_ADDRESS: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
@@ -40,7 +36,7 @@ const keeper = createNoopSigner(address('SysvarRecentB1ockHashes1111111111111111
 const config = {
   rpcUrl: 'http://127.0.0.1:8899',
   wsUrl: 'ws://127.0.0.1:8900',
-  programs: { token: tokenProgram, host: ZAMA_HOST_PROGRAM_ADDRESS },
+  programs: { host: ZAMA_HOST_PROGRAM_ADDRESS },
   mints: {
     joinUnderlying: address('SysvarStakeHistory1111111111111111111111111'),
     payoutUnderlying: address('Stake11111111111111111111111111111111111111'),
@@ -56,7 +52,6 @@ const position = { batchIndex: 1n, batch, amountBaseUnits: 100_000_000n };
 const initializeInstruction = { programAddress: tokenProgram, accounts: [], data: new Uint8Array([1]) };
 const claimInstruction = { programAddress: tokenProgram, accounts: [], data: new Uint8Array([2]) };
 let keeperStore: string;
-const sentBody = (call: number) => mocks.send.mock.calls[call]?.[1];
 
 describe('sponsored payout claim', () => {
   beforeEach(async () => {
@@ -70,9 +65,7 @@ describe('sponsored payout claim', () => {
     mocks.send.mockResolvedValue({ context: { signature: 'claim-signature' } });
   });
 
-  test('atomically initializes a missing payout account and claims with the keeper', async () => {
-    mocks.accountInfo.mockResolvedValue({ value: null });
-
+  test('initializes the payout account in the claim transaction, sent by the keeper', async () => {
     await claimBatchPayout({ config, keeper } as never, position, 'deposit', user);
 
     expect(mocks.buildInitialize).toHaveBeenCalledWith(
@@ -83,52 +76,7 @@ describe('sponsored payout claim', () => {
     );
     expect(mocks.createClient).toHaveBeenCalledWith(config, keeper);
     expect(mocks.send.mock.calls[0]?.[0]).toMatchObject({ address: keeperStore });
-    expect(sentBody(0)).toEqual([initializeInstruction, claimInstruction]);
-  });
-
-  test('claims directly when the canonical payout account already exists', async () => {
-    mocks.accountInfo.mockResolvedValue({ value: { owner: tokenProgram } });
-
-    await claimBatchPayout({ config, keeper } as never, position, 'redeem', user);
-
-    expect(mocks.buildInitialize).not.toHaveBeenCalled();
-    expect(sentBody(0)).toEqual([claimInstruction]);
-  });
-
-  test('initializes and claims a pre-funded System-owned payout account', async () => {
-    mocks.accountInfo.mockResolvedValue({ value: { owner: SYSTEM_PROGRAM_ADDRESS } });
-
-    await claimBatchPayout({ config, keeper } as never, position, 'deposit', user);
-
-    expect(mocks.buildInitialize).toHaveBeenCalledOnce();
-    expect(sentBody(0)).toEqual([initializeInstruction, claimInstruction]);
-  });
-
-  test('re-reads state and retries once after an initialization race', async () => {
-    mocks.accountInfo
-      .mockResolvedValueOnce({ value: null })
-      .mockResolvedValueOnce({ value: { owner: tokenProgram } });
-    mocks.send
-      .mockRejectedValueOnce(new Error('account already in use'))
-      .mockResolvedValueOnce({ context: { signature: 'claim-signature' } });
-
-    await claimBatchPayout({ config, keeper } as never, position, 'deposit', user);
-
-    expect(mocks.getJoinRecord).toHaveBeenCalledTimes(2);
-    expect(mocks.send).toHaveBeenCalledTimes(2);
-    expect(sentBody(0)).toEqual([initializeInstruction, claimInstruction]);
-    expect(sentBody(1)).toEqual([claimInstruction]);
-  });
-
-  test('does not retry a permanent failure', async () => {
-    mocks.accountInfo.mockResolvedValue({ value: null });
-    mocks.send.mockRejectedValue(new Error('claim failed'));
-
-    await expect(claimBatchPayout({ config, keeper } as never, position, 'deposit', user)).rejects.toThrow(
-      'claim failed',
-    );
-
-    expect(mocks.send).toHaveBeenCalledTimes(1);
+    expect(mocks.send.mock.calls[0]?.[1]).toEqual([initializeInstruction, claimInstruction]);
   });
 
   test('treats an already claimed join as idempotent success', async () => {
@@ -136,15 +84,6 @@ describe('sponsored payout claim', () => {
 
     await claimBatchPayout({ config, keeper } as never, position, 'deposit', user);
 
-    expect(mocks.send).not.toHaveBeenCalled();
-  });
-
-  test('rejects a payout PDA owned by an unexpected program', async () => {
-    mocks.accountInfo.mockResolvedValue({ value: { owner: user } });
-
-    await expect(claimBatchPayout({ config, keeper } as never, position, 'deposit', user)).rejects.toThrow(
-      'unexpected program',
-    );
     expect(mocks.send).not.toHaveBeenCalled();
   });
 });
