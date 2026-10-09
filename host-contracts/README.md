@@ -108,7 +108,7 @@ carries the signer's EIP-712 signature, and anyone may submit it. The contract a
 destruction confirmations (`confirmKmsContextDestruction`, `confirmKmsEpochDestruction`) from the
 active committee. `KMSGeneration` is deployed only here.
 
-Every other host chain (e.g. Polygon) runs `ProtocolConfigReplica`, a read-replica. Replicas never
+Every other host chain runs `ProtocolConfigReplica`, a read-replica. Replicas never
 run the lifecycle/quorum path, since KMS resharing and attestations happen once, on Ethereum. They
 have no `KMSGeneration`, and their only write path is the mirror methods below.
 

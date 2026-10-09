@@ -7,7 +7,7 @@ import {IProtocolConfigBase} from "./IProtocolConfigBase.sol";
 /**
  * @title Interface for the ProtocolConfigReplica contract.
  * @notice ProtocolConfigReplica is the read-replica of the canonical ProtocolConfig on every
- * non-canonical host chain (e.g. Polygon).
+ * non-canonical host chain.
  */
 interface IProtocolConfigReplica is IProtocolConfigBase {
     // -----------------------------------------------------------------------------------------

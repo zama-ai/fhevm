@@ -12,7 +12,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
  * @title ProtocolConfigReplica
- * @notice Read-replica of the canonical ProtocolConfig on the non-canonical host chains (e.g. Polygon).
+ * @notice Read-replica of the canonical ProtocolConfig on the non-canonical host chains.
  * @dev Ethereum is the canonical host and the single source of truth.
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md

@@ -18,7 +18,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  * @dev Ethereum is the canonical host and the single source of truth: the context/epoch lifecycle
  *      (`defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext`, then
  *      `confirmKmsContextCreation` / `confirmEpochActivation`) runs only there, alongside
- *      `KMSGeneration`. Every other host chain (e.g. Polygon) runs `ProtocolConfigReplica` instead.
+ *      `KMSGeneration`. Every other host chain runs `ProtocolConfigReplica` instead.
  *      Anyone may submit a KMS signer's EIP-712 lifecycle confirmation. The contract checks the
  *      recovered signer, not the caller. Replicas verify the same signatures (RFC 037).
  */
