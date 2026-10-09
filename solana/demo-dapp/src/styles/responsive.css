@@ -11,6 +11,7 @@
   }
 
   .brand > span:last-child,
+  .wallet-version-note,
   .wallet-demo-button {
     display: none;
   }

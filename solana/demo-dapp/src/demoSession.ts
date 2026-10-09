@@ -8,9 +8,14 @@ import {
   createMessageSignerFromWalletAccount,
   createTransactionSignerFromWalletAccount,
 } from '@solana/wallet-account-signer';
-import type { UiWalletAccount } from '@wallet-standard/react';
-import { SolanaSignOffchainMessage, type SolanaSignOffchainMessageFeature } from '@solana/wallet-standard-features';
-import { getWalletAccountFeature } from '@wallet-standard/ui';
+import type { UiWallet, UiWalletAccount } from '@wallet-standard/react';
+import {
+  SolanaSignOffchainMessage,
+  SolanaSignTransaction,
+  type SolanaSignOffchainMessageFeature,
+  type SolanaSignTransactionFeature,
+} from '@solana/wallet-standard-features';
+import { getWalletAccountFeature, getWalletFeature } from '@wallet-standard/ui';
 import { getWalletAccountForUiWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
 import { solanaPermitWalletFromSecretKey, type SolanaPermitWallet } from '@fhevm/sdk/solana';
 import {
@@ -258,14 +263,27 @@ export const permitWalletFromWalletAccount = (account: UiWalletAccount): SolanaP
   return { account: walletAccount, features: { [SolanaSignOffchainMessage]: feature } };
 };
 
+type SignTransactionFeature = SolanaSignTransactionFeature[typeof SolanaSignTransaction];
+
+const signsVersion1 = (feature: SignTransactionFeature): boolean => feature.supportedTransactionVersions.includes(1);
+
+/** Whether the demo can offer this wallet: every transaction it sends is version 1. */
+export const signsVersion1Transactions = (wallet: UiWallet): boolean =>
+  wallet.features.includes(SolanaSignTransaction) &&
+  signsVersion1(getWalletFeature(wallet, SolanaSignTransaction) as SignTransactionFeature);
+
 export const assertWalletAccountCapabilities = (account: UiWalletAccount, walletName: string, network: 'localnet' | 'devnet' = 'localnet'): void => {
   if (!account.chains.includes(`solana:${network}`)) {
     throw new Error(
       `${walletName} has not enabled Solana ${network}. Select the demo network in your wallet, then reconnect.`,
     );
   }
-  if (!account.features.includes('solana:signTransaction')) {
+  if (!account.features.includes(SolanaSignTransaction)) {
     throw new Error(`${walletName} does not support transaction signing`);
+  }
+  // The wallet list is filtered on the same rule, but a wallet can change its features after that.
+  if (!signsVersion1(getWalletAccountFeature(account, SolanaSignTransaction) as SignTransactionFeature)) {
+    throw new Error(`${walletName} cannot sign Solana version 1 transactions, which the demo sends. Use the demo wallet instead.`);
   }
   if (!account.features.includes('solana:signMessage')) {
     throw new Error(`${walletName} does not support message signing`);

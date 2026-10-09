@@ -174,7 +174,7 @@ describe('confidential balance reveal evidence', () => {
   test('refuses a session whose wallet cannot sign permits', async () => {
     const walletStandard = {
       ...(session as unknown as Record<string, unknown>),
-      wallet: { kind: 'wallet-standard', name: 'Phantom', accountKey: 'a' },
+      wallet: { kind: 'wallet-standard', name: 'Test wallet', accountKey: 'a' },
       permitWallet: undefined,
     } as unknown as DemoSession;
 

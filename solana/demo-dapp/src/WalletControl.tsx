@@ -1,7 +1,7 @@
 import { getUiWalletAccountStorageKey, useConnect, useDisconnect, useWallets, type UiWallet } from '@wallet-standard/react';
 import { useEffect } from 'react';
 
-import { connectWalletSession, type DemoSession } from './demoSession';
+import { connectWalletSession, signsVersion1Transactions, type DemoSession } from './demoSession';
 
 type Props = {
   readonly connection:
@@ -16,7 +16,7 @@ type Props = {
 const walletNamed = (wallets: readonly UiWallet[], name: string): UiWallet | undefined =>
   wallets.find((wallet) => wallet.name === name);
 
-function PhantomConnect({
+function WalletConnect({
   wallet,
   disabled,
   onConnect,
@@ -45,7 +45,7 @@ function PhantomConnect({
         })
       }
     >
-      {isConnecting ? 'Opening Phantom…' : 'Connect Phantom'}
+      {isConnecting ? `Opening ${wallet.name}…` : `Connect ${wallet.name}`}
     </button>
   );
 }
@@ -128,7 +128,7 @@ export function WalletControl({
   onDisconnect,
 }: Props) {
   const wallets = useWallets();
-  const phantom = wallets.find((wallet) => wallet.name.toLowerCase() === 'phantom');
+  const offeredWallets = wallets.filter(signsVersion1Transactions);
 
   if (connection.kind === 'ready') {
     if (connection.session.wallet.kind === 'wallet-standard') {
@@ -152,24 +152,31 @@ export function WalletControl({
     );
   }
 
-  if (phantom === undefined) {
+  if (offeredWallets.length === 0) {
     return (
-      <button
-        className="wallet-button"
-        type="button"
-        disabled={disabled || connection.kind === 'connecting'}
-        onClick={onBurnerConnect}
-      >
-        {connection.kind === 'connecting' ? 'Funding wallet…' : 'Start demo'}
-      </button>
+      <div className="wallet-connect-options">
+        <span className="wallet-version-note">No installed wallet signs Solana version 1 transactions yet.</span>
+        <button
+          className="wallet-button"
+          type="button"
+          disabled={disabled || connection.kind === 'connecting'}
+          onClick={onBurnerConnect}
+        >
+          {connection.kind === 'connecting' ? 'Funding wallet…' : 'Start demo'}
+        </button>
+      </div>
     );
   }
 
+  const authorizedWallet =
+    connection.kind === 'error' ? offeredWallets.find((wallet) => wallet.accounts.length > 0) : undefined;
   return (
     <div className="wallet-connect-options">
-      <PhantomConnect wallet={phantom} disabled={disabled} onConnect={onConnect} />
-      {connection.kind === 'error' && phantom.accounts.length > 0 ? (
-        <DisconnectAuthorizedWallet wallet={phantom} disabled={disabled} onDisconnect={onDisconnect} />
+      {offeredWallets.map((wallet) => (
+        <WalletConnect key={wallet.name} wallet={wallet} disabled={disabled} onConnect={onConnect} />
+      ))}
+      {authorizedWallet !== undefined ? (
+        <DisconnectAuthorizedWallet wallet={authorizedWallet} disabled={disabled} onDisconnect={onDisconnect} />
       ) : (
         <button
           className="wallet-demo-button"

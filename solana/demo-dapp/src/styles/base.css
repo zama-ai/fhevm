@@ -118,6 +118,11 @@ button {
   gap: 8px;
 }
 
+.wallet-version-note {
+  color: #a9a9b2;
+  font-size: 12px;
+}
+
 .wallet-demo-button {
   padding: 8px 4px;
   color: #a9a9b2;

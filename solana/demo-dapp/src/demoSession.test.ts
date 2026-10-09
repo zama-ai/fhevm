@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'vitest';
-import type { UiWalletAccount } from '@wallet-standard/react';
 import type { Wallet, WalletAccount } from '@wallet-standard/base';
 import { SolanaSignOffchainMessage } from '@solana/wallet-standard-features';
 import {
@@ -19,8 +18,10 @@ import {
   permitWalletFromWalletAccount,
   planDemoFunding,
   readExactMessageSignature,
+  signsVersion1Transactions,
 } from './demoSession';
 import { parseRuntimeDemoConfig } from './demoConfig';
+import { testUiWallet, testUiWalletAccount } from './testWallet';
 
 const validResponse = {
   config: {
@@ -133,7 +134,7 @@ describe('the permit adapter', () => {
   const standardAccount: WalletAccount = headless.account;
   const standardWallet: Wallet = {
     version: '1.0.0',
-    name: 'Fake Phantom',
+    name: 'Test wallet',
     icon: 'data:image/svg+xml;base64,',
     chains: ['solana:localnet'],
     features: { [SolanaSignOffchainMessage]: feature },
@@ -165,30 +166,45 @@ describe('the permit adapter', () => {
 });
 
 describe('Wallet Standard boundary', () => {
-  const walletAccount = (overrides: Partial<UiWalletAccount> = {}): UiWalletAccount =>
-    ({
-      address: '11111111111111111111111111111111',
-      chains: ['solana:localnet'],
-      features: ['solana:signTransaction', 'solana:signMessage'],
-      ...overrides,
-    }) as UiWalletAccount;
-
   test('requires localnet transaction and exact-message capabilities before funding', () => {
-    expect(() => assertWalletAccountCapabilities(walletAccount(), 'Phantom')).not.toThrow();
-    expect(() => assertWalletAccountCapabilities(walletAccount({ chains: ['solana:devnet'] }), 'Phantom')).toThrow(
-      'has not enabled Solana localnet',
-    );
+    expect(() => assertWalletAccountCapabilities(testUiWalletAccount(), 'Test wallet')).not.toThrow();
     expect(() =>
-      assertWalletAccountCapabilities(walletAccount({ features: ['solana:signMessage'] }), 'Phantom'),
+      assertWalletAccountCapabilities(testUiWalletAccount({ chains: ['solana:devnet'] }), 'Test wallet'),
+    ).toThrow('has not enabled Solana localnet');
+    expect(() =>
+      assertWalletAccountCapabilities(testUiWalletAccount({ accountFeatures: ['solana:signMessage'] }), 'Test wallet'),
     ).toThrow('does not support transaction signing');
     expect(() =>
-      assertWalletAccountCapabilities(walletAccount({ features: ['solana:signTransaction'] }), 'Phantom'),
+      assertWalletAccountCapabilities(testUiWalletAccount({ accountFeatures: ['solana:signTransaction'] }), 'Test wallet'),
     ).toThrow('does not support message signing');
   });
 
+  test('refuses at connect a wallet that cannot sign version 1 transactions', () => {
+    expect(() =>
+      assertWalletAccountCapabilities(
+        testUiWalletAccount({ supportedTransactionVersions: ['legacy', 0] }),
+        'Legacy wallet',
+      ),
+    ).toThrow(
+      'Legacy wallet cannot sign Solana version 1 transactions, which the demo sends. Use the demo wallet instead.',
+    );
+  });
+
+  test.each([
+    [['legacy', 0], false],
+    [[0, 1], true],
+    [['legacy', 0, 1], true],
+  ] as const)('offers a wallet advertising %j: %s', (supportedTransactionVersions, offered) => {
+    expect(signsVersion1Transactions(testUiWallet({ supportedTransactionVersions }))).toBe(offered);
+  });
+
   test('requires the selected devnet chain before funding', () => {
-    expect(() => assertWalletAccountCapabilities(walletAccount({ chains: ['solana:devnet'] }), 'Phantom', 'devnet')).not.toThrow();
-    expect(() => assertWalletAccountCapabilities(walletAccount(), 'Phantom', 'devnet')).toThrow('has not enabled Solana devnet');
+    expect(() =>
+      assertWalletAccountCapabilities(testUiWalletAccount({ chains: ['solana:devnet'] }), 'Test wallet', 'devnet'),
+    ).not.toThrow();
+    expect(() => assertWalletAccountCapabilities(testUiWalletAccount(), 'Test wallet', 'devnet')).toThrow(
+      'has not enabled Solana devnet',
+    );
   });
 
   test('accepts an unchanged decrypt preimage and copies its signature', () => {

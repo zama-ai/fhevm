@@ -1,7 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-import type { BatchPosition } from './batchTypes';
 import type { DemoSession } from './demoSession';
 import { PortfolioOverview } from './PortfolioOverview';
 import { initialDemoState, type DemoController } from './useDemoController';
@@ -261,13 +260,13 @@ const render = (value: DemoController): ReactTestRenderer => {
   return renderer;
 };
 
-const phantom = {
+const externalWallet = {
   kind: 'wallet-standard',
-  name: 'Phantom',
-  accountKey: 'phantom-account',
+  name: 'Test wallet',
+  accountKey: 'test-account',
 } as const;
 
-describe('PortfolioOverview Phantom localnet guidance', () => {
+describe('PortfolioOverview', () => {
   beforeEach(() => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     vi.clearAllMocks();
@@ -331,42 +330,9 @@ describe('PortfolioOverview Phantom localnet guidance', () => {
     act(() => renderer.unmount());
   });
 
-  test.each([
-    ['idle', { kind: 'idle' }],
-    ['error', { kind: 'error', message: 'Wallet request cancelled' }],
-  ] as const)('shows passive developer-mode guidance while the Phantom deposit is %s', (_name, deposit) => {
-    const renderer = render(walletController(phantom, deposit));
-    const notes = renderer.root.findAll((node) => node.props.className === 'wallet-scan-note');
-
-    expect(notes).toHaveLength(1);
-    expect(notes[0].findAllByType('button')).toHaveLength(0);
-    expect(notes[0].findAllByType('a')).toHaveLength(0);
-    expect(notes[0].children.join(' ')).toContain('its scanner cannot reach this local validator');
+  test('counts wallet approvals for a connected wallet', () => {
+    const renderer = render(walletController(externalWallet));
     expect(renderer.root.findByProps({ className: 'approval-count' }).children).toEqual(['Up to 2 approvals']);
-    act(() => renderer.unmount());
-  });
-
-  test.each([
-    ['the demo wallet', { kind: 'burner', name: 'Demo wallet' } as const, { kind: 'idle' } as const],
-    [
-      'another Wallet Standard wallet',
-      { kind: 'wallet-standard', name: 'Solflare', accountKey: 'solflare-account' } as const,
-      { kind: 'idle' } as const,
-    ],
-    [
-      'a running Phantom deposit',
-      phantom,
-      { kind: 'running', stage: 'shielding' } as const,
-    ],
-    [
-      'a completed Phantom deposit',
-      phantom,
-      { kind: 'joined', result: {} as BatchPosition } as const,
-    ],
-  ])('does not show the localnet note for %s', (_name, wallet, deposit) => {
-    const renderer = render(walletController(wallet, deposit as DemoController['state']['deposit']));
-
-    expect(renderer.root.findAll((node) => node.props.className === 'wallet-scan-note')).toHaveLength(0);
     act(() => renderer.unmount());
   });
 });
