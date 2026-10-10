@@ -1,0 +1,24 @@
+[book]
+title = "FHEVM Codebase Documentation"
+authors = ["Zama"]
+description = "Comprehensive technical documentation of the FHEVM codebase"
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/zama-ai/fhevm"
+edit-url-template = "https://github.com/zama-ai/fhevm/edit/main/docs/codebase/{path}"
+
+[output.html.search]
+enable = true
+limit-results = 30
+use-boolean-and = true
+
+[output.html.fold]
+enable = true
+level = 1
