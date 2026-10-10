@@ -1018,7 +1018,7 @@ participant's contribution Store through the transient store (DD-049), so the ba
 deposit into that Store in the same join transaction. Each batch gets its **own token
 account**, so the burned/revealed total is exactly that batch's sum (the EVM code documents the
 inter-batch dust leak this prevents). Lifecycle is Pending -> Dispatched -> Settled/Canceled, or
-Refunding after a cancelled dispatch, with permissionless dispatch/settle/claim, a permissionless
+Refunding after a cancelled dispatch or a deposit worth zero vault shares (below), with permissionless dispatch/settle/claim, a permissionless
 cancel once a dispatched batch passes its settle deadline (DD-045), and an exact-refund `quit` — no
 operator custody of principal.
 
@@ -1058,13 +1058,19 @@ its deposit phase — never the share account's raw balance — because SPL dest
 incoming transfers: a preloaded share balance stays inert instead of inflating the rate past u64 and
 bricking the batch (pinned by `mollusk_preloaded_shares_do_not_poison_the_rate`).
 
-Known deposit-path limitation: a batch whose certified total floors to zero shares at the vault's
-current price cannot settle — `demo_vault::deposit` rejects `ZeroShares`, settle reverts atomically
-(retryable but never to success, since the demo vault's price only rises), and the batch waits for
-the settle-deadline cancellation and refunds (DD-045). An attacker holding ~all vault shares can
-therefore delay sub-price-P batches by up to the settle deadline near-free by `harvest`-donating P
-(the donation accrues to their own shares); no deposit is lost. Behavior is pinned by
-`mollusk_dust_total_settle_reverts_until_the_deadline_cancel`.
+A deposit batch whose certified total floors to zero shares at the vault's current price settles
+into refunds. `demo_vault::deposit` would reject it with `ZeroShares`, and since a failed CPI aborts
+the whole transaction, settle cannot catch that error the way EVM's callback catches a route failure.
+It predicts it instead, with the vault's own `assets_to_shares` on the balances the deposit would
+read (the vault token account, pinned to the vault, and the share mint supply). On zero shares it
+wraps the redeemed total back into the batch's confidential join account and the batch becomes
+Refunding, where `quit` returns each participant's exact deposit. An attacker holding ~all vault
+shares can still push sub-price-P batches into refunds near-free by `harvest`-donating P (the
+donation accrues to their own shares), but no deposit is lost or delayed. Pinned by
+`mollusk_dust_total_settle_opens_exact_refunds`. Only `ZeroShares` is predicted: any other vault
+failure, such as a share-price overflow, still reverts settle, and the batch waits for the
+settle-deadline cancellation and refunds (DD-045), pinned by
+`mollusk_settle_overflow_waits_for_the_deadline_cancel`.
 
 Redeem path implemented (fhevm-internal#1758), as an addendum to the deposit path above. **One
 program serves both directions, with the direction on the `Batcher` config** — each config is a
@@ -1093,7 +1099,7 @@ Settle's delta accounting is preserved as a security invariant on the redeem dir
 underlying-received phase: the payout is the batch payout account's SPL balance DELTA across the
 vault CPI, never its raw balance, so preloaded tokens (which SPL destinations cannot refuse) stay
 inert (pinned by `mollusk_redeem_preloaded_underlying_stays_inert` alongside the deposit-side
-test). The dust-brick limitation above is deposit-only: the vault's share price never drops below
+test). The zero-shares refund above is deposit-only: the vault's share price never drops below
 1:1 (floor rounding favors the vault; `harvest` only raises the price), so withdrawing any non-zero
 share total always returns at least that many underlying units and `ZeroAssets` is unreachable from
 a redeem batch (pinned by `mollusk_redeem_one_share_dust_settles_at_extreme_price`). Exit rules are
@@ -1109,8 +1115,8 @@ with the deny list on or a binding per-application block cap when the caller pas
 (pinned by `batcher_mollusk.rs`). The demo's deposit, redeem, claim, settlement and
 batch-provisioning flows read `HostConfig` once with `readHostPolicy` and pass each instruction the
 deny records and HCU accounts of the applications its executions touch, the settlement flow's
-deadline `cancel_dispatch` included; no demo flow runs `quit`. The deployer leaves the
-per-application block cap unlimited; the per-transaction caps do bind.
+deadline `cancel_dispatch` and refunding `quit`s included. The deployer leaves the per-application
+block cap unlimited; the per-transaction caps do bind.
 
 ## DD-043: Two Derivation Regimes — Content-Addressed Deterministic Handles, Persistent-Write-Anchored Rand Seeds (`context_id` deleted)
 

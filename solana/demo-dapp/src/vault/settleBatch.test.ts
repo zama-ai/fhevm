@@ -140,7 +140,7 @@ describe('settleBatch', () => {
   });
 
   // The largest settle: a certificate at the host's maximum KMS threshold (MAX_KMS_SIGNERS = 16),
-  // with the SDK's 65-byte v2 extra data, the deny record and both HCU witnesses. A v1 transaction is at
+  // with the SDK's 65-byte v2 extra data, both mints' deny records and HCU witnesses. A v1 transaction is at
   // most 4,096 bytes and 64 account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
   it('fits one v1 transaction at the maximum KMS threshold with every witness', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n), 16));
@@ -155,7 +155,7 @@ describe('settleBatch', () => {
     expect(size.addresses).toBeLessThanOrEqual(64);
   });
 
-  it("puts the payout mint's HCU accounts in its slots for the wrap, and none for a zero total", async () => {
+  it("puts both mints' HCU accounts in their slots for a wrap, and none for a zero total", async () => {
     const settled = async (total: bigint) => {
       certificate.mockResolvedValue(claim(cleartextHex(total)));
       const { client, opts } = await setup();
@@ -163,11 +163,14 @@ describe('settleBatch', () => {
       const settle = messageOf(sent()).instructions[1]!;
       return parseSettleInstruction({ ...settle, accounts: settle.accounts!, data: settle.data! }).accounts;
     };
-    const slots = { payoutMint: tokenApp(roots().payoutConfidentialMint) };
+    const slots = {
+      payoutMint: tokenApp(roots().payoutConfidentialMint),
+      joinMint: tokenApp(roots().joinConfidentialMint),
+    };
 
     const { actual, expected } = await hcuSlots(await settled(800n), slots);
     expect(actual).toEqual(expected);
-    expect(Object.values((await hcuSlots(await settled(0n), slots)).actual)).toEqual([undefined, undefined]);
+    expect(Object.values((await hcuSlots(await settled(0n), slots)).actual)).toEqual(Array(4).fill(undefined));
   });
 
   // The settle instruction's accounts as submitted.
@@ -179,13 +182,14 @@ describe('settleBatch', () => {
     return Array.from(settle.accounts ?? [], (account) => account.address);
   }
 
-  it('appends, under the deny list, the payout mint deny record for the wrap, and none for a zero total', async () => {
+  it('appends, under the deny list, both mints\' deny records for a wrap, and none for a zero total', async () => {
     const plain = await submittedSettleAccounts(800n, false);
-    const [payoutMintRecord] = await findDenyScopeRecordPda({
-      appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
-      scope: roots().payoutConfidentialMint,
-    });
-    expect((await submittedSettleAccounts(800n, true)).slice(plain.length)).toEqual([payoutMintRecord]);
+    const record = async (scope: Address) =>
+      (await findDenyScopeRecordPda({ appProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, scope }))[0];
+    expect((await submittedSettleAccounts(800n, true)).slice(plain.length)).toEqual([
+      await record(roots().payoutConfidentialMint),
+      await record(roots().joinConfidentialMint),
+    ]);
     expect(await submittedSettleAccounts(0n, true)).toHaveLength(plain.length);
   });
 

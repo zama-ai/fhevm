@@ -1,4 +1,11 @@
-import type { Address, Rpc, SolanaRpcApi } from '@solana/kit';
+import {
+  getBase58Decoder,
+  getBase64Encoder,
+  type Address,
+  type Base58EncodedBytes,
+  type Rpc,
+  type SolanaRpcApi,
+} from '@solana/kit';
 
 import {
   type FhevmSolanaBaseClient,
@@ -6,7 +13,14 @@ import {
 } from '@fhevm/sdk/solana';
 import { fetchBatch, type Batch } from './internal/generated/confidentialBatcher/accounts/batch.js';
 import { fetchBatcher, type Batcher } from './internal/generated/confidentialBatcher/accounts/batcher.js';
-import { fetchJoinRecord, type JoinRecord } from './internal/generated/confidentialBatcher/accounts/joinRecord.js';
+import {
+  fetchJoinRecord,
+  getJoinRecordDecoder,
+  getJoinRecordSize,
+  JOIN_RECORD_DISCRIMINATOR,
+  type JoinRecord,
+} from './internal/generated/confidentialBatcher/accounts/joinRecord.js';
+import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { deriveBatchAddresses, type BatchAddresses, type VaultDemoRoots } from './derive.js';
 
 /** The batcher config's decoded on-chain state (generated decoder). */
@@ -45,6 +59,22 @@ export async function getJoinRecord(
 ): Promise<JoinRecordState> {
   const account = await fetchJoinRecord(rpc, joinRecord);
   return account.data;
+}
+
+/** Reads every join record of `batch` that still exists: one per participant who has not exited. */
+export async function getBatchJoinRecords(rpc: SolanaRpc, batch: Address): Promise<JoinRecordState[]> {
+  const memcmp = (offset: bigint, bytes: Base58EncodedBytes) => ({ memcmp: { offset, bytes, encoding: 'base58' as const } });
+  const accounts = await rpc
+    .getProgramAccounts(CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS, {
+      encoding: 'base64',
+      filters: [
+        { dataSize: BigInt(getJoinRecordSize()) },
+        memcmp(0n, getBase58Decoder().decode(JOIN_RECORD_DISCRIMINATOR) as Base58EncodedBytes),
+        memcmp(8n, batch as string as Base58EncodedBytes),
+      ],
+    })
+    .send();
+  return accounts.map(({ account }) => getJoinRecordDecoder().decode(getBase64Encoder().encode(account.data[0])));
 }
 
 /**

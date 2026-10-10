@@ -18,8 +18,11 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
   if (!depositJoined && !hasPrivateShares) return null;
 
   const settled = lifecycle?.kind === 'settled';
-  const complete = settled && lifecycle.claimed;
-  const activityLabel = complete
+  const refunded = lifecycle?.kind === 'refunding' && lifecycle.refunded;
+  const complete = (settled && lifecycle.claimed) || refunded;
+  const activityLabel = refunded
+    ? 'Deposit refunded'
+    : complete
     ? 'Deposit complete'
     : lifecycle?.kind === 'dispatched'
       ? 'Settlement in progress'
@@ -70,7 +73,9 @@ export function DepositJourney({ controller }: { readonly controller: DemoContro
               </div>
             </div>
 
-            {(lifecycle?.kind === 'awaiting-dispatch' || lifecycle?.kind === 'dispatched') && (
+            {(lifecycle?.kind === 'awaiting-dispatch' ||
+              lifecycle?.kind === 'dispatched' ||
+              lifecycle?.kind === 'refunding') && (
               <SettlementProgress lifecycle={lifecycle} action={operatorAction} />
             )}
 

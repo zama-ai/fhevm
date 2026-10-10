@@ -31,7 +31,8 @@ export type BatchLifecycle =
       readonly claimed: boolean;
     }
   | { readonly kind: 'canceled' }
-  | { readonly kind: 'refunding' };
+  /** `refunded` once the user's own contribution has been returned (their join record is closed). */
+  | { readonly kind: 'refunding'; readonly refunded: boolean };
 
 export type OperatorAction = 'dispatch' | 'settle' | 'claim';
 

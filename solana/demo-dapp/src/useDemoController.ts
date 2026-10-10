@@ -243,7 +243,7 @@ export function useDemoController() {
               action === 'dispatch'
                 ? next.kind !== 'awaiting-dispatch'
                 : action === 'settle'
-                  ? next.kind === 'settled' || next.kind === 'canceled'
+                  ? next.kind === 'settled' || next.kind === 'canceled' || (next.kind === 'refunding' && next.refunded)
                   : next.kind === 'settled' && next.claimed;
             commit(generation, {
               [lifecycleKey]: next,
@@ -289,7 +289,7 @@ export function useDemoController() {
           commit(generation, { depositLifecycle: next, depositLifecycleError: null });
           if (next.kind === 'awaiting-dispatch' && next.remainingSecs === 0n) {
             await advanceOperator(session, position, 'deposit', 'dispatch', generation);
-          } else if (next.kind === 'dispatched') {
+          } else if (next.kind === 'dispatched' || (next.kind === 'refunding' && !next.refunded)) {
             await advanceOperator(session, position, 'deposit', 'settle', generation);
           } else if (next.kind === 'settled' && !next.claimed) {
             await advanceOperator(session, position, 'deposit', 'claim', generation);
@@ -341,7 +341,7 @@ export function useDemoController() {
           commit(generation, { redeemLifecycle: next, redeemOperatorError: null });
           if (next.kind === 'awaiting-dispatch' && next.remainingSecs === 0n) {
             await advanceOperator(session, position, 'redeem', 'dispatch', generation);
-          } else if (next.kind === 'dispatched') {
+          } else if (next.kind === 'dispatched' || (next.kind === 'refunding' && !next.refunded)) {
             await advanceOperator(session, position, 'redeem', 'settle', generation);
           } else if (next.kind === 'settled' && !next.claimed) {
             await advanceOperator(session, position, 'redeem', 'claim', generation);

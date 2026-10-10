@@ -187,6 +187,18 @@ describe('useDemoController generation safety', () => {
     expect(controller.state.depositOperatorAction).toBe(null);
   });
 
+  test.each([
+    [false, 1],
+    [true, 0],
+  ])('refunding (refunded: %s) asks the keeper to refund %i time(s)', async (refunded, calls) => {
+    mocks.lifecycle.mockResolvedValue({ kind: 'refunding', refunded });
+    await connect(controller);
+    await flush();
+
+    expect(mocks.operator).toHaveBeenCalledTimes(calls);
+    if (calls > 0) expect(mocks.operator).toHaveBeenCalledWith({ action: 'settle', position, direction: 'deposit' });
+  });
+
   test('automatically advances the redeem batch too', async () => {
     mocks.findDeposit.mockResolvedValue(null);
     mocks.findRedeem.mockResolvedValue(position);

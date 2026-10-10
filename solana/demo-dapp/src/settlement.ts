@@ -1,6 +1,6 @@
 import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
-import type { Signature, TransactionSigner } from '@solana/kit';
+import type { Address, Signature, TransactionSigner } from '@solana/kit';
 import {
   createFhevmPublicDecryptClient,
   defineFhevmSolanaChain,
@@ -10,7 +10,10 @@ import {
 import {
   buildCancelDispatchInstruction,
   buildDispatchBatchInstruction,
+  buildQuitInstruction,
   dispatchableAt,
+  getBatchJoinRecords,
+  type VaultDemoRoots,
   getReclaimBatchAuthorityInstructionAsync,
   findJoinRecordPda,
   getBatchByIndex,
@@ -57,6 +60,13 @@ const currentPinnedBatch = async (
   return { rpc, batch };
 };
 
+/** The user's join record in `batch`, with its state while it exists: a quit or close removes it. */
+const userJoinRecord = async (rpc: ReturnType<typeof createFinalizedRpc>, batch: Address, user: Address) => {
+  const address = (await findJoinRecordPda({ batch, user }))[0];
+  const exists = (await rpc.getAccountInfo(address, { encoding: 'base64' }).send()).value !== null;
+  return { address, state: exists ? await getJoinRecord(rpc, address) : null };
+};
+
 export const readVaultLifecycle = async (
   session: DemoUserSession,
   position: BatchTarget,
@@ -76,9 +86,7 @@ export const readVaultLifecycle = async (
     return { kind: 'dispatched' };
   }
   if (batch.state.status === BatchStatus.Settled) {
-    const recordAddress = (await findJoinRecordPda({ batch: position.batch, user: session.signer.address }))[0];
-    const exists = (await rpc.getAccountInfo(recordAddress, { encoding: "base64" }).send()).value !== null;
-    const joinRecord = exists ? await getJoinRecord(rpc, recordAddress) : null;
+    const joinRecord = (await userJoinRecord(rpc, position.batch, session.signer.address)).state;
     return {
       kind: 'settled',
       totalJoined: batch.state.totalJoined,
@@ -87,7 +95,10 @@ export const readVaultLifecycle = async (
     };
   }
   if (batch.state.status === BatchStatus.Canceled) return { kind: 'canceled' };
-  if (batch.state.status === BatchStatus.Refunding) return { kind: 'refunding' };
+  if (batch.state.status === BatchStatus.Refunding) {
+    const joinRecord = (await userJoinRecord(rpc, position.batch, session.signer.address)).state;
+    return { kind: 'refunding', refunded: joinRecord === null };
+  }
   throw new Error(`Unsupported batch status ${batch.state.status}`);
 };
 
@@ -118,6 +129,50 @@ export const dispatchVaultBatch = async (
     .signature;
 };
 
+/**
+ * Runs `quit` for every participant still in a refunding batch, so each gets their exact contribution
+ * back without signing: a refunding quit is permissionless and pays only the participant's own token
+ * account. Each quit closes its join record, so a rerun refunds only who is left. One participant's
+ * failure does not hold back the others; the failed participants are reported once all were tried.
+ */
+const refundParticipants = async (
+  session: DemoOperatorSession,
+  roots: VaultDemoRoots,
+  batch: Address,
+): Promise<Signature | null> => {
+  const keeperClient = createDemoClient(session.config, session.keeper);
+  const host = await readHostPolicy(keeperClient.rpc);
+  let signature: Signature | null = null;
+  const failed: Address[] = [];
+  for (const { user } of await getBatchJoinRecords(keeperClient.rpc, batch)) {
+    try {
+      const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
+      const quit = await buildQuitInstruction({
+        transientStore,
+        user,
+        payer: session.keeper,
+        batcher: roots.batcher,
+        batch,
+        joinConfidentialMint: roots.joinConfidentialMint,
+        joinUnderlyingMint: roots.joinUnderlyingMint,
+        tokenProgram: TOKEN_PROGRAM_ADDRESS,
+        host,
+      });
+      signature = (await keeperClient.sendFheTransaction(transientStore, [quit])).context.signature;
+    } catch (error) {
+      console.warn(`refunding ${user} failed: ${error instanceof Error ? error.message : String(error)}`);
+      failed.push(user);
+    }
+  }
+  if (failed.length > 0) throw new Error(`Refunds failed for ${failed.join(', ')}; a rerun retries them`);
+  return signature;
+};
+
+/**
+ * The keeper's pass over a dispatched batch: settles it, or cancels it once its settle deadline has
+ * passed. A batch that ends refunding, cancelled or worth zero vault shares, then has every
+ * participant refunded.
+ */
 export const settleOrCancelVaultBatch = async (
   session: DemoOperatorSession,
   position: BatchTarget,
@@ -125,70 +180,75 @@ export const settleOrCancelVaultBatch = async (
 ): Promise<Signature | null> => {
   const roots = vaultRoots(session.config, direction);
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
-  if (
-    batch.state.status === BatchStatus.Settled ||
-    batch.state.status === BatchStatus.Canceled ||
-    batch.state.status === BatchStatus.Refunding
-  )
-    return null;
-  if (batch.state.status !== BatchStatus.Dispatched) throw new Error('Dispatch the batch before settlement');
+  let status = batch.state.status;
+  if (status === BatchStatus.Settled || status === BatchStatus.Canceled) return null;
+  if (status !== BatchStatus.Dispatched && status !== BatchStatus.Refunding) {
+    throw new Error('Dispatch the batch before settlement');
+  }
 
-  const keeperClient = createDemoClient(session.config, session.keeper);
-  const batcher = await getBatcher(rpc, roots.batcher);
-  if ((await fetchSysvarClock(rpc)).unixTimestamp >= settleDeadline(batch.state, batcher)) {
-    // Settle is refused from the deadline on; cancelling opens the participants' refunds instead.
-    const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
-    const cancel = await buildCancelDispatchInstruction({
-      transientStore,
-      payer: session.keeper,
-      batcher: roots.batcher,
-      batch: position.batch,
-      joinConfidentialMint: roots.joinConfidentialMint,
-      authorityFundingLamports: BigInt(session.config.authorityFundingLamports),
-      host: await readHostPolicy(rpc),
-    });
-    return (await keeperClient.sendFheTransaction(transientStore, [cancel])).context.signature;
-  }
-  setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: session.relayerApiKey } });
-  const chain = defineFhevmSolanaChain({
-    id: BigInt(session.config.chainId),
-    fhevm: { relayerUrl: session.config.relayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
-  });
-  const publicDecryptClient = createFhevmPublicDecryptClient({ chain, rpc });
-  const signature = await settleBatch(publicDecryptClient, keeperClient, {
-    roots,
-    batchIndex: position.batchIndex,
-    authorityFundingLamports: BigInt(session.config.authorityFundingLamports),
-    certificateOptions: { timeout: 60_000 },
-    host: await readHostPolicy(rpc),
-  });
-  // The batch is settled, so its authority PDA has paid its last owner-charged rent: take its unspent
-  // funding back. A failure here is a rent-hygiene miss, never a settlement failure, and not a
-  // permanent one: the reclaim pass in prepareNextBatch drains any authority whose batch is finished.
-  try {
-    await keeperClient.sendTransaction([
-      await getReclaimBatchAuthorityInstructionAsync({
-        authority: session.keeper,
+  let signature: Signature | null = null;
+  if (status === BatchStatus.Dispatched) {
+    const keeperClient = createDemoClient(session.config, session.keeper);
+    const batcher = await getBatcher(rpc, roots.batcher);
+    if ((await fetchSysvarClock(rpc)).unixTimestamp >= settleDeadline(batch.state, batcher)) {
+      // Settle is refused from the deadline on; cancelling opens the participants' refunds instead.
+      const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
+      const cancel = await buildCancelDispatchInstruction({
+        transientStore,
+        payer: session.keeper,
         batcher: roots.batcher,
-        batch: batch.addresses.batch,
-        batchAuthority: batch.addresses.batchAuthority,
+        batch: position.batch,
         joinConfidentialMint: roots.joinConfidentialMint,
-      }),
-    ]);
-  } catch (error) {
-    console.warn(
-      `settled, but reclaiming the batch authority failed (the next prepare retries): ${error instanceof Error ? error.message : String(error)}`,
-    );
+        authorityFundingLamports: BigInt(session.config.authorityFundingLamports),
+        host: await readHostPolicy(rpc),
+      });
+      signature = (await keeperClient.sendFheTransaction(transientStore, [cancel])).context.signature;
+    } else {
+      setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: session.relayerApiKey } });
+      const chain = defineFhevmSolanaChain({
+        id: BigInt(session.config.chainId),
+        fhevm: { relayerUrl: session.config.relayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
+      });
+      const publicDecryptClient = createFhevmPublicDecryptClient({ chain, rpc });
+      signature = await settleBatch(publicDecryptClient, keeperClient, {
+        roots,
+        batchIndex: position.batchIndex,
+        authorityFundingLamports: BigInt(session.config.authorityFundingLamports),
+        certificateOptions: { timeout: 60_000 },
+        host: await readHostPolicy(rpc),
+      });
+      // The batch is settled or refunding, so its authority PDA has paid its last owner-charged rent: take its unspent
+      // funding back. A failure here is a rent-hygiene miss, never a settlement failure, and not a
+      // permanent one: the reclaim pass in prepareNextBatch drains any authority whose batch is finished.
+      try {
+        await keeperClient.sendTransaction([
+          await getReclaimBatchAuthorityInstructionAsync({
+            authority: session.keeper,
+            batcher: roots.batcher,
+            batch: batch.addresses.batch,
+            batchAuthority: batch.addresses.batchAuthority,
+            joinConfidentialMint: roots.joinConfidentialMint,
+          }),
+        ]);
+      } catch (error) {
+        console.warn(
+          `settled, but reclaiming the batch authority failed (the next prepare retries): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    // A cancel, or a deposit total worth zero vault shares, leaves the batch refunding.
+    status = (await currentPinnedBatch(session, position, direction)).batch.state.status;
   }
+  if (status === BatchStatus.Refunding) return (await refundParticipants(session, roots, position.batch)) ?? signature;
   return signature;
 };
 
 /** User-signed rent return after claim/cancel. A quit closes its record itself. */
 export const closeSpentJoinRecord = async (session: DemoUserSession, position: BatchTarget): Promise<void> => {
   const rpc = createFinalizedRpc(session.config.rpcUrl);
-  const record = (await findJoinRecordPda({ batch: position.batch, user: session.signer.address }))[0];
-  if ((await rpc.getAccountInfo(record, { encoding: 'base64' }).send()).value === null) return;
+  const { address, state } = await userJoinRecord(rpc, position.batch, session.signer.address);
+  if (state === null) return;
   await createDemoClient(session.config, session.signer).sendTransaction([
-    await getCloseJoinRecordInstructionAsync({ user: session.signer, batch: position.batch, joinRecord: record }),
+    await getCloseJoinRecordInstructionAsync({ user: session.signer, batch: position.batch, joinRecord: address }),
   ]);
 };

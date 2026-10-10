@@ -115,7 +115,8 @@ pub struct BatchCanceled {
     pub batch: Pubkey,
 }
 
-/// Emitted when a dispatched burn is cancelled and the batch becomes refund-only.
+/// Emitted when a dispatched batch becomes refund-only: `cancel_dispatch` restored its burn, or
+/// `settle` wrapped back a deposit worth zero vault shares.
 #[event]
 pub struct BatchDispatchCancelled {
     /// Event schema version.

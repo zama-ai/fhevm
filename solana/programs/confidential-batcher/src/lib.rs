@@ -180,8 +180,10 @@ pub mod confidential_batcher {
     /// (deposit for deposit batchers, withdraw for redeem batchers), wraps
     /// the received payout into confidential payout tokens, and records the
     /// batch's informational public rate. A zero-total batch is canceled
-    /// instead. Permissionless, before the batch's settle deadline.
-    /// Deny records: `(token, payout mint)`, or none for a zero total, which runs no execution.
+    /// instead, and a deposit worth zero vault shares is wrapped back and opens
+    /// refunds. Permissionless, before the batch's settle deadline.
+    /// Deny records: `(token, payout mint)` then `(token, join mint)` for the zero-shares refund, or
+    /// none for a zero total, which runs no execution.
     pub fn settle<'info>(
         ctx: Context<'info, Settle<'info>>,
         cleartext_total: u64,
