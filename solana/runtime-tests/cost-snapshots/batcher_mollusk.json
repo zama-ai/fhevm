@@ -158,7 +158,7 @@
       "max_cpi_instruction_data_bytes": 396
     },
     "settle": {
-      "compute_units": 281104,
+      "compute_units": 281108,
       "unique_accounts": 38,
       "instruction_data_bytes": 98,
       "cpi_instructions": 14,
