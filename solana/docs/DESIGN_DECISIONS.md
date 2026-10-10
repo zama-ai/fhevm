@@ -1018,7 +1018,7 @@ participant's contribution Store through the transient store (DD-049), so the ba
 deposit into that Store in the same join transaction. Each batch gets its **own token
 account**, so the burned/revealed total is exactly that batch's sum (the EVM code documents the
 inter-batch dust leak this prevents). Lifecycle is Pending -> Dispatched -> Settled/Canceled, or
-Refunding after a cancelled dispatch or a deposit worth zero vault shares (DD-042), with permissionless dispatch/settle/claim, a permissionless
+Refunding after a cancelled dispatch or a deposit worth zero vault shares (below), with permissionless dispatch/settle/claim, a permissionless
 cancel once a dispatched batch passes its settle deadline (DD-045), and an exact-refund `quit` — no
 operator custody of principal.
 
