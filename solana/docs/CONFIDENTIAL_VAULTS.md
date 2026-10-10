@@ -69,7 +69,7 @@ everything below uses Solana-native building blocks.
 If the batch is not settled by its settle deadline, it is cancelled and each participant gets back
 the exact encrypted amount they joined (DD-045 in `DESIGN_DECISIONS.md`). The batch cannot accept
 new joins or be dispatched, settled, or cancelled again. A deposit batch too small to buy one vault
-share ends the same way, at settlement rather than at the deadline.
+share ends the same way, at settlement rather than at the deadline (DD-042).
 
 Withdrawing works the same way in mirror, in the same program: a *redeem*
 batcher's batches are joined with encrypted shares, the batch total of shares

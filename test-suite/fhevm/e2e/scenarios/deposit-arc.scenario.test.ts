@@ -4,9 +4,8 @@ import {
   ZAMA_HOST_PROGRAM_ADDRESS,
   findPendingBurnPda,
   findTokenAccountPda,
-  findEventAuthorityPda as findTokenEventAuthorityPda,
 } from '@fhevm/confidential-token';
-import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
+import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { asBytes32Hex } from '@fhevm/sdk/base';
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { LOCAL_SOLANA_ENDPOINTS } from "../../src/solana/endpoints";
@@ -637,19 +636,7 @@ test.skipIf(!runsDemoScenarios)(
     expect(await settleOrCancelVaultBatch(await session(), position, 'deposit')).toBeNull();
     const quit = await vault.buildQuitInstruction({
       transientStore, user: alice, payer: alice, batcher: roots.batcher, batch,
-      joinConfidentialMint: mint, joinUnderlyingMint: roots.joinUnderlyingMint,
-      batchAuthorityAta: (await findAssociatedTokenPda({
-        owner: batchAuthority,
-        tokenProgram: TOKEN_PROGRAM_ADDRESS,
-        mint: roots.joinUnderlyingMint,
-      }))[0],
-      userAta: (await findAssociatedTokenPda({
-        owner: alice.address,
-        tokenProgram: TOKEN_PROGRAM_ADDRESS,
-        mint: roots.joinUnderlyingMint,
-      }))[0],
-      batchJoinTokenAccount, userTokenAccount, batchBalanceStore: await vault.tokenStoreAddress(mint, batchJoinTokenAccount),
-      userBalanceStore, joinStore, confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0], host,
+      joinConfidentialMint: mint, joinUnderlyingMint: roots.joinUnderlyingMint, tokenProgram: TOKEN_PROGRAM_ADDRESS, host,
     });
     await expectProgramError('a retry of the refunding quit', ANCHOR_ACCOUNT_NOT_INITIALIZED, () =>
       aliceClient.sendFheTransaction(transientStore, [quit]),

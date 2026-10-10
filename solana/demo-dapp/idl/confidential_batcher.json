@@ -2569,7 +2569,7 @@
         {
           "name": "batch_join_token_account",
           "docs": [
-            "zero-shares refund wrap."
+            "Mutable for the zero-shares refund wrap."
           ],
           "writable": true
         },
@@ -2636,7 +2636,7 @@
         {
           "name": "batch_burned_amount_store",
           "docs": [
-            "by the token CPI. Mutable because the zero-shares refund wrap replaces its balance slot."
+            "Mutable because the zero-shares refund wrap replaces its balance slot."
           ],
           "writable": true
         },
@@ -3503,7 +3503,8 @@
     {
       "name": "BatchDispatchCancelled",
       "docs": [
-        "Emitted when a dispatched burn is cancelled and the batch becomes refund-only."
+        "Emitted when a dispatched batch becomes refund-only: `cancel_dispatch` restored its burn, or",
+        "`settle` wrapped back a deposit worth zero vault shares."
       ],
       "type": {
         "kind": "struct",

@@ -1018,7 +1018,7 @@ participant's contribution Store through the transient store (DD-049), so the ba
 deposit into that Store in the same join transaction. Each batch gets its **own token
 account**, so the burned/revealed total is exactly that batch's sum (the EVM code documents the
 inter-batch dust leak this prevents). Lifecycle is Pending -> Dispatched -> Settled/Canceled, or
-Refunding after a cancelled dispatch, with permissionless dispatch/settle/claim, a permissionless
+Refunding after a cancelled dispatch or a deposit worth zero vault shares (DD-042), with permissionless dispatch/settle/claim, a permissionless
 cancel once a dispatched batch passes its settle deadline (DD-045), and an exact-refund `quit` — no
 operator custody of principal.
 
@@ -1070,8 +1070,7 @@ donation accrues to their own shares), but no deposit is lost or delayed. Pinned
 `mollusk_dust_total_settle_opens_exact_refunds`. Only `ZeroShares` is predicted: any other vault
 failure, such as a share-price overflow, still reverts settle, and the batch waits for the
 settle-deadline cancellation and refunds (DD-045), pinned by
-`mollusk_settle_overflow_waits_for_the_deadline_cancel`. EVM's deposit route likewise retries a
-failed vault deposit until its callback deadline, then cancels.
+`mollusk_settle_overflow_waits_for_the_deadline_cancel`.
 
 Redeem path implemented (fhevm-internal#1758), as an addendum to the deposit path above. **One
 program serves both directions, with the direction on the `Batcher` config** — each config is a

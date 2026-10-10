@@ -620,9 +620,12 @@ Cancellation restores the batch's confidential join balance and
 encrypted total supply, closes the pending burn, and moves the batch to the
 refund-only `Refunding` state. That state accepts quits, which anyone may run and which pay only
 the participant's own token account, but rejects new joins, dispatch, settlement, and repeated
-cancellation, so recovery from failed KMS or vault settlement needs no one's cooperation. Redeem and
+cancellation, so recovery from failed KMS or vault settlement needs no one's cooperation. A deposit
+settle whose total is worth zero vault shares enters the same state: it wraps the total back into
+the batch's join balance, and each quit pays the participant's exact join. Redeem and
 cancellation cannot consume the same pending burn twice.
-Pinned by `mollusk_cancel_dispatch_restores_burn_and_allows_refunds` and
+Pinned by `mollusk_cancel_dispatch_restores_burn_and_allows_refunds`,
+`mollusk_dust_total_settle_opens_exact_refunds` and
 `mollusk_redeem_current_pending_burn_then_rejects_double_settlement`.
 
 ---

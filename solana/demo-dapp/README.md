@@ -267,9 +267,9 @@ compromised authorized service behaved honestly.
 | First depositor tries to profit from a donation | The price starts with one extra asset and share; extraction is costly, but a large donation can still block deposits |
 | Tokens are sent directly into batch or payout accounts | Each batch has its own accounts; settlement counts only the vault call's change |
 | A keeper stops | Anyone can close, settle, or claim; the program supports leaving a pending batch, but the demo UI does not |
-| The key service stops after a batch closes | Settlement waits; the demo has no timeout recovery after closing |
+| The key service stops after a batch closes | Settlement waits until the batch's settle deadline; then anyone can cancel it and the keeper refunds each participant |
 | Rounding distributes too much | Deposit, redeem, and per-user payout calculations round down |
-| A tiny deposit rounds to zero shares at a very high share price | The vault rejects it; recovery of an already closed batch is not implemented |
+| A tiny deposit rounds to zero shares at a very high share price | Settlement wraps the batch total back and the keeper refunds each participant's exact deposit |
 | A demo control is exposed | The operator listens only locally and requires the current run's token or an allow-listed Tailscale identity |
 | Key service parties are compromised | Three of the four can sign accepted results. Because the key comes from test key generation, the demo makes no claim about how many it takes to expose values; production uses secure key generation |
 | The input signer is compromised | It can approve invalid encrypted inputs; production should require several independent signers |

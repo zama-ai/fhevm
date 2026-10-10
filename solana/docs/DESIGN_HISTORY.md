@@ -1168,6 +1168,19 @@ refund its participants (DD-045). Before that, a batch had no exit between dispa
 > and settle in either direction — the deadline-cancel path stays out of demo scope
 > (fhevm-internal#1773).
 
+### DD-042, replaced in part by the zero-shares refund
+
+zama-ai/fhevm#4386 made a deposit batch worth zero vault shares settle into refunds instead of
+reverting. The replaced paragraph:
+
+> Known deposit-path limitation: a batch whose certified total floors to zero shares at the vault's
+> current price cannot settle — `demo_vault::deposit` rejects `ZeroShares`, settle reverts atomically
+> (retryable but never to success, since the demo vault's price only rises), and the batch waits for
+> the settle-deadline cancellation and refunds (DD-045). An attacker holding ~all vault shares can
+> therefore delay sub-price-P batches by up to the settle deadline near-free by `harvest`-donating P
+> (the donation accrues to their own shares); no deposit is lost. Behavior is pinned by
+> `mollusk_dust_total_settle_reverts_until_the_deadline_cancel`.
+
 ### DD-044, replaced in part by DD-048, DD-056, DD-058 and DD-061
 
 Status: adopted

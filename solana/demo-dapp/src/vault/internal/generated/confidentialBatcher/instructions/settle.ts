@@ -303,7 +303,7 @@ export type SettleAsyncInput<
   batchAuthority?: TAccountBatchAuthority;
   /** Confidential mint the batch total was burned on. Mutable for the zero-shares refund wrap. */
   joinConfidentialMint: TAccountJoinConfidentialMint;
-  /** zero-shares refund wrap. */
+  /** Mutable for the zero-shares refund wrap. */
   batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
   /**
    * SPL mint the join confidential mint wraps (vault underlying for deposit
@@ -316,7 +316,7 @@ export type SettleAsyncInput<
   joinMintVaultAuthority: TAccountJoinMintVaultAuthority;
   /** Batch's plain SPL account receiving the redeemed batch total. */
   batchJoinUnderlying?: TAccountBatchJoinUnderlying;
-  /** by the token CPI. Mutable because the zero-shares refund wrap replaces its balance slot. */
+  /** Mutable because the zero-shares refund wrap replaces its balance slot. */
   batchBurnedAmountStore: TAccountBatchBurnedAmountStore;
   pendingBurn: TAccountPendingBurn;
   hostConfig?: TAccountHostConfig;
@@ -1090,7 +1090,7 @@ export type SettleInput<
   batchAuthority: TAccountBatchAuthority;
   /** Confidential mint the batch total was burned on. Mutable for the zero-shares refund wrap. */
   joinConfidentialMint: TAccountJoinConfidentialMint;
-  /** zero-shares refund wrap. */
+  /** Mutable for the zero-shares refund wrap. */
   batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
   /**
    * SPL mint the join confidential mint wraps (vault underlying for deposit
@@ -1103,7 +1103,7 @@ export type SettleInput<
   joinMintVaultAuthority: TAccountJoinMintVaultAuthority;
   /** Batch's plain SPL account receiving the redeemed batch total. */
   batchJoinUnderlying: TAccountBatchJoinUnderlying;
-  /** by the token CPI. Mutable because the zero-shares refund wrap replaces its balance slot. */
+  /** Mutable because the zero-shares refund wrap replaces its balance slot. */
   batchBurnedAmountStore: TAccountBatchBurnedAmountStore;
   pendingBurn: TAccountPendingBurn;
   hostConfig: TAccountHostConfig;
@@ -1801,7 +1801,7 @@ export type ParsedSettleInstruction<
     batchAuthority: TAccountMetas[3];
     /** Confidential mint the batch total was burned on. Mutable for the zero-shares refund wrap. */
     joinConfidentialMint: TAccountMetas[4];
-    /** zero-shares refund wrap. */
+    /** Mutable for the zero-shares refund wrap. */
     batchJoinTokenAccount: TAccountMetas[5];
     /**
      * SPL mint the join confidential mint wraps (vault underlying for deposit
@@ -1814,7 +1814,7 @@ export type ParsedSettleInstruction<
     joinMintVaultAuthority: TAccountMetas[8];
     /** Batch's plain SPL account receiving the redeemed batch total. */
     batchJoinUnderlying: TAccountMetas[9];
-    /** by the token CPI. Mutable because the zero-shares refund wrap replaces its balance slot. */
+    /** Mutable because the zero-shares refund wrap replaces its balance slot. */
     batchBurnedAmountStore: TAccountMetas[10];
     pendingBurn: TAccountMetas[11];
     hostConfig: TAccountMetas[12];

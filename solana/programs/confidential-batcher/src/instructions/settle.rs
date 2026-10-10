@@ -24,12 +24,8 @@
 //!
 //! Settle runs only before the batch's settle deadline; from then on anyone may `cancel_dispatch`.
 //!
-//! A deposit batch below one share's worth would make the vault deposit fail with `ZeroShares`.
-//! A failed CPI aborts the whole transaction, so settle predicts that outcome with the vault's own
-//! `assets_to_shares` on the vault's live balances, before the deposit CPI. On zero shares it wraps
-//! the redeemed total back into the batch's join account and the batch becomes Refunding, where
-//! `quit` returns each participant's exact contribution. Any other vault failure still reverts
-//! settle, and the batch waits for its settle deadline, after which anyone may `cancel_dispatch`.
+//! A deposit worth zero vault shares is wrapped back and the batch becomes Refunding, before the
+//! vault deposit would fail with `ZeroShares` (DD-042).
 //!
 //! REDEEM batches have no analog: the vault's share price never drops below
 //! 1:1 (floor rounding favors the vault; `harvest` only raises the price), so
@@ -61,8 +57,8 @@ pub struct Settle<'info> {
     /// Confidential mint the batch total was burned on. Mutable for the zero-shares refund wrap.
     #[account(mut)]
     pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
-    /// CHECK: batch's confidential join token account; validated by the token CPI. Mutable for the
-    /// zero-shares refund wrap.
+    /// Mutable for the zero-shares refund wrap.
+    /// CHECK: batch's confidential join token account; validated by the token CPI.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
     /// SPL mint the join confidential mint wraps (vault underlying for deposit
@@ -79,8 +75,8 @@ pub struct Settle<'info> {
     /// Batch's plain SPL account receiving the redeemed batch total.
     #[account(mut, seeds = [BATCH_JOIN_UNDERLYING_SEED, batch.key().as_ref()], bump)]
     pub batch_join_underlying: Box<Account<'info, TokenAccount>>,
-    /// CHECK: the batch join token account's encrypted store, holding the burned amount; validated
-    /// by the token CPI. Mutable because the zero-shares refund wrap replaces its balance slot.
+    /// Mutable because the zero-shares refund wrap replaces its balance slot.
+    /// CHECK: batch's burned-amount encrypted store; validated by the token CPI.
     #[account(mut)]
     pub batch_burned_amount_store: UncheckedAccount<'info>,
     /// CHECK: pending-burn PDA for the batch token account; closed by the token redeem CPI.
@@ -101,7 +97,7 @@ pub struct Settle<'info> {
     /// prediction reads its balance even when no vault CPI follows.
     #[account(
         mut,
-        address = vault.vault_token_account @ demo_vault::errors::DemoVaultError::VaultTokenAccountMismatch,
+        address = vault.vault_token_account @ BatcherError::VaultMismatch,
     )]
     pub vault_token_account: Box<Account<'info, TokenAccount>>,
     /// Batch's plain SPL account receiving the vault phase's output.
@@ -311,12 +307,15 @@ pub fn settle<'info>(
     let payout_balance_before = ctx.accounts.batch_payout_underlying.amount;
     match ctx.accounts.batcher.direction {
         BatchDirection::Deposit => {
-            if demo_vault::state::assets_to_shares(
-                cleartext_total,
-                ctx.accounts.vault_token_account.amount,
-                ctx.accounts.payout_underlying_mint.supply,
-            )? == 0
-            {
+            // Any other result, an overflow included, is left to the vault deposit to reject.
+            if matches!(
+                demo_vault::state::assets_to_shares(
+                    cleartext_total,
+                    ctx.accounts.vault_token_account.amount,
+                    ctx.accounts.payout_underlying_mint.supply,
+                ),
+                Ok(0)
+            ) {
                 return refund_zero_shares(
                     ctx,
                     cleartext_total,
