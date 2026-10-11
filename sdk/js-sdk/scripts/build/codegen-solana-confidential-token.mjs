@@ -29,6 +29,8 @@ import {
   publicKeyValueNode,
   programIdValueNode,
   deleteNodesVisitor,
+  numberTypeNode,
+  numberValueNode,
   updateInstructionsVisitor,
   updateProgramsVisitor,
   variablePdaSeedNode,
@@ -231,7 +233,6 @@ const targets = [
     keep: {
       instructions: new Set([
         'initializeBatcher',
-        'openBatch',
         'join',
         'quit',
         'dispatch',
@@ -311,6 +312,23 @@ const hcuBlockMeter = pdaNode({
   ],
 });
 
+// The batcher derives the next batch from `batcher.next_batch_index`, account data Codama cannot
+// read, so no instruction declares the batch's index seed. Only the prefix comes from the IDL; the
+// (batcher, index) order is typed here and checked by pda-golden.test.ts.
+const batcherTarget = targets.find(({ idlPath }) => idlPath === demoIdlUrl('confidential_batcher.json'));
+function batchPda(batcherIdl) {
+  const batchSeed = batcherIdl.constants.find(({ name }) => name === 'BATCH_SEED');
+  if (!batchSeed) throw new Error('BATCH_SEED is missing from the committed confidential-batcher IDL');
+  return pdaNode({
+    name: 'batch',
+    seeds: [
+      constantPdaSeedNodeFromBytes('base58', getBase58Decoder().decode(Uint8Array.from(JSON.parse(batchSeed.value)))),
+      variablePdaSeedNode('batcher', publicKeyTypeNode()),
+      variablePdaSeedNode('index', numberTypeNode('u64')),
+    ],
+  });
+}
+
 let stale = false;
 const deploymentProgramIds = {};
 for (const target of targets) {
@@ -352,6 +370,39 @@ for (const target of targets) {
           ]),
         ),
       ),
+    );
+  }
+  if (target === batcherTarget) {
+    const { name, pdas } = codama.getRoot().program;
+    codama.update(
+      updateProgramsVisitor({
+        [name]: { pdas: [...pdas.filter((pda) => pda.name !== 'batch'), batchPda(anchorIdl)] },
+      }),
+    );
+    // dispatch's next batch derives its authority and SPL accounts with the batch's own seeds.
+    const ofNextBatch = (pda) => ({
+      defaultValue: pdaValueNode(pdaLinkNode(pda), [pdaSeedValueNode('batch', accountValueNode('nextBatch'))]),
+    });
+    codama.update(
+      updateInstructionsVisitor({
+        dispatch: {
+          accounts: {
+            nextBatchAuthority: ofNextBatch('batchAuthority'),
+            nextBatchJoinUnderlying: ofNextBatch('batchJoinUnderlying'),
+            nextBatchPayoutUnderlying: ofNextBatch('batchPayoutUnderlying'),
+          },
+        },
+        initializeBatcher: {
+          accounts: {
+            batch: {
+              defaultValue: pdaValueNode(pdaLinkNode('batch'), [
+                pdaSeedValueNode('batcher', accountValueNode('batcher')),
+                pdaSeedValueNode('index', numberValueNode(0)),
+              ]),
+            },
+          },
+        },
+      }),
     );
   }
   const foreignPdaLinks = {};

@@ -6,7 +6,9 @@ import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from "../../../../solana/demo-da
 import { DEMO_VAULT_PROGRAM_ADDRESS } from "../../../../solana/demo-dapp/src/vault/internal/generated/demoVault/programAddress.js";
 import { DEP_CHAIN_PROGRAM_ADDRESS } from "./internal/generated/depChain/programAddress.js";
 import { ENCRYPTED_COUNTER_PROGRAM_ADDRESS } from "./internal/generated/encryptedCounter/programAddress.js";
-import { getOpenBatchInstructionAsync, parseOpenBatchInstruction } from "../../../../solana/demo-dapp/src/vault/internal/generated/confidentialBatcher/instructions/openBatch.js";
+import { getDispatchInstructionAsync, parseDispatchInstruction } from "../../../../solana/demo-dapp/src/vault/internal/generated/confidentialBatcher/instructions/dispatch.js";
+import { getInitializeBatcherInstructionAsync, parseInitializeBatcherInstruction } from "../../../../solana/demo-dapp/src/vault/internal/generated/confidentialBatcher/instructions/initializeBatcher.js";
+import { BatchDirection } from "../../../../solana/demo-dapp/src/vault/internal/generated/confidentialBatcher/types/batchDirection.js";
 import { getInitializeVaultInstructionAsync, parseInitializeVaultInstruction } from "../../../../solana/demo-dapp/src/vault/internal/generated/demoVault/instructions/initializeVault.js";
 import { getInitializeInstructionAsync as initializeChain, parseInitializeInstruction as parseChain } from "./internal/generated/depChain/instructions/initialize.js";
 import { getInitializeInstructionAsync as initializeCounter, parseInitializeInstruction as parseCounter } from "./internal/generated/encryptedCounter/instructions/initialize.js";
@@ -151,32 +153,65 @@ describe("demo and specimen PDA golden", () => {
   });
 
   for (const override of [undefined, key("program")]) {
-    it(`binds open_batch defaults and seed encoders to ${override ?? "the default program"}`, async () => {
+    it(`binds initialize_batcher and dispatch defaults and seed encoders to ${override ?? "the default program"}`, async () => {
       const programAddress = override ?? CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS;
       const config = { programAddress };
-      const batch = await batcherPdas.findBatchPda({ batcher: key("batcher"), index }, config);
-      const authority = await batcherPdas.findBatchAuthorityPda({ batch: batch[0] }, config);
-      const instruction = await getOpenBatchInstructionAsync({
-        payer: createNoopSigner(key("payer")), batcher: key("batcher"), index,
-        joinConfidentialMint: key("mint"), batchJoinTokenAccount: key("tokenAccount"),
-        batchJoinBalanceStore: key("authority"), payoutConfidentialMint: key("mint"),
-        batchPayoutTokenAccount: key("tokenAccount"), batchPayoutBalanceStore: key("authority"),
-        joinUnderlyingMint: key("mint"), payoutUnderlyingMint: key("mint"),
+      // A batch's authority and SPL accounts, as the batcher derives them from the batch.
+      const derived = async (batch: (typeof input)["batcher"]) => ({
+        authority: (await batcherPdas.findBatchAuthorityPda({ batch: address(batch) }, config))[0],
+        joinUnderlying: (await batcherPdas.findBatchJoinUnderlyingPda({ batch: address(batch) }, config))[0],
+        payoutUnderlying: (await batcherPdas.findBatchPayoutUnderlyingPda({ batch: address(batch) }, config))[0],
+      });
+      const shared = {
+        payer: createNoopSigner(key("payer")),
+        joinConfidentialMint: key("mint"),
+        payoutConfidentialMint: key("mint"),
+        joinUnderlyingMint: key("mint"),
+        payoutUnderlyingMint: key("mint"),
         transientStore: key("authority"),
         instructions: address("Sysvar1nstructions1111111111111111111111111"),
         confidentialTokenEventAuthority: key("authority"),
         authorityFundingLamports: 0n,
-      }, config);
-      const parsed = parseOpenBatchInstruction(instruction);
-      expect(instruction.programAddress).toBe(programAddress);
-      expect(parsed.data.index).toBe(index);
-      expect(parsed.accounts.batch.address).toBe(batch[0]);
-      expect(parsed.accounts.batchAuthority.address).toBe(authority[0]);
-      expect(parsed.accounts.hostConfig.address).toBe((await host.findHostConfigPda())[0]);
-      expect(parsed.accounts.zamaEventAuthority.address).toBe((await host.findEventAuthorityPda())[0]);
-      expect(parsed.accounts.batchJoinUnderlying.address).toBe((await batcherPdas.findBatchJoinUnderlyingPda({ batch: batch[0] }, config))[0]);
-      expect(parsed.accounts.batchPayoutUnderlying.address).toBe((await batcherPdas.findBatchPayoutUnderlyingPda({ batch: batch[0] }, config))[0]);
-      expect(await getProgramDerivedAddress({ programAddress, seeds: batcherPdas.getBatchAuthorityPdaSeeds({ batch: batch[0] }) })).toEqual(authority);
+      };
+
+      // initialize_batcher opens batch 0.
+      const batch0 = (await batcherPdas.findBatchPda({ batcher: key("batcher"), index: 0n }, config))[0];
+      const initialize = parseInitializeBatcherInstruction(await getInitializeBatcherInstructionAsync({
+        ...shared,
+        batcher: createNoopSigner(key("batcher")), vault: key("vault"),
+        batchJoinTokenAccount: key("tokenAccount"), batchJoinBalanceStore: key("authority"),
+        batchPayoutTokenAccount: key("tokenAccount"), batchPayoutBalanceStore: key("authority"),
+        minBatchAgeSecs: 0n, settleDeadlineSecs: 1n, direction: BatchDirection.Deposit,
+      }, config));
+      const batch0Derived = await derived(batch0);
+      expect(initialize.programAddress).toBe(programAddress);
+      expect(initialize.accounts.batch.address).toBe(batch0);
+      expect(initialize.accounts.batchAuthority.address).toBe(batch0Derived.authority);
+      expect(initialize.accounts.batchJoinUnderlying.address).toBe(batch0Derived.joinUnderlying);
+      expect(initialize.accounts.batchPayoutUnderlying.address).toBe(batch0Derived.payoutUnderlying);
+
+      // dispatch opens the next batch; its authority and SPL accounts derive from that batch.
+      const batch = (await batcherPdas.findBatchPda({ batcher: key("batcher"), index }, config))[0];
+      const next = (await batcherPdas.findBatchPda({ batcher: key("batcher"), index: index + 1n }, config))[0];
+      const dispatch = parseDispatchInstruction(await getDispatchInstructionAsync({
+        ...shared,
+        batcher: key("batcher"), batch, nextBatch: next,
+        batchAuthorityAta: key("authority"), totalSupplyAuthority: key("authority"),
+        batchJoinTokenAccount: key("tokenAccount"), batchBalanceStore: key("authority"),
+        totalSupplyStore: key("authority"), pendingBurn: key("authority"),
+        nextBatchJoinTokenAccount: key("tokenAccount"), nextBatchJoinBalanceStore: key("authority"),
+        nextBatchPayoutTokenAccount: key("tokenAccount"), nextBatchPayoutBalanceStore: key("authority"),
+      }, config));
+      const nextDerived = await derived(next);
+      expect(dispatch.programAddress).toBe(programAddress);
+      expect(dispatch.accounts.batchAuthority.address).toBe((await derived(batch)).authority);
+      expect(dispatch.accounts.nextBatchAuthority.address).toBe(nextDerived.authority);
+      expect(dispatch.accounts.nextBatchJoinUnderlying.address).toBe(nextDerived.joinUnderlying);
+      expect(dispatch.accounts.nextBatchPayoutUnderlying.address).toBe(nextDerived.payoutUnderlying);
+      expect(dispatch.accounts.hostConfig.address).toBe((await host.findHostConfigPda())[0]);
+      expect(dispatch.accounts.zamaEventAuthority.address).toBe((await host.findEventAuthorityPda())[0]);
+      expect(await getProgramDerivedAddress({ programAddress, seeds: batcherPdas.getBatchAuthorityPdaSeeds({ batch: next }) }))
+        .toEqual(await batcherPdas.findBatchAuthorityPda({ batch: next }, config));
     });
 
     it(`binds vault and specimen defaults to ${override ?? "their default programs"}`, async () => {

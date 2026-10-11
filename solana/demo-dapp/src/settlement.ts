@@ -118,10 +118,9 @@ export const dispatchVaultBatch = async (
   const dispatch = await buildDispatchBatchInstruction({
     transientStore,
     payer: session.keeper,
-    batcher: roots.batcher,
-    batch: position.batch,
-    joinConfidentialMint: roots.joinConfidentialMint,
-    joinUnderlyingMint: roots.joinUnderlyingMint,
+    roots,
+    batchIndex: position.batchIndex,
+    authorityFundingLamports: BigInt(session.config.authorityFundingLamports),
     tokenProgram: TOKEN_PROGRAM_ADDRESS,
     host: await readHostPolicy(rpc),
   });

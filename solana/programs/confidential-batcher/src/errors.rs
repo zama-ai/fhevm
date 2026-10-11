@@ -14,12 +14,6 @@ pub enum BatcherError {
     /// The supplied batch does not belong to this batcher.
     #[msg("batch does not belong to this batcher")]
     BatchBatcherMismatch,
-    /// The previous batch account is required (or wrong) for this open.
-    #[msg("previous batch account missing or not the immediately preceding batch")]
-    PreviousBatchMismatch,
-    /// A new batch cannot open while the previous batch is still pending.
-    #[msg("previous batch is still pending")]
-    PreviousBatchStillPending,
     /// The instruction requires a pending batch.
     #[msg("batch is not pending")]
     BatchNotPending,
@@ -77,9 +71,6 @@ pub enum BatcherError {
     /// A join record closes only after its payout is claimed or its batch is canceled.
     #[msg("join record is still live; close it after claiming or once the batch is canceled")]
     JoinRecordStillLive,
-    /// The supplied index must open the next batch.
-    #[msg("batch index does not match the next batch index")]
-    BatchIndexMismatch,
     /// The remaining accounts must be exactly the deny records the instruction's executions need.
     #[msg("remaining accounts do not match the deny records this instruction needs")]
     DenyRecordsMismatch,

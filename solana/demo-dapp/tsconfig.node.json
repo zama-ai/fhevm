@@ -9,12 +9,15 @@
     "noEmit": true,
     "tsBuildInfoFile": "./node_modules/.cache/tsconfig.node.tsbuildinfo"
   },
+  // The dapp, the SDK and the zama-host client each install the same @solana/* versions, and tsc
+  // keeps whichever copy it loads first. demoClient.ts loads the SDK's before the zama-host client's,
+  // so the declarations it infers name the copies the dapp can resolve.
   "include": [
+    "src/demoClient.ts",
     "vite.config.ts",
     "src/batchProvisioning.ts",
     "src/batchTypes.ts",
     "src/demoApi.ts",
-    "src/demoClient.ts",
     "src/demoConfig.ts",
     "src/harvestOperator.ts",
     "src/settlement.ts",

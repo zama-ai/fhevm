@@ -78,20 +78,16 @@ export async function getBatchJoinRecords(rpc: SolanaRpc, batch: Address): Promi
 }
 
 /**
- * Resolves the batcher's most-recently-opened batch: its zero-based index, its derived addresses,
- * and its decoded state. `Batcher.nextBatchIndex` is the index the *next* `open_batch` will use, so
- * the current batch is one before it. Throws if no batch has been opened yet (index 0).
+ * Resolves the batcher's pending batch: its zero-based index, its derived addresses, and its decoded
+ * state. `Batcher.nextBatchIndex` is the index the next batch will open at, so the pending batch is
+ * one before it.
  */
 export async function getCurrentBatch(
   rpc: SolanaRpc,
   roots: VaultDemoRoots,
 ): Promise<{ index: bigint; addresses: BatchAddresses; state: BatchState }> {
   const batcher = await getBatcher(rpc, roots.batcher);
-  if (batcher.nextBatchIndex === 0n) {
-    throw new Error(`batcher ${roots.batcher} has opened no batches yet (nextBatchIndex is 0)`);
-  }
-  const index = batcher.nextBatchIndex - 1n;
-  return getBatchByIndex(rpc, roots, index);
+  return getBatchByIndex(rpc, roots, batcher.nextBatchIndex - 1n);
 }
 
 /** Reads one pinned historical or current batch by its index. */

@@ -84,9 +84,9 @@ export type SolanaDemoConfig = {
   /** The FHE parameter choice the local stack runs. */
   readonly fheParameter: string;
   /**
-   * Lamports the settle caller funds the batch authority with (unsigned decimal string). The amount
-   * must suffice to cover the rent settle's CPIs charge to this batch's authority; the seed records
-   * the `open_batch` value as a known-good amount.
+   * Lamports a batch authority is funded with when its batch opens at dispatch and again at settle
+   * (unsigned decimal string). The amount must suffice to cover the rent those CPIs charge to the
+   * authority; the seed records the value batch 0 opens with as a known-good amount.
    */
   readonly authorityFundingLamports: string;
   readonly programs: {

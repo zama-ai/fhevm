@@ -8,8 +8,8 @@ vi.mock('@solana/kit', async (importOriginal) => ({
 
 const certificate = vi.hoisted(() => vi.fn());
 
-const getCurrentBatch = vi.hoisted(() => vi.fn());
-vi.mock('./reads.js', () => ({ getCurrentBatch }));
+const fetchBatch = vi.hoisted(() => vi.fn());
+vi.mock('./internal/generated/confidentialBatcher/accounts/batch.js', () => ({ fetchBatch }));
 
 import {
   address,
@@ -76,13 +76,10 @@ function claim(cleartext: string, signatures = 1, extraData = V2_EXTRA_DATA) {
 
 async function setup(overrides: { burnedHandle?: Uint8Array } = {}) {
   const addresses = await deriveBatchAddresses(roots(), 0n);
-  getCurrentBatch.mockResolvedValue({
-    index: 0n,
-    addresses,
-    state: { burnedTotalHandle: overrides.burnedHandle ?? BURNED_HANDLE },
-  });
+  fetchBatch.mockResolvedValue({ data: { burnedTotalHandle: overrides.burnedHandle ?? BURNED_HANDLE } });
   const opts: SolanaVaultSettleOptions = {
     roots: roots(),
+    batchIndex: 0n,
     authorityFundingLamports: 5_000_000n,
     host: testHostPolicy(false),
   };
@@ -97,17 +94,17 @@ describe('settleBatch', () => {
   beforeEach(() => {
     sendAndConfirm.mockReset().mockResolvedValue(undefined);
     certificate.mockReset();
-    getCurrentBatch.mockReset();
+    fetchBatch.mockReset();
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('settles the current batch with its certificate as one v1 FHE transaction', async () => {
+  it('settles the batch with its certificate as one v1 FHE transaction', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
     const { client, opts, addresses } = await setup();
     const signature = await settleBatch({ publicDecryptCertificate: certificate }, client, opts);
 
-    // The batch was resolved from chain state, not supplied.
-    expect(getCurrentBatch).toHaveBeenCalledTimes(1);
+    // The burned handle was read from chain state, not supplied.
+    expect(fetchBatch).toHaveBeenCalledExactlyOnceWith(expect.anything(), addresses.batch);
     // The certificate names the handle and the account, nothing else: no proof travels.
     expect(certificate).toHaveBeenCalledTimes(1);
     expect(certificate.mock.calls[0]![0]).toEqual({

@@ -10,8 +10,7 @@ import { getSettleInstructionAsync } from './internal/generated/confidentialBatc
 import { tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 import { fetchBatch } from './internal/generated/confidentialBatcher/accounts/batch.js';
 import { settleTotalFromCleartext } from './internal/cleartext.js';
-import { deriveBatchAddresses, deriveSettleAccounts, type BatchAddresses, type VaultDemoRoots } from './derive.js';
-import { getCurrentBatch } from './reads.js';
+import { deriveBatchAddresses, deriveSettleAccounts, type VaultDemoRoots } from './derive.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import type { DemoClient } from '../demoClient';
 // The token client pins the host program it was compiled against; the vault module targets that pair.
@@ -22,8 +21,8 @@ const ZERO_HANDLE = new Uint8Array(32);
 export type SolanaVaultSettleOptions = HostPolicyParameters & {
   /** The batcher's demo topology; every settle account is derived from these. */
   readonly roots: VaultDemoRoots;
-  /** Which batch to settle; defaults to the batcher's current (most-recently-opened) batch. */
-  readonly batchIndex?: bigint | undefined;
+  /** Which batch to settle. */
+  readonly batchIndex: bigint;
   readonly authorityFundingLamports: bigint;
   /** Bounds and observes the relayer/KMS certificate request independently of the on-chain send. */
   readonly certificateOptions?: RelayerPublicDecryptOptions | undefined;
@@ -41,18 +40,9 @@ export async function settleBatch(
   const { roots } = options;
   const { rpc } = keeperClient;
 
-  // Resolve the batch and its created-public burned handle from chain state.
-  let addresses: BatchAddresses;
-  let burnedTotalHandle: Uint8Array;
-  if (options.batchIndex !== undefined) {
-    addresses = await deriveBatchAddresses(roots, options.batchIndex);
-    const batch = await fetchBatch(rpc, addresses.batch);
-    burnedTotalHandle = new Uint8Array(batch.data.burnedTotalHandle);
-  } else {
-    const current = await getCurrentBatch(rpc, roots);
-    addresses = current.addresses;
-    burnedTotalHandle = new Uint8Array(current.state.burnedTotalHandle);
-  }
+  // Resolve the batch's created-public burned handle from chain state.
+  const addresses = await deriveBatchAddresses(roots, options.batchIndex);
+  const burnedTotalHandle = new Uint8Array((await fetchBatch(rpc, addresses.batch)).data.burnedTotalHandle);
   if (burnedTotalHandle.every((byte, i) => byte === ZERO_HANDLE[i])) {
     throw new Error(`batch ${addresses.batch} has no burned total handle yet; dispatch it before settling`);
   }

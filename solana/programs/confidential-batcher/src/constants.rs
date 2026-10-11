@@ -1,5 +1,7 @@
 //! Shared constants and PDA seed bytes for the confidential-batcher program.
 
+use anchor_lang::prelude::constant;
+
 /// App event schema version, following the demo-vault pattern. The batcher is
 /// not ingested by the coprocessor host-listener (host protocol events are
 /// emitted by the ZamaHost CPIs it composes); this versions app/demo indexer
@@ -25,6 +27,7 @@ pub const MAX_SETTLE_DEADLINE_SECS: u64 = 30 * 24 * 60 * 60;
 pub const RATE_SCALE: u64 = 1_000_000_000;
 
 /// PDA seed for a batch, keyed by batcher and batch index.
+#[constant]
 pub const BATCH_SEED: &[u8] = b"batch";
 
 /// PDA seed for the per-batch authority that owns the batch's confidential and

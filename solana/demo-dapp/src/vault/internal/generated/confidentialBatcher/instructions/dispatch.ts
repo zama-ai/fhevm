@@ -15,6 +15,8 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
+  getU64Decoder,
+  getU64Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
@@ -41,7 +43,7 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
-import { findBatchAuthorityPda } from '../pdas/index.js';
+import { findBatchAuthorityPda, findBatchJoinUnderlyingPda, findBatchPayoutUnderlyingPda } from '../pdas/index.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const DISPATCH_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([8, 67, 96, 172, 17, 124, 160, 63]);
@@ -72,9 +74,22 @@ export type DispatchInstruction<
   TAccountConfidentialTokenEventAuthority extends string | AccountMeta<string> = string,
   TAccountConfidentialTokenProgram extends string | AccountMeta<string> =
     'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL',
+  TAccountTokenProgram extends string | AccountMeta<string> = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
+  TAccountNextBatch extends string | AccountMeta<string> = string,
+  TAccountNextBatchAuthority extends string | AccountMeta<string> = string,
+  TAccountNextBatchJoinTokenAccount extends string | AccountMeta<string> = string,
+  TAccountNextBatchJoinBalanceStore extends string | AccountMeta<string> = string,
+  TAccountPayoutConfidentialMint extends string | AccountMeta<string> = string,
+  TAccountPayoutUnderlyingMint extends string | AccountMeta<string> = string,
+  TAccountNextBatchPayoutTokenAccount extends string | AccountMeta<string> = string,
+  TAccountNextBatchPayoutBalanceStore extends string | AccountMeta<string> = string,
+  TAccountNextBatchJoinUnderlying extends string | AccountMeta<string> = string,
+  TAccountNextBatchPayoutUnderlying extends string | AccountMeta<string> = string,
   TAccountJoinMintHcuBlockMeter extends string | AccountMeta<string> = string,
   TAccountJoinMintHcuTrustedAppRecord extends string | AccountMeta<string> = string,
+  TAccountPayoutMintHcuBlockMeter extends string | AccountMeta<string> = string,
+  TAccountPayoutMintHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
   InstructionWithData<ReadonlyUint8Array> &
@@ -83,7 +98,7 @@ export type DispatchInstruction<
       TAccountPayer extends string
         ? WritableSignerAccount<TAccountPayer> & AccountSignerMeta<TAccountPayer>
         : TAccountPayer,
-      TAccountBatcher extends string ? ReadonlyAccount<TAccountBatcher> : TAccountBatcher,
+      TAccountBatcher extends string ? WritableAccount<TAccountBatcher> : TAccountBatcher,
       TAccountBatch extends string ? WritableAccount<TAccountBatch> : TAccountBatch,
       TAccountBatchAuthority extends string ? ReadonlyAccount<TAccountBatchAuthority> : TAccountBatchAuthority,
       TAccountJoinConfidentialMint extends string
@@ -115,30 +130,76 @@ export type DispatchInstruction<
       TAccountConfidentialTokenProgram extends string
         ? ReadonlyAccount<TAccountConfidentialTokenProgram>
         : TAccountConfidentialTokenProgram,
+      TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram,
       TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
+      TAccountNextBatch extends string ? WritableAccount<TAccountNextBatch> : TAccountNextBatch,
+      TAccountNextBatchAuthority extends string
+        ? WritableAccount<TAccountNextBatchAuthority>
+        : TAccountNextBatchAuthority,
+      TAccountNextBatchJoinTokenAccount extends string
+        ? WritableAccount<TAccountNextBatchJoinTokenAccount>
+        : TAccountNextBatchJoinTokenAccount,
+      TAccountNextBatchJoinBalanceStore extends string
+        ? WritableAccount<TAccountNextBatchJoinBalanceStore>
+        : TAccountNextBatchJoinBalanceStore,
+      TAccountPayoutConfidentialMint extends string
+        ? ReadonlyAccount<TAccountPayoutConfidentialMint>
+        : TAccountPayoutConfidentialMint,
+      TAccountPayoutUnderlyingMint extends string
+        ? ReadonlyAccount<TAccountPayoutUnderlyingMint>
+        : TAccountPayoutUnderlyingMint,
+      TAccountNextBatchPayoutTokenAccount extends string
+        ? WritableAccount<TAccountNextBatchPayoutTokenAccount>
+        : TAccountNextBatchPayoutTokenAccount,
+      TAccountNextBatchPayoutBalanceStore extends string
+        ? WritableAccount<TAccountNextBatchPayoutBalanceStore>
+        : TAccountNextBatchPayoutBalanceStore,
+      TAccountNextBatchJoinUnderlying extends string
+        ? WritableAccount<TAccountNextBatchJoinUnderlying>
+        : TAccountNextBatchJoinUnderlying,
+      TAccountNextBatchPayoutUnderlying extends string
+        ? WritableAccount<TAccountNextBatchPayoutUnderlying>
+        : TAccountNextBatchPayoutUnderlying,
       TAccountJoinMintHcuBlockMeter extends string
         ? WritableAccount<TAccountJoinMintHcuBlockMeter>
         : TAccountJoinMintHcuBlockMeter,
       TAccountJoinMintHcuTrustedAppRecord extends string
         ? ReadonlyAccount<TAccountJoinMintHcuTrustedAppRecord>
         : TAccountJoinMintHcuTrustedAppRecord,
+      TAccountPayoutMintHcuBlockMeter extends string
+        ? WritableAccount<TAccountPayoutMintHcuBlockMeter>
+        : TAccountPayoutMintHcuBlockMeter,
+      TAccountPayoutMintHcuTrustedAppRecord extends string
+        ? ReadonlyAccount<TAccountPayoutMintHcuTrustedAppRecord>
+        : TAccountPayoutMintHcuTrustedAppRecord,
       ...TRemainingAccounts,
     ]
   >;
 
-export type DispatchInstructionData = { discriminator: ReadonlyUint8Array };
+export type DispatchInstructionData = {
+  discriminator: ReadonlyUint8Array;
+  authorityFundingLamports: bigint;
+};
 
-export type DispatchInstructionDataArgs = {};
+export type DispatchInstructionDataArgs = {
+  authorityFundingLamports: number | bigint;
+};
 
 export function getDispatchInstructionDataEncoder(): FixedSizeEncoder<DispatchInstructionDataArgs> {
-  return transformEncoder(getStructEncoder([['discriminator', fixEncoderSize(getBytesEncoder(), 8)]]), (value) => ({
-    ...value,
-    discriminator: DISPATCH_DISCRIMINATOR,
-  }));
+  return transformEncoder(
+    getStructEncoder([
+      ['discriminator', fixEncoderSize(getBytesEncoder(), 8)],
+      ['authorityFundingLamports', getU64Encoder()],
+    ]),
+    (value) => ({ ...value, discriminator: DISPATCH_DISCRIMINATOR }),
+  );
 }
 
 export function getDispatchInstructionDataDecoder(): FixedSizeDecoder<DispatchInstructionData> {
-  return getStructDecoder([['discriminator', fixDecoderSize(getBytesDecoder(), 8)]]);
+  return getStructDecoder([
+    ['discriminator', fixDecoderSize(getBytesDecoder(), 8)],
+    ['authorityFundingLamports', getU64Decoder()],
+  ]);
 }
 
 export function getDispatchInstructionDataCodec(): FixedSizeCodec<
@@ -168,19 +229,33 @@ export type DispatchAsyncInput<
   TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountConfidentialTokenEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountConfidentialTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatch extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchJoinTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchJoinBalanceStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutConfidentialMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchPayoutTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchPayoutBalanceStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchJoinUnderlying extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchPayoutUnderlying extends InstructionAccountInput = InstructionAccountInput,
   TAccountJoinMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  /** Pays the burn's output ACL rent. Anyone. */
+  /** Pays the burn's output ACL rent and opens the next batch. Anyone. */
   payer: TAccountPayer;
-  /** Batcher config carrying the minimum batch age. */
+  /** Batcher config carrying the minimum batch age; `next_batch_index` advances. */
   batcher: TAccountBatcher;
   /** The pending batch being dispatched. */
   batch: TAccountBatch;
   batchAuthority?: TAccountBatchAuthority;
   /** Confidential mint whose encrypted total supply the burn decreases. */
   joinConfidentialMint: TAccountJoinConfidentialMint;
+  /** SPL mint the join confidential mint wraps. */
   joinUnderlyingMint: TAccountJoinUnderlyingMint;
   batchAuthorityAta: TAccountBatchAuthorityAta;
   totalSupplyAuthority: TAccountTotalSupplyAuthority;
@@ -199,18 +274,49 @@ export type DispatchAsyncInput<
   confidentialTokenEventAuthority: TAccountConfidentialTokenEventAuthority;
   /** confidential-token program composed via CPI. */
   confidentialTokenProgram?: TAccountConfidentialTokenProgram;
-  /** System program used for ACL account creation. */
+  /** SPL token program. */
+  tokenProgram?: TAccountTokenProgram;
+  /** System program used for account creation. */
   systemProgram?: TAccountSystemProgram;
+  /** The next batch, at the batcher's next index. */
+  nextBatch: TAccountNextBatch;
+  /** funding it receives here. */
+  nextBatchAuthority?: TAccountNextBatchAuthority;
+  /** is if someone already created it. */
+  nextBatchJoinTokenAccount: TAccountNextBatchJoinTokenAccount;
+  nextBatchJoinBalanceStore: TAccountNextBatchJoinBalanceStore;
+  /** Confidential mint claims pay out in. */
+  payoutConfidentialMint: TAccountPayoutConfidentialMint;
+  /** SPL mint the payout confidential mint wraps. */
+  payoutUnderlyingMint: TAccountPayoutUnderlyingMint;
+  /** as is if someone already created it. */
+  nextBatchPayoutTokenAccount: TAccountNextBatchPayoutTokenAccount;
+  nextBatchPayoutBalanceStore: TAccountNextBatchPayoutBalanceStore;
+  /** The next batch's plain SPL account receiving its redeemed total at settle. */
+  nextBatchJoinUnderlying?: TAccountNextBatchJoinUnderlying;
+  /** The next batch's plain SPL account receiving its vault phase's output at settle. */
+  nextBatchPayoutUnderlying?: TAccountNextBatchPayoutUnderlying;
   /**
-   * The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
-   * application is not trusted.
+   * The join mint's HCU block meter for the burn and the next batch's join token account.
+   * Supplied while the block cap binds and the application is not trusted.
    */
   joinMintHcuBlockMeter?: TAccountJoinMintHcuBlockMeter;
   /**
-   * The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
-   * application is trusted.
+   * The join mint's HCU trust record for the burn and the next batch's join token account.
+   * Supplied while the block cap binds and the application is trusted.
    */
   joinMintHcuTrustedAppRecord?: TAccountJoinMintHcuTrustedAppRecord;
+  /**
+   * The payout mint's HCU block meter for the next batch's payout token account. Supplied while
+   * the block cap binds and the application is not trusted.
+   */
+  payoutMintHcuBlockMeter?: TAccountPayoutMintHcuBlockMeter;
+  /**
+   * The payout mint's HCU trust record for the next batch's payout token account. Supplied while
+   * the block cap binds and the application is trusted.
+   */
+  payoutMintHcuTrustedAppRecord?: TAccountPayoutMintHcuTrustedAppRecord;
+  authorityFundingLamports: DispatchInstructionDataArgs['authorityFundingLamports'];
 };
 
 export async function getDispatchInstructionAsync<
@@ -233,9 +339,22 @@ export async function getDispatchInstructionAsync<
   TAccountHostConfig extends InstructionAccountInput,
   TAccountConfidentialTokenEventAuthority extends InstructionAccountInput,
   TAccountConfidentialTokenProgram extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountNextBatch extends InstructionAccountInput,
+  TAccountNextBatchAuthority extends InstructionAccountInput,
+  TAccountNextBatchJoinTokenAccount extends InstructionAccountInput,
+  TAccountNextBatchJoinBalanceStore extends InstructionAccountInput,
+  TAccountPayoutConfidentialMint extends InstructionAccountInput,
+  TAccountPayoutUnderlyingMint extends InstructionAccountInput,
+  TAccountNextBatchPayoutTokenAccount extends InstructionAccountInput,
+  TAccountNextBatchPayoutBalanceStore extends InstructionAccountInput,
+  TAccountNextBatchJoinUnderlying extends InstructionAccountInput,
+  TAccountNextBatchPayoutUnderlying extends InstructionAccountInput,
   TAccountJoinMintHcuBlockMeter extends InstructionAccountInput,
   TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput,
+  TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput,
+  TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: DispatchAsyncInput<
@@ -258,9 +377,22 @@ export async function getDispatchInstructionAsync<
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
     TAccountConfidentialTokenProgram,
+    TAccountTokenProgram,
     TAccountSystemProgram,
+    TAccountNextBatch,
+    TAccountNextBatchAuthority,
+    TAccountNextBatchJoinTokenAccount,
+    TAccountNextBatchJoinBalanceStore,
+    TAccountPayoutConfidentialMint,
+    TAccountPayoutUnderlyingMint,
+    TAccountNextBatchPayoutTokenAccount,
+    TAccountNextBatchPayoutBalanceStore,
+    TAccountNextBatchJoinUnderlying,
+    TAccountNextBatchPayoutUnderlying,
     TAccountJoinMintHcuBlockMeter,
-    TAccountJoinMintHcuTrustedAppRecord
+    TAccountJoinMintHcuTrustedAppRecord,
+    TAccountPayoutMintHcuBlockMeter,
+    TAccountPayoutMintHcuTrustedAppRecord
   >,
   config?: { programAddress?: TProgramAddress },
 ): Promise<
@@ -312,7 +444,45 @@ export async function getDispatchInstructionAsync<
       TAccountConfidentialTokenProgram,
       InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
     >,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
     ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountNextBatch, InstructionAccountInputAddress<TAccountNextBatch>>,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchAuthority,
+      InstructionAccountInputAddress<TAccountNextBatchAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchJoinTokenAccount,
+      InstructionAccountInputAddress<TAccountNextBatchJoinTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchJoinBalanceStore,
+      InstructionAccountInputAddress<TAccountNextBatchJoinBalanceStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutConfidentialMint,
+      InstructionAccountInputAddress<TAccountPayoutConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutUnderlyingMint,
+      InstructionAccountInputAddress<TAccountPayoutUnderlyingMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchPayoutTokenAccount,
+      InstructionAccountInputAddress<TAccountNextBatchPayoutTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchPayoutBalanceStore,
+      InstructionAccountInputAddress<TAccountNextBatchPayoutBalanceStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchJoinUnderlying,
+      InstructionAccountInputAddress<TAccountNextBatchJoinUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchPayoutUnderlying,
+      InstructionAccountInputAddress<TAccountNextBatchPayoutUnderlying>
+    >,
     ResolvedInstructionAccountMeta<
       TAccountJoinMintHcuBlockMeter,
       InstructionAccountInputAddress<TAccountJoinMintHcuBlockMeter>
@@ -320,6 +490,14 @@ export async function getDispatchInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountJoinMintHcuTrustedAppRecord,
       InstructionAccountInputAddress<TAccountJoinMintHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
     >
   >
 > {
@@ -335,7 +513,7 @@ export async function getDispatchInstructionAsync<
     batcher: {
       value: input.batcher ?? null,
       isSigner: false,
-      isWritable: false,
+      isWritable: true,
     },
     batch: { value: input.batch ?? null, isSigner: false, isWritable: true },
     batchAuthority: {
@@ -418,10 +596,65 @@ export async function getDispatchInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     systemProgram: {
       value: input.systemProgram ?? null,
       isSigner: false,
       isWritable: false,
+    },
+    nextBatch: {
+      value: input.nextBatch ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    nextBatchAuthority: {
+      value: input.nextBatchAuthority ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    nextBatchJoinTokenAccount: {
+      value: input.nextBatchJoinTokenAccount ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    nextBatchJoinBalanceStore: {
+      value: input.nextBatchJoinBalanceStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    payoutConfidentialMint: {
+      value: input.payoutConfidentialMint ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    payoutUnderlyingMint: {
+      value: input.payoutUnderlyingMint ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    nextBatchPayoutTokenAccount: {
+      value: input.nextBatchPayoutTokenAccount ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    nextBatchPayoutBalanceStore: {
+      value: input.nextBatchPayoutBalanceStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    nextBatchJoinUnderlying: {
+      value: input.nextBatchJoinUnderlying ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    nextBatchPayoutUnderlying: {
+      value: input.nextBatchPayoutUnderlying ?? null,
+      isSigner: false,
+      isWritable: true,
     },
     joinMintHcuBlockMeter: {
       value: input.joinMintHcuBlockMeter ?? null,
@@ -433,8 +666,21 @@ export async function getDispatchInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    payoutMintHcuBlockMeter: {
+      value: input.payoutMintHcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    payoutMintHcuTrustedAppRecord: {
+      value: input.payoutMintHcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
+
+  // Original args.
+  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.batchAuthority.value) {
@@ -463,8 +709,36 @@ export async function getDispatchInstructionAsync<
     accounts.confidentialTokenProgram.value =
       'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL' as Address<'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL'>;
   }
+  if (!accounts.tokenProgram.value) {
+    accounts.tokenProgram.value =
+      'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
+  }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
+  if (!accounts.nextBatchAuthority.value) {
+    accounts.nextBatchAuthority.value = await findBatchAuthorityPda(
+      {
+        batch: getAddressFromResolvedInstructionAccount('nextBatch', accounts.nextBatch.value),
+      },
+      { programAddress },
+    );
+  }
+  if (!accounts.nextBatchJoinUnderlying.value) {
+    accounts.nextBatchJoinUnderlying.value = await findBatchJoinUnderlyingPda(
+      {
+        batch: getAddressFromResolvedInstructionAccount('nextBatch', accounts.nextBatch.value),
+      },
+      { programAddress },
+    );
+  }
+  if (!accounts.nextBatchPayoutUnderlying.value) {
+    accounts.nextBatchPayoutUnderlying.value = await findBatchPayoutUnderlyingPda(
+      {
+        batch: getAddressFromResolvedInstructionAccount('nextBatch', accounts.nextBatch.value),
+      },
+      { programAddress },
+    );
   }
 
   return Object.freeze({
@@ -488,11 +762,24 @@ export async function getDispatchInstructionAsync<
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
       getAccountMeta('confidentialTokenProgram', accounts.confidentialTokenProgram),
+      getAccountMeta('tokenProgram', accounts.tokenProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
+      getAccountMeta('nextBatch', accounts.nextBatch),
+      getAccountMeta('nextBatchAuthority', accounts.nextBatchAuthority),
+      getAccountMeta('nextBatchJoinTokenAccount', accounts.nextBatchJoinTokenAccount),
+      getAccountMeta('nextBatchJoinBalanceStore', accounts.nextBatchJoinBalanceStore),
+      getAccountMeta('payoutConfidentialMint', accounts.payoutConfidentialMint),
+      getAccountMeta('payoutUnderlyingMint', accounts.payoutUnderlyingMint),
+      getAccountMeta('nextBatchPayoutTokenAccount', accounts.nextBatchPayoutTokenAccount),
+      getAccountMeta('nextBatchPayoutBalanceStore', accounts.nextBatchPayoutBalanceStore),
+      getAccountMeta('nextBatchJoinUnderlying', accounts.nextBatchJoinUnderlying),
+      getAccountMeta('nextBatchPayoutUnderlying', accounts.nextBatchPayoutUnderlying),
       getAccountMeta('joinMintHcuBlockMeter', accounts.joinMintHcuBlockMeter),
       getAccountMeta('joinMintHcuTrustedAppRecord', accounts.joinMintHcuTrustedAppRecord),
+      getAccountMeta('payoutMintHcuBlockMeter', accounts.payoutMintHcuBlockMeter),
+      getAccountMeta('payoutMintHcuTrustedAppRecord', accounts.payoutMintHcuTrustedAppRecord),
     ],
-    data: getDispatchInstructionDataEncoder().encode({}),
+    data: getDispatchInstructionDataEncoder().encode(args as DispatchInstructionDataArgs),
     programAddress,
   } as DispatchInstruction<
     TProgramAddress,
@@ -542,7 +829,45 @@ export async function getDispatchInstructionAsync<
       TAccountConfidentialTokenProgram,
       InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
     >,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
     ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountNextBatch, InstructionAccountInputAddress<TAccountNextBatch>>,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchAuthority,
+      InstructionAccountInputAddress<TAccountNextBatchAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchJoinTokenAccount,
+      InstructionAccountInputAddress<TAccountNextBatchJoinTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchJoinBalanceStore,
+      InstructionAccountInputAddress<TAccountNextBatchJoinBalanceStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutConfidentialMint,
+      InstructionAccountInputAddress<TAccountPayoutConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutUnderlyingMint,
+      InstructionAccountInputAddress<TAccountPayoutUnderlyingMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchPayoutTokenAccount,
+      InstructionAccountInputAddress<TAccountNextBatchPayoutTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchPayoutBalanceStore,
+      InstructionAccountInputAddress<TAccountNextBatchPayoutBalanceStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchJoinUnderlying,
+      InstructionAccountInputAddress<TAccountNextBatchJoinUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchPayoutUnderlying,
+      InstructionAccountInputAddress<TAccountNextBatchPayoutUnderlying>
+    >,
     ResolvedInstructionAccountMeta<
       TAccountJoinMintHcuBlockMeter,
       InstructionAccountInputAddress<TAccountJoinMintHcuBlockMeter>
@@ -550,6 +875,14 @@ export async function getDispatchInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountJoinMintHcuTrustedAppRecord,
       InstructionAccountInputAddress<TAccountJoinMintHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
     >
   >);
 }
@@ -574,19 +907,33 @@ export type DispatchInput<
   TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountConfidentialTokenEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountConfidentialTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatch extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchAuthority extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchJoinTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchJoinBalanceStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutConfidentialMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutUnderlyingMint extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchPayoutTokenAccount extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchPayoutBalanceStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchJoinUnderlying extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextBatchPayoutUnderlying extends InstructionAccountInput = InstructionAccountInput,
   TAccountJoinMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
+  TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
-  /** Pays the burn's output ACL rent. Anyone. */
+  /** Pays the burn's output ACL rent and opens the next batch. Anyone. */
   payer: TAccountPayer;
-  /** Batcher config carrying the minimum batch age. */
+  /** Batcher config carrying the minimum batch age; `next_batch_index` advances. */
   batcher: TAccountBatcher;
   /** The pending batch being dispatched. */
   batch: TAccountBatch;
   batchAuthority: TAccountBatchAuthority;
   /** Confidential mint whose encrypted total supply the burn decreases. */
   joinConfidentialMint: TAccountJoinConfidentialMint;
+  /** SPL mint the join confidential mint wraps. */
   joinUnderlyingMint: TAccountJoinUnderlyingMint;
   batchAuthorityAta: TAccountBatchAuthorityAta;
   totalSupplyAuthority: TAccountTotalSupplyAuthority;
@@ -605,18 +952,49 @@ export type DispatchInput<
   confidentialTokenEventAuthority: TAccountConfidentialTokenEventAuthority;
   /** confidential-token program composed via CPI. */
   confidentialTokenProgram?: TAccountConfidentialTokenProgram;
-  /** System program used for ACL account creation. */
+  /** SPL token program. */
+  tokenProgram?: TAccountTokenProgram;
+  /** System program used for account creation. */
   systemProgram?: TAccountSystemProgram;
+  /** The next batch, at the batcher's next index. */
+  nextBatch: TAccountNextBatch;
+  /** funding it receives here. */
+  nextBatchAuthority: TAccountNextBatchAuthority;
+  /** is if someone already created it. */
+  nextBatchJoinTokenAccount: TAccountNextBatchJoinTokenAccount;
+  nextBatchJoinBalanceStore: TAccountNextBatchJoinBalanceStore;
+  /** Confidential mint claims pay out in. */
+  payoutConfidentialMint: TAccountPayoutConfidentialMint;
+  /** SPL mint the payout confidential mint wraps. */
+  payoutUnderlyingMint: TAccountPayoutUnderlyingMint;
+  /** as is if someone already created it. */
+  nextBatchPayoutTokenAccount: TAccountNextBatchPayoutTokenAccount;
+  nextBatchPayoutBalanceStore: TAccountNextBatchPayoutBalanceStore;
+  /** The next batch's plain SPL account receiving its redeemed total at settle. */
+  nextBatchJoinUnderlying: TAccountNextBatchJoinUnderlying;
+  /** The next batch's plain SPL account receiving its vault phase's output at settle. */
+  nextBatchPayoutUnderlying: TAccountNextBatchPayoutUnderlying;
   /**
-   * The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
-   * application is not trusted.
+   * The join mint's HCU block meter for the burn and the next batch's join token account.
+   * Supplied while the block cap binds and the application is not trusted.
    */
   joinMintHcuBlockMeter?: TAccountJoinMintHcuBlockMeter;
   /**
-   * The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
-   * application is trusted.
+   * The join mint's HCU trust record for the burn and the next batch's join token account.
+   * Supplied while the block cap binds and the application is trusted.
    */
   joinMintHcuTrustedAppRecord?: TAccountJoinMintHcuTrustedAppRecord;
+  /**
+   * The payout mint's HCU block meter for the next batch's payout token account. Supplied while
+   * the block cap binds and the application is not trusted.
+   */
+  payoutMintHcuBlockMeter?: TAccountPayoutMintHcuBlockMeter;
+  /**
+   * The payout mint's HCU trust record for the next batch's payout token account. Supplied while
+   * the block cap binds and the application is trusted.
+   */
+  payoutMintHcuTrustedAppRecord?: TAccountPayoutMintHcuTrustedAppRecord;
+  authorityFundingLamports: DispatchInstructionDataArgs['authorityFundingLamports'];
 };
 
 export function getDispatchInstruction<
@@ -639,9 +1017,22 @@ export function getDispatchInstruction<
   TAccountHostConfig extends InstructionAccountInput,
   TAccountConfidentialTokenEventAuthority extends InstructionAccountInput,
   TAccountConfidentialTokenProgram extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountNextBatch extends InstructionAccountInput,
+  TAccountNextBatchAuthority extends InstructionAccountInput,
+  TAccountNextBatchJoinTokenAccount extends InstructionAccountInput,
+  TAccountNextBatchJoinBalanceStore extends InstructionAccountInput,
+  TAccountPayoutConfidentialMint extends InstructionAccountInput,
+  TAccountPayoutUnderlyingMint extends InstructionAccountInput,
+  TAccountNextBatchPayoutTokenAccount extends InstructionAccountInput,
+  TAccountNextBatchPayoutBalanceStore extends InstructionAccountInput,
+  TAccountNextBatchJoinUnderlying extends InstructionAccountInput,
+  TAccountNextBatchPayoutUnderlying extends InstructionAccountInput,
   TAccountJoinMintHcuBlockMeter extends InstructionAccountInput,
   TAccountJoinMintHcuTrustedAppRecord extends InstructionAccountInput,
+  TAccountPayoutMintHcuBlockMeter extends InstructionAccountInput,
+  TAccountPayoutMintHcuTrustedAppRecord extends InstructionAccountInput,
   TProgramAddress extends Address = typeof CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
 >(
   input: DispatchInput<
@@ -664,9 +1055,22 @@ export function getDispatchInstruction<
     TAccountHostConfig,
     TAccountConfidentialTokenEventAuthority,
     TAccountConfidentialTokenProgram,
+    TAccountTokenProgram,
     TAccountSystemProgram,
+    TAccountNextBatch,
+    TAccountNextBatchAuthority,
+    TAccountNextBatchJoinTokenAccount,
+    TAccountNextBatchJoinBalanceStore,
+    TAccountPayoutConfidentialMint,
+    TAccountPayoutUnderlyingMint,
+    TAccountNextBatchPayoutTokenAccount,
+    TAccountNextBatchPayoutBalanceStore,
+    TAccountNextBatchJoinUnderlying,
+    TAccountNextBatchPayoutUnderlying,
     TAccountJoinMintHcuBlockMeter,
-    TAccountJoinMintHcuTrustedAppRecord
+    TAccountJoinMintHcuTrustedAppRecord,
+    TAccountPayoutMintHcuBlockMeter,
+    TAccountPayoutMintHcuTrustedAppRecord
   >,
   config?: { programAddress?: TProgramAddress },
 ): DispatchInstruction<
@@ -711,7 +1115,45 @@ export function getDispatchInstruction<
     TAccountConfidentialTokenProgram,
     InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
   >,
+  ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
   ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+  ResolvedInstructionAccountMeta<TAccountNextBatch, InstructionAccountInputAddress<TAccountNextBatch>>,
+  ResolvedInstructionAccountMeta<
+    TAccountNextBatchAuthority,
+    InstructionAccountInputAddress<TAccountNextBatchAuthority>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountNextBatchJoinTokenAccount,
+    InstructionAccountInputAddress<TAccountNextBatchJoinTokenAccount>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountNextBatchJoinBalanceStore,
+    InstructionAccountInputAddress<TAccountNextBatchJoinBalanceStore>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutConfidentialMint,
+    InstructionAccountInputAddress<TAccountPayoutConfidentialMint>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutUnderlyingMint,
+    InstructionAccountInputAddress<TAccountPayoutUnderlyingMint>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountNextBatchPayoutTokenAccount,
+    InstructionAccountInputAddress<TAccountNextBatchPayoutTokenAccount>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountNextBatchPayoutBalanceStore,
+    InstructionAccountInputAddress<TAccountNextBatchPayoutBalanceStore>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountNextBatchJoinUnderlying,
+    InstructionAccountInputAddress<TAccountNextBatchJoinUnderlying>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountNextBatchPayoutUnderlying,
+    InstructionAccountInputAddress<TAccountNextBatchPayoutUnderlying>
+  >,
   ResolvedInstructionAccountMeta<
     TAccountJoinMintHcuBlockMeter,
     InstructionAccountInputAddress<TAccountJoinMintHcuBlockMeter>
@@ -719,6 +1161,14 @@ export function getDispatchInstruction<
   ResolvedInstructionAccountMeta<
     TAccountJoinMintHcuTrustedAppRecord,
     InstructionAccountInputAddress<TAccountJoinMintHcuTrustedAppRecord>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutMintHcuBlockMeter,
+    InstructionAccountInputAddress<TAccountPayoutMintHcuBlockMeter>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountPayoutMintHcuTrustedAppRecord,
+    InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
   >
 > {
   // Program address.
@@ -733,7 +1183,7 @@ export function getDispatchInstruction<
     batcher: {
       value: input.batcher ?? null,
       isSigner: false,
-      isWritable: false,
+      isWritable: true,
     },
     batch: { value: input.batch ?? null, isSigner: false, isWritable: true },
     batchAuthority: {
@@ -816,10 +1266,65 @@ export function getDispatchInstruction<
       isSigner: false,
       isWritable: false,
     },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     systemProgram: {
       value: input.systemProgram ?? null,
       isSigner: false,
       isWritable: false,
+    },
+    nextBatch: {
+      value: input.nextBatch ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    nextBatchAuthority: {
+      value: input.nextBatchAuthority ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    nextBatchJoinTokenAccount: {
+      value: input.nextBatchJoinTokenAccount ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    nextBatchJoinBalanceStore: {
+      value: input.nextBatchJoinBalanceStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    payoutConfidentialMint: {
+      value: input.payoutConfidentialMint ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    payoutUnderlyingMint: {
+      value: input.payoutUnderlyingMint ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    nextBatchPayoutTokenAccount: {
+      value: input.nextBatchPayoutTokenAccount ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    nextBatchPayoutBalanceStore: {
+      value: input.nextBatchPayoutBalanceStore ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    nextBatchJoinUnderlying: {
+      value: input.nextBatchJoinUnderlying ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    nextBatchPayoutUnderlying: {
+      value: input.nextBatchPayoutUnderlying ?? null,
+      isSigner: false,
+      isWritable: true,
     },
     joinMintHcuBlockMeter: {
       value: input.joinMintHcuBlockMeter ?? null,
@@ -831,8 +1336,21 @@ export function getDispatchInstruction<
       isSigner: false,
       isWritable: false,
     },
+    payoutMintHcuBlockMeter: {
+      value: input.payoutMintHcuBlockMeter ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    payoutMintHcuTrustedAppRecord: {
+      value: input.payoutMintHcuTrustedAppRecord ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
   };
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
+
+  // Original args.
+  const args = { ...input };
 
   // Resolve default values.
   if (!accounts.zamaProgram.value) {
@@ -842,6 +1360,10 @@ export function getDispatchInstruction<
   if (!accounts.confidentialTokenProgram.value) {
     accounts.confidentialTokenProgram.value =
       'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL' as Address<'FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL'>;
+  }
+  if (!accounts.tokenProgram.value) {
+    accounts.tokenProgram.value =
+      'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
@@ -868,11 +1390,24 @@ export function getDispatchInstruction<
       getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('confidentialTokenEventAuthority', accounts.confidentialTokenEventAuthority),
       getAccountMeta('confidentialTokenProgram', accounts.confidentialTokenProgram),
+      getAccountMeta('tokenProgram', accounts.tokenProgram),
       getAccountMeta('systemProgram', accounts.systemProgram),
+      getAccountMeta('nextBatch', accounts.nextBatch),
+      getAccountMeta('nextBatchAuthority', accounts.nextBatchAuthority),
+      getAccountMeta('nextBatchJoinTokenAccount', accounts.nextBatchJoinTokenAccount),
+      getAccountMeta('nextBatchJoinBalanceStore', accounts.nextBatchJoinBalanceStore),
+      getAccountMeta('payoutConfidentialMint', accounts.payoutConfidentialMint),
+      getAccountMeta('payoutUnderlyingMint', accounts.payoutUnderlyingMint),
+      getAccountMeta('nextBatchPayoutTokenAccount', accounts.nextBatchPayoutTokenAccount),
+      getAccountMeta('nextBatchPayoutBalanceStore', accounts.nextBatchPayoutBalanceStore),
+      getAccountMeta('nextBatchJoinUnderlying', accounts.nextBatchJoinUnderlying),
+      getAccountMeta('nextBatchPayoutUnderlying', accounts.nextBatchPayoutUnderlying),
       getAccountMeta('joinMintHcuBlockMeter', accounts.joinMintHcuBlockMeter),
       getAccountMeta('joinMintHcuTrustedAppRecord', accounts.joinMintHcuTrustedAppRecord),
+      getAccountMeta('payoutMintHcuBlockMeter', accounts.payoutMintHcuBlockMeter),
+      getAccountMeta('payoutMintHcuTrustedAppRecord', accounts.payoutMintHcuTrustedAppRecord),
     ],
-    data: getDispatchInstructionDataEncoder().encode({}),
+    data: getDispatchInstructionDataEncoder().encode(args as DispatchInstructionDataArgs),
     programAddress,
   } as DispatchInstruction<
     TProgramAddress,
@@ -922,7 +1457,45 @@ export function getDispatchInstruction<
       TAccountConfidentialTokenProgram,
       InstructionAccountInputAddress<TAccountConfidentialTokenProgram>
     >,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
     ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountNextBatch, InstructionAccountInputAddress<TAccountNextBatch>>,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchAuthority,
+      InstructionAccountInputAddress<TAccountNextBatchAuthority>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchJoinTokenAccount,
+      InstructionAccountInputAddress<TAccountNextBatchJoinTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchJoinBalanceStore,
+      InstructionAccountInputAddress<TAccountNextBatchJoinBalanceStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutConfidentialMint,
+      InstructionAccountInputAddress<TAccountPayoutConfidentialMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutUnderlyingMint,
+      InstructionAccountInputAddress<TAccountPayoutUnderlyingMint>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchPayoutTokenAccount,
+      InstructionAccountInputAddress<TAccountNextBatchPayoutTokenAccount>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchPayoutBalanceStore,
+      InstructionAccountInputAddress<TAccountNextBatchPayoutBalanceStore>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchJoinUnderlying,
+      InstructionAccountInputAddress<TAccountNextBatchJoinUnderlying>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextBatchPayoutUnderlying,
+      InstructionAccountInputAddress<TAccountNextBatchPayoutUnderlying>
+    >,
     ResolvedInstructionAccountMeta<
       TAccountJoinMintHcuBlockMeter,
       InstructionAccountInputAddress<TAccountJoinMintHcuBlockMeter>
@@ -930,6 +1503,14 @@ export function getDispatchInstruction<
     ResolvedInstructionAccountMeta<
       TAccountJoinMintHcuTrustedAppRecord,
       InstructionAccountInputAddress<TAccountJoinMintHcuTrustedAppRecord>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuBlockMeter,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuBlockMeter>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountPayoutMintHcuTrustedAppRecord,
+      InstructionAccountInputAddress<TAccountPayoutMintHcuTrustedAppRecord>
     >
   >);
 }
@@ -940,15 +1521,16 @@ export type ParsedDispatchInstruction<
 > = {
   programAddress: Address<TProgram>;
   accounts: {
-    /** Pays the burn's output ACL rent. Anyone. */
+    /** Pays the burn's output ACL rent and opens the next batch. Anyone. */
     payer: TAccountMetas[0];
-    /** Batcher config carrying the minimum batch age. */
+    /** Batcher config carrying the minimum batch age; `next_batch_index` advances. */
     batcher: TAccountMetas[1];
     /** The pending batch being dispatched. */
     batch: TAccountMetas[2];
     batchAuthority: TAccountMetas[3];
     /** Confidential mint whose encrypted total supply the burn decreases. */
     joinConfidentialMint: TAccountMetas[4];
+    /** SPL mint the join confidential mint wraps. */
     joinUnderlyingMint: TAccountMetas[5];
     batchAuthorityAta: TAccountMetas[6];
     totalSupplyAuthority: TAccountMetas[7];
@@ -967,18 +1549,48 @@ export type ParsedDispatchInstruction<
     confidentialTokenEventAuthority: TAccountMetas[17];
     /** confidential-token program composed via CPI. */
     confidentialTokenProgram: TAccountMetas[18];
-    /** System program used for ACL account creation. */
-    systemProgram: TAccountMetas[19];
+    /** SPL token program. */
+    tokenProgram: TAccountMetas[19];
+    /** System program used for account creation. */
+    systemProgram: TAccountMetas[20];
+    /** The next batch, at the batcher's next index. */
+    nextBatch: TAccountMetas[21];
+    /** funding it receives here. */
+    nextBatchAuthority: TAccountMetas[22];
+    /** is if someone already created it. */
+    nextBatchJoinTokenAccount: TAccountMetas[23];
+    nextBatchJoinBalanceStore: TAccountMetas[24];
+    /** Confidential mint claims pay out in. */
+    payoutConfidentialMint: TAccountMetas[25];
+    /** SPL mint the payout confidential mint wraps. */
+    payoutUnderlyingMint: TAccountMetas[26];
+    /** as is if someone already created it. */
+    nextBatchPayoutTokenAccount: TAccountMetas[27];
+    nextBatchPayoutBalanceStore: TAccountMetas[28];
+    /** The next batch's plain SPL account receiving its redeemed total at settle. */
+    nextBatchJoinUnderlying: TAccountMetas[29];
+    /** The next batch's plain SPL account receiving its vault phase's output at settle. */
+    nextBatchPayoutUnderlying: TAccountMetas[30];
     /**
-     * The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
-     * application is not trusted.
+     * The join mint's HCU block meter for the burn and the next batch's join token account.
+     * Supplied while the block cap binds and the application is not trusted.
      */
-    joinMintHcuBlockMeter?: TAccountMetas[20] | undefined;
+    joinMintHcuBlockMeter?: TAccountMetas[31] | undefined;
     /**
-     * The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
-     * application is trusted.
+     * The join mint's HCU trust record for the burn and the next batch's join token account.
+     * Supplied while the block cap binds and the application is trusted.
      */
-    joinMintHcuTrustedAppRecord?: TAccountMetas[21] | undefined;
+    joinMintHcuTrustedAppRecord?: TAccountMetas[32] | undefined;
+    /**
+     * The payout mint's HCU block meter for the next batch's payout token account. Supplied while
+     * the block cap binds and the application is not trusted.
+     */
+    payoutMintHcuBlockMeter?: TAccountMetas[33] | undefined;
+    /**
+     * The payout mint's HCU trust record for the next batch's payout token account. Supplied while
+     * the block cap binds and the application is trusted.
+     */
+    payoutMintHcuTrustedAppRecord?: TAccountMetas[34] | undefined;
   };
   data: DispatchInstructionData;
 };
@@ -986,10 +1598,10 @@ export type ParsedDispatchInstruction<
 export function parseDispatchInstruction<TProgram extends string, TAccountMetas extends readonly AccountMeta[]>(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedDispatchInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 22) {
+  if (instruction.accounts.length < 35) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 22,
+      expectedAccountMetas: 35,
     });
   }
   let accountIndex = 0;
@@ -1024,9 +1636,22 @@ export function parseDispatchInstruction<TProgram extends string, TAccountMetas 
       hostConfig: getNextAccount(),
       confidentialTokenEventAuthority: getNextAccount(),
       confidentialTokenProgram: getNextAccount(),
+      tokenProgram: getNextAccount(),
       systemProgram: getNextAccount(),
+      nextBatch: getNextAccount(),
+      nextBatchAuthority: getNextAccount(),
+      nextBatchJoinTokenAccount: getNextAccount(),
+      nextBatchJoinBalanceStore: getNextAccount(),
+      payoutConfidentialMint: getNextAccount(),
+      payoutUnderlyingMint: getNextAccount(),
+      nextBatchPayoutTokenAccount: getNextAccount(),
+      nextBatchPayoutBalanceStore: getNextAccount(),
+      nextBatchJoinUnderlying: getNextAccount(),
+      nextBatchPayoutUnderlying: getNextAccount(),
       joinMintHcuBlockMeter: getNextOptionalAccount(),
       joinMintHcuTrustedAppRecord: getNextOptionalAccount(),
+      payoutMintHcuBlockMeter: getNextOptionalAccount(),
+      payoutMintHcuTrustedAppRecord: getNextOptionalAccount(),
     },
     data: getDispatchInstructionDataDecoder().decode(instruction.data),
   };

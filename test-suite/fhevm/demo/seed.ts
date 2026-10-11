@@ -25,11 +25,11 @@ import { prepareTransientStore, type TransientStore } from "@fhevm/sdk/solana";
 //      `wrap_usdc`/`redeem_burned_amount` require to pre-exist (ATA of the mint's `vault_authority`
 //      PDA holding the underlying). `initialize_mint` does NOT create it; a missing escrow fails wrap
 //      on-chain with 3012 AccountNotInitialized. Both directions' escrows are created up front.
-//   4. `initialize_batcher` ×2 (confidential_batcher): the deposit batcher (join cUSDC → payout
-//      cShares) and the redeem batcher (the reverse), each with a slot-denominated min batch age.
-//   5. `open_batch` ×2 (via `openBatchForBatcher`): opens each batcher's first batch.
-//   6. fund the personas (keeper/alice/bob) — and the deployer payer — with SOL for fees.
-//   7. derive host/kms roots and write the demo-config JSON (`writeDemoConfig`, which re-parses).
+//   4. `initialize_batcher` ×2 (confidential_batcher, via `buildInitializeBatcherInstruction`): the
+//      deposit batcher (join cUSDC → payout cShares) and the redeem batcher (the reverse), each with
+//      its batch ages; each opens its batch 0.
+//   5. fund the personas (keeper/alice/bob) — and the deployer payer — with SOL for fees.
+//   6. derive host/kms roots and write the demo-config JSON (`writeDemoConfig`, which re-parses).
 
 import fs from "node:fs/promises";
 import {
@@ -216,32 +216,6 @@ const main = async (): Promise<void> => {
   });
   await send(deployer, [cUsdcEscrow.instruction, cSharesEscrow.instruction]);
 
-  // 4. Batchers: deposit (join cUSDC → payout cShares) and redeem (the reverse).
-  await send(deployer, [
-    vault.getInitializeBatcherInstruction({
-      payer: deployer,
-      batcher: depositBatcher,
-      joinConfidentialMint: cUsdcMint.address,
-      payoutConfidentialMint: cSharesMint.address,
-      vault: vaultAccount.address,
-      minBatchAgeSecs: DEMO_MIN_BATCH_AGE_SECS,
-      settleDeadlineSecs: DEMO_SETTLE_DEADLINE_SECS,
-      direction: vault.BatchDirection.Deposit,
-    }),
-  ]);
-  await send(deployer, [
-    vault.getInitializeBatcherInstruction({
-      payer: deployer,
-      batcher: redeemBatcher,
-      joinConfidentialMint: cSharesMint.address,
-      payoutConfidentialMint: cUsdcMint.address,
-      vault: vaultAccount.address,
-      minBatchAgeSecs: DEMO_MIN_BATCH_AGE_SECS,
-      settleDeadlineSecs: DEMO_SETTLE_DEADLINE_SECS,
-      direction: vault.BatchDirection.Redeem,
-    }),
-  ]);
-
   const commonRoots = {
     batcherProgram: vault.CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,
     tokenProgram: vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
@@ -266,24 +240,32 @@ const main = async (): Promise<void> => {
     payoutUnderlyingMint: mockUsdcMint.address,
   };
 
-  // 5. Open the first batch on each batcher.
-  const openFirstBatch = async (roots: VaultDemoRoots): Promise<void> => {
-    const transientStore = await prepareTransientStore({ payer: keeper, host: vault.ZAMA_HOST_PROGRAM_ADDRESS });
-    await sendFhe(keeper, transientStore, [
-      await vault.openBatchForBatcher({
+  // 4. Batchers: deposit (join cUSDC → payout cShares) and redeem (the reverse). Each opens its batch 0.
+  const initializeBatcher = async (
+    batcher: TransactionSigner,
+    roots: VaultDemoRoots,
+    direction: vault.BatchDirection,
+  ): Promise<void> => {
+    const transientStore = await prepareTransientStore({ payer: deployer, host: vault.ZAMA_HOST_PROGRAM_ADDRESS });
+    await sendFhe(deployer, transientStore, [
+      await vault.buildInitializeBatcherInstruction({
         transientStore,
+        payer: deployer,
+        batcher,
         roots,
-        batchIndex: 0n,
-        payer: keeper,
+        minBatchAgeSecs: DEMO_MIN_BATCH_AGE_SECS,
+        settleDeadlineSecs: DEMO_SETTLE_DEADLINE_SECS,
+        direction,
         authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS,
+        tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
         host: await vault.readHostPolicy(rpc),
       }),
     ]);
   };
-  await openFirstBatch(depositRoots);
-  await openFirstBatch(redeemRoots);
+  await initializeBatcher(depositBatcher, depositRoots, vault.BatchDirection.Deposit);
+  await initializeBatcher(redeemBatcher, redeemRoots, vault.BatchDirection.Redeem);
 
-  // 6 + 7. Assemble and persist the demo-config. Endpoints/ids come from the resolved env; the vault
+  // 5 + 6. Assemble and persist the demo-config. Endpoints/ids come from the resolved env; the vault
   // roots are the real addresses provisioned above. `writeDemoConfig` re-parses before persisting, so
   // a malformed assembly fails at write with a named field rather than later inside an SDK call.
   const config: SolanaDemoConfig = {
@@ -297,8 +279,8 @@ const main = async (): Promise<void> => {
     aclProgram: env.aclProgram,
     // The local stack runs the test FHE parameter set; the SDK reads the KMS trust from zama-host.
     fheParameter: "test",
-    // Must suffice to cover the rent settle's CPIs charge to the batch authority; the open_batch
-    // value is recorded as a known-good amount.
+    // Must suffice to cover the rent settle's CPIs charge to the batch authority; the value each batch
+    // opens with is recorded as a known-good amount.
     authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS.toString(),
     programs: {
       batcher: vault.CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,

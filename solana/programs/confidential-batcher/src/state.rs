@@ -39,7 +39,7 @@ pub struct Batcher {
     /// Seconds after dispatch during which only `settle` may finish the batch; from then on only
     /// `cancel_dispatch` may, and anyone can call it.
     pub settle_deadline_secs: u64,
-    /// Index the next `open_batch` creates.
+    /// Index of the next batch to open; the pending batch is the one before it.
     pub next_batch_index: u64,
 }
 

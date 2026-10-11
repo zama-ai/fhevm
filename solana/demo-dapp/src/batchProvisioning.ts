@@ -1,15 +1,12 @@
-import { prepareTransientStore } from '@fhevm/sdk/solana';
 import type { Address, TransactionSigner } from '@solana/kit';
 import {
   getReclaimBatchAuthorityInstructionAsync,
   getBatchByIndex,
   getBatcher,
   getCurrentBatch,
-  openBatchForBatcher,
-  readHostPolicy,
 } from './vault/index.js';
 
-import { BatchStatus, isBatchFinished, type VaultDirection } from './batchTypes';
+import { isBatchFinished, type VaultDirection } from './batchTypes';
 import { createDemoClient } from './demoClient';
 import type { DemoConfig } from './demoConfig';
 import { vaultRoots } from './vaultRoots';
@@ -76,35 +73,17 @@ export type PreparedBatch = {
   readonly batch: Address;
 };
 
+/**
+ * The batch a join lands in: the batcher's pending batch, which always exists because
+ * `initialize_batcher` opens batch 0 and each `dispatch` opens the next one.
+ */
 export const prepareNextBatch = async (
   config: DemoConfig,
   keeper: TransactionSigner,
   direction: VaultDirection,
 ): Promise<PreparedBatch> => {
-  const client = createDemoClient(config, keeper);
-  const { rpc } = client;
-  const roots = vaultRoots(config, direction);
-  const current = await getCurrentBatch(rpc, roots);
-
-  const batchIndex = current.state.status === BatchStatus.Pending ? current.index : current.index + 1n;
-  if (current.state.status !== BatchStatus.Pending) {
-    const transientStore = await prepareTransientStore({ payer: keeper, host: config.programs.host });
-    const openBatchInstruction = await openBatchForBatcher({
-      transientStore,
-      roots,
-      batchIndex,
-      payer: keeper,
-      authorityFundingLamports: BigInt(config.authorityFundingLamports),
-      host: await readHostPolicy(rpc),
-    });
-    await client.sendFheTransaction(transientStore, [openBatchInstruction]);
-  }
-  const batch =
-    current.state.status === BatchStatus.Pending
-      ? current.addresses.batch
-      : (await getCurrentBatch(rpc, roots)).addresses.batch;
-
+  const current = await getCurrentBatch(createDemoClient(config, keeper).rpc, vaultRoots(config, direction));
   // Rent hygiene: drain this direction's finished batch authorities while we are here.
   await reclaimFinishedBatchAuthorities(config, keeper, direction);
-  return { batchIndex, batch };
+  return { batchIndex: current.index, batch: current.addresses.batch };
 };

@@ -1,6 +1,6 @@
 //! Returns a finished batch's unspent authority funding to the operator.
 //!
-//! `open_batch`, `cancel_dispatch` and `settle` move `authority_funding_lamports` from their payer
+//! `initialize_batcher`, `dispatch` (opening the next batch), `cancel_dispatch` and `settle` move `authority_funding_lamports` from their payer
 //! to the batch authority PDA so it can pay the rent the token CPIs charge to the account owner.
 //! Once a batch is settled, canceled or refunding, nothing charges the authority any more: claims
 //! and quits pay their own rent through their `payer`, and the authority only signs. The PDA's

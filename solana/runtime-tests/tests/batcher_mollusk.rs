@@ -114,7 +114,7 @@ fn check_batcher_instruction(
         let payer_index = [
             (batcher::instruction::Join::DISCRIMINATOR, 1),
             (batcher::instruction::Quit::DISCRIMINATOR, 1),
-            (batcher::instruction::OpenBatch::DISCRIMINATOR, 0),
+            (batcher::instruction::InitializeBatcher::DISCRIMINATOR, 0),
             (batcher::instruction::Dispatch::DISCRIMINATOR, 0),
             (batcher::instruction::CancelDispatch::DISCRIMINATOR, 0),
             (batcher::instruction::Settle::DISCRIMINATOR, 0),
@@ -783,37 +783,15 @@ fn with_payer(mut ix: Instruction, payer_index: usize, payer: Pubkey) -> Instruc
 }
 
 fn initialize_batcher_ix(fixture: &BatcherFixture, min_batch_age_secs: u64) -> Instruction {
-    anchor_ix(
-        batcher::id(),
-        batcher::accounts::InitializeBatcher {
-            payer: fixture.payer,
-            batcher: fixture.batcher,
-            join_confidential_mint: fixture.join_mint().mint,
-            payout_confidential_mint: fixture.payout_mint().mint,
-            vault: fixture.vault,
-            system_program: system_program::ID,
-        },
-        batcher::instruction::InitializeBatcher {
-            min_batch_age_secs,
-            settle_deadline_secs: SETTLE_DEADLINE_SECS,
-            direction: fixture.direction,
-        },
-    )
-}
-
-fn open_batch_ix(
-    fixture: &BatcherFixture,
-    keys: &BatchKeys,
-    previous_batch: Option<Pubkey>,
-) -> Instruction {
+    let keys = BatchKeys::new(fixture, 0);
     let ix = anchor_ix(
         batcher::id(),
-        batcher::accounts::OpenBatch {
+        batcher::accounts::InitializeBatcher {
             transient_store: host::transient_store_address(fixture.payer).0,
             instructions: Instructions::id(),
             payer: fixture.payer,
             batcher: fixture.batcher,
-            previous_batch,
+            vault: fixture.vault,
             batch: keys.batch,
             batch_authority: keys.batch_authority,
             join_confidential_mint: fixture.join_mint().mint,
@@ -839,8 +817,10 @@ fn open_batch_ix(
             payout_mint_hcu_trusted_app_record: fixture
                 .hcu_trusted_app_record(fixture.payout_app()),
         },
-        batcher::instruction::OpenBatch {
-            index: keys.index,
+        batcher::instruction::InitializeBatcher {
+            min_batch_age_secs,
+            settle_deadline_secs: SETTLE_DEADLINE_SECS,
+            direction: fixture.direction,
             authority_funding_lamports: AUTHORITY_FUNDING,
         },
     );
@@ -991,6 +971,15 @@ fn donate_ix(
 }
 
 fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
+    dispatch_opening_ix(fixture, keys, &BatchKeys::new(fixture, keys.index + 1))
+}
+
+/// Dispatches `keys`' batch naming `next` as the batch it opens.
+fn dispatch_opening_ix(
+    fixture: &BatcherFixture,
+    keys: &BatchKeys,
+    next: &BatchKeys,
+) -> Instruction {
     let ix = anchor_ix(
         batcher::id(),
         batcher::accounts::Dispatch {
@@ -1016,13 +1005,30 @@ fn dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
             host_config: fixture.host_config,
             confidential_token_event_authority: event_authority(token::id()),
             confidential_token_program: token::id(),
+            token_program: spl_token::id(),
             system_program: system_program::ID,
+            next_batch: next.batch,
+            next_batch_authority: next.batch_authority,
+            next_batch_join_token_account: next.join_token_account,
+            next_batch_join_balance_store: next.join_balance_store,
+            payout_confidential_mint: fixture.payout_mint().mint,
+            payout_underlying_mint: fixture.payout_mint().underlying_mint,
+            next_batch_payout_token_account: next.payout_token_account,
+            next_batch_payout_balance_store: next.payout_balance_store,
+            next_batch_join_underlying: next.join_underlying,
+            next_batch_payout_underlying: next.payout_underlying,
             join_mint_hcu_block_meter: fixture.hcu_block_meter(fixture.join_app()),
             join_mint_hcu_trusted_app_record: fixture.hcu_trusted_app_record(fixture.join_app()),
+            payout_mint_hcu_block_meter: fixture.hcu_block_meter(fixture.payout_app()),
+            payout_mint_hcu_trusted_app_record: fixture
+                .hcu_trusted_app_record(fixture.payout_app()),
         },
-        batcher::instruction::Dispatch {},
+        batcher::instruction::Dispatch {
+            authority_funding_lamports: AUTHORITY_FUNDING,
+        },
     );
-    fixture.with_deny_records(ix, &[&[fixture.join_app()]])
+    let join = [fixture.join_app()];
+    fixture.with_deny_records(ix, &[&join, &join, &[fixture.payout_app()]])
 }
 
 fn cancel_dispatch_ix(fixture: &BatcherFixture, keys: &BatchKeys) -> Instruction {
@@ -1229,22 +1235,17 @@ fn run_reclaim_batch_authority(context: &Ctx, fixture: &BatcherFixture, keys: &B
 // Lifecycle drivers
 // ---------------------------------------------------------------------------
 
-/// Initializes the batcher and opens batch 0, returning its keys.
+/// Initializes the batcher, which opens batch 0, returning batch 0's keys.
 fn initialize_and_open_first_batch(
     context: &Ctx,
     fixture: &BatcherFixture,
     min_batch_age_secs: u64,
 ) -> BatchKeys {
-    check_batcher_instruction(
-        context,
-        &initialize_batcher_ix(fixture, min_batch_age_secs),
-        &[Check::success()],
-    );
     let keys = BatchKeys::new(fixture, 0);
     ensure_open_batch_accounts(context, fixture, &keys);
     check_batcher_instruction(
         context,
-        &open_batch_ix(fixture, &keys, None),
+        &initialize_batcher_ix(fixture, min_batch_age_secs),
         &[Check::success()],
     );
     keys
@@ -1299,8 +1300,8 @@ fn run_quit(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys, user: &Us
     assert_eq!(check_fhe_cpis(context, &result), 2);
 }
 
-/// Dispatches the batch and returns the created-public burned handle.
-fn run_dispatch(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys) -> [u8; 32] {
+/// Provides the accounts dispatching `keys`' batch creates, the next batch's included.
+fn ensure_dispatch_accounts(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys) {
     ensure_system_accounts(
         context,
         &[
@@ -1309,9 +1310,16 @@ fn run_dispatch(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys) -> [u
             owner_ata(keys.batch_authority, fixture.join_mint().underlying_mint),
         ],
     );
+    ensure_open_batch_accounts(context, fixture, &BatchKeys::new(fixture, keys.index + 1));
+}
+
+/// Dispatches the batch and returns the created-public burned handle.
+fn run_dispatch(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys) -> [u8; 32] {
+    ensure_dispatch_accounts(context, fixture, keys);
     let ix = dispatch_ix(fixture, keys);
     let result = check_batcher_instruction(context, &ix, &[Check::success()]);
-    assert_eq!(check_fhe_cpis(context, &result), 1);
+    // The burn, then the next batch's two token accounts.
+    assert_eq!(check_fhe_cpis(context, &result), 3);
     read_batch(context, keys.batch).burned_total_handle
 }
 
@@ -1832,9 +1840,11 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
     }
 
     // Refunding is terminal for aggregation and settlement, but remains live for withdrawals.
+    let next_open = BatchKeys::new(&fixture, keys.index + 2);
+    ensure_open_batch_accounts(&context, &fixture, &next_open);
     check_batcher_instruction(
         &context,
-        &dispatch_ix(&fixture, &keys),
+        &dispatch_opening_ix(&fixture, &keys, &next_open),
         &[batcher_error(batcher::BatcherError::BatchNotPending)],
     );
     check_batcher_instruction(
@@ -1938,8 +1948,8 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
 }
 
 /// A batch with no joins burns zero, and settle with the KMS-certified zero
-/// cancels the batch: no vault deposit, no wrap, no rate, and the next batch
-/// can open. The zero-total division-by-zero path is unreachable by
+/// cancels the batch: no vault deposit, no wrap, no rate, and the next batch,
+/// opened by the dispatch, stays pending. The zero-total division-by-zero path is unreachable by
 /// construction.
 #[test]
 fn mollusk_zero_total_batch_cancels_at_settle() {
@@ -1966,15 +1976,7 @@ fn mollusk_zero_total_batch_cancels_at_settle() {
     assert_eq!(read_spl_amount(&context, fixture.vault_token_account), 0);
     run_reclaim_batch_authority(&context, &fixture, &keys);
 
-    // The next batch opens against the canceled one.
-    let next = BatchKeys::new(&fixture, 1);
-    ensure_open_batch_accounts(&context, &fixture, &next);
-    check_batcher_instruction(
-        &context,
-        &open_batch_ix(&fixture, &next, Some(keys.batch)),
-        &[Check::success()],
-    );
-    assert_eq!(read_batch(&context, next.batch).index, 1);
+    assert_one_pending_batch(&context, &fixture);
 }
 
 /// Settle redeems through `verify_public_decrypt`, which never pauses, and wraps a nonzero payout
@@ -2861,6 +2863,7 @@ fn mollusk_initialize_batcher_bounds_the_batch_ages() {
             min_batch_age_secs,
             settle_deadline_secs,
             direction: fixture.direction,
+            authority_funding_lamports: AUTHORITY_FUNDING,
         });
         ix
     };
@@ -2946,10 +2949,12 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
         &quit_ix(&fixture, &keys, &fixture.alice),
         &[batcher_error(batcher::BatcherError::BatchNotRefundable)],
     );
-    // Second dispatch rejects.
+    // Second dispatch rejects, even naming the batch the batcher would open next.
+    let next_open = BatchKeys::new(&fixture, keys.index + 2);
+    ensure_open_batch_accounts(&context, &fixture, &next_open);
     check_batcher_instruction(
         &context,
-        &dispatch_ix(&fixture, &keys),
+        &dispatch_opening_ix(&fixture, &keys, &next_open),
         &[batcher_error(batcher::BatcherError::BatchNotPending)],
     );
 }
@@ -2990,36 +2995,97 @@ fn mollusk_double_claim_rejects() {
     );
 }
 
-/// Batches never overlap while pending: a second open against a pending
-/// previous batch rejects, and opening without the previous batch account
-/// rejects.
+/// Asserts the batcher invariant: exactly one batch is pending, the last one opened.
+fn assert_one_pending_batch(context: &Ctx, fixture: &BatcherFixture) {
+    let next_batch_index =
+        read_account::<batcher::Batcher>(context, fixture.batcher).next_batch_index;
+    let pending: Vec<u64> = (0..next_batch_index)
+        .filter(|&index| {
+            read_batch(context, batcher::batch_address(fixture.batcher, index).0).status
+                == batcher::BatchStatus::Pending
+        })
+        .collect();
+    assert_eq!(pending, [next_batch_index - 1]);
+}
+
+/// Asserts the batch authority received exactly `funding`: what it holds plus the rent of the token
+/// accounts and balance stores it paid for.
+fn assert_authority_funded(context: &Ctx, keys: &BatchKeys, funding: u64) {
+    let rent: u64 = [
+        keys.join_token_account,
+        keys.join_balance_store,
+        keys.payout_token_account,
+        keys.payout_balance_store,
+    ]
+    .map(|address| lamports_of(context, address))
+    .iter()
+    .sum();
+    assert_eq!(lamports_of(context, keys.batch_authority) + rent, funding);
+}
+
+/// Initializing a batcher opens batch 0 and funds its authority.
 #[test]
-fn mollusk_open_batch_requires_previous_batch_not_pending() {
+fn mollusk_initialize_batcher_opens_batch_zero() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     let keys = initialize_and_open_first_batch(&context, &fixture, 0);
 
-    let next = BatchKeys::new(&fixture, 1);
-    ensure_open_batch_accounts(&context, &fixture, &next);
-    check_batcher_instruction(
-        &context,
-        &open_batch_ix(&fixture, &next, Some(keys.batch)),
-        &[batcher_error(
-            batcher::BatcherError::PreviousBatchStillPending,
-        )],
+    let batch = read_batch(&context, keys.batch);
+    assert_eq!(
+        (batch.index, batch.status),
+        (0, batcher::BatchStatus::Pending)
     );
+    assert_one_pending_batch(&context, &fixture);
+    assert_authority_funded(&context, &keys, AUTHORITY_FUNDING);
+}
+
+/// A batcher always has exactly one pending batch, the last one opened: initializing opens batch 0,
+/// and dispatch, the only way out of Pending, opens the next one whether the dispatched batch then
+/// settles or is canceled.
+#[test]
+fn mollusk_a_batcher_has_exactly_one_pending_batch() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let mut context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    assert_one_pending_batch(&context, &fixture);
+
+    run_join(
+        &context,
+        &fixture,
+        &keys,
+        &fixture.alice,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    assert_one_pending_batch(&context, &fixture);
+    run_settle(&context, &fixture, &keys, burned_handle, 300);
+    assert_one_pending_batch(&context, &fixture);
+
+    let next = BatchKeys::new(&fixture, 1);
+    run_dispatch(&context, &fixture, &next);
+    assert_one_pending_batch(&context, &fixture);
+    reach_settle_deadline(&mut context);
     check_batcher_instruction(
         &context,
-        &open_batch_ix(&fixture, &next, None),
-        &[batcher_error(batcher::BatcherError::PreviousBatchMismatch)],
+        &cancel_dispatch_ix(&fixture, &next),
+        &[Check::success()],
+    );
+    assert_one_pending_batch(&context, &fixture);
+
+    run_dispatch(&context, &fixture, &BatchKeys::new(&fixture, 2));
+    assert_one_pending_batch(&context, &fixture);
+    assert_eq!(
+        read_account::<batcher::Batcher>(&context, fixture.batcher).next_batch_index,
+        4
     );
 }
 
-/// The next batch opens once the previous one is dispatched, as on EVM, where dispatching opens it: a
-/// join during the KMS round lands in the next batch, and the dispatched batch still settles and
-/// pays its claim.
+/// Dispatching a batch opens the next one, as on EVM: a join during the KMS round lands in the next
+/// batch, and the dispatched batch still settles and pays its claim.
 #[test]
-fn mollusk_open_batch_accepts_dispatched_previous_batch() {
+fn mollusk_dispatch_opens_the_next_batch() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
@@ -3035,16 +3101,20 @@ fn mollusk_open_batch_accepts_dispatched_previous_batch() {
     let burned_handle = run_dispatch(&context, &fixture, &keys);
 
     let next = BatchKeys::new(&fixture, 1);
-    ensure_open_batch_accounts(&context, &fixture, &next);
-    check_batcher_instruction(
-        &context,
-        &open_batch_ix(&fixture, &next, Some(keys.batch)),
-        &[Check::success()],
+    let opened = read_batch(&context, next.batch);
+    assert_eq!(
+        (opened.index, opened.status, opened.opened_at),
+        (
+            1,
+            batcher::BatchStatus::Pending,
+            context.mollusk.sysvars.clock.unix_timestamp
+        )
     );
     assert_eq!(
-        read_batch(&context, keys.batch).status,
-        batcher::BatchStatus::Dispatched
+        read_account::<batcher::Batcher>(&context, fixture.batcher).next_batch_index,
+        2
     );
+    assert_authority_funded(&context, &next, AUTHORITY_FUNDING);
     run_join(
         &context,
         &fixture,
@@ -3065,20 +3135,91 @@ fn mollusk_open_batch_accepts_dispatched_previous_batch() {
     assert_eq!(next_batch.join_count, 1);
 }
 
-/// A token account's owner does not sign its creation, and the next batch authority derives from the
-/// public `next_batch_index`, so anyone can create the next batch's token accounts first. The open
-/// still succeeds and keeps their zero balances.
+/// Dispatch funds the next batch's authority with the dispatcher's `authority_funding_lamports`.
+/// Funding too small to create the next batch's token accounts reverts the whole dispatch, so the
+/// batch stays pending instead of leaving the batcher without one.
 #[test]
-fn mollusk_open_batch_accepts_precreated_batch_token_accounts() {
+fn mollusk_dispatch_funds_the_next_batch_authority() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    ensure_dispatch_accounts(&context, &fixture, &keys);
+    let with_funding = |authority_funding_lamports| {
+        let mut ix = dispatch_ix(&fixture, &keys);
+        ix.data = anchor_lang::InstructionData::data(&batcher::instruction::Dispatch {
+            authority_funding_lamports,
+        });
+        ix
+    };
+
     check_batcher_instruction(
         &context,
-        &initialize_batcher_ix(&fixture, 0),
-        &[Check::success()],
+        &with_funding(0),
+        &[Check::err(ProgramError::Custom(1))],
     );
-    let keys = BatchKeys::new(&fixture, 0);
-    ensure_open_batch_accounts(&context, &fixture, &keys);
+    assert_eq!(
+        read_batch(&context, keys.batch).status,
+        batcher::BatchStatus::Pending
+    );
+    assert_one_pending_batch(&context, &fixture);
+
+    let funding = AUTHORITY_FUNDING / 2;
+    check_batcher_instruction(&context, &with_funding(funding), &[Check::success()]);
+    assert_authority_funded(&context, &BatchKeys::new(&fixture, 1), funding);
+}
+
+/// Dispatch opens the next batch on the batcher's own payout mint.
+#[test]
+fn mollusk_dispatch_rejects_another_payout_mint() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    ensure_dispatch_accounts(&context, &fixture, &keys);
+    let mut ix = dispatch_ix(&fixture, &keys);
+    ix.accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == fixture.payout_mint().mint)
+        .unwrap()
+        .pubkey = fixture.join_mint().mint;
+    check_batcher_instruction(
+        &context,
+        &ix,
+        &[batcher_error(
+            batcher::BatcherError::ConfidentialMintMismatch,
+        )],
+    );
+    assert_one_pending_batch(&context, &fixture);
+}
+
+/// Dispatch opens only the batch at the batcher's next index.
+#[test]
+fn mollusk_dispatch_rejects_a_next_batch_at_another_index() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    ensure_dispatch_accounts(&context, &fixture, &keys);
+    let wrong = BatchKeys::new(&fixture, 2);
+    ensure_open_batch_accounts(&context, &fixture, &wrong);
+    check_batcher_instruction(
+        &context,
+        &dispatch_opening_ix(&fixture, &keys, &wrong),
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::ConstraintSeeds,
+        )],
+    );
+    assert_one_pending_batch(&context, &fixture);
+}
+
+/// A token account's owner does not sign its creation, and the next batch authority derives from the
+/// public `next_batch_index`, so anyone can create the next batch's token accounts first. Dispatch
+/// still opens the next batch and keeps their zero balances.
+#[test]
+fn mollusk_dispatch_accepts_precreated_next_batch_token_accounts() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    ensure_dispatch_accounts(&context, &fixture, &keys);
+    let next = BatchKeys::new(&fixture, 1);
     let stranger = Pubkey::new_unique();
     context
         .account_store
@@ -3087,13 +3228,13 @@ fn mollusk_open_batch_accepts_precreated_batch_token_accounts() {
     let precreated = [
         (
             fixture.join_app(),
-            keys.join_token_account,
-            keys.join_balance_store,
+            next.join_token_account,
+            next.join_balance_store,
         ),
         (
             fixture.payout_app(),
-            keys.payout_token_account,
-            keys.payout_balance_store,
+            next.payout_token_account,
+            next.payout_balance_store,
         ),
     ];
     for (app, token_account, balance_store) in precreated {
@@ -3101,7 +3242,7 @@ fn mollusk_open_batch_accepts_precreated_batch_token_accounts() {
             token::id(),
             token::accounts::InitializeTokenAccount {
                 payer: stranger,
-                owner: keys.batch_authority,
+                owner: next.batch_authority,
                 mint: app.scope,
                 token_account,
                 balance_encrypted_store: balance_store,
@@ -3128,15 +3269,12 @@ fn mollusk_open_batch_accepts_precreated_batch_token_accounts() {
     let handles =
         precreated.map(|(_, _, store)| read_store_handle(&context, store, token::balance_key()));
 
-    check_batcher_instruction(
-        &context,
-        &open_batch_ix(&fixture, &keys, None),
-        &[Check::success()],
-    );
+    check_batcher_instruction(&context, &dispatch_ix(&fixture, &keys), &[Check::success()]);
 
+    assert_one_pending_batch(&context, &fixture);
     assert_eq!(
-        read_account::<batcher::Batcher>(&context, fixture.batcher).next_batch_index,
-        1
+        read_batch(&context, next.batch).status,
+        batcher::BatchStatus::Pending
     );
     for ((_, _, store), handle) in precreated.into_iter().zip(handles) {
         assert_eq!(
@@ -3147,24 +3285,6 @@ fn mollusk_open_batch_accepts_precreated_batch_token_accounts() {
     }
 }
 
-#[test]
-fn mollusk_open_batch_rejects_wrong_next_index() {
-    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
-    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
-    let wrong = BatchKeys::new(&fixture, 2);
-    ensure_open_batch_accounts(&context, &fixture, &wrong);
-    check_batcher_instruction(
-        &context,
-        &open_batch_ix(&fixture, &wrong, Some(keys.batch)),
-        &[batcher_error(batcher::BatcherError::BatchIndexMismatch)],
-    );
-    assert_eq!(
-        read_account::<batcher::Batcher>(&context, fixture.batcher).next_batch_index,
-        1
-    );
-}
-
 /// Initializing a batcher with the direction's mint wiring swapped rejects:
 /// a redeem batcher whose join mint wraps the vault underlying (instead of
 /// its shares) is refused at setup.
@@ -3172,23 +3292,24 @@ fn mollusk_open_batch_rejects_wrong_next_index() {
 fn mollusk_initialize_batcher_rejects_swapped_direction_wiring() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Redeem);
     let context = fixture_context(mollusk(), redeem_accounts(&fixture, 0, 0, 0));
-    let swapped = anchor_ix(
-        batcher::id(),
-        batcher::accounts::InitializeBatcher {
-            payer: fixture.payer,
-            batcher: fixture.batcher,
-            // Deposit-shaped wiring under a Redeem direction.
-            join_confidential_mint: fixture.underlying_cmint.mint,
-            payout_confidential_mint: fixture.shares_cmint.mint,
-            vault: fixture.vault,
-            system_program: system_program::ID,
-        },
-        batcher::instruction::InitializeBatcher {
-            min_batch_age_secs: 0,
-            settle_deadline_secs: SETTLE_DEADLINE_SECS,
-            direction: batcher::BatchDirection::Redeem,
-        },
-    );
+    ensure_open_batch_accounts(&context, &fixture, &BatchKeys::new(&fixture, 0));
+    // Deposit-shaped wiring under a Redeem direction.
+    let mut swapped = initialize_batcher_ix(&fixture, 0);
+    for meta in &mut swapped.accounts {
+        for (redeem, deposit) in [
+            (fixture.join_mint(), fixture.payout_mint()),
+            (fixture.payout_mint(), fixture.join_mint()),
+        ] {
+            if meta.pubkey == redeem.mint {
+                meta.pubkey = deposit.mint;
+                break;
+            }
+            if meta.pubkey == redeem.underlying_mint {
+                meta.pubkey = deposit.underlying_mint;
+                break;
+            }
+        }
+    }
     check_batcher_instruction(
         &context,
         &swapped,
@@ -3212,20 +3333,20 @@ fn assert_batcher_cost(profile: &str, ix: &Instruction, result: &InstructionResu
 const SETTLE_DEPOSIT_MAX_COMPUTE_UNITS: u64 = 360_000;
 const SETTLE_REDEEM_MAX_COMPUTE_UNITS: u64 = 430_000;
 
-/// One fixed-key run through open/join/dispatch/settle/claim and the exits (quit, cancel_dispatch),
-/// snapshotting each instruction's cost profile under `prefix`. Fixed fixture keys keep the PDA
-/// bump searches — part of the measured compute — stable across runs.
+/// One fixed-key run through initialize/join/dispatch/settle/claim and the exits (quit,
+/// cancel_dispatch), snapshotting each instruction's cost profile under `prefix`. Fixed fixture
+/// keys keep the PDA bump searches — part of the measured compute — stable across runs.
 fn snapshot_lifecycle(fixture: &BatcherFixture, context: &mut Ctx, prefix: &str) {
-    check_batcher_instruction(
-        context,
-        &initialize_batcher_ix(fixture, 0),
-        &[Check::success()],
-    );
     let keys = BatchKeys::new(fixture, 0);
     ensure_open_batch_accounts(context, fixture, &keys);
-    let open = open_batch_ix(fixture, &keys, None);
-    let open_result = check_batcher_instruction(context, &open, &[Check::success()]);
-    assert_batcher_cost(&format!("{prefix}open_batch"), &open, &open_result);
+    let initialize = initialize_batcher_ix(fixture, 0);
+    let initialize_result = check_batcher_instruction(context, &initialize, &[Check::success()]);
+    check_fhe_cpis(context, &initialize_result);
+    assert_batcher_cost(
+        &format!("{prefix}initialize_batcher"),
+        &initialize,
+        &initialize_result,
+    );
 
     let amount_handle = handle_for_chain(0x71, BALANCE_FHE_TYPE);
     ensure_system_accounts(
@@ -3248,14 +3369,7 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &mut Ctx, prefix: &str)
     check_fhe_cpis(context, &join_result);
     assert_batcher_cost(&format!("{prefix}join"), &join, &join_result);
 
-    ensure_system_accounts(
-        context,
-        &[
-            keys.burned_amount_store,
-            keys.pending_burn(fixture.join_mint().mint),
-            owner_ata(keys.batch_authority, fixture.join_mint().underlying_mint),
-        ],
-    );
+    ensure_dispatch_accounts(context, fixture, &keys);
     let dispatch = dispatch_ix(fixture, &keys);
     let dispatch_result = check_batcher_instruction(context, &dispatch, &[Check::success()]);
     check_fhe_cpis(context, &dispatch_result);
@@ -3308,12 +3422,6 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &mut Ctx, prefix: &str)
     // while pending, a keeper cancels its dispatch at the settle deadline, and alice quits it while
     // refunding.
     let next = BatchKeys::new(fixture, 1);
-    ensure_open_batch_accounts(context, fixture, &next);
-    check_batcher_instruction(
-        context,
-        &open_batch_ix(fixture, &next, Some(keys.batch)),
-        &[Check::success()],
-    );
     run_join(
         context,
         fixture,
@@ -3402,12 +3510,6 @@ fn run_every_flow(levers: HostLevers) -> (BatcherFixture, Ctx) {
     assert!(read_join_record(&context, keys.join_record(fixture.alice.user)).claimed);
 
     let next = BatchKeys::new(&fixture, 1);
-    ensure_open_batch_accounts(&context, &fixture, &next);
-    check_batcher_instruction(
-        &context,
-        &open_batch_ix(&fixture, &next, Some(keys.batch)),
-        &[Check::success()],
-    );
     run_join(
         &context,
         &fixture,

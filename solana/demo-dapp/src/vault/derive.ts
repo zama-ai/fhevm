@@ -94,7 +94,7 @@ export async function deriveBatchAddresses(roots: VaultDemoRoots, batchIndex: bi
  * The complete account set for one `settle`, derived from the roots and a batch's addresses. This is
  * the settle instruction's non-fixed, batch-scoped accounts and event authorities.
  * The payer and transaction transient store are resolved when the transaction is assembled. `pendingBurn`
- * is derived from the join mint and batch join token account, so it is known at `open_batch`.
+ * is derived from the join mint and batch join token account, so it is known when the batch opens.
  */
 export interface SolanaVaultSettleAccounts {
   readonly batcher: Address;

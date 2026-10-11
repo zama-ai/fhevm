@@ -56,9 +56,7 @@ pub use errors::*;
 pub use events::*;
 use instructions::*;
 /// Re-export instruction account contexts for tests.
-pub use instructions::{
-    CancelDispatch, Claim, Dispatch, InitializeBatcher, Join, OpenBatch, Quit, Settle,
-};
+pub use instructions::{CancelDispatch, Claim, Dispatch, InitializeBatcher, Join, Quit, Settle};
 /// Re-export account layouts, PDA helpers, and payout math.
 pub use state::*;
 
@@ -102,32 +100,27 @@ pub mod confidential_batcher {
     /// shares; redeem batchers join with confidential shares and pay
     /// confidential underlying. Permissionless one-time setup; the batcher
     /// holds no admin role afterwards.
-    pub fn initialize_batcher(
-        ctx: Context<InitializeBatcher>,
+    ///
+    /// Also opens batch 0: the `Batch` account, its per-batch authority PDA, its own confidential
+    /// join and payout token accounts unless they already exist, and its plain SPL accounts for
+    /// settle's phases. `authority_funding_lamports` is moved from the payer to the batch authority
+    /// PDA, which pays the rent the token CPIs charge to the account owner. Unspent funding stays on
+    /// the PDA until the batch is finished and `reclaim_batch_authority` returns it.
+    /// Deny records: `(token, join mint)`, then `(token, payout mint)`.
+    pub fn initialize_batcher<'info>(
+        ctx: Context<'info, InitializeBatcher<'info>>,
         min_batch_age_secs: u64,
         settle_deadline_secs: u64,
         direction: BatchDirection,
-    ) -> Result<()> {
-        instructions::initialize_batcher(ctx, min_batch_age_secs, settle_deadline_secs, direction)
-    }
-
-    /// Opens the next batch: creates the `Batch` account, its per-batch
-    /// authority PDA, its own confidential join and payout token accounts
-    /// unless they already exist, and its plain SPL accounts for settle's
-    /// phases. Permissionless; requires
-    /// the previous batch of the same batcher to have been dispatched (a
-    /// batcher's batches never overlap while pending; the other direction's
-    /// batcher is independent). `authority_funding_lamports` is moved from
-    /// the payer to the batch authority PDA, which pays the rent the token
-    /// CPIs charge to the account owner. Unspent funding stays on the PDA until
-    /// the batch is finished and `reclaim_batch_authority` returns it.
-    /// Deny records: `(token, join mint)`, then `(token, payout mint)`.
-    pub fn open_batch<'info>(
-        ctx: Context<'info, OpenBatch<'info>>,
-        index: u64,
         authority_funding_lamports: u64,
     ) -> Result<()> {
-        instructions::open_batch(ctx, index, authority_funding_lamports)
+        instructions::initialize_batcher(
+            ctx,
+            min_batch_age_secs,
+            settle_deadline_secs,
+            direction,
+            authority_funding_lamports,
+        )
     }
 
     /// Joins the pending batch with the batcher's join token: one user-signed
@@ -158,9 +151,15 @@ pub mod confidential_batcher {
     /// Dispatches the batch once it is old enough: burns the batch account's
     /// full encrypted balance via `confidential_burn_from_value` and records
     /// the created-public burned handle the KMS will certify. Permissionless.
-    /// Deny records: `(token, join mint)`.
-    pub fn dispatch<'info>(ctx: Context<'info, Dispatch<'info>>) -> Result<()> {
-        instructions::dispatch(ctx)
+    /// In the same instruction it opens the next batch, as `initialize_batcher` opens batch 0, with
+    /// `authority_funding_lamports` moved from the payer to the next batch's authority PDA.
+    /// Deny records: `(token, join mint)` for the burn, then `(token, join mint)` and
+    /// `(token, payout mint)` for the next batch's token accounts.
+    pub fn dispatch<'info>(
+        ctx: Context<'info, Dispatch<'info>>,
+        authority_funding_lamports: u64,
+    ) -> Result<()> {
+        instructions::dispatch(ctx, authority_funding_lamports)
     }
 
     /// Cancels a dispatched burn when settlement cannot complete. Anyone may call it once the batch's

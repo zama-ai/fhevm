@@ -59,8 +59,8 @@ pub fn initialize_token_account<'info>(
 ) -> Result<()> {
     assert_confidential_mint_shape(&ctx.accounts.mint)?;
     // An account this call creates is zeroed; one that existed holds its mint. The owner need not
-    // sign, so anyone can create an account first: `open_batch` must still succeed, and the existing
-    // balance must not be replaced by a new zero.
+    // sign, so anyone can create an account first: the batcher's `dispatch` must still succeed, and
+    // the existing balance must not be replaced by a new zero.
     if ctx.accounts.token_account.mint == ctx.accounts.mint.key() {
         return Ok(());
     }
