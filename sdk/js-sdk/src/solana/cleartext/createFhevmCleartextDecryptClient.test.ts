@@ -24,6 +24,7 @@ const chain = {
   id: 72057594037940281n,
   fhevm: {
     relayerUrl: 'https://relayer.example.test',
+    decryptionRelayerUrl: 'https://decryption.relayer.example.test',
     programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },
   },
 } as const satisfies FhevmSolanaChain;
@@ -46,7 +47,6 @@ describe('createFhevmCleartextDecryptClient', () => {
     vi.spyOn(zamaHost, 'fetchKmsContext').mockResolvedValue({
       data: { destroyed: false, signers: [kmsSigner] },
     } as unknown as Awaited<ReturnType<typeof zamaHost.fetchKmsContext>>);
-    vi.spyOn(authorization, 'solanaRelayerPrecheckRefusal').mockResolvedValue(undefined);
     vi.spyOn(authorization, 'judgeSolanaUserDecryption').mockResolvedValue({ authorized: true });
     vi.spyOn(storeValues, 'fetchCleartextStoreValue').mockResolvedValue(Uint8Array.of(42));
     const client = createFhevmCleartextDecryptClient({

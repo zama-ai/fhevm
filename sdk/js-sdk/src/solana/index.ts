@@ -19,7 +19,7 @@ export {
 } from './permit/index.js';
 export type { SolanaPermitWallet, SolanaSignedPermit, SolanaPermitWarning } from './permit/index.js';
 export type { SolanaPermitSession } from './userDecrypt/execute.js';
-export { SolanaUserDecryptRunError } from './userDecrypt/session.js';
+export { SolanaDecryptionRunError } from './decryption/retry.js';
 export { SolanaUserDecryptRequestError } from './userDecrypt/request.js';
 export type {
   FhevmSolanaBaseClient,

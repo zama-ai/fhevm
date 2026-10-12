@@ -1,13 +1,12 @@
-// Assembling the request, against the shape the relayer parses.
+// Assembling the request, against the shape the Connector parses.
 //
-// The accepted records of `solana/test-fixtures/user-decrypt/relayer_envelope_v1.json` are the same
-// ones `relayer/tests/solana_envelope_fixture.rs` feeds to the endpoint's wire type. Here they are the
-// expected *output*: what this builder emits must equal them field for field, which is what makes the
-// seam a contract rather than two implementations that happen to agree today.
+// The permit comes from the shared canon (`solana/test-fixtures/permit/permit_v1.json`), and the body
+// it yields is pinned field for field here; `decryption/connectorVectors.test.ts` holds the same body
+// to the Connector's own vectors.
 //
-// The rest of the file covers what no fixture record can express, because a record is a request that
-// exists: an empty list, a request over the bit budget, a handle of a type nobody sized, a handle of
-// another host chain. And one property that matters more than any of them — the builder never signs.
+// The rest of the file covers what no vector can express, because a vector is a request that exists:
+// an empty list, a request over the bit budget, a handle of a type nobody sized, a handle of another
+// host chain. And one property that matters more than any of them — the builder never signs.
 
 import type { SolanaUserDecryptHandleEntry, SolanaUserDecryptRequestFailure } from './index.js';
 import type { SolanaPermitFields, SolanaSignedPermit } from '../permit/index.js';
@@ -27,15 +26,6 @@ import { decodeSolanaPermitFields } from '../permit/index.js';
 import { bytesToHex, hexToBytes } from '../../core/base/bytes.js';
 
 /* eslint-disable @typescript-eslint/naming-convention -- the fixtures' own field names are snake_case */
-
-interface EnvelopeFixture {
-  readonly attestation_type: string;
-  readonly permit_source: { readonly record: string };
-  readonly accepted: readonly {
-    readonly name: string;
-    readonly handles: readonly Readonly<Record<string, string>>[];
-  }[];
-}
 
 interface PermitCanon {
   readonly transport_keys: Readonly<Record<string, string>>;
@@ -57,15 +47,13 @@ interface PermitCanon {
 
 /* eslint-enable @typescript-eslint/naming-convention */
 
-const FIXTURE_DIR = new URL('../../../../../solana/test-fixtures/', import.meta.url);
-const read = <T>(relative: string): T => JSON.parse(readFileSync(new URL(relative, FIXTURE_DIR), 'utf8')) as T;
+const canon = JSON.parse(
+  readFileSync(new URL('../../../../../solana/test-fixtures/permit/permit_v1.json', import.meta.url), 'utf8'),
+) as PermitCanon;
 
-const fixture = read<EnvelopeFixture>('user-decrypt/relayer_envelope_v1.json');
-const canon = read<PermitCanon>('permit/permit_v1.json');
-
-const canonRecord = canon.vectors.find((vector) => vector.name === fixture.permit_source.record);
+const canonRecord = canon.vectors.find((vector) => vector.name === 'reference-permit-two-scopes');
 if (canonRecord === undefined) {
-  throw new Error(`the permit canon carries no record named ${fixture.permit_source.record}`);
+  throw new Error('the permit canon carries no record named reference-permit-two-scopes');
 }
 const transportKeyHex = canon.transport_keys[canonRecord.permit.transport_key];
 if (transportKeyHex === undefined) {
@@ -90,32 +78,6 @@ const signedPermit = (): SolanaSignedPermit => ({
   fields: permitFields(),
   signature: hexToBytes(`0x${canonRecord.signature}`),
 });
-
-/** The request body the fixture pins for one record, composed as the fixture states. */
-const expectedBody = (record: (typeof fixture.accepted)[number]): unknown => ({
-  attestationType: fixture.attestation_type,
-  attestedPayload: {
-    userAddress: `0x${canonRecord.permit.user_address}`,
-    transportKey: `0x${transportKeyHex}`,
-    allowedScopes: canonRecord.permit.allowed_scopes.map((scope) => `0x${scope}`),
-    requestValidity: {
-      startTimestamp: canonRecord.permit.start_timestamp,
-      durationSeconds: canonRecord.permit.duration_seconds,
-    },
-    verifyingProgramId: `0x${canonRecord.permit.verifying_program_id}`,
-    extraData: `0x${canonRecord.permit.extra_data}`,
-    handles: record.handles,
-  },
-  signature: `0x${canonRecord.signature}`,
-});
-
-/** The entries a fixture record's handles stand for, in the order it lists them. */
-const entriesOf = (record: (typeof fixture.accepted)[number]): readonly SolanaUserDecryptHandleEntry[] =>
-  record.handles.map((entry) => ({
-    handle: hexToBytes(entry.handle ?? '0x'),
-    ownerAddress: hexToBytes(entry.ownerAddress ?? '0x'),
-    encryptedStore: hexToBytes(entry.encryptedStore ?? '0x'),
-  }));
 
 ////////////////////////////////////////////////////////////////////////////////
 // Handles built here, for the cases no record can carry
@@ -166,17 +128,35 @@ function failureOf(call: () => unknown): SolanaUserDecryptRequestFailure {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-describe('the request the fixture pins', () => {
-  it.each(fixture.accepted.map((record) => [record.name, record] as const))(
-    '%s: is what this builder emits',
-    (_name, record) => {
-      const body = buildSolanaUserDecryptRequest({ signedPermit: signedPermit(), entries: entriesOf(record) });
-      expect(body).toEqual(expectedBody(record));
-    },
-  );
+describe('the request body', () => {
+  // A direct entry and a delegated one, so both owner keys travel.
+  it('is the Connector DTO: the permit fields, the entries in order, and the signature', () => {
+    const direct = entryFor(handleOf(EBOOL_TYPE_ID));
+    const delegated = entryFor(handleOf(EUINT256_TYPE_ID), { ownerAddress: new Uint8Array(32).fill(0xde) });
+    const body = buildSolanaUserDecryptRequest({ signedPermit: signedPermit(), entries: [direct, delegated] });
 
-  it('declares the attestation type the relayer dispatches on', () => {
-    expect(SOLANA_SRFC38_ATTESTATION_TYPE).toBe(fixture.attestation_type);
+    expect(body).toStrictEqual({
+      attestationType: 'solana-srfc38-user-decrypt-v1',
+      payload: {
+        handles: [direct, delegated].map((entry) => ({
+          handle: bytesToHex(entry.handle),
+          ownerAddress: bytesToHex(entry.ownerAddress),
+          encryptedStore: bytesToHex(entry.encryptedStore),
+        })),
+        userAddress: `0x${canonRecord.permit.user_address}`,
+        publicKey: `0x${transportKeyHex}`,
+        allowedScopes: canonRecord.permit.allowed_scopes.map((scope) => `0x${scope}`),
+        // JSON numbers: the DTO's u64 fields refuse strings.
+        requestValidity: {
+          startTimestamp: Number(canonRecord.permit.start_timestamp),
+          durationSeconds: Number(canonRecord.permit.duration_seconds),
+        },
+        verifyingProgramId: `0x${canonRecord.permit.verifying_program_id}`,
+        extraData: `0x${canonRecord.permit.extra_data}`,
+      },
+      signature: `0x${canonRecord.signature}`,
+    });
+    expect(body.attestationType).toBe(SOLANA_SRFC38_ATTESTATION_TYPE);
   });
 });
 
@@ -213,7 +193,7 @@ describe('the entry list', () => {
       entries: [entryFor(first), entryFor(second), entryFor(first)],
     });
 
-    expect(body.attestedPayload.handles.map((entry) => entry.handle)).toEqual([
+    expect(body.payload.handles.map((entry) => entry.handle)).toEqual([
       bytesToHex(first),
       bytesToHex(second),
       bytesToHex(first),
@@ -234,7 +214,7 @@ describe('the entry list', () => {
       ],
     });
 
-    expect(body.attestedPayload.handles.map((entry) => entry.encryptedStore)).toEqual([
+    expect(body.payload.handles.map((entry) => entry.encryptedStore)).toEqual([
       bytesToHex(firstAccount),
       bytesToHex(secondAccount),
     ]);
@@ -274,7 +254,7 @@ describe('the handle count', () => {
       signedPermit: signedPermit(),
       entries: entriesOfType(EBOOL_TYPE_ID, MAX_SOLANA_DECRYPT_HANDLES),
     });
-    expect(body.attestedPayload.handles).toHaveLength(MAX_SOLANA_DECRYPT_HANDLES);
+    expect(body.payload.handles).toHaveLength(MAX_SOLANA_DECRYPT_HANDLES);
   });
 
   it('refuses one handle past the cap, well under the bit budget', () => {
@@ -310,7 +290,7 @@ describe('the bit budget', () => {
       signedPermit: signedPermit(),
       entries: entriesOfType(EUINT256_TYPE_ID, full),
     });
-    expect(body.attestedPayload.handles).toHaveLength(full);
+    expect(body.payload.handles).toHaveLength(full);
   });
 
   // Refused, never trimmed to fit: a trimmed request is answered as a request the caller never made,

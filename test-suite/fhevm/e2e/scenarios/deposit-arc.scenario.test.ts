@@ -211,15 +211,15 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       setFhevmRuntimeConfig({ auth: relayerAuth() });
       const chain = defineFhevmSolanaChain({
         id: BigInt(config.chainId),
-        fhevm: { relayerUrl: env.relayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } } },
+        fhevm: { relayerUrl: env.relayerUrl, decryptionRelayerUrl: env.decryptionRelayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } } },
       }) as FhevmSolanaChain;
       const encryptClient = createFhevmEncryptClient({ chain, rpc });
       const { batch, batchAuthority, batchJoinTokenAccount } = batchBeforeJoin.addresses;
       const joinMint = config.mints.joinConfidential;
 
       // The object-store fetch rewrite is scoped to the join phase only: just the input proof's
-      // key-material fetch needs it — settle's certificate phase talks to the relayer's
-      // /v2/public-decrypt endpoint only (verified against actions/publicDecryptCertificate.ts).
+      // key-material fetch needs it — settle's certificate phase talks to the decryption relayer's
+      // /v4/public-decrypt endpoint only (verified against actions/publicDecryptCertificate.ts).
       await withHostReachableFetch(async () => {
         // Step 6: build + submit the coprocessor input proof for the join amount. Binding tuple per
         // joinBatch's own checks: contract identity = the confidential-token program (NOT the
@@ -399,7 +399,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       const aliceWallet = solanaPermitWalletFromSecretKey(aliceKeypairBytes);
       const decryptChain = defineFhevmSolanaChain({
         id: BigInt(config.chainId),
-        fhevm: { relayerUrl: env.relayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } } },
+        fhevm: { relayerUrl: env.relayerUrl, decryptionRelayerUrl: env.decryptionRelayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } } },
       });
       const decryptClient = createFhevmDecryptClient({
         chain: decryptChain,
@@ -535,7 +535,8 @@ test.skipIf(!runsDemoScenarios)(
     })]);
     setFhevmRuntimeConfig({ auth: relayerAuth() });
     const chain = defineFhevmSolanaChain({ id: BigInt(config.chainId), fhevm: {
-      relayerUrl: env.relayerUrl, programs: { host: { address: asBytes32Hex(config.aclProgram) } },
+      relayerUrl: env.relayerUrl, decryptionRelayerUrl: env.decryptionRelayerUrl,
+      programs: { host: { address: asBytes32Hex(config.aclProgram) } },
     } });
     const decrypt = createFhevmDecryptClient({ chain, rpc, fheParameter: config.fheParameter });
     await decrypt.ready;

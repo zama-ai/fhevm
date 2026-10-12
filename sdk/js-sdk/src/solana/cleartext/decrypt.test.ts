@@ -1,5 +1,4 @@
 import * as authorization from './authorization.js';
-import * as envelope from '../permit/envelope.js';
 import * as storeValues from './storeValues.js';
 import * as zamaHost from '@fhevm/solana-zama-host';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,11 +21,11 @@ import {
   PERMIT_TRANSPORT_KEY_LEN,
   decodeSolanaPermitFields,
 } from '../permit/index.js';
-import { SolanaUserDecryptRunError } from '../userDecrypt/index.js';
+import { SolanaDecryptionRunError } from '../decryption/retry.js';
 import {
   cleartextPublicDecryptCertifier,
+  cleartextConnectorRejection,
   cleartextUserDecryptExecution,
-  cleartextUserDecryptRejection,
 } from './decrypt.js';
 import { SOLANA_CLEARTEXT_SIGNER_ADDRESSES } from './parties.js';
 
@@ -48,29 +47,22 @@ const refusal = (failure: authorization.ConnectorFailure): authorization.Connect
 
 afterEach(() => vi.restoreAllMocks());
 
-describe('cleartextUserDecryptRejection', () => {
+// The code per failure is held to the Connector in `authorization.test.ts`; this pins the message.
+describe('cleartextConnectorRejection', () => {
   it('answers a request the Connector authorizes', () => {
-    expect(cleartextUserDecryptRejection({ authorized: true })).toBeUndefined();
+    expect(cleartextConnectorRejection({ authorized: true })).toBeUndefined();
   });
 
-  it('leaves a failure the Connector would retry unanswered', () => {
-    for (const failure of [
-      'HandleBinding::ProofRecordBehind',
-      'EncryptedStore::Absent',
-      'Delegation::NoLiveDelegation',
-    ] as const) {
-      expect(cleartextUserDecryptRejection(refusal(failure))).toEqual({ kind: 'unanswered' });
-    }
-  });
-
-  it('fails at once on a failure the Connector never clears, naming it', () => {
-    expect(() => cleartextUserDecryptRejection(refusal('ScopeNotAllowed'))).toThrow(
-      /ScopeNotAllowed: entry 0: ScopeNotAllowed.*response_timed_out/,
-    );
+  it('answers a refusal with the code the Connector sends for it, naming the failure', () => {
+    expect(cleartextConnectorRejection(refusal('Delegation::NoLiveDelegation'))).toEqual({
+      code: 'acl_denied',
+      message: 'Delegation::NoLiveDelegation: entry 0: Delegation::NoLiveDelegation',
+    });
   });
 });
 
-// The Connector retries a public decryption it may authorize later, and stops on one it never will.
+// A public decryption goes through the production retry loop: a code it retries is judged again,
+// one it does not ends the request.
 describe('cleartextPublicDecryptCertifier', () => {
   const certify = cleartextPublicDecryptCertifier(rpc, chain, readMerkleProofs);
   const parameters = {
@@ -143,25 +135,27 @@ describe('cleartextPublicDecryptCertifier', () => {
     ).not.toThrow();
   });
 
-  it('fails at once on a failure the Connector never clears', async () => {
+  it('fails at once on a code the retry loop gives up on', async () => {
     vi.spyOn(authorization, 'judgeSolanaPublicDecryption').mockResolvedValue(
       refusal('EncryptedStore::InvalidHostRecord'),
     );
-    await expect(certify(parameters)).rejects.toThrow(/refuses to decrypt \(EncryptedStore::InvalidHostRecord\)/);
+    const error = await certify(parameters).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SolanaDecryptionRunError);
+    expect(error).toMatchObject({ rejection: { code: 'unprocessable' }, attempts: 1 });
     expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(1);
   });
 
-  it('retries a failure the Connector may clear, within a bounded budget', async () => {
+  it('retries a code the retry loop retries, within its budget', async () => {
     vi.spyOn(authorization, 'judgeSolanaPublicDecryption').mockResolvedValue(
       refusal('HandleBinding::ProofRecordBehind'),
     );
     const outcome = certify(parameters).catch((error: unknown) => error);
     await vi.runAllTimersAsync();
-    expect(String(await outcome)).toMatch(/refuses to decrypt \(HandleBinding::ProofRecordBehind\)/);
-    expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(20);
+    expect(await outcome).toMatchObject({ rejection: { code: 'acl_denied' }, attempts: 4 });
+    expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(4);
   });
 
-  it('stops retrying when the signal aborts', async () => {
+  it('stops retrying when the signal aborts, as a public decryption', async () => {
     vi.spyOn(authorization, 'judgeSolanaPublicDecryption').mockResolvedValue(
       refusal('HandleBinding::ProofRecordBehind'),
     );
@@ -170,8 +164,10 @@ describe('cleartextPublicDecryptCertifier', () => {
     await vi.advanceTimersByTimeAsync(250);
     controller.abort();
     await vi.runAllTimersAsync();
-    expect(await outcome).toMatchObject({ name: 'AbortError' });
-    expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(2);
+    const error = await outcome;
+    expect(error).toBeInstanceOf(RelayerAbortError);
+    expect((error as RelayerAbortError).operation).toBe('PUBLIC_DECRYPT');
+    expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -220,17 +216,13 @@ describe('cleartextUserDecryptExecution', () => {
     const error = await execute(undefined, { attempts: 1, ...(start === undefined ? {} : { start }) }).catch(
       (caught: unknown) => caught,
     );
-    expect(error).toBeInstanceOf(SolanaUserDecryptRunError);
-    return (error as SolanaUserDecryptRunError).rejection;
+    expect(error).toBeInstanceOf(SolanaDecryptionRunError);
+    return (error as SolanaDecryptionRunError).rejection;
   };
   const hostOnChain = (chainId: bigint) =>
     vi.mocked(zamaHost.fetchHostConfig).mockResolvedValue({
       data: { chainId, gatewayChainId, decryptionContract },
     } as unknown as Awaited<ReturnType<typeof zamaHost.fetchHostConfig>>);
-  const badSignature = () =>
-    vi.mocked(envelope.verifySolanaPermitSignature).mockImplementation(() => {
-      throw new Error('bad signature');
-    });
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -238,8 +230,6 @@ describe('cleartextUserDecryptExecution', () => {
     hostOnChain(hostChainId);
     vi.spyOn(zamaHost, 'fetchKmsContext').mockResolvedValue(kmsContext(false));
     vi.spyOn(storeValues, 'fetchCleartextStoreValue').mockResolvedValue(new Uint8Array([1]));
-    vi.spyOn(envelope, 'verifySolanaPermitSignature').mockReturnValue(undefined);
-    vi.spyOn(authorization, 'solanaRelayerPrecheckRefusal').mockResolvedValue(undefined);
     vi.spyOn(authorization, 'judgeSolanaUserDecryption').mockResolvedValue({ authorized: true });
   });
 
@@ -279,39 +269,34 @@ describe('cleartextUserDecryptExecution', () => {
       .mocked(authorization.judgeSolanaUserDecryption)
       .mockResolvedValueOnce(refusal('HandleBinding::ProofRecordBehind'));
 
-  it("refuses a bad signature before the relayer's host-chain check", async () => {
+  it("refuses handles on another host chain as the relayer's admission does, before the Connector", async () => {
     hostOnChain(hostChainId + 1n);
-    badSignature();
-    expect(await firstRejection()).toMatchObject({ kind: 'refused', label: 'validation_failed' });
+    expect(await firstRejection()).toMatchObject({ code: 'malformed' });
+    expect(authorization.judgeSolanaUserDecryption).not.toHaveBeenCalled();
   });
 
-  it("refuses handles on another host chain before the relayer's pre-check", async () => {
-    hostOnChain(hostChainId + 1n);
-    expect(await firstRejection()).toMatchObject({ kind: 'refused', label: 'host_chain_id_not_supported' });
-    expect(authorization.solanaRelayerPrecheckRefusal).not.toHaveBeenCalled();
-  });
-
-  it("refuses a bad signature at submission, before the relayer's pre-check", async () => {
-    badSignature();
-    expect(await firstRejection()).toMatchObject({ kind: 'refused', label: 'validation_failed' });
-    expect(authorization.solanaRelayerPrecheckRefusal).not.toHaveBeenCalled();
-  });
-
-  it("gives up on the relayer's pre-check before the gateway's window", async () => {
-    vi.mocked(authorization.solanaRelayerPrecheckRefusal).mockResolvedValue('no live delegation');
-    expect(await firstRejection(now + 600n)).toEqual({
-      kind: 'failed',
-      label: 'not_allowed_on_host_acl',
-      message: 'no live delegation',
-    });
-  });
-
-  it("retries a window the gateway refuses, before the Connector's checks", async () => {
+  it("refuses a window the relayer's wall clock does not hold, before the Connector's checks", async () => {
     vi.mocked(zamaHost.fetchKmsContext).mockResolvedValue(kmsContext(true));
     for (const start of [now + 600n, now - 3_700n]) {
-      expect(await firstRejection(start)).toMatchObject({ kind: 'failed', label: 'internal_server_error' });
+      expect(await firstRejection(start)).toMatchObject({ code: 'malformed' });
     }
     expect(authorization.judgeSolanaUserDecryption).not.toHaveBeenCalled();
+  });
+
+  it('gives up at once on a destroyed KMS context, before the Connector authorizes', async () => {
+    vi.mocked(zamaHost.fetchKmsContext).mockResolvedValue(kmsContext(true));
+    const error = await execute().catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SolanaDecryptionRunError);
+    expect((error as SolanaDecryptionRunError).attempts).toBe(1);
+    expect((error as SolanaDecryptionRunError).rejection.code).toBe('kms_context_destroyed');
+    expect(authorization.judgeSolanaUserDecryption).not.toHaveBeenCalled();
+  });
+
+  it('gives up at once on a signature the Connector rejects', async () => {
+    vi.mocked(authorization.judgeSolanaUserDecryption).mockResolvedValue(refusal('Signature'));
+    const error = await execute().catch((caught: unknown) => caught);
+    expect((error as SolanaDecryptionRunError).attempts).toBe(1);
+    expect((error as SolanaDecryptionRunError).rejection.code).toBe('user_signature_rejected');
   });
 
   it('judges every attempt against the KMS context as it is then', async () => {
@@ -320,7 +305,7 @@ describe('cleartextUserDecryptExecution', () => {
     const outcome = execute().catch((error: unknown) => error);
     await untilBackoff();
     await vi.advanceTimersByTimeAsync(2_000);
-    expect(String(await outcome)).toMatch(/KmsContextDestroyed: KMS context .* is destroyed/);
+    expect(String(await outcome)).toMatch(/kms_context_destroyed: KMS context .* is destroyed/);
     expect(zamaHost.fetchKmsContext).toHaveBeenCalledTimes(2);
   });
 

@@ -60,6 +60,7 @@ const session = {
       payoutConfidential: '11111111111111111111111111111111',
     },
     relayerUrl: 'http://127.0.0.1:3000',
+    decryptionRelayerUrl: 'http://127.0.0.1/decryption-relayer',
     rpcUrl: 'http://127.0.0.1:8899',
     aclProgram: `0x${'22'.repeat(32)}`,
     fheParameter: 'test',
@@ -98,28 +99,9 @@ describe('confidential balance reveal evidence', () => {
     });
   });
 
-  test('records successful SDK correlation without persisting the clear value', async () => {
-    mocks.decryptValues.mockImplementation(async (parameters) => {
-      parameters.options.onProgress({
-        type: 'queued',
-        method: 'POST',
-        jobId: 'job-1',
-        requestId: 'post-request',
-        elapsed: 50,
-      });
-      parameters.options.onProgress({
-        type: 'succeeded',
-        jobId: 'job-1',
-        requestId: 'get-request',
-        elapsed: 1_250,
-      });
-      return [{ value: 72n }];
-    });
-    vi.spyOn(performance, 'now')
-      .mockReturnValueOnce(1_000)
-      .mockReturnValueOnce(1_100)
-      .mockReturnValueOnce(2_300)
-      .mockReturnValueOnce(2_500);
+  test('records the handle and timing of a reveal without persisting the clear value', async () => {
+    mocks.decryptValues.mockResolvedValue([{ value: 72n }]);
+    vi.spyOn(performance, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(2_500);
     vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
 
     await expect(revealClaimedShares(session)).resolves.toEqual({
@@ -130,9 +112,7 @@ describe('confidential balance reveal evidence', () => {
       {
         completedAt: 1_700_000_000_000,
         handle: `0x${'12'.repeat(32)}`,
-        jobId: 'job-1',
         label: 'cShares',
-        queueToResponseMs: 1_200,
         totalElapsedMs: 1_500,
       },
     ]);

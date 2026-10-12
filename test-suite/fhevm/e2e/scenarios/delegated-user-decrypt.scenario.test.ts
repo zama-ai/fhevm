@@ -4,8 +4,7 @@
 //
 //   [headless]  A wallet delegator: grant through the SDK builders -> the *delegate* decrypts the
 //               delegator's value (permit signed by the delegate, entry `ownerAddress` = delegator) ->
-//               identical repeat coalesces into one relayer job -> revoke -> the next request is
-//               terminally refused. The revocation lever is the delegator's; the delegate's own
+//               an identical repeat is answered again -> revoke -> the next request is refused. The revocation lever is the delegator's; the delegate's own
 //               permit stays valid throughout.
 //
 //   [squads]    A program-controlled delegator — the real Squads v4 program at its mainnet id: a
@@ -116,20 +115,20 @@ const squadsAvailable = (await squadsGenesisExtras()) !== undefined;
 // reason; this is the second gate, for a suite run against a stack that already booted.
 const squadsRequired = process.env.SOLANA_E2E_REQUIRE_SQUADS === "1";
 
-// A cleartext stack has no relayer to coalesce jobs and no Squads program: there the headless arc
-// skips its coalescing step and the squads arc does not run. Its client refuses a revoked delegation
+// A cleartext stack has no decryption relayer and no Squads program: there the headless arc skips
+// its repeat step and the squads arc does not run. Its client refuses a revoked delegation
 // as the Connector does.
 const protocolServices = loadEnv().capabilities.protocolServices;
 
 describe("solana delegated user-decrypt", () => {
   test(
-    "[headless] grant -> delegate decrypts 42 -> identical repeat is one job -> revoke -> refused",
+    "[headless] grant -> delegate decrypts 42 -> identical repeat is answered -> revoke -> refused",
     async () => {
       const setup = await verticalSetup();
       const { stack, context, wallet, config } = setup;
       const chain = defineFhevmSolanaChain({
         id: BigInt(config.chainId),
-        fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: asBytes32Hex(config.verifyingProgramId) } } },
+        fhevm: { relayerUrl: config.relayerUrl, decryptionRelayerUrl: config.decryptionRelayerUrl, programs: { host: { address: asBytes32Hex(config.verifyingProgramId) } } },
       });
       const hostProgram = solanaHostProgram(chain);
 
@@ -172,25 +171,24 @@ describe("solana delegated user-decrypt", () => {
       expect(await delegatedDecrypt(setup, { value, handle, delegateSecretKey })).toBe(42n);
 
       if (protocolServices) {
-        // Dedup: the same session, the same bytes, twice — the relayer coalesces them into one
-        // job. Asserted at the wire: both POST bodies are byte-identical and both answers carry
-        // the same job id. The interception passes everything through untouched.
+        // A repeat costs no signature: the same session sends the same bytes twice, so the
+        // Connectors see one decryption id twice, and the stack must answer it the second time
+        // too. The wire check pins that the repeat really is the same request. The interception
+        // passes everything through untouched.
         setFhevmRuntimeConfig({ auth: relayerAuth() });
         const client = createFhevmDecryptClient({ chain, rpc: context.rpc, fheParameter: config.fheParameter });
         const session = await client.signPermit({
           wallet: solanaPermitWalletFromSecretKey(delegate.bytes.subarray(0, 32)),
           durationSeconds: 3_600n,
         });
-        const submissions: { body: string; jobId: string }[] = [];
+        const submissions: string[] = [];
         const realFetch = globalThis.fetch;
         globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
           const url = String(input instanceof Request ? input.url : input);
-          const response = await realFetch(input as never, init);
-          if (url.includes("/v3/user-decrypt") && (init?.method ?? "GET") === "POST") {
-            const answer = (await response.clone().json()) as { result?: { jobId?: string } };
-            submissions.push({ body: String(init?.body), jobId: answer.result?.jobId ?? "<no job id>" });
+          if (url.includes("/v4/user-decrypt") && (init?.method ?? "GET") === "POST") {
+            submissions.push(String(init?.body));
           }
-          return response;
+          return realFetch(input as never, init);
         }) as typeof fetch;
         try {
           const entries = [
@@ -204,14 +202,12 @@ describe("solana delegated user-decrypt", () => {
           globalThis.fetch = realFetch;
         }
         expect(submissions).toHaveLength(2);
-        expect(submissions[1]!.body).toBe(submissions[0]!.body);
-        expect(submissions[1]!.jobId).toBe(submissions[0]!.jobId);
+        expect(submissions[1]).toBe(submissions[0]);
       }
 
       // Revoke — the delegator's lever. The delegate's permit is untouched. The record's zeroed
-      // expiry is the on-chain fact; the fast client-visible refusal is the relayer's
-      // advisory pre-check (`not_allowed_on_host_acl`) — the connector's own terminal
-      // rejection has no channel back (see 09-rejection-path-findings).
+      // expiry is the on-chain fact; the client sees the Connectors' delegation check as
+      // `acl_denied`, after the SDK's bounded resubmissions.
       // The host refuses a second update of a delegation in the slot of the first.
       await until(async () => (await context.rpc.getSlot().send()) > grantSlot, {
         description: "a slot after the grant",
@@ -230,12 +226,10 @@ describe("solana delegated user-decrypt", () => {
         ...value.application,
       }, { programAddress: hostProgram });
       expect(revokedRows.exact?.expiresAt).toBe(0n);
-      // The typed label, not the message text: the label IS the relayer's contract, while the
-      // message it is rendered into is prose. The kind is always `failed`: the v3 POST does no ACL
-      // check, so the client sees the job queued before any GET, and the relayer's delegation
-      // pre-check (solana/docs/INVARIANTS.md #50) refuses the queued job.
+      // The typed code, not the message text: the code is the relayer's contract, while the
+      // message it is rendered into is prose (solana/docs/INVARIANTS.md #50).
       await expect(delegatedDecrypt(setup, { value, handle, delegateSecretKey })).rejects.toMatchObject({
-        rejection: { kind: "failed", label: "not_allowed_on_host_acl" },
+        rejection: { code: "acl_denied" },
       });
       await setup.wallets.sweep();
     },
@@ -257,7 +251,7 @@ describe("solana delegated user-decrypt", () => {
       const hostProgram = solanaHostProgram(
         defineFhevmSolanaChain({
           id: BigInt(config.chainId),
-          fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: asBytes32Hex(config.verifyingProgramId) } } },
+          fhevm: { relayerUrl: config.relayerUrl, decryptionRelayerUrl: config.decryptionRelayerUrl, programs: { host: { address: asBytes32Hex(config.verifyingProgramId) } } },
         }),
       );
       const connection = new Connection(env.rpcUrl, "finalized");
@@ -356,9 +350,9 @@ describe("solana delegated user-decrypt", () => {
         ...value.application,
       }, { programAddress: hostProgram });
       expect(revokedRows.exact?.expiresAt).toBe(0n);
-      // Pinned the same way as the headless arc above: the kind and the label, not the rendered message.
+      // Pinned the same way as the headless arc above: the code, not the rendered message.
       await expect(delegatedDecrypt(setup, { value, handle, delegateSecretKey })).rejects.toMatchObject({
-        rejection: { kind: "failed", label: "not_allowed_on_host_acl" },
+        rejection: { code: "acl_denied" },
       });
       await setup.wallets.sweep();
     },

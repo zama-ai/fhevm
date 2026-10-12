@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
+import { RELAYER_HTTP_PORT } from "../../src/layout";
 import { loadEnv, resolveEnv } from "./loadEnv";
+
+const DEVNET_DECRYPTION_RELAYER_URL = "http://127.0.0.1:13002";
 
 describe("loadEnv", () => {
   test("defaults reproduce the local clean-e2e stack", () => {
@@ -8,6 +11,7 @@ describe("loadEnv", () => {
     expect(env.source).toBe("local");
     expect(env.rpcUrl).toBe("http://127.0.0.1:8899");
     expect(env.relayerUrl).toBe("http://127.0.0.1:3000");
+    expect(env.decryptionRelayerUrl).toBe(`http://127.0.0.1:${RELAYER_HTTP_PORT}`);
     expect(env.chainId).toBe(72057594037940281n);
     expect(env.aclProgram).toMatch(/^0x[0-9a-f]{64}$/);
     expect(env.capabilities).toEqual({ faucet: true, freshMints: true, fastSlots: true, protocolServices: true });
@@ -36,11 +40,13 @@ describe("loadEnv", () => {
   test("SOLANA_E2E_SOURCE=devnet: no faucet, no fast slots, small transfers from the deployer", () => {
     const env = loadEnv({
       SOLANA_E2E_SOURCE: "devnet",
+      SOLANA_DECRYPTION_RELAYER_URL: DEVNET_DECRYPTION_RELAYER_URL,
       COPROCESSOR_DB_PSQL: "kubectl exec -n ns db-0 -- psql -U zama -d e2e",
       MERKLE_DB_PSQL: "kubectl exec -n ns db-0 -- psql -U zama -d solana_merkle",
     });
     expect(env.source).toBe("devnet");
     expect(env.network).toBe("devnet");
+    expect(env.decryptionRelayerUrl).toBe(DEVNET_DECRYPTION_RELAYER_URL);
     expect(env.capabilities).toEqual({ faucet: false, freshMints: true, fastSlots: false, protocolServices: true });
     expect(env.funding.primarySol).toBeLessThan(1);
     expect(env.coprocessorDbPsql).toEqual(["kubectl", "exec", "-n", "ns", "db-0", "--", "psql", "-U", "zama", "-d", "e2e"]);
@@ -48,10 +54,16 @@ describe("loadEnv", () => {
     expect(() => loadEnv({ SOLANA_E2E_SOURCE: "mainnet" })).toThrow(/SOLANA_E2E_SOURCE/);
   });
 
+  test("devnet has no local decryption relayer to default to", () => {
+    expect(() => loadEnv({ SOLANA_E2E_SOURCE: "devnet" })).toThrow(/SOLANA_DECRYPTION_RELAYER_URL must be set on devnet/);
+    expect(() => resolveEnv({}, "demo-config", "devnet")).toThrow(/SOLANA_DECRYPTION_RELAYER_URL/);
+  });
+
   test("a demo-config seeded on devnet keeps pre-seeded mints and loses the faucet", () => {
-    const env = resolveEnv({}, "demo-config", "devnet");
+    const devnet = { decryptionRelayerUrl: DEVNET_DECRYPTION_RELAYER_URL };
+    const env = resolveEnv(devnet, "demo-config", "devnet");
     expect(env.capabilities).toEqual({ faucet: false, freshMints: false, fastSlots: false, protocolServices: true });
-    expect(env.funding).toEqual(resolveEnv({}, "devnet").funding);
+    expect(env.funding).toEqual(resolveEnv(devnet, "devnet").funding);
   });
 
   test("the demo-config source labels its provenance and pre-seeds mints (no fresh mints)", () => {

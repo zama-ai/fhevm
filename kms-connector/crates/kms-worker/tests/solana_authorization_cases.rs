@@ -18,7 +18,7 @@ use connector_utils::types::solana_request::{
 use kms_worker::core::solana::{
     delegation::DelegationFailure,
     encrypted_store::EncryptedStoreFailure,
-    failure::AuthorizationFailure,
+    failure::{AuthorizationFailure, FailureClass},
     handle_binding::HandleBindingFailure,
     pipeline::authorize_request,
     proof::{LeafKind, LeafQuery, ProofReadError},
@@ -788,8 +788,14 @@ fn render_outcome(outcome: &MerkleProofOutcome) -> Value {
     }
 }
 
-fn render_verdict((name, entry): (&str, Option<usize>), recoverable: bool) -> Value {
-    json!({ "authorized": false, "failure": name, "entry": entry, "recoverable": recoverable })
+fn render_verdict((name, entry): (&str, Option<usize>), class: FailureClass) -> Value {
+    json!({
+        "authorized": false,
+        "failure": name,
+        "entry": entry,
+        "code": class.code.as_str(),
+        "recoverable": class.recoverable,
+    })
 }
 
 fn render_case(case: &Case, failure: Option<&AuthorizationFailure>, batch: &[LeafQuery]) -> Value {
@@ -802,7 +808,7 @@ fn render_case(case: &Case, failure: Option<&AuthorizationFailure>, batch: &[Lea
         case.name
     );
     let verdict = failure.map_or(json!({ "authorized": true }), |failure| {
-        render_verdict(failure_name(failure), failure.is_recoverable())
+        render_verdict(failure_name(failure), failure.class())
     });
     json!({
         "name": case.name,
@@ -842,7 +848,7 @@ fn render_public_case(
         "accounts": render_accounts(&case.world),
         "leaf_read": render_leaf_read(batch, &case.record),
         "verdict": failure.map_or(json!({ "authorized": true }), |failure| {
-            render_verdict(public_failure_name(failure), failure.is_recoverable())
+            render_verdict(public_failure_name(failure), failure.class())
         }),
     })
 }

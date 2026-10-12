@@ -79,6 +79,7 @@
       "name": "a handle the store never made public",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "HandleBinding::NoLeaf",
         "recoverable": true
@@ -119,6 +120,7 @@
       "name": "a leaf record behind the store's public leaf",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "HandleBinding::ProofRecordBehind",
         "recoverable": true
@@ -161,6 +163,7 @@
       "name": "an allow leaf's proof offered for the public leaf",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "HandleBinding::ProofDoesNotVerify",
         "recoverable": true
@@ -184,6 +187,7 @@
       "name": "no account at the named store",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "EncryptedStore::Absent",
         "recoverable": true
@@ -212,6 +216,7 @@
       "name": "a store naming the wildcard application",
       "verdict": {
         "authorized": false,
+        "code": "unprocessable",
         "entry": 0,
         "failure": "EncryptedStore::InvalidHostRecord",
         "recoverable": false
@@ -249,6 +254,7 @@
       "name": "every store is judged before any leaf",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 1,
         "failure": "EncryptedStore::ForeignOwner",
         "recoverable": false
@@ -613,6 +619,7 @@
       "signature": "b7802d818ec7503ed324f741f14a5073b141787a44b73ae4dc3055b869436667edfeb95ca5f85d7c517bd4efa42b205adb7e45e3e6059e75c89a8d159241330f",
       "verdict": {
         "authorized": false,
+        "code": "user_signature_rejected",
         "entry": null,
         "failure": "Signature",
         "recoverable": false
@@ -655,6 +662,7 @@
       "signature": "b7802d818ec7503ed324f741f14a5073b141787a44b73ae4dc3055b869436667edfeb95ca5f85d7c517bd4efa42b205adb7e45e3e6059e75c89a8d159241330f",
       "verdict": {
         "authorized": false,
+        "code": "user_signature_rejected",
         "entry": null,
         "failure": "Signature",
         "recoverable": false
@@ -697,6 +705,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "user_signature_rejected",
         "entry": null,
         "failure": "Window::NotYetValid",
         "recoverable": true
@@ -847,6 +856,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "user_signature_rejected",
         "entry": null,
         "failure": "Window::Expired",
         "recoverable": false
@@ -889,6 +899,7 @@
       "signature": "0ee23b1697276aadddded6f1f1e9fa8d342e0c0f3158a7f2167444b793845b1f4856f5ce4b4fed7366a26eeaec28e0ee7a89f4824ad249c48814a33aedcf5b01",
       "verdict": {
         "authorized": false,
+        "code": "user_signature_rejected",
         "entry": null,
         "failure": "ProgramIdMismatch",
         "recoverable": false
@@ -936,6 +947,7 @@
       "signature": "0ee23b1697276aadddded6f1f1e9fa8d342e0c0f3158a7f2167444b793845b1f4856f5ce4b4fed7366a26eeaec28e0ee7a89f4824ad249c48814a33aedcf5b01",
       "verdict": {
         "authorized": false,
+        "code": "user_signature_rejected",
         "entry": null,
         "failure": "ProgramIdMismatch",
         "recoverable": false
@@ -983,6 +995,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "user_signature_rejected",
         "entry": null,
         "failure": "Watermark::Invalidated",
         "recoverable": false
@@ -1148,6 +1161,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "unprocessable",
         "entry": null,
         "failure": "Watermark::InvalidHostRecord",
         "recoverable": false
@@ -1185,6 +1199,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "EncryptedStore::Absent",
         "recoverable": true
@@ -1227,6 +1242,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "EncryptedStore::Absent",
         "recoverable": true
@@ -1269,6 +1285,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "EncryptedStore::ForeignOwner",
         "recoverable": false
@@ -1311,6 +1328,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "EncryptedStore::NotAnEncryptedStore",
         "recoverable": false
@@ -1353,6 +1371,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "EncryptedStore::AddressMismatch",
         "recoverable": false
@@ -1395,6 +1414,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "unprocessable",
         "entry": 0,
         "failure": "EncryptedStore::InvalidHostRecord",
         "recoverable": false
@@ -1435,6 +1455,7 @@
       "signature": "0c444de7ac65677cef8323e26ace916374c9a16fad5b6a3cc1526e837a4b1142266b7a9970e63a65db54ffa1b00b535ef3b0ad3999112ce759d719c4a21cca00",
       "verdict": {
         "authorized": false,
+        "code": "unprocessable",
         "entry": 0,
         "failure": "EncryptedStore::InvalidHostRecord",
         "recoverable": false
@@ -1477,6 +1498,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "ScopeNotAllowed",
         "recoverable": false
@@ -1571,6 +1593,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "ScopeNotAllowed",
         "recoverable": false
@@ -1613,6 +1636,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "Delegation::NoLiveDelegation",
         "recoverable": true
@@ -1660,6 +1684,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "Delegation::NoLiveDelegation",
         "recoverable": true
@@ -1707,6 +1732,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "Delegation::NoLiveDelegation",
         "recoverable": true
@@ -1759,6 +1785,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "unprocessable",
         "entry": 0,
         "failure": "Delegation::InvalidHostRecord",
         "recoverable": false
@@ -1811,6 +1838,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "unprocessable",
         "entry": 0,
         "failure": "Delegation::InvalidHostRecord",
         "recoverable": false
@@ -1866,6 +1894,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "HandleBinding::NoLeaf",
         "recoverable": true
@@ -1926,6 +1955,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "HandleBinding::NoLeaf",
         "recoverable": true
@@ -1981,6 +2011,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "HandleBinding::ProofRecordBehind",
         "recoverable": true
@@ -2040,6 +2071,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "HandleBinding::ProofDoesNotVerify",
         "recoverable": true
@@ -2094,6 +2126,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "HandleBinding::AccountUnknownToProofRecord",
         "recoverable": true
@@ -2153,6 +2186,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "HandleBinding::LeafIndexOutOfRange",
         "recoverable": true
@@ -2261,6 +2295,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 1,
         "failure": "EncryptedStore::ForeignOwner",
         "recoverable": false
@@ -2303,6 +2338,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "EncryptedStore::Absent",
         "recoverable": true
@@ -2345,6 +2381,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "user_signature_rejected",
         "entry": null,
         "failure": "Watermark::Invalidated",
         "recoverable": false
@@ -2397,6 +2434,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
+        "code": "acl_denied",
         "entry": 0,
         "failure": "Delegation::NoLiveDelegation",
         "recoverable": true

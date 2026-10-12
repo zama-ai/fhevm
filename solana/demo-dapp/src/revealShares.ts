@@ -49,6 +49,7 @@ const revealConfidentialBalance = async (
     id: BigInt(session.config.chainId),
     fhevm: {
       relayerUrl: session.config.relayerUrl,
+      decryptionRelayerUrl: session.config.decryptionRelayerUrl,
       programs: { host: { address: session.config.aclProgram as Bytes32Hex } },
     },
   });
@@ -79,40 +80,21 @@ const revealConfidentialBalance = async (
     },
     () => client.signPermit({ wallet: permitWallet, durationSeconds: 3_600n, allowedScopes: [permitScope] }),
   );
-  let jobId: string | null = null;
-  let queuedAt: number | null = null;
-  let responseAt: number | null = null;
   const [clearValue] = await client.decryptValues({
     session: permit,
     entries: [{ handle: encryptedStoreHandle(state, BALANCE_KEY), encryptedStore: encodeAddress(encryptedStore) }],
-    options: {
-      timeout: 60_000,
-      onProgress: (progress) => {
-        if (progress.type === 'queued' && progress.method === 'POST') {
-          jobId = progress.jobId;
-          queuedAt = performance.now();
-        } else if (progress.type === 'succeeded') {
-          jobId ??= progress.jobId;
-          responseAt = performance.now();
-        }
-      },
-    },
+    options: { timeout: 60_000 },
   });
   if (clearValue === undefined || typeof clearValue.value !== 'bigint') {
     throw new Error(`decrypted ${label} balance is not an integer`);
   }
   const handle = handleHex(encryptedStoreHandle(state, BALANCE_KEY));
-  const totalElapsedMs = Math.round(performance.now() - startedAt);
-  if (jobId !== null && queuedAt !== null && responseAt !== null) {
-    recordDecryptionEvidence(session, {
-      label,
-      handle,
-      jobId,
-      queueToResponseMs: Math.round(responseAt - queuedAt),
-      totalElapsedMs,
-      completedAt: Date.now(),
-    });
-  }
+  recordDecryptionEvidence(session, {
+    label,
+    handle,
+    totalElapsedMs: Math.round(performance.now() - startedAt),
+    completedAt: Date.now(),
+  });
   return { handle, value: clearValue.value };
 };
 
@@ -120,7 +102,7 @@ const createReadClient = (session: DemoSession) => createFhevmBaseClient({
   rpc: createFinalizedRpc(session.config.rpcUrl),
   chain: defineFhevmSolanaChain({
     id: BigInt(session.config.chainId),
-    fhevm: { relayerUrl: session.config.relayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
+    fhevm: { relayerUrl: session.config.relayerUrl, decryptionRelayerUrl: session.config.decryptionRelayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
   }),
 });
 

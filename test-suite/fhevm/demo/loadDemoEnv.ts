@@ -39,6 +39,7 @@ const toOverrides = (config: SolanaDemoConfig) => ({
   rpcUrl: config.rpcUrl,
   wsUrl: config.wsUrl,
   relayerUrl: config.relayerUrl,
+  decryptionRelayerUrl: config.decryptionRelayerUrl,
   gatewayRpcUrl: config.gatewayRpcUrl,
   chainId: config.chainId,
   aclProgram: config.aclProgram,

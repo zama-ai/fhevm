@@ -276,6 +276,7 @@ const main = async (): Promise<void> => {
     rpcUrl: env.rpcUrl,
     wsUrl: env.wsUrl,
     relayerUrl: env.relayerUrl,
+    decryptionRelayerUrl: env.decryptionRelayerUrl,
     gatewayRpcUrl: env.gatewayRpcUrl,
     aclProgram: env.aclProgram,
     // The local stack runs the test FHE parameter set; the SDK reads the KMS trust from zama-host.

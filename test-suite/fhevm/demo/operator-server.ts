@@ -136,10 +136,11 @@ const main = async (): Promise<void> => {
         if (env.network === "devnet") await requireRecoverableWallet(recipient);
         return mintUsdc(recipient, amount);
       },
-      // The page reaches the relayer through its own origin's proxy, never a raw relayer URL.
+      // The page reaches the relayers through its own origin's proxy, never a raw relayer URL.
       readConfig: async () => ({
         ...(await readRuntimeConfig()),
         relayerUrl: `${allowedOrigin}/api/relayer`,
+        decryptionRelayerUrl: `${allowedOrigin}/api/decryption-relayer`,
         demoBootId: authorization.bootId,
       }),
       encryptionKeyFingerprint: encryptionKey.fingerprint,

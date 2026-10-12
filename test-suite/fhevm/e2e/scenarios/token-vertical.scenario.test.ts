@@ -77,6 +77,7 @@ describe("solana confidential-token consume vertical", () => {
           rpcUrl: env.rpcUrl,
           chainId: config.chainId,
           relayerUrl: config.relayerUrl,
+          decryptionRelayerUrl: config.decryptionRelayerUrl,
           aclProgramAddress: env.aclProgram,
           contractAddress,
           userAddress: walletHex,

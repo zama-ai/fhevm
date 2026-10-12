@@ -1,7 +1,7 @@
 // One permit session, from signed permit to verified plaintexts.
 //
-// The pieces are already built — the retry session, the response verification — and this module
-// only fastens them together. Its one substantive rule is where the request inputs come from: the
+// The pieces are already built — the request builder, the retry loop, the response verification —
+// and this module only fastens them together. Its one substantive rule is where the request inputs come from: the
 // signed permit's own fields, including the KMS routing decoded out of the permit's extraData, plus
 // the gateway domain from `HostConfig`. The routing is read from `HostConfig` once, when the permit
 // is minted; from then on the permit is the single source, and a verification that read the routing
@@ -19,9 +19,10 @@ import type {
   SolanaUserDecryptPlaintext,
   SolanaUserDecryptRequestInputs,
 } from './response.js';
-import type { SolanaUserDecryptHandleEntry } from './request.js';
-import type { SolanaUserDecryptClock, SolanaUserDecryptTransport } from './session.js';
-import { runSolanaUserDecrypt } from './session.js';
+import type { SolanaUserDecryptHandleEntry, SolanaUserDecryptRequestJson } from './request.js';
+import type { SolanaDecryptionClock, SolanaDecryptionOutcome } from '../decryption/retry.js';
+import { retrySolanaDecryption } from '../decryption/retry.js';
+import { buildSolanaUserDecryptRequest } from './request.js';
 import { verifySolanaUserDecryptResponse } from './response.js';
 import { encodeSolanaKmsRouting } from '../permit/index.js';
 
@@ -73,33 +74,40 @@ export function solanaUserDecryptRequestInputs(
 }
 
 /**
- * Runs one user decryption end to end: the retry session to an answer, then its verification.
+ * Runs one user decryption end to end: the request, the retry loop to an answer, then its
+ * verification.
+ *
+ * The request is built once, from the entries and the permit alone, and every attempt submits those
+ * bytes under the permit's one signature. A request that can never be submitted — too many handles,
+ * over the bit budget, a foreign chain, a malformed identity field — is refused before the network.
  *
  * @param run.runtime - The client runtime that owns the KMS WASM module.
  * @param run.session - The signed permit and its transport keypair.
  * @param run.entries - The handles to decrypt, in the order they will be requested.
- * @param run.transport - Submits a request and waits for its outcome.
+ * @param run.submit - Submits the request once and reads its outcome.
  * @param run.clock - Used for the backoff between attempts.
- * @param run.attempts - Submission budget; the session's default applies when absent.
+ * @param run.attempts - Submission budget; the retry loop's default applies when absent.
  * @param run.verification - The signers of the permit's `KmsContext` and the gateway domain from `HostConfig`.
- * @throws SolanaUserDecryptRunError - When no attempt was answered.
+ * @throws SolanaUserDecryptRequestError - When the request is refused before the network.
+ * @throws SolanaDecryptionRunError - When no attempt was answered.
  * @throws If the answer does not verify as this request's.
  */
 export async function executeSolanaUserDecrypt(run: {
   readonly runtime: FhevmRuntime;
   readonly session: SolanaPermitSession;
   readonly entries: readonly SolanaUserDecryptHandleEntry[];
-  readonly transport: SolanaUserDecryptTransport<readonly SolanaSigncryptedShare[]>;
-  readonly clock: SolanaUserDecryptClock;
+  readonly submit: (
+    request: SolanaUserDecryptRequestJson,
+  ) => Promise<SolanaDecryptionOutcome<readonly SolanaSigncryptedShare[]>>;
+  readonly clock: SolanaDecryptionClock;
   readonly attempts?: number | undefined;
   readonly verification: SolanaUserDecryptVerification;
 }): Promise<readonly SolanaUserDecryptPlaintext[]> {
-  const { response: shares } = await runSolanaUserDecrypt({
-    signedPermit: run.session.signedPermit,
-    entries: run.entries,
-    transport: run.transport,
+  const request = buildSolanaUserDecryptRequest({ signedPermit: run.session.signedPermit, entries: run.entries });
+  const shares = await retrySolanaDecryption({
+    submit: () => run.submit(request),
     clock: run.clock,
-    ...(run.attempts === undefined ? {} : { attempts: run.attempts }),
+    attempts: run.attempts,
   });
 
   return verifySolanaUserDecryptResponse({

@@ -105,6 +105,7 @@ const chain = {
   id: 72057594037940281n,
   fhevm: {
     relayerUrl: 'https://relayer.example.test',
+    decryptionRelayerUrl: 'https://decryption.relayer.example.test',
     programs: {
       host: {
         address: asBytes32Hex(bytesToHex(new Uint8Array(getAddressEncoder().encode(ZAMA_HOST_PROGRAM_ADDRESS)))),
@@ -276,35 +277,22 @@ describe('public decrypt client account-to-plaintext flow', () => {
   it('routes a certificate request to the context and epoch HostConfig holds', async () => {
     const f = await accountFixture();
     f.request.mockRestore();
-    vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'queued', requestId: 'r1', result: { jobId: 'j1' } }), {
-          status: 202,
-          headers: { 'Retry-After': '1' },
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: 'succeeded',
+          requestId: 'r1',
+          result: {
+            decryptedValue: f.claim.abiEncodedCleartext,
+            signatures: f.claim.signatures,
+            extraData: f.claim.extraData,
+          },
         }),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            status: 'succeeded',
-            requestId: 'r1',
-            result: {
-              decryptedValue: f.claim.abiEncodedCleartext,
-              signatures: f.claim.signatures,
-              extraData: f.claim.extraData,
-            },
-          }),
-          { status: 200 },
-        ),
-      );
+        { status: 200 },
+      ),
+    );
     vi.stubGlobal('fetch', fetchMock);
-    const pending = f.client.publicDecryptCertificate({ handle, encryptedStore: store });
-    // The request starts after the HostConfig read; then run out the relayer's Retry-After.
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    await vi.runAllTimersAsync();
-    const claim = await pending;
+    const claim = await f.client.publicDecryptCertificate({ handle, encryptedStore: store });
     const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body)) as { extraData: string };
     expect(body.extraData).toBe(`0x02${'44'.repeat(32)}${'45'.repeat(32)}`);
     expect(claim.extraData).toBe(body.extraData);

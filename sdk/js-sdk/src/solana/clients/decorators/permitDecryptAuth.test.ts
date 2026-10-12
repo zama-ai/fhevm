@@ -23,6 +23,7 @@ const chain = {
   id: 72057594037940281n,
   fhevm: {
     relayerUrl: 'http://relayer.local',
+    decryptionRelayerUrl: 'http://decryption.relayer.local',
     programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },
   },
 } as const satisfies FhevmSolanaChain;

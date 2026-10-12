@@ -33,6 +33,7 @@ const validResponse = {
     rpcUrl: 'http://127.0.0.1:8899',
     wsUrl: 'ws://127.0.0.1:8900',
     relayerUrl: 'http://127.0.0.1:3000',
+    decryptionRelayerUrl: 'http://127.0.0.1/decryption-relayer',
     aclProgram: '0xb825643b79bf4499ff31ccfe8a297aa0eb30a8a0cc1f2319e82176c1b4d65e71',
     fheParameter: 'test',
     authorityFundingLamports: '1000000',

@@ -7,7 +7,9 @@ import type { Bytes32Hex } from './primitives.js';
  * - `id` — the Solana host chain id embedded in each ciphertext handle (`contracts_chain_id`).
  *   It is a `bigint`: the RFC-021 Solana host id (e.g. `72057594037940281n`) exceeds
  *   `Number.MAX_SAFE_INTEGER`, so a `number` would silently lose precision.
- * - `relayerUrl` — the relayer base URL requests are POSTed to.
+ * - `relayerUrl` — the relayer that serves input proofs and the FHE public key.
+ * - `decryptionRelayerUrl` — the relayer that answers user and public decryptions, synchronously
+ *   (`relayer-http`, `/v4/user-decrypt` and `/v4/public-decrypt`).
  * - `programs.host.address` — the zama-host program id of the deployment as a canonical 32-byte
  *   identity, the analogue of the EVM chain's `contracts.acl.address`. Every action derives PDAs,
  *   checks account ownership and signs permits (`verifyingProgramId`) against it; nothing falls
@@ -22,6 +24,7 @@ export type FhevmSolanaChain = {
   readonly id: bigint;
   readonly fhevm: {
     readonly relayerUrl: string;
+    readonly decryptionRelayerUrl: string;
     readonly programs: {
       readonly host: {
         readonly address: Bytes32Hex;

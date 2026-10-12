@@ -67,6 +67,8 @@ export type TestEnv = {
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly relayerUrl: string;
+  /** The decryption relayer (relayer-http): user and public decryptions. */
+  readonly decryptionRelayerUrl: string;
   readonly gatewayRpcUrl: string;
   /** Primary EVM host chain RPC — where the deployed `ProtocolConfig` declares the active KMS pair. */
   readonly hostRpcUrl: string;
@@ -102,6 +104,7 @@ type TestEnvOverrides = {
   rpcUrl: string;
   wsUrl: string;
   relayerUrl: string;
+  decryptionRelayerUrl: string;
   gatewayRpcUrl: string;
   hostRpcUrl: string;
   chainId: string;
@@ -118,6 +121,7 @@ const LOCAL_DEFAULTS = {
   rpcUrl: LOCAL_SOLANA_ENDPOINTS.validatorRpc,
   wsUrl: LOCAL_SOLANA_ENDPOINTS.validatorWs,
   relayerUrl: LOCAL_SOLANA_ENDPOINTS.relayer,
+  decryptionRelayerUrl: LOCAL_SOLANA_ENDPOINTS.decryptionRelayer,
   gatewayRpcUrl: LOCAL_SOLANA_ENDPOINTS.gatewayRpc,
   hostRpcUrl: LOCAL_SOLANA_ENDPOINTS.hostRpc,
   chainId: SOLANA_HOST_CHAIN_ID.toString(),
@@ -165,6 +169,7 @@ export const envOverrides = (env: NodeJS.ProcessEnv): Partial<TestEnvOverrides> 
     ...pick("rpcUrl", "SOLANA_RPC_URL"),
     ...pick("wsUrl", "SOLANA_WS_URL"),
     ...pick("relayerUrl", "SOLANA_RELAYER_URL"),
+    ...pick("decryptionRelayerUrl", "SOLANA_DECRYPTION_RELAYER_URL"),
     ...pick("gatewayRpcUrl", "GW_RPC"),
     ...pick("hostRpcUrl", "HOST_RPC"),
     ...pick("chainId", "SOLANA_HOST_CHAIN_ID"),
@@ -206,12 +211,18 @@ export const resolveEnv = (
     ...overrides,
   };
   if (source === "devnet" && network !== "devnet") throw new Error('source "devnet" runs on network "devnet"');
+  // The local default names relayer-http on this machine's stack; a devnet run reaching it would
+  // decrypt against whatever happens to listen there.
+  if (network === "devnet" && overrides.decryptionRelayerUrl === undefined) {
+    throw new Error("SOLANA_DECRYPTION_RELAYER_URL must be set on devnet (the preview helper writes it to preview.env)");
+  }
   return {
     source,
     network,
     rpcUrl: merged.rpcUrl,
     wsUrl: merged.wsUrl,
     relayerUrl: merged.relayerUrl,
+    decryptionRelayerUrl: merged.decryptionRelayerUrl,
     gatewayRpcUrl: merged.gatewayRpcUrl,
     hostRpcUrl: merged.hostRpcUrl,
     chainId: solanaChainId(merged.chainId),

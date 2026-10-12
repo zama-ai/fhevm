@@ -12,6 +12,7 @@ export type DemoConfig = {
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly relayerUrl: string;
+  readonly decryptionRelayerUrl: string;
   readonly aclProgram: `0x${string}`;
   /** The FHE parameter choice this deployment runs. */
   readonly fheParameter: string;
@@ -116,6 +117,7 @@ export const parseDemoConfig = (value: unknown): DemoConfig => {
     rpcUrl,
     wsUrl,
     relayerUrl: localUrl(raw.relayerUrl, "demo config.relayerUrl", "http:"),
+    decryptionRelayerUrl: localUrl(raw.decryptionRelayerUrl, "demo config.decryptionRelayerUrl", "http:"),
     aclProgram,
     fheParameter: string(raw.fheParameter, "demo config.fheParameter"),
     authorityFundingLamports: string(raw.authorityFundingLamports, "demo config.authorityFundingLamports"),

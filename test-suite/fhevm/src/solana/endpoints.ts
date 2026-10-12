@@ -7,6 +7,7 @@ import {
   DEFAULT_HOST_RPC_PORT,
   DEMO_DAPP_PORT,
   DEMO_OPERATOR_PORT,
+  RELAYER_HTTP_PORT,
   RELAYER_PORT,
   SOLANA_CLEARTEXT_RPC_PORT,
   SOLANA_LISTENER_GRPC_PORT,
@@ -23,6 +24,7 @@ export const LOCAL_SOLANA_ENDPOINTS = {
   validatorRpc: loopback(SOLANA_VALIDATOR_RPC_PORT),
   validatorWs: loopback(SOLANA_VALIDATOR_WS_PORT, "ws"),
   relayer: loopback(RELAYER_PORT),
+  decryptionRelayer: loopback(RELAYER_HTTP_PORT),
   hostRpc: loopback(DEFAULT_HOST_RPC_PORT),
   gatewayRpc: loopback(DEFAULT_GATEWAY_RPC_PORT),
   /** The first coprocessor's Merkle proof server. */

@@ -5,13 +5,14 @@ import { readDemoAuthorizationFromEnv } from '../../test-suite/fhevm/demo/author
 // The page is static; everything privileged lives in the demo operator (test-suite/fhevm/demo/
 // operator-server.ts). The dev server proxies the page's same-origin `/api` calls to it and adds
 // the boot capability on the way, so the browser never holds a token and the operator never trusts
-// a page context. `/api/relayer` goes straight to the relayer.
-// The lifecycle and the preview helper always pass these three; the fallbacks are the local
-// stack's ports from test-suite/fhevm/src/layout.ts (not imported: that module is Bun-typed and
-// would pull the whole layout into this Node config).
+// a page context. `/api/relayer` and `/api/decryption-relayer` go straight to the two relayers.
+// The lifecycle and the preview helper always pass these four; the fallbacks are the local stack's
+// ports from test-suite/fhevm/src/layout.ts (not imported: that module is Bun-typed and would pull
+// the whole layout into this Node config).
 const dappUrl = new URL(process.env.DEMO_DAPP_URL ?? 'http://127.0.0.1:5173');
 const operatorUrl = process.env.DEMO_OPERATOR_URL ?? 'http://127.0.0.1:8091';
 const relayerUrl = process.env.DEMO_RELAYER_URL ?? 'http://127.0.0.1:3000';
+const decryptionRelayerUrl = process.env.DEMO_DECRYPTION_RELAYER_URL ?? 'http://127.0.0.1:3002';
 // The proxy adds the capability to every `/api` call, so this server must not be reachable from
 // anywhere but this machine: the bind is loopback whatever DEMO_DAPP_URL says, and the URL only
 // names the origin the operator answers and the port to listen on.
@@ -49,6 +50,10 @@ export default defineConfig(async ({ command, mode }) => ({
         target: relayerUrl,
         headers: { "x-api-key": process.env.DEMO_RELAYER_API_KEY ?? "local" },
         rewrite: (requestPath: string) => requestPath.replace(/^\/api\/relayer/, ''),
+      },
+      '/api/decryption-relayer': {
+        target: decryptionRelayerUrl,
+        rewrite: (requestPath: string) => requestPath.replace(/^\/api\/decryption-relayer/, ''),
       },
       // The proxy (and the capability it reads) exists only for a served page: `vite build` and
       // vitest run without a demo boot.

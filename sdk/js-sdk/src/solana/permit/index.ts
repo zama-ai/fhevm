@@ -58,7 +58,11 @@ export type {
 } from '@solana/wallet-standard-features';
 export type { WalletAccount } from '@wallet-standard/base';
 
-export { PERMIT_START_GRANULARITY_SECONDS, normalizeSolanaPermitStart } from './start.js';
+export {
+  PERMIT_START_CLOCK_MARGIN_SECONDS,
+  PERMIT_START_GRANULARITY_SECONDS,
+  normalizeSolanaPermitStart,
+} from './start.js';
 
 export { PERMIT_PERMISSIVE_WARNING, PERMIT_WARN_ABOVE_DURATION_SECONDS, solanaPermitWarnings } from './warnings.js';
 export type { SolanaPermitWarning } from './warnings.js';

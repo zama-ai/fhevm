@@ -113,6 +113,7 @@ export const prepareSolanaKmsContextLeg = async (
   const decryptConfig: FheVerticalConfig = {
     rpcUrl: endpoints.validatorRpc,
     relayerUrl: endpoints.relayer,
+    decryptionRelayerUrl: endpoints.decryptionRelayer,
     chainId,
     verifyingProgramId: SOLANA_ACL_PROGRAM,
     fheParameter: state.scenario.kms.fheParams.toLowerCase(),

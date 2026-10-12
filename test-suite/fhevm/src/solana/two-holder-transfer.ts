@@ -41,6 +41,7 @@ export type TwoHolderConfig = {
   readonly rpcUrl: string;
   readonly wsUrl: string;
   readonly relayerUrl: string;
+  readonly decryptionRelayerUrl: string;
   readonly aclProgram: `0x${string}`;
   /** SOL each holder starts with: Alice pays every provisioning rent and the arc's fees, Bob his own account. */
   readonly funding: { readonly primarySol: number; readonly secondarySol: number };
@@ -92,6 +93,7 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
       {
         rpcUrl: cfg.rpcUrl,
         relayerUrl: cfg.relayerUrl,
+        decryptionRelayerUrl: cfg.decryptionRelayerUrl,
         chainId: BigInt(state.chainId),
         verifyingProgramId: cfg.aclProgram,
         fheParameter: "test",
@@ -159,7 +161,7 @@ export const createRealTwoHolderDependencies = (cfg: TwoHolderConfig): RealTwoHo
       const aclProgramAddress = asBytes32Hex(cfg.aclProgram);
       const chain = solana.defineFhevmSolanaChain({
         id: BigInt(alice.chainId),
-        fhevm: { relayerUrl: cfg.relayerUrl, programs: { host: { address: aclProgramAddress } } },
+        fhevm: { relayerUrl: cfg.relayerUrl, decryptionRelayerUrl: cfg.decryptionRelayerUrl, programs: { host: { address: aclProgramAddress } } },
       });
       solana.setFhevmRuntimeConfig({ auth: relayerAuth() });
       const rpc = context().rpc;

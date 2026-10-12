@@ -302,22 +302,20 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
 - **User decrypt.** The permit and request are built as in production, except the transport key:
   no share is signcrypted to it, so the permit commits to random bytes of its length
   (`PERMIT_TRANSPORT_KEY_LEN`) and no KMS WASM loads, as in EVM's cleartext decrypt module.
-  Each attempt then runs the relayer's submission checks and pre-check, the gateway's
-  validity window, and the KMS Connector's authorization, in the real stack's order and with its
-  labels (the header of
-  `sdk/js-sdk/src/solana/cleartext/decrypt.ts` lists them). A failure the Connector would retry
-  leaves the attempt unanswered for the retry loop; any other throws at once and names the failure,
-  where the real stack leaves the request to time out. Otherwise the answer is the plaintext the
-  host recorded in the store. The Connector part (`cleartext/authorization.ts`) is held to the
-  Connector itself: the kms-worker test `solana_authorization_cases` runs the Connector on a set of
-  user and public decryptions and writes each one's accounts, Merkle proof batch with the record's
-  answers, and verdict to `solana/test-fixtures/authorization/decrypt_cases_v1.json`, and the SDK
-  test requires the client to match. The relayer and gateway part is copied from their code
-  (`relayer/src/host/solana_user_decrypt_precheck.rs`, the relayer's user-decrypt admission,
-  `Decryption.sol`) and nothing generated pins it, so a change there needs a matching change here.
+  Each attempt then runs the decryption relayer's admission (the handles' chain, and the validity
+  window against wall time) and the KMS Connector's authorization, in the real stack's order (the
+  header of `sdk/js-sdk/src/solana/cleartext/decrypt.ts` lists it). A refusal carries the code the
+  real stack sends, and the production retry loop decides from that code, as it does against
+  relayer-http. Otherwise the answer is the plaintext the host recorded in the store. The Connector
+  part (`cleartext/authorization.ts`) is held to the Connector itself: the kms-worker test
+  `solana_authorization_cases` runs the Connector on a set of user and public decryptions and
+  writes each one's accounts, Merkle proof batch with the record's answers, verdict and code to
+  `solana/test-fixtures/authorization/decrypt_cases_v1.json`, and the SDK test requires the client
+  to match. The relayer's admission is copied from relayer-http's user-decrypt handler and nothing
+  generated pins it, so a change there needs a matching change here.
 - **Public decrypt.** The store and the handle's public leaf are judged by the Connector's rules,
-  and a failure the Connector would retry is judged again, up to 20 times. The certificate is
-  signed with the test KMS key, and the on-chain verifier checks it as usual.
+  through the same retry loop and codes as a user decryption. The certificate is signed with the
+  test KMS key, and the on-chain verifier checks it as usual.
 
 Leaf proofs come from an in-memory leaf record of the validator (`createSolanaLeafRecord`, whose
 header gives its catch-up rules). The e2e's decrypt clients share one record for the test process
@@ -329,9 +327,9 @@ that runs long enough loses the history of a store the record has not read yet.
 What the cleartext target does not prove, so these parts skip there
 (`capabilities.protocolServices` is false):
 
-- Relayer behavior: job coalescing (the coalescing step of `delegated-user-decrypt`), and which
-  refusals come back unanswered rather than labeled. The client applies the pre-check's rules; the
-  relayer's own code does not run.
+- Decryption relayer behavior: the repeat step of `delegated-user-decrypt`, and which code wins
+  when the Connectors disagree. The client applies the relayer's admission rules; the relayer's
+  own code does not run.
 - The KMS: shares, signcryption and response signatures, and so the FHE parameter and the KMS
   epoch. Threshold topologies, and ciphertext materialization: `waitForSnsCommit` resolves at once.
 - Host upgrade with a listener restart (the third `fhe-vertical` test), and the Squads arc of
@@ -368,10 +366,10 @@ failures: a transaction that fits on the cleartext build always fits in producti
   `the_committed_cases_are_the_connectors_verdicts` until the cases are rewritten:
   `ZAMA_UPDATE_AUTHORIZATION_CASES=1 cargo test -p kms-worker --test solana_authorization_cases`
   from `kms-connector/`. The SDK's `authorization.test.ts` then fails until
-  `cleartext/authorization.ts` reaches the same verdicts. Add a case there for a new rule.
-- **A change to the relayer's admission or user-decrypt pre-check, or to the gateway's validity
-  window,** has no generated check. Mirror it by hand in `cleartext/decrypt.ts` or
-  `cleartext/authorization.ts` (`solanaRelayerPrecheckRefusal`) and its test.
+  `cleartext/authorization.ts` reaches the same verdicts, and the code each failure is answered
+  with, as the cases record it. Add a case there for a new rule.
+- **A change to the decryption relayer's admission (relayer-http's stateless validation)** has no
+  generated check. Mirror it by hand in `cleartext/decrypt.ts` and its test.
 
 ## Where the two decrypt leaves are tested
 
@@ -447,7 +445,8 @@ and a record that is behind is a retry.
   The user-decrypt side of the mirror is pinned by committed vectors that both sides assert
   against. The permit's canonical text and offchain-message envelope come from `zama-solana-permit`
   (used by the connector and the relayer) and the SDK's TypeScript, pinned by
-  `solana/test-fixtures/permit/permit_v1.json`. The relayer envelope is mirrored by the relayer's
-  wire types (`UserDecryptV3RequestJson`) and the SDK, pinned by
-  `solana/test-fixtures/user-decrypt/relayer_envelope_v1.json`. Moving those bytes is a protocol
-  change (new domain tag / version byte), not a fixture refresh.
+  `solana/test-fixtures/permit/permit_v1.json`. The decryption request bodies are the
+  `kms-connector-api` Solana DTOs, which the decryption relayer forwards unchanged; the SDK's
+  `decryption/connectorVectors.test.ts` holds both bodies to the Connector's vectors in
+  `kms-connector/crates/api/tests/vectors.json`. Moving those bytes is a protocol change (new
+  domain tag / version byte), not a fixture refresh.

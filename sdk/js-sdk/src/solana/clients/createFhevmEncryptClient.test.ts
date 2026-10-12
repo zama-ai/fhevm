@@ -13,6 +13,7 @@ const chain = {
   id: 72057594037940281n,
   fhevm: {
     relayerUrl: 'https://relayer.example.test',
+    decryptionRelayerUrl: 'https://decryption.relayer.example.test',
     programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },
   },
 };

@@ -20,6 +20,7 @@ import { withHostReachableFetch } from "../../../src/utils/fs";
 export const submitUint64InputProof = async (parameters: {
   readonly chainId: bigint;
   readonly relayerUrl: string;
+  readonly decryptionRelayerUrl: string;
   readonly rpcUrl: string;
   readonly aclProgramAddress: `0x${string}`;
   readonly contractAddress: `0x${string}`;
@@ -28,7 +29,7 @@ export const submitUint64InputProof = async (parameters: {
 }): Promise<SolanaSubmitInputProofResult> => {
   const solanaSdk = await loadSolanaSdk();
   solanaSdk.setFhevmRuntimeConfig({ auth: relayerAuth() });
-  const chain = solanaSdk.defineFhevmSolanaChain({ id: parameters.chainId, fhevm: { relayerUrl: parameters.relayerUrl, programs: { host: { address: asBytes32Hex(parameters.aclProgramAddress) } } } });
+  const chain = solanaSdk.defineFhevmSolanaChain({ id: parameters.chainId, fhevm: { relayerUrl: parameters.relayerUrl, decryptionRelayerUrl: parameters.decryptionRelayerUrl, programs: { host: { address: asBytes32Hex(parameters.aclProgramAddress) } } } });
   const encryptClient = solanaSdk.createFhevmEncryptClient({
     chain,
     rpc: createFinalizedRpc(parameters.rpcUrl),
