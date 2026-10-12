@@ -61,7 +61,7 @@ spec:
             value: {{ .value | quote }}
             {{- else if .valueFrom }}
             valueFrom:
-              {{- toYaml .valueFrom | nindent 14 }}
+              {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 14 }}
             {{- end }}
           {{- end }}
           {{- with .Values.commonConfig.databaseEndpoint }}
@@ -70,7 +70,7 @@ spec:
             value: {{ .value | quote }}
             {{- else if .valueFrom }}
             valueFrom:
-              {{- toYaml .valueFrom | nindent 14 }}
+              {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 14 }}
             {{- end }}
           {{- end }}
           {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
@@ -80,7 +80,7 @@ spec:
             value: {{ .value | quote }}
             {{- else if .valueFrom }}
             valueFrom:
-              {{- toYaml .valueFrom | nindent 14 }}
+              {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 14 }}
             {{- end }}
           {{- end }}
           {{- end }}
@@ -94,7 +94,7 @@ spec:
             value: {{ .value | quote }}
             {{- else if .valueFrom }}
             valueFrom:
-              {{- toYaml .valueFrom | nindent 14 }}
+              {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 14 }}
             {{- end }}
           {{- end }}
           {{- /*
@@ -124,7 +124,7 @@ spec:
             value: {{ $chain.aclContractAddress | quote }}
             {{- else if $chain.aclContractAddressValueFrom }}
             valueFrom:
-              {{- toYaml $chain.aclContractAddressValueFrom | nindent 14 }}
+              {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $chain.aclContractAddressValueFrom) | nindent 14 }}
             {{- end }}
           {{- end }}
           {{- end }}
@@ -138,7 +138,7 @@ spec:
             value: {{ .value | quote }}
             {{- else if .valueFrom }}
             valueFrom:
-              {{- toYaml .valueFrom | nindent 14 }}
+              {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 14 }}
             {{- end }}
           {{- end }}
           {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" .) "true" }}
@@ -146,10 +146,10 @@ spec:
           {{- end }}
           {{- end }}
         {{- with .Values.commonConfig.env }}
-          {{- toYaml . | nindent 10 }}
+          {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 10 }}
         {{- end }}
         {{- with .Values.dbMigration.env }}
-          {{- toYaml . | nindent 10 }}
+          {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 10 }}
         {{- end }}
         resources:
           requests:

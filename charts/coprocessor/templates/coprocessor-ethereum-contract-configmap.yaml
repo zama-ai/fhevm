@@ -13,10 +13,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ $cm.name }}
+  name: {{ include "coprocessor.hostContractConfigMapName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/name: {{ $cm.name }}
+    app.kubernetes.io/name: {{ include "coprocessor.hostContractConfigMapName" . }}
 data:
   {{- range $k, $v := $merged }}
   {{ $k }}: {{ $v | quote }}
