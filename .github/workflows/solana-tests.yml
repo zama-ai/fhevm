@@ -465,11 +465,14 @@ jobs:
       # A cost snapshot test panics on the first profile that moved, so the failure message names
       # one profile even when several changed, and the fix needs an SBF toolchain the author may
       # not have. Re-run the snapshot tests in record mode and hand back the JSON that
-      # update-cost-snapshots.sh would have written.
+      # update-cost-snapshots.sh would have written. Record mode never deletes a profile, so the
+      # files are cleared first, as the script does, and removed profiles do not linger.
       - name: Regenerate the cost snapshots after a test failure
         id: regen-snapshots
         if: ${{ failure() && steps.workspace-tests.conclusion == 'failure' }}
-        run: ZAMA_UPDATE_COST_SNAPSHOT=1 cargo test -p zama-solana-runtime-tests cost_snapshot_
+        run: |
+          rm -f runtime-tests/cost-snapshots/*.json
+          ZAMA_UPDATE_COST_SNAPSHOT=1 cargo test -p zama-solana-runtime-tests cost_snapshot_
         continue-on-error: true
 
       # Only publish when regeneration actually succeeded. If the workspace failed to compile, the

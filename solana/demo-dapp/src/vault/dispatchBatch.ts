@@ -1,75 +1,91 @@
 import { tokenStoreAddress } from './internal/encryptedStores.js';
 import {
   findPendingBurnPda,
-  findTokenAccountPda,
   findEventAuthorityPda as findTokenEventAuthorityPda,
   findTotalSupplyAuthorityPda,
 } from '@fhevm/confidential-token';
-import { findAssociatedTokenPda } from '@solana-program/token';
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
-import type { Address, Instruction, TransactionSigner } from '@solana/kit';
+import type { Instruction, TransactionSigner } from '@solana/kit';
 import { getDispatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/dispatch.js';
 import { tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
-import { findBatchAuthorityPda } from './internal/generated/confidentialBatcher/pdas/index.js';
+import { deriveBatchAddresses, type VaultDemoRoots } from './derive.js';
 
 
 /**
- * Semantic roots for the batcher `dispatch` instruction. Every other account the on-chain handler
- * validates (`dispatch.rs`) — the batch authority, the join mint's total-supply
- * authority, the batch's join token account, the balance / total-supply / burned-amount encrypted stores,
- * and both event authorities — is derived internally from these, so callers never hand-build the
- * account map.
+ * Semantic roots for the batcher `dispatch` instruction. Every account the on-chain handler
+ * validates (`dispatch.rs`) — both batches' authorities, token accounts and encrypted stores, the join
+ * mint's total-supply authority and pending burn, and both event authorities — is derived internally
+ * from the roots and the batch index, so callers never hand-build the account map.
  */
 export type SolanaVaultDispatchParameters = HostPolicyParameters & {
   readonly transientStore: TransientStore;
-  /** Pays the rent for the burn's output encrypted store. Anyone — dispatch is permissionless. */
+  /**
+   * Pays the burn's output rent, the next batch's rent and its authority funding. Anyone — dispatch is
+   * permissionless.
+   */
   readonly payer: TransactionSigner;
-  /** Batcher config account. */
-  readonly batcher: Address;
-  /** The full batch being dispatched. */
-  readonly batch: Address;
-  /** Confidential mint the batch total is burned on (`batcher.join_confidential_mint`). */
-  readonly joinConfidentialMint: Address;
-  /** SPL mint wrapped by `joinConfidentialMint`. Freeze checks the batch authority's ATA. */
-  readonly joinUnderlyingMint: Address;
-  /** Token program that owns `joinUnderlyingMint` (`Tokenkeg` or Token-2022). */
-  readonly tokenProgram: Address;
+  /** The batcher's immutable topology (from the demo-config projection). */
+  readonly roots: VaultDemoRoots;
+  /** Index of the pending batch being dispatched; dispatch opens `batchIndex + 1`. */
+  readonly batchIndex: bigint;
+  /** Lamports the next batch's authority is funded with to pay its owner-charged rent. */
+  readonly authorityFundingLamports: bigint;
 };
 
 /**
  * Builds the permissionless `dispatch` instruction: once a batch is old enough, it burns the batch
- * account's full encrypted balance and records the created-public burned handle the KMS will certify
- * at settle.
+ * account's full encrypted balance, records the created-public burned handle the KMS will certify at
+ * settle, and opens the next batch.
  */
 export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispatchParameters): Promise<Instruction> {
-  const { joinConfidentialMint } = parameters;
-  const [batchAuthority] = await findBatchAuthorityPda({ batch: parameters.batch });
-  const batchJoinTokenAccount = (await findTokenAccountPda({ mint: joinConfidentialMint, owner: batchAuthority }))[0];
+  const { roots, batchIndex } = parameters;
+  const { joinConfidentialMint, payoutConfidentialMint } = roots;
+  const [batch, next] = await Promise.all([
+    deriveBatchAddresses(roots, batchIndex),
+    deriveBatchAddresses(roots, batchIndex + 1n),
+  ]);
   const totalSupplyAuthority = (await findTotalSupplyAuthorityPda({ mint: joinConfidentialMint }))[0];
   const joinMint = tokenApp(joinConfidentialMint);
-  const joinMintHcu = await parameters.host.hcuAccounts(joinMint);
+  const payoutMint = tokenApp(payoutConfidentialMint);
+  const [joinMintHcu, payoutMintHcu] = await Promise.all([
+    parameters.host.hcuAccounts(joinMint),
+    parameters.host.hcuAccounts(payoutMint),
+  ]);
   const instruction = await getDispatchInstructionAsync({
     transientStore: parameters.transientStore.address,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     payer: parameters.payer,
-    batcher: parameters.batcher,
-    batch: parameters.batch,
-    batchAuthority,
+    batcher: roots.batcher,
+    batch: batch.batch,
+    batchAuthority: batch.batchAuthority,
     joinConfidentialMint,
-    joinUnderlyingMint: parameters.joinUnderlyingMint,
+    joinUnderlyingMint: roots.joinUnderlyingMint,
     batchAuthorityAta: (await findAssociatedTokenPda({
-      owner: batchAuthority,
-      tokenProgram: parameters.tokenProgram,
-      mint: parameters.joinUnderlyingMint,
+      owner: batch.batchAuthority,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      mint: roots.joinUnderlyingMint,
     }))[0],
     totalSupplyAuthority,
-    batchJoinTokenAccount,
-    batchBalanceStore: await tokenStoreAddress(joinConfidentialMint, batchJoinTokenAccount),
+    batchJoinTokenAccount: batch.batchJoinTokenAccount,
+    // A token account has one encrypted store, holding both its balance and its burned amount.
+    batchBalanceStore: batch.batchBurnedAmountStore,
     totalSupplyStore: await tokenStoreAddress(joinConfidentialMint, totalSupplyAuthority),
-    pendingBurn: (await findPendingBurnPda({ mint: joinConfidentialMint, tokenAccount: batchJoinTokenAccount }))[0],
+    pendingBurn: (await findPendingBurnPda({ mint: joinConfidentialMint, tokenAccount: batch.batchJoinTokenAccount }))[0],
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
+    nextBatch: next.batch,
+    nextBatchJoinTokenAccount: next.batchJoinTokenAccount,
+    nextBatchJoinBalanceStore: next.batchBurnedAmountStore,
+    payoutConfidentialMint,
+    payoutUnderlyingMint: roots.payoutUnderlyingMint,
+    nextBatchPayoutTokenAccount: next.batchPayoutTokenAccount,
+    nextBatchPayoutBalanceStore: next.batchPayoutBalanceStore,
+    authorityFundingLamports: parameters.authorityFundingLamports,
     joinMintHcuBlockMeter: joinMintHcu.hcuBlockMeter,
     joinMintHcuTrustedAppRecord: joinMintHcu.hcuTrustedAppRecord,
+    payoutMintHcuBlockMeter: payoutMintHcu.hcuBlockMeter,
+    payoutMintHcuTrustedAppRecord: payoutMintHcu.hcuTrustedAppRecord,
   });
-  return withDenyRecords(instruction, parameters.host.denyListEnabled, [joinMint]);
+  // The burn, then the next batch's join and payout token accounts.
+  return withDenyRecords(instruction, parameters.host.denyListEnabled, [joinMint, joinMint, payoutMint]);
 }

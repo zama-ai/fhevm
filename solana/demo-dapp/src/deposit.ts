@@ -15,13 +15,13 @@ import {
   buildWrapUsdcInstruction,
   deriveBatchAddresses,
   findJoinRecordPda,
-  getBatchByIndex,
+  findRecentJoin,
   getCurrentBatch,
   joinBatch,
   readHostPolicy,
 } from './vault/index.js';
 
-import type { BatchPosition, BatchTarget } from './batchTypes';
+import type { BatchPosition } from './batchTypes';
 import { createDemoClient } from './demoClient';
 import type { DemoSession } from './demoSession';
 import { loadDemoEncryptionKey } from './encryptionKey';
@@ -232,12 +232,10 @@ export async function findExistingDeposit(session: DemoSession): Promise<BatchPo
     const reconciled = await reconcileSavedDeposit(rpc, session, saved);
     if (reconciled !== null) return reconciled;
   }
-  const batch = await getCurrentBatch(rpc, depositRoots(session));
-  const joinRecord = (await findJoinRecordPda({ batch: batch.addresses.batch, user: session.signer.address }))[0];
-  const account = await rpc.getAccountInfo(joinRecord, { encoding: 'base64' }).send();
-  if (account.value === null) return null;
+  const join = await findRecentJoin(rpc, depositRoots(session), session.signer.address);
+  if (join === null || join.joinRecord.claimed) return null;
   clearShieldJournal(session);
-  const result = { batchIndex: batch.index, batch: batch.addresses.batch, amountBaseUnits: 0n };
+  const result = { batchIndex: join.batchIndex, batch: join.batch, amountBaseUnits: 0n };
   writeActiveDeposit(session, result);
   return result;
 }
@@ -250,7 +248,6 @@ export async function depositToVault(
   session: DemoSession,
   amount: number,
   onStage: (stage: DepositStage) => void,
-  target?: BatchTarget,
   source: DepositSource = 'usdc',
   expectedSourceHandle?: string,
 ): Promise<BatchPosition> {
@@ -261,23 +258,14 @@ export async function depositToVault(
   const { rpc } = client;
   const roots = depositRoots(session);
   const saved = readActiveDeposit(session);
-  if (
-    saved !== null &&
-    (target === undefined || (saved.batchIndex === target.batchIndex && saved.batch === target.batch))
-  ) {
+  if (saved !== null) {
     const reconciled = await reconcileSavedDeposit(rpc, session, saved);
     if (reconciled !== null) {
       onStage('joined');
       return reconciled;
     }
   }
-  const batch =
-    target === undefined
-      ? await getCurrentBatch(rpc, roots)
-      : await getBatchByIndex(rpc, roots, target.batchIndex);
-  if (target !== undefined && (batch.index !== target.batchIndex || batch.addresses.batch !== target.batch)) {
-    throw new Error('The prepared deposit batch no longer matches the requested batch');
-  }
+  const batch = await getCurrentBatch(rpc, roots);
   const joinRecord = (await findJoinRecordPda({ batch: batch.addresses.batch, user: signer.address }))[0];
   const joinRecordAccount = await rpc
     .getAccountInfo(joinRecord, { encoding: 'base64' })

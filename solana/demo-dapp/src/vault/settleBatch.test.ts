@@ -8,8 +8,8 @@ vi.mock('@solana/kit', async (importOriginal) => ({
 
 const certificate = vi.hoisted(() => vi.fn());
 
-const getCurrentBatch = vi.hoisted(() => vi.fn());
-vi.mock('./reads.js', () => ({ getCurrentBatch }));
+const fetchBatch = vi.hoisted(() => vi.fn());
+vi.mock('./internal/generated/confidentialBatcher/accounts/batch.js', () => ({ fetchBatch }));
 
 import {
   address,
@@ -25,7 +25,7 @@ import { getSettleInstructionDataDecoder, parseSettleInstruction } from './inter
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { findDenyScopeRecordPda, findKmsContextPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
-import { encodedSize, messageOf, testDemoClient } from '../testDemoClient';
+import { expectFitsV1, messageOf, testDemoClient } from '../testDemoClient';
 import { hcuSlots, testHostPolicy } from './testHostPolicy.js';
 import { tokenApp } from './internal/hostPolicy.js';
 
@@ -76,13 +76,10 @@ function claim(cleartext: string, signatures = 1, extraData = V2_EXTRA_DATA) {
 
 async function setup(overrides: { burnedHandle?: Uint8Array } = {}) {
   const addresses = await deriveBatchAddresses(roots(), 0n);
-  getCurrentBatch.mockResolvedValue({
-    index: 0n,
-    addresses,
-    state: { burnedTotalHandle: overrides.burnedHandle ?? BURNED_HANDLE },
-  });
+  fetchBatch.mockResolvedValue({ data: { burnedTotalHandle: overrides.burnedHandle ?? BURNED_HANDLE } });
   const opts: SolanaVaultSettleOptions = {
     roots: roots(),
+    batchIndex: 0n,
     authorityFundingLamports: 5_000_000n,
     host: testHostPolicy(false),
   };
@@ -97,17 +94,17 @@ describe('settleBatch', () => {
   beforeEach(() => {
     sendAndConfirm.mockReset().mockResolvedValue(undefined);
     certificate.mockReset();
-    getCurrentBatch.mockReset();
+    fetchBatch.mockReset();
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('settles the current batch with its certificate as one v1 FHE transaction', async () => {
+  it('settles the batch with its certificate as one v1 FHE transaction', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n)));
     const { client, opts, addresses } = await setup();
     const signature = await settleBatch({ publicDecryptCertificate: certificate }, client, opts);
 
-    // The batch was resolved from chain state, not supplied.
-    expect(getCurrentBatch).toHaveBeenCalledTimes(1);
+    // The burned handle was read from chain state, not supplied.
+    expect(fetchBatch).toHaveBeenCalledExactlyOnceWith(expect.anything(), addresses.batch);
     // The certificate names the handle and the account, nothing else: no proof travels.
     expect(certificate).toHaveBeenCalledTimes(1);
     expect(certificate.mock.calls[0]![0]).toEqual({
@@ -140,8 +137,7 @@ describe('settleBatch', () => {
   });
 
   // The largest settle: a certificate at the host's maximum KMS threshold (MAX_KMS_SIGNERS = 16),
-  // with the SDK's 65-byte v2 extra data, both mints' deny records and HCU witnesses. A v1 transaction is at
-  // most 4,096 bytes and 64 account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
+  // with the SDK's 65-byte v2 extra data, both mints' deny records and HCU witnesses.
   it('fits one v1 transaction at the maximum KMS threshold with every witness', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n), 16));
     const { client, opts } = await setup();
@@ -149,10 +145,7 @@ describe('settleBatch', () => {
       ...opts,
       host: testHostPolicy(true, true),
     });
-    const size = encodedSize(sent());
-    expect(size.version).toBe(1);
-    expect(size.bytes).toBeLessThanOrEqual(4096);
-    expect(size.addresses).toBeLessThanOrEqual(64);
+    expectFitsV1(sent());
   });
 
   it("puts both mints' HCU accounts in their slots for a wrap, and none for a zero total", async () => {

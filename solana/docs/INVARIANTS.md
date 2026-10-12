@@ -1,6 +1,6 @@
 # Protocol invariants — Solana fhevm
 
-Last synced: 2026-10-06.
+Last synced: 2026-10-11.
 
 Every entry carries a stable number and a tag. Numbers are never reused: an
 entry that dies is retired in place. The tags:
@@ -627,6 +627,13 @@ cancellation cannot consume the same pending burn twice.
 Pinned by `mollusk_cancel_dispatch_restores_burn_and_allows_refunds`,
 `mollusk_dust_total_settle_opens_exact_refunds` and
 `mollusk_redeem_current_pending_burn_then_rejects_double_settlement`.
+
+**70. [HOLDS]** A batcher has exactly one `Pending` batch, the last one opened. `initialize_batcher`
+opens batch 0, and `dispatch`, the only way out of `Pending` (`cancel_dispatch` and `settle` need a
+dispatched batch), opens the next batch in the same instruction. A dispatch whose next batch cannot
+open reverts, so the batch stays pending.
+Pinned by `mollusk_a_batcher_has_exactly_one_pending_batch`, `mollusk_initialize_batcher_opens_batch_zero`,
+`mollusk_dispatch_opens_the_next_batch` and `mollusk_dispatch_funds_the_next_batch_authority`.
 
 ---
 

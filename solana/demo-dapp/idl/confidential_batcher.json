@@ -747,7 +747,10 @@
         "Dispatches the batch once it is old enough: burns the batch account's",
         "full encrypted balance via `confidential_burn_from_value` and records",
         "the created-public burned handle the KMS will certify. Permissionless.",
-        "Deny records: `(token, join mint)`."
+        "In the same instruction it opens the next batch, as `initialize_batcher` opens batch 0, with",
+        "`authority_funding_lamports` moved from the payer to the next batch's authority PDA.",
+        "Deny records: `(token, join mint)` for the burn, then `(token, join mint)` and",
+        "`(token, payout mint)` for the next batch's token accounts."
       ],
       "discriminator": [
         8,
@@ -763,7 +766,7 @@
         {
           "name": "payer",
           "docs": [
-            "Pays the burn's output ACL rent. Anyone."
+            "Pays the burn's output ACL rent and opens the next batch. Anyone."
           ],
           "writable": true,
           "signer": true
@@ -771,8 +774,9 @@
         {
           "name": "batcher",
           "docs": [
-            "Batcher config carrying the minimum batch age."
-          ]
+            "Batcher config carrying the minimum batch age; `next_batch_index` advances."
+          ],
+          "writable": true
         },
         {
           "name": "batch",
@@ -820,7 +824,10 @@
           "writable": true
         },
         {
-          "name": "join_underlying_mint"
+          "name": "join_underlying_mint",
+          "docs": [
+            "SPL mint the join confidential mint wraps."
+          ]
         },
         {
           "name": "batch_authority_ata"
@@ -1001,424 +1008,11 @@
           "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
         },
         {
-          "name": "system_program",
+          "name": "token_program",
           "docs": [
-            "System program used for ACL account creation."
+            "SPL token program."
           ],
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "join_mint_hcu_block_meter",
-          "docs": [
-            "The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the",
-            "application is not trusted."
-          ],
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "join_mint_hcu_trusted_app_record",
-          "docs": [
-            "The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the",
-            "application is trusted."
-          ],
-          "optional": true
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "initialize_batcher",
-      "docs": [
-        "Creates a batcher config for one direction, wiring a join confidential",
-        "mint, a payout confidential mint, and one public vault together.",
-        "Deposit batchers join with confidential underlying and pay confidential",
-        "shares; redeem batchers join with confidential shares and pay",
-        "confidential underlying. Permissionless one-time setup; the batcher",
-        "holds no admin role afterwards."
-      ],
-      "discriminator": [
-        7,
-        103,
-        113,
-        72,
-        237,
-        50,
-        22,
-        151
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "docs": [
-            "Rent payer and the account that submits the initialization."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "batcher",
-          "docs": [
-            "Batcher config account, created here. A fresh keypair signs its own",
-            "creation (the demo-vault `Vault` pattern)."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "join_confidential_mint",
-          "docs": [
-            "Confidential mint users join batches with."
-          ]
-        },
-        {
-          "name": "payout_confidential_mint",
-          "docs": [
-            "Confidential mint claims pay out in."
-          ]
-        },
-        {
-          "name": "vault",
-          "docs": [
-            "Public vault the batcher fronts."
-          ]
-        },
-        {
-          "name": "system_program",
-          "docs": [
-            "System program used for account creation."
-          ],
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "min_batch_age_secs",
-          "type": "u64"
-        },
-        {
-          "name": "settle_deadline_secs",
-          "type": "u64"
-        },
-        {
-          "name": "direction",
-          "type": {
-            "defined": {
-              "name": "BatchDirection"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "join",
-      "docs": [
-        "Joins the pending batch with the batcher's join token: one user-signed",
-        "transaction that CPIs the coprocessor-attested confidential transfer",
-        "into the batch's token account. The token returns the transferred handle and grants",
-        "the JoinRecord Store access through transient store. The batcher adds it to the user's",
-        "contribution slot (decryptable by the user). Repeated joins accumulate.",
-        "Deny records: `(token, join mint)`, then `(batcher, batch)`."
-      ],
-      "discriminator": [
-        206,
-        55,
-        2,
-        106,
-        113,
-        220,
-        17,
-        163
-      ],
-      "accounts": [
-        {
-          "name": "user",
-          "docs": [
-            "Joining user; transfer authority over their confidential balance."
-          ],
-          "signer": true
-        },
-        {
-          "name": "payer",
-          "docs": [
-            "Pays join-record rent, transfer output rent, and the batcher execution's",
-            "ACL rent."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "batcher",
-          "docs": [
-            "Batcher config."
-          ]
-        },
-        {
-          "name": "batch",
-          "docs": [
-            "The pending batch being joined."
-          ],
-          "writable": true
-        },
-        {
-          "name": "batch_authority",
-          "docs": [
-            "Owns the batch's destination token account."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  98,
-                  97,
-                  116,
-                  99,
-                  104,
-                  45,
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "batch"
-              }
-            ]
-          }
-        },
-        {
-          "name": "join_record",
-          "docs": [
-            "The user's join record for this batch; created on first join and controls its contribution Store."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  106,
-                  111,
-                  105,
-                  110,
-                  45,
-                  114,
-                  101,
-                  99,
-                  111,
-                  114,
-                  100
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "batch"
-              },
-              {
-                "kind": "account",
-                "path": "user"
-              }
-            ]
-          }
-        },
-        {
-          "name": "join_confidential_mint",
-          "docs": [
-            "Confidential mint users join batches with."
-          ]
-        },
-        {
-          "name": "join_underlying_mint"
-        },
-        {
-          "name": "user_ata"
-        },
-        {
-          "name": "batch_authority_ata"
-        },
-        {
-          "name": "user_token_account",
-          "docs": [
-            "by the token CPI."
-          ],
-          "writable": true
-        },
-        {
-          "name": "batch_join_token_account",
-          "docs": [
-            "validated by the token CPI and pinned below."
-          ],
-          "writable": true
-        },
-        {
-          "name": "user_balance_store",
-          "writable": true
-        },
-        {
-          "name": "batch_balance_store",
-          "writable": true
-        },
-        {
-          "name": "join_store",
-          "writable": true
-        },
-        {
-          "name": "transient_store",
-          "writable": true
-        },
-        {
-          "name": "instructions"
-        },
-        {
-          "name": "zama_event_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  95,
-                  95,
-                  101,
-                  118,
-                  101,
-                  110,
-                  116,
-                  95,
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program (FHE compute + ACL)."
-          ],
-          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
-        },
-        {
-          "name": "host_config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "confidential_token_event_authority"
-        },
-        {
-          "name": "confidential_token_program",
-          "docs": [
-            "confidential-token program composed via CPI."
-          ],
-          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
           "name": "system_program",
@@ -1428,104 +1022,9 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "join_mint_hcu_block_meter",
+          "name": "next_batch",
           "docs": [
-            "The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the",
-            "application is not trusted."
-          ],
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "join_mint_hcu_trusted_app_record",
-          "docs": [
-            "The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the",
-            "application is trusted."
-          ],
-          "optional": true
-        },
-        {
-          "name": "batch_hcu_block_meter",
-          "docs": [
-            "The batch's HCU block meter for the batcher's own execution. Supplied while the block cap binds and the",
-            "application is not trusted."
-          ],
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "batch_hcu_trusted_app_record",
-          "docs": [
-            "The batch's HCU trust record for the batcher's own execution. Supplied while the block cap binds and the",
-            "application is trusted."
-          ],
-          "optional": true
-        }
-      ],
-      "args": [
-        {
-          "name": "amount_attestation",
-          "type": {
-            "defined": {
-              "name": "CoprocessorInputAttestation"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "open_batch",
-      "docs": [
-        "Opens the next batch: creates the `Batch` account, its per-batch",
-        "authority PDA, its own confidential join and payout token accounts",
-        "unless they already exist, and its plain SPL accounts for settle's",
-        "phases. Permissionless; requires",
-        "the previous batch of the same batcher to have been dispatched (a",
-        "batcher's batches never overlap while pending; the other direction's",
-        "batcher is independent). `authority_funding_lamports` is moved from",
-        "the payer to the batch authority PDA, which pays the rent the token",
-        "CPIs charge to the account owner. Unspent funding stays on the PDA until",
-        "the batch is finished and `reclaim_batch_authority` returns it.",
-        "Deny records: `(token, join mint)`, then `(token, payout mint)`."
-      ],
-      "discriminator": [
-        103,
-        163,
-        23,
-        69,
-        63,
-        155,
-        108,
-        163
-      ],
-      "accounts": [
-        {
-          "name": "payer",
-          "docs": [
-            "Pays batch-account rent and the batch authority funding."
-          ],
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "batcher",
-          "docs": [
-            "Batcher config; `next_batch_index` advances."
-          ],
-          "writable": true
-        },
-        {
-          "name": "previous_batch",
-          "docs": [
-            "The immediately preceding batch; required except for the first open.",
-            "A new batch may not open while it is still pending."
-          ],
-          "optional": true
-        },
-        {
-          "name": "batch",
-          "docs": [
-            "The batch, at the batcher's next index."
+            "The next batch, at the batcher's next index."
           ],
           "writable": true,
           "pda": {
@@ -1545,8 +1044,293 @@
                 "path": "batcher"
               },
               {
-                "kind": "arg",
-                "path": "index"
+                "kind": "account",
+                "path": "batcher.next_batch_index",
+                "account": "Batcher"
+              }
+            ]
+          }
+        },
+        {
+          "name": "next_batch_authority",
+          "docs": [
+            "funding it receives here."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  99,
+                  104,
+                  45,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "next_batch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "next_batch_join_token_account",
+          "docs": [
+            "is if someone already created it."
+          ],
+          "writable": true
+        },
+        {
+          "name": "next_batch_join_balance_store",
+          "writable": true
+        },
+        {
+          "name": "payout_confidential_mint",
+          "docs": [
+            "Confidential mint claims pay out in."
+          ]
+        },
+        {
+          "name": "payout_underlying_mint",
+          "docs": [
+            "SPL mint the payout confidential mint wraps."
+          ]
+        },
+        {
+          "name": "next_batch_payout_token_account",
+          "docs": [
+            "as is if someone already created it."
+          ],
+          "writable": true
+        },
+        {
+          "name": "next_batch_payout_balance_store",
+          "writable": true
+        },
+        {
+          "name": "next_batch_join_underlying",
+          "docs": [
+            "The next batch's plain SPL account receiving its redeemed total at settle."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  99,
+                  104,
+                  45,
+                  106,
+                  111,
+                  105,
+                  110,
+                  45,
+                  117,
+                  110,
+                  100,
+                  101,
+                  114,
+                  108,
+                  121,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "next_batch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "next_batch_payout_underlying",
+          "docs": [
+            "The next batch's plain SPL account receiving its vault phase's output at settle."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  99,
+                  104,
+                  45,
+                  112,
+                  97,
+                  121,
+                  111,
+                  117,
+                  116,
+                  45,
+                  117,
+                  110,
+                  100,
+                  101,
+                  114,
+                  108,
+                  121,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "next_batch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "join_mint_hcu_block_meter",
+          "docs": [
+            "The join mint's HCU block meter for the burn and the next batch's join token account.",
+            "Supplied while the block cap binds and the application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "join_mint_hcu_trusted_app_record",
+          "docs": [
+            "The join mint's HCU trust record for the burn and the next batch's join token account.",
+            "Supplied while the block cap binds and the application is trusted."
+          ],
+          "optional": true
+        },
+        {
+          "name": "payout_mint_hcu_block_meter",
+          "docs": [
+            "The payout mint's HCU block meter for the next batch's payout token account. Supplied while",
+            "the block cap binds and the application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "payout_mint_hcu_trusted_app_record",
+          "docs": [
+            "The payout mint's HCU trust record for the next batch's payout token account. Supplied while",
+            "the block cap binds and the application is trusted."
+          ],
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "authority_funding_lamports",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize_batcher",
+      "docs": [
+        "Creates a batcher config for one direction, wiring a join confidential",
+        "mint, a payout confidential mint, and one public vault together.",
+        "Deposit batchers join with confidential underlying and pay confidential",
+        "shares; redeem batchers join with confidential shares and pay",
+        "confidential underlying. Permissionless one-time setup; the batcher",
+        "holds no admin role afterwards.",
+        "",
+        "Also opens batch 0: the `Batch` account, its per-batch authority PDA, its own confidential",
+        "join and payout token accounts unless they already exist, and its plain SPL accounts for",
+        "settle's phases. `authority_funding_lamports` is moved from the payer to the batch authority",
+        "PDA, which pays the rent the token CPIs charge to the account owner. Unspent funding stays on",
+        "the PDA until the batch is finished and `reclaim_batch_authority` returns it.",
+        "Deny records: `(token, join mint)`, then `(token, payout mint)`."
+      ],
+      "discriminator": [
+        7,
+        103,
+        113,
+        72,
+        237,
+        50,
+        22,
+        151
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Rent payer and the account that submits the initialization; also opens batch 0."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "batcher",
+          "docs": [
+            "Batcher config account, created here. A fresh keypair signs its own",
+            "creation (the demo-vault `Vault` pattern)."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "Public vault the batcher fronts."
+          ]
+        },
+        {
+          "name": "batch",
+          "docs": [
+            "Batch 0, opened with the batcher."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  99,
+                  104
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "batcher"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
               }
             ]
           }
@@ -1920,12 +1704,387 @@
       ],
       "args": [
         {
-          "name": "index",
+          "name": "min_batch_age_secs",
           "type": "u64"
+        },
+        {
+          "name": "settle_deadline_secs",
+          "type": "u64"
+        },
+        {
+          "name": "direction",
+          "type": {
+            "defined": {
+              "name": "BatchDirection"
+            }
+          }
         },
         {
           "name": "authority_funding_lamports",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "join",
+      "docs": [
+        "Joins the pending batch with the batcher's join token: one user-signed",
+        "transaction that CPIs the coprocessor-attested confidential transfer",
+        "into the batch's token account. The token returns the transferred handle and grants",
+        "the JoinRecord Store access through transient store. The batcher adds it to the user's",
+        "contribution slot (decryptable by the user). Repeated joins accumulate.",
+        "Deny records: `(token, join mint)`, then `(batcher, batch)`."
+      ],
+      "discriminator": [
+        206,
+        55,
+        2,
+        106,
+        113,
+        220,
+        17,
+        163
+      ],
+      "accounts": [
+        {
+          "name": "user",
+          "docs": [
+            "Joining user; transfer authority over their confidential balance."
+          ],
+          "signer": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Pays join-record rent, transfer output rent, and the batcher execution's",
+            "ACL rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "batcher",
+          "docs": [
+            "Batcher config."
+          ]
+        },
+        {
+          "name": "batch",
+          "docs": [
+            "The pending batch being joined."
+          ],
+          "writable": true
+        },
+        {
+          "name": "batch_authority",
+          "docs": [
+            "Owns the batch's destination token account."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  116,
+                  99,
+                  104,
+                  45,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "batch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "join_record",
+          "docs": [
+            "The user's join record for this batch; created on first join and controls its contribution Store."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  106,
+                  111,
+                  105,
+                  110,
+                  45,
+                  114,
+                  101,
+                  99,
+                  111,
+                  114,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "batch"
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "join_confidential_mint",
+          "docs": [
+            "Confidential mint users join batches with."
+          ]
+        },
+        {
+          "name": "join_underlying_mint"
+        },
+        {
+          "name": "user_ata"
+        },
+        {
+          "name": "batch_authority_ata"
+        },
+        {
+          "name": "user_token_account",
+          "docs": [
+            "by the token CPI."
+          ],
+          "writable": true
+        },
+        {
+          "name": "batch_join_token_account",
+          "docs": [
+            "validated by the token CPI and pinned below."
+          ],
+          "writable": true
+        },
+        {
+          "name": "user_balance_store",
+          "writable": true
+        },
+        {
+          "name": "batch_balance_store",
+          "writable": true
+        },
+        {
+          "name": "join_store",
+          "writable": true
+        },
+        {
+          "name": "transient_store",
+          "writable": true
+        },
+        {
+          "name": "instructions"
+        },
+        {
+          "name": "zama_event_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  95,
+                  95,
+                  101,
+                  118,
+                  101,
+                  110,
+                  116,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
+        },
+        {
+          "name": "zama_program",
+          "docs": [
+            "ZamaHost program (FHE compute + ACL)."
+          ],
+          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
+        },
+        {
+          "name": "host_config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                184,
+                37,
+                100,
+                59,
+                121,
+                191,
+                68,
+                153,
+                255,
+                49,
+                204,
+                254,
+                138,
+                41,
+                122,
+                160,
+                235,
+                48,
+                168,
+                160,
+                204,
+                31,
+                35,
+                25,
+                232,
+                33,
+                118,
+                193,
+                180,
+                214,
+                94,
+                113
+              ]
+            }
+          }
+        },
+        {
+          "name": "confidential_token_event_authority"
+        },
+        {
+          "name": "confidential_token_program",
+          "docs": [
+            "confidential-token program composed via CPI."
+          ],
+          "address": "FAWs7E52LZmXR5YzFy4aXanfBjNtXV2qooQVtkmBa3cL"
+        },
+        {
+          "name": "system_program",
+          "docs": [
+            "System program used for account creation."
+          ],
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "join_mint_hcu_block_meter",
+          "docs": [
+            "The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the",
+            "application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "join_mint_hcu_trusted_app_record",
+          "docs": [
+            "The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the",
+            "application is trusted."
+          ],
+          "optional": true
+        },
+        {
+          "name": "batch_hcu_block_meter",
+          "docs": [
+            "The batch's HCU block meter for the batcher's own execution. Supplied while the block cap binds and the",
+            "application is not trusted."
+          ],
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "batch_hcu_trusted_app_record",
+          "docs": [
+            "The batch's HCU trust record for the batcher's own execution. Supplied while the block cap binds and the",
+            "application is trusted."
+          ],
+          "optional": true
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_attestation",
+          "type": {
+            "defined": {
+              "name": "CoprocessorInputAttestation"
+            }
+          }
         }
       ]
     },
@@ -3195,121 +3354,106 @@
     },
     {
       "code": 6003,
-      "name": "PreviousBatchMismatch",
-      "msg": "previous batch account missing or not the immediately preceding batch"
-    },
-    {
-      "code": 6004,
-      "name": "PreviousBatchStillPending",
-      "msg": "previous batch is still pending"
-    },
-    {
-      "code": 6005,
       "name": "BatchNotPending",
       "msg": "batch is not pending"
     },
     {
-      "code": 6006,
+      "code": 6004,
       "name": "BatchNotDispatched",
       "msg": "batch is not dispatched"
     },
     {
-      "code": 6007,
+      "code": 6005,
       "name": "BatchNotSettled",
       "msg": "batch is not settled"
     },
     {
-      "code": 6008,
+      "code": 6006,
       "name": "BatchTooYoung",
       "msg": "batch is younger than the minimum batch age"
     },
     {
-      "code": 6009,
+      "code": 6007,
       "name": "DerivedAccountMismatch",
       "msg": "account does not match its canonical derived address"
     },
     {
-      "code": 6010,
+      "code": 6008,
       "name": "EncryptedStoreInvalid",
       "msg": "encrypted store is invalid"
     },
     {
-      "code": 6011,
+      "code": 6009,
       "name": "InvalidFheExecution",
       "msg": "invalid FHE execution"
     },
     {
-      "code": 6012,
+      "code": 6010,
       "name": "AlreadyClaimed",
       "msg": "payout already claimed for this join record"
     },
     {
-      "code": 6013,
+      "code": 6011,
       "name": "BatchIndexOverflow",
       "msg": "batch index overflowed"
     },
     {
-      "code": 6014,
+      "code": 6012,
       "name": "JoinMintVaultMismatch",
       "msg": "join confidential mint does not wrap the vault mint this direction requires"
     },
     {
-      "code": 6015,
+      "code": 6013,
       "name": "PayoutMintVaultMismatch",
       "msg": "payout confidential mint does not wrap the vault mint this direction requires"
     },
     {
-      "code": 6016,
+      "code": 6014,
       "name": "PayoutBalanceUnderflow",
       "msg": "batch payout balance decreased across the vault phase"
     },
     {
-      "code": 6017,
+      "code": 6015,
       "name": "BatchNotRefundable",
       "msg": "batch does not accept refunds"
     },
     {
-      "code": 6018,
+      "code": 6016,
       "name": "SettleDeadlineNotReached",
       "msg": "settle deadline has not passed; the batch can still settle"
     },
     {
-      "code": 6019,
+      "code": 6017,
       "name": "SettleDeadlinePassed",
       "msg": "settle deadline has passed; cancel the dispatch instead"
     },
     {
-      "code": 6020,
+      "code": 6018,
       "name": "BatchStillLive",
       "msg": "batch is still live; authority funding is reclaimable after settle, cancel or refund"
     },
     {
-      "code": 6021,
+      "code": 6019,
       "name": "ReclaimAuthorityMismatch",
       "msg": "reclaim authority does not match the join confidential mint authority"
     },
     {
-      "code": 6022,
+      "code": 6020,
       "name": "JoinRecordStillLive",
       "msg": "join record is still live; close it after claiming or once the batch is canceled"
     },
     {
-      "code": 6023,
-      "name": "BatchIndexMismatch",
-      "msg": "batch index does not match the next batch index"
-    },
-    {
-      "code": 6024,
+      "code": 6021,
       "name": "DenyRecordsMismatch",
       "msg": "remaining accounts do not match the deny records this instruction needs"
     },
     {
-      "code": 6025,
+      "code": 6022,
       "name": "InvalidMinBatchAge",
       "msg": "minimum batch age exceeds the maximum"
     },
     {
-      "code": 6026,
+      "code": 6023,
       "name": "InvalidSettleDeadline",
       "msg": "settle deadline is zero or exceeds the maximum"
     }
@@ -3753,7 +3897,7 @@
           {
             "name": "next_batch_index",
             "docs": [
-              "Index the next `open_batch` creates."
+              "Index of the next batch to open; the pending batch is the one before it."
             ],
             "type": "u64"
           }
@@ -4430,6 +4574,14 @@
     }
   ],
   "constants": [
+    {
+      "name": "BATCH_SEED",
+      "docs": [
+        "PDA seed for a batch, keyed by batcher and batch index."
+      ],
+      "type": "bytes",
+      "value": "[98, 97, 116, 99, 104]"
+    },
     {
       "name": "JOINED_AMOUNT_KEY",
       "docs": [

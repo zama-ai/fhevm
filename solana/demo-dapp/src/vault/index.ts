@@ -9,7 +9,6 @@ export { settleBatch, type SolanaVaultSettleOptions } from './settleBatch.js';
 export { buildClaimInstruction, type SolanaVaultClaimParameters } from './claim.js';
 export {
   getCloseJoinRecordInstructionAsync,
-  getInitializeBatcherInstruction,
   getReclaimBatchAuthorityInstructionAsync,
 } from './internal/generated/confidentialBatcher/instructions/index.js';
 export { BatchDirection } from './internal/generated/confidentialBatcher/types/batchDirection.js';
@@ -27,12 +26,12 @@ export {
 // One-time provisioning builders the demo seeder drives (fhevm-internal#1760). Each derives its
 // encrypted store/event PDAs internally so the seeder passes semantic roots, never hand-rolled accounts.
 export { buildInitializeMintInstruction, type SolanaVaultInitializeMintParameters } from './initializeMint.js';
+export { buildInitializeBatcherInstruction, type SolanaVaultInitializeBatcherParameters } from './initializeBatcher.js';
 export {
   buildInitializeTokenAccountInstruction,
   type SolanaVaultInitializeTokenAccountParameters,
 } from './initializeTokenAccount.js';
 export { buildWrapUsdcInstruction, type SolanaVaultWrapUsdcParameters } from './wrapUsdc.js';
-export { openBatchForBatcher, type SolanaVaultOpenBatchForBatcherParameters } from './openBatchForBatcher.js';
 
 // The confidential-token app actions (transfer + secp disclosure). These moved out of the SDK's
 // protocol surface with the rest of the dapp code: they target one specific token program, not
@@ -55,12 +54,14 @@ export {
 } from './derive.js';
 export {
   dispatchableAt,
+  findRecentJoin,
   getBatcher,
   getBatchByIndex,
   getBatchJoinRecords,
   getCurrentBatch,
   getEncryptedStore,
   getJoinRecord,
+  RECENT_BATCH_SCAN_LIMIT,
   settleDeadline,
   type BatcherState,
   type BatchState,

@@ -36,7 +36,6 @@ import { targetsCleartext } from "../../src/solana/target";
 import { depositRoots, resolveDemoConfigPath, type VaultDemoRoots } from "../../demo/config";
 import { readDemoAuthorization } from "../../demo/lifecycle";
 import { demoKeypairs, loadDemoEnv } from "../../demo/loadDemoEnv";
-import { prepareNextBatch } from "@demo-dapp/batchProvisioning";
 import { createDemoClient } from "@demo-dapp/demoClient";
 import { parseRuntimeDemoConfig } from "@demo-dapp/demoConfig";
 
@@ -199,35 +198,10 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       expect(account.value).not.toBeNull();
       expect(account.value?.owner).toBe(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
 
-      // Step 5: precondition for the join phase — join targets the batcher's current batch, which
-      // must still be Pending (the seeder opens batch 0 that way). Fail here with a reason instead
-      // of an opaque on-chain BatchNotPending revert. A fresh seed leaves batch 0 Pending; on a
-      // persistent cluster the previous run settled its batch, so the keeper opens the next one the
-      // way the demo page does (the dapp's batch provisioning). A Dispatched batch is left alone: it is mid-settlement and an operator
-      // settles it (demo page or /api/demo-operator) before the arc can run again.
+      // Step 5: the join targets the batcher's pending batch (INVARIANTS #70).
       const roots = depositRoots(config);
-      const dappConfig = parseRuntimeDemoConfig(
-        JSON.parse(await fs.readFile(resolveDemoConfigPath(), "utf8")) as unknown,
-        authorization.bootId,
-      );
-      const currentBatch = await vault.getCurrentBatch(rpc, roots);
-      if (currentBatch.state.status === vault.BatchStatus.Dispatched) {
-        throw new Error(
-          `deposit batch ${currentBatch.index} (${currentBatch.addresses.batch}) is Dispatched and awaits ` +
-            "settlement; settle it through the demo operator before rerunning the arc.",
-        );
-      }
-      if (currentBatch.state.status !== vault.BatchStatus.Pending) {
-        console.log(`deposit-arc: batch ${currentBatch.index} is finished (status ${currentBatch.state.status}); opening the next one...`);
-        await prepareNextBatch(dappConfig, keeper, "deposit");
-      }
       const batchBeforeJoin = await vault.getCurrentBatch(rpc, roots);
-      if (batchBeforeJoin.state.status !== vault.BatchStatus.Pending) {
-        throw new Error(
-          `deposit batch ${batchBeforeJoin.index} (${batchBeforeJoin.addresses.batch}) is not joinable: ` +
-            `status ${batchBeforeJoin.state.status} != Pending(${vault.BatchStatus.Pending})`,
-        );
-      }
+      expect(batchBeforeJoin.state.status).toBe(vault.BatchStatus.Pending);
 
       // SDK client setup + the derivations the join, dispatch and settle phases share. All of this is
       // pure/local (no network), so it sits OUTSIDE the fetch patch below — dispatch and settle run
@@ -315,31 +289,31 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       );
 
       // Step 10: dispatch. Permissionless on-chain; the demo has the keeper play it (and pay the
-      // burn's output ACL rent). The SDK builder derives every validated account — authorities,
-      // encrypted value accounts, event authorities — from these five roots (its unit test pins each derivation
-      // against dispatch.rs), so nothing comes from an address dump.
+      // burn's output ACL rent and the next batch's rent and funding). The SDK builder derives every
+      // validated account — both batches' authorities, encrypted value accounts, event authorities —
+      // from the roots and the batch index (its unit test pins each derivation against dispatch.rs),
+      // so nothing comes from an address dump.
       console.log(`deposit-arc dispatch: keeper dispatching batch ${batchBeforeJoin.index} (${batch})...`);
       const keeperTransientStore = await prepareTransientStore({ payer: keeper, host: config.programs.host });
       await keeperClient.sendFheTransaction(keeperTransientStore, [
         await vault.buildDispatchBatchInstruction({
           transientStore: keeperTransientStore,
           payer: keeper,
-          batcher: roots.batcher,
-          batch,
-          joinConfidentialMint: joinMint,
-          joinUnderlyingMint: roots.joinUnderlyingMint,
-          tokenProgram: TOKEN_PROGRAM_ADDRESS,
+          roots,
+          batchIndex: batchBeforeJoin.index,
+          authorityFundingLamports: BigInt(config.authorityFundingLamports),
           host,
         }),
       ]);
 
       // Step 11: on-chain assertions for the dispatch phase. The burn records a created-public burned
       // total handle on the batch; settle refuses a zero handle, so assert both the status flip and
-      // the nonzero handle here (getCurrentBatch reads at the RPC default `finalized`, hence until).
-      console.log("deposit-arc dispatch: asserting batch status Dispatched + burned handle on-chain...");
+      // the nonzero handle here (reads are at the RPC default `finalized`, hence until). The same
+      // dispatch opened the next batch, which is now the pending one.
+      console.log("deposit-arc dispatch: asserting batch status Dispatched + burned handle + next batch on-chain...");
       const batchAfterDispatch = await until(
         async () => {
-          const snapshot = await vault.getCurrentBatch(rpc, roots);
+          const snapshot = await vault.getBatchByIndex(rpc, roots, batchBeforeJoin.index);
           return snapshot.state.status === vault.BatchStatus.Dispatched &&
             snapshot.state.burnedTotalHandle.some((byte) => byte !== 0)
             ? snapshot
@@ -348,6 +322,9 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
         { description: "batch status Dispatched with a nonzero burned total handle", timeoutMs: 60_000 },
       );
       expect(batchAfterDispatch.addresses.batch).toBe(batch);
+      const nextBatch = await vault.getCurrentBatch(rpc, roots);
+      expect(nextBatch.index).toBe(batchBeforeJoin.index + 1n);
+      expect(nextBatch.state.status).toBe(vault.BatchStatus.Pending);
 
       // Step 12: wait for the SNS commit of the burned total handle. The KMS certificate request
       // inside settleBatch needs the ciphertext materialized; the Connector reads the public leaf
@@ -360,11 +337,12 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // auth config already set before the join) and sends the on-chain settle as one version 1
       // transaction. The keeper signs;
       // authorityFundingLamports must suffice to cover the rent settle's CPIs charge to this
-      // batch's authority — the seed recorded the open_batch value as a known-good amount.
+      // batch's authority — the seed recorded the value batch 0 opens with as a known-good amount.
       console.log("deposit-arc settle: calling settleBatch (KMS certificate + on-chain settle)...");
       const publicDecryptClient = createFhevmPublicDecryptClient({ chain, rpc });
       await vault.settleBatch(publicDecryptClient, keeperClient, {
         roots,
+        batchIndex: batchBeforeJoin.index,
         authorityFundingLamports: BigInt(config.authorityFundingLamports),
         host,
       });
@@ -376,7 +354,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       console.log("deposit-arc settle: asserting settled batch state on-chain...");
       const batchAfterSettle = await until(
         async () => {
-          const snapshot = await vault.getCurrentBatch(rpc, roots);
+          const snapshot = await vault.getBatchByIndex(rpc, roots, batchBeforeJoin.index);
           return snapshot.state.status === vault.BatchStatus.Settled ? snapshot : false;
         },
         { description: "batch status reflects the settle", timeoutMs: 60_000 },
@@ -524,7 +502,6 @@ test.skipIf(!runsDemoScenarios)(
     const readConfig = async () => parseRuntimeDemoConfig(
       JSON.parse(await fs.readFile(resolveDemoConfigPath(), 'utf8')), authorization.bootId,
     );
-    const dappConfig = await readConfig();
     const rpc = createFinalizedRpc(env.rpcUrl);
     const host = await vault.readHostPolicy(rpc);
     const aliceClient = createDemoClient(env, alice);
@@ -532,7 +509,6 @@ test.skipIf(!runsDemoScenarios)(
     const roots = depositRoots(config);
     const personas = await loadPersonas(env, { alice: demoKeypairs(env).alice, keeper: demoKeypairs(env).keeper });
     await personas.fund(personas.roles.keeper!, 0.2);
-    await prepareNextBatch(dappConfig, keeper, 'deposit');
     const current = await vault.getCurrentBatch(rpc, roots);
     expect(current.state.status).toBe(vault.BatchStatus.Pending);
     // Never cancel another participant's work, including an earlier failed run.

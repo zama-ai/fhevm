@@ -365,7 +365,7 @@ and a record that is behind is a retry.
 - **A small CU delta after an incremental SBF build is not a code change.** The committed
   baselines are minted by `scripts/update-cost-snapshots.sh`, which runs `cargo clean` first. An
   incremental rebuild of the same source can differ by a few CU: a doc-comment-only edit to
-  `zama-host` was measured at −12 CU on the batcher's `open_batch` and `redeem_open_batch` after
+  `zama-host` was measured at −12 CU on two batcher profiles after
   `sync-zama-host-idl.sh` (incremental), and byte-identical to the baselines after the snapshot
   script's clean rebuild. So regenerate with the script before believing a delta of this size, and
   do not attribute it to the edit in front of you.

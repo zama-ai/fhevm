@@ -14,7 +14,6 @@ import {
   dispatchableAt,
   getBatchJoinRecords,
   type VaultDemoRoots,
-  getReclaimBatchAuthorityInstructionAsync,
   findJoinRecordPda,
   getBatchByIndex,
   getBatcher,
@@ -35,6 +34,7 @@ import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 import { fetchSysvarClock } from '@solana/sysvars';
 import type { DemoConfig } from './demoConfig';
 import { createDemoClient } from './demoClient';
+import { reclaimFinishedBatchAuthorities } from './batchProvisioning';
 import { vaultRoots } from './vaultRoots';
 
 export type DemoOperatorSession = {
@@ -118,11 +118,9 @@ export const dispatchVaultBatch = async (
   const dispatch = await buildDispatchBatchInstruction({
     transientStore,
     payer: session.keeper,
-    batcher: roots.batcher,
-    batch: position.batch,
-    joinConfidentialMint: roots.joinConfidentialMint,
-    joinUnderlyingMint: roots.joinUnderlyingMint,
-    tokenProgram: TOKEN_PROGRAM_ADDRESS,
+    roots,
+    batchIndex: position.batchIndex,
+    authorityFundingLamports: BigInt(session.config.authorityFundingLamports),
     host: await readHostPolicy(rpc),
   });
   return (await createDemoClient(session.config, session.keeper).sendFheTransaction(transientStore, [dispatch])).context
@@ -217,29 +215,16 @@ export const settleOrCancelVaultBatch = async (
         certificateOptions: { timeout: 60_000 },
         host: await readHostPolicy(rpc),
       });
-      // The batch is settled or refunding, so its authority PDA has paid its last owner-charged rent: take its unspent
-      // funding back. A failure here is a rent-hygiene miss, never a settlement failure, and not a
-      // permanent one: the reclaim pass in prepareNextBatch drains any authority whose batch is finished.
-      try {
-        await keeperClient.sendTransaction([
-          await getReclaimBatchAuthorityInstructionAsync({
-            authority: session.keeper,
-            batcher: roots.batcher,
-            batch: batch.addresses.batch,
-            batchAuthority: batch.addresses.batchAuthority,
-            joinConfidentialMint: roots.joinConfidentialMint,
-          }),
-        ]);
-      } catch (error) {
-        console.warn(
-          `settled, but reclaiming the batch authority failed (the next prepare retries): ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
     }
     // A cancel, or a deposit total worth zero vault shares, leaves the batch refunding.
     status = (await currentPinnedBatch(session, position, direction)).batch.state.status;
   }
-  if (status === BatchStatus.Refunding) return (await refundParticipants(session, roots, position.batch)) ?? signature;
+  if (status === BatchStatus.Refunding) signature = (await refundParticipants(session, roots, position.batch)) ?? signature;
+  // The batch is finished, so its authority has paid its last owner-charged rent. A failed reclaim is a
+  // rent-hygiene miss, never a settlement failure, and the next pass retries it.
+  await reclaimFinishedBatchAuthorities(session.config, session.keeper, direction).catch((error: unknown) => {
+    console.warn(`reclaiming finished batch authorities failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
   return signature;
 };
 

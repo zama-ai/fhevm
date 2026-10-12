@@ -2,10 +2,8 @@ import { describe, expect, test } from 'vitest';
 import { address } from '@solana/kit';
 
 import {
-  encodeBatchTarget,
   encodeOperatorRequest,
   encodeVaultMetrics,
-  parseBatchTarget,
   parseOperatorRequest,
   parseVaultMetrics,
 } from './demoApi';
@@ -41,14 +39,6 @@ describe('demo API codecs', () => {
         batch: position.batch,
       }),
     ).toThrow('user');
-  });
-
-  test('round-trips a prepared batch target and rejects negative indices', () => {
-    const target = { batchIndex: position.batchIndex, batch: position.batch };
-    expect(parseBatchTarget(encodeBatchTarget(target))).toEqual(target);
-    expect(() => parseBatchTarget({ batchIndex: '-1', batch: position.batch })).toThrow(
-      'prepared batch index cannot be negative',
-    );
   });
 
   test('round-trips bigint vault metrics and rejects malformed input', () => {

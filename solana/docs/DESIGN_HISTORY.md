@@ -1181,6 +1181,16 @@ reverting. The replaced paragraph:
 > (the donation accrues to their own shares); no deposit is lost. Behavior is pinned by
 > `mollusk_dust_total_settle_reverts_until_the_deadline_cancel`.
 
+### DD-042, replaced in part by the dispatch rollover
+
+zama-ai/fhevm#4387 made `dispatch` open the next batch and `initialize_batcher` open batch 0, as on
+EVM (INVARIANTS #70). The separate instruction was justified by the 1,232-byte legacy transaction;
+a version 1 transaction holds the combined dispatch. The replaced wording:
+
+> "next batch opens immediately" is a permissionless `open_batch` gated only on the previous batch
+> no longer being pending, rather than being folded into `dispatch` (keeps each instruction inside
+> one transaction envelope)
+
 ### DD-044, replaced in part by DD-048, DD-056, DD-058 and DD-061
 
 Status: adopted

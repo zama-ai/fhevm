@@ -6,16 +6,19 @@
 //! encrypted store IS the burn amount (`confidential_burn_from_value`'s whole-balance
 //! alias, deduped inside the token program), so the created-public burned handle
 //! certifies exactly this batch's sum and nothing else.
+//!
+//! The same instruction opens the next batch, as EVM's `dispatchBatch` does (INVARIANTS #70).
 
 use super::*;
 
 /// Accounts for dispatching a batch.
 #[derive(Accounts)]
 pub struct Dispatch<'info> {
-    /// Pays the burn's output ACL rent. Anyone.
+    /// Pays the burn's output ACL rent and opens the next batch. Anyone.
     #[account(mut)]
     pub payer: Signer<'info>,
-    /// Batcher config carrying the minimum batch age.
+    /// Batcher config carrying the minimum batch age; `next_batch_index` advances.
+    #[account(mut)]
     pub batcher: Box<Account<'info, Batcher>>,
     /// The pending batch being dispatched.
     #[account(mut, constraint = batch.batcher == batcher.key() @ BatcherError::BatchBatcherMismatch)]
@@ -26,8 +29,8 @@ pub struct Dispatch<'info> {
     /// Confidential mint whose encrypted total supply the burn decreases.
     #[account(mut)]
     pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
-    /// CHECK: underlying SPL mint wrapped by `join_confidential_mint`. Token program is its owner.
-    pub join_underlying_mint: UncheckedAccount<'info>,
+    /// SPL mint the join confidential mint wraps.
+    pub join_underlying_mint: Box<Account<'info, SplMint>>,
     /// CHECK: ATA of `batch_authority` on `join_underlying_mint`. Uninitialized → not frozen.
     pub batch_authority_ata: UncheckedAccount<'info>,
     /// CHECK: mint-scoped total-supply authority PDA; validated by the token CPI.
@@ -62,29 +65,91 @@ pub struct Dispatch<'info> {
     pub confidential_token_event_authority: UncheckedAccount<'info>,
     /// confidential-token program composed via CPI.
     pub confidential_token_program: Program<'info, ConfidentialToken>,
-    /// System program used for ACL account creation.
+    /// SPL token program.
+    pub token_program: Program<'info, Token>,
+    /// System program used for account creation.
     pub system_program: Program<'info, System>,
-    /// The join mint's HCU block meter for the token CPI. Supplied while the block cap binds and the
-    /// application is not trusted.
+
+    // --- the next batch, opened by this dispatch ---
+    /// The next batch, at the batcher's next index.
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + Batch::INIT_SPACE,
+        seeds = [BATCH_SEED, batcher.key().as_ref(), &batcher.next_batch_index.to_le_bytes()],
+        bump,
+    )]
+    pub next_batch: Box<Account<'info, Batch>>,
+    /// CHECK: the next batch's authority PDA; owns its token accounts and pays their rent from the
+    /// funding it receives here.
+    #[account(mut, seeds = [BATCH_AUTHORITY_SEED, next_batch.key().as_ref()], bump)]
+    pub next_batch_authority: UncheckedAccount<'info>,
+    /// CHECK: the next batch's confidential join token account; created by the token CPI, or kept as
+    /// is if someone already created it.
+    #[account(mut)]
+    pub next_batch_join_token_account: UncheckedAccount<'info>,
+    /// CHECK: the next batch's join balance encrypted store; created by the host CPI.
+    #[account(mut)]
+    pub next_batch_join_balance_store: UncheckedAccount<'info>,
+    /// Confidential mint claims pay out in.
+    pub payout_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
+    /// SPL mint the payout confidential mint wraps.
+    pub payout_underlying_mint: Box<Account<'info, SplMint>>,
+    /// CHECK: the next batch's confidential payout token account; created by the token CPI, or kept
+    /// as is if someone already created it.
+    #[account(mut)]
+    pub next_batch_payout_token_account: UncheckedAccount<'info>,
+    /// CHECK: the next batch's payout balance encrypted store; created by the host CPI.
+    #[account(mut)]
+    pub next_batch_payout_balance_store: UncheckedAccount<'info>,
+    /// The next batch's plain SPL account receiving its redeemed total at settle.
+    #[account(
+        init,
+        payer = payer,
+        seeds = [BATCH_JOIN_UNDERLYING_SEED, next_batch.key().as_ref()],
+        bump,
+        token::mint = join_underlying_mint,
+        token::authority = next_batch_authority,
+    )]
+    pub next_batch_join_underlying: Box<Account<'info, TokenAccount>>,
+    /// The next batch's plain SPL account receiving its vault phase's output at settle.
+    #[account(
+        init,
+        payer = payer,
+        seeds = [BATCH_PAYOUT_UNDERLYING_SEED, next_batch.key().as_ref()],
+        bump,
+        token::mint = payout_underlying_mint,
+        token::authority = next_batch_authority,
+    )]
+    pub next_batch_payout_underlying: Box<Account<'info, TokenAccount>>,
+    /// The join mint's HCU block meter for the burn and the next batch's join token account.
+    /// Supplied while the block cap binds and the application is not trusted.
     /// CHECK: validated by ZamaHost.
     #[account(mut)]
     pub join_mint_hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// The join mint's HCU trust record for the token CPI. Supplied while the block cap binds and the
-    /// application is trusted.
+    /// The join mint's HCU trust record for the burn and the next batch's join token account.
+    /// Supplied while the block cap binds and the application is trusted.
     /// CHECK: validated by ZamaHost.
     pub join_mint_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+    /// The payout mint's HCU block meter for the next batch's payout token account. Supplied while
+    /// the block cap binds and the application is not trusted.
+    /// CHECK: validated by ZamaHost.
+    #[account(mut)]
+    pub payout_mint_hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// The payout mint's HCU trust record for the next batch's payout token account. Supplied while
+    /// the block cap binds and the application is trusted.
+    /// CHECK: validated by ZamaHost.
+    pub payout_mint_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
-/// Burns the batch's full balance and records the burned handle to settle.
-pub fn dispatch<'info>(ctx: Context<'info, Dispatch<'info>>) -> Result<()> {
+/// Burns the batch's full balance, records the burned handle to settle, and opens the next batch.
+pub fn dispatch<'info>(
+    ctx: Context<'info, Dispatch<'info>>,
+    authority_funding_lamports: u64,
+) -> Result<()> {
     require!(
         ctx.accounts.batch.status == BatchStatus::Pending,
         BatcherError::BatchNotPending
-    );
-    require_keys_eq!(
-        ctx.accounts.join_confidential_mint.key(),
-        ctx.accounts.batcher.join_confidential_mint,
-        BatcherError::ConfidentialMintMismatch
     );
     let now = Clock::get()?.unix_timestamp;
     // Bounded by `MAX_MIN_BATCH_AGE_SECS` at initialization, so the cast cannot wrap.
@@ -112,8 +177,8 @@ pub fn dispatch<'info>(ctx: Context<'info, Dispatch<'info>>) -> Result<()> {
         ct::pending_burn_address(mint_key, ctx.accounts.batch_join_token_account.key()).0,
         BatcherError::DerivedAccountMismatch
     );
-    let [burn_deny_records] =
-        split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [1])?;
+    let [burn_deny_records, join_deny_records, payout_deny_records] =
+        split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [1, 1, 1])?;
     ct::cpi::confidential_burn_from_value(
         CpiContext::new_with_signer(
             ctx.accounts.confidential_token_program.key(),
@@ -171,5 +236,38 @@ pub fn dispatch<'info>(ctx: Context<'info, Dispatch<'info>>) -> Result<()> {
         batch: batch_key,
         burned_total_handle,
     });
-    Ok(())
+
+    let accounts = &mut *ctx.accounts;
+    open_batch(
+        OpenBatch {
+            payer: &accounts.payer,
+            batcher: &mut accounts.batcher,
+            batch: &mut accounts.next_batch,
+            batch_bump: ctx.bumps.next_batch,
+            batch_authority: &accounts.next_batch_authority,
+            batch_authority_bump: ctx.bumps.next_batch_authority,
+            join_confidential_mint: &accounts.join_confidential_mint,
+            join_underlying_mint: &accounts.join_underlying_mint,
+            batch_join_token_account: &accounts.next_batch_join_token_account,
+            batch_join_balance_store: &accounts.next_batch_join_balance_store,
+            join_mint_hcu_block_meter: &accounts.join_mint_hcu_block_meter,
+            join_mint_hcu_trusted_app_record: &accounts.join_mint_hcu_trusted_app_record,
+            payout_confidential_mint: &accounts.payout_confidential_mint,
+            payout_underlying_mint: &accounts.payout_underlying_mint,
+            batch_payout_token_account: &accounts.next_batch_payout_token_account,
+            batch_payout_balance_store: &accounts.next_batch_payout_balance_store,
+            payout_mint_hcu_block_meter: &accounts.payout_mint_hcu_block_meter,
+            payout_mint_hcu_trusted_app_record: &accounts.payout_mint_hcu_trusted_app_record,
+            zama_event_authority: &accounts.zama_event_authority,
+            transient_store: &accounts.transient_store,
+            instructions: &accounts.instructions,
+            zama_program: &accounts.zama_program,
+            host_config: &accounts.host_config,
+            confidential_token_event_authority: &accounts.confidential_token_event_authority,
+            confidential_token_program: &accounts.confidential_token_program,
+            system_program: &accounts.system_program,
+        },
+        authority_funding_lamports,
+        [join_deny_records, payout_deny_records],
+    )
 }

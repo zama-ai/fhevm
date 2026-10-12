@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   deriveBatchAddresses: vi.fn(),
   findJoinRecordPda: vi.fn(),
+  findRecentJoin: vi.fn(),
   getAccountInfo: vi.fn(),
   getCurrentBatch: vi.fn(),
   getJoinRecord: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('./vault/index.js', () => ({
   TOKEN_PROGRAM_ADDRESS: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   deriveBatchAddresses: mocks.deriveBatchAddresses,
   findJoinRecordPda: mocks.findJoinRecordPda,
+  findRecentJoin: mocks.findRecentJoin,
   getCurrentBatch: mocks.getCurrentBatch,
   getJoinRecord: mocks.getJoinRecord,
 }));
@@ -90,11 +92,7 @@ describe('redeem recovery', () => {
         },
       }),
     );
-    mocks.getCurrentBatch.mockResolvedValue({ index: 1n });
-    mocks.deriveBatchAddresses.mockResolvedValue({ batch: nextBatch });
-    mocks.findJoinRecordPda.mockResolvedValue([joinRecord, 255]);
-    mocks.getAccountInfo.mockReturnValue({ send: async () => ({ value: {} }) });
-    mocks.getJoinRecord.mockResolvedValue({ claimed: true });
+    mocks.findRecentJoin.mockResolvedValue({ batchIndex: 1n, batch: nextBatch, joinRecord: { claimed: true } });
 
     await expect(findExistingRedeem(session)).resolves.toBe(null);
     expect(mocks.getSignatureStatuses).not.toHaveBeenCalled();
@@ -125,11 +123,7 @@ describe('redeem recovery', () => {
         },
       }),
     );
-    mocks.getCurrentBatch.mockResolvedValue({ index: 1n });
-    mocks.deriveBatchAddresses.mockResolvedValue({ batch: nextBatch });
-    mocks.findJoinRecordPda.mockResolvedValue([joinRecord, 255]);
-    mocks.getAccountInfo.mockReturnValue({ send: async () => ({ value: {} }) });
-    mocks.getJoinRecord.mockResolvedValue({ claimed: false });
+    mocks.findRecentJoin.mockResolvedValue({ batchIndex: 1n, batch: nextBatch, joinRecord: { claimed: false } });
 
     await expect(findExistingRedeem(session)).resolves.toEqual({
       batchIndex: 1n,

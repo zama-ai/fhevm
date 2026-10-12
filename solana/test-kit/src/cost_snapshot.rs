@@ -47,7 +47,8 @@
 //!
 //! Update mode inserts or overwrites the current profile only; it never deletes
 //! keys. Full regenerations go through `scripts/update-cost-snapshots.sh`, which
-//! clears the JSON files first so renamed/deleted profiles do not linger.
+//! clears the JSON files first so renamed/deleted profiles do not linger; the
+//! `solana-cost-snapshots` artifact CI uploads after a failure clears them the same way.
 
 use mollusk_svm::result::InstructionResult;
 use serde::{Deserialize, Serialize};

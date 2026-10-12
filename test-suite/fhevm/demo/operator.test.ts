@@ -35,7 +35,6 @@ const stubActions = () => ({
     crsBase64: "AA==",
   })),
   vaultMetrics: mock(async () => METRICS),
-  prepareBatch: mock(async (_direction: "deposit" | "redeem") => ({ batchIndex: 3n, batch: BATCH })),
   runOperator: mock(async () => "sig-op"),
   harvest: mock(async () => ({ before: METRICS, after: { totalAssets: 107n, totalShares: 50n } })),
 });
@@ -171,13 +170,11 @@ describe("operator routes", () => {
     expect((await handler(post("/demo-faucet/airdrop-sol", { address: "not-an-address" }))).status).toBe(400);
     expect((await handler(post("/demo-faucet/airdrop-sol", { address: RECIPIENT, sol: 5 }))).status).toBe(400);
     expect(actions.fundSol).not.toHaveBeenCalled();
-    expect((await handler(post("/demo-batch", { direction: "sideways" }))).status).toBe(400);
     expect((await handler(post("/demo-operator", { action: "dispatch" }))).status).toBe(400);
     expect((await handler(post("/demo-faucet/mint-usdc", {}))).status).toBe(400);
     const text = new Request(`${OPERATOR_URL}/demo-harvest`, { method: "POST", headers: { ...capability, "content-type": "text/plain" }, body: "x" });
     expect((await handler(text)).status).toBe(400);
     expect(actions.fundSol).not.toHaveBeenCalled();
-    expect(actions.prepareBatch).not.toHaveBeenCalled();
     expect(actions.runOperator).not.toHaveBeenCalled();
     expect(actions.harvest).not.toHaveBeenCalled();
 
@@ -189,17 +186,13 @@ describe("operator routes", () => {
 
   test("rejects a wrong method and an unknown path", async () => {
     const { handler } = operator();
-    expect((await handler(get("/demo-batch"))).status).toBe(405);
+    expect((await handler(get("/demo-operator"))).status).toBe(405);
     expect((await handler(post("/demo-config", {}))).status).toBe(405);
     expect((await handler(get("/nope"))).status).toBe(404);
   });
 
   test("runs keeper actions and encodes the results for the page", async () => {
     const { handler, actions } = operator();
-    const batch = await handler(post("/demo-batch", { direction: "deposit" }));
-    expect(await batch.json()).toEqual({ batchIndex: "3", batch: BATCH });
-    expect(actions.prepareBatch).toHaveBeenCalledWith("deposit");
-
     const dispatch = await handler(
       post("/demo-operator", { action: "claim", direction: "redeem", batchIndex: "3", batch: BATCH, user: RECIPIENT }),
     );
@@ -272,7 +265,7 @@ describe("single-flight and serialization", () => {
     );
   });
 
-  test("serializes distinct batch preparations that share one registry", async () => {
+  test("runs queued operations one at a time, in order", async () => {
     const queue = { tail: Promise.resolve() };
     const order: string[] = [];
     let releaseFirst!: () => void;
@@ -280,21 +273,21 @@ describe("single-flight and serialization", () => {
       releaseFirst = resolve;
     });
     const first = runSerialized(queue, async () => {
-      order.push("deposit:start");
+      order.push("first:start");
       await firstPending;
-      order.push("deposit:end");
-      return "deposit";
+      order.push("first:end");
+      return "first";
     });
     const second = runSerialized(queue, async () => {
-      order.push("redeem:start");
-      order.push("redeem:end");
-      return "redeem";
+      order.push("second:start");
+      order.push("second:end");
+      return "second";
     });
     await Promise.resolve();
-    expect(order).toEqual(["deposit:start"]);
+    expect(order).toEqual(["first:start"]);
     releaseFirst();
-    await expect(Promise.all([first, second])).resolves.toEqual(["deposit", "redeem"]);
-    expect(order).toEqual(["deposit:start", "deposit:end", "redeem:start", "redeem:end"]);
+    await expect(Promise.all([first, second])).resolves.toEqual(["first", "second"]);
+    expect(order).toEqual(["first:start", "first:end", "second:start", "second:end"]);
   });
 });
 

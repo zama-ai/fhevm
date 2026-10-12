@@ -9,7 +9,7 @@ pub mod close_join_record;
 pub mod dispatch;
 pub mod initialize_batcher;
 pub mod join;
-pub mod open_batch;
+mod open_batch;
 pub mod quit;
 pub mod reclaim_batch_authority;
 pub mod settle;
@@ -28,14 +28,14 @@ pub use close_join_record::*;
 pub use dispatch::*;
 pub use initialize_batcher::*;
 pub use join::*;
-pub use open_batch::*;
+pub(crate) use open_batch::*;
 pub use quit::*;
 pub use reclaim_batch_authority::*;
 pub use settle::*;
 
 /// Moves lamports from the transaction payer to the batch authority PDA, which
 /// pays the rent that token CPIs charge to the account owner (token-account
-/// creation at `open_batch`, execution growth at `cancel_dispatch` and `settle`).
+/// creation when a batch opens, execution growth at `cancel_dispatch` and `settle`).
 /// `dispatch` opens the pending burn with its caller's payer instead.
 /// Unspent lamports stay on the PDA until the batch is finished, when
 /// `reclaim_batch_authority` returns them to the join mint's wrapper authority.

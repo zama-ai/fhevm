@@ -72,7 +72,7 @@ export type Batcher = {
    * `cancel_dispatch` may, and anyone can call it.
    */
   settleDeadlineSecs: bigint;
-  /** Index the next `open_batch` creates. */
+  /** Index of the next batch to open; the pending batch is the one before it. */
   nextBatchIndex: bigint;
 };
 
@@ -98,7 +98,7 @@ export type BatcherArgs = {
    * `cancel_dispatch` may, and anyone can call it.
    */
   settleDeadlineSecs: number | bigint;
-  /** Index the next `open_batch` creates. */
+  /** Index of the next batch to open; the pending batch is the one before it. */
   nextBatchIndex: number | bigint;
 };
 

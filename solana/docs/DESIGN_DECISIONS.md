@@ -1040,17 +1040,18 @@ Didactic companion: `CONFIDENTIAL_VAULTS.md`. Relates to DD-039 (HCU metering id
 fit table).
 
 Deposit path implemented (fhevm-internal#1757): `programs/confidential-batcher` (evolved in place
-from the `confidential-deposit-app` reference) with `initialize_batcher` / `open_batch` / `join` /
-`quit` / `dispatch` / `settle` / `claim`. Refinements over the sketch above, all mechanism-level:
+from the `confidential-deposit-app` reference) with `initialize_batcher` / `join` / `quit` /
+`dispatch` / `settle` / `claim`. Refinements over the sketch above, all mechanism-level:
 the per-batch authority PDA is one identity that owns both batch token accounts, is the batcher's
 Store authority, and signs every token CPI via `invoke_signed`;
 `join` moves the amount with the ATTESTED `confidential_transfer` arm (a wallet user's fresh
 encryption is a fromExternal input; `confidential_transfer_from_value` remains the mechanism for
 `quit` refunds and `claim` payouts, whose amounts are existing computed handles); each participant's
 JoinRecord owns its contribution Store, and the token returns the transferred handle and grants it
-to that Store through the transient store (DD-049); "next batch opens immediately" is a
-permissionless `open_batch` gated only on the previous batch no longer being pending, rather than
-being folded into `dispatch` (keeps each instruction inside one transaction envelope); and the rate
+to that Store through the transient store (DD-049); "next batch opens immediately" is `dispatch`
+itself: it opens the next batch in the same instruction, as EVM's `dispatchBatch` does, and
+`initialize_batcher` opens batch 0 (INVARIANTS #70). Whoever dispatches pays the next batch's rent and funds its authority, as EVM's dispatcher pays
+for the new batch's storage, and a next batch that cannot open reverts the dispatch; and the rate
 is fixed-point at `RATE_SCALE = 10^9` with both divisions rounding down, so the sum of claims can
 never exceed the wrapped shares (the claim MulDiv's 128-bit intermediate and euint64 result are
 bounded by `shares * RATE_SCALE`). Settle prices and wraps only the vault-minted share DELTA across
@@ -1081,7 +1082,7 @@ mint (what users batch in: cUnderlying for deposits, cShares for redeems) and a 
 mint (what claims pay: cShares for deposits, cUnderlying for redeems) — and the batch lifecycle's
 only direction branch is settle's vault phase (`demo_vault::deposit` vs `demo_vault::withdraw`);
 `initialize_batcher` additionally validates the mint wiring per direction at setup, and join, quit,
-dispatch, claim, and open_batch are direction-free. The
+dispatch and claim are direction-free. The
 alternative (a duplicated instruction set) was rejected because the two flows differ in exactly one
 CPI: duplicating fourteen account structs to encode one branch would double the review surface for
 zero clarity.
@@ -1338,8 +1339,8 @@ Confidential accounts follow the associated token account model: canonical deriv
 create-for, and idempotent creation (`initialize_token_account`, like `CreateIdempotent`). An account
 that already exists is left unchanged and its creator keeps the rent, so a client includes the
 instruction without reading the account first. Because the owner does not sign, anyone can create the
-next batch's token accounts before `open_batch` does, and the open still succeeds (pinned by
-`mollusk_open_batch_accepts_precreated_batch_token_accounts`).
+next batch's token accounts before `dispatch` opens it, and the dispatch still succeeds (pinned by
+`mollusk_dispatch_accepts_precreated_next_batch_token_accounts`).
 
 Disclosure publishes the certified handle and cleartext and reads no token state (DD-040). The
 binding is checked when the handle is made public: `make_token_account_handle_public` names a

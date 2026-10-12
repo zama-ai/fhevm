@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, it, vi } from 'vitest';
 
 const sendAndConfirm = vi.hoisted(() => vi.fn());
 vi.mock('@solana/kit', async (importOriginal) => ({
@@ -12,7 +12,7 @@ import { buildVerifyPublicDecryptInstruction, type SolanaPublicDecryptCertificat
 import { getRedeemBurnedAmountInstructionAsync, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { buildDiscloseSecpInstruction } from './discloseSecp.js';
-import { encodedSize, testDemoClient } from '../../testDemoClient';
+import { expectFitsV1, testDemoClient } from '../../testDemoClient';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -55,15 +55,11 @@ const consumers: [string, (payer: TransactionSigner) => Promise<Instruction>][] 
 describe('KMS certificate consumers', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  // A v1 transaction is at most 4,096 bytes and 64 account keys (solana-message v1::MAX_TRANSACTION_SIZE
-  // and MAX_ADDRESSES). The test suite sends these through the demo client.
+  // The test suite sends these through the demo client.
   it.each(consumers)('%s fits one v1 transaction at the maximum KMS threshold', async (_name, build) => {
     const payer = await generateKeyPairSigner();
     const { client } = testDemoClient(payer);
     await client.sendTransaction([await build(payer)]);
-    const size = encodedSize(sendAndConfirm.mock.lastCall![0] as Transaction);
-    expect(size.version).toBe(1);
-    expect(size.bytes).toBeLessThanOrEqual(4096);
-    expect(size.addresses).toBeLessThanOrEqual(64);
+    expectFitsV1(sendAndConfirm.mock.lastCall![0] as Transaction);
   });
 });
