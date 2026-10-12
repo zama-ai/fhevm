@@ -1,5 +1,5 @@
 import type { FhevmRuntimeConfig } from '../../core/types/coreFhevmRuntime.js';
-import { authsAreEqual } from '../../core/runtimeConfig-p.js';
+import { authsAreEqual, loggersAreEqual } from '../../core/runtimeConfig-p.js';
 
 let viemFhevmRuntimeConfig: FhevmRuntimeConfig | undefined;
 
@@ -25,7 +25,7 @@ export function setFhevmRuntimeConfig(config: FhevmRuntimeConfig): void {
   }
 
   if (
-    viemFhevmRuntimeConfig.logger !== config.logger ||
+    !loggersAreEqual(viemFhevmRuntimeConfig.logger, config.logger) ||
     viemFhevmRuntimeConfig.locateFile !== config.locateFile ||
     viemFhevmRuntimeConfig.wasmAssetLoadMode !== config.wasmAssetLoadMode ||
     viemFhevmRuntimeConfig.singleThread !== config.singleThread ||
