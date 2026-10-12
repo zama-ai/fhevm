@@ -24,10 +24,65 @@ pub struct BatcherInitialized {
     pub payout_confidential_mint: Pubkey,
     /// Public vault the batcher fronts.
     pub vault: Pubkey,
+    /// Key that may pause the batcher, set its policy and hand the role on.
+    pub admin: Pubkey,
     /// Minimum seconds a batch must stay open before dispatch.
     pub min_batch_age_secs: u64,
     /// Seconds after dispatch until anyone may cancel an unsettled batch.
     pub settle_deadline_secs: u64,
+}
+
+/// Emitted when the admin pauses the batcher.
+#[event]
+pub struct BatcherPaused {
+    /// Event schema version.
+    pub version: u8,
+    /// Batcher config account.
+    pub batcher: Pubkey,
+}
+
+/// Emitted when the admin unpauses the batcher.
+#[event]
+pub struct BatcherUnpaused {
+    /// Event schema version.
+    pub version: u8,
+    /// Batcher config account.
+    pub batcher: Pubkey,
+}
+
+/// Emitted when the admin sets the minimum batch age that batches opened from now on copy.
+#[event]
+pub struct MinBatchAgeSet {
+    /// Event schema version.
+    pub version: u8,
+    /// Batcher config account.
+    pub batcher: Pubkey,
+    /// New minimum batch age in seconds.
+    pub min_batch_age_secs: u64,
+}
+
+/// Emitted when the admin sets the settle deadline that batches opened from now on copy.
+#[event]
+pub struct SettleDeadlineSet {
+    /// Event schema version.
+    pub version: u8,
+    /// Batcher config account.
+    pub batcher: Pubkey,
+    /// New settle deadline in seconds after dispatch.
+    pub settle_deadline_secs: u64,
+}
+
+/// Emitted when the admin role moves to a new key.
+#[event]
+pub struct AdminSet {
+    /// Event schema version.
+    pub version: u8,
+    /// Batcher config account.
+    pub batcher: Pubkey,
+    /// The admin that signed the change.
+    pub previous_admin: Pubkey,
+    /// The admin from now on.
+    pub new_admin: Pubkey,
 }
 
 /// Emitted when a new batch opens.
@@ -45,6 +100,10 @@ pub struct BatchOpened {
     pub batch_authority: Pubkey,
     /// Unix time the batch opened at.
     pub opened_at: i64,
+    /// Minimum batch age the batch opened with.
+    pub min_batch_age_secs: u64,
+    /// Settle deadline the batch opened with.
+    pub settle_deadline_secs: u64,
 }
 
 /// Emitted when a user joins a batch. The amount stays encrypted; only the

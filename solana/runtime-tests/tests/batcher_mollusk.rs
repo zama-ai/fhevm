@@ -354,6 +354,8 @@ struct BatcherFixture {
     direction: batcher::BatchDirection,
     payer: Pubkey,
     batcher: Pubkey,
+    /// The batcher's admin.
+    admin: Pubkey,
     /// Confidential mint wrapping the vault's underlying mint.
     underlying_cmint: ConfidentialMintKeys,
     /// Confidential mint wrapping the vault's share mint.
@@ -424,6 +426,8 @@ impl BatcherFixture {
         alice_bytes[31] = alice_bytes[31].wrapping_add(1);
         let mut bob_bytes = users_seed.to_bytes();
         bob_bytes[31] = bob_bytes[31].wrapping_add(2);
+        let mut admin_bytes = users_seed.to_bytes();
+        admin_bytes[31] = admin_bytes[31].wrapping_add(3);
         let alice = UserKeys::new(
             Pubkey::new_from_array(alice_bytes),
             (&underlying_cmint, &shares_cmint),
@@ -438,6 +442,7 @@ impl BatcherFixture {
             direction,
             payer,
             batcher: batcher_key,
+            admin: Pubkey::new_from_array(admin_bytes),
             underlying_cmint,
             shares_cmint,
             vault: vault_key,
@@ -493,6 +498,7 @@ impl BatcherFixture {
             direction: batcher::BatchDirection::Redeem,
             payer: self.payer,
             batcher: batcher_key,
+            admin: self.admin,
             underlying_cmint: ConfidentialMintKeys::new(
                 self.underlying_cmint.mint,
                 self.underlying_mint,
@@ -643,6 +649,7 @@ impl BatcherFixture {
     ) -> HashMap<Pubkey, Account> {
         let mut accounts = HashMap::from([
             (self.payer, system_account(50_000_000_000)),
+            (self.admin, system_account(1_000_000_000)),
             (self.alice.user, system_account(50_000_000_000)),
             (self.bob.user, system_account(50_000_000_000)),
             (self.batcher, system_account(0)),
@@ -822,9 +829,46 @@ fn initialize_batcher_ix(fixture: &BatcherFixture, min_batch_age_secs: u64) -> I
             settle_deadline_secs: SETTLE_DEADLINE_SECS,
             direction: fixture.direction,
             authority_funding_lamports: AUTHORITY_FUNDING,
+            admin: fixture.admin,
         },
     );
     fixture.with_deny_records(ix, &[&[fixture.join_app()], &[fixture.payout_app()]])
+}
+
+/// An admin-only instruction (`pause`, `unpause` or a policy setter) signed by `admin`.
+fn batcher_admin_ix(
+    fixture: &BatcherFixture,
+    admin: Pubkey,
+    data: impl anchor_lang::InstructionData,
+) -> Instruction {
+    anchor_ix(
+        batcher::id(),
+        batcher::accounts::BatcherAdmin {
+            admin,
+            batcher: fixture.batcher,
+        },
+        data,
+    )
+}
+
+/// `set_admin` signed by `admin`, with `new_admin` co-signing when `cosign`.
+fn set_admin_ix(
+    fixture: &BatcherFixture,
+    admin: Pubkey,
+    new_admin: Pubkey,
+    cosign: bool,
+) -> Instruction {
+    let mut ix = anchor_ix(
+        batcher::id(),
+        batcher::accounts::SetAdmin {
+            admin,
+            batcher: fixture.batcher,
+            new_admin,
+        },
+        batcher::instruction::SetAdmin {},
+    );
+    ix.accounts[2].is_signer = cosign;
+    ix
 }
 
 fn owner_ata(owner: Pubkey, underlying_mint: Pubkey) -> Pubkey {
@@ -2851,8 +2895,8 @@ fn mollusk_pending_quit_requires_the_user_signature() {
     );
 }
 
-/// The batch ages are bounded: at most seven days to dispatch, and a settle deadline of more than
-/// zero and at most thirty days.
+/// The batch ages are bounded: at most seven days to dispatch and a settle deadline of at most thirty
+/// days. A zero deadline is accepted, as on EVM.
 #[test]
 fn mollusk_initialize_batcher_bounds_the_batch_ages() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
@@ -2864,6 +2908,7 @@ fn mollusk_initialize_batcher_bounds_the_batch_ages() {
             settle_deadline_secs,
             direction: fixture.direction,
             authority_funding_lamports: AUTHORITY_FUNDING,
+            admin: fixture.admin,
         });
         ix
     };
@@ -2872,7 +2917,6 @@ fn mollusk_initialize_batcher_bounds_the_batch_ages() {
             (batcher::MAX_MIN_BATCH_AGE_SECS + 1, SETTLE_DEADLINE_SECS),
             batcher::BatcherError::InvalidMinBatchAge,
         ),
-        ((0, 0), batcher::BatcherError::InvalidSettleDeadline),
         (
             (0, batcher::MAX_SETTLE_DEADLINE_SECS + 1),
             batcher::BatcherError::InvalidSettleDeadline,
@@ -2886,10 +2930,7 @@ fn mollusk_initialize_batcher_bounds_the_batch_ages() {
     }
     check_batcher_instruction(
         &context,
-        &with_ages(
-            batcher::MAX_MIN_BATCH_AGE_SECS,
-            batcher::MAX_SETTLE_DEADLINE_SECS,
-        ),
+        &with_ages(batcher::MAX_MIN_BATCH_AGE_SECS, 0),
         &[Check::success()],
     );
 }
@@ -3392,6 +3433,384 @@ fn mollusk_initialize_batcher_rejects_foreign_underlyings() {
             &[batcher_error(error)],
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Admin: pause, policy and the role itself
+// ---------------------------------------------------------------------------
+
+/// Only the admin pauses, unpauses, sets the policy or hands the role on.
+#[test]
+fn mollusk_admin_instructions_reject_another_signer() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    run_initialize_batcher(&context, &fixture, 0);
+    let stranger = fixture.payer;
+    let mismatch = || batcher_error(batcher::BatcherError::AdminMismatch);
+    for ix in [
+        batcher_admin_ix(&fixture, stranger, batcher::instruction::Pause {}),
+        batcher_admin_ix(&fixture, stranger, batcher::instruction::Unpause {}),
+        batcher_admin_ix(
+            &fixture,
+            stranger,
+            batcher::instruction::SetMinBatchAge {
+                min_batch_age_secs: 1,
+            },
+        ),
+        batcher_admin_ix(
+            &fixture,
+            stranger,
+            batcher::instruction::SetSettleDeadline {
+                settle_deadline_secs: 1,
+            },
+        ),
+        set_admin_ix(&fixture, stranger, stranger, true),
+    ] {
+        check_batcher_instruction(&context, &ix, &[mismatch()]);
+    }
+    let config = read_account::<batcher::Batcher>(&context, fixture.batcher);
+    assert_eq!(
+        (config.admin, config.paused, config.min_batch_age_secs),
+        (fixture.admin, false, 0)
+    );
+}
+
+/// Pause and unpause each refuse a repeat, as OpenZeppelin's `Pausable` does.
+#[test]
+fn mollusk_pause_and_unpause_refuse_a_repeat() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    run_initialize_batcher(&context, &fixture, 0);
+    let pause = batcher_admin_ix(&fixture, fixture.admin, batcher::instruction::Pause {});
+    let unpause = batcher_admin_ix(&fixture, fixture.admin, batcher::instruction::Unpause {});
+    let paused = || read_account::<batcher::Batcher>(&context, fixture.batcher).paused;
+
+    check_batcher_instruction(
+        &context,
+        &unpause,
+        &[batcher_error(batcher::BatcherError::NotPaused)],
+    );
+    check_batcher_instruction(&context, &pause, &[Check::success()]);
+    assert!(paused());
+    check_batcher_instruction(
+        &context,
+        &pause,
+        &[batcher_error(batcher::BatcherError::Paused)],
+    );
+    check_batcher_instruction(&context, &unpause, &[Check::success()]);
+    assert!(!paused());
+}
+
+/// While paused, joins, dispatches and settles are refused, so no tokens move into the vault.
+/// Quits of a pending or refunding batch, claims and the deadline cancel stay open, as EVM keeps
+/// quit, recover and claim. Past the deadline, settle is refused for the deadline, paused or not.
+/// Unpausing restores joins, dispatches and settles.
+#[test]
+fn mollusk_pause_blocks_join_dispatch_and_settle_only() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let mut context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
+    let settled = run_initialize_batcher(&context, &fixture, 0);
+    run_join(
+        &context,
+        &fixture,
+        &settled,
+        &fixture.alice,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+    let burned = run_dispatch(&context, &fixture, &settled);
+    run_settle(&context, &fixture, &settled, burned, 300);
+    let dispatched = BatchKeys::new(&fixture, 1);
+    run_join(
+        &context,
+        &fixture,
+        &dispatched,
+        &fixture.bob,
+        handle_for_chain(42, BALANCE_FHE_TYPE),
+        200,
+    );
+    let burned = run_dispatch(&context, &fixture, &dispatched);
+    let pending = BatchKeys::new(&fixture, 2);
+    run_join(
+        &context,
+        &fixture,
+        &pending,
+        &fixture.alice,
+        handle_for_chain(43, BALANCE_FHE_TYPE),
+        100,
+    );
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned, 200);
+    let settle = settle_ix(
+        &fixture,
+        &dispatched,
+        200,
+        signatures,
+        extra_data,
+        dispatched.pending_burn(fixture.join_mint().mint),
+    );
+    ensure_dispatch_accounts(&context, &fixture, &pending);
+    let bob_joins = |context: &Ctx| {
+        ensure_system_accounts(
+            context,
+            &[
+                pending.join_record(fixture.bob.user),
+                pending.pending_join_value(fixture.bob.user),
+            ],
+        );
+        join_ix(
+            &fixture,
+            &pending,
+            &fixture.bob,
+            amount_attestation_for(
+                handle_for_chain(44, BALANCE_FHE_TYPE),
+                50,
+                fixture.bob.user,
+                token::id(),
+            ),
+        )
+    };
+    let paused = || batcher_error(batcher::BatcherError::Paused);
+
+    check_batcher_instruction(
+        &context,
+        &batcher_admin_ix(&fixture, fixture.admin, batcher::instruction::Pause {}),
+        &[Check::success()],
+    );
+    check_batcher_instruction(&context, &bob_joins(&context), &[paused()]);
+    check_batcher_instruction(&context, &dispatch_ix(&fixture, &pending), &[paused()]);
+    check_batcher_instruction(&context, &settle, &[paused()]);
+    assert_eq!(
+        read_batch(&context, dispatched.batch).status,
+        batcher::BatchStatus::Dispatched
+    );
+
+    run_claim(&context, &fixture, &settled, &fixture.alice);
+    run_quit(&context, &fixture, &pending, &fixture.alice);
+    reach_settle_deadline(&mut context);
+    check_batcher_instruction(
+        &context,
+        &settle,
+        &[batcher_error(batcher::BatcherError::SettleDeadlinePassed)],
+    );
+    check_batcher_instruction(
+        &context,
+        &cancel_dispatch_ix(&fixture, &dispatched),
+        &[Check::success()],
+    );
+    run_quit(&context, &fixture, &dispatched, &fixture.bob);
+
+    check_batcher_instruction(
+        &context,
+        &batcher_admin_ix(&fixture, fixture.admin, batcher::instruction::Unpause {}),
+        &[Check::success()],
+    );
+    check_batcher_instruction(&context, &bob_joins(&context), &[Check::success()]);
+    check_batcher_instruction(
+        &context,
+        &dispatch_ix(&fixture, &pending),
+        &[Check::success()],
+    );
+}
+
+/// The policy setters are bounded like `initialize_batcher` and work while paused, as on EVM.
+#[test]
+fn mollusk_policy_setters_are_bounded_and_work_while_paused() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    run_initialize_batcher(&context, &fixture, 0);
+    let set_age = |min_batch_age_secs| {
+        batcher_admin_ix(
+            &fixture,
+            fixture.admin,
+            batcher::instruction::SetMinBatchAge { min_batch_age_secs },
+        )
+    };
+    let set_deadline = |settle_deadline_secs| {
+        batcher_admin_ix(
+            &fixture,
+            fixture.admin,
+            batcher::instruction::SetSettleDeadline {
+                settle_deadline_secs,
+            },
+        )
+    };
+    check_batcher_instruction(
+        &context,
+        &set_age(batcher::MAX_MIN_BATCH_AGE_SECS + 1),
+        &[batcher_error(batcher::BatcherError::InvalidMinBatchAge)],
+    );
+    check_batcher_instruction(
+        &context,
+        &set_deadline(batcher::MAX_SETTLE_DEADLINE_SECS + 1),
+        &[batcher_error(batcher::BatcherError::InvalidSettleDeadline)],
+    );
+    check_batcher_instruction(
+        &context,
+        &batcher_admin_ix(&fixture, fixture.admin, batcher::instruction::Pause {}),
+        &[Check::success()],
+    );
+    check_batcher_instruction(
+        &context,
+        &set_age(batcher::MAX_MIN_BATCH_AGE_SECS),
+        &[Check::success()],
+    );
+    check_batcher_instruction(
+        &context,
+        &set_deadline(batcher::MAX_SETTLE_DEADLINE_SECS),
+        &[Check::success()],
+    );
+    let config = read_account::<batcher::Batcher>(&context, fixture.batcher);
+    assert_eq!(
+        (config.min_batch_age_secs, config.settle_deadline_secs),
+        (
+            batcher::MAX_MIN_BATCH_AGE_SECS,
+            batcher::MAX_SETTLE_DEADLINE_SECS
+        )
+    );
+}
+
+/// A batch keeps the policy it opened with, as EVM's per-batch `Policy` does: a new minimum age
+/// applies from the next batch, and a new deadline cannot shorten a dispatched batch's. With a zero
+/// deadline, a batch cannot settle and anyone may cancel it as soon as it is dispatched.
+#[test]
+fn mollusk_a_batch_keeps_the_policy_it_opened_with() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let mut context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
+    let first = run_initialize_batcher(&context, &fixture, 0);
+    check_batcher_instruction(
+        &context,
+        &batcher_admin_ix(
+            &fixture,
+            fixture.admin,
+            batcher::instruction::SetMinBatchAge {
+                min_batch_age_secs: 1_000,
+            },
+        ),
+        &[Check::success()],
+    );
+    check_batcher_instruction(
+        &context,
+        &batcher_admin_ix(
+            &fixture,
+            fixture.admin,
+            batcher::instruction::SetSettleDeadline {
+                settle_deadline_secs: 0,
+            },
+        ),
+        &[Check::success()],
+    );
+    let opened = read_batch(&context, first.batch);
+    assert_eq!(
+        (opened.min_batch_age_secs, opened.settle_deadline_secs),
+        (0, SETTLE_DEADLINE_SECS)
+    );
+
+    run_join(
+        &context,
+        &fixture,
+        &first,
+        &fixture.alice,
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+        300,
+    );
+    let burned = run_dispatch(&context, &fixture, &first);
+    check_batcher_instruction(
+        &context,
+        &cancel_dispatch_ix(&fixture, &first),
+        &[batcher_error(
+            batcher::BatcherError::SettleDeadlineNotReached,
+        )],
+    );
+    run_settle(&context, &fixture, &first, burned, 300);
+
+    let second = BatchKeys::new(&fixture, 1);
+    let opened = read_batch(&context, second.batch);
+    assert_eq!(
+        (opened.min_batch_age_secs, opened.settle_deadline_secs),
+        (1_000, 0)
+    );
+    run_join(
+        &context,
+        &fixture,
+        &second,
+        &fixture.bob,
+        handle_for_chain(42, BALANCE_FHE_TYPE),
+        200,
+    );
+    ensure_dispatch_accounts(&context, &fixture, &second);
+    check_batcher_instruction(
+        &context,
+        &dispatch_ix(&fixture, &second),
+        &[batcher_error(batcher::BatcherError::BatchTooYoung)],
+    );
+    context.mollusk.sysvars.clock.unix_timestamp += 1_000;
+    let burned = run_dispatch(&context, &fixture, &second);
+    let (signatures, extra_data) = amount_public_decrypt_cert(burned, 200);
+    check_batcher_instruction(
+        &context,
+        &settle_ix(
+            &fixture,
+            &second,
+            200,
+            signatures,
+            extra_data,
+            second.pending_burn(fixture.join_mint().mint),
+        ),
+        &[batcher_error(batcher::BatcherError::SettleDeadlinePassed)],
+    );
+    check_batcher_instruction(
+        &context,
+        &cancel_dispatch_ix(&fixture, &second),
+        &[Check::success()],
+    );
+}
+
+/// Handing the admin role on needs the new key's co-signature, as zama-host's `set_admin` does,
+/// unless the new admin is an existing program-owned PDA. The old admin loses the role.
+#[test]
+fn mollusk_set_admin_needs_the_new_admin_to_cosign() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    let keys = run_initialize_batcher(&context, &fixture, 0);
+    let admin = || read_account::<batcher::Batcher>(&context, fixture.batcher).admin;
+    let not_accepted = || batcher_error(batcher::BatcherError::NewAdminNotAccepted);
+    let keypair = Pubkey::new_unique();
+    let unfunded_pda = Pubkey::find_program_address(&[b"nobody"], &batcher::id()).0;
+    ensure_system_accounts(&context, &[keypair, unfunded_pda]);
+
+    check_batcher_instruction(
+        &context,
+        &set_admin_ix(&fixture, fixture.admin, keypair, false),
+        &[not_accepted()],
+    );
+    check_batcher_instruction(
+        &context,
+        &set_admin_ix(&fixture, fixture.admin, unfunded_pda, false),
+        &[not_accepted()],
+    );
+    assert_eq!(admin(), fixture.admin);
+
+    check_batcher_instruction(
+        &context,
+        &set_admin_ix(&fixture, fixture.admin, keypair, true),
+        &[Check::success()],
+    );
+    assert_eq!(admin(), keypair);
+    check_batcher_instruction(
+        &context,
+        &batcher_admin_ix(&fixture, fixture.admin, batcher::instruction::Pause {}),
+        &[batcher_error(batcher::BatcherError::AdminMismatch)],
+    );
+
+    // Batch 0 is an off-curve account the batcher program owns.
+    check_batcher_instruction(
+        &context,
+        &set_admin_ix(&fixture, keypair, keys.batch, false),
+        &[Check::success()],
+    );
+    assert_eq!(admin(), keys.batch);
 }
 
 // ---------------------------------------------------------------------------

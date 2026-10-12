@@ -746,7 +746,7 @@
       "docs": [
         "Dispatches the batch once it is old enough: burns the batch account's",
         "full encrypted balance via `confidential_burn_from_value` and records",
-        "the created-public burned handle the KMS will certify. Permissionless.",
+        "the created-public burned handle the KMS will certify. Permissionless; refused while paused.",
         "In the same instruction it opens the next batch, as `initialize_batcher` opens batch 0, with",
         "`authority_funding_lamports` moved from the payer to the next batch's authority PDA.",
         "Deny records: `(token, join mint)` for the burn, then `(token, join mint)` and",
@@ -1253,8 +1253,8 @@
         "mint, a payout confidential mint, and one public vault together.",
         "Deposit batchers join with confidential underlying and pay confidential",
         "shares; redeem batchers join with confidential shares and pay",
-        "confidential underlying. Permissionless one-time setup; the batcher",
-        "holds no admin role afterwards.",
+        "confidential underlying. Permissionless one-time setup. `admin` may later pause the",
+        "batcher, set the policy that batches opened from then on copy, and hand the role on.",
         "",
         "Also opens batch 0: the `Batch` account, its per-batch authority PDA, its own confidential",
         "join and payout token accounts unless they already exist, and its plain SPL accounts for",
@@ -1722,13 +1722,17 @@
         {
           "name": "authority_funding_lamports",
           "type": "u64"
+        },
+        {
+          "name": "admin",
+          "type": "pubkey"
         }
       ]
     },
     {
       "name": "join",
       "docs": [
-        "Joins the pending batch with the batcher's join token: one user-signed",
+        "Joins the pending batch with the batcher's join token (refused while paused): one user-signed",
         "transaction that CPIs the coprocessor-attested confidential transfer",
         "into the batch's token account. The token returns the transferred handle and grants",
         "the JoinRecord Store access through transient store. The batcher adds it to the user's",
@@ -2087,6 +2091,44 @@
           }
         }
       ]
+    },
+    {
+      "name": "pause",
+      "docs": [
+        "Pauses the batcher (admin-only): joins, dispatches and settles are refused until",
+        "`unpause`. Quits, claims, the deadline cancel and the rest stay open. Refuses when already",
+        "paused."
+      ],
+      "discriminator": [
+        211,
+        22,
+        221,
+        251,
+        74,
+        121,
+        193,
+        47
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "The batcher's admin."
+          ],
+          "signer": true,
+          "relations": [
+            "batcher"
+          ]
+        },
+        {
+          "name": "batcher",
+          "docs": [
+            "Batcher config."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
     },
     {
       "name": "preview_close_token",
@@ -2637,6 +2679,133 @@
       "args": []
     },
     {
+      "name": "set_admin",
+      "docs": [
+        "Hands the admin role to `new_admin`. The current admin signs; a new keypair co-signs; a",
+        "new PDA does not, provided it already exists as a program-owned account."
+      ],
+      "discriminator": [
+        251,
+        163,
+        0,
+        52,
+        91,
+        194,
+        187,
+        92
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "The batcher's current admin."
+          ],
+          "signer": true,
+          "relations": [
+            "batcher"
+          ]
+        },
+        {
+          "name": "batcher",
+          "docs": [
+            "Batcher config."
+          ],
+          "writable": true
+        },
+        {
+          "name": "new_admin",
+          "docs": [
+            "off-curve and already owned by a program, so a mistyped key cannot become admin."
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "set_min_batch_age",
+      "docs": [
+        "Sets the minimum batch age that batches opened from now on copy (admin-only), at most",
+        "`MAX_MIN_BATCH_AGE_SECS`. Works while paused."
+      ],
+      "discriminator": [
+        172,
+        232,
+        182,
+        172,
+        99,
+        107,
+        84,
+        152
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "The batcher's admin."
+          ],
+          "signer": true,
+          "relations": [
+            "batcher"
+          ]
+        },
+        {
+          "name": "batcher",
+          "docs": [
+            "Batcher config."
+          ],
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "min_batch_age_secs",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_settle_deadline",
+      "docs": [
+        "Sets the settle deadline that batches opened from now on copy (admin-only), at most",
+        "`MAX_SETTLE_DEADLINE_SECS`; zero cancels every dispatch. Works while paused."
+      ],
+      "discriminator": [
+        33,
+        29,
+        135,
+        165,
+        187,
+        155,
+        175,
+        147
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "The batcher's admin."
+          ],
+          "signer": true,
+          "relations": [
+            "batcher"
+          ]
+        },
+        {
+          "name": "batcher",
+          "docs": [
+            "Batcher config."
+          ],
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "settle_deadline_secs",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "settle",
       "docs": [
         "Settles a dispatched batch with the KMS certificate for its burned",
@@ -2645,7 +2814,7 @@
         "the received payout into confidential payout tokens, and records the",
         "batch's informational public rate. A zero-total batch is canceled",
         "instead, and a deposit worth zero vault shares is wrapped back and opens",
-        "refunds. Permissionless, before the batch's settle deadline.",
+        "refunds. Permissionless, before the batch's settle deadline; refused while paused.",
         "Deny records: `(token, payout mint)` then `(token, join mint)` for the zero-shares refund, or",
         "none for a zero total, which runs no execution."
       ],
@@ -3148,6 +3317,42 @@
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "unpause",
+      "docs": [
+        "Unpauses the batcher (admin-only). Refuses when not paused."
+      ],
+      "discriminator": [
+        169,
+        144,
+        4,
+        38,
+        10,
+        141,
+        188,
+        255
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "The batcher's admin."
+          ],
+          "signer": true,
+          "relations": [
+            "batcher"
+          ]
+        },
+        {
+          "name": "batcher",
+          "docs": [
+            "Batcher config."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
     }
   ],
   "accounts": [
@@ -3192,6 +3397,19 @@
     }
   ],
   "events": [
+    {
+      "name": "AdminSet",
+      "discriminator": [
+        157,
+        245,
+        205,
+        226,
+        118,
+        125,
+        183,
+        97
+      ]
+    },
     {
       "name": "BatchAuthorityReclaimed",
       "discriminator": [
@@ -3284,6 +3502,32 @@
       ]
     },
     {
+      "name": "BatcherPaused",
+      "discriminator": [
+        80,
+        206,
+        123,
+        84,
+        28,
+        202,
+        208,
+        112
+      ]
+    },
+    {
+      "name": "BatcherUnpaused",
+      "discriminator": [
+        92,
+        61,
+        27,
+        147,
+        225,
+        177,
+        183,
+        52
+      ]
+    },
+    {
       "name": "JoinRecordClosed",
       "discriminator": [
         231,
@@ -3310,6 +3554,19 @@
       ]
     },
     {
+      "name": "MinBatchAgeSet",
+      "discriminator": [
+        199,
+        118,
+        179,
+        95,
+        242,
+        72,
+        0,
+        158
+      ]
+    },
+    {
       "name": "PayoutClaimed",
       "discriminator": [
         200,
@@ -3333,6 +3590,19 @@
         254,
         47,
         150
+      ]
+    },
+    {
+      "name": "SettleDeadlineSet",
+      "discriminator": [
+        30,
+        153,
+        79,
+        98,
+        48,
+        11,
+        185,
+        87
       ]
     }
   ],
@@ -3455,10 +3725,69 @@
     {
       "code": 6023,
       "name": "InvalidSettleDeadline",
-      "msg": "settle deadline is zero or exceeds the maximum"
+      "msg": "settle deadline exceeds the maximum"
+    },
+    {
+      "code": 6024,
+      "name": "AdminMismatch",
+      "msg": "signer is not the batcher admin"
+    },
+    {
+      "code": 6025,
+      "name": "NewAdminNotAccepted",
+      "msg": "the new admin must co-sign, or be an existing program-owned PDA"
+    },
+    {
+      "code": 6026,
+      "name": "Paused",
+      "msg": "batcher is paused"
+    },
+    {
+      "code": 6027,
+      "name": "NotPaused",
+      "msg": "batcher is not paused"
     }
   ],
   "types": [
+    {
+      "name": "AdminSet",
+      "docs": [
+        "Emitted when the admin role moves to a new key."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "batcher",
+            "docs": [
+              "Batcher config account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "previous_admin",
+            "docs": [
+              "The admin that signed the change."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "new_admin",
+            "docs": [
+              "The admin from now on."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
     {
       "name": "Batch",
       "docs": [
@@ -3499,6 +3828,21 @@
               "Unix time the batch opened at; dispatch requires `min_batch_age_secs` past."
             ],
             "type": "i64"
+          },
+          {
+            "name": "min_batch_age_secs",
+            "docs": [
+              "Minimum seconds the batch stays open before dispatch, frozen when it opened."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "settle_deadline_secs",
+            "docs": [
+              "Seconds after dispatch during which only `settle` may finish the batch, frozen when it",
+              "opened; from then on only `cancel_dispatch` may, and anyone can call it."
+            ],
+            "type": "u64"
           },
           {
             "name": "dispatched_at",
@@ -3757,6 +4101,20 @@
               "Unix time the batch opened at."
             ],
             "type": "i64"
+          },
+          {
+            "name": "min_batch_age_secs",
+            "docs": [
+              "Minimum batch age the batch opened with."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "settle_deadline_secs",
+            "docs": [
+              "Settle deadline the batch opened with."
+            ],
+            "type": "u64"
           }
         ]
       }
@@ -3880,17 +4238,30 @@
             "type": "pubkey"
           },
           {
+            "name": "admin",
+            "docs": [
+              "Key that may pause the batcher, set its policy and hand the role on."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "paused",
+            "docs": [
+              "While paused, joins, dispatches and settles are refused."
+            ],
+            "type": "bool"
+          },
+          {
             "name": "min_batch_age_secs",
             "docs": [
-              "Minimum seconds a batch must stay open before dispatch."
+              "Minimum batch age copied into each batch when it opens."
             ],
             "type": "u64"
           },
           {
             "name": "settle_deadline_secs",
             "docs": [
-              "Seconds after dispatch during which only `settle` may finish the batch; from then on only",
-              "`cancel_dispatch` may, and anyone can call it."
+              "Settle deadline copied into each batch when it opens."
             ],
             "type": "u64"
           },
@@ -3959,6 +4330,13 @@
             "type": "pubkey"
           },
           {
+            "name": "admin",
+            "docs": [
+              "Key that may pause the batcher, set its policy and hand the role on."
+            ],
+            "type": "pubkey"
+          },
+          {
             "name": "min_batch_age_secs",
             "docs": [
               "Minimum seconds a batch must stay open before dispatch."
@@ -3971,6 +4349,56 @@
               "Seconds after dispatch until anyone may cancel an unsettled batch."
             ],
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BatcherPaused",
+      "docs": [
+        "Emitted when the admin pauses the batcher."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "batcher",
+            "docs": [
+              "Batcher config account."
+            ],
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BatcherUnpaused",
+      "docs": [
+        "Emitted when the admin unpauses the batcher."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "batcher",
+            "docs": [
+              "Batcher config account."
+            ],
+            "type": "pubkey"
           }
         ]
       }
@@ -4408,6 +4836,38 @@
       }
     },
     {
+      "name": "MinBatchAgeSet",
+      "docs": [
+        "Emitted when the admin sets the minimum batch age that batches opened from now on copy."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "batcher",
+            "docs": [
+              "Batcher config account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "min_batch_age_secs",
+            "docs": [
+              "New minimum batch age in seconds."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "PauseFlags",
       "docs": [
         "The host areas a pauser can stop, each matching an area EVM pauses on its own (DD-058). As",
@@ -4523,6 +4983,38 @@
               "Quitting user."
             ],
             "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SettleDeadlineSet",
+      "docs": [
+        "Emitted when the admin sets the settle deadline that batches opened from now on copy."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "version",
+            "docs": [
+              "Event schema version."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "batcher",
+            "docs": [
+              "Batcher config account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "settle_deadline_secs",
+            "docs": [
+              "New settle deadline in seconds after dispatch."
+            ],
+            "type": "u64"
           }
         ]
       }

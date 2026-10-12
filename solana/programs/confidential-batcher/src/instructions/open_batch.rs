@@ -139,6 +139,8 @@ pub(crate) fn open_batch<'info>(
     batch.index = index;
     batch.status = BatchStatus::Pending;
     batch.opened_at = opened_at;
+    batch.min_batch_age_secs = accounts.batcher.min_batch_age_secs;
+    batch.settle_deadline_secs = accounts.batcher.settle_deadline_secs;
     batch.dispatched_at = 0;
     batch.join_count = 0;
     batch.authority_bump = accounts.batch_authority_bump;
@@ -160,6 +162,8 @@ pub(crate) fn open_batch<'info>(
         index,
         batch_authority: accounts.batch_authority.key(),
         opened_at,
+        min_batch_age_secs: batch.min_batch_age_secs,
+        settle_deadline_secs: batch.settle_deadline_secs,
     });
     Ok(())
 }

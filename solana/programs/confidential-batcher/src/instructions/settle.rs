@@ -192,9 +192,12 @@ pub fn settle<'info>(
         BatcherError::BatchNotDispatched
     );
     require!(
-        Clock::get()?.unix_timestamp < ctx.accounts.batch.settle_deadline(&ctx.accounts.batcher),
+        Clock::get()?.unix_timestamp < ctx.accounts.batch.settle_deadline(),
         BatcherError::SettleDeadlinePassed
     );
+    // After the deadline check, as on EVM: past the deadline the batch can only cancel, paused or
+    // not. Before it, a paused batcher holds the batch dispatched without calling the vault.
+    require_not_paused(&ctx.accounts.batcher)?;
     require_keys_eq!(
         ctx.accounts.join_confidential_mint.key(),
         ctx.accounts.batcher.join_confidential_mint,

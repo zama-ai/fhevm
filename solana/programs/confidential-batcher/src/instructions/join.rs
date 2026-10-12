@@ -100,6 +100,7 @@ pub fn join<'info>(
     ctx: Context<'info, Join<'info>>,
     amount_attestation: zama_host::CoprocessorInputAttestation,
 ) -> Result<()> {
+    require_not_paused(&ctx.accounts.batcher)?;
     require!(
         ctx.accounts.batch.status == BatchStatus::Pending,
         BatcherError::BatchNotPending
