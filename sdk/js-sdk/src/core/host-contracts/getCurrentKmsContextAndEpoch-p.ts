@@ -1,7 +1,6 @@
 import type { ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
-import type { HostContractVersion } from '../types/hostContract.js';
 import { getCurrentKmsContextAndEpochAbi } from './abi-fragments/fragments.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
 import { isVersionStrictlyBefore } from './HostContractVersion-p.js';
@@ -50,13 +49,10 @@ export function getCurrentKmsContextAndEpoch(
   return cachedGetCurrentKmsContextAndEpoch.execute(context, parameters);
 }
 
-// ProtocolConfigReplica postdates ProtocolConfig v0.2.0 (protocol v0.14.0), so every replica version supports it.
-function supportsGetCurrentKmsContextAndEpoch(version: HostContractVersion<'ProtocolConfig'>): boolean {
-  return version.contractName === 'ProtocolConfigReplica' || !isVersionStrictlyBefore(version, { major: 0, minor: 2 });
-}
-
 async function _getCurrentKmsContextAndEpoch(context: Context, parameters: Parameters): Promise<ReturnType> {
-  if (!supportsGetCurrentKmsContextAndEpoch(parameters.fhevmContext.hostContractVersion('ProtocolConfig'))) {
+  // ProtocolConfigReplica postdates ProtocolConfig v0.2.0 (protocol v0.14.0), so every replica version supports it.
+  const version = parameters.fhevmContext.hostContractVersion('ProtocolConfig');
+  if (version.contractName !== 'ProtocolConfigReplica' && isVersionStrictlyBefore(version, { major: 0, minor: 2 })) {
     throw new Error(
       'ProtocolConfig.getCurrentKmsContextAndEpoch() requires ProtocolConfig >= v0.2.0 (protocol v0.14.0)',
     );
