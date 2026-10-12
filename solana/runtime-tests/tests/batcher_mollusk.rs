@@ -51,7 +51,7 @@ use zama_solana_test_kit::signing::{
 };
 use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, coprocessor_signer_address,
-    cost_snapshot, deny_scope_record_account, encrypted_store_account, ensure_system_accounts,
+    cost_report, deny_scope_record_account, encrypted_store_account, ensure_system_accounts,
     event_authority, handle_for_chain, hcu_trusted_app_record_account, host_config_account,
     kms_context_account, new_encrypted_store, paused_host_config, read_account, read_spl_amount,
     read_store_handle, readonly, serialized_account, spl_mint_account, spl_token_account,
@@ -384,7 +384,7 @@ impl BatcherFixture {
         )
     }
 
-    /// Fixed-key variant for cost snapshots: PDA bump searches are part of the
+    /// Fixed-key variant for cost profiles: PDA bump searches are part of the
     /// measured compute, so profile addresses must not change between runs.
     fn fixed(direction: batcher::BatchDirection, seed: u8) -> Self {
         Self::with_keys(
@@ -1325,7 +1325,7 @@ fn run_dispatch(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys) -> [u
 
 /// Settles the batch with a real KMS cert over `total`, replaying the wrap's
 /// execution when the batch is non-zero. Returns the instruction and result so the
-/// fixed-key lifecycle can snapshot cost; behavior-test callers ignore them.
+/// fixed-key lifecycle can record its cost; behavior-test callers ignore them.
 fn run_settle(
     context: &Ctx,
     fixture: &BatcherFixture,
@@ -3395,31 +3395,23 @@ fn mollusk_initialize_batcher_rejects_foreign_underlyings() {
 }
 
 // ---------------------------------------------------------------------------
-// Cost snapshots
+// Cost profiles
 // ---------------------------------------------------------------------------
 
-fn assert_batcher_cost(profile: &str, ix: &Instruction, result: &InstructionResult) {
-    cost_snapshot::assert_cost_snapshot("batcher_mollusk", profile, ix, result);
+fn record_batcher_cost(profile: &str, ix: &Instruction, result: &InstructionResult) {
+    cost_report::record_profile("batcher_mollusk", profile, ix, result);
 }
 
-// Deterministic upper bounds on settle's compute cost, asserted only in the
-// fixed-key cost lifecycle (see `snapshot_lifecycle`). Exact snapshots detect
-// ordinary drift; these bounds also keep unusually expensive runs below a
-// documented ceiling. The sequential pending-burn PDA is keyed only by mint
-// and token account, so its bump search is stable for the fixed fixture keys.
-const SETTLE_DEPOSIT_MAX_COMPUTE_UNITS: u64 = 360_000;
-const SETTLE_REDEEM_MAX_COMPUTE_UNITS: u64 = 430_000;
-
 /// One fixed-key run through initialize/join/dispatch/settle/claim and the exits (quit,
-/// cancel_dispatch), snapshotting each instruction's cost profile under `prefix`. Fixed fixture
+/// cancel_dispatch), recording each instruction's cost profile under `prefix`. Fixed fixture
 /// keys keep the PDA bump searches — part of the measured compute — stable across runs.
-fn snapshot_lifecycle(fixture: &BatcherFixture, context: &mut Ctx, prefix: &str) {
+fn cost_lifecycle(fixture: &BatcherFixture, context: &mut Ctx, prefix: &str) {
     let keys = BatchKeys::new(fixture, 0);
     ensure_open_batch_accounts(context, fixture, &keys);
     let initialize = initialize_batcher_ix(fixture, 0);
     let initialize_result = check_batcher_instruction(context, &initialize, &[Check::success()]);
     check_fhe_cpis(context, &initialize_result);
-    assert_batcher_cost(
+    record_batcher_cost(
         &format!("{prefix}initialize_batcher"),
         &initialize,
         &initialize_result,
@@ -3444,30 +3436,17 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &mut Ctx, prefix: &str)
     );
     let join_result = check_batcher_instruction(context, &join.clone(), &[Check::success()]);
     check_fhe_cpis(context, &join_result);
-    assert_batcher_cost(&format!("{prefix}join"), &join, &join_result);
+    record_batcher_cost(&format!("{prefix}join"), &join, &join_result);
 
     ensure_dispatch_accounts(context, fixture, &keys);
     let dispatch = dispatch_ix(fixture, &keys);
     let dispatch_result = check_batcher_instruction(context, &dispatch, &[Check::success()]);
     check_fhe_cpis(context, &dispatch_result);
-    assert_batcher_cost(&format!("{prefix}dispatch"), &dispatch, &dispatch_result);
+    record_batcher_cost(&format!("{prefix}dispatch"), &dispatch, &dispatch_result);
 
     let burned_handle = read_batch(context, keys.batch).burned_total_handle;
     let (settle, settle_result) = run_settle(context, fixture, &keys, burned_handle, 300);
-    assert_batcher_cost(&format!("{prefix}settle"), &settle, &settle_result);
-    let settle_compute_units = settle_result.compute_units_consumed;
-    let settle_bound = match fixture.direction {
-        batcher::BatchDirection::Deposit => SETTLE_DEPOSIT_MAX_COMPUTE_UNITS,
-        batcher::BatchDirection::Redeem => SETTLE_REDEEM_MAX_COMPUTE_UNITS,
-    };
-    assert!(
-        settle_compute_units < settle_bound,
-        "settle ({:?}) consumed {settle_compute_units} CU, over the {settle_bound} CU upper \
-         bound. If this cost increase is intentional, set the matching \
-         SETTLE_{{DEPOSIT,REDEEM}}_MAX_COMPUTE_UNITS to the new measured value plus ~15% headroom \
-         rounded up to a clean number.",
-        fixture.direction,
-    );
+    record_batcher_cost(&format!("{prefix}settle"), &settle, &settle_result);
 
     ensure_system_accounts(
         context,
@@ -3481,11 +3460,11 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &mut Ctx, prefix: &str)
     let claim = claim_ix(fixture, &keys, &fixture.alice);
     let claim_result = check_batcher_instruction(context, &claim.clone(), &[Check::success()]);
     check_fhe_cpis(context, &claim_result);
-    assert_batcher_cost(&format!("{prefix}claim"), &claim, &claim_result);
+    record_batcher_cost(&format!("{prefix}claim"), &claim, &claim_result);
 
     let reclaim = reclaim_batch_authority_ix(fixture, &keys, fixture.payer);
     let reclaim_result = check_batcher_instruction(context, &reclaim, &[Check::success()]);
-    assert_batcher_cost(
+    record_batcher_cost(
         &format!("{prefix}reclaim_batch_authority"),
         &reclaim,
         &reclaim_result,
@@ -3493,7 +3472,7 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &mut Ctx, prefix: &str)
 
     let close = close_join_record_ix(&keys, fixture.alice.user);
     let close_result = check_batcher_instruction(context, &close, &[Check::success()]);
-    assert_batcher_cost(&format!("{prefix}close_join_record"), &close, &close_result);
+    record_batcher_cost(&format!("{prefix}close_join_record"), &close, &close_result);
 
     // The exits run on the next batch, so the profiles above keep their measurements: bob quits it
     // while pending, a keeper cancels its dispatch at the settle deadline, and alice quits it while
@@ -3519,34 +3498,34 @@ fn snapshot_lifecycle(fixture: &BatcherFixture, context: &mut Ctx, prefix: &str)
     let quit = quit_ix(fixture, &next, &fixture.bob);
     let quit_result = check_batcher_instruction(context, &quit, &[Check::success()]);
     check_fhe_cpis(context, &quit_result);
-    assert_batcher_cost(&format!("{prefix}quit"), &quit, &quit_result);
+    record_batcher_cost(&format!("{prefix}quit"), &quit, &quit_result);
 
     run_dispatch(context, fixture, &next);
     reach_settle_deadline(context);
     let cancel = cancel_dispatch_ix(fixture, &next);
     let cancel_result = check_batcher_instruction(context, &cancel, &[Check::success()]);
     check_fhe_cpis(context, &cancel_result);
-    assert_batcher_cost(&format!("{prefix}cancel_dispatch"), &cancel, &cancel_result);
+    record_batcher_cost(&format!("{prefix}cancel_dispatch"), &cancel, &cancel_result);
 
     let refund = quit_ix(fixture, &next, &fixture.alice);
     let refund_result = check_batcher_instruction(context, &refund, &[Check::success()]);
     check_fhe_cpis(context, &refund_result);
-    assert_batcher_cost(&format!("{prefix}quit_refunding"), &refund, &refund_result);
+    record_batcher_cost(&format!("{prefix}quit_refunding"), &refund, &refund_result);
 }
 
 #[test]
-fn cost_snapshot_batcher_lifecycle() {
+fn cost_profile_batcher_lifecycle() {
     let fixture = BatcherFixture::fixed(batcher::BatchDirection::Deposit, 0x61);
     let mut context = production_mollusk().with_context(fixture.accounts(0, 0));
-    snapshot_lifecycle(&fixture, &mut context, "");
+    cost_lifecycle(&fixture, &mut context, "");
 }
 
 #[test]
-fn cost_snapshot_batcher_redeem_lifecycle() {
+fn cost_profile_batcher_redeem_lifecycle() {
     let fixture = BatcherFixture::fixed(batcher::BatchDirection::Redeem, 0x51);
     let mut context =
         production_mollusk().with_context(redeem_accounts(&fixture, 1_000, 1_000, 1_000));
-    snapshot_lifecycle(&fixture, &mut context, "redeem_");
+    cost_lifecycle(&fixture, &mut context, "redeem_");
 }
 
 // ---------------------------------------------------------------------------

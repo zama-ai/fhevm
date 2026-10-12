@@ -6,8 +6,8 @@
 # ROOT and then cd into it, which leaves a relative BASH_SOURCE pointing at the old cwd.
 #   . "$ROOT/scripts/lib/require-pinned-toolchain.sh"
 #
-# For the scripts that regenerate committed build output — cost snapshots, IDL and ABI
-# goldens. Those files are only comparable with the ones they replace if the same compiler
+# For the scripts that regenerate committed build output: the IDL and ABI goldens. Those
+# files are only comparable with the ones they replace if the same compiler
 # wrote both, and a regeneration under a different toolchain is indistinguishable from a real
 # change once it is committed.
 #

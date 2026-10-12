@@ -40,7 +40,7 @@ The rules every agent and reviewer applies to the Solana work: the code `AGENTS.
 
 ## Working rules for the train
 
-18. Generated code and snapshots are minted only by CI and regenerated after every rebase, never resolved by hand. One snapshot-touching PR per program at a time.
+18. Generated code is minted only by CI and regenerated after every rebase, never resolved by hand.
 19. No backward compatibility before deployment, as `AGENTS.md` ("Pre-production") defines. When unsure whether a change needs compatibility or a fallback, ask.
 
 ## Scale

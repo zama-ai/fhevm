@@ -249,10 +249,10 @@ instruction arguments without the SDK. Pinned by the `compile_fail` doctest on `
 **61. [ANTI]** `FheExecution::build` does not guarantee that the host's CPI fits the host's heap or compute budget. The
 builder's typed limits (#54) cover the app's own heap. The host has a separate 32 KiB heap, and what it allocates
 depends on the live Store size, the number of MMR peaks and the permissions sealed per output, none of which the builder
-can see. The gap is measurable: `the_builder_admits_mature_updates_the_host_heap_cannot_run` builds 16 updates, each
-to its own Store with 8 MMR peaks and the same eight viewers, while the runtime sweep
-`fhe_execute_boundary/mature_updates_peaks_8` runs 15 and exhausts the host heap at 16. The builder admits 22 such
-updates at any peak count; the host runs 7 at 32 peaks. These are shape measurements, not an output cap. No
+can see. `the_builder_admits_mature_updates_without_modeling_the_host_heap` pins that the builder admits 22 updates,
+each to its own Store with the same eight viewers, at 1, 8, 32 and 55 MMR peaks, and refuses the 23rd. The
+`fhe_execute_boundary/mature_updates*` rows of the solana-tests cost report show where the host heap stops those
+shapes. These are shape measurements, not an output cap. No
 host-side admission model exists; an app validates its shapes against the sweeps and budgets the whole transaction. Why
 no allocator was shipped is DD-046 (fhevm-internal#1872).
 
@@ -646,10 +646,10 @@ not when the threat model changes.
 ## I. Sizes, limits, and operations
 
 **14. [HOLDS]** Executions are capped at 32 steps. Packet size and CU cost depend on the shape; the cap does not imply a
-fit in a 4,096-byte version 1 transaction or 200k CU. `runtime-tests/cost-snapshots/fhe_execute_boundary.json` pins each shape's
+fit in a 4,096-byte version 1 transaction or 200k CU. The solana-tests cost report shows each shape's
 instruction-data bytes and CU at its largest passing size. These are host-instruction measurements, before transaction
 overhead and application CPIs.
-Pinned by `rejects_more_than_max_ops`, `cost_snapshot_fhe_execute_max_steps` and `cost_snapshot_boundary_sweeps`.
+Pinned by `rejects_more_than_max_ops` and `cost_profile_fhe_execute_max_steps`; `boundary_sweeps` measures the shapes.
 
 **34. [RETIRED]** The host listener always compiles its Solana modules; the `solana` cargo
 feature that gated them is gone.
@@ -708,9 +708,9 @@ bytes with their tallies across the current shape frontier. `the_tally_never_cro
 checks rejection paths. `print_build_frontier_grid` prints the current measurements; those tests are the source of truth
 for the admission frontier.
 
-The host heap remains a separate limit (#61). Runtime sweeps cover wide audiences, reductions and mature history. In the
-committed snapshots, updates across Stores with 8, 32 and 55 MMR peaks reach 16, 7 and 4 steps, respectively;
-maximum-width sums reach 6. These shape measurements do not guarantee that an arbitrary composition fits.
+The host heap remains a separate limit (#61). Runtime sweeps cover wide audiences, reductions and mature history,
+and the solana-tests cost report shows how many steps each shape reaches. These shape measurements do not guarantee
+that an arbitrary composition fits.
 
 **66. [HOLDS]** TransientStore has fixed storage for 112 result occurrences and 32 explicit grants (10,168 bytes including
 discriminator). Repeated handles count as occurrences to preserve step/output references. Each execution admits at most

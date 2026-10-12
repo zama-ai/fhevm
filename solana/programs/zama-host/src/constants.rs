@@ -43,9 +43,9 @@ pub const MAX_KMS_SIGNERS: u8 = 16;
 /// The runtime boundary suite measures whole transactions, including transient store
 /// open/close, under the fixed 32 KiB heap. The max-op transaction also fits a 1,232-byte
 /// legacy packet, inside the 4,096-byte version 1 transaction clients send. Dependent
-/// chains reach this cap; wide permissions and Store histories can hit a lower
-/// limit. See `runtime-tests/cost-snapshots/fhe_execute_boundary.json` for each
-/// measured shape and its binding resource. Raising this cap requires new
+/// chains reach this cap; other shapes can stop below it on the host heap. The
+/// solana-tests job summary reports each measured shape and the limit that stopped it
+/// (`runtime-tests/tests/fhe_execute_boundary.rs`). Raising this cap requires new
 /// measurements, not extrapolation from the smallest execution.
 pub const MAX_FHE_EXECUTION_STEPS: usize = 32;
 /// At most 32 selected 32-byte handles fit the return-data channel, independently of step count.

@@ -10,7 +10,6 @@ Run from `solana/` unless a path below says otherwise.
 |---|---|---|
 | `bash scripts/check-zama-host-idl.sh` | Before Mollusk tests; CI IDL/ABI parity and the authority table | `target/deploy` only |
 | `bash scripts/sync-zama-host-idl.sh` | After an intentional IDL/ABI change | all six committed IDLs + the zama-fhe error table + ABI goldens + `docs/AUTHORITY.md` |
-| `bash scripts/update-cost-snapshots.sh` | After an intentional CU / ix-shape change | `runtime-tests/cost-snapshots/*.json` |
 | `bash scripts/update-pda-vectors.sh` | After an intentional PDA recipe change | `test-fixtures/pda/pda_v1.json` |
 | `bash scripts/update-permit-vectors.sh` | After an intentional permit-canon change | `test-fixtures/permit/permit_v1.json` |
 | `bash scripts/update-permit-invalidation-fixture.sh` | After an intentional `PermitInvalidation` layout / seed change | `test-fixtures/permit/permit_invalidation_account_v1.json` |

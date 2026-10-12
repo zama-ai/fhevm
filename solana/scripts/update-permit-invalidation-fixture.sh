@@ -13,8 +13,7 @@
 # Writes: test-fixtures/permit/permit_invalidation_account_v1.json
 #
 # Needs an existing SBF artifact: the fixture is captured from a real revocation run through
-# Mollusk, so target/deploy/zama_host.so must already exist. This script does not rebuild it —
-# rebuilding under an unpinned local toolchain also moves the committed compute-unit snapshots.
+# Mollusk, so target/deploy/zama_host.so must already exist. This script does not rebuild it.
 #
 # After regenerating, review the diff and run the target without the gate, so the
 # committed file is checked rather than rewritten.

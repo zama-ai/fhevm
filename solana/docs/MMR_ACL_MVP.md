@@ -30,4 +30,4 @@ The record follows every Store from leaf zero: the indexer starts at a block bef
 
 ## Resources and verification
 
-The 32-step maximum is not a promise that every shape fits the default heap or packet budget. Use the measured runtime boundary and cost snapshots; #1872 records the accepted approach. TransientStore rent is reclaimed but CPI/compute costs remain. See TESTING.md for unit/runtime/live layers and INVARIANTS.md for the security register.
+The 32-step maximum is not a promise that every shape fits the default heap or packet budget. Use the runtime boundaries and costs in the solana-tests cost report; #1872 records the accepted approach. TransientStore rent is reclaimed but CPI/compute costs remain. See TESTING.md for unit/runtime/live layers and INVARIANTS.md for the security register.

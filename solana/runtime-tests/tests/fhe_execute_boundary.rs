@@ -1,24 +1,21 @@
 //! The `fhe_execute` capacity instrument: where each execution shape stops, and why.
 //!
-//! One shape table drives everything here — the boundary sweeps asserted against the cost
-//! snapshot (`cost-snapshots/fhe_execute_boundary.json`), the per-shape wall pins that tie the
-//! builder's model to the measured walls, and the `#[ignore]`d full-curve printer. Behavior
-//! tests for `fhe_execute` live in `host_mollusk.rs`; this binary only measures capacity.
+//! One shape table drives everything here: the boundary sweeps, the cost report rows they
+//! record, the lower bound a shape must reach when a client packs it to a named size, and the
+//! `#[ignore]`d full-curve printer. Behavior tests for `fhe_execute` live in `host_mollusk.rs`;
+//! this binary only measures capacity.
 //!
 //! A sweep probes one shape from its minimum legal step count to the host's step cap, asserts
 //! success is a prefix of the range (so step count really is what governs the shape), and
-//! records the largest passing count, the first failing one, and the wall it hit. The snapshot
-//! pins all three; regenerate with `ZAMA_UPDATE_COST_SNAPSHOT=1` or
-//! `bash scripts/update-cost-snapshots.sh`.
+//! records the largest passing count and the wall the next count hit in the cost report.
 
 use anchor_lang::prelude::system_program;
 use mollusk_svm::Mollusk;
 use solana_sdk::{account::Account, instruction::Instruction, pubkey::Pubkey};
-use std::collections::BTreeMap;
 use zama_host::encode::ExecutionDictionary;
 use zama_host::{self as host, FheBinaryOpCode, FheExecuteArgs, FheExecuteOperand, FheExecuteStep};
 use zama_solana_test_kit::{
-    cost_snapshot, empty_system_account, encrypted_store_account, event_authority,
+    cost_report, empty_system_account, encrypted_store_account, event_authority,
     funded_system_account, handle_for_chain, host_svm as mollusk, label,
     new_encrypted_store_with_slot as new_state_with_slot, readonly, signing,
     system_program_account, u256_be, writable, HostConfigParams,
@@ -76,11 +73,10 @@ impl From<StoreOutputsExecution> for ProbeCase {
     }
 }
 
-/// The result of sweeping one shape: the largest passing step count, the first failing one, the
-/// wall that failure hit, and the passing run's evidence for the snapshot.
+/// The result of sweeping one shape: the largest passing step count, the wall the next count hit,
+/// and the passing run for the cost report.
 struct SweptBoundary {
     max_ok: usize,
-    first_fail: usize,
     limited_by: String,
     instruction_at_max_ok: Instruction,
     result_at_max_ok: mollusk_svm::result::InstructionResult,
@@ -121,33 +117,16 @@ fn sweep_step_boundary(
     }
     let (max_ok, instruction_at_max_ok, result_at_max_ok) =
         last_ok.expect("the smallest probe of the sweep must pass");
-    let (first_fail, limited_by) = first_failure.unwrap_or((
-        // Every legal size passes: the policy cap is the wall, and no runtime wall was
-        // observed below it.
-        host::MAX_FHE_EXECUTION_STEPS + 1,
-        "MAX_FHE_EXECUTION_STEPS".to_string(),
-    ));
+    // When every legal size passes, the policy cap is the wall: no runtime wall was observed
+    // below it.
+    let limited_by =
+        first_failure.map_or_else(|| "MAX_FHE_EXECUTION_STEPS".to_string(), |(_, axis)| axis);
     SweptBoundary {
         max_ok,
-        first_fail,
         limited_by,
         instruction_at_max_ok,
         result_at_max_ok,
     }
-}
-
-fn assert_swept_boundary(profile: &str, sweep: &SweptBoundary) {
-    cost_snapshot::assert_boundary_snapshot(
-        "fhe_execute_boundary",
-        profile,
-        &cost_snapshot::Boundary {
-            max_ok: sweep.max_ok as u64,
-            first_fail: sweep.first_fail as u64,
-            limited_by: sweep.limited_by.clone(),
-        },
-        &sweep.instruction_at_max_ok,
-        &sweep.result_at_max_ok,
-    );
 }
 
 /// A dependent transient chain closing in one Store output: every step adds a scalar to the
@@ -559,30 +538,18 @@ fn reduction_heavy_case(steps: usize, program: Pubkey) -> ProbeCase {
     }
 }
 
-/// What a shape's sweep must prove beyond matching the snapshot: the per-shape tie between the
-/// builder's admission model and the measured wall.
-enum WallPin {
-    /// No app-side model speaks about this shape's wall; the snapshot alone pins it.
-    SnapshotOnly,
-    /// The workload reaches the protocol step limit without a runtime resource failure.
-    FullStepCapacity,
-    /// The host heap stops the shape before the step cap, at a count the builder still admits
-    /// (invariant #61). Issue #1872 kept shape-specific runtime limits rather than a host
-    /// allocator admission model, so callers must fit the measured shape, not just the step cap.
-    HostHeapGap,
-}
-
-/// One row of the shape table: the snapshot profile it records, its minimum legal step count,
-/// its case builder, and the wall pin its sweep must prove.
+/// One row of the shape table: the profile it records, its minimum legal step count, its case
+/// builder, and the most steps a production client packs into this shape, when a named constant
+/// sets it. The sweep must reach that count.
 struct BoundaryShape {
     profile: &'static str,
     min_steps: usize,
     build: Box<dyn Fn(usize) -> ProbeCase>,
-    pin: WallPin,
+    client_packs: Option<usize>,
 }
 
-/// The whole frontier as data: every swept shape, its builder, and its pin. The sweeps, the
-/// snapshot, and the printer all walk this one table, so a new axis is one new row.
+/// The whole frontier as data: every swept shape and its builder. The sweeps, the report and the
+/// printer all walk this one table, so a new axis is one new row.
 ///
 /// No row is limited by `instruction_trace`: an execution creates no per-result accounts, and
 /// `zama-fhe`'s worst case (`FheExecutionCost::instruction_trace_worst_case`: the floor, a rent
@@ -590,36 +557,36 @@ struct BoundaryShape {
 fn boundary_shapes() -> Vec<BoundaryShape> {
     let shape = |profile: &'static str,
                  min_steps: usize,
-                 pin: WallPin,
+                 client_packs: Option<usize>,
                  build: Box<dyn Fn(usize) -> ProbeCase>| BoundaryShape {
         profile,
         min_steps,
         build,
-        pin,
+        client_packs,
     };
     vec![
         shape(
             "fhe_execute_boundary/all_created_public",
             1,
-            WallPin::FullStepCapacity,
+            None,
             Box::new(|steps| all_created_public_case(steps, Pubkey::new_from_array([0x31; 32]))),
         ),
         shape(
             "fhe_execute_boundary/all_private_creates",
             1,
-            WallPin::FullStepCapacity,
+            None,
             Box::new(|steps| all_private_creates_case(steps, Pubkey::new_from_array([0x36; 32]))),
         ),
         shape(
             "fhe_execute_boundary/allow_heavy_creates",
             1,
-            WallPin::SnapshotOnly,
+            None,
             Box::new(|steps| allow_heavy_creates_case(steps, Pubkey::new_from_array([0x37; 32]))),
         ),
         shape(
             "fhe_execute_boundary/allow_heavy_public_creates",
             1,
-            WallPin::FullStepCapacity,
+            None,
             Box::new(|steps| {
                 allow_heavy_public_creates_case(steps, Pubkey::new_from_array([0x3B; 32]))
             }),
@@ -627,89 +594,76 @@ fn boundary_shapes() -> Vec<BoundaryShape> {
         shape(
             "fhe_execute_boundary/reduction_heavy",
             1,
-            WallPin::SnapshotOnly,
+            None,
             Box::new(|steps| reduction_heavy_case(steps, Pubkey::new_from_array([0x38; 32]))),
         ),
+        // dep-chain's `extend` carries up to `MAX_CHAIN_LINKS` links in one execution, and the
+        // load-smoke scenario drives it there.
         shape(
             "fhe_execute_boundary/dependent_chain",
             2,
-            WallPin::SnapshotOnly,
+            Some(usize::from(dep_chain::MAX_CHAIN_LINKS)),
             Box::new(|steps| dependent_chain_case(steps, Pubkey::new_from_array([0x32; 32]))),
         ),
         shape(
             "fhe_execute_boundary/mature_updates",
             1,
-            WallPin::SnapshotOnly,
+            None,
             Box::new(|steps| mature_updates_case(steps, 55, Pubkey::new_from_array([0x33; 32]))),
         ),
         shape(
             "fhe_execute_boundary/mature_updates_peaks_8",
             1,
-            WallPin::HostHeapGap,
+            None,
             Box::new(|steps| mature_updates_case(steps, 8, Pubkey::new_from_array([0x39; 32]))),
         ),
         shape(
             "fhe_execute_boundary/mature_updates_peaks_32",
             1,
-            WallPin::SnapshotOnly,
+            None,
             Box::new(|steps| mature_updates_case(steps, 32, Pubkey::new_from_array([0x3A; 32]))),
         ),
         shape(
             "fhe_execute_boundary/attestation_per_step",
             1,
-            WallPin::SnapshotOnly,
+            None,
             Box::new(|steps| attestation_per_step_case(steps, Pubkey::new_from_array([0x34; 32]))),
         ),
         shape(
             "fhe_execute_boundary/mixed_chain_creates",
             1,
-            WallPin::SnapshotOnly,
+            None,
             Box::new(|steps| mixed_chain_creates_case(steps, Pubkey::new_from_array([0x35; 32]))),
         ),
     ]
 }
 
-/// Proves what a shape's [`WallPin`] claims about its swept boundary.
-fn assert_wall_pin(profile: &str, pin: &WallPin, sweep: &SweptBoundary) {
-    match pin {
-        WallPin::SnapshotOnly => {}
-        WallPin::FullStepCapacity => {
-            assert!(
-                host::MAX_FHE_EXECUTION_STEPS == sweep.max_ok,
-                "{profile}: expected {} steps to fit but the host wall is {}",
-                host::MAX_FHE_EXECUTION_STEPS,
-                sweep.max_ok,
-            );
-        }
-        WallPin::HostHeapGap => {
-            assert_eq!(
-                sweep.limited_by, "heap",
-                "{profile}: the wall moved off the host heap; invariant #61 cites it",
-            );
-            assert!(
-                sweep.max_ok < host::MAX_FHE_EXECUTION_STEPS,
-                "{profile}: the host now runs all {} steps; invariant #61 cites this gap",
-                host::MAX_FHE_EXECUTION_STEPS,
-            );
-        }
-    }
-}
-
-/// Sweeps every shape in the table, asserts its pinned wall, and records it in the snapshot.
-/// The `cost_snapshot_` prefix keeps it inside `scripts/update-cost-snapshots.sh`'s test filter.
+/// Sweeps every shape in the table, records its boundary in the cost report, and requires each
+/// shape a client packs to a named size to execute at that size.
 ///
-/// Every shape is swept before any failure is reported: a change that moves several
-/// boundaries surfaces as one complete report instead of a fix-and-rerun cycle per shape, and
-/// an update run (`ZAMA_UPDATE_COST_SNAPSHOT=1`) records every profile even when a wall pin
-/// fails mid-table — the snapshot on disk is never left partially rewritten.
+/// Every shape is swept before any failure is reported, so a change that breaks several shapes
+/// surfaces as one complete report instead of a fix-and-rerun cycle per shape.
 #[test]
-fn cost_snapshot_boundary_sweeps() {
+fn boundary_sweeps() {
     let mut failures = Vec::new();
     for shape in boundary_shapes() {
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let sweep = sweep_step_boundary(&mollusk(), shape.min_steps, &shape.build);
-            assert_swept_boundary(shape.profile, &sweep);
-            assert_wall_pin(shape.profile, &shape.pin, &sweep);
+            cost_report::record_boundary(
+                shape.profile,
+                sweep.max_ok,
+                &sweep.limited_by,
+                &sweep.instruction_at_max_ok,
+                &sweep.result_at_max_ok,
+            );
+            if let Some(client_packs) = shape.client_packs {
+                assert!(
+                    sweep.max_ok >= client_packs,
+                    "a client packs {client_packs} steps, but the host runs {} ({} stops it)",
+                    sweep.max_ok,
+                    sweep.limited_by,
+                );
+            }
         }));
         if let Err(panic) = outcome {
             let message = panic
@@ -790,117 +744,4 @@ fn print_boundary_matrix() {
             );
         }
     }
-}
-
-/// The limits every measurement in this file runs against, as data: what each is, whether a
-/// transaction can push it, and how. Solana values are runtime facts of the pinned toolchain;
-/// zama values are this repo's policy, asserted from the constants so the snapshot cannot drift
-/// from the code.
-#[test]
-fn cost_snapshot_solana_ceilings() {
-    let ceiling = |value: u64, extendable: bool, note: &str| cost_snapshot::Ceiling {
-        value,
-        extendable,
-        note: note.to_string(),
-    };
-    let ceilings = BTreeMap::from([
-        (
-            "solana/heap_frame_bytes".to_string(),
-            ceiling(
-                32 * 1024,
-                false,
-                "fixed-length bump allocator installed by solana-program-entrypoint; every \
-                 invocation (each top-level instruction and each CPI frame) gets a fresh region. \
-                 RequestHeapFrame grants up to 256 KiB per frame, but the default allocator's \
-                 length is a compile-time constant, so the grant is unusable without a custom \
-                 allocator (fhevm-internal#1872: we do not ship one)",
-            ),
-        ),
-        (
-            "solana/compute_units_per_instruction_default".to_string(),
-            ceiling(
-                200_000,
-                true,
-                "SetComputeUnitLimit raises it toward the transaction cap; the priority fee is \
-                 charged on the requested limit, not on usage",
-            ),
-        ),
-        (
-            "solana/compute_units_per_transaction_max".to_string(),
-            ceiling(
-                1_400_000,
-                false,
-                "hard runtime cap; no instruction raises it",
-            ),
-        ),
-        (
-            "solana/transaction_bytes".to_string(),
-            ceiling(
-                4_096,
-                false,
-                "version 1 transaction limit (SIMD-0385), which also allows at most 64 account \
-                 keys; clients send every transaction as version 1",
-            ),
-        ),
-        (
-            "solana/instruction_trace_length".to_string(),
-            ceiling(
-                64,
-                false,
-                "every top-level instruction and CPI shares this transaction limit; budget \
-                 State and transient store creation, rent top-ups, lazy meter creation, host events, \
-                 final transient store close and the app's other CPIs",
-            ),
-        ),
-        (
-            "solana/cpi_instruction_data_bytes".to_string(),
-            ceiling(10_240, false, "per CPI call"),
-        ),
-        (
-            "solana/cpi_call_depth".to_string(),
-            ceiling(5, false, "maximum invoke nesting"),
-        ),
-        (
-            "solana/stack_frame_bytes".to_string(),
-            ceiling(4_096, false, "per stack frame"),
-        ),
-        (
-            "solana/return_data_bytes".to_string(),
-            ceiling(1_024, false, "per set_return_data"),
-        ),
-        (
-            "zama/max_fhe_execution_steps".to_string(),
-            ceiling(
-                host::MAX_FHE_EXECUTION_STEPS as u64,
-                true,
-                "policy cap owned by this repo; raising it is a code change plus a re-run of \
-                 the boundary sweeps above (fhevm-internal#1872)",
-            ),
-        ),
-        (
-            "zama/max_input_attestation_handles".to_string(),
-            ceiling(
-                host::MAX_INPUT_ATTESTATION_HANDLES as u64,
-                true,
-                "policy: covered handles per inline attestation",
-            ),
-        ),
-        (
-            "zama/max_input_attestation_extra_data_bytes".to_string(),
-            ceiling(
-                host::MAX_INPUT_ATTESTATION_EXTRA_DATA as u64,
-                true,
-                "policy: extra-data bytes per inline attestation",
-            ),
-        ),
-        (
-            "zama/max_mmr_peaks".to_string(),
-            ceiling(
-                zama_solana_acl::MAX_MMR_PEAKS as u64,
-                false,
-                "structural: a u64 leaf count can never hold more than 64 peaks",
-            ),
-        ),
-    ]);
-    cost_snapshot::assert_ceilings_snapshot("fhe_execute_boundary", &ceilings);
 }

@@ -16,19 +16,30 @@ use super::harness::counted_bytes;
 use super::harness::{balance_handle, try_measure, ShapeBuilder, ADMITTED_FRONTIER_SHAPES};
 use super::shapes::*;
 
-/// Invariant #61: 16 updates to 8-peak Stores is one past the host's measured wall for that shape
-/// (`fhe_execute_boundary/mature_updates_peaks_8`), yet the builder admits it.
+/// Invariant #61: the builder admits 22 shared-audience updates to mature Stores at any peak count
+/// and refuses the 23rd on its own heap budget, because it does not model the host heap. The cost
+/// report's `fhe_execute_boundary/mature_updates*` rows show where the host stops these shapes.
 #[test]
-fn the_builder_admits_mature_updates_the_host_heap_cannot_run() {
-    FheExecution::build(
-        crate::StoreId::new(
-            anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
-            Pubkey::new_unique(),
-            Pubkey::new_from_array([0xA5; 32]),
-        ),
-        shared_audience_mature_updates_shape(16, 8),
-    )
-    .expect("16 shared-audience updates to 8-peak Stores fit the builder");
+fn the_builder_admits_mature_updates_without_modeling_the_host_heap() {
+    for peaks in [1, 8, 32, 55] {
+        let build = |updates| {
+            FheExecution::build(
+                crate::StoreId::new(
+                    anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),
+                    Pubkey::new_unique(),
+                    Pubkey::new_from_array([0xA5; 32]),
+                ),
+                shared_audience_mature_updates_shape(updates, peaks),
+            )
+            .map(|_| ())
+        };
+        assert_eq!(build(22), Ok(()), "22 updates at {peaks} peaks");
+        assert_eq!(
+            build(23),
+            Err(crate::FheExecutionError::ExceedsBuildHeapBudget),
+            "23 updates at {peaks} peaks"
+        );
+    }
 }
 
 /// The pre-emptive heap protocol, proven adversarially: drive the heaviest per-step

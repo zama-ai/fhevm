@@ -26,6 +26,7 @@ later decision replaced only part of a live entry, the replaced wording is under
 | DD-037 `fhe_execute` Events — `emit_cpi!`-Only, No `emit!` Log Fallback (DD-033 addendum)                  | DD-038                       |
 | DD-038 One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events                            | removed; fhevm-internal#2079 |
 | DD-039 HCU Block Cap Meters The Signed `compute_subject`, Not A Separate Authority                         | DD-047                       |
+| Committed Cost Snapshots Gate CI On Exact Costs                                                            | the cost report              |
 
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds
 
@@ -754,6 +755,32 @@ meter and is rejected (`FheExecuteUnanchoredUnderBlockCap`). The "registry Optio
 deferred had two halves, and the verified program answers one of them: an application identity a
 caller cannot forge, with the program as its own registry entry. The other half, aggregating one
 finite cap across the several identities a single application may hold, is still not built.
+
+## Committed Cost Snapshots Gate CI On Exact Costs
+
+**Status:** replaced by the cost report (`zama_solana_test_kit::cost_report`, `docs/TESTING.md`
+"Cost report"). A test that measures cost asserts that the instruction executes and records its
+cost in the solana-tests job summary; a cost change fails nothing. Of the probed `fhe_execute`
+boundaries, only `dependent_chain` still fails a test, against `dep_chain::MAX_CHAIN_LINKS`, the
+one size a client packs a shape to by a named constant.
+
+The snapshots made any change of one compute unit fail CI. The fix was a regeneration that only CI
+could mint exactly, and concurrent PRs conflicted on the same JSON files. Rule 18 of
+`CONSTITUTION.md` read:
+
+> 18. Generated code and snapshots are minted only by CI and regenerated after every rebase, never
+> resolved by hand. One snapshot-touching PR per program at a time.
+
+The test kit's `cost_snapshot` module described the gate:
+
+> Drift in either direction fails the dedicated `cost_snapshot_*` tests: costlier is a regression,
+> cheaper invalidates design assumptions derived from the old number (transaction packing,
+> per-phase budgets), and both deserve a reviewed snapshot update in the same diff. Behavior tests
+> never depend on these numbers.
+
+`runtime-tests/cost-snapshots/fhe_execute_boundary.json` also held a `ceilings` block of Solana
+runtime limits and zama-host policy caps, asserted verbatim. `docs/TESTING.md` now lists the Solana
+limits with the upstream symbol that defines each.
 
 ## Replaced parts of live decisions
 
