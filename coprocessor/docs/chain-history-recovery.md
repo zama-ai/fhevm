@@ -41,8 +41,45 @@ and checks stored committed/finalized identities before replaying each block.
 The Gateway listener pins every block in a fetched range before admitting its
 events, checks log/header identity and header parent linkage, and rechecks the
 saved tip even when no new block exists. It retains the tip and at least 64
-preceding checkpoints; a range that has not committed progress remains pinned.
+preceding checkpoints, plus admitted blocks beyond durable progress. When a
+sibling listener completes a range first, its progress supersedes older scans.
 Gateway block batches are limited to 1 through 1,000 blocks.
+
+Gateway ranges must extend the retained predecessor, including the first
+header in each range. An internally inconsistent, unadmitted RPC response is
+retried without declaring a history halt. A window rewind fetches its anchor
+before changing any progress and commits the verified checkpoint, cursor and
+window latch together. Promotion copies Green's checkpoint identity to the
+live role in the same transaction as its cursor; disagreeing identities block
+promotion and record containment.
+
+Gateway checkpoint ownership is resolved from the cursor's actual database
+namespace after acquiring the cutover fence. This also protects admission that
+was queued behind promotion while the in-memory stack mode still says Green.
+Cursor reads and baseline checks use that same fenced namespace.
+
+Every Gateway cursor carries a random progress revision. Normal advancement
+must match the scan's revision, move forward and retain an admitted checkpoint.
+It changes the revision and prunes checkpoints in one transaction under the
+same per-role/chain lock used for admission and rewind. Delayed replicas cannot
+publish an older cursor or delete a newer rewind's anchor. Rewind rechecks the
+durable proposal latch and cursor under this lock and issues a fresh revision;
+schema recreation also invalidates old revisions, even for empty cursors.
+The listener reloads both cursor and drift state when its scan is superseded.
+The new revision migration also upgrades already-created Green cursor tables;
+apply it before starting the repaired fleet.
+
+Startup verifies the saved Gateway tip before registry refresh or drift
+rebuilding, and drift replay uses the same header/log provenance checks.
+Automatic drift recovery cannot create a signal or execute a destructive
+revert through a history halt. Checks deferred by a temporary replay gate
+remain pending and are retried, rather than being marked handled.
+Once a local digest mismatch is confirmed, its recovery request does not expire
+under the missing-digest timeout. It retains the earliest-open replay watermark
+until signal acceptance, including across detector rebuilding after restart.
+While recovery remains blocked, these known mismatches remain in memory and
+their retained history may grow; normal missing-digest and consensus timeouts
+still apply to other handles.
 
 A hash change at a stored committed checkpoint halts the whole coprocessor
 database, across host chains and both stacks. The Gateway policy also contains
@@ -140,7 +177,8 @@ INSERT INTO public.listener_block_checkpoints
 VALUES ('gateway', '<BCS or GCS>', <gateway_chain_id>, <verified_cursor>,
         decode('<verified canonical hash without 0x>', 'hex'))
 ON CONFLICT (source, stack_role, chain_id, block_number)
-DO UPDATE SET block_hash = EXCLUDED.block_hash;
+-- Forget the old ancestry; a verified repeat fills the nullable parent hash.
+DO UPDATE SET block_hash = EXCLUDED.block_hash, parent_hash = NULL;
 
 UPDATE public.chain_recovery_halts
 SET resolved_at = NOW(), recovery_note = '<recovery audit reference and verified baseline>'

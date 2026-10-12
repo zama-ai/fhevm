@@ -29,6 +29,27 @@ pub fn stack_role(gcs_mode: bool) -> &'static str {
     }
 }
 
+/// Resolve the Gateway cursor's actual namespace while holding the shared
+/// cutover fence. A copied StackMode can outlive promotion while waiting for
+/// that fence; the pool then routes to public although the copy still says GCS.
+pub async fn gateway_role_tx(tx: &mut Transaction<'_, Postgres>) -> anyhow::Result<bool> {
+    anyhow::ensure!(
+        !crate::versioning::is_retired(tx).await?,
+        "retired Gateway stack cannot write progress"
+    );
+    let schema: String = sqlx::query_scalar(
+        "SELECT n.nspname::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE c.oid = 'gw_listener_last_block'::regclass",
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+    match schema.as_str() {
+        "public" => Ok(false),
+        crate::database::GCS_SCHEMA => Ok(true),
+        _ => anyhow::bail!("unexpected Gateway cursor schema: {schema}"),
+    }
+}
+
 /// Taken after the shared cutover fence. Serialize identity checks with
 /// admission for a single source/role/chain, including across replicas.
 pub async fn lock_history_tx(
@@ -124,6 +145,16 @@ pub async fn record_halt(pool: &PgPool, mismatch: HistoryMismatch<'_>) -> Result
         .bind(CUTOVER_LOCK_ID)
         .execute(&mut *tx)
         .await?;
+    record_halt_tx(&mut tx, mismatch).await?;
+    tx.commit().await
+}
+
+/// The caller must already hold CUTOVER_LOCK_ID exclusively. Used when a
+/// controller discovers a conflict while reconciling promotion state.
+pub async fn record_halt_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    mismatch: HistoryMismatch<'_>,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO public.chain_recovery_halts
              (source, stack_role, chain_id, block_number, expected_hash, observed_hash, reason)
@@ -139,7 +170,7 @@ pub async fn record_halt(pool: &PgPool, mismatch: HistoryMismatch<'_>) -> Result
     .bind(mismatch.expected_hash)
     .bind(mismatch.observed_hash)
     .bind(mismatch.reason)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     // Revoke the persisted Gateway release latch as well as closing readiness.
     // This does not repair or delete any proof that might already be consumed.
@@ -147,15 +178,15 @@ pub async fn record_halt(pool: &PgPool, mismatch: HistoryMismatch<'_>) -> Result
         "UPDATE public.upgrade_state SET gw_dry_run_started = FALSE, updated_at = NOW()
                  WHERE stack_role = 'GCS' AND status = 'in_progress'",
     )
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
     for channel in [crate::gcs_activation::EVENT_GW_NEW_BLOCK, "event_new_block"] {
         sqlx::query("SELECT pg_notify($1, 'chain recovery halt')")
             .bind(channel)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?;
     }
-    tx.commit().await
+    Ok(())
 }
 
 #[derive(sqlx::FromRow)]
@@ -464,59 +495,98 @@ pub async fn checkpoint_hash(
     .await
 }
 
-/// Pin identities before admitting individual Gateway events. A failed event
-/// may already have admitted earlier events in the same range; keep its pinned
-/// identity even when the numeric watermark has not advanced yet.
+#[derive(Clone, Debug)]
+pub struct ListenerHeader {
+    pub number: i64,
+    pub hash: Vec<u8>,
+    pub parent_hash: Vec<u8>,
+}
+
+/// Pin a coherent range in the caller's transaction, including its link to
+/// both retained neighbors. Callers roll back before recording a conflict:
+/// containment needs the exclusive fence, never a shared-to-exclusive upgrade.
+pub async fn pin_headers_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    source: ListenerSource,
+    gcs_mode: bool,
+    chain_id: i64,
+    headers: &[ListenerHeader],
+) -> Result<Option<HistoryConflict>, sqlx::Error> {
+    lock_history_tx(tx, source, gcs_mode, chain_id).await?;
+    for header in headers {
+        let rows: Vec<(i64, Vec<u8>, Option<Vec<u8>>)> = sqlx::query_as(
+            "SELECT block_number, block_hash, parent_hash FROM public.listener_block_checkpoints
+             WHERE source = $1 AND stack_role = $2 AND chain_id = $3
+               AND block_number BETWEEN $4 - 1 AND $4 + 1",
+        )
+        .bind(source.as_str())
+        .bind(stack_role(gcs_mode))
+        .bind(chain_id)
+        .bind(header.number)
+        .fetch_all(&mut **tx)
+        .await?;
+        for (number, hash, parent) in rows {
+            let (boundary, expected, observed) = if number == header.number {
+                (number, hash, header.hash.clone())
+            } else if number == header.number - 1 {
+                (number, hash, header.parent_hash.clone())
+            } else if let Some(parent) = parent {
+                (header.number, parent, header.hash.clone())
+            } else {
+                continue;
+            };
+            if expected != observed {
+                return Ok(Some(HistoryConflict {
+                    block_number: boundary,
+                    expected_hash: expected,
+                    observed_hash: observed,
+                    reason: "canonical listener checkpoint or parent changed after admission",
+                }));
+            }
+        }
+        sqlx::query(
+            "INSERT INTO public.listener_block_checkpoints
+                (source, stack_role, chain_id, block_number, block_hash, parent_hash)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (source, stack_role, chain_id, block_number)
+             DO UPDATE SET parent_hash = COALESCE(listener_block_checkpoints.parent_hash, EXCLUDED.parent_hash)",
+        ).bind(source.as_str()).bind(stack_role(gcs_mode)).bind(chain_id)
+            .bind(header.number).bind(&header.hash).bind(&header.parent_hash)
+            .execute(&mut **tx).await?;
+    }
+    Ok(None)
+}
+
 pub async fn save_checkpoints(
     pool: &PgPool,
     source: ListenerSource,
     gcs_mode: bool,
     chain_id: i64,
-    checkpoints: &[(i64, Vec<u8>)],
+    headers: &[ListenerHeader],
 ) -> anyhow::Result<()> {
+    // An incoherent response that has never been admitted is retryable. Do
+    // not turn its internal discontinuity into a durable history halt.
+    for pair in headers.windows(2) {
+        anyhow::ensure!(
+            pair[0].number.checked_add(1) == Some(pair[1].number)
+                && pair[1].parent_hash == pair[0].hash,
+            "listener headers do not form one contiguous canonical range"
+        );
+    }
     let Some(mut tx) = begin_write_guarded(pool, gcs_mode, GcsRollbackPolicy::RawIngestion)
         .await?
         .into_tx()
     else {
         anyhow::bail!("chain recovery or stack lifecycle blocks checkpoint acceptance");
     };
-    for (height, hash) in checkpoints {
-        // Return the existing identity atomically, also when another replica
-        // has pinned this height after our caller's preliminary read.
-        let expected: Vec<u8> = sqlx::query_scalar(
-            "INSERT INTO public.listener_block_checkpoints
-                (source, stack_role, chain_id, block_number, block_hash)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (source, stack_role, chain_id, block_number)
-             DO UPDATE SET block_hash = listener_block_checkpoints.block_hash
-             RETURNING block_hash",
-        )
-        .bind(source.as_str())
-        .bind(stack_role(gcs_mode))
-        .bind(chain_id)
-        .bind(height)
-        .bind(hash)
-        .fetch_one(&mut *tx)
-        .await?;
-        if expected != *hash {
-            tx.rollback().await?;
-            record_halt(
-                pool,
-                HistoryMismatch {
-                    source,
-                    gcs_mode,
-                    chain_id,
-                    block_number: *height,
-                    expected_hash: Some(&expected),
-                    observed_hash: Some(hash),
-                    reason: "canonical listener checkpoint changed after event admission",
-                },
-            )
-            .await?;
-            anyhow::bail!(
-                "Committed chain checkpoint changed at block {height}; operator recovery required"
-            );
-        }
+    let gcs_mode = match source {
+        ListenerSource::Gateway => gateway_role_tx(&mut tx).await?,
+        ListenerSource::Host => gcs_mode,
+    };
+    if let Some(conflict) = pin_headers_tx(&mut tx, source, gcs_mode, chain_id, headers).await? {
+        tx.rollback().await?;
+        record_halt(pool, conflict.observation(source, gcs_mode, chain_id)).await?;
+        anyhow::bail!("Committed chain checkpoint changed; operator recovery required");
     }
     tx.commit().await?;
     Ok(())

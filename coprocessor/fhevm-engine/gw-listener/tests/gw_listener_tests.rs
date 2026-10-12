@@ -37,7 +37,7 @@ impl TestEnvironment {
 
         let mut _test_instance = None;
         if std::env::var("FORCE_DATABASE_URL").is_err() {
-            let instance = test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            let instance = test_harness::instance::setup_test_db(ImportMode::None)
                 .await
                 .expect("valid db instance");
             eprintln!("New test database on {}", instance.db_url());
@@ -374,22 +374,22 @@ async fn gcs_rewind_on_activated_window_ingests_window_start() -> anyhow::Result
     let mut env = TestEnvironment::new().await?;
     env.conf.gcs_mode = true;
 
-    // The green schema's watermark table: the rewind writes it by its
-    // qualified name (in production the controller's create_gcs_schema makes
-    // it before the proposal activates).
+    // Use the same Green tables and connection routing as production.
     let gcs_schema = fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
-    sqlx::query(&format!("DROP SCHEMA IF EXISTS {gcs_schema} CASCADE"))
-        .execute(&env.db_pool)
+    upgrade_controller::create_gcs_schema(&env.db_pool).await?;
+    let options = env
+        .conf
+        .database_url
+        .as_str()
+        .parse::<sqlx::postgres::PgConnectOptions>()?
+        .options([(
+            "search_path",
+            fhevm_engine_common::database::GCS_SEARCH_PATH,
+        )]);
+    env.db_pool = PgPoolOptions::new()
+        .max_connections(16)
+        .connect_with(options)
         .await?;
-    sqlx::query(&format!("CREATE SCHEMA {gcs_schema}"))
-        .execute(&env.db_pool)
-        .await?;
-    sqlx::query(&format!(
-        "CREATE TABLE {gcs_schema}.gw_listener_last_block
-             (LIKE public.gw_listener_last_block INCLUDING ALL)"
-    ))
-    .execute(&env.db_pool)
-    .await?;
 
     // Make this binary "green": the live consensus version is one behind the
     // compiled one, as it is for a real GCS stack before cutover. Without this
@@ -474,16 +474,22 @@ async fn gcs_rewind_on_activated_window_ingests_window_start() -> anyhow::Result
     .await?;
     assert!(latched, "the rewind must latch gw_window_rewound");
 
-    // The rewound watermark went to the GCS namespace.
+    // Normal progress, as well as rewind, must remain in the Green namespace.
     let gcs_watermark = sqlx::query_scalar::<_, Option<i64>>(&format!(
         "SELECT last_block_num FROM {gcs_schema}.gw_listener_last_block WHERE dummy_id = true"
     ))
     .fetch_one(&env.db_pool)
     .await?;
+    assert!(
+        gcs_watermark.is_some_and(|height| height >= gw_start_block as i64),
+        "the Green cursor must cover the ingested window start"
+    );
+    let blue_rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM public.gw_listener_last_block")
+        .fetch_one(&env.db_pool)
+        .await?;
     assert_eq!(
-        gcs_watermark,
-        Some(i64::try_from(gw_start_block)? - 1),
-        "the rewind must persist gw_start_block - 1 into the gcs schema's watermark"
+        blue_rows, 0,
+        "Green ingestion must not advance Blue's cursor"
     );
 
     env.cancel_token.cancel();

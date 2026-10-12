@@ -1018,7 +1018,7 @@ async fn transition_to_dry_run_started(
 ///      `gw_start_block` — the Gateway-inputs analogue of `check_dry_run_ready`'s
 ///      `computations` completeness check, protecting the same class of
 ///      backfill-timing race for the input-ciphertext consensus track.
-async fn check_gw_dry_run_ready(
+pub async fn check_gw_dry_run_ready(
     pool: &Pool<Postgres>,
     gw_start_block: i64,
 ) -> Result<bool, sqlx::Error> {
@@ -2416,6 +2416,66 @@ async fn delete_gcs_synthetic_inputs(tx: &mut Transaction<'_, Postgres>) -> Resu
     Ok(())
 }
 
+/// Runs under the exclusive cutover lock, before the cursor/table merge.
+async fn promote_gateway_checkpoints(
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<Option<(i64, fhevm_engine_common::chain_recovery::HistoryConflict)>, Error> {
+    let cursor: Option<Option<i64>> = sqlx::query_scalar(&format!(
+        "SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block WHERE dummy_id = TRUE"
+    )).fetch_optional(&mut **tx).await?;
+    let Some(cursor) = cursor.flatten() else {
+        return Ok(None);
+    };
+    let chains: Vec<i64> = sqlx::query_scalar(
+        "SELECT chain_id FROM public.listener_block_checkpoints
+         WHERE source = 'gateway' AND stack_role = 'GCS' AND block_number = $1",
+    )
+    .bind(cursor)
+    .fetch_all(&mut **tx)
+    .await?;
+    if cursor == 0 && chains.is_empty() {
+        return Ok(None);
+    }
+    if chains.len() != 1 {
+        return Err(sqlx::Error::Protocol(
+            "Gateway promotion requires one verified checkpoint for its cursor".into(),
+        )
+        .into());
+    }
+    let chain_id = chains[0];
+    let conflict: Option<(i64, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+        "SELECT g.block_number, b.block_hash, g.block_hash
+         FROM public.listener_block_checkpoints g
+         JOIN public.listener_block_checkpoints b USING (source, chain_id, block_number)
+         WHERE g.source = 'gateway' AND g.stack_role = 'GCS' AND b.stack_role = 'BCS'
+           AND g.chain_id = $1 AND b.block_hash <> g.block_hash LIMIT 1",
+    )
+    .bind(chain_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some((block_number, expected_hash, observed_hash)) = conflict {
+        return Ok(Some((
+            chain_id,
+            fhevm_engine_common::chain_recovery::HistoryConflict {
+                block_number,
+                expected_hash,
+                observed_hash,
+                reason: "Gateway identities disagree during stack promotion",
+            },
+        )));
+    }
+    sqlx::query(
+        "INSERT INTO public.listener_block_checkpoints
+            (source, stack_role, chain_id, block_number, block_hash, parent_hash)
+         SELECT source, 'BCS', chain_id, block_number, block_hash, parent_hash
+         FROM public.listener_block_checkpoints
+         WHERE source = 'gateway' AND stack_role = 'GCS' AND chain_id = $1
+         ON CONFLICT (source, stack_role, chain_id, block_number)
+         DO UPDATE SET parent_hash = COALESCE(listener_block_checkpoints.parent_hash, EXCLUDED.parent_hash)",
+    ).bind(chain_id).execute(&mut **tx).await?;
+    Ok(None)
+}
+
 /// Cutover routine — run once every GCS row is `UpgradeAuthorized`, from the
 /// unanimity handler or from `reconcile`. Idempotent via the under-lock re-read.
 ///
@@ -2512,6 +2572,19 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         )
         .bind(&reason)
         .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return Ok(());
+    }
+
+    // Green's cursor and its identity become live atomically. Keep historical
+    // halt records and refuse promotion if the two stacks disagree.
+    if let Some((chain_id, conflict)) = promote_gateway_checkpoints(&mut tx).await? {
+        use fhevm_engine_common::chain_recovery::{record_halt_tx, ListenerSource};
+        record_halt_tx(
+            &mut tx,
+            conflict.observation(ListenerSource::Gateway, false, chain_id),
+        )
         .await?;
         tx.commit().await?;
         return Ok(());
@@ -4222,6 +4295,67 @@ mod tests {
         assert!(fhevm_engine_common::chain_recovery::is_halted(&pool)
             .await
             .unwrap());
+    }
+
+    #[tokio::test]
+    async fn gateway_promotion_preserves_the_promoted_cursor_identity() {
+        use fhevm_engine_common::chain_recovery::{checkpoint_hash, ListenerSource};
+        let (_db, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.unwrap();
+        sqlx::query("INSERT INTO public.gw_listener_last_block (dummy_id, last_block_num) VALUES (TRUE, 140)").execute(&pool).await.unwrap();
+        for cursor in [60_i64, 200] {
+            sqlx::query(&format!("INSERT INTO {GCS_SCHEMA_QUOTED}.gw_listener_last_block (dummy_id, last_block_num) VALUES (TRUE, $1) ON CONFLICT (dummy_id) DO UPDATE SET last_block_num = EXCLUDED.last_block_num"))
+                .bind(cursor).execute(&pool).await.unwrap();
+            sqlx::query("INSERT INTO public.listener_block_checkpoints (source, stack_role, chain_id, block_number, block_hash, parent_hash) VALUES ('gateway', 'GCS', 42, $1, $2, $3)")
+                .bind(cursor).bind(vec![cursor as u8; 32]).bind(vec![(cursor - 1) as u8; 32]).execute(&pool).await.unwrap();
+            let mut tx = pool.begin().await.unwrap();
+            sqlx::query("SELECT pg_advisory_xact_lock($1)")
+                .bind(CUTOVER_LOCK_ID)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            assert!(promote_gateway_checkpoints(&mut tx)
+                .await
+                .unwrap()
+                .is_none());
+            merge_gcs_table(&mut tx, "gw_listener_last_block", &["dummy_id"])
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+            let actual: i64 = sqlx::query_scalar(
+                "SELECT last_block_num FROM public.gw_listener_last_block WHERE dummy_id",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(actual, cursor);
+            assert_eq!(
+                checkpoint_hash(&pool, ListenerSource::Gateway, false, 42, actual)
+                    .await
+                    .unwrap(),
+                Some(vec![cursor as u8; 32])
+            );
+        }
+        // Promotion must never overwrite a disagreeing live identity.
+        sqlx::query("UPDATE public.listener_block_checkpoints SET block_hash = $1 WHERE stack_role = 'BCS' AND block_number = 200")
+            .bind(vec![1_u8; 32]).execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(CUTOVER_LOCK_ID)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(promote_gateway_checkpoints(&mut tx)
+            .await
+            .unwrap()
+            .is_some());
+        tx.rollback().await.unwrap();
+        assert_eq!(
+            checkpoint_hash(&pool, ListenerSource::Gateway, false, 42, 200)
+                .await
+                .unwrap(),
+            Some(vec![1_u8; 32])
+        );
     }
 
     fn timeout_payload() -> String {

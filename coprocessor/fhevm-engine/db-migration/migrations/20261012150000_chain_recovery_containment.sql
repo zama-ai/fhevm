@@ -40,5 +40,6 @@ CREATE TABLE public.listener_block_checkpoints (
     chain_id BIGINT NOT NULL,
     block_number BIGINT NOT NULL CHECK (block_number >= 0),
     block_hash BYTEA NOT NULL CHECK (octet_length(block_hash) = 32),
+    parent_hash BYTEA CHECK (octet_length(parent_hash) = 32),
     PRIMARY KEY (source, stack_role, chain_id, block_number)
 );
