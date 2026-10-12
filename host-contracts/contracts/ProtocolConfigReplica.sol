@@ -45,9 +45,8 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
 
     /**
      * @notice Canonical mirror initializer: seeds a non-canonical host from Ethereum's active state.
-     * @dev Preserves both the canonical context ID and canonical epoch ID instead of allocating a
-     *      fresh local epoch. This is the bootstrap path; later canonical updates use
-     *      `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch`.
+     * @dev Preserves both the canonical context ID and canonical epoch ID. This is the bootstrap path.
+     *      Later canonical updates use `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch`.
      * @param canonicalContextId The active Ethereum KMS context ID to preserve.
      * @param canonicalEpochId The active Ethereum epoch ID to preserve.
      * @param canonicalKmsNodeParams The active Ethereum KMS node set, including MPC metadata.
