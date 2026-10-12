@@ -1962,6 +1962,22 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         ProtocolConfig(protocolConfigAdd).reinitializeV4();
     }
 
+    /// @dev A v0.3.0 vote sits in the unused base field epochActivationConfirmedBySigner (field 18 of the
+    ///      base namespace). The current code reads the canonical namespace, so that vote does not block the signer.
+    function test_confirmEpochActivationIgnoresV030VoteInBaseStorage() public {
+        _setupEpochLifecycle();
+        uint256 epochId = EPOCH_COUNTER_BASE + 2;
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+        (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
+
+        uint256 baseField = uint256(0x80f3585af86806c5774303b06c1ee640aa83b6ef3e45df49bb26c8524500c200) + 18;
+        bytes32 voteSlot = keccak256(abi.encode(vm.addr(kmsPk0), keccak256(abi.encode(epochId, baseField))));
+        vm.store(address(protocolConfig), voteSlot, bytes32(uint256(1)));
+
+        _confirmEpochActivation(KMS_CONTEXT_COUNTER_BASE + 1, epochId, kmsPk0, completedKeyId, completedCrsId);
+    }
+
     // -----------------------------------------------------------------------
     // confirmEpochActivation negative branches
     // -----------------------------------------------------------------------

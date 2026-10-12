@@ -137,7 +137,7 @@ interface IProtocolConfig is IProtocolConfigBase {
      * @param signature The signer's EIP-712 ContextDestructionConfirmation signature.
      * @param extraData The extra data bound into the signature.
      */
-    event KmsContextDestructionConfirmed(
+    event KmsContextDestructionConfirmation(
         uint256 indexed destroyedContextId,
         uint256[] destroyedEpochIds,
         address indexed signer,
@@ -152,7 +152,7 @@ interface IProtocolConfig is IProtocolConfigBase {
      * @param signature The signer's EIP-712 EpochDestructionConfirmation signature.
      * @param extraData The extra data bound into the signature.
      */
-    event KmsEpochDestructionConfirmed(
+    event KmsEpochDestructionConfirmation(
         uint256 indexed destroyedEpochId,
         address indexed signer,
         bytes signature,

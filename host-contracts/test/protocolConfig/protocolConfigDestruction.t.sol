@@ -59,7 +59,7 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         bytes memory extraData = hex"01ab";
         signature = _computeSignature(kmsPk0, _hashContextDestruction(contextId, destroyedEpochIds, extraData));
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextDestructionConfirmed(
+        emit IProtocolConfig.KmsContextDestructionConfirmation(
             contextId,
             destroyedEpochIds,
             vm.addr(kmsPk0),
@@ -133,7 +133,7 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         bytes memory extraData = hex"01ab";
         signature = _computeSignature(kmsPk2, _hashEpochDestruction(epochId, extraData));
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsEpochDestructionConfirmed(epochId, vm.addr(kmsPk2), signature, extraData);
+        emit IProtocolConfig.KmsEpochDestructionConfirmation(epochId, vm.addr(kmsPk2), signature, extraData);
         vm.prank(address(0x999));
         protocolConfig.confirmKmsEpochDestruction(epochId, signature, extraData);
 

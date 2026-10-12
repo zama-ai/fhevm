@@ -68,7 +68,7 @@ contract ProtocolConfigVectorsTest is HostContractsDeployerTestUtils {
             );
             (address signer, bytes memory signature, bytes memory extraData) = _message(path);
             vm.expectEmit(address(protocolConfig));
-            emit IProtocolConfig.KmsContextDestructionConfirmed(
+            emit IProtocolConfig.KmsContextDestructionConfirmation(
                 switchAContextId,
                 destroyedEpochIds,
                 signer,
@@ -120,7 +120,7 @@ contract ProtocolConfigVectorsTest is HostContractsDeployerTestUtils {
             uint256 destroyedEpochId = vm.parseJsonUint(vectors, string.concat(path, ".fields.destroyedEpochId"));
             (address signer, bytes memory signature, bytes memory extraData) = _message(path);
             vm.expectEmit(address(protocolConfig));
-            emit IProtocolConfig.KmsEpochDestructionConfirmed(destroyedEpochId, signer, signature, extraData);
+            emit IProtocolConfig.KmsEpochDestructionConfirmation(destroyedEpochId, signer, signature, extraData);
             protocolConfig.confirmKmsEpochDestruction(destroyedEpochId, signature, extraData);
         }
     }

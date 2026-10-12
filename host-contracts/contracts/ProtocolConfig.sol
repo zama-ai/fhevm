@@ -80,10 +80,10 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         mapping(uint256 contextId => mapping(address signer => bool confirmed)) contextDestructionConfirmedBySigner;
         /// @notice Epoch destruction confirmations per signer.
         mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochDestructionConfirmedBySigner;
-        /// @notice Epoch activation confirmations per signer (one digest per signer per epoch).
-        mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochActivationConfirmedBySigner;
-        /// @notice Epoch activation confirmations grouped by digest.
-        mapping(uint256 epochId => mapping(bytes32 digest => uint256 confirmations)) epochActivationConfirmationCountForDigest;
+        /// @notice Epoch activation votes per signer (one digest per signer per epoch).
+        mapping(uint256 epochId => mapping(address signer => bool voted)) epochActivationVotedBySigner;
+        /// @notice Epoch activation votes grouped by digest.
+        mapping(uint256 epochId => mapping(bytes32 digest => uint256 votes)) epochActivationVoteCountForDigest;
         /// @notice Whether an epoch was destroyed by destroyKmsEpoch.
         mapping(uint256 epochId => bool) destroyedEpochs;
     }
@@ -262,9 +262,10 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         if (!isPreviousSigner && !isNewSigner) {
             revert KmsContextCreationUnauthorized(signer, kmsContextId);
         }
-        if (_markConfirmed(canonical$.contextCreationConfirmedBySigner[kmsContextId], signer)) {
+        if (canonical$.contextCreationConfirmedBySigner[kmsContextId][signer]) {
             revert KmsContextCreationAlreadyConfirmed(signer, kmsContextId);
         }
+        canonical$.contextCreationConfirmedBySigner[kmsContextId][signer] = true;
 
         // Count the confirmation separately for the split quorum. A signer in both committees
         // counts toward both.
@@ -309,8 +310,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
                 revert InvalidKmsEpoch(epochId);
             }
 
-            // Activation requires one key and one CRS attestation from the signer. An empty array skips its
-            // loop in _verifyEpochResults, so the contract would record the vote without checking that attestation.
+            // Activation needs a key result and a CRS result from the signer. _verifyEpochResults reads the
+            // signer from keys[0]. An empty crsList would skip the CRS check in _verifyEpochResults.
             if (keys.length == 0 || crsList.length == 0) {
                 revert EmptyEpochActivationAttestation(epochId);
             }
@@ -419,11 +420,12 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             revert KmsContextDestructionUnauthorized(signer, destroyedContextId);
         }
         ProtocolConfigCanonicalStorage storage canonical$ = _getProtocolConfigCanonicalStorage();
-        if (_markConfirmed(canonical$.contextDestructionConfirmedBySigner[destroyedContextId], signer)) {
+        if (canonical$.contextDestructionConfirmedBySigner[destroyedContextId][signer]) {
             revert KmsContextDestructionAlreadyConfirmed(signer, destroyedContextId);
         }
+        canonical$.contextDestructionConfirmedBySigner[destroyedContextId][signer] = true;
 
-        emit KmsContextDestructionConfirmed(destroyedContextId, destroyedEpochIds, signer, signature, extraData);
+        emit KmsContextDestructionConfirmation(destroyedContextId, destroyedEpochIds, signer, signature, extraData);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -447,11 +449,12 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         if (!$.isKmsSignerForContext[$.latestActiveKmsContextId][signer]) {
             revert KmsEpochDestructionUnauthorized(signer, destroyedEpochId);
         }
-        if (_markConfirmed(canonical$.epochDestructionConfirmedBySigner[destroyedEpochId], signer)) {
+        if (canonical$.epochDestructionConfirmedBySigner[destroyedEpochId][signer]) {
             revert KmsEpochDestructionAlreadyConfirmed(signer, destroyedEpochId);
         }
+        canonical$.epochDestructionConfirmedBySigner[destroyedEpochId][signer] = true;
 
-        emit KmsEpochDestructionConfirmed(destroyedEpochId, signer, signature, extraData);
+        emit KmsEpochDestructionConfirmation(destroyedEpochId, signer, signature, extraData);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -642,23 +645,12 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         bytes32 digest
     ) internal virtual returns (bool complete) {
         ProtocolConfigCanonicalStorage storage canonical$ = _getProtocolConfigCanonicalStorage();
-        if (_markConfirmed(canonical$.epochActivationConfirmedBySigner[epochId], signer)) {
+        if (canonical$.epochActivationVotedBySigner[epochId][signer]) {
             revert EpochActivationAlreadyConfirmed(signer, epochId);
         }
-        uint256 digestCount = ++canonical$.epochActivationConfirmationCountForDigest[epochId][digest];
+        canonical$.epochActivationVotedBySigner[epochId][signer] = true;
+        uint256 digestCount = ++canonical$.epochActivationVoteCountForDigest[epochId][digest];
         complete = digestCount == _getProtocolConfigStorage().kmsSignerAddressesForContext[contextId].length;
-    }
-
-    /**
-     * @dev Marks `signer` in `confirmedBySigner` and returns whether it was already marked. Callers
-     *      revert on true with their own error, which also undoes the write.
-     */
-    function _markConfirmed(
-        mapping(address signer => bool confirmed) storage confirmedBySigner,
-        address signer
-    ) internal virtual returns (bool alreadyConfirmed) {
-        alreadyConfirmed = confirmedBySigner[signer];
-        confirmedBySigner[signer] = true;
     }
 
     /**

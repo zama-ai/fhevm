@@ -342,9 +342,7 @@ export async function inspectKmsContextSwitch(
 
   const checksum = (address: string) => ethers.getAddress(address);
 
-  // Fetched once, on first use. An eager fetch reverts when no context is active.
-  let committee: Promise<ActiveCommittee> | undefined;
-  const activeCommittee = () => (committee ??= fetchActiveCommittee(pc, activeContextId, checksum));
+  const committee = await fetchActiveCommittee(pc, activeContextId, checksum);
 
   const status: KmsContextSwitchStatus = {
     protocolConfig: protocolConfigAddress,
@@ -397,7 +395,7 @@ export async function inspectKmsContextSwitch(
       fromBlock,
       toBlock,
       checksum,
-      activeCommittee,
+      committee,
     );
   } else if (sameSetRotationPending) {
     await fillSameSetRotation(pc, status, latestNewEpoch.args.epochId, fromBlock, toBlock, checksum);
@@ -412,7 +410,7 @@ export async function inspectKmsContextSwitch(
   status.epochDestructions = [];
   for (const event of destroyedEpochEvents) {
     const confirmations = await pc.queryFilter(
-      pc.filters.KmsEpochDestructionConfirmed(event.args.epochId),
+      pc.filters.KmsEpochDestructionConfirmation(event.args.epochId),
       fromBlock,
       toBlock,
     );
@@ -421,7 +419,7 @@ export async function inspectKmsContextSwitch(
         event.args.epochId,
         confirmations,
         (confirmation) => confirmation.args.extraData,
-        await activeCommittee(),
+        committee,
         checksum,
       ),
     );
@@ -486,7 +484,7 @@ async function fillContextSwitch(
   fromBlock: number,
   toBlock: number,
   checksum: (address: string) => string,
-  activeCommittee: () => Promise<ActiveCommittee>,
+  committee: ActiveCommittee,
 ): Promise<void> {
   status.flow = 'context-switch';
   status.pendingContextId = pendingContextId;
@@ -499,7 +497,7 @@ async function fillContextSwitch(
   if (status.aborted) {
     status.abortReason = 'context-destroyed';
     const destructionConfirmations = await pc.queryFilter(
-      pc.filters.KmsContextDestructionConfirmed(pendingContextId),
+      pc.filters.KmsContextDestructionConfirmation(pendingContextId),
       fromBlock,
       toBlock,
     );
@@ -507,7 +505,7 @@ async function fillContextSwitch(
       pendingContextId,
       destructionConfirmations,
       (confirmation) => `${confirmation.args.destroyedEpochIds.join(',')}:${confirmation.args.extraData}`,
-      await activeCommittee(),
+      committee,
       checksum,
     );
   }
