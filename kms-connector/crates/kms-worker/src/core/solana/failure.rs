@@ -67,8 +67,8 @@ pub enum AuthorizationFailure {
 /// read now is transient, and host state that grants no access is an ACL denial. A host record the
 /// host program could not have written is not the user's permission state, so it is
 /// unprocessable. A proof record its coprocessor knows is wrong is the coprocessors' failure, so it
-/// is transient. A connector every coprocessor refuses as a sender is outside the KMS context, so
-/// its request is unprocessable.
+/// is transient. A request every coprocessor refused this connector as a sender for is
+/// unprocessable.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct FailureClass {
     pub check: RequestCheckKind,
@@ -99,7 +99,7 @@ const ACL_DENIED: FailureClass = class(RequestCheckKind::Acl, ErrorCode::AclDeni
 /// Access that no later attempt can grant: the request itself names the wrong thing.
 const ACL_REFUSED: FailureClass = class(RequestCheckKind::Acl, ErrorCode::AclDenied, false);
 const UNPROCESSABLE: FailureClass = class(RequestCheckKind::Acl, ErrorCode::Unprocessable, false);
-const NOT_IN_KMS_CONTEXT: FailureClass = class(
+const REFUSED_AS_SENDER: FailureClass = class(
     RequestCheckKind::KmsContext,
     ErrorCode::Unprocessable,
     false,
@@ -167,16 +167,18 @@ impl SnapshotError {
 
 impl ProofReadError {
     /// A proof read failure is the coprocessors', except when every coprocessor refused this
-    /// connector as a sender. A coprocessor reads the KMS tx-senders of the live contexts at the
-    /// finalized block and refreshes them every 60 s, longer than relayer-http retries a request,
-    /// so a retry cannot recover within the request. As on EVM, where a node outside the KMS
-    /// context answers `unprocessable`, the refusal is final.
+    /// connector as a sender: its signer is in no live KMS context the coprocessors have read, or
+    /// its request signature does not verify. A coprocessor reads the KMS tx-senders of the live
+    /// contexts at the finalized block and refreshes them every 60 s, and a signature the
+    /// connector builds wrongly stays wrong, so neither recovers within relayer-http's retries and
+    /// the refusal is final. For the first cause this is EVM's outcome: a node outside the KMS
+    /// context answers `unprocessable`.
     pub fn class(&self) -> FailureClass {
         match self {
             Self::Refused {
                 code: ProofErrorCode::SenderAuthenticationFailed,
                 ..
-            } => NOT_IN_KMS_CONTEXT,
+            } => REFUSED_AS_SENDER,
             Self::Unavailable { .. }
             | Self::Refused { .. }
             | Self::ResponseLengthMismatch { .. } => UPSTREAM_TRANSIENT,
@@ -291,7 +293,7 @@ mod tests {
     const UNPROCESSABLE: (RequestCheckKind, ErrorCode) =
         (RequestCheckKind::Acl, ErrorCode::Unprocessable);
     /// KMS context family, `unprocessable`.
-    const NOT_IN_CONTEXT: (RequestCheckKind, ErrorCode) =
+    const REFUSED_AS_SENDER: (RequestCheckKind, ErrorCode) =
         (RequestCheckKind::KmsContext, ErrorCode::Unprocessable);
 
     fn refused(code: ProofErrorCode) -> ProofReadError {
@@ -444,7 +446,7 @@ mod tests {
                 AuthorizationFailure::ProofRead(refused(
                     ProofErrorCode::SenderAuthenticationFailed,
                 )),
-                NOT_IN_CONTEXT,
+                REFUSED_AS_SENDER,
                 TERMINAL,
             ),
             (
@@ -569,7 +571,7 @@ mod tests {
                 PublicDecryptFailure::ProofRead(refused(
                     ProofErrorCode::SenderAuthenticationFailed,
                 )),
-                NOT_IN_CONTEXT,
+                REFUSED_AS_SENDER,
                 TERMINAL,
             ),
             (

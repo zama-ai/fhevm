@@ -101,8 +101,8 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
 }
 
 /// The error for a query no coprocessor answered, after every coprocessor's read failed: a refusal
-/// when every coprocessor refused the connector as a sender, since its signer is then in no live
-/// KMS context any coprocessor has read.
+/// when every coprocessor refused this connector as a sender, because its signer is in no live KMS
+/// context the coprocessors have read or its request signature does not verify.
 fn unanswered(read_failures: &[(String, ProofReadError)]) -> ProofReadError {
     let reason = format!(
         "no coprocessor answered: {}",
