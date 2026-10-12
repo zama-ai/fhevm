@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import hre, { ethers } from 'hardhat';
 
-import { getProtocolConfigInterface } from '../../tasks/kmsContext';
+import { getProtocolConfigReplicaInterface } from '../../tasks/kmsContext';
 import {
   assertReplicaNeedsContextSwitch,
   assertReplicaNeedsEpochMirror,
@@ -88,7 +88,7 @@ describe('KMS mirror tasks', function () {
       const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
       await rotateToNewKmsContext(canonicalAddress, deployer, committee);
 
-      const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
+      const iface = await getProtocolConfigReplicaInterface(hre);
       const args = await readCanonicalContextSwitch(hre, {
         canonicalProvider: ethers.provider,
         canonicalProtocolConfigAddress: canonicalAddress,
@@ -152,7 +152,7 @@ describe('KMS mirror tasks', function () {
         committee.thresholds,
       );
 
-      const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
+      const iface = await getProtocolConfigReplicaInterface(hre);
       const switchArgs = await readCanonicalContextSwitch(hre, {
         canonicalProvider: ethers.provider,
         canonicalProtocolConfigAddress: canonicalAddress,

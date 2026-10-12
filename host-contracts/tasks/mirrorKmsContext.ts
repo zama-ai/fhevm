@@ -4,7 +4,7 @@ import type { ConfigurableTaskDefinition, HardhatRuntimeEnvironment } from 'hard
 
 import type { ProtocolConfig, ProtocolConfigReplica } from '../types';
 import type { KmsNodeParamsStruct, PcrValuesStruct } from '../types/contracts/ProtocolConfigReplica';
-import { broadcast, getProtocolConfigInterface, requireProtocolConfigAddress } from './kmsContext';
+import { broadcast, getProtocolConfigReplicaInterface, requireProtocolConfigAddress } from './kmsContext';
 import { type KmsThresholds, readCanonicalSnapshot } from './protocolConfigMirror';
 
 // This file defines tasks that mirror the canonical (Ethereum) ProtocolConfig's active KMS context
@@ -197,7 +197,7 @@ addMirrorTaskParams(
   { canonicalRpcUrl, canonicalProtocolConfigAddress, blockNumber, useInternalProxyAddress },
   hre,
 ): Promise<void> {
-  const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
+  const iface = await getProtocolConfigReplicaInterface(hre);
   const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
   const args = await readCanonicalContextSwitch(hre, {
     canonicalProvider,
@@ -226,7 +226,7 @@ addMirrorTaskParams(
   { canonicalRpcUrl, canonicalProtocolConfigAddress, blockNumber, useInternalProxyAddress },
   hre,
 ): Promise<void> {
-  const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
+  const iface = await getProtocolConfigReplicaInterface(hre);
   const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
   const args = await readCanonicalContextSwitch(hre, {
     canonicalProvider,
@@ -285,7 +285,7 @@ addMirrorTaskParams(
   { canonicalRpcUrl, canonicalProtocolConfigAddress, blockNumber, useInternalProxyAddress },
   hre,
 ): Promise<void> {
-  const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
+  const iface = await getProtocolConfigReplicaInterface(hre);
   const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
   const snapshot = await readCanonicalSnapshot(hre, {
     canonicalProvider,
@@ -313,7 +313,7 @@ addMirrorTaskParams(
   { canonicalRpcUrl, canonicalProtocolConfigAddress, blockNumber, useInternalProxyAddress },
   hre,
 ): Promise<void> {
-  const iface = await getProtocolConfigInterface(hre, 'ProtocolConfigReplica');
+  const iface = await getProtocolConfigReplicaInterface(hre);
   const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
   const snapshot = await readCanonicalSnapshot(hre, {
     canonicalProvider,
