@@ -33,7 +33,7 @@ const cachedGetCurrentKmsContextAndEpoch = createCachedFetch<Context, Parameters
 /**
  * Reads the current KMS context ID and epoch ID from a ProtocolConfig contract.
  *
- * Requires ProtocolConfig >= v0.2.0 (protocol v0.14.0).
+ * Requires ProtocolConfig >= v0.2.0 (protocol v0.14.0) or any ProtocolConfigReplica.
  *
  * Results are cached per (runtime, address) with a 24-hour TTL.
  * Concurrent callers share a single in-flight RPC request (deduplication).
@@ -50,10 +50,11 @@ export function getCurrentKmsContextAndEpoch(
 }
 
 async function _getCurrentKmsContextAndEpoch(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const protocolConfigVersion = parameters.fhevmContext.hostContractVersion('ProtocolConfig');
-
-  // getCurrentKmsContextAndEpoch requires ProtocolConfig >= v0.2.0 (protocol v0.14.0)
-  if (isVersionStrictlyBefore(protocolConfigVersion, { major: 0, minor: 2 })) {
+  // ProtocolConfigReplica postdates ProtocolConfig v0.2.0, so every replica version supports it.
+  if (
+    !parameters.fhevmContext.hasHostContractVersion('ProtocolConfigReplica') &&
+    isVersionStrictlyBefore(parameters.fhevmContext.hostContractVersion('ProtocolConfig'), { major: 0, minor: 2 })
+  ) {
     throw new Error(
       'ProtocolConfig.getCurrentKmsContextAndEpoch() requires ProtocolConfig >= v0.2.0 (protocol v0.14.0)',
     );

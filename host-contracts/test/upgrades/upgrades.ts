@@ -65,6 +65,28 @@ describe('Upgrades', function () {
     await expectThresholds(pc2);
   });
 
+  it('upgrades a ProtocolConfig proxy in place to ProtocolConfigReplica', async function () {
+    const factory = await ethers.getContractFactory('ProtocolConfig', this.signers.fred);
+    const replicaFactory = await ethers.getContractFactory('ProtocolConfigReplica', this.signers.fred);
+    const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
+    const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
+      },
+    });
+    await pc.waitForDeployment();
+    const [contextId, epochId] = await pc.getCurrentKmsContextAndEpoch();
+
+    const replica = await upgrades.upgradeProxy(pc, replicaFactory, { call: { fn: 'reinitializeV4' } });
+    await replica.waitForDeployment();
+    expect(await replica.getVersion()).to.equal('ProtocolConfigReplica v0.1.0');
+    expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId]);
+
+    await (await replica.mirrorKmsEpoch(contextId, epochId + 1n)).wait();
+    expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId + 1n]);
+  });
+
   it('deploy upgradeable KMSGeneration', async function () {
     const factory = await ethers.getContractFactory('KMSGeneration', this.signers.fred);
     const factoryUpgraded = await ethers.getContractFactory('KMSGenerationUpgradedExample', this.signers.fred);

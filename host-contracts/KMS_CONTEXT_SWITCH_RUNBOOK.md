@@ -10,10 +10,9 @@ parties:
 | **2. Context switch (committee change/node swap)** | Committee membership and/or metadata; includes a resharing | `defineNewKmsContextAndEpoch(...)`     | Yes — the **new** committee (§2) |
 
 Both run on the canonical host (Ethereum) only, and they can only ever complete there: the
-KMS connectors watch Ethereum's `ProtocolConfig` and no other chain, so the same call on a
-non-canonical host would open a context or epoch that no confirmation ever arrives for, and
-it would stay Pending forever. Non-canonical hosts are updated by mirroring the result of
-the canonical operation instead — §5.
+KMS connectors watch Ethereum's `ProtocolConfig` and no other chain. Non-canonical hosts run
+`ProtocolConfigReplica`, which has no `defineNew*` functions. They are updated by mirroring
+the result of the canonical operation instead (§5).
 
 Audience: whoever coordinates the governance operation with the external KMS parties.
 
@@ -262,13 +261,12 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
 
 ## 5. Mirroring onto non-canonical hosts (replicas)
 
-Ethereum is the canonical host: §3 and §4 run there and nowhere else. The same
-`ProtocolConfig` is deployed on every other host chain (e.g. Polygon), but those
-replicas never run the lifecycle — no quorum, no reshare, no `KMSGeneration`. Their only
-write path is the two mirror methods, which import state Ethereum has already finalized
-and land it as immediately `Active`. **Bringing each replica forward after a canonical
-rotation is the operator's job** — nothing on-chain does it for you, and nothing flags a
-replica that fell behind.
+Ethereum is the canonical host: §3 and §4 run there and nowhere else. Every other host
+chain (e.g. Polygon) runs `ProtocolConfigReplica`, which has no lifecycle — no quorum, no
+reshare, no `KMSGeneration`. Its only write path is the two mirror methods, which import
+state Ethereum has already finalized and land it as immediately `Active`.
+**Bringing each replica forward after a canonical rotation is the operator's job** —
+nothing on-chain does it for you, and nothing flags a replica that fell behind.
 
 The tasks below are defined in `host-contracts/tasks/mirrorKmsContext.ts`.
 
@@ -328,7 +326,7 @@ host-contracts README. Use the mirror tasks for every rotation after that.
 
 ```bash
 cd host-contracts
-export PROTOCOL_CONFIG_CONTRACT_ADDRESS=<replica ProtocolConfig proxy>
+export PROTOCOL_CONFIG_CONTRACT_ADDRESS=<ProtocolConfigReplica proxy>
 
 # DAO path — prints target + calldata, never broadcasts:
 npx hardhat task:buildMirrorKmsContextAndEpochCalldata --network <replica-network> \
@@ -349,11 +347,12 @@ slip a different committee past that check. Thresholds are read from canonical's
 rather than the event, so a threshold changed since the switch is mirrored at its current
 value.
 
-Two errors are worth knowing:
+Three errors are worth knowing:
 
-- `has no context anchor recorded` — the `--canonical-protocol-config-address` is not a
-  canonical `ProtocolConfig`. Replicas never write an anchor, so this is normally a
-  canonical/replica address mix-up.
+- `reports version "ProtocolConfigReplica v…"; expected "ProtocolConfig v…"` — the
+  `--canonical-protocol-config-address` points at a replica, not at Ethereum's `ProtocolConfig`.
+- `has no context anchor recorded` — the address runs `ProtocolConfig` but holds no anchor for the
+  active context. This is normally a replica proxy that still runs `ProtocolConfig`.
 - `is already at context …` — either canonical's rotation is not finalized yet (§5.2) or this
   replica is already up to date.
 
@@ -364,7 +363,7 @@ read, no anchor check:
 
 ```bash
 cd host-contracts
-export PROTOCOL_CONFIG_CONTRACT_ADDRESS=<replica ProtocolConfig proxy>
+export PROTOCOL_CONFIG_CONTRACT_ADDRESS=<ProtocolConfigReplica proxy>
 
 # DAO path:
 npx hardhat task:buildMirrorKmsEpochCalldata --network <replica-network> \
@@ -476,8 +475,8 @@ Quorum cheat-sheet:
   that range. In a node swap, the incoming node **takes the dropped node's party id** —
   only the identity fields (addresses, `mpcIdentity`, cert, storage prefix) change.
 - **Canonical vs replica.** The lifecycle above exists only on the canonical host
-  (Ethereum). Other host chains run the same `ProtocolConfig` but as read-replicas: no
-  quorum path, no `KMSGeneration`, and one write path — `mirrorKmsContextAndEpoch` /
+  (Ethereum). Other host chains run `ProtocolConfigReplica`, a read-replica: no quorum
+  path, no `KMSGeneration`, and one write path — `mirrorKmsContextAndEpoch` /
   `mirrorKmsEpoch`, which import already-finalized canonical state as immediately `Active`.
   The only on-chain guard is that ids strictly increase, which prevents a rollback but not
   a replica left behind; keeping every replica current is operational discipline (§5).

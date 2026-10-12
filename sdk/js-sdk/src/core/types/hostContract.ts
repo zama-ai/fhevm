@@ -7,6 +7,7 @@ export type HostContractNameMap = {
   readonly InputVerifier: 'InputVerifier';
   readonly KMSVerifier: 'KMSVerifier';
   readonly ProtocolConfig: 'ProtocolConfig';
+  readonly ProtocolConfigReplica: 'ProtocolConfigReplica';
 };
 
 // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents

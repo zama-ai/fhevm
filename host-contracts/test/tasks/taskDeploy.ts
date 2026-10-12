@@ -22,7 +22,7 @@ import {
   snapshotProtocolConfigCanonicalEnv,
 } from '../../tasks/utils/protocolConfigCanonicalEnv';
 import { executeUpgradeProposal } from '../../tasks/utils/upgradeProposal';
-import type { KMSGeneration, ProtocolConfig } from '../../types';
+import type { KMSGeneration, ProtocolConfig, ProtocolConfigReplica } from '../../types';
 import {
   HOST_ADDRESSES_SOL_FILE,
   HOST_ENV_FILE,
@@ -220,10 +220,12 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
     const blockAfterMirror = await ethers.provider.getBlockNumber();
 
     const secondary = (await ethers.getContractAt(
-      'ProtocolConfig',
+      'ProtocolConfigReplica',
       secondaryProxyAddress,
       deployer,
-    )) as unknown as ProtocolConfig;
+    )) as unknown as ProtocolConfigReplica;
+
+    expect(await secondary.getVersion()).to.match(/^ProtocolConfigReplica v/);
 
     const canonicalContextId = await canonical.getCurrentKmsContextId();
     const secondaryContextId = await secondary.getCurrentKmsContextId();
