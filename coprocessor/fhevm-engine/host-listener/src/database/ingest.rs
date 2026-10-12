@@ -20,6 +20,7 @@ use crate::contracts::{
 };
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::event_envelope::{classify, DecodedEvent};
+use crate::database::event_operands::validate_scalar_mode;
 use crate::database::synthetic_ops::{
     synthetic_logs, synthetic_transaction_hash, SyntheticContext,
     SYNTHETIC_BLOCK_OFFSET,
@@ -452,6 +453,9 @@ pub async fn ingest_block_logs(
                 TfheContract::TfheContractEvents::SELECTORS,
             ) {
                 DecodedEvent::Decoded(event) => {
+                    validate_scalar_mode(&event.data).map_err(|reason| {
+                        sqlx::Error::Protocol(reason.into())
+                    })?;
                     fhe_event_count = fhe_event_count.saturating_add(1);
                     let log = LogTfhe {
                         event,
