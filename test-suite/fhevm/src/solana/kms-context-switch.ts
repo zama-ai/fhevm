@@ -13,8 +13,8 @@
 //
 // Every Solana decrypt goes through relayer-http, which lists every party's proxy, spares included
 // (generate/config.ts). After the first switch and after the node swap, the leg reads relayer-http's
-// log of those decrypts: the party outside the active context must be refused at its first attempt,
-// and the aggregation must not wait for its deadline.
+// log of those decrypts: the party outside the active context must be refused, and the aggregation
+// must not wait for its deadline.
 import { bytesToHex, hexToBytes } from '@fhevm/sdk/base';
 import { TOTAL_SUPPLY_KEY } from '@fhevm/confidential-token';
 import { address, getAddressEncoder } from '@solana/kit';
@@ -85,8 +85,8 @@ export type SolanaKmsContextLeg = {
   /**
    * Steps 1 and 5: values written at the baseline decrypt under `contextId`. zama-host accepts the
    * certificate its committee signs, and the holder user-decrypts the balance. relayer-http also
-   * asked `outsideParties`, which are not in `contextId`: each was refused at its first attempt, and
-   * no aggregation waited for its deadline.
+   * asked `outsideParties`, which are not in `contextId`: each was refused, and no aggregation waited
+   * for its deadline.
    */
   readonly checkDecrypts: (contextId: bigint, outsideParties: readonly number[]) => Promise<void>;
   /**
@@ -166,14 +166,15 @@ export const prepareSolanaKmsContextLeg = async (
 
   /**
    * relayer-http's log of the decrypts of the leg's values made after `before` (the request ids it
-   * had logged until then): in each answered decrypt, each party in `outsideParties` was refused at
-   * its first attempt, and the aggregation did not reach its deadline. One attempt, because a core
-   * with no role in the request's context answers NotFound, which the connector's worker turns into
-   * 422 unprocessable, a code relayer-http does not retry. The SDK authenticates each
-   * share against the signers of its permit's context and needs 2t+1 of them
-   * (userDecrypt/response.ts), so a share from outside that context could never count.
+   * had logged until then): in each answered decrypt, each party in `outsideParties` ended its call
+   * refused, and the aggregation finished before its deadline. A party whose tx-sender is in no live
+   * context is refused by the Merkle proof server, which its worker reports as retryable
+   * upstream_transient, so relayer-http retries it with backoff: about 3 s of the 5 s call timeout per
+   * decrypt in this leg. Production lists only current nodes. The SDK authenticates each share
+   * against the signers of its permit's context and needs 2t+1 of them (userDecrypt/response.ts), so
+   * a share from outside that context could never count.
    */
-  const assertOutsidePartiesRefusedAtOnce = async (before: ReadonlySet<string>, outsideParties: readonly number[]) => {
+  const assertOutsidePartiesRefusedBeforeDeadline = async (before: ReadonlySet<string>, outsideParties: readonly number[]) => {
     const handles = [bytesToHex(supplyHandle), balance.currentHandle.toLowerCase()];
     const answered = await until(
       async () => {
@@ -192,20 +193,21 @@ export const prepareSolanaKmsContextLeg = async (
       const outcome = aggregationOutcome(lines)!;
       if (started === undefined) throw new Error('relayer-http logged no aggregation start for a decrypt');
       const timeoutMs = Number(started.fields.timeout_ms);
-      if (outcome.fields.deadline_hit !== false) {
+      if (outcome.fields.deadline_hit !== false || Number(outcome.fields.elapsed_ms) >= timeoutMs) {
         throw new Error(`a ${String(started.fields.flow)} decrypt waited for its ${timeoutMs} ms deadline`);
       }
       for (const party of outsideParties) {
         const node = nodeOutcomes(lines).find((outcomeOfNode) => outcomeOfNode.node === relayerHttpNodeName(party));
-        if (node?.message !== 'call failed' || node.attempts !== 1) {
+        if (node?.message !== 'call failed') {
           throw new Error(
             `party ${party}, outside the context, ended its ${String(started.fields.flow)} call with ` +
-              `${node === undefined ? 'no line' : `"${node.message}" after ${node.attempts} attempt(s)`}, expected one refused attempt`,
+              `${node === undefined ? 'no line' : `"${node.message}" after ${node.attempts} attempt(s)`}, expected a refusal`,
           );
         }
         console.log(
-          `[kms-context-switch] solana: ${String(started.fields.flow)}: party ${party} refused (${node.code}) in ` +
-            `${node.elapsedMs} ms; the aggregation took ${String(outcome.fields.elapsed_ms)} ms of its ${timeoutMs} ms`,
+          `[kms-context-switch] solana: ${String(started.fields.flow)}: party ${party} refused (${node.code}) after ` +
+            `${node.attempts} attempt(s) in ${node.elapsedMs} ms; the aggregation took ${String(outcome.fields.elapsed_ms)} ms ` +
+            `of its ${timeoutMs} ms`,
         );
       }
     }
@@ -293,7 +295,7 @@ export const prepareSolanaKmsContextLeg = async (
         secretKey: bytesToHex(holder.bytes.subarray(0, 32)),
         expected: WRAP_AMOUNT,
       });
-      await assertOutsidePartiesRefusedAtOnce(before, outsideParties);
+      await assertOutsidePartiesRefusedBeforeDeadline(before, outsideParties);
       console.log(
         `[kms-context-switch] solana: context ${contextId} certified the baseline supply and the holder ` +
           'user-decrypted the baseline balance',

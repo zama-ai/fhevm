@@ -150,7 +150,7 @@ export const renderRelayerConfig = (
  * context was defined with, and one endpoint per kms-connector proxy, named after its party. Every
  * party's proxy is listed, spares included, so a node swap needs no new config or restart: a party
  * outside the active context only adds a refused call, which the kms-context-switch leg checks ends
- * at its first attempt. A production deployment lists its current nodes and updates the list on a
+ * before the aggregation's deadline. A production deployment lists its current nodes and updates the list on a
  * node change.
  */
 export const renderRelayerHttpConfig = (
