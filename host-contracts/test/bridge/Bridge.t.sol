@@ -3,19 +3,22 @@ pragma solidity ^0.8.24;
 
 import {TestHelperOz5} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 import {Origin} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol";
-import {MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {ILayerZeroEndpointV2, MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
 import {Vm} from "forge-std/Vm.sol";
 
 import {DeployableERC1967Proxy, HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
 import {ACL} from "../../contracts/ACL.sol";
+import {HCULimit} from "../../contracts/HCULimit.sol";
+import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
+import {FheType} from "../../contracts/shared/FheType.sol";
 import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {ConfidentialBridge} from "../../contracts/bridge/ConfidentialBridge.sol";
 import {HandlesSender} from "../../contracts/bridge/HandlesSender.sol";
 import {HandlesReceiver} from "../../contracts/bridge/HandlesReceiver.sol";
 import {BridgeEvents} from "../../contracts/bridge/BridgeEvents.sol";
-import {aclAdd, confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd, hcuLimitAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 import {MockDstApp} from "./mocks/MockDstApp.sol";
 
@@ -57,6 +60,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         // Reconstruct the FHE host stack at canonical addresses.
         _deployACL(owner);
         _deployFHEVMExecutor(owner);
+        _deployHCULimit(owner);
         acl = ACL(aclAdd);
         fhevmExecutor = fhevmExecutorAdd;
 
@@ -806,6 +810,103 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     ////////////////////////////////////////////////////////////////////////////////
     // Destination-side lzCompose authentication + dispatch
     ////////////////////////////////////////////////////////////////////////////////
+
+    function test_LineageSurvivesReceiveAndCompose() public {
+        dstBridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
+        vm.startPrank(owner);
+        srcBridge.setPeer(DST_EID, _addressToBytes32(address(dstBridge)));
+        dstBridge.setPeer(SRC_EID, _addressToBytes32(address(srcBridge)));
+        HCULimit(hcuLimitAdd).setLineageDepthLimit(200_000, 100);
+        vm.stopPrank();
+
+        vm.startPrank(srcApp);
+        bytes32 source = FHEVMExecutor(fhevmExecutorAdd).trivialEncrypt(7, FheType.Uint64);
+        source = FHEVMExecutor(fhevmExecutorAdd).fheAdd(source, bytes32(uint256(1)), 0x01);
+        acl.allow(source, srcApp);
+        bytes32[] memory handles = new bytes32[](1);
+        handles[0] = source;
+        MessagingFee memory fee = srcBridge.quote(
+            DST_EID,
+            srcApp,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handles,
+            uint64(200_000)
+        );
+        MessagingReceipt memory receipt = srcBridge.send{value: fee.nativeFee}(
+            DST_EID,
+            _addressToBytes32(address(dstApp)),
+            "",
+            handles,
+            uint64(200_000)
+        );
+        vm.stopPrank();
+
+        vm.recordLogs();
+        verifyPackets(DST_EID, address(dstBridge));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes memory compose;
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].topics[0] == keccak256("ComposeSent(address,address,bytes32,uint16,bytes)")) {
+                (, , , , compose) = abi.decode(logs[i].data, (address, address, bytes32, uint16, bytes));
+            }
+        }
+        assertGt(compose.length, 0);
+        vm.roll(block.number + 3);
+        ILayerZeroEndpointV2(endpoints[DST_EID]).lzCompose(
+            address(dstBridge),
+            address(dstBridge),
+            receipt.guid,
+            0,
+            compose,
+            ""
+        );
+        bytes32 destination = dstApp.lastCall().dstHandleList[0];
+        assertTrue(acl.allowedTransient(destination, address(dstApp)));
+        assertEq(HCULimit(hcuLimitAdd).getDepthForPersistence(destination, address(dstApp)), 132_732);
+        vm.prank(address(dstApp));
+        vm.expectRevert(HCULimit.HCULineageDepthLimitExceeded.selector);
+        FHEVMExecutor(fhevmExecutorAdd).fheAdd(destination, bytes32(uint256(1)), 0x01);
+    }
+
+    function test_LegacyComposeCannotResetDepthWhenThrottlingIsEnabled() public {
+        dstBridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
+        vm.prank(owner);
+        HCULimit(hcuLimitAdd).setLineageDepthLimit(1_000_000, 1);
+        bytes32[] memory handles = new bytes32[](1);
+        handles[0] = _makeHandle(42);
+        bytes memory message = abi.encode(
+            SRC_EID,
+            _addressToBytes32(srcApp),
+            _addressToBytes32(address(dstApp)),
+            bytes(""),
+            handles,
+            handles
+        );
+        vm.prank(address(endpoints[DST_EID]));
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.UnknownHandleDepth.selector, handles[0]));
+        dstBridge.lzCompose(address(dstBridge), keccak256("legacy"), message, address(0), "");
+    }
+
+    function test_UntrackedSourceCannotResetDepthWhenThrottlingIsEnabled() public {
+        dstBridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
+        vm.prank(owner);
+        HCULimit(hcuLimitAdd).setLineageDepthLimit(1_000_000, 1);
+        bytes32[] memory handles = new bytes32[](1);
+        handles[0] = _makeHandle(42);
+        bytes memory message = abi.encode(
+            SRC_EID,
+            _addressToBytes32(srcApp),
+            _addressToBytes32(address(dstApp)),
+            bytes(""),
+            handles,
+            handles,
+            abi.encode(uint48(block.number), new uint48[](1), false)
+        );
+        vm.prank(address(endpoints[DST_EID]));
+        vm.expectRevert(HandlesReceiver.SourceDepthTrackingDisabled.selector);
+        dstBridge.lzCompose(address(dstBridge), keccak256("untracked"), message, address(0), "");
+    }
 
     function test_LzCompose_RevertsIfNotEndpoint() public {
         bytes memory composeMsg = abi.encode(

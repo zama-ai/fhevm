@@ -5,7 +5,8 @@ import {OAppSenderUpgradeable, MessagingFee, MessagingReceipt} from "@layerzerol
 import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 
 import {ACL} from "../ACL.sol";
-import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {HCULimit} from "../HCULimit.sol";
+import {aclAdd, hcuLimitAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {ACLOwnable} from "../shared/ACLOwnable.sol";
 import {BridgeEvents} from "./BridgeEvents.sol";
 
@@ -284,7 +285,14 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         if (_getHandlesSenderStorage().dstChainIdForEid[dstEid] == 0) revert UnknownDstEid(dstEid);
 
         bytes memory finalOptions = _buildOptions(dstEid, uint64(nHandles), uint64(payload.length), lzComposeGas);
-        bytes memory message = abi.encode(bytes32(uint256(uint160(srcApp))), dstApp, payload, handleList);
+        bytes memory message = abi.encode(
+            bytes32(uint256(uint160(srcApp))),
+            dstApp,
+            payload,
+            handleList,
+            new uint48[](nHandles),
+            false
+        );
         fee = _quote(dstEid, message, finalOptions, false);
     }
 
@@ -385,8 +393,14 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
 
         _checkAllAllowed(handleList);
 
+        uint48[] memory depths = new uint48[](handleList.length);
+        for (uint256 i; i < handleList.length; i++) {
+            depths[i] = HCULimit(hcuLimitAdd).getDepthForPersistence(handleList[i], msg.sender);
+        }
+
         bytes32 srcApp = bytes32(uint256(uint160(msg.sender)));
-        bytes memory message = abi.encode(srcApp, dstApp, payload, handleList);
+        (uint48 lineageLimit, ) = HCULimit(hcuLimitAdd).getLineageDepthLimit();
+        bytes memory message = abi.encode(srcApp, dstApp, payload, handleList, depths, lineageLimit != 0);
         MessagingFee memory fee = _quote(dstEid, message, finalOptions, false);
         receipt = _lzSend(dstEid, message, finalOptions, fee, payable(msg.sender));
     }

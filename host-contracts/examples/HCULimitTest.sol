@@ -8,6 +8,35 @@ import {CoprocessorSetup} from "../lib/CoprocessorSetup.sol";
 /// @title HCULimitTest
 /// @notice A contract to demonstrate HCU limits in different scenarios
 contract HCULimitTest {
+    euint64 public lineage;
+
+    function startLineage() external {
+        lineage = FHE.asEuint64(0);
+        FHE.allowThis(lineage);
+    }
+
+    function advanceLineage(euint64 input) external {
+        lineage = FHE.add(input, uint64(1));
+        FHE.allowThis(lineage);
+    }
+
+    function forwardLineage(HCULimitTest recipient) external {
+        FHE.allowTransient(lineage, address(recipient));
+        recipient.advanceLineage(lineage);
+    }
+
+    function allowLineage(address account) external {
+        FHE.allow(lineage, account);
+    }
+
+    function combineWithFreshBranch(euint64 input) external {
+        euint64 fresh = FHE.asEuint64(0);
+        fresh = FHE.add(fresh, uint64(1));
+        fresh = FHE.add(fresh, uint64(1));
+        lineage = FHE.add(input, fresh);
+        FHE.allowThis(lineage);
+    }
+
     /// @notice Constructor that sets up FHE configuration and deposits initial value
     /// @dev Payable to allow initial deposit
     constructor() {

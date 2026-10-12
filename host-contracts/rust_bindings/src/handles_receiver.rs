@@ -9,6 +9,7 @@ interface HandlesReceiver {
         uint64 nonce;
     }
 
+    error DepthListLengthMismatch();
     error InvalidDelegate();
     error InvalidEndpointCall();
     error InvalidInitialization();
@@ -21,6 +22,7 @@ interface HandlesReceiver {
     error OwnableInvalidOwner(address owner);
     error OwnableUnauthorizedAccount(address account);
     error PlaintextOutOfRange();
+    error SourceDepthTrackingDisabled();
     error UnexpectedComposeOrigin(address from);
     error UnsupportedFheTypeInDstHandle();
     error WrongChainIdInDstHandle();
@@ -589,6 +591,11 @@ interface HandlesReceiver {
   },
   {
     "type": "error",
+    "name": "DepthListLengthMismatch",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidDelegate",
     "inputs": []
   },
@@ -692,6 +699,11 @@ interface HandlesReceiver {
   {
     "type": "error",
     "name": "PlaintextOutOfRange",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SourceDepthTrackingDisabled",
     "inputs": []
   },
   {
@@ -1004,6 +1016,80 @@ struct Origin { uint32 srcEid; bytes32 sender; uint64 nonce; }
                 alloy_sol_types::abi::token::WordToken(
                     alloy_sol_types::private::keccak256(out),
                 )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `DepthListLengthMismatch()` and selector `0xa51ad291`.
+```solidity
+error DepthListLengthMismatch();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct DepthListLengthMismatch;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<DepthListLengthMismatch> for UnderlyingRustTuple<'_> {
+            fn from(value: DepthListLengthMismatch) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for DepthListLengthMismatch {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for DepthListLengthMismatch {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "DepthListLengthMismatch()";
+            const SELECTOR: [u8; 4] = [165u8, 26u8, 210u8, 145u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -1938,6 +2024,82 @@ error PlaintextOutOfRange();
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "PlaintextOutOfRange()";
             const SELECTOR: [u8; 4] = [245u8, 125u8, 154u8, 245u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `SourceDepthTrackingDisabled()` and selector `0x9b4a45fc`.
+```solidity
+error SourceDepthTrackingDisabled();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct SourceDepthTrackingDisabled;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<SourceDepthTrackingDisabled>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: SourceDepthTrackingDisabled) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for SourceDepthTrackingDisabled {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for SourceDepthTrackingDisabled {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "SourceDepthTrackingDisabled()";
+            const SELECTOR: [u8; 4] = [155u8, 74u8, 69u8, 252u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -6421,6 +6583,8 @@ function transferOwnership(address newOwner) external;
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum HandlesReceiverErrors {
         #[allow(missing_docs)]
+        DepthListLengthMismatch(DepthListLengthMismatch),
+        #[allow(missing_docs)]
         InvalidDelegate(InvalidDelegate),
         #[allow(missing_docs)]
         InvalidEndpointCall(InvalidEndpointCall),
@@ -6444,6 +6608,8 @@ function transferOwnership(address newOwner) external;
         OwnableUnauthorizedAccount(OwnableUnauthorizedAccount),
         #[allow(missing_docs)]
         PlaintextOutOfRange(PlaintextOutOfRange),
+        #[allow(missing_docs)]
+        SourceDepthTrackingDisabled(SourceDepthTrackingDisabled),
         #[allow(missing_docs)]
         UnexpectedComposeOrigin(UnexpectedComposeOrigin),
         #[allow(missing_docs)]
@@ -6472,6 +6638,8 @@ function transferOwnership(address newOwner) external;
             [82u8, 73u8, 0u8, 22u8],
             [111u8, 207u8, 11u8, 98u8],
             [145u8, 172u8, 94u8, 79u8],
+            [155u8, 74u8, 69u8, 252u8],
+            [165u8, 26u8, 210u8, 145u8],
             [181u8, 134u8, 54u8, 4u8],
             [185u8, 18u8, 14u8, 129u8],
             [194u8, 107u8, 235u8, 204u8],
@@ -6492,6 +6660,8 @@ function transferOwnership(address newOwner) external;
             ::core::stringify!(UnexpectedComposeOrigin),
             ::core::stringify!(NotLzEndpoint),
             ::core::stringify!(OnlyEndpoint),
+            ::core::stringify!(SourceDepthTrackingDisabled),
+            ::core::stringify!(DepthListLengthMismatch),
             ::core::stringify!(InvalidDelegate),
             ::core::stringify!(WrongHandleVersionInDstHandle),
             ::core::stringify!(OnlyPeer),
@@ -6512,6 +6682,8 @@ function transferOwnership(address newOwner) external;
             <UnexpectedComposeOrigin as alloy_sol_types::SolError>::SIGNATURE,
             <NotLzEndpoint as alloy_sol_types::SolError>::SIGNATURE,
             <OnlyEndpoint as alloy_sol_types::SolError>::SIGNATURE,
+            <SourceDepthTrackingDisabled as alloy_sol_types::SolError>::SIGNATURE,
+            <DepthListLengthMismatch as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidDelegate as alloy_sol_types::SolError>::SIGNATURE,
             <WrongHandleVersionInDstHandle as alloy_sol_types::SolError>::SIGNATURE,
             <OnlyPeer as alloy_sol_types::SolError>::SIGNATURE,
@@ -6546,10 +6718,13 @@ function transferOwnership(address newOwner) external;
     impl alloy_sol_types::SolInterface for HandlesReceiverErrors {
         const NAME: &'static str = "HandlesReceiverErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 17usize;
+        const COUNT: usize = 19usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
+                Self::DepthListLengthMismatch(_) => {
+                    <DepthListLengthMismatch as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::InvalidDelegate(_) => {
                     <InvalidDelegate as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -6581,6 +6756,9 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::PlaintextOutOfRange(_) => {
                     <PlaintextOutOfRange as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::SourceDepthTrackingDisabled(_) => {
+                    <SourceDepthTrackingDisabled as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::UnexpectedComposeOrigin(_) => {
                     <UnexpectedComposeOrigin as alloy_sol_types::SolError>::SELECTOR
@@ -6710,6 +6888,28 @@ function transferOwnership(address newOwner) external;
                             .map(HandlesReceiverErrors::OnlyEndpoint)
                     }
                     OnlyEndpoint
+                },
+                {
+                    fn SourceDepthTrackingDisabled(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
+                        <SourceDepthTrackingDisabled as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HandlesReceiverErrors::SourceDepthTrackingDisabled)
+                    }
+                    SourceDepthTrackingDisabled
+                },
+                {
+                    fn DepthListLengthMismatch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
+                        <DepthListLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(HandlesReceiverErrors::DepthListLengthMismatch)
+                    }
+                    DepthListLengthMismatch
                 },
                 {
                     fn InvalidDelegate(
@@ -6915,6 +7115,28 @@ function transferOwnership(address newOwner) external;
                     OnlyEndpoint
                 },
                 {
+                    fn SourceDepthTrackingDisabled(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
+                        <SourceDepthTrackingDisabled as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesReceiverErrors::SourceDepthTrackingDisabled)
+                    }
+                    SourceDepthTrackingDisabled
+                },
+                {
+                    fn DepthListLengthMismatch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
+                        <DepthListLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(HandlesReceiverErrors::DepthListLengthMismatch)
+                    }
+                    DepthListLengthMismatch
+                },
+                {
                     fn InvalidDelegate(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<HandlesReceiverErrors> {
@@ -7016,6 +7238,11 @@ function transferOwnership(address newOwner) external;
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
+                Self::DepthListLengthMismatch(inner) => {
+                    <DepthListLengthMismatch as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::InvalidDelegate(inner) => {
                     <InvalidDelegate as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -7066,6 +7293,11 @@ function transferOwnership(address newOwner) external;
                         inner,
                     )
                 }
+                Self::SourceDepthTrackingDisabled(inner) => {
+                    <SourceDepthTrackingDisabled as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::UnexpectedComposeOrigin(inner) => {
                     <UnexpectedComposeOrigin as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -7096,6 +7328,12 @@ function transferOwnership(address newOwner) external;
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
+                Self::DepthListLengthMismatch(inner) => {
+                    <DepthListLengthMismatch as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::InvalidDelegate(inner) => {
                     <InvalidDelegate as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -7158,6 +7396,12 @@ function transferOwnership(address newOwner) external;
                 }
                 Self::PlaintextOutOfRange(inner) => {
                     <PlaintextOutOfRange as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::SourceDepthTrackingDisabled(inner) => {
+                    <SourceDepthTrackingDisabled as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
