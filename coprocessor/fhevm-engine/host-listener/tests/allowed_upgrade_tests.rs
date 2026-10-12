@@ -480,3 +480,48 @@ async fn unknown_envelopes_do_not_prevent_valid_events() -> anyhow::Result<()> {
     assert_eq!(computation_flags(&pool, handle).await?, (true, false));
     Ok(())
 }
+
+#[tokio::test]
+#[serial(db)]
+async fn shift_replay_preserves_legacy_and_current_contract_amounts(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    let block = block();
+    let tx_hash = FixedBytes::with_last_byte(0x94);
+    let input = computed_handle(0x30); // Uint64: legacy scalar range exceeds uint8.
+    let current_output = computed_handle(0x31);
+    let legacy_output = computed_handle(0x32);
+    let shift = |amount: u64, result| TfheContract::FheShl {
+        caller: Address::ZERO,
+        lhs: input,
+        rhs: FixedBytes::from(U256::from(amount).to_be_bytes::<32>()),
+        scalarByte: FixedBytes::with_last_byte(1),
+        result,
+    };
+    let logs = || {
+        vec![
+            rpc_log(&trivial_encrypt(input), &block, tx_hash, 0),
+            rpc_log(&shift(255, current_output), &block, tx_hash, 1),
+            rpc_log(&shift(256, legacy_output), &block, tx_hash, 2),
+            rpc_log(&allowed(current_output), &block, tx_hash, 3),
+            rpc_log(&allowed(legacy_output), &block, tx_hash, 4),
+        ]
+    };
+    ingest(&mut db, &block, logs(), false).await?;
+    ingest(&mut db, &block, logs(), true).await?;
+    for output in [current_output, legacy_output] {
+        assert_eq!(computation_flags(&pool, output).await?, (true, false));
+    }
+    let scalar: Vec<Vec<u8>> = sqlx::query_scalar(
+        "SELECT dependencies FROM computations WHERE output_handle=$1",
+    )
+    .bind(legacy_output.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        scalar[1],
+        U256::from(256).to_be_bytes::<32>().to_vec(),
+        "historical replay must preserve the original amount, not truncate it"
+    );
+    Ok(())
+}

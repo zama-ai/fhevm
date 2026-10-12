@@ -33,16 +33,62 @@ pub fn validate_scalar_mode(
                 Err("MulDiv event requires scalarByte 0x01 or 0x03")
             }
         }
+        E::FheShl(C::FheShl {
+            scalarByte,
+            lhs,
+            rhs,
+            ..
+        })
+        | E::FheShr(C::FheShr {
+            scalarByte,
+            lhs,
+            rhs,
+            ..
+        })
+        | E::FheRotl(C::FheRotl {
+            scalarByte,
+            lhs,
+            rhs,
+            ..
+        })
+        | E::FheRotr(C::FheRotr {
+            scalarByte,
+            lhs,
+            rhs,
+            ..
+        }) => match scalarByte.0[0] {
+            0 => Ok(()),
+            1 => {
+                // Before executor #4304, scalar shifts used the ordinary
+                // lhs-type scalar range. Restart replay can cross that upgrade;
+                // without a per-chain activation height, uint8-only validation
+                // would reject legitimate committed history. Enforce the range
+                // common to both versions, leaving the newer limit to the EVM.
+                let bytes = match lhs.0[30] {
+                    2 => 1,
+                    3 => 2,
+                    4 => 4,
+                    5 => 8,
+                    6 => 16,
+                    8 => 32,
+                    _ => {
+                        return Err("scalar shift has unsupported operand type")
+                    }
+                };
+                if rhs.0[..32 - bytes].iter().all(|byte| *byte == 0) {
+                    Ok(())
+                } else {
+                    Err("scalar shift amount exceeds operand type range")
+                }
+            }
+            _ => Err("binary event scalarByte is not Boolean"),
+        },
         E::FheAdd(C::FheAdd { scalarByte, .. })
         | E::FheSub(C::FheSub { scalarByte, .. })
         | E::FheMul(C::FheMul { scalarByte, .. })
         | E::FheBitAnd(C::FheBitAnd { scalarByte, .. })
         | E::FheBitOr(C::FheBitOr { scalarByte, .. })
         | E::FheBitXor(C::FheBitXor { scalarByte, .. })
-        | E::FheShl(C::FheShl { scalarByte, .. })
-        | E::FheShr(C::FheShr { scalarByte, .. })
-        | E::FheRotl(C::FheRotl { scalarByte, .. })
-        | E::FheRotr(C::FheRotr { scalarByte, .. })
         | E::FheEq(C::FheEq { scalarByte, .. })
         | E::FheNe(C::FheNe { scalarByte, .. })
         | E::FheGe(C::FheGe { scalarByte, .. })
@@ -58,6 +104,91 @@ pub fn validate_scalar_mode(
             }
         }
         _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod scalar_boundary_tests {
+    use super::*;
+    use alloy_primitives::Address;
+
+    fn shifts(rhs: Handle, flag: u8, ty: u8) -> [TfheContractEvents; 4] {
+        use TfheContract as C;
+        use TfheContractEvents as E;
+        let caller = Address::ZERO;
+        let mut lhs = Handle::ZERO;
+        lhs.0[30] = ty;
+        let result = Handle::ZERO;
+        let scalar_byte = FixedBytes([flag]);
+        [
+            E::FheShl(C::FheShl {
+                caller,
+                lhs,
+                rhs,
+                scalarByte: scalar_byte,
+                result,
+            }),
+            E::FheShr(C::FheShr {
+                caller,
+                lhs,
+                rhs,
+                scalarByte: scalar_byte,
+                result,
+            }),
+            E::FheRotl(C::FheRotl {
+                caller,
+                lhs,
+                rhs,
+                scalarByte: scalar_byte,
+                result,
+            }),
+            E::FheRotr(C::FheRotr {
+                caller,
+                lhs,
+                rhs,
+                scalarByte: scalar_byte,
+                result,
+            }),
+        ]
+    }
+
+    #[test]
+    fn shifts_and_rotates_preserve_pre_upgrade_scalar_history() {
+        for (ty, bytes) in [(2, 1), (3, 2), (4, 4), (5, 8), (6, 16), (8, 32)] {
+            // Current contract boundary values remain accepted for every type.
+            for amount in [0, 1, 255] {
+                for event in shifts(Handle::with_last_byte(amount), 1, ty) {
+                    assert!(validate_scalar_mode(&event).is_ok());
+                }
+            }
+            // The old public executor accepted the entire lhs scalar range,
+            // even though SDK helpers commonly restricted shifts to uint8.
+            let mut legacy_max = Handle::ZERO;
+            legacy_max.0[32 - bytes..].fill(255);
+            for event in shifts(legacy_max, 1, ty) {
+                assert!(validate_scalar_mode(&event).is_ok());
+            }
+            for index in 0..32 - bytes {
+                let mut rhs = Handle::ZERO;
+                rhs.0[index] = 1;
+                for event in shifts(rhs, 1, ty) {
+                    assert!(validate_scalar_mode(&event).is_err());
+                }
+            }
+            for event in shifts(FixedBytes([255; 32]), 0, ty) {
+                assert!(validate_scalar_mode(&event).is_ok());
+            }
+            for flag in [2, 3, 128, 255] {
+                for event in shifts(Handle::ZERO, flag, ty) {
+                    assert!(validate_scalar_mode(&event).is_err());
+                }
+            }
+        }
+        for ty in [0, 1, 7, 9, 83, 255] {
+            for event in shifts(Handle::ZERO, 1, ty) {
+                assert!(validate_scalar_mode(&event).is_err());
+            }
+        }
     }
 }
 
