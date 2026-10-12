@@ -61,6 +61,44 @@ pub fn validate_scalar_mode(
     }
 }
 
+/// The executor rejects oversized collections before emitting these events.
+/// Their function-only type arguments are not present in the event ABI, but
+/// are retained in the output (`FheSum`) or first operand (`FheIsIn`) handle.
+/// This checks the host event's application metadata, never TFHE values.
+pub fn validate_collection_shape(
+    op: &TfheContractEvents,
+) -> Result<(), &'static str> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+    match op {
+        E::FheSum(C::FheSum { values, result, .. }) => {
+            let limit = match result.0[30] {
+                2..=4 => 100,
+                5 | 6 => 60,
+                _ => return Err("FheSum event has unsupported result type"),
+            };
+            if values.len() > limit {
+                Err("FheSum event exceeds collection limit")
+            } else {
+                Ok(())
+            }
+        }
+        E::FheIsIn(C::FheIsIn { value, values, .. }) => {
+            let limit = match value.0[30] {
+                2..=4 => 100,
+                5..=8 => 60,
+                _ => return Err("FheIsIn event has unsupported value type"),
+            };
+            if values.len() > limit {
+                Err("FheIsIn event exceeds collection limit")
+            } else {
+                Ok(())
+            }
+        }
+        _ => Ok(()),
+    }
+}
+
 pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
     use TfheContract as C;
     use TfheContractEvents as E;
@@ -477,15 +515,86 @@ mod scalar_mode_tests {
             let rhs = Handle::ZERO;
             let result = Handle::ZERO;
             let scalar_byte = FixedBytes([flag]);
-            let add = E::FheAdd(C::FheAdd { caller, lhs, rhs, result, scalarByte: scalar_byte });
-            let div = E::FheDiv(C::FheDiv { caller, lhs, rhs, result, scalarByte: scalar_byte });
-            let rem = E::FheRem(C::FheRem { caller, lhs, rhs, result, scalarByte: scalar_byte });
-            let mul_div = E::FheMulDiv(C::FheMulDiv { caller, factor1: lhs, factor2: rhs,
-                divisor: rhs, result, scalarByte: scalar_byte });
+            let add = E::FheAdd(C::FheAdd {
+                caller,
+                lhs,
+                rhs,
+                result,
+                scalarByte: scalar_byte,
+            });
+            let div = E::FheDiv(C::FheDiv {
+                caller,
+                lhs,
+                rhs,
+                result,
+                scalarByte: scalar_byte,
+            });
+            let rem = E::FheRem(C::FheRem {
+                caller,
+                lhs,
+                rhs,
+                result,
+                scalarByte: scalar_byte,
+            });
+            let mul_div = E::FheMulDiv(C::FheMulDiv {
+                caller,
+                factor1: lhs,
+                factor2: rhs,
+                divisor: rhs,
+                result,
+                scalarByte: scalar_byte,
+            });
             assert_eq!(validate_scalar_mode(&add).is_ok(), flag <= 1);
             assert_eq!(validate_scalar_mode(&div).is_ok(), flag == 1);
             assert_eq!(validate_scalar_mode(&rem).is_ok(), flag == 1);
-            assert_eq!(validate_scalar_mode(&mul_div).is_ok(), flag == 1 || flag == 3);
+            assert_eq!(
+                validate_scalar_mode(&mul_div).is_ok(),
+                flag == 1 || flag == 3
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod collection_boundary_tests {
+    use super::*;
+    use alloy_primitives::Address;
+    #[test]
+    fn collection_limits_follow_event_type_metadata() {
+        use TfheContract as C;
+        use TfheContractEvents as E;
+        for type_byte in [0, 2, 4, 5, 6, 7, 8, 9, 83, 255] {
+            for len in [0, 60, 61, 100, 101] {
+                let mut handle = Handle::ZERO;
+                handle.0[30] = type_byte;
+                let values = vec![Handle::ZERO; len];
+                let sum = E::FheSum(C::FheSum {
+                    caller: Address::ZERO,
+                    values: values.clone(),
+                    result: handle,
+                });
+                let is_in = E::FheIsIn(C::FheIsIn {
+                    caller: Address::ZERO,
+                    value: handle,
+                    values,
+                    result: Handle::ZERO,
+                });
+                let sum_valid = match type_byte {
+                    2..=4 => len <= 100,
+                    5 | 6 => len <= 60,
+                    _ => false,
+                };
+                let is_in_valid = match type_byte {
+                    2..=4 => len <= 100,
+                    5..=8 => len <= 60,
+                    _ => false,
+                };
+                assert_eq!(validate_collection_shape(&sum).is_ok(), sum_valid);
+                assert_eq!(
+                    validate_collection_shape(&is_in).is_ok(),
+                    is_in_valid
+                );
+            }
         }
     }
 }
