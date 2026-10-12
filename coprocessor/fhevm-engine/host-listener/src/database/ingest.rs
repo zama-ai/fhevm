@@ -24,7 +24,9 @@ use crate::contracts::{
 };
 use crate::database::dependence_chains::dependence_chains;
 use crate::database::event_envelope::{classify, DecodedEvent};
-use crate::database::event_operands::validate_scalar_mode;
+use crate::database::event_operands::{
+    validate_collection_shape, validate_scalar_mode,
+};
 use crate::database::synthetic_ops::{
     synthetic_logs, synthetic_transaction_hash, SyntheticContext,
     SYNTHETIC_BLOCK_OFFSET,
@@ -469,6 +471,9 @@ pub async fn ingest_block_logs(
                     validate_scalar_mode(&event.data).map_err(|reason| {
                         sqlx::Error::Protocol(reason.into())
                     })?;
+                    validate_collection_shape(&event.data).map_err(
+                        |reason| sqlx::Error::Protocol(reason.into()),
+                    )?;
                     for handle in tfhe_result_handles(&event.data) {
                         validate_computed_handle_metadata(
                             &handle.0,
