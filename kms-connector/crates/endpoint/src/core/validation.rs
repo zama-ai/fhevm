@@ -11,7 +11,7 @@ use connector_utils::types::{
     },
 };
 use kms_connector_api::{
-    AttestationType, ErrorCode, PublicDecryptionRequest, RequestValidity,
+    AttestationType, ErrorCode, PublicDecryptionRequest, PublicDecryptionScheme, RequestValidity,
     SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody, SolanaUserDecryptionRequest,
     UserDecryptionRequest,
 };
@@ -183,6 +183,22 @@ pub fn attestation_type(body: &Value) -> Result<AttestationType, ValidationError
         .ok_or_else(|| ValidationError::InvalidBody("attestationType must be a string".into()))?
         .parse()
         .map_err(|_| ValidationError::UnsupportedAttestationType)
+}
+
+/// The `scheme` tag of a public-decryption body. `None` is the EVM `v1` body, which has no tag.
+pub fn public_decryption_scheme(
+    body: &Value,
+) -> Result<Option<PublicDecryptionScheme>, ValidationError> {
+    let Some(scheme) = body.get("scheme") else {
+        return Ok(None);
+    };
+    let scheme = scheme
+        .as_str()
+        .ok_or_else(|| ValidationError::InvalidBody("scheme must be a string".into()))?;
+    scheme
+        .parse()
+        .map(Some)
+        .map_err(|_| ValidationError::InvalidBody(format!("unsupported scheme {scheme}")))
 }
 
 pub fn parse_body<T: DeserializeOwned>(body: Value) -> Result<T, ValidationError> {
@@ -526,6 +542,7 @@ pub(crate) mod tests {
         }
 
         let public = SolanaPublicDecryptionBody {
+            scheme: PublicDecryptionScheme::SolanaPublicDecryptV1.to_string(),
             ctHandles: vec![evm],
             extraData: Bytes::new(),
             encryptedStores: vec![B256::repeat_byte(0x03)],
