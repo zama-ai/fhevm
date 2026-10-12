@@ -12,6 +12,7 @@ mod sign;
 mod verify;
 
 pub use header::FhevmSigHeader;
+pub use http::uri::PathAndQuery;
 pub use sign::{SignError, sign, sign_valid_for};
 pub use verify::{AuthError, FhevmSigVerifier, RefreshableSigners, SignerAllowlist};
 
@@ -72,12 +73,12 @@ pub fn domain(chain_id: u64, protocol_config: Address) -> Eip712Domain {
 pub fn signing_hash(
     domain: &Eip712Domain,
     audience: Address,
-    path: &str,
+    path_and_query: &PathAndQuery,
     body: &[u8],
     expires: u64,
 ) -> B256 {
     Request {
-        path: path.to_owned(),
+        path: path_and_query.as_str().to_owned(),
         bodyDigest: keccak256(body),
         expires,
         audience,
@@ -92,7 +93,7 @@ mod test_utils {
     pub(crate) use alloy::signers::local::PrivateKeySigner;
 
     pub(crate) const NOW: u64 = 1_800_000_000;
-    pub(crate) const PATH: &str = "/v1/user-decrypt";
+    pub(crate) const PATH: PathAndQuery = PathAndQuery::from_static("/v1/user-decrypt");
     pub(crate) const BODY: &[u8] = br#"{"payload":1}"#;
 
     pub(crate) fn setup() -> (PrivateKeySigner, Eip712Domain, Address) {
@@ -110,7 +111,7 @@ mod test_utils {
         domain: &Eip712Domain,
         audience: Address,
     ) -> String {
-        sign(signer, domain, audience, PATH, BODY, NOW + 60)
+        sign(signer, domain, audience, &PATH, BODY, NOW + 60)
             .await
             .unwrap()
             .to_string()
@@ -126,7 +127,7 @@ mod test_utils {
             signer,
             domain,
             audience,
-            PATH,
+            &PATH,
             BODY,
             Duration::from_secs(60),
         )
@@ -146,7 +147,7 @@ mod tests {
     #[test]
     fn signing_hash_is_stable() {
         let domain = domain(1, Address::repeat_byte(0xc0));
-        let hash = signing_hash(&domain, Address::repeat_byte(0xa1), PATH, BODY, NOW + 60);
+        let hash = signing_hash(&domain, Address::repeat_byte(0xa1), &PATH, BODY, NOW + 60);
         assert_eq!(
             hash,
             b256!("0xa06d35ef211b66e99d7e1165552319faf87480e17354294b6428e0b13dc7fc7b")

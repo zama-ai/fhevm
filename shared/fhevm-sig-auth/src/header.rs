@@ -144,7 +144,7 @@ mod tests {
     #[tokio::test]
     async fn header_value_is_sensitive_and_parses_back() {
         let (signer, domain, audience) = setup();
-        let header = sign(&signer, &domain, audience, PATH, BODY, NOW + 60)
+        let header = sign(&signer, &domain, audience, &PATH, BODY, NOW + 60)
             .await
             .unwrap();
         let value = header.to_header_value();

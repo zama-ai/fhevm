@@ -4,6 +4,7 @@ use crate::{
     DEFAULT_CLOCK_SKEW, DEFAULT_MAX_AUTH_VALIDITY, FhevmSigHeader, signing_hash, unix_now,
 };
 use alloy::{primitives::Address, sol_types::Eip712Domain};
+use http::uri::PathAndQuery;
 use std::{
     collections::HashSet,
     sync::{Arc, PoisonError, RwLock},
@@ -104,11 +105,13 @@ impl<P: SignerAllowlist> FhevmSigVerifier<P> {
         }
     }
 
+    /// Counted in whole seconds: a sub-second part is dropped.
     pub fn with_max_validity(mut self, max_validity: Duration) -> Self {
         self.max_validity = max_validity;
         self
     }
 
+    /// Counted in whole seconds: a sub-second part is dropped.
     pub fn with_clock_skew(mut self, clock_skew: Duration) -> Self {
         self.clock_skew = clock_skew;
         self
@@ -123,12 +126,12 @@ impl<P: SignerAllowlist> FhevmSigVerifier<P> {
     pub fn recover(
         &self,
         auth_header: Option<&[u8]>,
-        path: &str,
+        path_and_query: &PathAndQuery,
         body: &[u8],
         now: u64,
     ) -> Result<Address, AuthError> {
         let header = FhevmSigHeader::parse(auth_header.ok_or(AuthError::Missing)?)?;
-        if path.contains('?') {
+        if path_and_query.query().is_some() {
             return Err(AuthError::QueryString);
         }
         let skew = self.clock_skew.as_secs();
@@ -141,7 +144,13 @@ impl<P: SignerAllowlist> FhevmSigVerifier<P> {
         if header.expires > latest {
             return Err(AuthError::TooLongLived);
         }
-        let hash = signing_hash(&self.domain, self.audience, path, body, header.expires);
+        let hash = signing_hash(
+            &self.domain,
+            self.audience,
+            path_and_query,
+            body,
+            header.expires,
+        );
         header
             .signature
             .recover_address_from_prehash(&hash)
@@ -152,10 +161,10 @@ impl<P: SignerAllowlist> FhevmSigVerifier<P> {
     pub fn verify(
         &self,
         authorization: Option<&[u8]>,
-        path: &str,
+        path_and_query: &PathAndQuery,
         body: &[u8],
     ) -> Result<Address, AuthError> {
-        let signer = self.recover(authorization, path, body, unix_now())?;
+        let signer = self.recover(authorization, path_and_query, body, unix_now())?;
         if self.allowlist.allows(signer) {
             Ok(signer)
         } else {
@@ -176,7 +185,7 @@ mod tests {
         let allowed = HashSet::from([signer.address()]);
         let verifier = FhevmSigVerifier::new(domain, audience, allowed);
         assert_eq!(
-            verifier.verify(Some(header.as_bytes()), PATH, BODY),
+            verifier.verify(Some(header.as_bytes()), &PATH, BODY),
             Ok(signer.address())
         );
     }
@@ -188,7 +197,7 @@ mod tests {
         let others = HashSet::from([Address::repeat_byte(0x01)]);
         let verifier = FhevmSigVerifier::new(domain, audience, others);
         assert_eq!(
-            verifier.verify(Some(header.as_bytes()), PATH, BODY),
+            verifier.verify(Some(header.as_bytes()), &PATH, BODY),
             Err(AuthError::UnknownSigner(signer.address()))
         );
     }
@@ -198,7 +207,7 @@ mod tests {
         let (signer, domain, audience) = setup();
         let header = fresh_header(&signer, &domain, audience).await;
         let verifier = FhevmSigVerifier::new(domain, audience, RefreshableSigners::default());
-        let verify = || verifier.verify(Some(header.as_bytes()), PATH, BODY);
+        let verify = || verifier.verify(Some(header.as_bytes()), &PATH, BODY);
         assert_eq!(verify(), Err(AuthError::UnknownSigner(signer.address())));
 
         // A clone, as held by a refresh task, updates the verifier's set.
@@ -214,7 +223,7 @@ mod tests {
         let (_, domain, audience) = setup();
         let verifier = FhevmSigVerifier::new(domain, audience, HashSet::new());
         assert_eq!(
-            verifier.recover(None, PATH, BODY, NOW),
+            verifier.recover(None, &PATH, BODY, NOW),
             Err(AuthError::Missing)
         );
     }
@@ -226,7 +235,7 @@ mod tests {
         let verifier = FhevmSigVerifier::new(domain, audience, HashSet::new());
         let late = NOW + 60 + DEFAULT_CLOCK_SKEW.as_secs() + 1;
         let err = verifier
-            .recover(Some(header.as_bytes()), PATH, BODY, late)
+            .recover(Some(header.as_bytes()), &PATH, BODY, late)
             .unwrap_err();
         assert_eq!(err, AuthError::Expired);
     }
@@ -241,11 +250,11 @@ mod tests {
         let at_limit = NOW + 60 - max;
         assert!(
             verifier
-                .recover(Some(header.as_bytes()), PATH, BODY, at_limit)
+                .recover(Some(header.as_bytes()), &PATH, BODY, at_limit)
                 .is_ok()
         );
         assert_eq!(
-            verifier.recover(Some(header.as_bytes()), PATH, BODY, at_limit - 1),
+            verifier.recover(Some(header.as_bytes()), &PATH, BODY, at_limit - 1),
             Err(AuthError::TooLongLived)
         );
 
@@ -254,7 +263,7 @@ mod tests {
             .with_max_validity(Duration::from_secs(10))
             .with_clock_skew(Duration::ZERO);
         assert_eq!(
-            strict.recover(Some(header.as_bytes()), PATH, BODY, NOW),
+            strict.recover(Some(header.as_bytes()), &PATH, BODY, NOW),
             Err(AuthError::TooLongLived)
         );
     }
@@ -266,7 +275,12 @@ mod tests {
         let verifier = FhevmSigVerifier::new(domain, audience, HashSet::new());
         for target in ["/v1/user-decrypt?a=1", "/v1/user-decrypt?"] {
             assert_eq!(
-                verifier.recover(Some(header.as_bytes()), target, BODY, NOW),
+                verifier.recover(
+                    Some(header.as_bytes()),
+                    &PathAndQuery::from_static(target),
+                    BODY,
+                    NOW
+                ),
                 Err(AuthError::QueryString),
                 "{target}"
             );
@@ -277,33 +291,38 @@ mod tests {
     async fn tampering_recovers_another_address() {
         let (signer, domain, audience) = setup();
         let header = header(&signer, &domain, audience).await;
-        let recover = |domain: &Eip712Domain, audience, path, body| {
+        let recover = |domain: &Eip712Domain, audience, path: &PathAndQuery, body| {
             FhevmSigVerifier::new(domain.clone(), audience, HashSet::new())
                 .recover(Some(header.as_bytes()), path, body, NOW)
                 .unwrap()
         };
-        assert_eq!(recover(&domain, audience, PATH, BODY), signer.address());
+        assert_eq!(recover(&domain, audience, &PATH, BODY), signer.address());
         let other_audience = Address::repeat_byte(0xb2);
         assert_ne!(
-            recover(&domain, other_audience, PATH, BODY),
+            recover(&domain, other_audience, &PATH, BODY),
             signer.address()
         );
         assert_ne!(
-            recover(&domain, audience, "/v1/public-decrypt", BODY),
+            recover(
+                &domain,
+                audience,
+                &PathAndQuery::from_static("/v1/public-decrypt"),
+                BODY
+            ),
             signer.address()
         );
         assert_ne!(
-            recover(&domain, audience, PATH, br#"{"payload":2}"#),
+            recover(&domain, audience, &PATH, br#"{"payload":2}"#),
             signer.address()
         );
         let other_chain = crate::domain(2, Address::repeat_byte(0xc0));
         assert_ne!(
-            recover(&other_chain, audience, PATH, BODY),
+            recover(&other_chain, audience, &PATH, BODY),
             signer.address()
         );
         let other_contract = crate::domain(1, Address::repeat_byte(0xc1));
         assert_ne!(
-            recover(&other_contract, audience, PATH, BODY),
+            recover(&other_contract, audience, &PATH, BODY),
             signer.address()
         );
     }
