@@ -1236,7 +1236,7 @@ fn run_reclaim_batch_authority(context: &Ctx, fixture: &BatcherFixture, keys: &B
 // ---------------------------------------------------------------------------
 
 /// Initializes the batcher, which opens batch 0, returning batch 0's keys.
-fn initialize_and_open_first_batch(
+fn run_initialize_batcher(
     context: &Ctx,
     fixture: &BatcherFixture,
     min_batch_age_secs: u64,
@@ -1374,7 +1374,7 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
 
     // Batch opens with an encrypted zero balance on both sides.
     let open_result = read_batch(&context, keys.batch);
@@ -1559,7 +1559,7 @@ fn mollusk_lifecycle_with_yield_rate_rounds_down() {
     let context = fixture_context(mollusk(), fixture.accounts(2_000, 1_000));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
 
     run_join(
         &context,
@@ -1623,7 +1623,7 @@ fn mollusk_single_user_batch_reveals_that_users_amount() {
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
 
     let alice_amount = 777;
     run_join(
@@ -1670,7 +1670,7 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
 
     // Two joins accumulate: the second join's execution reads the joined encrypted store
     // as an operand AND updates it as the output (the #3238 aliasing class
@@ -1748,7 +1748,7 @@ fn mollusk_cancel_dispatch_restores_burn_and_allows_refunds() {
     let mut context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -1957,7 +1957,7 @@ fn mollusk_zero_total_batch_cancels_at_settle() {
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
 
     let burned_handle = run_dispatch(&context, &fixture, &keys);
     assert_eq!(
@@ -1987,7 +1987,7 @@ fn mollusk_settle_stops_only_under_the_execution_pause() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -2064,7 +2064,7 @@ fn mollusk_redeem_lifecycle_two_users_join_dispatch_settle_claim() {
     let context = fixture_context(mollusk(), redeem_accounts(&fixture, 1_000, 1_000, 1_000));
     fixture.seed_values(&context, (0, 600), (0, 400), (0, 1_000));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     assert_eq!(
         read_batch(&context, keys.batch).status,
         batcher::BatchStatus::Pending
@@ -2186,7 +2186,7 @@ fn mollusk_redeem_lifecycle_with_yield_rounds_down() {
     let context = fixture_context(mollusk(), redeem_accounts(&fixture, 2_000, 1_000, 1_000));
     fixture.seed_values(&context, (0, 600), (0, 400), (0, 1_000));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
 
     run_join(
         &context,
@@ -2248,7 +2248,7 @@ fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
     let context = fixture_context(mollusk(), redeem_accounts(&fixture, 1_000, 1_000, 1_000));
     fixture.seed_values(&context, (0, 600), (0, 400), (0, 1_000));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
 
     // Two joins accumulate: the second join's execution reads the joined encrypted store
     // as an operand AND updates it as the output.
@@ -2324,7 +2324,7 @@ fn mollusk_quit_rejects_refund_destination_that_is_not_the_users_account() {
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -2369,7 +2369,7 @@ fn mollusk_claim_after_quit_is_refused() {
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
 
     run_join(
         &context,
@@ -2455,7 +2455,7 @@ fn mollusk_redeem_zero_total_batch_cancels_at_settle() {
     let context = fixture_context(mollusk(), redeem_accounts(&fixture, 1_000, 1_000, 1_000));
     fixture.seed_values(&context, (0, 600), (0, 400), (0, 1_000));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
 
     let burned_handle = run_dispatch(&context, &fixture, &keys);
     assert_eq!(
@@ -2491,7 +2491,7 @@ fn mollusk_redeem_one_share_dust_settles_at_extreme_price() {
     let context = fixture_context(mollusk(), redeem_accounts(&fixture, 2_000_000, 100, 100));
     fixture.seed_values(&context, (0, 60), (0, 40), (0, 100));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
 
     run_join(
         &context,
@@ -2544,7 +2544,7 @@ fn mollusk_redeem_preloaded_underlying_stays_inert() {
     let context = fixture_context(mollusk(), accounts);
     fixture.seed_values(&context, (0, 600), (0, 400), (0, 1_000));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -2630,8 +2630,8 @@ fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
     // Users hold both cUnderlying (to deposit) and cShares (to redeem).
     deposit.seed_values(&context, (1_000, 600), (2_000, 400), (1_000_000, 1_000));
 
-    let deposit_keys = initialize_and_open_first_batch(&context, &deposit, 0);
-    let redeem_keys = initialize_and_open_first_batch(&context, &redeem, 0);
+    let deposit_keys = run_initialize_batcher(&context, &deposit, 0);
+    let redeem_keys = run_initialize_batcher(&context, &redeem, 0);
     assert_ne!(deposit_keys.batch, redeem_keys.batch);
 
     // Interleaved joins: both batches are pending at once, and each user
@@ -2795,7 +2795,7 @@ fn mollusk_dispatch_waits_for_min_batch_age() {
     let mut context = fixture_context(mollusk(), fixture.accounts(0, 0));
     // Open well past zero, so an age counted from anything but the opening would already suffice.
     context.mollusk.sysvars.clock.unix_timestamp += 1_000_000;
-    let keys = initialize_and_open_first_batch(&context, &fixture, 1_000);
+    let keys = run_initialize_batcher(&context, &fixture, 1_000);
     ensure_system_accounts(
         &context,
         &[
@@ -2826,7 +2826,7 @@ fn mollusk_pending_quit_requires_the_user_signature() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -2902,7 +2902,7 @@ fn mollusk_join_quit_and_claim_respect_batch_status() {
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -2967,7 +2967,7 @@ fn mollusk_double_claim_rejects() {
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -3028,7 +3028,7 @@ fn assert_authority_funded(context: &Ctx, keys: &BatchKeys, funding: u64) {
 fn mollusk_initialize_batcher_opens_batch_zero() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
 
     let batch = read_batch(&context, keys.batch);
     assert_eq!(
@@ -3047,7 +3047,7 @@ fn mollusk_a_batcher_has_exactly_one_pending_batch() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let mut context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     assert_one_pending_batch(&context, &fixture);
 
     run_join(
@@ -3089,7 +3089,7 @@ fn mollusk_dispatch_opens_the_next_batch() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -3142,7 +3142,7 @@ fn mollusk_dispatch_opens_the_next_batch() {
 fn mollusk_dispatch_funds_the_next_batch_authority() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     ensure_dispatch_accounts(&context, &fixture, &keys);
     let with_funding = |authority_funding_lamports| {
         let mut ix = dispatch_ix(&fixture, &keys);
@@ -3168,27 +3168,74 @@ fn mollusk_dispatch_funds_the_next_batch_authority() {
     assert_authority_funded(&context, &BatchKeys::new(&fixture, 1), funding);
 }
 
-/// Dispatch opens the next batch on the batcher's own payout mint.
+/// Returns `ix` with each account meta whose key is replaced moved to its replacement.
+fn replace_accounts(ix: &Instruction, replacements: &[(Pubkey, Pubkey)]) -> Instruction {
+    let mut ix = ix.clone();
+    for meta in &mut ix.accounts {
+        if let Some((_, to)) = replacements.iter().find(|(from, _)| *from == meta.pubkey) {
+            meta.pubkey = *to;
+        }
+    }
+    ix
+}
+
+/// Dispatch opens the next batch only on the batcher's two mints and the underlyings they wrap. The
+/// burn already rejects another join underlying; the open helper rejects the rest.
 #[test]
-fn mollusk_dispatch_rejects_another_payout_mint() {
+fn mollusk_dispatch_rejects_foreign_mints() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let foreign_underlying = Pubkey::new_unique();
+    context
+        .account_store
+        .borrow_mut()
+        .insert(foreign_underlying, spl_mint_account(None, 0));
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     ensure_dispatch_accounts(&context, &fixture, &keys);
-    let mut ix = dispatch_ix(&fixture, &keys);
-    ix.accounts
-        .iter_mut()
-        .find(|meta| meta.pubkey == fixture.payout_mint().mint)
-        .unwrap()
-        .pubkey = fixture.join_mint().mint;
-    check_batcher_instruction(
-        &context,
-        &ix,
-        &[batcher_error(
-            batcher::BatcherError::ConfidentialMintMismatch,
-        )],
-    );
-    assert_one_pending_batch(&context, &fixture);
+    let (join, payout) = (fixture.join_mint(), fixture.payout_mint());
+    // Batch 0 burned as if the batcher joined in the payout mint.
+    let payout_burn = token::pending_burn_address(payout.mint, keys.payout_token_account).0;
+    ensure_system_accounts(&context, &[payout_burn]);
+    let dispatch = dispatch_ix(&fixture, &keys);
+    for (replacements, error) in [
+        (
+            vec![(payout.mint, join.mint)],
+            batcher_error(batcher::BatcherError::ConfidentialMintMismatch),
+        ),
+        (
+            vec![
+                (join.mint, payout.mint),
+                (join.underlying_mint, payout.underlying_mint),
+                (
+                    owner_ata(keys.batch_authority, join.underlying_mint),
+                    owner_ata(keys.batch_authority, payout.underlying_mint),
+                ),
+                (join.total_supply_authority, payout.total_supply_authority),
+                (join.total_supply_store, payout.total_supply_store),
+                (keys.join_token_account, keys.payout_token_account),
+                (keys.join_balance_store, keys.payout_balance_store),
+                (keys.pending_burn(join.mint), payout_burn),
+            ],
+            batcher_error(batcher::BatcherError::ConfidentialMintMismatch),
+        ),
+        (
+            vec![(join.underlying_mint, foreign_underlying)],
+            anchor_error_check(
+                token::errors::ConfidentialTokenError::UnderlyingMintMismatch as u32,
+            ),
+        ),
+        (
+            vec![(payout.underlying_mint, foreign_underlying)],
+            batcher_error(batcher::BatcherError::PayoutMintVaultMismatch),
+        ),
+    ] {
+        check_batcher_instruction(
+            &context,
+            &replace_accounts(&dispatch, &replacements),
+            &[error],
+        );
+        assert_one_pending_batch(&context, &fixture);
+    }
 }
 
 /// Dispatch opens only the batch at the batcher's next index.
@@ -3196,7 +3243,7 @@ fn mollusk_dispatch_rejects_another_payout_mint() {
 fn mollusk_dispatch_rejects_a_next_batch_at_another_index() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     ensure_dispatch_accounts(&context, &fixture, &keys);
     let wrong = BatchKeys::new(&fixture, 2);
     ensure_open_batch_accounts(&context, &fixture, &wrong);
@@ -3217,7 +3264,7 @@ fn mollusk_dispatch_rejects_a_next_batch_at_another_index() {
 fn mollusk_dispatch_accepts_precreated_next_batch_token_accounts() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     ensure_dispatch_accounts(&context, &fixture, &keys);
     let next = BatchKeys::new(&fixture, 1);
     let stranger = Pubkey::new_unique();
@@ -3315,6 +3362,36 @@ fn mollusk_initialize_batcher_rejects_swapped_direction_wiring() {
         &swapped,
         &[batcher_error(batcher::BatcherError::JoinMintVaultMismatch)],
     );
+}
+
+/// `initialize_batcher` opens batch 0 only on the underlyings its two mints wrap.
+#[test]
+fn mollusk_initialize_batcher_rejects_foreign_underlyings() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    let foreign_underlying = Pubkey::new_unique();
+    context
+        .account_store
+        .borrow_mut()
+        .insert(foreign_underlying, spl_mint_account(None, 0));
+    ensure_open_batch_accounts(&context, &fixture, &BatchKeys::new(&fixture, 0));
+    let initialize = initialize_batcher_ix(&fixture, 0);
+    for (underlying, error) in [
+        (
+            fixture.join_mint().underlying_mint,
+            batcher::BatcherError::JoinMintVaultMismatch,
+        ),
+        (
+            fixture.payout_mint().underlying_mint,
+            batcher::BatcherError::PayoutMintVaultMismatch,
+        ),
+    ] {
+        check_batcher_instruction(
+            &context,
+            &replace_accounts(&initialize, &[(underlying, foreign_underlying)]),
+            &[batcher_error(error)],
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3486,7 +3563,7 @@ fn run_every_flow(levers: HostLevers) -> (BatcherFixture, Ctx) {
         ..BatcherFixture::new(batcher::BatchDirection::Deposit)
     };
     let mut context = production_mollusk().with_context(fixture.accounts(0, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -3655,7 +3732,7 @@ fn witnessed_batch_with_alice() -> (BatcherFixture, Ctx, BatchKeys) {
         ..BatcherFixture::new(batcher::BatchDirection::Deposit)
     };
     let context = production_mollusk().with_context(fixture.accounts(0, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -3678,7 +3755,7 @@ fn mollusk_zero_total_settle_takes_no_deny_records() {
         ..BatcherFixture::new(batcher::BatchDirection::Deposit)
     };
     let context = production_mollusk().with_context(fixture.accounts(0, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     let burned_handle = run_dispatch(&context, &fixture, &keys);
 
     let (signatures, extra_data) = amount_public_decrypt_cert(burned_handle, 0);
@@ -3739,7 +3816,7 @@ fn mollusk_dust_total_settle_opens_exact_refunds() {
     let context = fixture_context(mollusk(), fixture.accounts(2_000_000, 100));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
 
     // Alice's 100 and Bob's 200 are dust at this price: 300 * (100 + 1) / (2_000_000 + 1)
     // floors to zero shares.
@@ -3815,7 +3892,7 @@ fn mollusk_zero_shares_refund_rejects_wrong_join_total_supply_accounts() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(2_000_000, 100));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -3866,7 +3943,7 @@ fn mollusk_settle_overflow_waits_for_the_deadline_cancel() {
     // An empty vault with the largest share supply: any deposit's share count overflows u64.
     let mut context = fixture_context(mollusk(), fixture.accounts(0, u64::MAX));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -3926,7 +4003,7 @@ fn mollusk_settle_rejects_a_planted_vault_token_account() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -3995,7 +4072,7 @@ fn mollusk_settle_at_the_largest_kms_certificate_fits_the_compute_budget() {
         .1,
     );
     let context = production_mollusk().with_context(accounts);
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -4061,7 +4138,7 @@ fn mollusk_preloaded_shares_do_not_poison_the_rate() {
     let context = fixture_context(mollusk(), accounts);
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
 
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
@@ -4162,7 +4239,7 @@ fn mollusk_donations_to_batch_accounts_leave_claims_exact() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 50), (1_000_000, 50));
-    let keys = initialize_and_open_first_batch(&context, &fixture, 0);
+    let keys = run_initialize_batcher(&context, &fixture, 0);
     run_join(
         &context,
         &fixture,
