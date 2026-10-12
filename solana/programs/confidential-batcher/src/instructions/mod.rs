@@ -3,6 +3,7 @@
 //! The public Anchor entrypoints in `lib.rs` delegate into these modules so
 //! account contexts, validation, and handler logic stay out of the crate root.
 
+pub mod admin;
 pub mod cancel_dispatch;
 pub mod claim;
 pub mod close_join_record;
@@ -22,6 +23,7 @@ use zama_host::program::ZamaHost;
 
 use crate::{constants::*, errors::*, events::*, fhe, state::*};
 
+pub use admin::*;
 pub use cancel_dispatch::*;
 pub use claim::*;
 pub use close_join_record::*;

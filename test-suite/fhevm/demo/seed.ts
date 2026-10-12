@@ -240,7 +240,8 @@ const main = async (): Promise<void> => {
     payoutUnderlyingMint: mockUsdcMint.address,
   };
 
-  // 4. Batchers: deposit (join cUSDC → payout cShares) and redeem (the reverse). Each opens its batch 0.
+  // 4. Batchers: deposit (join cUSDC → payout cShares) and redeem (the reverse). Each opens its batch 0,
+  // and the deployer is their admin.
   const initializeBatcher = async (
     batcher: TransactionSigner,
     roots: VaultDemoRoots,
@@ -256,6 +257,7 @@ const main = async (): Promise<void> => {
         minBatchAgeSecs: DEMO_MIN_BATCH_AGE_SECS,
         settleDeadlineSecs: DEMO_SETTLE_DEADLINE_SECS,
         direction,
+        admin: deployer.address,
         authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS,
         host: await vault.readHostPolicy(rpc),
       }),

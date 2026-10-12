@@ -36,14 +36,16 @@ describe('buildInitializeBatcherInstruction', () => {
     minBatchAgeSecs: 10n,
     settleDeadlineSecs: 120n,
     direction: BatchDirection.Deposit,
+    admin: addr(3),
     authorityFundingLamports: 0n,
     host,
   });
 
   it('opens batch 0 of the batcher', async () => {
     const parameters = await input();
-    const { accounts } = parseInitializeBatcherInstruction((await buildInitializeBatcherInstruction(parameters)) as never);
+    const { accounts, data } = parseInitializeBatcherInstruction((await buildInitializeBatcherInstruction(parameters)) as never);
     const batch = await deriveBatchAddresses({ ...parameters.roots, batcher: addr(2) }, 0n);
+    expect(data.admin).toBe(addr(3));
     expect(accounts.batcher.address).toBe(addr(2));
     expect(accounts.batch.address).toBe(batch.batch);
     expect(accounts.batchAuthority.address).toBe(batch.batchAuthority);

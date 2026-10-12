@@ -1,6 +1,6 @@
 import { findEventAuthorityPda as findTokenEventAuthorityPda } from '@fhevm/confidential-token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
-import type { Instruction, TransactionSigner } from '@solana/kit';
+import type { Address, Instruction, TransactionSigner } from '@solana/kit';
 import { tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 import { getInitializeBatcherInstructionAsync } from './internal/generated/confidentialBatcher/instructions/initializeBatcher.js';
 import type { BatchDirection } from './internal/generated/confidentialBatcher/types/batchDirection.js';
@@ -17,6 +17,8 @@ export type SolanaVaultInitializeBatcherParameters = HostPolicyParameters & {
   readonly minBatchAgeSecs: bigint;
   readonly settleDeadlineSecs: bigint;
   readonly direction: BatchDirection;
+  /** Key that may pause the batcher, set its policy and hand the role on. */
+  readonly admin: Address;
   /** Lamports batch 0's authority is funded with to pay its owner-charged rent. */
   readonly authorityFundingLamports: bigint;
 };
@@ -57,6 +59,7 @@ export async function buildInitializeBatcherInstruction(
     minBatchAgeSecs: parameters.minBatchAgeSecs,
     settleDeadlineSecs: parameters.settleDeadlineSecs,
     direction: parameters.direction,
+    admin: parameters.admin,
     authorityFundingLamports: parameters.authorityFundingLamports,
     joinMintHcuBlockMeter: joinMintHcu.hcuBlockMeter,
     joinMintHcuTrustedAppRecord: joinMintHcu.hcuTrustedAppRecord,

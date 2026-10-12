@@ -99,7 +99,9 @@ joining many times with zero — and we say so instead of pretending otherwise.
   encrypted value (no "instant exit if the pool is big enough"), because
   anything that reacts to encrypted store can be probed until the secret leaks.
 - **Settlement and cancellation are self-serve.** Dispatch, settle, and claim are permissionless,
-  and so are the settle-deadline cancellation and its refunds (DD-045).
+  and so are the settle-deadline cancellation and its refunds (DD-045). The batcher admin can stop
+  join, dispatch and settle until a batch's deadline, but not claims, quits or that cancellation
+  (DD-042).
 - **One batch, one account.** Each batch has its own token account, so the
   revealed total is exactly that batch's sum — leftover dust from an earlier
   batch can never leak into it.

@@ -34,10 +34,13 @@ pub struct Batcher {
     pub payout_confidential_mint: Pubkey,
     /// Public `demo_vault::Vault` the batcher fronts.
     pub vault: Pubkey,
-    /// Minimum seconds a batch must stay open before dispatch.
+    /// Key that may pause the batcher, set its policy and hand the role on.
+    pub admin: Pubkey,
+    /// While paused, joins, dispatches and settles of a nonzero total are refused.
+    pub paused: bool,
+    /// Minimum batch age copied into each batch when it opens.
     pub min_batch_age_secs: u64,
-    /// Seconds after dispatch during which only `settle` may finish the batch; from then on only
-    /// `cancel_dispatch` may, and anyone can call it.
+    /// Settle deadline copied into each batch when it opens.
     pub settle_deadline_secs: u64,
     /// Index of the next batch to open; the pending batch is the one before it.
     pub next_batch_index: u64,
@@ -71,6 +74,11 @@ pub struct Batch {
     pub status: BatchStatus,
     /// Unix time the batch opened at; dispatch requires `min_batch_age_secs` past.
     pub opened_at: i64,
+    /// Minimum seconds the batch stays open before dispatch, frozen when it opened.
+    pub min_batch_age_secs: u64,
+    /// Seconds after dispatch during which only `settle` may finish the batch, frozen when it
+    /// opened; from then on only `cancel_dispatch` may, and anyone can call it.
+    pub settle_deadline_secs: u64,
     /// Unix time the batch was dispatched at (zero before dispatch).
     pub dispatched_at: i64,
     /// Number of join calls routed into this batch.
@@ -92,11 +100,18 @@ pub struct Batch {
 }
 
 impl Batch {
+    /// Unix time from which a pending batch may be dispatched.
+    pub fn dispatchable_at(&self) -> i64 {
+        // Bounded by `MAX_MIN_BATCH_AGE_SECS` when set, so the cast cannot wrap.
+        self.opened_at
+            .saturating_add(self.min_batch_age_secs as i64)
+    }
+
     /// Unix time from which a dispatched batch can no longer settle and anyone may cancel it.
-    pub fn settle_deadline(&self, batcher: &Batcher) -> i64 {
-        // Bounded by `MAX_SETTLE_DEADLINE_SECS` at initialization, so the cast cannot wrap.
+    pub fn settle_deadline(&self) -> i64 {
+        // Bounded by `MAX_SETTLE_DEADLINE_SECS` when set, so the cast cannot wrap.
         self.dispatched_at
-            .saturating_add(batcher.settle_deadline_secs as i64)
+            .saturating_add(self.settle_deadline_secs as i64)
     }
 }
 

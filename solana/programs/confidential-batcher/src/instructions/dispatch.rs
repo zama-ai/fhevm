@@ -147,18 +147,14 @@ pub fn dispatch<'info>(
     ctx: Context<'info, Dispatch<'info>>,
     authority_funding_lamports: u64,
 ) -> Result<()> {
+    require_not_paused(&ctx.accounts.batcher)?;
     require!(
         ctx.accounts.batch.status == BatchStatus::Pending,
         BatcherError::BatchNotPending
     );
     let now = Clock::get()?.unix_timestamp;
-    // Bounded by `MAX_MIN_BATCH_AGE_SECS` at initialization, so the cast cannot wrap.
     require!(
-        now >= ctx
-            .accounts
-            .batch
-            .opened_at
-            .saturating_add(ctx.accounts.batcher.min_batch_age_secs as i64),
+        now >= ctx.accounts.batch.dispatchable_at(),
         BatcherError::BatchTooYoung
     );
     let mint_key = ctx.accounts.join_confidential_mint.key();

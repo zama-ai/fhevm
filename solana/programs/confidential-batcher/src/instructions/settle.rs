@@ -192,7 +192,7 @@ pub fn settle<'info>(
         BatcherError::BatchNotDispatched
     );
     require!(
-        Clock::get()?.unix_timestamp < ctx.accounts.batch.settle_deadline(&ctx.accounts.batcher),
+        Clock::get()?.unix_timestamp < ctx.accounts.batch.settle_deadline(),
         BatcherError::SettleDeadlinePassed
     );
     require_keys_eq!(
@@ -296,6 +296,9 @@ pub fn settle<'info>(
         });
         return Ok(());
     }
+    // Only the vault phase waits for unpause, as EVM checks the pause after its zero-total cancel
+    // and its deadline check.
+    require_not_paused(&ctx.accounts.batcher)?;
 
     // Phase 2: the one public number goes through the vault; the payout comes
     // back. The received payout is the batch payout account's balance DELTA

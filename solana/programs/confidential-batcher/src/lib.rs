@@ -56,7 +56,9 @@ pub use errors::*;
 pub use events::*;
 use instructions::*;
 /// Re-export instruction account contexts for tests.
-pub use instructions::{CancelDispatch, Claim, Dispatch, InitializeBatcher, Join, Quit, Settle};
+pub use instructions::{
+    BatcherAdmin, CancelDispatch, Claim, Dispatch, InitializeBatcher, Join, Quit, SetAdmin, Settle,
+};
 /// Re-export account layouts, PDA helpers, and payout math.
 pub use state::*;
 
@@ -98,8 +100,8 @@ pub mod confidential_batcher {
     /// mint, a payout confidential mint, and one public vault together.
     /// Deposit batchers join with confidential underlying and pay confidential
     /// shares; redeem batchers join with confidential shares and pay
-    /// confidential underlying. Permissionless one-time setup; the batcher
-    /// holds no admin role afterwards.
+    /// confidential underlying. Permissionless one-time setup. `admin` may later pause the
+    /// batcher, set the policy that batches opened from then on copy, and hand the role on.
     ///
     /// Also opens batch 0: the `Batch` account, its per-batch authority PDA, its own confidential
     /// join and payout token accounts unless they already exist, and its plain SPL accounts for
@@ -113,6 +115,7 @@ pub mod confidential_batcher {
         settle_deadline_secs: u64,
         direction: BatchDirection,
         authority_funding_lamports: u64,
+        admin: Pubkey,
     ) -> Result<()> {
         instructions::initialize_batcher(
             ctx,
@@ -120,10 +123,44 @@ pub mod confidential_batcher {
             settle_deadline_secs,
             direction,
             authority_funding_lamports,
+            admin,
         )
     }
 
-    /// Joins the pending batch with the batcher's join token: one user-signed
+    /// Pauses the batcher (admin-only): joins, dispatches and settles of a nonzero total are
+    /// refused until `unpause`. Refuses when already paused.
+    pub fn pause(ctx: Context<BatcherAdmin>) -> Result<()> {
+        instructions::pause(ctx)
+    }
+
+    /// Unpauses the batcher (admin-only). Refuses when not paused.
+    pub fn unpause(ctx: Context<BatcherAdmin>) -> Result<()> {
+        instructions::unpause(ctx)
+    }
+
+    /// Sets the minimum batch age that batches opened from now on copy (admin-only), at most
+    /// `MAX_MIN_BATCH_AGE_SECS`. Works while paused.
+    pub fn set_min_batch_age(ctx: Context<BatcherAdmin>, min_batch_age_secs: u64) -> Result<()> {
+        instructions::set_min_batch_age(ctx, min_batch_age_secs)
+    }
+
+    /// Sets the settle deadline that batches opened from now on copy (admin-only), at most
+    /// `MAX_SETTLE_DEADLINE_SECS`. With zero, a batch cannot settle and anyone may cancel it once
+    /// dispatched. Works while paused.
+    pub fn set_settle_deadline(
+        ctx: Context<BatcherAdmin>,
+        settle_deadline_secs: u64,
+    ) -> Result<()> {
+        instructions::set_settle_deadline(ctx, settle_deadline_secs)
+    }
+
+    /// Hands the admin role to `new_admin`. The current admin signs; a new keypair co-signs; a
+    /// new PDA does not, provided it already exists as a program-owned account.
+    pub fn set_admin(ctx: Context<SetAdmin>) -> Result<()> {
+        instructions::set_admin(ctx)
+    }
+
+    /// Joins the pending batch with the batcher's join token (refused while paused): one user-signed
     /// transaction that CPIs the coprocessor-attested confidential transfer
     /// into the batch's token account. The token returns the transferred handle and grants
     /// the JoinRecord Store access through transient store. The batcher adds it to the user's
@@ -150,7 +187,7 @@ pub mod confidential_batcher {
 
     /// Dispatches the batch once it is old enough: burns the batch account's
     /// full encrypted balance via `confidential_burn_from_value` and records
-    /// the created-public burned handle the KMS will certify. Permissionless.
+    /// the created-public burned handle the KMS will certify. Permissionless; refused while paused.
     /// In the same instruction it opens the next batch, as `initialize_batcher` opens batch 0, with
     /// `authority_funding_lamports` moved from the payer to the next batch's authority PDA.
     /// Deny records: `(token, join mint)` for the burn, then `(token, join mint)` and
@@ -180,7 +217,8 @@ pub mod confidential_batcher {
     /// the received payout into confidential payout tokens, and records the
     /// batch's informational public rate. A zero-total batch is canceled
     /// instead, and a deposit worth zero vault shares is wrapped back and opens
-    /// refunds. Permissionless, before the batch's settle deadline.
+    /// refunds. Permissionless, before the batch's settle deadline; refused while paused unless
+    /// the total is zero.
     /// Deny records: `(token, payout mint)` then `(token, join mint)` for the zero-shares refund, or
     /// none for a zero total, which runs no execution.
     pub fn settle<'info>(

@@ -77,7 +77,22 @@ pub enum BatcherError {
     /// The minimum batch age exceeds `MAX_MIN_BATCH_AGE_SECS`.
     #[msg("minimum batch age exceeds the maximum")]
     InvalidMinBatchAge,
-    /// The settle deadline is zero or exceeds `MAX_SETTLE_DEADLINE_SECS`.
-    #[msg("settle deadline is zero or exceeds the maximum")]
+    /// The settle deadline exceeds `MAX_SETTLE_DEADLINE_SECS`.
+    #[msg("settle deadline exceeds the maximum")]
     InvalidSettleDeadline,
+    /// The signer is not the batcher's admin.
+    #[msg("signer is not the batcher admin")]
+    AdminMismatch,
+    /// A new admin must co-sign, unless it is an existing program-owned PDA.
+    #[msg("the new admin must co-sign, or be an existing program-owned PDA")]
+    NewAdminNotAccepted,
+    /// Joins, dispatches and settles of a nonzero total are refused while the batcher is paused.
+    #[msg("batcher is paused")]
+    Paused,
+    /// Unpausing needs a paused batcher.
+    #[msg("batcher is not paused")]
+    NotPaused,
+    /// The admin cannot be the default (all-zero) key.
+    #[msg("admin cannot be the default key")]
+    InvalidAdmin,
 }
