@@ -1,4 +1,4 @@
-{{- range $i, $chain := .Values.chains }}
+{{- range $i, $chain := (include "coprocessor.chains" . | fromYaml).chains }}
 {{- if (($chain.hostListenerCatchupOnly).enabled) }}
 {{- $useLegacyName := $chain.hostListenerCatchupOnly.useLegacyName | default false -}}
 {{- $deploymentName := ternary (printf "%s-host-listener-catchup-only" $.Release.Name | trunc 63 | trimSuffix "-") (printf "%s-host-listener-catchup-only-%s" $.Release.Name $chain.name | trunc 63 | trimSuffix "-") $useLegacyName -}}

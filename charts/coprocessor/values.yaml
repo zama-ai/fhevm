@@ -19,6 +19,11 @@
 # -----------------------------------------------------------------------------
 # Shared configuration across all coprocessor components
 commonConfig:
+  # Selects a bundled preset from configs/<network>.yaml.
+  # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
+  # An unrecognized value fails the render. Also drives the generated chains[]
+  # entries (see the Chains section).
+  network: ""
   # Keep production Blue on legacy material during a compressed-key migration.
   # Fresh and GPU deployments must disable this safeguard explicitly.
   forceLegacyServerKey: true
@@ -139,6 +144,36 @@ commonConfig:
 # on key conflict.
 podAnnotations: {}
 podLabels: {}
+
+# -----------------------------------------------------------------------------
+# Contract ConfigMap
+# -----------------------------------------------------------------------------
+# Optional ConfigMap rendering chain contract addresses. Downstream
+# components (dbMigration, hostListener, hostListenerPoller,
+# hostListenerCatchupOnly) reference its keys via configMapKeyRef.
+#
+# When commonConfig.stackVersion is set, it is appended to the rendered name of
+# this and the gateway/polygon ConfigMaps (lowercased, dots replaced by dashes),
+# e.g. stackVersion v0.13.7 renders contracts-addresses-v0-13-7. valueFrom blocks
+# and env lists are rendered through tpl, so reference the computed name with:
+#   configMapKeyRef:
+#     name: '{{ include "coprocessor.contractConfigMapName" . }}'
+# (coprocessor.gatewayContractConfigMapName / coprocessor.polygonContractConfigMapName
+# for the other two).
+contractConfigMap:
+  enabled: false
+
+  # Base resource name; see the stackVersion suffix note above.
+  name: contract-addresses
+
+  # Operator overrides, deep-merged on top of the configs/<commonConfig.network>.yaml
+  # preset. Keys are used as-is and prefixed by chain. Operator entries win on key collision with
+  # the preset, and also feed the generated chains[] entries.
+  # Example:
+  #   addresses:
+  #     ethereum.acl.address: "0xabc..."    # override preset
+  #     polygon.acl.address: "0xdef..."     # enables the polygon chain entry
+  addresses: {}
 
 # -----------------------------------------------------------------------------
 # Host Contract ConfigMap
@@ -764,6 +799,20 @@ hostListenerConsumerShared:
 # hostListenerCatchupOnlyShared / hostListenerConsumerShared blocks define
 # shared settings used by every enabled chain for that listener type. Chain
 # entries do not deep-merge or override arbitrary top-level fields.
+#
+# Generated chains: when contractConfigMap.enabled is true and
+# commonConfig.network is set, one entry is generated per host chain found
+# in configs/<network>.yaml (a "<prefix>.chain_id" key with a non-empty
+# "<prefix>.acl.address"). It provides name ("<prefix>.name", or the prefix),
+# chainId and the four *ContractAddressValueFrom refs pointing at the contract
+# ConfigMap. Entries below with the same name are merged on top and win, so
+# usually they only add wsUrl/httpUrl and the listener switches:
+#   chains:
+#     - name: sepolia
+#       wsUrl: "ws://eth-node:8546"
+#       hostListener:
+#         enabled: true
+# Entries with no matching generated chain are used as-is.
 #
 # What each chain entry provides:
 #   - required chain-specific connection values (wsUrl or wsUrlValueFrom,
