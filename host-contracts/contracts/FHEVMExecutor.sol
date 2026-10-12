@@ -858,6 +858,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         FheType typeCt = _typeOf(inputHandle);
         if (inputType != typeCt) revert InvalidType();
         result = INPUT_VERIFIER.verifyInput(contextUserInputs, inputHandle, inputProof);
+        HCU_LIMIT.registerInputDepth(result);
         // Deliberately NOT marked as minted: a verified input is not computed
         // in this transaction; its only representation is the persisted
         // input ciphertext, so consumers fold a boundary bit for it.
@@ -1059,8 +1060,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     ///      alias for that op); any new op must join the boundary-bit rotation
     ///      tests in fhevmExecutor.t.sol, which pin each operand's position by
     ///      rotating a single minted operand through every slot.
-    function _consumeOperand(bytes32 ct, uint8 position) internal view virtual returns (uint256 shiftedBit) {
+    function _consumeOperand(bytes32 ct, uint8 position) internal virtual returns (uint256 shiftedBit) {
         if (!ACL.isAllowed(ct, msg.sender)) revert ACLNotAllowed(ct, msg.sender);
+        HCU_LIMIT.importDepth(ct, msg.sender);
         shiftedBit = _oneOperandBoundaryBit(ct) << position;
     }
 

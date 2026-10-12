@@ -228,7 +228,7 @@ contract MockHCULimit {
 
 /// @dev Exposes internal choke points of FHEVMExecutor for direct unit tests.
 contract FHEVMExecutorHarness is FHEVMExecutor {
-    function consumeOperand(bytes32 ct, uint8 position) external view returns (uint256) {
+    function consumeOperand(bytes32 ct, uint8 position) external returns (uint256) {
         return _consumeOperand(ct, position);
     }
 

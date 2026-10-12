@@ -6,7 +6,8 @@ import {MulticallUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Mu
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
+import {confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd, hcuLimitAdd} from "../addresses/FHEVMHostAddresses.sol";
+import {HCULimit} from "./HCULimit.sol";
 import {IPauserSet} from "./interfaces/IPauserSet.sol";
 import {IConfidentialBridge} from "./bridge/interfaces/IConfidentialBridge.sol";
 
@@ -235,7 +236,25 @@ contract ACL is
             revert SenderNotAllowed(msg.sender);
         }
         ACLStorage storage $ = _getACLStorage();
-        $.persistedAllowedPairs[handle][account] = true;
+        uint48 depth = HCULimit(hcuLimitAdd).getDepthForPersistence(handle, msg.sender);
+        mapping(address => bool) storage pairs = $.persistedAllowedPairs[handle];
+        bytes32 slot;
+        uint256 previous;
+        assembly ("memory-safe") {
+            mstore(0, and(account, 0xffffffffffffffffffffffffffffffffffffffff))
+            mstore(32, pairs.slot)
+            slot := keccak256(0, 64)
+            previous := sload(slot)
+        }
+        if (uint8(previous) != 0) {
+            uint48 previousDepth = HCULimit(hcuLimitAdd).decayDepth(uint48(previous >> 8), uint48(previous >> 56));
+            if (previousDepth > depth) depth = previousDepth;
+        }
+        // Keep the existing bool byte and mapping layout; metadata shares its word.
+        uint256 packed = 1 | (uint256(depth) << 8) | (uint256(uint48(block.number)) << 56);
+        assembly ("memory-safe") {
+            sstore(slot, packed)
+        }
         emit Allowed(msg.sender, account, handle);
     }
 
@@ -301,6 +320,12 @@ contract ACL is
             if (!isAllowed(handle, msg.sender)) {
                 revert SenderNotAllowed(msg.sender);
             }
+        }
+
+        // Executor outputs are finalized by the HCU check after this grant.
+        // Bridge grants cannot silently initialize an unknown lineage to zero.
+        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) {
+            HCULimit(hcuLimitAdd).importDepth(handle, msg.sender);
         }
 
         bytes32 key = keccak256(abi.encodePacked(handle, account));
@@ -564,6 +589,21 @@ contract ACL is
     function persistAllowed(bytes32 handle, address account) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
         return $.persistedAllowedPairs[handle][account];
+    }
+
+    /// @notice Returns depth metadata without changing the legacy permission getter.
+    function getPermissionDepth(
+        bytes32 handle,
+        address account
+    ) external view returns (bool allowed, uint48 depth, uint48 savedBlock) {
+        mapping(address => bool) storage pairs = _getACLStorage().persistedAllowedPairs[handle];
+        uint256 packed;
+        assembly ("memory-safe") {
+            mstore(0, and(account, 0xffffffffffffffffffffffffffffffffffffffff))
+            mstore(32, pairs.slot)
+            packed := sload(keccak256(0, 64))
+        }
+        return (uint8(packed) != 0, uint48(packed >> 8), uint48(packed >> 56));
     }
 
     /**
