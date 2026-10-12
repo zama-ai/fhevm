@@ -3,7 +3,10 @@
 use crate::{
     DEFAULT_CLOCK_SKEW, DEFAULT_MAX_AUTH_VALIDITY, FhevmSigHeader, signing_hash, unix_now,
 };
-use alloy::{primitives::Address, sol_types::Eip712Domain};
+use alloy::{
+    primitives::{Address, B256, keccak256},
+    sol_types::Eip712Domain,
+};
 use http::uri::PathAndQuery;
 use std::{
     collections::HashSet,
@@ -29,6 +32,8 @@ pub enum AuthError {
     InvalidSignature(String),
     #[error("signer {0} is not allowed")]
     UnknownSigner(Address),
+    #[error("body does not match the signed digest")]
+    BodyMismatch,
 }
 
 impl AuthError {
@@ -42,6 +47,7 @@ impl AuthError {
             Self::TooLongLived => "auth_too_long_lived",
             Self::InvalidSignature(_) => "auth_invalid_signature",
             Self::UnknownSigner(_) => "auth_unknown_signer",
+            Self::BodyMismatch => "auth_body_mismatch",
         }
     }
 }
@@ -117,19 +123,19 @@ impl<P: SignerAllowlist> FhevmSigVerifier<P> {
         self
     }
 
-    /// The signers [`Self::verify`] accepts, e.g. to clone a [`RefreshableSigners`] for its refresh task.
+    /// The signers [`Self::verify_header`] accepts.
     pub fn allowlist(&self) -> &P {
         &self.allowlist
     }
 
-    /// Recovers the signer address from the signed request, without checking it is allowed.
+    /// Recovers the signer and the signed body digest from the header, without checking the
+    /// signer is allowed nor reading the body.
     pub fn recover(
         &self,
         auth_header: Option<&[u8]>,
         path_and_query: &PathAndQuery,
-        body: &[u8],
         now: u64,
-    ) -> Result<Address, AuthError> {
+    ) -> Result<(Address, B256), AuthError> {
         let header = FhevmSigHeader::parse(auth_header.ok_or(AuthError::Missing)?)?;
         if path_and_query.query().is_some() {
             return Err(AuthError::QueryString);
@@ -148,13 +154,31 @@ impl<P: SignerAllowlist> FhevmSigVerifier<P> {
             &self.domain,
             self.audience,
             path_and_query,
-            body,
+            header.body_digest,
             header.expires,
         );
-        header
+        let signer = header
             .signature
             .recover_address_from_prehash(&hash)
-            .map_err(|e| AuthError::InvalidSignature(e.to_string()))
+            .map_err(|e| AuthError::InvalidSignature(e.to_string()))?;
+        Ok((signer, header.body_digest))
+    }
+
+    /// Authenticates the request via the header alone, before the body is read.
+    ///
+    /// Returns its allowed signer and the signed body digest.
+    /// The caller must then check that `keccak256(body)` matches the digest.
+    pub fn verify_header(
+        &self,
+        authorization: Option<&[u8]>,
+        path_and_query: &PathAndQuery,
+    ) -> Result<(Address, B256), AuthError> {
+        let (signer, body_digest) = self.recover(authorization, path_and_query, unix_now())?;
+        if self.allowlist.allows(signer) {
+            Ok((signer, body_digest))
+        } else {
+            Err(AuthError::UnknownSigner(signer))
+        }
     }
 
     /// Returns the signer of the request if its [`SignerAllowlist`] allows it.
@@ -164,11 +188,11 @@ impl<P: SignerAllowlist> FhevmSigVerifier<P> {
         path_and_query: &PathAndQuery,
         body: &[u8],
     ) -> Result<Address, AuthError> {
-        let signer = self.recover(authorization, path_and_query, body, unix_now())?;
-        if self.allowlist.allows(signer) {
+        let (signer, body_digest) = self.verify_header(authorization, path_and_query)?;
+        if keccak256(body) == body_digest {
             Ok(signer)
         } else {
-            Err(AuthError::UnknownSigner(signer))
+            Err(AuthError::BodyMismatch)
         }
     }
 }
@@ -222,10 +246,7 @@ mod tests {
     fn missing_header_is_rejected() {
         let (_, domain, audience) = setup();
         let verifier = FhevmSigVerifier::new(domain, audience, HashSet::new());
-        assert_eq!(
-            verifier.recover(None, &PATH, BODY, NOW),
-            Err(AuthError::Missing)
-        );
+        assert_eq!(verifier.recover(None, &PATH, NOW), Err(AuthError::Missing));
     }
 
     #[tokio::test]
@@ -235,7 +256,7 @@ mod tests {
         let verifier = FhevmSigVerifier::new(domain, audience, HashSet::new());
         let late = NOW + 60 + DEFAULT_CLOCK_SKEW.as_secs() + 1;
         let err = verifier
-            .recover(Some(header.as_bytes()), &PATH, BODY, late)
+            .recover(Some(header.as_bytes()), &PATH, late)
             .unwrap_err();
         assert_eq!(err, AuthError::Expired);
     }
@@ -250,11 +271,11 @@ mod tests {
         let at_limit = NOW + 60 - max;
         assert!(
             verifier
-                .recover(Some(header.as_bytes()), &PATH, BODY, at_limit)
+                .recover(Some(header.as_bytes()), &PATH, at_limit)
                 .is_ok()
         );
         assert_eq!(
-            verifier.recover(Some(header.as_bytes()), &PATH, BODY, at_limit - 1),
+            verifier.recover(Some(header.as_bytes()), &PATH, at_limit - 1),
             Err(AuthError::TooLongLived)
         );
 
@@ -263,7 +284,7 @@ mod tests {
             .with_max_validity(Duration::from_secs(10))
             .with_clock_skew(Duration::ZERO);
         assert_eq!(
-            strict.recover(Some(header.as_bytes()), &PATH, BODY, NOW),
+            strict.recover(Some(header.as_bytes()), &PATH, NOW),
             Err(AuthError::TooLongLived)
         );
     }
@@ -278,7 +299,6 @@ mod tests {
                 verifier.recover(
                     Some(header.as_bytes()),
                     &PathAndQuery::from_static(target),
-                    BODY,
                     NOW
                 ),
                 Err(AuthError::QueryString),
@@ -291,39 +311,56 @@ mod tests {
     async fn tampering_recovers_another_address() {
         let (signer, domain, audience) = setup();
         let header = header(&signer, &domain, audience).await;
-        let recover = |domain: &Eip712Domain, audience, path: &PathAndQuery, body| {
+        let recover = |header: &str, domain: &Eip712Domain, audience, path: &PathAndQuery| {
             FhevmSigVerifier::new(domain.clone(), audience, HashSet::new())
-                .recover(Some(header.as_bytes()), path, body, NOW)
+                .recover(Some(header.as_bytes()), path, NOW)
                 .unwrap()
+                .0
         };
-        assert_eq!(recover(&domain, audience, &PATH, BODY), signer.address());
+        assert_eq!(recover(&header, &domain, audience, &PATH), signer.address());
         let other_audience = Address::repeat_byte(0xb2);
         assert_ne!(
-            recover(&domain, other_audience, &PATH, BODY),
+            recover(&header, &domain, other_audience, &PATH),
             signer.address()
         );
+        let other_path = PathAndQuery::from_static("/v1/public-decrypt");
         assert_ne!(
-            recover(
-                &domain,
-                audience,
-                &PathAndQuery::from_static("/v1/public-decrypt"),
-                BODY
-            ),
+            recover(&header, &domain, audience, &other_path),
             signer.address()
         );
+        let other_digest = header.replace(
+            &keccak256(BODY).to_string(),
+            &keccak256(br#"{"payload":2}"#).to_string(),
+        );
         assert_ne!(
-            recover(&domain, audience, &PATH, br#"{"payload":2}"#),
+            recover(&other_digest, &domain, audience, &PATH),
             signer.address()
         );
         let other_chain = crate::domain(2, Address::repeat_byte(0xc0));
         assert_ne!(
-            recover(&other_chain, audience, &PATH, BODY),
+            recover(&header, &other_chain, audience, &PATH),
             signer.address()
         );
         let other_contract = crate::domain(1, Address::repeat_byte(0xc1));
         assert_ne!(
-            recover(&other_contract, audience, &PATH, BODY),
+            recover(&header, &other_contract, audience, &PATH),
             signer.address()
+        );
+    }
+
+    #[tokio::test]
+    async fn body_is_checked_against_the_signed_digest() {
+        let (signer, domain, audience) = setup();
+        let header = fresh_header(&signer, &domain, audience).await;
+        let allowed = HashSet::from([signer.address()]);
+        let verifier = FhevmSigVerifier::new(domain, audience, allowed);
+        assert_eq!(
+            verifier.verify_header(Some(header.as_bytes()), &PATH),
+            Ok((signer.address(), keccak256(BODY)))
+        );
+        assert_eq!(
+            verifier.verify(Some(header.as_bytes()), &PATH, br#"{"payload":2}"#),
+            Err(AuthError::BodyMismatch)
         );
     }
 }

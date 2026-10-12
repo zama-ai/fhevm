@@ -1,9 +1,11 @@
 //! `FhevmSig` HTTP request authentication.
 //!
 //! The sender signs an EIP-712 `Request { path, bodyDigest, expires, audience }` and sends
-//! `Authorization: FhevmSig expires=<unix seconds>, sig=0x<65-byte signature>`. The server rebuilds
-//! the struct from the request it actually received and its own address as `audience`, recovers
-//! the signer with `ecrecover` and checks it against the endpoint's [`SignerAllowlist`].
+//! `Authorization: FhevmSig expires=<unix seconds>, digest=0x<keccak256(body)>, sig=0x<65-byte
+//! signature>`. The server rebuilds the struct from the request target it actually received, the
+//! header's `digest` and its own address as `audience`, recovers the signer with `ecrecover` and
+//! checks it against the endpoint's [`SignerAllowlist`], all before reading the body. The body is
+//! then checked against `digest`.
 //!
 //! The crate is framework-agnostic.
 
@@ -17,7 +19,7 @@ pub use sign::{SignError, sign, sign_valid_for};
 pub use verify::{AuthError, FhevmSigVerifier, RefreshableSigners, SignerAllowlist};
 
 use alloy::{
-    primitives::{Address, B256, U256, keccak256},
+    primitives::{Address, B256, U256},
     sol_types::{Eip712Domain, SolStruct},
 };
 use std::{
@@ -74,12 +76,12 @@ pub fn signing_hash(
     domain: &Eip712Domain,
     audience: Address,
     path_and_query: &PathAndQuery,
-    body: &[u8],
+    body_digest: B256,
     expires: u64,
 ) -> B256 {
     Request {
         path: path_and_query.as_str().to_owned(),
-        bodyDigest: keccak256(body),
+        bodyDigest: body_digest,
         expires,
         audience,
     }
@@ -90,6 +92,7 @@ pub fn signing_hash(
 #[cfg(test)]
 mod test_utils {
     pub(crate) use super::*;
+    pub(crate) use alloy::primitives::keccak256;
     pub(crate) use alloy::signers::local::PrivateKeySigner;
 
     pub(crate) const NOW: u64 = 1_800_000_000;
@@ -147,7 +150,8 @@ mod tests {
     #[test]
     fn signing_hash_is_stable() {
         let domain = domain(1, Address::repeat_byte(0xc0));
-        let hash = signing_hash(&domain, Address::repeat_byte(0xa1), &PATH, BODY, NOW + 60);
+        let audience = Address::repeat_byte(0xa1);
+        let hash = signing_hash(&domain, audience, &PATH, keccak256(BODY), NOW + 60);
         assert_eq!(
             hash,
             b256!("0xa06d35ef211b66e99d7e1165552319faf87480e17354294b6428e0b13dc7fc7b")

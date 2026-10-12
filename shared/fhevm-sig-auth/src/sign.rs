@@ -1,7 +1,11 @@
 //! Client-side signing.
 
 use crate::{FhevmSigHeader, signing_hash, unix_now};
-use alloy::{primitives::Address, signers::Signer, sol_types::Eip712Domain};
+use alloy::{
+    primitives::{Address, keccak256},
+    signers::Signer,
+    sol_types::Eip712Domain,
+};
 use http::uri::PathAndQuery;
 use std::time::Duration;
 use thiserror::Error;
@@ -27,9 +31,14 @@ pub async fn sign<S: Signer + Send + Sync + ?Sized>(
     if path_and_query.query().is_some() {
         return Err(SignError::QueryString);
     }
-    let hash = signing_hash(domain, audience, path_and_query, body, expires);
+    let body_digest = keccak256(body);
+    let hash = signing_hash(domain, audience, path_and_query, body_digest, expires);
     let signature = signer.sign_hash(&hash).await?;
-    Ok(FhevmSigHeader { expires, signature })
+    Ok(FhevmSigHeader {
+        expires,
+        body_digest,
+        signature,
+    })
 }
 
 /// [`sign`] with `expires = now + validity`.

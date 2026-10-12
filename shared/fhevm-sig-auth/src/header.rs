@@ -1,13 +1,14 @@
 //! The `Authorization: FhevmSig ...` header value.
 
 use crate::{AuthError, SCHEME};
-use alloy::primitives::{Signature, hex};
+use alloy::primitives::{B256, Signature, hex};
 use std::{fmt, str::FromStr};
 
 /// A parsed or freshly signed `Authorization: FhevmSig ...` value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FhevmSigHeader {
     pub expires: u64,
+    pub body_digest: B256,
     pub signature: Signature,
 }
 
@@ -28,13 +29,14 @@ impl FhevmSigHeader {
     }
 }
 
-// `FhevmSig expires=<decimal>, sig=0x<130 lowercase hex chars>`.
+// `FhevmSig expires=<decimal>, digest=0x<64 lowercase hex chars>, sig=0x<130 lowercase hex chars>`.
 impl fmt::Display for FhevmSigHeader {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{SCHEME} expires={}, sig=0x{}",
+            "{SCHEME} expires={}, digest={}, sig=0x{}",
             self.expires,
+            self.body_digest,
             hex::encode(self.signature.as_bytes())
         )
     }
@@ -50,17 +52,27 @@ impl FromStr for FhevmSigHeader {
         if !scheme.eq_ignore_ascii_case(SCHEME) {
             return Err(AuthError::Malformed("wrong scheme"));
         }
-        let (expires, sig) = params
-            .split_once(", ")
-            .ok_or(AuthError::Malformed("expected `expires=..., sig=...`"))?;
+        let mut params = params.split(", ");
+        let (Some(expires), Some(digest), Some(sig), None) =
+            (params.next(), params.next(), params.next(), params.next())
+        else {
+            return Err(AuthError::Malformed(
+                "expected `expires=..., digest=..., sig=...`",
+            ));
+        };
         let expires = expires
             .strip_prefix("expires=")
             .ok_or(AuthError::Malformed("first parameter must be `expires=`"))?
             .parse()
             .map_err(|_| AuthError::Malformed("`expires` is not a u64"))?;
+        let body_digest = digest
+            .strip_prefix("digest=")
+            .ok_or(AuthError::Malformed("second parameter must be `digest=`"))?
+            .parse()
+            .map_err(|_| AuthError::Malformed("`digest` is not 32 hex bytes"))?;
         let signature: Signature = sig
             .strip_prefix("sig=")
-            .ok_or(AuthError::Malformed("second parameter must be `sig=`"))?
+            .ok_or(AuthError::Malformed("third parameter must be `sig=`"))?
             .parse()
             .map_err(|e| AuthError::InvalidSignature(format!("`sig`: {e}")))?;
         // A high-s signature has a low-s twin for the same signer (EIP-2): refuse it so a valid
@@ -68,7 +80,11 @@ impl FromStr for FhevmSigHeader {
         if signature.normalize_s().is_some() {
             return Err(AuthError::InvalidSignature("`sig`: high s".to_owned()));
         }
-        Ok(Self { expires, signature })
+        Ok(Self {
+            expires,
+            body_digest,
+            signature,
+        })
     }
 }
 
@@ -81,7 +97,10 @@ mod tests {
     async fn display_and_parse_round_trip() {
         let (signer, domain, audience) = setup();
         let header = header(&signer, &domain, audience).await;
-        assert!(header.starts_with("FhevmSig expires=1800000060, sig=0x"));
+        let digest = keccak256(BODY);
+        assert!(header.starts_with(&format!(
+            "FhevmSig expires=1800000060, digest={digest}, sig=0x"
+        )));
         assert_eq!(
             header.parse::<FhevmSigHeader>().unwrap().to_string(),
             header
@@ -93,37 +112,52 @@ mod tests {
         let (signer, domain, audience) = setup();
         let header = header(&signer, &domain, audience).await;
         let sig = header.split_once("sig=0x").unwrap().1;
+        let digest = keccak256(BODY);
+        let expected = "expected `expires=..., digest=..., sig=...`";
         let cases = [
             (String::new(), "missing parameters"),
             ("FhevmSig".to_owned(), "missing parameters"),
-            (format!("Bearer expires=1, sig=0x{sig}"), "wrong scheme"),
             (
-                format!("FhevmSig sig=0x{sig}, expires=1"),
+                format!("Bearer expires=1, digest={digest}, sig=0x{sig}"),
+                "wrong scheme",
+            ),
+            (
+                format!("FhevmSig sig=0x{sig}, digest={digest}, expires=1"),
                 "first parameter must be `expires=`",
             ),
+            ("FhevmSig expires=1".to_owned(), expected),
+            (format!("FhevmSig expires=1, sig=0x{sig}"), expected),
             (
-                "FhevmSig expires=1".to_owned(),
-                "expected `expires=..., sig=...`",
+                format!("FhevmSig expires=1, digest={digest},sig=0x{sig}"),
+                expected,
             ),
             (
-                format!("FhevmSig expires=1,sig=0x{sig}"),
-                "expected `expires=..., sig=...`",
+                format!("FhevmSig expires=1, digest={digest}, sig=0x{sig}, x=1"),
+                expected,
             ),
             (
-                format!("FhevmSig expires=x, sig=0x{sig}"),
+                format!("FhevmSig expires=x, digest={digest}, sig=0x{sig}"),
                 "`expires` is not a u64",
             ),
             (
-                format!("FhevmSig expires=-1, sig=0x{sig}"),
+                format!("FhevmSig expires=-1, digest={digest}, sig=0x{sig}"),
                 "`expires` is not a u64",
             ),
             (
-                format!("FhevmSig expires=18446744073709551616, sig=0x{sig}"),
+                format!("FhevmSig expires=18446744073709551616, digest={digest}, sig=0x{sig}"),
                 "`expires` is not a u64",
             ),
             (
-                format!("FhevmSig expires=1, sign=0x{sig}"),
-                "second parameter must be `sig=`",
+                format!("FhevmSig expires=1, sig=0x{sig}, digest={digest}"),
+                "second parameter must be `digest=`",
+            ),
+            (
+                format!("FhevmSig expires=1, digest=0x01, sig=0x{sig}"),
+                "`digest` is not 32 hex bytes",
+            ),
+            (
+                format!("FhevmSig expires=1, digest={digest}, sign=0x{sig}"),
+                "third parameter must be `sig=`",
             ),
         ];
         for (value, reason) in cases {
@@ -134,13 +168,13 @@ mod tests {
             );
         }
 
-        let short_sig = format!("FhevmSig expires=1, sig=0x{}", &sig[2..]);
+        let short_sig = format!("FhevmSig expires=1, digest={digest}, sig=0x{}", &sig[2..]);
         assert!(matches!(
             FhevmSigHeader::parse(short_sig.as_bytes()),
             Err(AuthError::InvalidSignature(_))
         ));
         assert_eq!(
-            FhevmSigHeader::parse(b"FhevmSig expires=1, sig=0x\xff"),
+            FhevmSigHeader::parse(b"FhevmSig expires=1, digest=0x, sig=0x\xff"),
             Err(AuthError::Malformed("not UTF-8"))
         );
         // The scheme is case-insensitive (RFC 9110).
