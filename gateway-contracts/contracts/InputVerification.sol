@@ -307,6 +307,7 @@ contract InputVerification is
         bytes calldata signature,
         bytes calldata extraData
     ) external virtual onlyCoprocessorTxSender {
+        _checkZkProofIdRequested(zkProofId);
         ZKProofInput memory zkProofInput = _getInputVerificationStorage().zkProofInputs[zkProofId];
         bytes32 digest = _hashCiphertextVerification(
             CiphertextVerification(
@@ -333,6 +334,7 @@ contract InputVerification is
         bytes calldata signature,
         bytes calldata extraData
     ) external virtual onlyCoprocessorTxSender {
+        _checkZkProofIdRequested(zkProofId);
         SolanaZKProofInput memory solanaInput = _getInputVerificationStorage().solanaZkProofInputs[zkProofId];
         bytes32 digest = _hashSolanaCiphertextVerification(
             SolanaCiphertextVerification(
@@ -348,12 +350,8 @@ contract InputVerification is
 
     /// @notice See {IInputVerification-rejectProofResponse}.
     function rejectProofResponse(uint256 zkProofId, bytes calldata extraData) external virtual onlyCoprocessorTxSender {
+        _checkZkProofIdRequested(zkProofId);
         InputVerificationStorage storage $ = _getInputVerificationStorage();
-
-        // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
-        if (zkProofId > $.zkProofIdCounter || zkProofId == 0) {
-            revert VerifyProofNotRequested(zkProofId);
-        }
 
         /**
          * @dev Retrieve the coprocessor signer address from the GatewayConfig contract using the
@@ -485,7 +483,8 @@ contract InputVerification is
      * @notice Records a coprocessor's verification of a ZKPoK request, given the EIP712 digest the
      * coprocessor signed, and emits {VerifyProofResponse} when this response reaches consensus.
      * @dev Shared by {verifyProofResponse} and {verifyProofResponseSolana}, which differ only in
-     * how they compute `digest`.
+     * how they compute `digest`. Each checks `zkProofId` before computing it, so a response to a
+     * request that was never made reverts before it pays for hashing.
      */
     function _verifyProofResponse(
         uint256 zkProofId,
@@ -496,12 +495,7 @@ contract InputVerification is
     ) internal virtual {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
-        // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
-        if (zkProofId > $.zkProofIdCounter || zkProofId == 0) {
-            revert VerifyProofNotRequested(zkProofId);
-        }
-
-        // Recover the signer address from the signature,
+        // Recover the signer address from the signature.
         address signerAddress = ECDSA.recover(digest, signature);
 
         // Check that the signer is a coprocessor signer, and that it corresponds to the transaction
@@ -542,6 +536,16 @@ contract InputVerification is
             $.verifyProofConsensusDigest[zkProofId] = digest;
 
             emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
+        }
+    }
+
+    /**
+     * @notice Reverts unless `zkProofId` corresponds to a generated ZK Proof verification request.
+     * @param zkProofId The ID of the ZK Proof.
+     */
+    function _checkZkProofIdRequested(uint256 zkProofId) internal view virtual {
+        if (zkProofId > _getInputVerificationStorage().zkProofIdCounter || zkProofId == 0) {
+            revert VerifyProofNotRequested(zkProofId);
         }
     }
 
