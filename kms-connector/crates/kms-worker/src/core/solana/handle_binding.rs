@@ -16,7 +16,7 @@ use std::{cmp::Ordering, time::Duration};
 use zama_solana_acl::{
     AclError, EncryptedStore, MmrProof, authorize_state_historical, authorize_state_public,
 };
-use zama_solana_merkle_proofs::MerkleProofOutcome;
+use zama_solana_merkle_proofs::{ErrorCode, MerkleProofOutcome};
 
 /// How long a proof read may run before the next coprocessor is asked as well. A proof read takes
 /// tens of milliseconds, so a coprocessor slower than this is most likely stalled or overloaded.
@@ -86,7 +86,7 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
                 SOLANA_PROOF_ANSWER_COUNTER
                     .with_label_values(&[&source_name, "read_failed"])
                     .inc_by(queries.len() as u64);
-                read_failures.push(format!("coprocessor {source_name}: {error}"));
+                read_failures.push((source_name, error));
             }
         }
         if results.iter().all(|result| *result == Some(Ok(()))) {
@@ -96,12 +96,39 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
     }
     results
         .into_iter()
-        .map(|result| {
-            result.ok_or_else(|| ProofReadError::Unavailable {
-                reason: format!("no coprocessor answered: {}", read_failures.join("; ")),
-            })
-        })
+        .map(|result| result.ok_or_else(|| unanswered(&read_failures)))
         .collect()
+}
+
+/// The error for a query no coprocessor answered, after every coprocessor's read failed: a refusal
+/// when every coprocessor refused the connector as a sender, since its signer is then in no live
+/// KMS context any coprocessor has read.
+fn unanswered(read_failures: &[(String, ProofReadError)]) -> ProofReadError {
+    let reason = format!(
+        "no coprocessor answered: {}",
+        read_failures
+            .iter()
+            .map(|(source_name, error)| format!("coprocessor {source_name}: {error}"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    );
+    let not_a_sender = |(_, error): &(String, ProofReadError)| {
+        matches!(
+            error,
+            ProofReadError::Refused {
+                code: ErrorCode::SenderAuthenticationFailed,
+                ..
+            }
+        )
+    };
+    if read_failures.iter().all(not_a_sender) {
+        ProofReadError::Refused {
+            code: ErrorCode::SenderAuthenticationFailed,
+            reason,
+        }
+    } else {
+        ProofReadError::Unavailable { reason }
+    }
 }
 
 /// The `outcome` label of a coprocessor's answer for one leaf: `verified`, `no_leaf`,

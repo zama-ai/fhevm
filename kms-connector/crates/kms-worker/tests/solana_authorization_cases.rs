@@ -109,6 +109,7 @@ fn encrypted_store_name(source: &EncryptedStoreFailure) -> &'static str {
 fn proof_read_name(source: &ProofReadError) -> &'static str {
     match source {
         ProofReadError::Unavailable { .. } => "ProofRead::Unavailable",
+        ProofReadError::Refused { .. } => "ProofRead::Refused",
         ProofReadError::ResponseLengthMismatch { .. } => "ProofRead::ResponseLengthMismatch",
     }
 }

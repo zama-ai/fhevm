@@ -2506,6 +2506,9 @@ the same way, through `shared/kms-context`. A refresh that fails, or takes more 
 keeps the last set. Until the first read succeeds, every request gets `upstream_transient` (502,
 retryable) and `/healthz` answers 503. A missing, malformed, too long-lived or unknown signature,
 or one for another audience, gets `sender_authentication_failed` (401) before the database is read.
+A KMS connector that every coprocessor refuses this way fails the request `unprocessable`, final, as
+an EVM node outside the KMS context does: a coprocessor learns a new context's tx-senders only at the
+finalized block and up to 60 seconds later, longer than relayer-http retries a request.
 
 Request and success bodies are CBOR (RFC 8949) over HTTP/2 without TLS negotiation (prior
 knowledge). Hashes and keys travel as 32-byte byte strings, and the requests kms-worker sends one

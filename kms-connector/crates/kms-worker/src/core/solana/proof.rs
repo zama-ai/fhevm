@@ -13,8 +13,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use zama_solana_merkle_proofs::{
-    ErrorResponse, LeafQuery as WireLeaf, LeafQueryKind as WireLeafKind, MAX_LEAVES_PER_REQUEST,
-    MERKLE_PROOFS_PATH, MerkleProofOutcome, MerkleProofRequest, MerkleProofResponse,
+    ErrorCode, ErrorResponse, LeafQuery as WireLeaf, LeafQueryKind as WireLeafKind,
+    MAX_LEAVES_PER_REQUEST, MERKLE_PROOFS_PATH, MerkleProofOutcome, MerkleProofRequest,
+    MerkleProofResponse,
 };
 
 use crate::{core::config::ProofServer, monitoring::metrics::SOLANA_PROOF_ANSWER_COUNTER};
@@ -72,8 +73,7 @@ pub(super) fn check_length(requested: usize, returned: usize) -> Result<(), Proo
     }
 }
 
-/// Why a batch could not be read from a coprocessor. Every variant says nothing about any leaf,
-/// and a later read may succeed.
+/// Why a batch could not be read from a coprocessor. Every variant says nothing about any leaf.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum ProofReadError {
     /// A coprocessor could not be read; from [`verify_proofs`], some query has no answer that
@@ -82,6 +82,12 @@ pub enum ProofReadError {
     /// [`verify_proofs`]: super::handle_binding::verify_proofs
     #[error("Merkle proof read failed: {reason}")]
     Unavailable { reason: String },
+    /// A coprocessor answered with an error body; from [`verify_proofs`], every coprocessor
+    /// refused with `code`.
+    ///
+    /// [`verify_proofs`]: super::handle_binding::verify_proofs
+    #[error("Merkle proof read refused with {code:?}: {reason}")]
+    Refused { code: ErrorCode, reason: String },
     #[error("Merkle proof read returned {returned} outcomes for {requested} queries")]
     ResponseLengthMismatch { requested: usize, returned: usize },
 }
@@ -285,11 +291,13 @@ impl HostProofReader for CoprocessorProofClient {
         }
         let status = response.status();
         if !status.is_success() {
-            let error = serde_json::from_slice::<ErrorResponse>(&body).map_or_else(
-                |_| String::new(),
-                |error| format!(" {:?}: {}", error.code, error.message),
-            );
-            return Err(failed(format!("HTTP {status}{error}")));
+            return Err(match serde_json::from_slice::<ErrorResponse>(&body) {
+                Ok(error) => ProofReadError::Refused {
+                    code: error.code,
+                    reason: format!("{url}: HTTP {status}: {}", error.message),
+                },
+                Err(_) => failed(format!("HTTP {status}")),
+            });
         }
         decode_cbor::<MerkleProofResponse>(&body)
             .map(|response| response.proofs)
@@ -470,7 +478,7 @@ mod tests {
         );
     }
 
-    /// A refusal carries the coprocessor's error code and message into the read error.
+    /// A refusal keeps the coprocessor's error code and carries its message into the read error.
     #[tokio::test]
     async fn a_refusal_reports_the_coprocessor_error() {
         use mocktail::{StatusCode, server::MockServer};
@@ -493,9 +501,10 @@ mod tests {
         let proofs_url = base_url.join(MERKLE_PROOFS_PATH).unwrap();
         assert_eq!(
             client.read_proofs(0, &batch).await,
-            Err(ProofReadError::Unavailable {
+            Err(ProofReadError::Refused {
+                code: ErrorCode::Overloaded,
                 reason: format!(
-                    "{proofs_url}: HTTP 503 Service Unavailable Overloaded: \
+                    "{proofs_url}: HTTP 503 Service Unavailable: \
                      no database connection free within 200ms"
                 ),
             })
