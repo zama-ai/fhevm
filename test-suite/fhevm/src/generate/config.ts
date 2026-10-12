@@ -7,7 +7,8 @@ import {
   requiresLegacyRelayerKeyUrlConfig,
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
-import { hostChainRuntimes, OBJECT_STORE_INTERNAL_URL } from "../layout";
+import { kmsCertificateThreshold } from "../../../../solana/deploy/src/bootstrap";
+import { hostChainRuntimes, isEvmHost, OBJECT_STORE_INTERNAL_URL, RELAYER_HTTP_PORT } from "../layout";
 import { solanaProgramId, solanaValidatorUrl } from "./solana";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
@@ -138,5 +139,41 @@ export const renderRelayerConfig = (
     config = rewriteHostChains(config, state, chains);
     config = rewriteProtocolConfig(config, state, chains);
   }
+  return YAML.stringify(config);
+};
+
+/**
+ * Renders relayer-http's config from its checked-in example: EVM chains in supported_chain_ids,
+ * each Solana chain in solana_chains with the zama-host id and the certificate threshold its KMS
+ * context was defined with, and one endpoint per kms-connector proxy.
+ */
+export const renderRelayerHttpConfig = (
+  state: Pick<State, "discovery">,
+  baseText: string,
+  plan: Pick<StackSpec, "hostChains" | "kms">,
+  envs: Record<string, Record<string, string>>,
+) => {
+  const config = YAML.parse(baseText) as {
+    http: Record<string, unknown>;
+    kms_aggregator: { public_decrypt: { threshold: number }; user_decrypt: { threshold: number }; endpoints: unknown[] };
+  };
+  const solanaThreshold = kmsCertificateThreshold(plan.kms.threshold, plan.kms.committeeSize);
+  config.http.endpoint = `0.0.0.0:${RELAYER_HTTP_PORT}`;
+  config.http.supported_chain_ids = plan.hostChains.filter(isEvmHost).map((chain) => Number(chain.chainId));
+  config.http.solana_chains = Object.fromEntries(
+    plan.hostChains
+      .filter((chain) => !isEvmHost(chain))
+      .map((chain) => [
+        chain.chainId,
+        { program_id: solanaProgramId(state.discovery, chain.key), public_decrypt_threshold: solanaThreshold },
+      ]),
+  );
+  config.kms_aggregator.public_decrypt.threshold = Number(envs["gateway-sc"].PUBLIC_DECRYPTION_THRESHOLD);
+  config.kms_aggregator.user_decrypt.threshold = Number(envs["gateway-sc"].USER_DECRYPTION_THRESHOLD);
+  config.kms_aggregator.endpoints = envs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS.split(",").map((url, index) => ({
+    name: `kms_${index}`,
+    url,
+    auth: { type: "api_key", value_env: "KMS_CONNECTOR_API_KEY" },
+  }));
   return YAML.stringify(config);
 };

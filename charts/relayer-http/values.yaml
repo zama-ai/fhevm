@@ -1,0 +1,37 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/zama-ai/fhevm/relayer-http
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 1
+
+# Deep-merged over configs/relayer-http-default.yaml (relayer-http/config/config.yaml). Lists
+# replace the default's: set kms_aggregator.endpoints, http.supported_chain_ids and, per Solana
+# chain, http.solana_chains. API keys stay out of the file: each endpoint names the env var that
+# holds its key, and `env` provides it.
+config: {}
+
+# Must provide every env var the endpoints' `auth.value_env` names.
+env: []
+envFrom: []
+
+# Mounts for a private CA: point SSL_CERT_FILE (in `env`) at the mounted certificate.
+extraVolumes: []
+extraVolumeMounts: []
+
+service:
+  type: ClusterIP
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

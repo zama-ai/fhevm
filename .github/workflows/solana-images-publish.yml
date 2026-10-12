@@ -134,6 +134,12 @@ jobs:
             dockerfile: relayer/docker/relayer-migrate/Dockerfile
             rust_toolchain: relayer/rust-toolchain.toml
             context: .
+          - name: relayer-http
+            image: fhevm/relayer-http
+            dockerfile: relayer-http/Dockerfile
+            rust_toolchain: relayer-http/rust-toolchain.toml
+            context: .
+            target: prod
           - name: kms-connector-db-migration
             image: fhevm/kms-connector/db-migration
             dockerfile: kms-connector/connector-db/Dockerfile

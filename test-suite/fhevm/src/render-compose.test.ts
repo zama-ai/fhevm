@@ -147,8 +147,8 @@ instances:
 };
 
 /** Runs a test body with `DOCKER_HOST` pinned to a known value, restoring it after. */
-/** The template's mount of the kms-connector proxies' test certificate into the e2e runner. */
-const PROXY_TLS_CERT_MOUNT = `${path.resolve(TEMPLATE_COMPOSE_DIR, "../static/config/kms-connector-proxy/tls.crt")}:/etc/kms-connector/proxy/tls.crt:ro`;
+/** The template's mount of the kms-connector proxies' test CA into the e2e runner. */
+const PROXY_CA_MOUNT = `${path.resolve(TEMPLATE_COMPOSE_DIR, "../static/config/kms-connector-proxy/ca.crt")}:/etc/kms-connector/proxy/ca.crt:ro`;
 
 const withDockerHost = async <T>(value: string | undefined, run: () => Promise<T>) => {
   const previous = process.env.DOCKER_HOST;
@@ -717,7 +717,7 @@ describe("render-compose", () => {
         expect(testSuite?.image).toContain(":fhevm-local");
         expect(testSuite?.build).toBeTruthy();
         // Only the template's proxy test-certificate mount: no docker socket.
-        expect(testSuite?.volumes).toEqual([PROXY_TLS_CERT_MOUNT]);
+        expect(testSuite?.volumes).toEqual([PROXY_CA_MOUNT]);
         expect(testSuite?.group_add).toBeUndefined();
       });
     });

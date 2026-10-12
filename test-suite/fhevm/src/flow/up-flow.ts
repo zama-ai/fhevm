@@ -79,6 +79,7 @@ import {
   SCHEMA_COUPLED_GROUPS,
   SOLANA_MERKLE_DB_COMPONENT,
   SOLANA_MERKLE_POSTGRES_PORT,
+  RELAYER_HTTP_PORT,
   STATE_DIR,
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
@@ -89,6 +90,7 @@ import {
   hostChainAddressesPath,
   isEvmHost,
   realLzEndpointFor,
+  runsRelayerHttp,
 } from "../layout";
 import type {
   BuiltImage,
@@ -145,6 +147,7 @@ import {
   waitForKmsConnectorParty,
   waitForLog,
   waitForRpc,
+  waitForRelayerHttp,
   waitForStableChainListeners,
   waitForTestSuite,
 } from "./readiness";
@@ -334,7 +337,7 @@ export const preflightPorts = (state: Pick<State, "scenario">) =>
       ...PORTS,
       ...(scenarioUsesForkAnvil(state.scenario) ? [DEFAULT_FORK_RPC_PORT] : []),
       ...state.scenario.hostChains.filter((c) => isEvmHost(c)).map((c) => c.rpcPort),
-      ...(state.scenario.hostChains.some((c) => !isEvmHost(c)) ? [SOLANA_MERKLE_POSTGRES_PORT] : []),
+      ...(state.scenario.hostChains.some((c) => !isEvmHost(c)) ? [SOLANA_MERKLE_POSTGRES_PORT, RELAYER_HTTP_PORT] : []),
     ]),
   ];
 
@@ -1218,10 +1221,13 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "relayer":
-      await stepComposeUp("relayer", state);
+      await stepComposeUp("relayer", state, serviceNameList(state, "relayer"));
       await waitForContainer("fhevm-relayer-db", "healthy");
       await waitForContainer("fhevm-relayer", "running");
       await waitForLog("fhevm-relayer", /All servers are ready and responding/);
+      if (runsRelayerHttp(state.scenario.hostChains)) {
+        await waitForRelayerHttp();
+      }
       break;
     case "host-process": {
       // The Solana nodes fhevm-cli spawns itself, beside the Merkle record's database container.

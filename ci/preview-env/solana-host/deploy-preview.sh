@@ -102,6 +102,36 @@ yq -i '.env = ((.env // []) | map(select(.name != "APP_HOST_CHAINS__1__CHAIN_ID"
 helm upgrade relayer "$COMMON_CHART" --version "$COMMON_CHART_VERSION" -n "$NAMESPACE" -f "$work/relayer.yaml" \
   --set-string "image.tag=$(jq -r .relayer <<< "$TAGS_JSON")" --wait --wait-for-jobs --timeout=10m
 
+# relayer-http serves decryption over HTTP for the host chains the connectors serve, through every
+# party's proxy. EVM chains go in supported_chain_ids. Each Solana chain goes in solana_chains with
+# the zama-host id and the certificate threshold the host deploy published. Chain ids stay strings:
+# Helm reads numeric values as float64.
+helm get values kms-connector-1 -n "$NAMESPACE" --all -o yaml > "$work/connector.yaml"
+endpoint_urls=$(kubectl get configmap kms-connector-http -n "$NAMESPACE" -o jsonpath='{.data.endpoint-urls}')
+program_id=$(kubectl get configmap solana-host-addresses -n "$NAMESPACE" -o jsonpath='{.data.zama_host\.address}')
+solana_threshold=$(kubectl get configmap solana-host-addresses -n "$NAMESPACE" -o jsonpath='{.data.kms_context\.public_decryption_threshold}')
+require_nonempty "$endpoint_urls" "kms-connector-http[endpoint-urls] is empty"
+require_nonempty "$program_id" "solana-host-addresses[zama_host.address] is empty"
+require_nonempty "$solana_threshold" "solana-host-addresses[kms_context.public_decryption_threshold] is empty"
+# shellcheck disable=SC2016  # $chains and $entry are yq variables
+ENDPOINT_URLS="$endpoint_urls" PROGRAM_ID="$program_id" SOLANA_THRESHOLD="$solana_threshold" \
+  EVM_THRESHOLD=$(kms_reconstruct "$NB_KMS_CORE") yq '
+  [.commonConfig.hostChains[] | select(. != null)] as $chains
+  | {"config": {
+      "http": {
+        "supported_chain_ids": [$chains[] | select(has("solanaHostProgramId") | not) | .chainId],
+        "solana_chains": ([$chains[] | select(has("solanaHostProgramId")) | {.chainId: {"program_id": strenv(PROGRAM_ID), "public_decrypt_threshold": env(SOLANA_THRESHOLD)}}] | .[] as $entry ireduce ({}; . * $entry))
+      },
+      "kms_aggregator": {
+        "public_decrypt": {"threshold": env(EVM_THRESHOLD)},
+        "user_decrypt": {"threshold": env(EVM_THRESHOLD)},
+        "endpoints": [strenv(ENDPOINT_URLS) | split(",") | to_entries | .[] | {"name": "kms_" + (.key | tostring), "url": .value, "auth": {"type": "api_key", "value_env": "KMS_API_KEY"}}]
+      }
+    }}' "$work/connector.yaml" > "$work/relayer-http.yaml"
+helm upgrade --install relayer-http charts/relayer-http -n "$NAMESPACE" \
+  -f "$values/values-relayer-http-e2e.yaml" -f "$work/relayer-http.yaml" \
+  --set-string "image.tag=$(jq -er .relayer_http <<< "$TAGS_JSON")" --wait --timeout=10m
+
 # HTTP readiness alone does not prove that Yellowstone is delivering sealed blocks.
 for i in $(seq 1 "$NB_COPROCESSOR"); do
   initial=$(psql_party "$i" 'SELECT COALESCE(MAX(slot),0) FROM solana_listener_checkpoint')

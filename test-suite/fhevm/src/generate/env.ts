@@ -19,6 +19,7 @@ import {
   KMS_STORAGE_PUBLISHED_URL,
   OBJECT_STORE_INTERNAL_URL,
   POSTGRES_HOST,
+  RELAYER_HTTP_PORT,
   coprocessorDatabaseName,
   hostChainRuntimes,
   isEvmHost,
@@ -522,6 +523,10 @@ const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, pla
         .join(",")
     : "";
   envs["test-suite"].KMS_THRESHOLD = String(plan.kms.threshold);
+  // Compose interpolation of relayer-docker-compose.yml reads relayer.env; the port is set for
+  // every scenario so the file parses even where relayer-http does not run.
+  envs["relayer"].RELAYER_HTTP_PORT = String(RELAYER_HTTP_PORT);
+  envs["relayer"].KMS_CONNECTOR_API_KEY = envs["test-suite"].KMS_CONNECTOR_API_KEY;
 };
 
 /** Renders component and per-instance env maps from state, topology, and discovery. */

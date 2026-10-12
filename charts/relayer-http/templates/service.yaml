@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "relayer-http.fullname" . }}
+  labels:
+    {{- include "relayer-http.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "relayer-http.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ include "relayer-http.port" . }}
+      targetPort: http
+      protocol: TCP

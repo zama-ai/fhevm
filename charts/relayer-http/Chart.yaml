@@ -1,0 +1,8 @@
+apiVersion: v2
+name: relayer-http
+description: >-
+  Helm chart for relayer-http, the relayer that serves decryption over HTTP.
+  It fans each request out to the KMS connector proxies and aggregates their answers.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

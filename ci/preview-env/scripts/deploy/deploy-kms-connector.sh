@@ -14,6 +14,8 @@ source "${script_dir}/../lib.sh"
 proxy_service() { echo "kms-connector-${1}-kms-connector-proxy"; }
 proxy_port=8443
 tls_secret=kms-connector-proxy-tls          # kmsConnectorProxy.tls.secretName in the overlay
+api_key_secret=kms-connector-proxy          # kmsConnectorProxy.apiKeyDigest.secret.name (chart default)
+api_key=fhevm-e2e-kms-connector-api-key     # test literal; relayer-http reads it from ${api_key_secret}
 http_configmap=kms-connector-http           # read by the test-suite overlays
 
 decryption=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.decryption\.address}')
@@ -57,12 +59,13 @@ if [[ "${OBSERVABILITY}" == "true" ]]; then
 fi
 
 ######################################################################
-# Proxy TLS: one self-signed certificate per namespace, shared by every
-# party's proxy. The chart only mounts an existing `kubernetes.io/tls`
-# Secret, so it is created here, before the first release installs. The
-# SANs cover each party's proxy Service name (what the e2e suite dials),
-# so the same cert is also the trust anchor the test-suite gets through
-# NODE_EXTRA_CA_CERTS - no separate CA.
+# Proxy TLS: one test CA and one server certificate per namespace, shared
+# by every party's proxy. The chart only mounts an existing
+# `kubernetes.io/tls` Secret, so it is created here, before the first
+# release installs. The SANs cover each party's proxy Service name (what
+# the e2e suite and relayer-http dial). Clients trust ca.crt. The server
+# certificate is not a CA: rustls clients such as relayer-http reject a CA
+# certificate served as a server certificate (CaUsedAsEndEntity).
 ######################################################################
 if kubectl get secret "${tls_secret}" -n "${NAMESPACE}" >/dev/null 2>&1; then
   echo "Secret ${tls_secret} already exists in ${NAMESPACE}; keeping it."
@@ -79,16 +82,30 @@ else
   sans="${sans}${fq}"
   tls_dir=$(mktemp -d)
   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 30 \
-    -keyout "${tls_dir}/tls.key" -out "${tls_dir}/tls.crt" -subj "/CN=$(proxy_service 1)" \
-    -addext "subjectAltName=${sans}" \
+    -keyout "${tls_dir}/ca.key" -out "${tls_dir}/ca.crt" -subj "/CN=kms-connector-proxy test CA" \
     -addext "basicConstraints=critical,CA:TRUE" \
-    -addext "keyUsage=critical,digitalSignature,keyCertSign" \
-    -addext "extendedKeyUsage=serverAuth" 2>/dev/null
-  kubectl create secret tls "${tls_secret}" -n "${NAMESPACE}" \
-    --cert="${tls_dir}/tls.crt" --key="${tls_dir}/tls.key"
+    -addext "keyUsage=critical,keyCertSign" 2>/dev/null
+  openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+    -keyout "${tls_dir}/tls.key" -subj "/CN=$(proxy_service 1)" -out "${tls_dir}/tls.csr" 2>/dev/null
+  printf '%s\n' "subjectAltName=${sans}" "basicConstraints=critical,CA:FALSE" \
+    "keyUsage=critical,digitalSignature" "extendedKeyUsage=serverAuth" > "${tls_dir}/tls.ext"
+  openssl x509 -req -in "${tls_dir}/tls.csr" -CA "${tls_dir}/ca.crt" -CAkey "${tls_dir}/ca.key" \
+    -set_serial "0x$(openssl rand -hex 16)" -days 30 -extfile "${tls_dir}/tls.ext" \
+    -out "${tls_dir}/tls.crt" 2>/dev/null
+  kubectl create secret generic "${tls_secret}" -n "${NAMESPACE}" --type=kubernetes.io/tls \
+    --from-file=tls.crt="${tls_dir}/tls.crt" --from-file=tls.key="${tls_dir}/tls.key" \
+    --from-file=ca.crt="${tls_dir}/ca.crt"
   rm -rf "${tls_dir}"
   echo "Created ${tls_secret} (SANs: ${sans})"
 fi
+
+######################################################################
+# Proxy API key: the proxies check the digest, relayer-http sends the key.
+######################################################################
+kubectl create secret generic "${api_key_secret}" -n "${NAMESPACE}" \
+  --from-literal=api-key="${api_key}" \
+  --from-literal=api-key-digest="0x$(printf '%s' "${api_key}" | sha256sum | cut -d' ' -f1)" \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 ######################################################################
 # What the e2e suite needs to exercise the HTTP decryption path (see
@@ -97,7 +114,7 @@ fi
 # instead of being yq-patched per party count:
 #   endpoint-urls  KMS_CONNECTOR_ENDPOINT_URLS, one https proxy URL per party
 #   kms-threshold  KMS_THRESHOLD: MPC t, quorum is 2t+1 (kms_t in lib.sh)
-#   ca.crt         the proxies' certificate, for NODE_EXTRA_CA_CERTS
+#   ca.crt         the proxies' CA, for NODE_EXTRA_CA_CERTS
 # The API key itself is a fixed test literal in the overlays.
 ######################################################################
 urls="https://$(proxy_service 1):${proxy_port}"
@@ -105,8 +122,10 @@ for i in $(seq 2 "${NB_KMS_CORE}"); do
   urls="${urls},https://$(proxy_service "${i}"):${proxy_port}"
 done
 threshold=$(kms_t "${NB_KMS_CORE}")
+ca=$(kubectl get secret "${tls_secret}" -n "${NAMESPACE}" -o jsonpath='{.data.ca\.crt}')
+require_nonempty "${ca}" "${tls_secret} has no ca.crt: it predates the proxy CA; destroy the preview and deploy it again"
 ca_file=$(mktemp)
-kubectl get secret "${tls_secret}" -n "${NAMESPACE}" -o jsonpath='{.data.tls\.crt}' | base64 -d > "${ca_file}"
+base64 -d <<<"${ca}" > "${ca_file}"
 kubectl create configmap "${http_configmap}" -n "${NAMESPACE}" \
   --from-literal=endpoint-urls="${urls}" \
   --from-literal=kms-threshold="${threshold}" \

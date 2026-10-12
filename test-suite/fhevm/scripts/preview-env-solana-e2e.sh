@@ -24,8 +24,8 @@
 #   - the devnet RPC URL (secret `solana-rpc`; the websocket URL is the same endpoint over wss);
 #   - the deployer keypair (secret `solana-deployer`) unless SOLANA_DEPLOYER_KEYPAIR already
 #     names a funded devnet wallet; it funds every scenario actor by transfer;
-# The relayer and both anvil chains are port-forwarded to the loopback ports the local stack
-# uses, so no default URL changes.
+# The relayer, relayer-http and both anvil chains are port-forwarded to the loopback ports the
+# local stack uses, so no default URL changes.
 set +x
 set -euo pipefail
 umask 077
@@ -85,12 +85,15 @@ up)
   # Local ports for the forwards. The defaults mirror the local stack so a sourced preview.env needs
   # no other change; override any of them (PREVIEW_*_PORT) when a local stack is up at the same time.
   relayer_port=${PREVIEW_RELAYER_PORT:-3000}
+  relayer_http_port=${PREVIEW_RELAYER_HTTP_PORT:-$(bun -e 'console.log((await import(process.argv[1])).RELAYER_HTTP_PORT)' \
+    "$(cd "$(dirname "$0")/../src" && pwd)/layout.ts")}
   gateway_port=${PREVIEW_GATEWAY_RPC_PORT:-8546}
   host_port=${PREVIEW_HOST_RPC_PORT:-8545}
   dapp_port=${PREVIEW_DAPP_PORT:-5173}
   operator_port=${PREVIEW_OPERATOR_PORT:-8091}
   relayer=$(kubectl get svc -n "$namespace" -l app.kubernetes.io/instance=relayer -o name | head -1)
   forward "${relayer:-svc/relayer}" "$relayer_port:3000"
+  forward svc/relayer-http "$relayer_http_port:http"
   forward svc/anvil-gateway-anvil-node "$gateway_port:8546"
   forward svc/anvil-host-anvil-node "$host_port:8545"
   sleep 2
@@ -114,6 +117,8 @@ up)
     env_line SOLANA_WS_URL "${rpc_url/https:/wss:}"
     env_line SOLANA_RELAYER_URL "http://127.0.0.1:$relayer_port"
     env_line DEMO_RELAYER_URL "http://127.0.0.1:$relayer_port"
+    env_line SOLANA_DECRYPTION_RELAYER_URL "http://127.0.0.1:$relayer_http_port"
+    env_line DEMO_DECRYPTION_RELAYER_URL "http://127.0.0.1:$relayer_http_port"
     env_line GW_RPC "http://127.0.0.1:$gateway_port"
     env_line HOST_RPC "http://127.0.0.1:$host_port"
     # The seeded demo config, boots and batch tables land under FHEVM_STATE_DIR (src/layout.ts).

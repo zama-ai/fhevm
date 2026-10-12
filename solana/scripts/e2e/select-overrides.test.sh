@@ -50,8 +50,8 @@ T="feature-solana-$BASE_SHA"
 PINS_GATEWAY="GATEWAY_VERSION=$T"
 PINS_HOST="HOST_VERSION=$T"
 PINS_COPRO="COPROCESSOR_DB_MIGRATION_VERSION=$T COPROCESSOR_HOST_LISTENER_VERSION=$T COPROCESSOR_GW_LISTENER_VERSION=$T COPROCESSOR_TFHE_WORKER_VERSION=$T COPROCESSOR_ZKPROOF_WORKER_VERSION=$T COPROCESSOR_SNS_WORKER_VERSION=$T COPROCESSOR_TX_SENDER_VERSION=$T COPROCESSOR_CONSENSUS_DETECTOR_VERSION=$T"
-PINS_RELAYER="RELAYER_VERSION=$T RELAYER_MIGRATE_VERSION=$T"
-PINS_CONNECTOR="CONNECTOR_DB_MIGRATION_VERSION=$T CONNECTOR_GW_LISTENER_VERSION=$T CONNECTOR_KMS_WORKER_VERSION=$T CONNECTOR_TX_SENDER_VERSION=$T"
+PINS_RELAYER="RELAYER_VERSION=$T RELAYER_MIGRATE_VERSION=$T RELAYER_HTTP_VERSION=$T"
+PINS_CONNECTOR="CONNECTOR_DB_MIGRATION_VERSION=$T CONNECTOR_GW_LISTENER_VERSION=$T CONNECTOR_KMS_WORKER_VERSION=$T CONNECTOR_TX_SENDER_VERSION=$T CONNECTOR_ENDPOINT_VERSION=$T CONNECTOR_PROXY_VERSION=$T"
 
 check "solana scripts only -> nothing" \
   $'solana/scripts/dead-surface-check.sh\nsolana/geyser/src/lib.rs\nsolana/docs/notes.md' \
@@ -133,11 +133,18 @@ check "coprocessor change -> coprocessor only" \
   "coprocessor" \
   "$PINS_GATEWAY $PINS_HOST $PINS_RELAYER $PINS_CONNECTOR"
 
-check "kms-connector change -> kms-connector only" \
+# relayer-http's image copies the whole kms-connector tree (kms-connector-api is its path dependency).
+check "kms-connector change -> kms-connector + relayer" \
   "kms-connector/crates/gw-listener/src/lib.rs" \
   "true" \
-  "kms-connector" \
-  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_RELAYER"
+  "kms-connector relayer" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO"
+
+check "relayer-http change -> relayer only" \
+  "relayer-http/crates/relayer-http/src/main.rs" \
+  "true" \
+  "relayer" \
+  "$PINS_GATEWAY $PINS_HOST $PINS_COPRO $PINS_CONNECTOR"
 
 # Contracts are compiled into the Rust images (bindings/artifacts), so they fan out.
 check "host-contracts change -> contracts + rust consumers" \

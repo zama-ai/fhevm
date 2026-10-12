@@ -57,8 +57,7 @@ kmsConnectorKmsWorker:
 # and needs no such out-of-band step).
 
 kmsConnectorProxy:
-  apiKeyDigest:
-    value: "0x75e65d843ac0b8656e1d75b2efc1cc7879e4b6c1854651cb28664686625a6e23"
+  # apiKeyDigest comes from the chart's default Secret, which deploy-kms-connector.sh creates.
   # `kubernetes.io/tls` Secret the chart does NOT create. deploy-kms-connector.sh
   # generates ONE self-signed certificate per namespace and stores it under this
   # name before the first release installs. So all N releases share it and the

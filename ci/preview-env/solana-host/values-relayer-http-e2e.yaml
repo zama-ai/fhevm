@@ -1,0 +1,24 @@
+# relayer-http in a Solana preview. deploy-preview.sh adds what depends on the namespace: the
+# proxy endpoints, the host chains the connectors serve, the thresholds and the image tag.
+image:
+  repository: hub.zama.org/ghcr/zama-ai/fhevm/relayer-http
+config:
+  log:
+    format: json
+env:
+  - name: KMS_API_KEY
+    valueFrom:
+      secretKeyRef: {name: kms-connector-proxy, key: api-key}
+  # The proxies' test CA is the only CA relayer-http needs to trust.
+  - name: SSL_CERT_FILE
+    value: /etc/relayer-http/proxy-ca/ca.crt
+extraVolumes:
+  - name: proxy-ca
+    secret:
+      secretName: kms-connector-proxy-tls
+      items:
+        - {key: ca.crt, path: ca.crt}
+extraVolumeMounts:
+  - {name: proxy-ca, mountPath: /etc/relayer-http/proxy-ca, readOnly: true}
+nodeSelector:
+  kubernetes.io/arch: amd64
