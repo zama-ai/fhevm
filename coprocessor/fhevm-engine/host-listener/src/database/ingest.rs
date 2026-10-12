@@ -19,6 +19,7 @@ use crate::contracts::{
     AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
 };
 use crate::database::dependence_chains::dependence_chains;
+use crate::database::event_envelope::{classify, DecodedEvent};
 use crate::database::synthetic_ops::{
     synthetic_logs, synthetic_transaction_hash, SyntheticContext,
     SYNTHETIC_BLOCK_OFFSET,
@@ -422,43 +423,61 @@ pub async fn ingest_block_logs(
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
         if acl_contract_address.is_none() || is_acl_address {
-            if let Ok(event) =
-                AclContract::AclContractEvents::decode_log(&log.inner)
-            {
-                allow_event_count = allow_event_count.saturating_add(1);
-                let handles = acl_result_handles(&event);
-                for handle in handles {
-                    is_allowed.insert(handle.to_vec());
+            match classify::<AclContract::AclContractEvents>(
+                &log.inner,
+                AclContract::AclContractEvents::SELECTORS,
+            ) {
+                DecodedEvent::Decoded(event) => {
+                    allow_event_count = allow_event_count.saturating_add(1);
+                    let handles = acl_result_handles(&event);
+                    for handle in handles {
+                        is_allowed.insert(handle.to_vec());
+                    }
+                    acl_event_log.push((event, log.transaction_hash));
+                    continue;
                 }
-                acl_event_log.push((event, log.transaction_hash));
-                continue;
+                DecodedEvent::MalformedKnown => {
+                    return Err(sqlx::Error::Protocol(
+                        "malformed known ACL event envelope".into(),
+                    ));
+                }
+                DecodedEvent::Unknown => {}
             }
         }
 
         let is_tfhe_address = &current_address == tfhe_contract_address;
         if tfhe_contract_address.is_none() || is_tfhe_address {
-            if let Ok(event) =
-                TfheContract::TfheContractEvents::decode_log(&log.inner)
-            {
-                fhe_event_count = fhe_event_count.saturating_add(1);
-                let log = LogTfhe {
-                    event,
-                    transaction_hash: log.transaction_hash,
-                    block_number,
-                    block_hash,
-                    block_timestamp,
-                    // Filled in by the loop below.
-                    allowed_outputs: Default::default(),
-                    dependence_chain: Default::default(),
-                    tx_depth_size: 0,
-                    log_index: log.log_index,
-                    operand_boundary_mask: None,
-                    is_executor_minted: true,
-                    is_fallback_grant: false,
-                    is_synthetic,
-                };
-                tfhe_event_log.push(log);
-                continue;
+            match classify::<TfheContract::TfheContractEvents>(
+                &log.inner,
+                TfheContract::TfheContractEvents::SELECTORS,
+            ) {
+                DecodedEvent::Decoded(event) => {
+                    fhe_event_count = fhe_event_count.saturating_add(1);
+                    let log = LogTfhe {
+                        event,
+                        transaction_hash: log.transaction_hash,
+                        block_number,
+                        block_hash,
+                        block_timestamp,
+                        // Filled in by the loop below.
+                        allowed_outputs: Default::default(),
+                        dependence_chain: Default::default(),
+                        tx_depth_size: 0,
+                        log_index: log.log_index,
+                        operand_boundary_mask: None,
+                        is_executor_minted: true,
+                        is_fallback_grant: false,
+                        is_synthetic,
+                    };
+                    tfhe_event_log.push(log);
+                    continue;
+                }
+                DecodedEvent::MalformedKnown => {
+                    return Err(sqlx::Error::Protocol(
+                        "malformed known TFHE event envelope".into(),
+                    ));
+                }
+                DecodedEvent::Unknown => {}
             }
         }
 
