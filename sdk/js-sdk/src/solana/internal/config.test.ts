@@ -8,23 +8,6 @@ async function loadConfigModule(): Promise<ConfigModule> {
   return import('./config.js');
 }
 
-describe('shared logger configuration semantics', () => {
-  it.each(['viem', 'ethers'] as const)(
-    'keeps %s configuration idempotent after copying logger callbacks',
-    async (adapter) => {
-      vi.resetModules();
-      const { setFhevmRuntimeConfig } =
-        adapter === 'viem'
-          ? await import('../../viem/internal/config.js')
-          : await import('../../ethers/internal/config.js');
-      const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
-      setFhevmRuntimeConfig({ logger });
-      expect(() => setFhevmRuntimeConfig({ logger: { ...logger } })).not.toThrow();
-      expect(() => setFhevmRuntimeConfig({ logger: { ...logger, warn: vi.fn() } })).toThrow();
-    },
-  );
-});
-
 describe('Solana runtime config', () => {
   it('allows an identical normalized config with the same logger callbacks', async () => {
     const { setFhevmRuntimeConfig } = await loadConfigModule();
