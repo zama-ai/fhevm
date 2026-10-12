@@ -28,15 +28,16 @@
 //! S3 attestations carry no epoch, so they set a target only for a block whose
 //! objects the finding's epoch uploaded (`upload_start_block`): never during a
 //! dry run, when the Green uploader is parked. Each vote must also be tagged
-//! with the finding's epoch by its uploader (`S3_METADATA_CONSENSUS_EPOCH_KEY`),
-//! which covers peers that cut over later; an untagged object is `legacy`. A finding superseded by a later
+//! with the finding's epoch, the one that computed the object's bytes
+//! (`S3_METADATA_CONSENSUS_EPOCH_KEY`), which covers peers that cut over later;
+//! an untagged object is `legacy`. A finding superseded by a later
 //! epoch's cutover (`drift_superseded`) describes bytes that are gone: it is
 //! marked `superseded_at` and never installed, also when the cutover lands
 //! during its download.
 //!
-//! The installed object's tag also dates the bytes: a row without a
-//! `consensus_version` takes the one `consensus_epoch_history` records for the
-//! uploading epoch; a row that has one keeps it.
+//! The installed object's tag also dates the bytes: the healed row takes the
+//! `consensus_version` that `consensus_epoch_history` records for that epoch,
+//! like the peer row the bytes come from.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -812,8 +813,8 @@ async fn recover_from_attestations<S: Ct64Source>(
                 warn!(
                     finding_id = job.id,
                     bucket_url,
-                    uploaded_by = attested.consensus_epoch,
-                    "Skipping peer whose ct64 was uploaded by another epoch"
+                    computed_by = attested.consensus_epoch,
+                    "Skipping peer whose ct64 was computed by another epoch"
                 );
             }
             Ok(attested) => votes.push((bucket_url, attested.digest.to_vec())),
@@ -1203,9 +1204,9 @@ async fn install_matching_ct64(
         trx.rollback().await?;
         return Ok(false);
     }
-    let consensus_version = uploading_consensus_version(&mut trx, job, ct64).await?;
-    // Healing replaces the bytes, not their producer: a version the row already
-    // holds is kept; the uploader's one only fills a missing value.
+    let consensus_version = computing_consensus_version(&mut trx, job, ct64).await?;
+    // The bytes and their version both come from the downloaded object, so a
+    // healed row matches the peer row it was copied from.
     sqlx::query!(
         r#"
         INSERT INTO ciphertexts (
@@ -1213,9 +1214,9 @@ async fn install_matching_ct64(
         ) VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (handle, ciphertext_version) DO UPDATE
         SET ciphertext = EXCLUDED.ciphertext,
-            consensus_version = COALESCE(ciphertexts.consensus_version, EXCLUDED.consensus_version)
+            consensus_version = EXCLUDED.consensus_version
         WHERE ciphertexts.ciphertext IS DISTINCT FROM EXCLUDED.ciphertext
-           OR (ciphertexts.consensus_version IS NULL AND EXCLUDED.consensus_version IS NOT NULL)
+           OR ciphertexts.consensus_version IS DISTINCT FROM EXCLUDED.consensus_version
         "#,
         &job.handle,
         &ct64.bytes,
@@ -1259,12 +1260,11 @@ async fn install_matching_ct64(
     Ok(true)
 }
 
-/// Protocol version of the epoch that uploaded the healed object, from its
-/// `consensus-epoch` metadata (absent is `legacy`): the epoch's recorded
+/// Protocol version of the epoch that computed the healed object's bytes, from
+/// its `consensus-epoch` metadata (absent is `legacy`): the epoch's recorded
 /// `consensus_version`, without its proposal block. `None` when the epoch is
-/// unknown here or its version does not fit the column. Must run with the
-/// finding's schema selected: the existing row is read from its `ciphertexts`.
-async fn uploading_consensus_version(
+/// unknown here or its version does not fit the column.
+async fn computing_consensus_version(
     trx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     job: &DueHandle,
     ct64: &DownloadedCt64,
@@ -1280,44 +1280,19 @@ async fn uploading_consensus_version(
     .fetch_optional(trx.as_mut())
     .await?
     .flatten();
-    let consensus_version = match recorded.map(i16::try_from) {
-        Some(Ok(version)) => Some(version),
+    match recorded.map(i16::try_from) {
+        Some(Ok(version)) => Ok(Some(version)),
         Some(Err(_)) => {
             warn!(
                 finding_id = job.id,
-                uploaded_by = ct64.consensus_epoch,
+                computed_by = ct64.consensus_epoch,
                 recorded,
-                "Uploading epoch's consensus_version does not fit ciphertexts.consensus_version"
+                "Computing epoch's consensus_version does not fit ciphertexts.consensus_version"
             );
-            None
+            Ok(None)
         }
-        None => None,
-    };
-    let existing = sqlx::query_scalar!(
-        r#"
-        SELECT consensus_version
-          FROM ciphertexts
-         WHERE handle = $1 AND ciphertext_version = $2
-        "#,
-        &job.handle,
-        CIPHERTEXT_VERSION,
-    )
-    .fetch_optional(trx.as_mut())
-    .await?
-    .flatten();
-    if let (Some(existing), Some(uploaded)) = (existing, consensus_version) {
-        if existing != uploaded {
-            warn!(
-                finding_id = job.id,
-                handle = hex::encode(&job.handle),
-                existing,
-                uploaded,
-                uploaded_by = ct64.consensus_epoch,
-                "Healed ct64 keeps its row's consensus_version, not the uploader's"
-            );
-        }
+        None => Ok(None),
     }
-    Ok(consensus_version)
 }
 
 /// A transient failure is retried until `max_attempts`; a terminal one can

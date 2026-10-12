@@ -288,6 +288,9 @@ pub struct HandleItem {
     pub(crate) ct64_digest: Option<Vec<u8>>,
     pub(crate) ct128_digest: Option<Vec<u8>>,
     pub(crate) s3_format_version: Option<i16>,
+    /// `ciphertexts.consensus_version` of the ct64 row: the protocol version that
+    /// computed it, which names the ct64 object's epoch.
+    pub(crate) ct64_consensus_version: Option<i16>,
 
     pub span: tracing::Span,
     pub transaction_id: Option<Vec<u8>>,
