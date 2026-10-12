@@ -412,3 +412,71 @@ async fn replay_repairs_counts_without_duplicate_or_finalization_regression(
     assert_eq!(counts, (1, 1));
     Ok(())
 }
+
+#[tokio::test]
+#[serial(db)]
+async fn malformed_known_envelopes_rollback_and_allow_valid_retry(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    let block = block();
+    let tx_hash = FixedBytes::with_last_byte(0x91);
+    let handle = computed_handle(0x21);
+    db.poller_set_last_caught_up_block(ChainId::try_from(42_u64)?, 99)
+        .await?;
+    let valid = || {
+        vec![
+            rpc_log(&trivial_encrypt(handle), &block, tx_hash, 0),
+            rpc_log(&allowed(handle), &block, tx_hash, 1),
+        ]
+    };
+    for index in [0, 1] {
+        let mut logs = valid();
+        // Retain a recognized selector and topics but omit its required data.
+        logs[index].inner.data = alloy::primitives::LogData::new_unchecked(
+            logs[index].inner.data.topics().to_vec(),
+            Default::default(),
+        );
+        let err = ingest(&mut db, &block, logs, false).await.unwrap_err();
+        assert!(err.to_string().contains("malformed known"), "{err}");
+        let counts: (i64, i64, i64) = sqlx::query_as(
+            "SELECT (SELECT COUNT(*) FROM computations),
+                    (SELECT COUNT(*) FROM allowed_handles),
+                    (SELECT COUNT(*) FROM host_chain_blocks_valid WHERE chain_id=42)",
+        ).fetch_one(&pool).await?;
+        assert_eq!(counts, (0, 0, 0), "rejected block must be atomic");
+        let cursor: i64 = sqlx::query_scalar(
+            "SELECT last_caught_up_block FROM host_listener_poller_state WHERE chain_id=42",
+        ).fetch_one(&pool).await?;
+        assert_eq!(cursor, 99);
+    }
+    ingest(&mut db, &block, valid(), false).await?;
+    assert_eq!(computation_flags(&pool, handle).await?, (true, false));
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn unknown_envelopes_do_not_prevent_valid_events() -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    let block = block();
+    let tx_hash = FixedBytes::with_last_byte(0x92);
+    let handle = computed_handle(0x22);
+    let mut unknown = rpc_log(&allowed(handle), &block, tx_hash, 0);
+    unknown.inner.data = alloy::primitives::LogData::new_unchecked(
+        vec![FixedBytes::with_last_byte(0xee)],
+        Default::default(),
+    );
+    ingest(
+        &mut db,
+        &block,
+        vec![
+            unknown,
+            rpc_log(&trivial_encrypt(handle), &block, tx_hash, 1),
+            rpc_log(&allowed(handle), &block, tx_hash, 2),
+        ],
+        false,
+    )
+    .await?;
+    assert_eq!(computation_flags(&pool, handle).await?, (true, false));
+    Ok(())
+}

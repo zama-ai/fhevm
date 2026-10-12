@@ -1034,6 +1034,14 @@ async fn db_insert_block(
         let Err(err) = res else {
             return Ok(());
         };
+        // Repeating rejected event bytes cannot repair them. Exit so restart
+        // refetches from durable progress; never advance past this block.
+        if matches!(err, sqlx::Error::Protocol(_)) {
+            anyhow::bail!(
+                "Rejected block {}; refetch required: {err}",
+                block_logs.summary.number
+            );
+        }
         if retries == 0 {
             error!(error = %err, block = ?block_logs.summary, "Error inserting block");
             anyhow::bail!("Error in block insertion transaction: {err}");
@@ -1178,6 +1186,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     };
 
     let cancel_token = CancellationToken::new();
+    let _cancel_on_exit = cancel_token.clone().drop_guard();
 
     // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
     // this (blue) stack is retired and `stack_mode` flips to paused, turning
@@ -1251,7 +1260,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             if args.only_catchup_loop && !block_logs.catchup {
                 break;
             }
-            let status = db_insert_block(
+            db_insert_block(
                 chain_id,
                 &mut db,
                 &block_logs,
@@ -1263,11 +1272,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 &args,
                 is_protocol_config_listener,
             )
-            .await;
-            if status.is_err() {
-                // logging & retry on error is already done in db_insert_block
-                continue;
-            };
+            .await?;
             log_iter.last_valid_block = Some(
                 block_logs
                     .summary
