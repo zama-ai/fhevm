@@ -7,8 +7,8 @@ import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "../contracts/shared/
 import {UUPSUpgradeableEmptyProxy} from "../contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "../contracts/shared/ACLOwnable.sol";
 
-/// @notice Stand-in for the release v0.14.2 ProtocolConfig proxy: same storage layout and initialized version.
-contract ProtocolConfigV0142LayoutExample is UUPSUpgradeableEmptyProxy, ACLOwnable {
+/// @notice Stand-in for the release v0.15 ProtocolConfig proxy: same storage layout and initialized version.
+contract ProtocolConfigV015LayoutExample is UUPSUpgradeableEmptyProxy, ACLOwnable {
     enum ContextState {
         None,
         Pending,
@@ -65,12 +65,12 @@ contract ProtocolConfigV0142LayoutExample is UUPSUpgradeableEmptyProxy, ACLOwnab
         _disableInitializers();
     }
 
-    /// @notice Seeds one active context and epoch at initialized version 3, like v0.14.2.
+    /// @notice Seeds one active context and epoch at initialized version 4, like v0.15.
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
         KmsNodeParams[] calldata kmsNodeParams,
         KmsThresholds calldata thresholds
-    ) public onlyFromEmptyProxy reinitializer(3) {
+    ) public onlyFromEmptyProxy reinitializer(4) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
         uint256 epochId = EPOCH_COUNTER_BASE + 1;

@@ -66,9 +66,9 @@ describe('Upgrades', function () {
     await expectThresholds(pc2);
   });
 
-  // Deploys a proxy with the v0.14.2 ProtocolConfig storage layout, at initialized version 3.
-  async function deployV0142ProtocolConfig(fred: any, emptyUUPSFactory: any) {
-    const factory = await ethers.getContractFactory('ProtocolConfigV0142LayoutExample', fred);
+  // Deploys a proxy with the v0.15 ProtocolConfig storage layout, at initialized version 4.
+  async function deployV015ProtocolConfig(fred: any, emptyUUPSFactory: any) {
+    const factory = await ethers.getContractFactory('ProtocolConfigV015LayoutExample', fred);
     const pc = await upgrades.upgradeProxy(await deployEmptyProxy(emptyUUPSFactory), factory, {
       call: { fn: 'initializeFromEmptyProxy', args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds()] },
     });
@@ -76,34 +76,34 @@ describe('Upgrades', function () {
     return pc;
   }
 
-  const expectV0142State = async (c: any) => {
+  const expectV015State = async (c: any) => {
     expect(await c.getKmsSigners()).to.deep.equal(buildProtocolConfigNodes().map((n) => n.signerAddress));
     await expectThresholds(c);
   };
 
-  it('upgrades a v0.14.2 ProtocolConfig proxy in place to ProtocolConfigReplica', async function () {
-    const pc = await deployV0142ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
+  it('upgrades a v0.15 ProtocolConfig proxy in place to ProtocolConfigReplica', async function () {
+    const pc = await deployV015ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
     const replicaFactory = await ethers.getContractFactory('ProtocolConfigReplica', this.signers.fred);
     const replica = await upgrades.upgradeProxy(pc, replicaFactory, { call: { fn: 'reinitializeV4' } });
     await replica.waitForDeployment();
     expect(await replica.getVersion()).to.equal('ProtocolConfigReplica v0.4.0');
     const [contextId, epochId] = await replica.getCurrentKmsContextAndEpoch();
     expect(await replica.isValidEpochForContext(contextId, epochId)).to.be.true;
-    await expectV0142State(replica);
+    await expectV015State(replica);
 
     await (await replica.mirrorKmsEpoch(contextId, epochId + 1n)).wait();
     expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId + 1n]);
   });
 
-  it('upgrades a v0.14.2 ProtocolConfig proxy in place to ProtocolConfig', async function () {
-    const pc = await deployV0142ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
+  it('upgrades a v0.15 ProtocolConfig proxy in place to ProtocolConfig', async function () {
+    const pc = await deployV015ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
     const factory = await ethers.getContractFactory('ProtocolConfig', this.signers.fred);
     const canonical = await upgrades.upgradeProxy(pc, factory, { call: { fn: 'reinitializeV4' } });
     await canonical.waitForDeployment();
     expect(await canonical.getVersion()).to.equal('ProtocolConfig v0.4.0');
     const [contextId, epochId] = await canonical.getCurrentKmsContextAndEpoch();
     expect(await canonical.isValidEpochForContext(contextId, epochId)).to.be.true;
-    await expectV0142State(canonical);
+    await expectV015State(canonical);
   });
 
   it('deploy upgradeable KMSGeneration', async function () {
