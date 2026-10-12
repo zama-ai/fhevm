@@ -1059,24 +1059,25 @@ its deposit phase — never the share account's raw balance — because SPL dest
 incoming transfers: a preloaded share balance stays inert instead of inflating the rate past u64 and
 bricking the batch (pinned by `mollusk_preloaded_shares_do_not_poison_the_rate`).
 
-The batcher has an admin, as EVM's batcher has an owner. `initialize_batcher` names it; it is called
-`admin` because on Solana an account's owner is the program that owns it, and zama-host names the
-same role `HostConfig.admin`. The admin `pause`s and `unpause`s the batcher, sets the minimum batch
-age and settle deadline that batches opened from then on copy (`set_min_batch_age`,
-`set_settle_deadline`: at most 7 and 30 days, a zero deadline allowed, working while paused), and
-hands the role on with `set_admin`, where a new keypair co-signs and a new PDA must already be a
-program-owned account, as with zama-host's `set_admin`. EVM's `Ownable` transfers in one step and
-keeps a renounce; the batcher follows zama-host instead, so a mistyped key cannot take the role, and
-has no renounce, which would strand the pause and the policy. Each batch freezes the policy it opened with, as EVM's per-batch `Policy`
+The batcher has an admin, as EVM's batcher has an owner. `initialize_batcher` names it and refuses
+the default key, as OZ `Ownable` refuses `address(0)`. It is called `admin` because on Solana an
+account's owner is the program that owns it, and zama-host names the same role `HostConfig.admin`.
+The admin `pause`s and `unpause`s the batcher, sets the minimum batch age and settle deadline that
+batches opened from then on copy (`set_min_batch_age`, `set_settle_deadline`: at most 7 and 30 days,
+a zero deadline allowed, working while paused), and hands the role on with `set_admin`, where a new
+keypair co-signs and a new PDA must already be a program-owned account, as with zama-host's
+`set_admin`. EVM's `Ownable` transfers in one step and keeps a renounce; the batcher follows
+zama-host instead, so a mistyped key cannot take the role, and has no renounce, which would strand
+the pause and the policy. Each batch freezes the policy it opened with, as EVM's per-batch `Policy`
 does, so a setter cannot shorten the age its joiners saw nor force-cancel a dispatched batch. While
 paused, `join`, `dispatch` and `settle` are refused, and quits, claims and the deadline cancel stay
 open (INVARIANTS #71). A refused settle is the Solana form of EVM's paused callback, which collects
 the unwrap but does not call the vault: settle is one atomic instruction, so the batch stays
 dispatched until unpause or its deadline, and the deadline is checked first, as on EVM. The admin is
 not the join mint's wrapper authority, which stays the recipient of `reclaim_batch_authority`; the
-demo seeds the deployer as admin and the keeper as wrapper authority. `AUTHORITY.md` is generated for zama-host only, so the batcher's
-roles are recorded here. The batcher's events stay `emit!` app events for demo indexers; DD-044's
-event-CPI rule covers zama-host.
+demo seeds the deployer as admin and the keeper as wrapper authority. `AUTHORITY.md` is generated
+for zama-host only, so the batcher's roles are recorded here. The batcher's events stay `emit!` app
+events for demo indexers; DD-044's event-CPI rule covers zama-host.
 
 A deposit batch whose certified total floors to zero shares at the vault's current price settles
 into refunds. `demo_vault::deposit` would reject it with `ZeroShares`, and since a failed CPI aborts
