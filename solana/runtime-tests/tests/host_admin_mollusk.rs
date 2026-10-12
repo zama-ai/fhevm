@@ -902,8 +902,9 @@ fn mollusk_close_owned_accounts_refunds_admin_and_skips_foreign_accounts() {
 #[test]
 fn mollusk_close_owned_accounts_fits_one_deployer_transaction() {
     // wipe.ts sends this many targets per version 1 transaction (4,096 bytes, 64 account keys). A
-    // full batch fits the stricter 1232-byte legacy packet. wipe.ts sets no compute-unit limit, so
-    // the 200k per-instruction default applies.
+    // full batch fits the stricter 1232-byte legacy packet. wipe.ts signs through the deployer's
+    // client, which sets the compute-unit limit from a simulation, so the ceiling is the most compute
+    // a transaction may request (solana-compute-budget MAX_COMPUTE_UNIT_LIMIT).
     const TARGETS_PER_TRANSACTION: usize = 25; // mirrors solana/deploy/src/wipe.ts
     let admin = Pubkey::new_unique();
     let (program_data, program_data_acct) = program_data_account(Some(admin));
@@ -927,7 +928,7 @@ fn mollusk_close_owned_accounts_fits_one_deployer_transaction() {
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
 
     assert!(
-        result.compute_units_consumed < 200_000,
+        result.compute_units_consumed <= 1_400_000,
         "a full sweep used {} compute units",
         result.compute_units_consumed
     );

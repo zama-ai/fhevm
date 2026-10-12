@@ -83,7 +83,7 @@ pub fn record_boundary(
 
 /// Appends one row in a single write, so rows from tests running in parallel do not interleave.
 fn append_row(file: &str, cells: &[String]) {
-    let Some(dir) = std::env::var_os(REPORT_DIR_ENV) else {
+    let Some(dir) = std::env::var_os(REPORT_DIR_ENV).filter(|dir| !dir.is_empty()) else {
         return;
     };
     let path = std::path::Path::new(&dir).join(file);

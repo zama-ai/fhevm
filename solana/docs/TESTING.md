@@ -82,8 +82,8 @@ never fails a test. When `ZAMA_COST_REPORT_DIR` names a directory,
   size.
 
 Locally, `ZAMA_COST_REPORT_DIR=/tmp/cost cargo test -p zama-solana-runtime-tests` writes
-`profiles.md` and `boundaries.md`. Compare a profile between two commits built the same way (see
-the traps below).
+`profiles.md` and `boundaries.md`. Rows only append, so point it at an empty directory. Compare a
+profile between two commits built the same way (see the traps below).
 
 These still fail a test:
 
@@ -92,8 +92,13 @@ These still fail a test:
 - a transaction that no longer fits its packet-fit test;
 - `fhe_execute_boundary/dependent_chain` running fewer steps than `dep_chain::MAX_CHAIN_LINKS`, the
   depth dep-chain's `extend` carries in one execution;
-- settle at `MAX_KMS_SIGNERS` over 1,400,000 compute units, and the admin sweep over the 200,000
-  default, which applies because `deploy/src/wipe.ts` sets no compute-unit limit.
+- settle at `MAX_KMS_SIGNERS` or a full admin sweep over 1,400,000 compute units, the most a
+  transaction may request. `deploy/src/wipe.ts` sends the sweep through the deployer's client, which
+  sets the compute-unit limit from a simulation;
+- a boundary sweep whose probe fails on a program error instead of a capacity wall, or that succeeds
+  again after its first failure (`sweep_step_boundary`);
+- the cleartext host build stopping a shape at a different step count than the production build
+  (`the_cleartext_build_stops_every_shape_at_the_production_wall`).
 
 ### Solana limits
 
