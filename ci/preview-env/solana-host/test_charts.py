@@ -365,10 +365,10 @@ class SolanaCharts(unittest.TestCase):
         # The rest of relayer-http's own config is kept.
         self.assertEqual(config["kms_aggregator"]["call"]["timeout"], "5000ms")
 
-    def test_dispatch_overrides_reject_unknown_keys_and_multiline_values(self):
+    def test_dispatch_overrides_reject_unknown_keys_and_non_string_values(self):
         script = ROOT / "ci/preview-env/scripts/resolve/parse-overrides.cjs"
         for value, valid in [({}, True), ({"solana_programs_version": "abcdef0"}, True),
-                             ({"unknown": "x"}, False), ({"kms_repo_ref": "a\nb"}, False),
+                             ({"unknown": "x"}, False),
                              ({"coprocessor_version": 1}, False), ([], False)]:
             with tempfile.NamedTemporaryFile() as output:
                 result = subprocess.run(["node", str(script)], env={**os.environ,

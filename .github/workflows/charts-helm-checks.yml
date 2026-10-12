@@ -31,6 +31,7 @@ jobs:
               - 'charts/**'
               - 'ci/preview-env/solana-host/**'
               - 'ci/preview-env/scripts/lib.sh'
+              - 'ci/preview-env/scripts/resolve/parse-overrides.cjs'
               - 'ci/preview-env/scripts/deploy/deploy-kms-connector.sh'
   lint:
     name: charts-helm-checks/lint
