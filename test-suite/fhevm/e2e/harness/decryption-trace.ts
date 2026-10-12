@@ -10,15 +10,15 @@ import { loadEnv } from './loadEnv';
 const env = loadEnv();
 const parties = env.source === 'local' ? kmsPartyIds((await readStackState()).scenario.kms.parties) : undefined;
 
-interceptDecryptionCalls(async (call) => {
+// The trace prints once the logs are read; the scenario's fetch does not wait for it.
+interceptDecryptionCalls((call) => {
   if (call.status === 200) return;
   if (parties === undefined) {
-    console.log(`[decryption] ${call.route} -> ${call.status} ${call.code ?? ''} request_id=${call.requestId}`);
+    console.log(`[decryption] ${call.route} -> ${call.status} ${call.code ?? ''} request_id=${call.requestId ?? 'none'}`);
     return;
   }
-  try {
-    console.log(await describeDecryptionCall(call, parties));
-  } catch (error) {
-    console.log(`[decryption] request ${call.requestId}: its logs could not be read: ${String(error)}`);
-  }
+  describeDecryptionCall(call, parties).then(
+    (trace) => console.log(trace),
+    (error: unknown) => console.log(`[decryption] request ${call.requestId}: its logs could not be read: ${String(error)}`),
+  );
 });

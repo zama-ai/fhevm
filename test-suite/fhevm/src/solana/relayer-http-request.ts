@@ -3,8 +3,9 @@
 // A test can then send a request the SDK's client never would (a field changed after signing, a
 // permit for another program, one already expired or for a destroyed context) and read the answer to
 // that one request, without the client's retry loop. The package does not export those parts, so
-// every SDK symbol a caller combines with them comes from here, out of the source tree: one module
-// instance and one set of types. `@fhevm/sdk` resolves to the built copy, a separate instance.
+// every SDK symbol whose types meet them (the client, its permits, the chain) comes from here, out
+// of the source tree: one module instance and one set of types. `@fhevm/sdk` resolves to the built
+// copy, a separate instance; fhe-vertical.ts builds its chain and client from that one.
 import { createFinalizedRpc } from '@fhevm/solana-zama-host';
 
 import { asBytes32Hex } from '../../../../sdk/js-sdk/src/core/base/index';
@@ -22,13 +23,8 @@ import { relayerAuth } from '../layout';
 import { type DecryptionCall, recordDecryptionCalls } from './decryption-trace';
 import type { FheVerticalConfig } from './fhe-vertical';
 
-export { asBytes32Hex, bytesToHex, hexToBytes } from '../../../../sdk/js-sdk/src/core/base/index';
 export { fetchSolanaPermitInvalidation } from '../../../../sdk/js-sdk/src/solana/actions/revokePermits';
-export {
-  buildRevokePermitsInstruction,
-  solanaPermitWalletFromSecretKey,
-  type SolanaPermitSession,
-} from '../../../../sdk/js-sdk/src/solana/index';
+export { buildRevokePermitsInstruction, solanaPermitWalletFromSecretKey } from '../../../../sdk/js-sdk/src/solana/index';
 export { decodeSolanaPermitFields, signSolanaPermit } from '../../../../sdk/js-sdk/src/solana/permit/index';
 export {
   buildSolanaUserDecryptRequest,

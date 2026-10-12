@@ -148,9 +148,10 @@ export const renderRelayerConfig = (
  * Renders relayer-http's config from its checked-in example: EVM chains in supported_chain_ids,
  * each Solana chain in solana_chains with the zama-host id and the certificate threshold its KMS
  * context was defined with, and one endpoint per kms-connector proxy, named after its party. Every
- * party's proxy is listed, spares included: aggregation counts a threshold of answers, so a party
- * outside the active context is one refused call, and a node swap needs no new config or restart.
- * A production deployment lists its current nodes and updates the list on a node change.
+ * party's proxy is listed, spares included, so a node swap needs no new config or restart: a party
+ * outside the active context only adds a refused call, which the kms-context-switch leg checks ends
+ * at its first attempt. A production deployment lists its current nodes and updates the list on a
+ * node change.
  */
 export const renderRelayerHttpConfig = (
   state: Pick<State, "discovery">,

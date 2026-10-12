@@ -15,7 +15,7 @@
 // (generate/config.ts). After the first switch and after the node swap, the leg reads relayer-http's
 // log of those decrypts: the party outside the active context must be refused at its first attempt,
 // and the aggregation must not wait for its deadline.
-import { bytesToHex } from '@fhevm/sdk/base';
+import { bytesToHex, hexToBytes } from '@fhevm/sdk/base';
 import { TOTAL_SUPPLY_KEY } from '@fhevm/confidential-token';
 import { address, getAddressEncoder } from '@solana/kit';
 import {
@@ -28,10 +28,12 @@ import {
 
 import { defineKmsContextInstruction } from '../../../../solana/deploy/src/bootstrap';
 import type { ContextAndEpoch } from '../commands/kms-context-switch';
+import { relayerHttpNodeName } from '../kms-party';
 import { SOLANA_ACL_PROGRAM } from '../layout';
 import type { State } from '../types';
+import { until } from '../utils/until';
 import { readEvmKmsSignersForContext, uint256Bytes } from './addresses';
-import { aggregationOutcome, nodeOutcomes, relayerHttpRequestsSince } from './decryption-trace';
+import { aggregationOutcome, nodeOutcomes, relayerHttpRequests } from './decryption-trace';
 import {
   assertActiveKmsPairMatchesEvmHost,
   assertKmsContextMatchesEvmHost,
@@ -58,12 +60,10 @@ import {
   buildSolanaUserDecryptRequest,
   decryptionChain,
   decryptionClient,
-  hexToBytes,
   solanaPermitWalletFromSecretKey,
   submitUserDecryptOnce,
 } from './relayer-http-request';
 import { waitForSnsCommit } from './sns';
-import { relayerHttpNodeName } from '../kms-party';
 import { sdkVerifyModule } from './lazy-modules';
 import { discloseCertifiedHandle, sealTotalSupplyHandle, totalSupplyStore } from './token-vertical';
 
@@ -165,21 +165,30 @@ export const prepareSolanaKmsContextLeg = async (
   };
 
   /**
-   * relayer-http's log of every decrypt of the leg's values since `since`: each party in
-   * `outsideParties` was refused at its first attempt, and no aggregation hit its deadline. The SDK
-   * authenticates each share against the signers of its permit's context and needs 2t+1 of them
+   * relayer-http's log of the decrypts of the leg's values made after `before` (the request ids it
+   * had logged until then): in each answered decrypt, each party in `outsideParties` was refused at
+   * its first attempt, and the aggregation did not reach its deadline. The SDK authenticates each
+   * share against the signers of its permit's context and needs 2t+1 of them
    * (userDecrypt/response.ts), so a share from outside that context could never count.
    */
-  const assertOutsidePartiesRefusedAtOnce = async (since: Date, outsideParties: readonly number[]) => {
+  const assertOutsidePartiesRefusedAtOnce = async (before: ReadonlySet<string>, outsideParties: readonly number[]) => {
     const handles = [bytesToHex(supplyHandle), balance.currentHandle.toLowerCase()];
-    const requests = [...(await relayerHttpRequestsSince(since)).values()].filter((lines) =>
-      lines.some((line) => handles.some((handle) => String(line.fields.handles).includes(handle))),
+    const answered = await until(
+      async () => {
+        const requests = [...(await relayerHttpRequests()).entries()]
+          .filter(([requestId]) => !before.has(requestId))
+          .map(([, lines]) => lines)
+          .filter((lines) => lines.some((line) => handles.some((handle) => String(line.fields.handles).includes(handle))))
+          .filter((lines) => aggregationOutcome(lines)?.message === 'aggregation succeeded');
+        const flows = new Set(requests.map((lines) => String(lines[0]?.fields.flow)));
+        return flows.has('user_decrypt') && flows.has('public_decrypt') ? requests : undefined;
+      },
+      { description: "relayer-http's answered user and public decrypts of the leg's values", timeoutMs: 10_000, intervalMs: 500 },
     );
-    if (requests.length < 2) throw new Error(`relayer-http logged ${requests.length} decrypt(s) of the leg's values, expected 2`);
-    for (const lines of requests) {
+    for (const lines of answered) {
       const started = lines.find((line) => line.message === 'aggregation started');
-      const outcome = aggregationOutcome(lines);
-      if (started === undefined || outcome === undefined) throw new Error('relayer-http logged no aggregation for a decrypt');
+      const outcome = aggregationOutcome(lines)!;
+      if (started === undefined) throw new Error('relayer-http logged no aggregation start for a decrypt');
       const timeoutMs = Number(started.fields.timeout_ms);
       if (outcome.fields.deadline_hit !== false) {
         throw new Error(`a ${String(started.fields.flow)} decrypt waited for its ${timeoutMs} ms deadline`);
@@ -273,7 +282,7 @@ export const prepareSolanaKmsContextLeg = async (
     },
 
     checkDecrypts: async (contextId, outsideParties) => {
-      const since = new Date();
+      const before = new Set((await relayerHttpRequests()).keys());
       const certificate = await certifySupply(contextId);
       await discloseCertifiedHandle(context, { payer: holder.signer, certificate });
       await userDecryptExpectInFreshProcess(decryptConfig, {
@@ -282,7 +291,7 @@ export const prepareSolanaKmsContextLeg = async (
         secretKey: bytesToHex(holder.bytes.subarray(0, 32)),
         expected: WRAP_AMOUNT,
       });
-      await assertOutsidePartiesRefusedAtOnce(since, outsideParties);
+      await assertOutsidePartiesRefusedAtOnce(before, outsideParties);
       console.log(
         `[kms-context-switch] solana: context ${contextId} certified the baseline supply and the holder ` +
           'user-decrypted the baseline balance',

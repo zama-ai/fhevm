@@ -20,8 +20,9 @@ const LOG_WINDOW = '30m';
 export type DecryptionCall = {
   readonly route: 'user-decrypt' | 'public-decrypt';
   readonly status: number;
-  readonly requestId: string;
-  /** The error body's code; absent on a 200. */
+  /** relayer-http sets it on every answer; an answer from anything in front of it may lack it. */
+  readonly requestId: string | undefined;
+  /** The error body's code; absent on a 200 and on a body that is not relayer-http's. */
   readonly code?: string | undefined;
   readonly requestBody: string;
   readonly responseBody: string;
@@ -39,8 +40,8 @@ export type RelayerHttpNodeOutcome = {
   readonly code: string | undefined;
 };
 
-const containerLogs = async (container: string, since: string = LOG_WINDOW): Promise<string> => {
-  const { stdout, stderr } = await run(['docker', 'logs', '--since', since, container]);
+const containerLogs = async (container: string): Promise<string> => {
+  const { stdout, stderr } = await run(['docker', 'logs', '--since', LOG_WINDOW, container]);
   return `${stdout}\n${stderr}`;
 };
 
@@ -55,20 +56,23 @@ const parseRelayerHttpLines = (logs: string): RelayerHttpLine[] =>
       return { message: String(merged.message), fields: merged };
     });
 
+/** The error body's code, when the body is relayer-http's JSON error. */
+const errorCode = (body: string): string | undefined => {
+  try {
+    const { code } = JSON.parse(body) as { code?: unknown };
+    return typeof code === 'string' ? code : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 const recordCall = async (route: string, init: RequestInit | undefined, response: Response): Promise<DecryptionCall> => {
   const responseBody = await response.clone().text();
-  let code: string | undefined;
-  if (!response.ok) {
-    const parsed = JSON.parse(responseBody) as { code?: unknown };
-    code = typeof parsed.code === 'string' ? parsed.code : undefined;
-  }
-  const requestId = response.headers.get('x-request-id');
-  if (requestId === null) throw new Error(`relayer-http answered ${route} without x-request-id`);
   return {
     route: route as DecryptionCall['route'],
     status: response.status,
-    requestId,
-    code,
+    requestId: response.headers.get('x-request-id') ?? undefined,
+    code: response.ok ? undefined : errorCode(responseBody),
     requestBody: String(init?.body ?? ''),
     responseBody,
   };
@@ -76,14 +80,15 @@ const recordCall = async (route: string, init: RequestInit | undefined, response
 
 /**
  * Wraps `fetch` so that every v4 decryption POST is handed to `onCall` once answered, and returns the
- * function that restores the previous `fetch`. Other requests pass through untouched.
+ * function that restores the previous `fetch`. The caller gets the response it would have got:
+ * recording never throws, and `onCall` is not awaited. Other requests pass through untouched.
  */
-export const interceptDecryptionCalls = (onCall: (call: DecryptionCall) => Promise<void> | void): (() => void) => {
+export const interceptDecryptionCalls = (onCall: (call: DecryptionCall) => void): (() => void) => {
   const previous = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const response = await previous(input as never, init);
     const route = DECRYPTION_ROUTE.exec(String(input instanceof Request ? input.url : input));
-    if (route && (init?.method ?? 'GET') === 'POST') await onCall(await recordCall(`${route[1]}-decrypt`, init, response));
+    if (route && (init?.method ?? 'GET') === 'POST') onCall(await recordCall(`${route[1]}-decrypt`, init, response));
     return response;
   }) as typeof fetch;
   return () => {
@@ -119,14 +124,17 @@ export const relayerHttpLines = async (requestId: string): Promise<RelayerHttpLi
     { description: `relayer-http's last log line for request ${requestId}`, timeoutMs: 10_000, intervalMs: 250 },
   );
 
-/** Every request relayer-http finished since `since`, by request id. */
-export const relayerHttpRequestsSince = async (since: Date): Promise<Map<string, RelayerHttpLine[]>> => {
+/**
+ * Every request relayer-http logged in the log window, finished or not, by request id. A caller
+ * that wants a step's requests takes the ids it saw before the step and diffs against them, which
+ * needs no clock shared with the Docker daemon.
+ */
+export const relayerHttpRequests = async (): Promise<Map<string, RelayerHttpLine[]>> => {
   const requests = new Map<string, RelayerHttpLine[]>();
-  for (const line of parseRelayerHttpLines(await containerLogs(RELAYER_HTTP_CONTAINER, since.toISOString()))) {
+  for (const line of parseRelayerHttpLines(await containerLogs(RELAYER_HTTP_CONTAINER))) {
     const requestId = line.fields.request_id;
     if (typeof requestId === 'string') requests.set(requestId, [...(requests.get(requestId) ?? []), line]);
   }
-  for (const [requestId, lines] of requests) if (!lines.some((line) => TERMINAL_MESSAGES.has(line.message))) requests.delete(requestId);
   return requests;
 };
 
@@ -166,7 +174,7 @@ export const aggregationOutcome = (lines: readonly RelayerHttpLine[]): RelayerHt
   lines.find((line) => line.message === 'aggregation succeeded' || line.message === 'aggregation failed');
 
 /** Party i's kms-connector endpoint lines that name `decryptionId`, colour codes removed. */
-export const connectorEndpointLines = async (party: number, decryptionId: string): Promise<string[]> =>
+const connectorEndpointLines = async (party: number, decryptionId: string): Promise<string[]> =>
   (await containerLogs(`${kmsConnectorPrefix(party)}-endpoint`))
     .split('\n')
     .map((line) => line.replace(/\x1b\[[0-9;]*m/g, ''))
@@ -177,6 +185,7 @@ export const connectorEndpointLines = async (party: number, decryptionId: string
  * node's outcome, and the endpoint lines of every party in `parties` that name that decryption id.
  */
 export const describeDecryptionCall = async (call: DecryptionCall, parties: readonly number[]): Promise<string> => {
+  if (call.requestId === undefined) return `[decryption] ${call.route} -> ${call.status}, not answered by relayer-http (no x-request-id)`;
   const lines = await relayerHttpLines(call.requestId);
   const decryptionId = loggedDecryptionId(lines);
   const nodes = nodeOutcomes(lines).map(

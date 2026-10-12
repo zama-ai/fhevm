@@ -12,7 +12,7 @@
 //   [changed field]      a field changed after signing -> 403 user_signature_rejected, from relayer-http.
 //   [other program]      a permit signed for another zama-host -> 403 user_signature_rejected, from
 //                        relayer-http.
-//   [expired]            a permit whose window closed -> 403 user_signature_rejected, from the Connectors.
+//   [expired]            a permit whose window closed -> 400 malformed, from relayer-http.
 //   [revoked]            a permit opened before its signer's `revoke_permits` -> 403
 //                        user_signature_rejected, from the Connectors.
 //   [proof catch-up]     (local) a balance written while the Merkle indexer is paused -> 403 acl_denied;
@@ -23,6 +23,7 @@
 // and the code.
 import { describe, expect, test } from 'bun:test';
 import { address, getAddressEncoder, type Address } from '@solana/kit';
+import { hexToBytes } from '@fhevm/sdk/base';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 
 import {
@@ -47,7 +48,6 @@ import {
   decryptionChain,
   decryptionClient,
   fetchSolanaPermitInvalidation,
-  hexToBytes,
   permitWireFields,
   signSolanaPermit,
   solanaPermitWalletFromSecretKey,
@@ -72,6 +72,12 @@ const addressBytes = (value: Address): Uint8Array => new Uint8Array(getAddressEn
 const shares = (call: DecryptionCall): string[] =>
   (JSON.parse(call.responseBody) as { result: { result: unknown[] } }).result.result.map((share) => JSON.stringify(share)).sort();
 
+/** relayer-http's log lines for the request behind `call`. */
+const linesOf = (call: DecryptionCall) => {
+  if (call.requestId === undefined) throw new Error(`a ${call.status} answer carried no x-request-id`);
+  return relayerHttpLines(call.requestId);
+};
+
 /** Asserts the status and the code, and on the local stack whether relayer-http asked the Connectors. */
 const expectRefusal = async (
   call: DecryptionCall,
@@ -79,7 +85,7 @@ const expectRefusal = async (
 ) => {
   expect({ status: call.status, code: call.code }).toEqual({ status: expected.status, code: expected.code });
   if (!readsLogs) return;
-  const lines = await relayerHttpLines(call.requestId);
+  const lines = await linesOf(call);
   expect(wasForwarded(lines)).toBe(expected.refusedBy === 'connectors');
   expect(loggedDecryptionId(lines) !== undefined).toBe(expected.refusedBy === 'connectors');
 };
@@ -130,9 +136,7 @@ describe.skipIf(!env.capabilities.protocolServices)('solana decrypt refusals thr
       expect(shares(repeated)).toEqual(shares(answered));
       if (readsLogs) {
         expect(repeated.requestId).not.toBe(answered.requestId);
-        expect(loggedDecryptionId(await relayerHttpLines(repeated.requestId))).toBe(
-          loggedDecryptionId(await relayerHttpLines(answered.requestId)),
-        );
+        expect(loggedDecryptionId(await linesOf(repeated))).toBe(loggedDecryptionId(await linesOf(answered)));
       }
 
       // [store substitution] The holder's handle, named in the mint's total-supply store.
@@ -173,16 +177,17 @@ describe.skipIf(!env.capabilities.protocolServices)('solana decrypt refusals thr
       });
 
       // [expired] A genuine signature over a one-minute window that closed an hour ago. relayer-http
-      // reads no clock, so the Connectors refuse it.
+      // checks the window against its own clock before forwarding (endpoint/validate.rs
+      // `request_window`), so the Connectors never see it.
       const anHourAgo = (BigInt(Math.floor(Date.now() / 1000)) / 60n - 60n) * 60n;
       const expired = await signSolanaPermit(
         permitWallet,
         decodeSolanaPermitFields({ ...permitWireFields(session), startTimestamp: anHourAgo, durationSeconds: 60n }),
       );
       await expectRefusal(await submit(buildSolanaUserDecryptRequest({ signedPermit: expired, entries: [entry] })), {
-        status: 403,
-        code: 'user_signature_rejected',
-        refusedBy: 'connectors',
+        status: 400,
+        code: 'malformed',
+        refusedBy: 'relayer-http',
       });
 
       // [revoked] A second wallet signs a permit, then revokes every permit it opened. The Connectors
@@ -199,7 +204,8 @@ describe.skipIf(!env.capabilities.protocolServices)('solana decrypt refusals thr
       ]);
       await until(
         async () =>
-          (await fetchSolanaPermitInvalidation(context.rpc, revoker.signer.address, { programAddress: ZAMA_HOST_PROGRAM_ADDRESS })) >=
+          // The Connectors revoke a permit whose start is before the watermark (kms-worker watermark.rs).
+          (await fetchSolanaPermitInvalidation(context.rpc, revoker.signer.address, { programAddress: ZAMA_HOST_PROGRAM_ADDRESS })) >
           revokedSession.signedPermit.fields.startTimestamp,
         { description: 'the revocation watermark at finalized', timeoutMs: 60_000 },
       );
@@ -213,7 +219,7 @@ describe.skipIf(!env.capabilities.protocolServices)('solana decrypt refusals thr
       // record, which the indexer writes. A balance written while the indexer is paused has no leaf
       // yet: refused as acl_denied, the code a client retries. Once the indexer resumes and records
       // it, the same request is answered. The indexer is a host process of the local stack.
-      if (env.network === 'localnet') {
+      if (readsLogs) {
         await run(['pkill', '-STOP', '-f', 'solana_merkle_indexer']);
         try {
           await wrapUnderlying(context, { owner: wallet.signer, mint, underlyingMint, amount: WRAP_AMOUNT });

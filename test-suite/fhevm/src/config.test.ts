@@ -197,13 +197,14 @@ describe("config", () => {
     expect(parsed.kms_aggregator.public_decrypt.threshold).toBe(3);
     expect(parsed.kms_aggregator.user_decrypt.threshold).toBe(3);
     // The spare (party 5) is listed, so the node swap reaches it without a new config.
-    expect(parsed.kms_aggregator.endpoints).toEqual(
-      [1, 2, 3, 4, 5].map((party) => ({
-        name: `kms_${party}`,
-        url: `https://${party === 1 ? "kms-connector" : `kms-connector-${party}`}-proxy:8443`,
-        auth: { type: "api_key", value_env: "KMS_CONNECTOR_API_KEY" },
-      })),
-    );
+    const auth = { type: "api_key", value_env: "KMS_CONNECTOR_API_KEY" };
+    expect(parsed.kms_aggregator.endpoints).toEqual([
+      { name: "kms_1", url: "https://kms-connector-proxy:8443", auth },
+      { name: "kms_2", url: "https://kms-connector-2-proxy:8443", auth },
+      { name: "kms_3", url: "https://kms-connector-3-proxy:8443", auth },
+      { name: "kms_4", url: "https://kms-connector-4-proxy:8443", auth },
+      { name: "kms_5", url: "https://kms-connector-5-proxy:8443", auth },
+    ]);
   });
 });
 

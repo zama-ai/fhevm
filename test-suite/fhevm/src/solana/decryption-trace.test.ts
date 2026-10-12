@@ -29,6 +29,20 @@ describe('decryption trace', () => {
     ]);
   });
 
+  test('an answer from in front of relayer-http reaches the caller unchanged', async () => {
+    globalThis.fetch = (async (_input: RequestInfo | URL) =>
+      new Response('<html>502 Bad Gateway</html>', { status: 502 })) as typeof fetch;
+
+    const { result, calls } = await recordDecryptionCalls(async () =>
+      (await fetch('http://relayer/v4/user-decrypt', { method: 'POST', body: '{}' })).text(),
+    );
+
+    expect(result).toBe('<html>502 Bad Gateway</html>');
+    expect(calls.map(({ status, code, requestId }) => ({ status, code, requestId }))).toEqual([
+      { status: 502, code: undefined, requestId: undefined },
+    ]);
+  });
+
   test('restores the previous fetch when the action throws', async () => {
     const before = globalThis.fetch;
     await expect(recordDecryptionCalls(async () => Promise.reject(new Error('boom')))).rejects.toThrow('boom');
@@ -40,12 +54,12 @@ describe('decryption trace', () => {
     const outcomes = nodeOutcomes([
       line('aggregation started', { nodes: 5, threshold: 3, timeout_ms: 5000 }),
       line('response accepted', { node: 'kms_1', attempts: 1, elapsed_ms: 40 }),
-      line('attempt failed', { node: 'kms_5', attempt: 1, elapsed_ms: 12, code: 'kms_context_invalid', retry_in_ms: null }),
+      line('attempt failed', { node: 'kms_5', attempt: 1, elapsed_ms: 12, code: 'unprocessable', retry_in_ms: null }),
       line('call failed', { node: 'kms_5', attempts: 1, elapsed_ms: 12, error: 'refused' }),
     ]);
     expect(outcomes).toEqual([
       { node: 'kms_1', message: 'response accepted', elapsedMs: 40, attempts: 1, code: undefined },
-      { node: 'kms_5', message: 'call failed', elapsedMs: 12, attempts: 1, code: 'kms_context_invalid' },
+      { node: 'kms_5', message: 'call failed', elapsedMs: 12, attempts: 1, code: 'unprocessable' },
     ]);
   });
 });
