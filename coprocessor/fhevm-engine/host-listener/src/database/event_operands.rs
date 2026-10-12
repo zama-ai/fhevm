@@ -33,16 +33,29 @@ pub fn validate_scalar_mode(
                 Err("MulDiv event requires scalarByte 0x01 or 0x03")
             }
         }
+        E::FheShl(C::FheShl {
+            scalarByte, rhs, ..
+        })
+        | E::FheShr(C::FheShr {
+            scalarByte, rhs, ..
+        })
+        | E::FheRotl(C::FheRotl {
+            scalarByte, rhs, ..
+        })
+        | E::FheRotr(C::FheRotr {
+            scalarByte, rhs, ..
+        }) => match scalarByte.0[0] {
+            0 => Ok(()),
+            1 if rhs.0[..31].iter().all(|byte| *byte == 0) => Ok(()),
+            1 => Err("scalar shift amount exceeds uint8 range"),
+            _ => Err("binary event scalarByte is not Boolean"),
+        },
         E::FheAdd(C::FheAdd { scalarByte, .. })
         | E::FheSub(C::FheSub { scalarByte, .. })
         | E::FheMul(C::FheMul { scalarByte, .. })
         | E::FheBitAnd(C::FheBitAnd { scalarByte, .. })
         | E::FheBitOr(C::FheBitOr { scalarByte, .. })
         | E::FheBitXor(C::FheBitXor { scalarByte, .. })
-        | E::FheShl(C::FheShl { scalarByte, .. })
-        | E::FheShr(C::FheShr { scalarByte, .. })
-        | E::FheRotl(C::FheRotl { scalarByte, .. })
-        | E::FheRotr(C::FheRotr { scalarByte, .. })
         | E::FheEq(C::FheEq { scalarByte, .. })
         | E::FheNe(C::FheNe { scalarByte, .. })
         | E::FheGe(C::FheGe { scalarByte, .. })
@@ -58,6 +71,79 @@ pub fn validate_scalar_mode(
             }
         }
         _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod scalar_boundary_tests {
+    use super::*;
+    use alloy_primitives::Address;
+
+    fn shifts(rhs: Handle, flag: u8) -> [TfheContractEvents; 4] {
+        use TfheContract as C;
+        use TfheContractEvents as E;
+        let caller = Address::ZERO;
+        let lhs = Handle::ZERO;
+        let result = Handle::ZERO;
+        let scalar_byte = FixedBytes([flag]);
+        [
+            E::FheShl(C::FheShl {
+                caller,
+                lhs,
+                rhs,
+                scalarByte: scalar_byte,
+                result,
+            }),
+            E::FheShr(C::FheShr {
+                caller,
+                lhs,
+                rhs,
+                scalarByte: scalar_byte,
+                result,
+            }),
+            E::FheRotl(C::FheRotl {
+                caller,
+                lhs,
+                rhs,
+                scalarByte: scalar_byte,
+                result,
+            }),
+            E::FheRotr(C::FheRotr {
+                caller,
+                lhs,
+                rhs,
+                scalarByte: scalar_byte,
+                result,
+            }),
+        ]
+    }
+
+    #[test]
+    fn shifts_and_rotates_enforce_scalar_uint8_without_restricting_handles() {
+        for amount in [0, 1, 255] {
+            for event in shifts(Handle::with_last_byte(amount), 1) {
+                assert!(validate_scalar_mode(&event).is_ok());
+            }
+        }
+        // Every high byte is forbidden in a scalar, including the 256 boundary.
+        for index in 0..31 {
+            let mut rhs = Handle::ZERO;
+            rhs.0[index] = 1;
+            for event in shifts(rhs, 1) {
+                assert!(validate_scalar_mode(&event).is_err());
+            }
+            for event in shifts(rhs, 0) {
+                assert!(validate_scalar_mode(&event).is_ok());
+            }
+        }
+        for event in shifts(FixedBytes([255; 32]), 1) {
+            assert!(validate_scalar_mode(&event).is_err());
+        }
+        for flag in [2, 3, 128, 255] {
+            for event in shifts(Handle::ZERO, flag) {
+                assert!(validate_scalar_mode(&event).is_err());
+            }
+        }
     }
 }
 
