@@ -89,6 +89,26 @@ pub fn validate_verified_input_metadata(
     Ok(())
 }
 
+/// Persistent ACL grants may refer to a verified input or a computed/bridged
+/// handle. Both forms retain their originating host chain, FheType and version.
+/// Their producer identity is resolved separately because a missed earlier
+/// event may still arrive through catch-up or replay.
+pub fn validate_acl_handle_metadata(
+    handle: &[u8; HANDLE_LEN],
+    chain_id: u64,
+) -> Result<(), &'static str> {
+    if handle[22..30] != chain_id.to_be_bytes() {
+        return Err("ACL handle has the wrong chain id");
+    }
+    if handle[30] > MAX_FHE_TYPE_BYTE {
+        return Err("ACL handle has an unknown FheType");
+    }
+    if handle[31] != HANDLE_VERSION {
+        return Err("ACL handle has an unknown version");
+    }
+    Ok(())
+}
+
 /// Application-level bounds, shared with the computation metadata adapter.
 pub const MAX_MULTI_OUTPUT_ARITY: usize = u8::MAX as usize;
 
@@ -110,7 +130,12 @@ mod computed_metadata_tests {
         valid[22..30].copy_from_slice(&42_u64.to_be_bytes());
         valid[30] = MAX_FHE_TYPE_BYTE;
         assert!(validate_computed_handle_metadata(&valid, 42).is_ok());
-        for (index, byte) in [(21, 254), (29, 43), (30, MAX_FHE_TYPE_BYTE + 1), (31, HANDLE_VERSION + 1)] {
+        for (index, byte) in [
+            (21, 254),
+            (29, 43),
+            (30, MAX_FHE_TYPE_BYTE + 1),
+            (31, HANDLE_VERSION + 1),
+        ] {
             let mut invalid = valid;
             invalid[index] = byte;
             assert!(validate_computed_handle_metadata(&invalid, 42).is_err());
@@ -130,18 +155,54 @@ mod verified_metadata_tests {
         proof.extend_from_slice(&handle);
         proof.extend_from_slice(&[0_u8; 65]);
         assert!(validate_verified_input_metadata(&handle, &handle, 5, &proof, 42).is_ok());
-        assert!(validate_verified_input_metadata(&handle, &handle, 5, &proof[..proof.len() - 1], 42).is_err());
+        assert!(validate_verified_input_metadata(
+            &handle,
+            &handle,
+            5,
+            &proof[..proof.len() - 1],
+            42
+        )
+        .is_err());
         assert!(validate_verified_input_metadata(&handle, &handle, 6, &proof, 42).is_err());
         assert!(validate_verified_input_metadata(&handle, &handle, 5, &proof, 43).is_err());
-        let mut result = handle; result[0] = 1;
+        let mut result = handle;
+        result[0] = 1;
         assert!(validate_verified_input_metadata(&handle, &result, 5, &proof, 42).is_err());
-        let mut invalid = handle; invalid[21] = 255;
+        let mut invalid = handle;
+        invalid[21] = 255;
         assert!(validate_verified_input_metadata(&invalid, &invalid, 5, &proof, 42).is_err());
-        let mut other_version = proof.clone(); other_version[33] = HANDLE_VERSION + 1;
+        let mut other_version = proof.clone();
+        other_version[33] = HANDLE_VERSION + 1;
         assert!(validate_verified_input_metadata(&handle, &handle, 5, &other_version, 42).is_err());
-        let mut bad_selection = proof.clone(); bad_selection[2] = 1;
+        let mut bad_selection = proof.clone();
+        bad_selection[2] = 1;
         assert!(validate_verified_input_metadata(&handle, &handle, 5, &bad_selection, 42).is_err());
-        let mut empty_count = proof; empty_count[0] = 0;
+        let mut empty_count = proof;
+        empty_count[0] = 0;
         assert!(validate_verified_input_metadata(&handle, &handle, 5, &empty_count, 42).is_err());
+    }
+}
+
+#[cfg(test)]
+mod acl_metadata_tests {
+    use super::*;
+    #[test]
+    fn grants_accept_input_or_computed_handles_with_valid_footer() {
+        let mut handle = [0_u8; HANDLE_LEN];
+        handle[22..30].copy_from_slice(&42_u64.to_be_bytes());
+        handle[30] = MAX_FHE_TYPE_BYTE;
+        for index in [0, 254, COMPUTED_HANDLE_INDEX_MARKER] {
+            handle[21] = index;
+            assert!(validate_acl_handle_metadata(&handle, 42).is_ok());
+        }
+        for (index, byte) in [
+            (29, 43),
+            (30, MAX_FHE_TYPE_BYTE + 1),
+            (31, HANDLE_VERSION + 1),
+        ] {
+            let mut invalid = handle;
+            invalid[index] = byte;
+            assert!(validate_acl_handle_metadata(&invalid, 42).is_err());
+        }
     }
 }
