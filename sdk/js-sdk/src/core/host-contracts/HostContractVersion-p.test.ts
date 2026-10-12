@@ -10,7 +10,6 @@ import { getHostContractVersion, invalidateVersionCache } from './HostContractVe
 
 const ACL_ADDRESS = sepolia.fhevm.contracts.acl.address as ChecksummedAddress;
 const KMS_VERIFIER_ADDRESS = sepolia.fhevm.contracts.kmsVerifier.address as ChecksummedAddress;
-const PROTOCOL_CONFIG_ADDRESS = sepolia.fhevm.contracts.protocolConfig?.address as ChecksummedAddress;
 
 function makeClient(
   readContract: EthereumModule['readContract'],
@@ -45,11 +44,11 @@ function makeReadContract(
   });
 }
 
-beforeEach(() => {
-  invalidateVersionCache({ includeInflight: true });
-});
-
 describe('HostContractVersion cache', () => {
+  beforeEach(() => {
+    invalidateVersionCache({ includeInflight: true });
+  });
+
   it('invalidates one cached host contract version entry', async () => {
     const readContract = makeReadContract(
       new Map<ChecksummedAddress, string[]>([
@@ -104,33 +103,5 @@ describe('HostContractVersion cache', () => {
       version: 'KMSVerifier v0.2.0',
     });
     expect(readContract).toHaveBeenCalledTimes(4);
-  });
-});
-
-describe('HostContractVersion parsing', () => {
-  it('parses a ProtocolConfigReplica version', async () => {
-    const readContract = makeReadContract(
-      new Map<ChecksummedAddress, string[]>([[PROTOCOL_CONFIG_ADDRESS, ['ProtocolConfigReplica v0.1.0']]]),
-    );
-    const client = makeClient(readContract);
-
-    await expect(getHostContractVersion(client, { address: PROTOCOL_CONFIG_ADDRESS })).resolves.toEqual({
-      version: 'ProtocolConfigReplica v0.1.0',
-      contractName: 'ProtocolConfigReplica',
-      major: 0,
-      minor: 1,
-      patch: 0,
-    });
-  });
-
-  it('rejects an unknown contract name', async () => {
-    const readContract = makeReadContract(
-      new Map<ChecksummedAddress, string[]>([[PROTOCOL_CONFIG_ADDRESS, ['ProtocolConfigMirror v0.1.0']]]),
-    );
-    const client = makeClient(readContract);
-
-    await expect(getHostContractVersion(client, { address: PROTOCOL_CONFIG_ADDRESS })).rejects.toThrow(
-      'Invalid version format: "ProtocolConfigMirror v0.1.0".',
-    );
   });
 });

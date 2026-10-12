@@ -4,6 +4,7 @@ import type { ChecksummedAddress } from '../types/primitives.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
 import { polygonAmoy } from '../chains/definitions/polygonAmoy.js';
+import { getCurrentKmsContextAndEpoch } from '../host-contracts/getCurrentKmsContextAndEpoch-p.js';
 import { invalidateVersionCache } from '../host-contracts/HostContractVersion-p.js';
 import { createCoreFhevm } from '../runtime/CoreFhevm-p.js';
 import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
@@ -18,6 +19,7 @@ const INPUT_VERIFIER_ADDRESS = polygonAmoy.fhevm.contracts.inputVerifier.address
 const KMS_VERIFIER_ADDRESS = polygonAmoy.fhevm.contracts.kmsVerifier.address as ChecksummedAddress;
 const PROTOCOL_CONFIG_ADDRESS = polygonAmoy.fhevm.contracts.protocolConfig?.address as ChecksummedAddress;
 
+// getVersion() answers per address. getCurrentKmsContextAndEpoch() answers (7, 3).
 function makeClient(protocolConfigVersion: string) {
   const versionsByAddress = new Map<string, string>([
     [ACL_ADDRESS, 'ACL v0.3.0'],
@@ -25,13 +27,18 @@ function makeClient(protocolConfigVersion: string) {
     [KMS_VERIFIER_ADDRESS, 'KMSVerifier v0.4.0'],
     [PROTOCOL_CONFIG_ADDRESS, protocolConfigVersion],
   ]);
-  const readContract = vi.fn(async (_trustedClient: unknown, parameters: { readonly address: string }) => {
-    const version = versionsByAddress.get(parameters.address);
-    if (version === undefined) {
-      throw new Error(`No mocked version for ${parameters.address}`);
-    }
-    return version;
-  });
+  const readContract = vi.fn(
+    async (_trustedClient: unknown, parameters: { readonly address: string; readonly functionName: string }) => {
+      if (parameters.functionName === 'getCurrentKmsContextAndEpoch') {
+        return [7n, 3n];
+      }
+      const version = versionsByAddress.get(parameters.address);
+      if (version === undefined) {
+        throw new Error(`No mocked version for ${parameters.address}`);
+      }
+      return version;
+    },
+  );
 
   const runtime = createFhevmRuntime(PRIVATE_ETHERS_TOKEN, {
     ethereum: { readContract } as unknown as EthereumModule,
@@ -46,30 +53,26 @@ function makeClient(protocolConfigVersion: string) {
   });
 }
 
+async function readContextAndEpoch(protocolConfigVersion: string) {
+  const client = makeClient(protocolConfigVersion);
+  const fhevmContext = await resolveFhevmClientFrozenContext(client);
+  return getCurrentKmsContextAndEpoch(client, { protocolConfigAddress: PROTOCOL_CONFIG_ADDRESS, fhevmContext });
+}
+
 beforeEach(() => {
   invalidateVersionCache({ includeInflight: true });
 });
 
-describe('resolveFhevmClientFrozenContext', () => {
-  it('stores a canonical ProtocolConfig version under ProtocolConfig', async () => {
-    const fhevmContext = await resolveFhevmClientFrozenContext(makeClient('ProtocolConfig v0.2.0'));
-
-    expect(fhevmContext.hostContractVersion('ProtocolConfig')).toMatchObject({
-      version: 'ProtocolConfig v0.2.0',
-      contractName: 'ProtocolConfig',
-    });
+describe('ProtocolConfigReplica at the ProtocolConfig address', () => {
+  it('accepts a replica and reads its context and epoch', async () => {
+    await expect(readContextAndEpoch('ProtocolConfigReplica v0.1.0')).resolves.toEqual({ contextId: 7n, epochId: 3n });
   });
 
-  it('stores a ProtocolConfigReplica version under ProtocolConfig', async () => {
-    const fhevmContext = await resolveFhevmClientFrozenContext(makeClient('ProtocolConfigReplica v0.1.0'));
-
-    expect(fhevmContext.hostContractVersion('ProtocolConfig')).toMatchObject({
-      version: 'ProtocolConfigReplica v0.1.0',
-      contractName: 'ProtocolConfigReplica',
-    });
+  it('still rejects a ProtocolConfig before v0.2.0', async () => {
+    await expect(readContextAndEpoch('ProtocolConfig v0.1.0')).rejects.toThrow('requires ProtocolConfig >= v0.2.0');
   });
 
-  it('rejects another host contract at the ProtocolConfig address', async () => {
+  it('rejects another host contract', async () => {
     await expect(resolveFhevmClientFrozenContext(makeClient('ACL v0.3.0'))).rejects.toThrow(
       "Invalid contract name. Expecting 'ProtocolConfig', got ACL.",
     );

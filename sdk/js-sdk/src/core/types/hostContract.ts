@@ -1,8 +1,5 @@
 import type { ChecksummedAddress, UintNumber } from './primitives.js';
 
-/**
- * Maps each host contract address role to the contract names that may run at that address.
- */
 export type HostContractNameMap = {
   readonly ACL: 'ACL';
   readonly FHEVMExecutor: 'FHEVMExecutor';

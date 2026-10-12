@@ -50,9 +50,13 @@ export function getCurrentKmsContextAndEpoch(
 }
 
 async function _getCurrentKmsContextAndEpoch(context: Context, parameters: Parameters): Promise<ReturnType> {
-  // ProtocolConfigReplica postdates ProtocolConfig v0.2.0 (protocol v0.14.0), so every replica version supports it.
-  const version = parameters.fhevmContext.hostContractVersion('ProtocolConfig');
-  if (version.contractName !== 'ProtocolConfigReplica' && isVersionStrictlyBefore(version, { major: 0, minor: 2 })) {
+  const protocolConfigVersion = parameters.fhevmContext.hostContractVersion('ProtocolConfig');
+
+  // getCurrentKmsContextAndEpoch requires ProtocolConfig >= v0.2.0 (protocol v0.14.0)
+  if (
+    protocolConfigVersion.contractName !== 'ProtocolConfigReplica' &&
+    isVersionStrictlyBefore(protocolConfigVersion, { major: 0, minor: 2 })
+  ) {
     throw new Error(
       'ProtocolConfig.getCurrentKmsContextAndEpoch() requires ProtocolConfig >= v0.2.0 (protocol v0.14.0)',
     );
