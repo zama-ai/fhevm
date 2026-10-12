@@ -1,10 +1,12 @@
 //! The Pingora [`ProxyHttp`] implementation of [`Proxy`]: the request lifecycle of the proxy.
 
 use crate::core::{Proxy, Route, match_route};
+use alloy::primitives::{Address, B256, Keccak256, keccak256};
 use async_trait::async_trait;
 use bytes::Bytes;
+use fhevm_sig_auth::AuthError;
 use http::{
-    Method, StatusCode,
+    HeaderValue, Method, StatusCode,
     header::{
         ALLOW, AUTHORIZATION, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, FORWARDED, HeaderName,
         PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, TE, TRAILER, UPGRADE, VIA, WWW_AUTHENTICATE,
@@ -31,33 +33,38 @@ const PROXY_CONNECTION: HeaderName = HeaderName::from_static("proxy-connection")
 
 /// Error message for oversized request bodies.
 const BODY_TOO_LARGE: &str = "request body too large";
+const NOT_ORIGIN_FORM: &str = "request target must be an origin-form UTF-8 path";
 
 /// Per-request context.
 pub struct RequestContext {
     started_at: Instant,
     route: Option<Route>,
     endpoint: Option<String>,
-    body_bytes: usize,
+    /// The sender authenticated by the `FhevmSig` header.
+    sender: Option<Address>,
+    /// The body digest signed in the `FhevmSig` header.
+    body_digest: B256,
+    /// The `keccak256` of the body received so far.
+    body_hasher: Keccak256,
+    /// The number of body bytes received.
+    body_len: usize,
 }
 
 impl Proxy {
-    /// Writes an error body as JSON with the given status.
+    /// Writes an error body as JSON.
     async fn respond_with_error(
         &self,
         session: &mut Session,
-        status: StatusCode,
         error: ErrorResponse,
-        extra_headers: &[(HeaderName, String)],
     ) -> pingora::Result<()> {
+        let status = StatusCode::from_u16(error.code.http_status())
+            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         let body = serde_json::to_vec(&error).unwrap_or_default();
-        let fixed_headers = [
-            (CONTENT_TYPE, "application/json".to_string()),
-            (CONTENT_LENGTH, body.len().to_string()),
-        ];
-        let mut header =
-            ResponseHeader::build(status, Some(fixed_headers.len() + extra_headers.len()))?;
-        for (name, value) in fixed_headers.iter().chain(extra_headers) {
-            header.insert_header(name.clone(), value.as_str())?;
+        let mut header = ResponseHeader::build(status, None)?;
+        header.insert_header(CONTENT_TYPE, "application/json")?;
+        header.insert_header(CONTENT_LENGTH, body.len().to_string())?;
+        if status == StatusCode::UNAUTHORIZED {
+            header.insert_header(WWW_AUTHENTICATE, fhevm_sig_auth::SCHEME)?;
         }
         session
             .write_response_header(Box::new(header), false)
@@ -74,8 +81,7 @@ impl Proxy {
         status: StatusCode,
         allow: Option<&Method>,
     ) -> pingora::Result<()> {
-        let headers_len = if allow.is_some() { 2 } else { 1 };
-        let mut header = ResponseHeader::build(status, Some(headers_len))?;
+        let mut header = ResponseHeader::build(status, None)?;
         header.insert_header(CONTENT_LENGTH, "0")?;
         if let Some(method) = allow {
             header.insert_header(ALLOW, method.as_str())?;
@@ -98,7 +104,10 @@ impl ProxyHttp for Proxy {
             started_at: Instant::now(),
             route: None,
             endpoint: None,
-            body_bytes: 0,
+            sender: None,
+            body_digest: B256::ZERO, // `ZERO` (matching no body) until it's parsed from header
+            body_hasher: Keccak256::new(),
+            body_len: 0,
         }
     }
 
@@ -111,7 +120,8 @@ impl ProxyHttp for Proxy {
         Ok(())
     }
 
-    // Route (404/405), authentication (401), body cap (400) then read the body.
+    // Request target (400), route (404/405), `FhevmSig` header (401), body cap (400), all before
+    // any endpoint connection. A request without a body is fully authenticated here.
     async fn request_filter(
         &self,
         session: &mut Session,
@@ -119,7 +129,19 @@ impl ProxyHttp for Proxy {
     ) -> pingora::Result<bool> {
         let req = session.req_header();
 
-        let route = match match_route(&req.method, req.uri.path()) {
+        // Pingora forwards the raw target, but its URI renders an absolute-form or non-UTF-8 target
+        // lossily: only a target identical to what reaches the endpoint can be authenticated.
+        let Some(target) = req
+            .uri
+            .path_and_query()
+            .filter(|target| target.as_str().as_bytes() == req.raw_path())
+        else {
+            let error = ErrorResponse::new(ErrorCode::Malformed, NOT_ORIGIN_FORM, None);
+            self.respond_with_error(session, error).await?;
+            return Ok(true);
+        };
+
+        let route = match match_route(&req.method, target.path()) {
             Ok(route) => route,
             Err(e) => {
                 self.respond_empty(session, e.http_status(), e.allow_header())
@@ -129,17 +151,16 @@ impl ProxyHttp for Proxy {
         };
         ctx.route = Some(route);
 
-        if !self.verifier.verify(req.headers.get(AUTHORIZATION)) {
-            let error = ErrorResponse::new(
-                ErrorCode::SenderAuthenticationFailed,
-                "invalid or missing API key",
-                None,
-            );
-            let headers = [(WWW_AUTHENTICATE, "Bearer".to_string())];
-            self.respond_with_error(session, StatusCode::UNAUTHORIZED, error, &headers)
-                .await?;
-            return Ok(true);
-        }
+        let authorization = req.headers.get(AUTHORIZATION).map(HeaderValue::as_bytes);
+        let (sender, body_digest) = match self.verifier.verify_header(authorization, target) {
+            Ok(signed) => signed,
+            Err(e) => {
+                self.respond_with_error(session, auth_error_response(&e))
+                    .await?;
+                return Ok(true);
+            }
+        };
+        ctx.sender = Some(sender);
 
         let declared_length = req
             .headers
@@ -148,31 +169,43 @@ impl ProxyHttp for Proxy {
             .and_then(|v| v.parse::<usize>().ok());
         if declared_length.is_some_and(|len| len > self.config.max_body_bytes) {
             let error = ErrorResponse::new(ErrorCode::Malformed, BODY_TOO_LARGE, None);
-            self.respond_with_error(session, StatusCode::BAD_REQUEST, error, &[])
+            self.respond_with_error(session, error).await?;
+            return Ok(true);
+        }
+
+        if session.is_body_empty() && keccak256([]) != body_digest {
+            self.respond_with_error(session, auth_error_response(&AuthError::BodyMismatch))
                 .await?;
             return Ok(true);
         }
+        ctx.body_digest = body_digest;
 
         Ok(false)
     }
 
-    // Checks the body cap on chunked requests.
+    // Streams the body, within the cap, while hashing it. It is checked against the signed
+    // digest before its last chunk is written, so the endpoint never receives a whole body that
+    // does not match: it gets a truncated request and a closed connection instead.
     async fn request_body_filter(
         &self,
         _session: &mut Session,
         body: &mut Option<Bytes>,
-        _end_of_stream: bool,
+        end_of_stream: bool,
         ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
         if let Some(chunk) = body {
-            ctx.body_bytes += chunk.len();
-            if ctx.body_bytes > self.config.max_body_bytes {
+            ctx.body_len += chunk.len();
+            if ctx.body_len > self.config.max_body_bytes {
                 return abort_with(ErrorResponse::new(
                     ErrorCode::Malformed,
                     BODY_TOO_LARGE,
                     None,
                 ));
             }
+            ctx.body_hasher.update(chunk);
+        }
+        if end_of_stream && ctx.body_hasher.clone().finalize() != ctx.body_digest {
+            return abort_with(auth_error_response(&AuthError::BodyMismatch));
         }
         Ok(())
     }
@@ -228,10 +261,7 @@ impl ProxyHttp for Proxy {
             Some(error) => {
                 let status = StatusCode::from_u16(error.code.http_status())
                     .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                if let Err(e) = self
-                    .respond_with_error(session, status, error.clone(), &[])
-                    .await
-                {
+                if let Err(e) = self.respond_with_error(session, error.clone()).await {
                     error!("Failed to send error response to downstream: {e}");
                 }
                 status.as_u16()
@@ -249,7 +279,7 @@ impl ProxyHttp for Proxy {
                 let error = ErrorResponse::new(code, message.to_string(), None);
                 let status = StatusCode::from_u16(error.code.http_status())
                     .unwrap_or(StatusCode::BAD_GATEWAY);
-                if let Err(e) = self.respond_with_error(session, status, error, &[]).await {
+                if let Err(e) = self.respond_with_error(session, error).await {
                     error!("Failed to send error response to downstream: {e}");
                 }
                 status.as_u16()
@@ -287,11 +317,22 @@ impl ProxyHttp for Proxy {
             status,
             client,
             endpoint = ctx.endpoint.as_deref().unwrap_or(""),
+            sender = ctx.sender.map(|s| s.to_string()).unwrap_or_default(),
             duration_ms = ctx.started_at.elapsed().as_millis() as u64,
             error = e.map(|e| e.to_string()).unwrap_or_default(),
             "Proxied request"
         );
     }
+}
+
+/// Converts an `AuthError` into an `ErrorResponse`.
+fn auth_error_response(error: &AuthError) -> ErrorResponse {
+    let code = if matches!(error, AuthError::Expired) {
+        ErrorCode::AuthExpired
+    } else {
+        ErrorCode::SenderAuthenticationFailed
+    };
+    ErrorResponse::new(code, format!("{}: {error}", error.code()), None)
 }
 
 /// Aborts the proxying with an kms-connector-api error.
@@ -355,6 +396,18 @@ mod tests {
         assert_eq!(e.etype(), &ErrorType::HTTPStatus(502));
         assert_eq!(default_error_code(&e), 502);
         assert_eq!(e.root_cause().downcast_ref::<ErrorResponse>(), Some(&error));
+    }
+
+    #[test]
+    fn only_expired_auth_rejection_is_retryable() {
+        let expired = auth_error_response(&AuthError::Expired);
+        assert_eq!(expired.code, ErrorCode::AuthExpired);
+        assert!(expired.retryable);
+
+        let missing = auth_error_response(&AuthError::Missing);
+        assert_eq!(missing.code, ErrorCode::SenderAuthenticationFailed);
+        assert!(!missing.retryable);
+        assert!(missing.message.starts_with("auth_missing: "));
     }
 
     #[test]

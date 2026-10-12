@@ -2,8 +2,7 @@ mod common;
 
 use alloy::transports::http::reqwest::{self, StatusCode, Url};
 use common::{
-    API_KEY, ENDPOINT_HEALTHCHECK_FREQUENCY, StubEndpoint, TestProxy, TestTls, free_addr,
-    wait_for_listener,
+    ENDPOINT_HEALTHCHECK_FREQUENCY, StubEndpoint, TestProxy, TestTls, free_addr, wait_for_listener,
 };
 use connector_utils::monitoring::{
     health::{Healthcheck, query_healthcheck_endpoint},
@@ -84,13 +83,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
 
     // The proxy stops selecting the unhealthy endpoint
     for _ in 0..10 {
-        let response = t
-            .client
-            .post(t.url(PUBLIC_DECRYPTION_ROUTE))
-            .bearer_auth(API_KEY)
-            .body("{}")
-            .send()
-            .await?;
+        let response = t.post(PUBLIC_DECRYPTION_ROUTE, "{}").await.send().await?;
         assert_eq!(response.status(), StatusCode::OK);
     }
     assert_eq!(live.hits(), 10);
@@ -109,13 +102,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     assert!(status.details.contains("No healthy endpoint available"));
 
     // The proxy has no endpoint left to select
-    let response = t
-        .client
-        .post(t.url(PUBLIC_DECRYPTION_ROUTE))
-        .bearer_auth(API_KEY)
-        .body("{}")
-        .send()
-        .await?;
+    let response = t.post(PUBLIC_DECRYPTION_ROUTE, "{}").await.send().await?;
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
     let error: ErrorResponse = response.json().await?;
     assert_eq!(error.code, ErrorCode::UpstreamTransient);
