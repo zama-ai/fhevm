@@ -7,7 +7,8 @@ use alloy::sol_types::SolEventInterface;
 use fhevm_engine_common::bridge::chain_id_from_handle;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::handle_metadata::{
-    validate_computed_handle_metadata, validate_verified_input_metadata,
+    validate_acl_handle_metadata, validate_computed_handle_metadata,
+    validate_verified_input_metadata,
 };
 use fhevm_engine_common::types::{
     Handle, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION,
@@ -432,8 +433,17 @@ pub async fn ingest_block_logs(
                 AclContract::AclContractEvents::SELECTORS,
             ) {
                 DecodedEvent::Decoded(event) => {
-                    allow_event_count = allow_event_count.saturating_add(1);
                     let handles = acl_result_handles(&event);
+                    for handle in &handles {
+                        validate_acl_handle_metadata(
+                            &handle.0,
+                            chain_id.as_u64(),
+                        )
+                        .map_err(|reason| {
+                            sqlx::Error::Protocol(reason.into())
+                        })?;
+                    }
+                    allow_event_count = allow_event_count.saturating_add(1);
                     for handle in handles {
                         is_allowed.insert(handle.to_vec());
                     }
