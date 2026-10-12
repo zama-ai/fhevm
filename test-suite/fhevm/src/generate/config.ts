@@ -7,6 +7,7 @@ import {
   requiresLegacyRelayerKeyUrlConfig,
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
+import { kmsCertificateThreshold } from "../../../../solana/deploy/src/thresholds";
 import { hostChainRuntimes, isEvmHost, OBJECT_STORE_INTERNAL_URL, RELAYER_HTTP_PORT } from "../layout";
 import { solanaProgramId, solanaValidatorUrl } from "./solana";
 import type { StackSpec } from "../stack-spec/stack-spec";
@@ -146,7 +147,7 @@ export const renderRelayerConfig = (
  * each Solana chain in solana_chains with the zama-host id and the certificate threshold its KMS
  * context was defined with, and one endpoint per kms-connector proxy.
  */
-export const renderRelayerHttpConfig = async (
+export const renderRelayerHttpConfig = (
   state: Pick<State, "discovery">,
   baseText: string,
   plan: Pick<StackSpec, "hostChains" | "kms">,
@@ -156,8 +157,6 @@ export const renderRelayerHttpConfig = async (
     http: Record<string, unknown>;
     kms_aggregator: { public_decrypt: { threshold: number }; user_decrypt: { threshold: number }; endpoints: unknown[] };
   };
-  // Imported lazily so an EVM-only stack never loads the Solana client stack.
-  const { kmsCertificateThreshold } = await import("../../../../solana/deploy/src/bootstrap");
   const solanaThreshold = kmsCertificateThreshold(plan.kms.threshold, plan.kms.committeeSize);
   config.http.endpoint = `0.0.0.0:${RELAYER_HTTP_PORT}`;
   config.http.supported_chain_ids = plan.hostChains.filter(isEvmHost).map((chain) => Number(chain.chainId));

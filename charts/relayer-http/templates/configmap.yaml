@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ include "relayer-http.fullname" . }}
-  labels:
-    {{- include "relayer-http.labels" . | nindent 4 }}
-data:
-  config.yaml: |
-    {{- include "relayer-http.config" . | nindent 4 }}

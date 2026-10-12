@@ -171,8 +171,8 @@ describe("config", () => {
     expect(parsed.solana_proof).toBeUndefined();
   });
 
-  test("renders relayer-http with EVM chains, Solana chains and one endpoint per proxy", async () => {
-    const rendered = await renderRelayerHttpConfig(
+  test("renders relayer-http with EVM chains, Solana chains and one endpoint per proxy", () => {
+    const rendered = renderRelayerHttpConfig(
       { discovery: { hosts: { solana: { ACL_CONTRACT_ADDRESS: "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ" } } } as never },
       readFileSync(RELAYER_HTTP_CONFIG_BASE, "utf8"),
       {

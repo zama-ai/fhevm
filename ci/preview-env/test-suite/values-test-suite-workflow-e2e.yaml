@@ -312,7 +312,7 @@ additionalResources:
                   # exactly like values-test-suite-e2e.yaml does for the idle Job.
                   CONFIG_SOL=/app/test-suite/e2e/contracts/E2ECoprocessorConfigLocal.sol
 
-                  # The kms-connector proxies' self-signed certificate (env
+                  # The kms-connector proxies' test CA (env
                   # KMS_CONNECTOR_PROXY_CA below): Node only trusts extra CAs from
                   # a file, so write it where NODE_EXTRA_CA_CERTS points first.
                   printf '%s\n' "${KMS_CONNECTOR_PROXY_CA}" > "${NODE_EXTRA_CA_CERTS}"

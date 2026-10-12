@@ -85,8 +85,7 @@ up)
   # Local ports for the forwards. The defaults mirror the local stack so a sourced preview.env needs
   # no other change; override any of them (PREVIEW_*_PORT) when a local stack is up at the same time.
   relayer_port=${PREVIEW_RELAYER_PORT:-3000}
-  relayer_http_port=${PREVIEW_RELAYER_HTTP_PORT:-$(bun -e 'console.log((await import(process.argv[1])).RELAYER_HTTP_PORT)' \
-    "$(cd "$(dirname "$0")/../src" && pwd)/layout.ts")}
+  relayer_http_port=${PREVIEW_RELAYER_HTTP_PORT:-3002} # RELAYER_HTTP_PORT in src/layout.ts
   gateway_port=${PREVIEW_GATEWAY_RPC_PORT:-8546}
   host_port=${PREVIEW_HOST_RPC_PORT:-8545}
   dapp_port=${PREVIEW_DAPP_PORT:-5173}

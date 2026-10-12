@@ -19,6 +19,7 @@ import {
   KEYGEN_ID_SELECTOR,
   KMS_CORE_CONTAINER,
   OBJECT_STORE_EXTERNAL_URL,
+  RELAYER_HTTP_CONTAINER,
   RELAYER_HTTP_PORT,
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
@@ -878,7 +879,7 @@ export const waitForKmsConnector = async (state: State) => {
 
 /** Waits for relayer-http to run and answer /healthz on its published port (the image has no shell). */
 export const waitForRelayerHttp = async () => {
-  await waitForContainer("fhevm-relayer-http", "running");
+  await waitForContainer(RELAYER_HTTP_CONTAINER, "running");
   await until(async () => (await fetch(`http://127.0.0.1:${RELAYER_HTTP_PORT}/healthz`)).ok, {
     description: "relayer-http /healthz",
   });

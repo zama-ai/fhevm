@@ -342,9 +342,9 @@ class SolanaCharts(unittest.TestCase):
 
     def test_relayer_http_serves_the_connector_chains_through_every_proxy(self):
         # Runs deploy-preview.sh's generator on the connector's host chains (the e2e values plus the
-        # Solana overlay, as `helm get values --all` returns them), then renders the chart with it.
+        # Solana overlay, as `helm get values --all` returns them), from the repository root like the script.
         script = (VALUES / "deploy-preview.sh").read_text()
-        program = re.search(r"EVM_THRESHOLD=\$\(kms_reconstruct \"\$NB_KMS_CORE\"\) yq '(.*?)' \"\$work/connector\.yaml\"",
+        program = re.search(r"THRESHOLD=\$\(kms_reconstruct \"\$NB_KMS_CORE\"\) yq '(.*?)' \"\$work/connector\.yaml\"",
                             script, re.S).group(1)
         host_chains = {}
         for values in [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml",
@@ -354,24 +354,16 @@ class SolanaCharts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             connector = pathlib.Path(tmp) / "connector.yaml"
             connector.write_text(yaml.safe_dump({"commonConfig": {"hostChains": host_chains}}))
-            generated = pathlib.Path(tmp) / "relayer-http.yaml"
-            generated.write_text(subprocess.check_output(["yq", program, str(connector)], text=True, env={
-                **os.environ, "ENDPOINT_URLS": ",".join(proxies), "PROGRAM_ID": "1" * 32,
-                "SOLANA_THRESHOLD": "3", "EVM_THRESHOLD": "3"}))
-            documents = render("relayer-http", "relayer-http",
-                               [VALUES / "values-relayer-http-e2e.yaml", generated], "--set-string", "image.tag=test")
-        config = yaml.safe_load(next(d for d in documents if d and d["kind"] == "ConfigMap")["data"]["config.yaml"])
+            config = yaml.safe_load(subprocess.check_output(["yq", program, str(connector)], text=True, cwd=ROOT, env={
+                **os.environ, "ENDPOINT_URLS": ",".join(proxies), "PROGRAM_ID": "1" * 32, "THRESHOLD": "3"}))
         # Chain ids stay strings: Helm would read 130140237723663404 as a float64 and round it.
         self.assertEqual(config["http"]["supported_chain_ids"], ["12345"])
         self.assertEqual(config["http"]["solana_chains"],
                          {"130140237723663404": {"program_id": "1" * 32, "public_decrypt_threshold": 3}})
         self.assertEqual([e["url"] for e in config["kms_aggregator"]["endpoints"]], proxies)
-        self.assertEqual({e["auth"]["value_env"] for e in config["kms_aggregator"]["endpoints"]}, {"KMS_API_KEY"})
-        container = next(d for d in documents if d and d["kind"] == "Deployment")["spec"]["template"]["spec"]["containers"][0]
-        env = {e["name"]: e for e in container["env"]}
-        # deploy-kms-connector.sh creates both secrets.
-        self.assertEqual(env["KMS_API_KEY"]["valueFrom"]["secretKeyRef"], {"name": "kms-connector-proxy", "key": "api-key"})
-        self.assertEqual(env["SSL_CERT_FILE"]["value"], "/etc/relayer-http/proxy-ca/ca.crt")
+        self.assertEqual({e["auth"]["value_env"] for e in config["kms_aggregator"]["endpoints"]}, {"KMS_CONNECTOR_API_KEY"})
+        # The rest of relayer-http's own config is kept.
+        self.assertEqual(config["kms_aggregator"]["call"]["timeout"], "5000ms")
 
     def test_dispatch_overrides_reject_unknown_keys_and_multiline_values(self):
         script = ROOT / "ci/preview-env/scripts/resolve/parse-overrides.cjs"

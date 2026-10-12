@@ -59,8 +59,8 @@ kmsConnectorKmsWorker:
 kmsConnectorProxy:
   # apiKeyDigest comes from the chart's default Secret, which deploy-kms-connector.sh creates.
   # `kubernetes.io/tls` Secret the chart does NOT create. deploy-kms-connector.sh
-  # generates ONE self-signed certificate per namespace and stores it under this
-  # name before the first release installs. So all N releases share it and the
-  # test-suite trusts a single CA.
+  # generates one test CA and one server certificate per namespace and stores them
+  # under this name before the first release installs. So all N releases share it
+  # and clients trust the one CA (`ca.crt`).
   tls:
     secretName: kms-connector-proxy-tls

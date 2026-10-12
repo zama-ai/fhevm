@@ -18,7 +18,8 @@ import {
   coprocessorHostKey,
   defaultHostChainKey,
   hostChainSuffix,
-  relayerServices,
+  RELAYER_HTTP_CONTAINER,
+  groupBuildServices,
   runsRelayerHttp,
 } from "../layout";
 import type { LocalOverride, OverrideGroup, ResolvedCoprocessorScenarioInstance, State, StepName } from "../types";
@@ -128,7 +129,7 @@ export const resumeSteadyStateServices = (state: State) => {
       ),
     ],
     "kms-connector": kmsConnectorServices(state).filter((service) => !service.endsWith("-db-migration")),
-    "relayer": ["fhevm-relayer-db", "fhevm-relayer", ...(runsRelayerHttp(state.scenario.hostChains) ? ["fhevm-relayer-http"] : [])],
+    "relayer": ["fhevm-relayer-db", "fhevm-relayer", ...(runsRelayerHttp(state.scenario.hostChains) ? [RELAYER_HTTP_CONTAINER] : [])],
     "test-suite": [TEST_SUITE_CONTAINER],
   } satisfies Partial<Record<StepName, string[]>>;
 };
@@ -214,7 +215,7 @@ export const resolveUpgradePlan = (
     throw new Error(`No runtime component registered for ${group}`);
   }
   const selectedServices = groupOverrides.flatMap((item) => item.services ?? []);
-  const groupServices = group === "relayer" ? relayerServices(state.scenario.hostChains) : GROUP_BUILD_SERVICES[group];
+  const groupServices = groupBuildServices(group, state.scenario.hostChains);
   const fullGroupServices = groupOverrides.length && !selectedServices.length
     ? group === "coprocessor"
       ? coprocessorServices(state)

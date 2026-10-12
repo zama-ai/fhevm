@@ -60,6 +60,6 @@ writes such a config from the same template (`scripts/gen-config.sh`, which prod
 Recreating endpoints (for example to move them to a tag with #3990) changes their addresses; the proxies resolve
 their endpoint once at startup, so run `make down up` afterwards.
 
-The forwarders terminate the proxy's self-signed TLS because a host process on macOS cannot trust it; the relayer
+The forwarders terminate the proxy's TLS, issued by a test CA, because a host process on macOS cannot trust it; the relayer
 speaks plain http to loopback (allowed by its config validation) and the proxy still checks the Bearer key. None of
 this applies to production, where the relayer validates the proxy certificate itself.

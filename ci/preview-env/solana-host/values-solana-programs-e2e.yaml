@@ -53,11 +53,8 @@ scDeploy:
     # deploy-preview.sh appends KMS_THRESHOLD and COPROCESSOR_THRESHOLD from the party counts.
   # Each preview namespace binds HostConfig to its own Gateway, and every branch head brings
   # different bytecode to the same program id. deploy-preview.sh recovers the old state first.
-  # The second command publishes the threshold the deploy wrote, replacing an earlier value; the
-  # chart only maps .env.* lines to `<name>.address`, and never overwrites a key.
   deployCommands:
     - node /app/cli.mjs host deploy --allow-upgrade
-    - kubectl patch configmap "${CONFIGMAP_NAME}" -p "{\"data\":{\"kms_context.public_decryption_threshold\":\"$(cat "${ADDRESSES_DIR}/kms_context.public_decryption_threshold")\"}}"
   verifyContracts: false
 nodeSelector:
   kubernetes.io/arch: amd64

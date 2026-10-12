@@ -1,10 +1,10 @@
 import { BuildError, ContainerStartError, PreflightError } from "../errors";
 import {
   GROUP_BUILD_COMPONENTS,
-  GROUP_BUILD_SERVICES,
   PROJECT,
   composePath,
   dockerArgs,
+  groupBuildServices,
 } from "../layout";
 import { loadMergedComposeDoc, resolvedComposeEnv, serviceNameList, type ComposeDoc } from "../generate/compose";
 import { stackSpecForState } from "../stack-spec/stack-spec";
@@ -271,7 +271,9 @@ export const maybeBuild = async (
       }
       const doc = await loadMergedComposeDoc(component);
       const available = new Set(Object.keys(doc.services));
-      const candidates = override.services?.length ? override.services : GROUP_BUILD_SERVICES[override.group];
+      const candidates = override.services?.length
+        ? override.services
+        : groupBuildServices(override.group, state.scenario.hostChains);
       const services = candidates.filter((service) => available.has(service));
       if (!services.length) {
         continue;

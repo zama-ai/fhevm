@@ -337,7 +337,8 @@ export const preflightPorts = (state: Pick<State, "scenario">) =>
       ...PORTS,
       ...(scenarioUsesForkAnvil(state.scenario) ? [DEFAULT_FORK_RPC_PORT] : []),
       ...state.scenario.hostChains.filter((c) => isEvmHost(c)).map((c) => c.rpcPort),
-      ...(state.scenario.hostChains.some((c) => !isEvmHost(c)) ? [SOLANA_MERKLE_POSTGRES_PORT, RELAYER_HTTP_PORT] : []),
+      ...(state.scenario.hostChains.some((c) => !isEvmHost(c)) ? [SOLANA_MERKLE_POSTGRES_PORT] : []),
+      ...(runsRelayerHttp(state.scenario.hostChains) ? [RELAYER_HTTP_PORT] : []),
     ]),
   ];
 
@@ -1222,12 +1223,7 @@ export const runStep = async (state: State, step: StepName) => {
     }
     case "relayer":
       await stepComposeUp("relayer", state, serviceNameList(state, "relayer"));
-      await waitForContainer("fhevm-relayer-db", "healthy");
-      await waitForContainer("fhevm-relayer", "running");
-      await waitForLog("fhevm-relayer", /All servers are ready and responding/);
-      if (runsRelayerHttp(state.scenario.hostChains)) {
-        await waitForRelayerHttp();
-      }
+      await waitForRelayer(state);
       break;
     case "host-process": {
       // The Solana nodes fhevm-cli spawns itself, beside the Merkle record's database container.
@@ -2007,10 +2003,13 @@ export const refreshDiscovery = async () => {
   console.log("[rollout] discovery refreshed");
 };
 
-const waitForRelayer = async () => {
+const waitForRelayer = async (state: Pick<State, "scenario">) => {
   await waitForContainer("fhevm-relayer-db", "healthy");
   await waitForContainer("fhevm-relayer", "running");
   await waitForLog("fhevm-relayer", /All servers are ready and responding/);
+  if (runsRelayerHttp(state.scenario.hostChains)) {
+    await waitForRelayerHttp();
+  }
 };
 
 const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices: string[]) => {
@@ -2042,7 +2041,7 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
     return;
   }
   if (group === "relayer") {
-    await waitForRelayer();
+    await waitForRelayer(state);
     return;
   }
   await waitForTestSuite();

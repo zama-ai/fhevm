@@ -301,6 +301,12 @@ export const GROUP_BUILD_COMPONENTS: Record<OverrideGroup, string[]> = {
   "test-suite": ["test-suite"],
 };
 
+/** relayer-http serves Solana's decryption, so only stacks with a Solana host run (or build) it. */
+export const RELAYER_HTTP_SERVICE = "relayer-http";
+export const RELAYER_HTTP_CONTAINER = "fhevm-relayer-http";
+export const runsRelayerHttp = (hostChains: readonly Pick<HostChainScenario, "type">[]) =>
+  hostChains.some((chain) => !isEvmHost(chain));
+
 export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
   "coprocessor": [
     "coprocessor-db-migration",
@@ -327,7 +333,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
   "relayer": [
     "relayer-db-migration",
     "relayer",
-    "relayer-http",
+    RELAYER_HTTP_SERVICE,
   ],
   "gateway-contracts": [
     "gateway-deploy-mocked-zama-oft",
@@ -373,14 +379,9 @@ export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fr
 /** The kms-connector services `supportsConnectorHttp` gates as a pair: HTTP endpoint + proxy. */
 export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-connector-proxy"];
 
-/** relayer-http serves Solana's decryption, so only stacks with a Solana host run (or build) it. */
-export const RELAYER_HTTP_SERVICE = "relayer-http";
-export const runsRelayerHttp = (hostChains: readonly Pick<HostChainScenario, "type">[]) =>
-  hostChains.some((chain) => !isEvmHost(chain));
-
-/** The relayer group's services for a stack: relayer-http only when it runs. */
-export const relayerServices = (hostChains: readonly Pick<HostChainScenario, "type">[]) =>
-  GROUP_BUILD_SERVICES.relayer.filter((service) => service !== RELAYER_HTTP_SERVICE || runsRelayerHttp(hostChains));
+/** A group's services for a stack: the relayer group has relayer-http only when it runs. */
+export const groupBuildServices = (group: OverrideGroup, hostChains: readonly Pick<HostChainScenario, "type">[]) =>
+  GROUP_BUILD_SERVICES[group].filter((service) => service !== RELAYER_HTTP_SERVICE || runsRelayerHttp(hostChains));
 
 /** Services that run the same image and therefore must be built together by an override. */
 const IMAGE_SIBLINGS: Record<string, string[]> = {

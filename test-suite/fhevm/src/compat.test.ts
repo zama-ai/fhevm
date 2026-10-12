@@ -103,6 +103,36 @@ describe("compat", () => {
     ).not.toThrow();
   });
 
+  test("a Solana host needs the connector endpoint, the proxies and relayer-http", () => {
+    const evm = testDefaultScenario();
+    const solana = testDefaultScenario({
+      hostChains: [...evm.hostChains, { key: "solana", type: "solana", chainId: "130140237723663404", rpcPort: 8899 }],
+    });
+    const versions = (env: Record<string, string>) => ({
+      target: "latest-main" as const,
+      lockName: "latest-main.json",
+      env,
+      sources: [],
+    });
+    const http = { CONNECTOR_ENDPOINT_VERSION: "v1", CONNECTOR_PROXY_VERSION: "v1", RELAYER_HTTP_VERSION: "v1" };
+    const without = (key: string) => Object.fromEntries(Object.entries(http).filter(([name]) => name !== key));
+    expect(() => assertSupportedBundleScenario({ versions: versions({}), overrides: [], scenario: evm })).not.toThrow();
+    expect(() => assertSupportedBundleScenario({ versions: versions(http), overrides: [], scenario: solana })).not.toThrow();
+    for (const key of Object.keys(http)) {
+      expect(() => assertSupportedBundleScenario({ versions: versions(without(key)), overrides: [], scenario: solana })).toThrow(
+        "Solana host scenarios decrypt only over HTTP",
+      );
+    }
+    // A local relayer override builds relayer-http.
+    expect(() =>
+      assertSupportedBundleScenario({
+        versions: versions(without("RELAYER_HTTP_VERSION")),
+        overrides: [{ group: "relayer" }],
+        scenario: solana,
+      }),
+    ).not.toThrow();
+  });
+
   test("flags relayer v1 vs test-suite v2 incompatibility", () => {
     const issues = validateBundleCompatibility({
       versions: {

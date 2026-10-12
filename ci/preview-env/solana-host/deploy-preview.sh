@@ -104,31 +104,33 @@ helm upgrade relayer "$COMMON_CHART" --version "$COMMON_CHART_VERSION" -n "$NAME
 
 # relayer-http serves decryption over HTTP for the host chains the connectors serve, through every
 # party's proxy. EVM chains go in supported_chain_ids. Each Solana chain goes in solana_chains with
-# the zama-host id and the certificate threshold the host deploy published. Chain ids stay strings:
-# Helm reads numeric values as float64.
+# the zama-host id and its certificate threshold. The host deploy requires a 3t+1 committee, so that
+# threshold (2t+1, kmsCertificateThreshold) equals kms_reconstruct (n - t), the EVM thresholds' value.
+# Chain ids stay strings, and the config reaches the chart as one string: Helm reads numeric values
+# as float64.
 helm get values kms-connector-1 -n "$NAMESPACE" --all -o yaml > "$work/connector.yaml"
 endpoint_urls=$(kubectl get configmap kms-connector-http -n "$NAMESPACE" -o jsonpath='{.data.endpoint-urls}')
 program_id=$(kubectl get configmap solana-host-addresses -n "$NAMESPACE" -o jsonpath='{.data.zama_host\.address}')
-solana_threshold=$(kubectl get configmap solana-host-addresses -n "$NAMESPACE" -o jsonpath='{.data.kms_context\.public_decryption_threshold}')
 require_nonempty "$endpoint_urls" "kms-connector-http[endpoint-urls] is empty"
 require_nonempty "$program_id" "solana-host-addresses[zama_host.address] is empty"
-require_nonempty "$solana_threshold" "solana-host-addresses[kms_context.public_decryption_threshold] is empty"
 # shellcheck disable=SC2016  # $chains and $entry are yq variables
-ENDPOINT_URLS="$endpoint_urls" PROGRAM_ID="$program_id" SOLANA_THRESHOLD="$solana_threshold" \
-  EVM_THRESHOLD=$(kms_reconstruct "$NB_KMS_CORE") yq '
+ENDPOINT_URLS="$endpoint_urls" PROGRAM_ID="$program_id" THRESHOLD=$(kms_reconstruct "$NB_KMS_CORE") yq '
   [.commonConfig.hostChains[] | select(. != null)] as $chains
-  | {"config": {
+  | load("relayer-http/config/config.yaml") * {
+      "log": {"format": "json"},
       "http": {
         "supported_chain_ids": [$chains[] | select(has("solanaHostProgramId") | not) | .chainId],
-        "solana_chains": ([$chains[] | select(has("solanaHostProgramId")) | {.chainId: {"program_id": strenv(PROGRAM_ID), "public_decrypt_threshold": env(SOLANA_THRESHOLD)}}] | .[] as $entry ireduce ({}; . * $entry))
+        "solana_chains": ([$chains[] | select(has("solanaHostProgramId")) | {.chainId: {"program_id": strenv(PROGRAM_ID), "public_decrypt_threshold": env(THRESHOLD)}}] | .[] as $entry ireduce ({}; . * $entry))
       },
       "kms_aggregator": {
-        "public_decrypt": {"threshold": env(EVM_THRESHOLD)},
-        "user_decrypt": {"threshold": env(EVM_THRESHOLD)},
-        "endpoints": [strenv(ENDPOINT_URLS) | split(",") | to_entries | .[] | {"name": "kms_" + (.key | tostring), "url": .value, "auth": {"type": "api_key", "value_env": "KMS_API_KEY"}}]
+        "public_decrypt": {"threshold": env(THRESHOLD)},
+        "user_decrypt": {"threshold": env(THRESHOLD)},
+        "endpoints": [strenv(ENDPOINT_URLS) | split(",") | to_entries | .[] | {"name": "kms_" + (.key | tostring), "url": .value, "auth": {"type": "api_key", "value_env": "KMS_CONNECTOR_API_KEY"}}]
       }
-    }}' "$work/connector.yaml" > "$work/relayer-http.yaml"
-helm upgrade --install relayer-http charts/relayer-http -n "$NAMESPACE" \
+    }' "$work/connector.yaml" > "$work/relayer-http-config.yaml"
+CONFIG="$work/relayer-http-config.yaml" yq -n '.configmapFiles.files."config.yaml" = load_str(strenv(CONFIG))' \
+  > "$work/relayer-http.yaml"
+helm upgrade --install relayer-http "$COMMON_CHART" --version "$COMMON_CHART_VERSION" -n "$NAMESPACE" \
   -f "$values/values-relayer-http-e2e.yaml" -f "$work/relayer-http.yaml" \
   --set-string "image.tag=$(jq -er .relayer_http <<< "$TAGS_JSON")" --wait --timeout=10m
 

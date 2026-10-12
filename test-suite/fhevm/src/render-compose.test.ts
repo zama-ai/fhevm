@@ -88,6 +88,14 @@ const relayerOverrideState: State = {
   overrides: [{ group: "relayer" }],
 };
 
+const solanaRelayerOverrideState: State = {
+  ...relayerOverrideState,
+  scenario: {
+    ...scenario,
+    hostChains: [...scenario.hostChains, { key: "solana", type: "solana", chainId: "130140237723663404", rpcPort: 8899 }],
+  },
+};
+
 const listenerCoreOverrideState: State = {
   ...state,
   overrides: [{ group: "listener-core" }],
@@ -701,7 +709,29 @@ describe("render-compose", () => {
       expect(doc.services["relayer"]?.platform).toBeUndefined();
       expect(doc.services["relayer"]?.image).toContain(":fhevm-local");
       expect(doc.services["relayer"]?.build?.dockerfile).toContain("relayer/docker/relayer/Dockerfile");
+      // relayer-http serves Solana's decryption: an EVM stack neither runs nor builds it.
+      expect(doc.services["relayer-http"]).toBeUndefined();
     });
+  });
+
+  test("a Solana stack's relayer override builds relayer-http's prod stage", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(solanaRelayerOverrideState, stackSpecForState(solanaRelayerOverrideState));
+      const doc = YAML.parse(await readFile(composePath("relayer"), "utf8")) as {
+        services: Record<string, { image?: string; build?: { dockerfile?: string; target?: string } }>;
+      };
+      expect(doc.services["relayer-http"]?.image).toContain(":fhevm-local");
+      expect(doc.services["relayer-http"]?.build?.dockerfile).toContain("relayer-http/Dockerfile");
+      expect(doc.services["relayer-http"]?.build?.target).toBe("prod");
+    });
+  });
+
+  test("lists relayer-http among the relayer services only for a Solana stack", () => {
+    expect(serviceNameList(relayerOverrideState, "relayer")).toEqual(["relayer-db-migration", "relayer"]);
+    expect(serviceNameList(solanaRelayerOverrideState, "relayer")).toEqual(["relayer-db-migration", "relayer", "relayer-http"]);
   });
 
   test("renders a test-suite local build override without daemon access on a socketless host", async () => {

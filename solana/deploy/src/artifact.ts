@@ -22,12 +22,3 @@ export const writeSolanaAddressArtifact = async (
   await writeFile(file, [...entries].map(([name, id]) => `${name}=${id}\n`).join(''));
   return file;
 };
-
-/** The file, named after its ConfigMap key, holding the public-decryption threshold the host was bootstrapped with. */
-export const KMS_PUBLIC_DECRYPTION_THRESHOLD_FILE = 'kms_context.public_decryption_threshold';
-
-/** Writes that threshold for relayer-http, which must collect as many matching KMS signatures. */
-export const writeKmsPublicDecryptionThreshold = async (addressesDir: string, threshold: number): Promise<void> => {
-  await mkdir(addressesDir, { recursive: true });
-  await writeFile(path.join(addressesDir, KMS_PUBLIC_DECRYPTION_THRESHOLD_FILE), `${threshold}\n`);
-};

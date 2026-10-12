@@ -1,24 +1,51 @@
-# relayer-http in a Solana preview. deploy-preview.sh adds what depends on the namespace: the
-# proxy endpoints, the host chains the connectors serve, the thresholds and the image tag.
+# common chart overlay for relayer-http in a Solana preview, deployed like the relayer
+# (ci/preview-env/relayer/values-relayer-e2e.yaml). deploy-preview.sh sets image.tag and
+# configmapFiles.files."config.yaml": relayer-http/config/config.yaml with the namespace's host
+# chains, proxy endpoints and thresholds merged in.
+fullnameOverride: relayer-http
+
+# The common chart does not set a pull secret for private hub.zama.org images.
+imagePullSecrets:
+  - name: registry-credentials
+
 image:
   repository: hub.zama.org/ghcr/zama-ai/fhevm/relayer-http
-config:
-  log:
-    format: json
+
+deployment:
+  enabled: true
+
+service:
+  enabled: true
+  ports:
+    - {name: http, port: 8080}
+
+livenessProbe:
+  httpGet: {path: /liveness, port: http}
+readinessProbe:
+  httpGet: {path: /healthz, port: http}
+
+# The image runs `relayer-http /app/config/config.yaml`.
+configmapFiles:
+  enabled: true
+  volumeMount:
+    mountPath: /app/config
+    subPath: ""
+    readOnly: true
+
 env:
-  - name: KMS_API_KEY
+  # deploy-kms-connector.sh creates both Secrets.
+  - name: KMS_CONNECTOR_API_KEY
     valueFrom:
       secretKeyRef: {name: kms-connector-proxy, key: api-key}
   # The proxies' test CA is the only CA relayer-http needs to trust.
   - name: SSL_CERT_FILE
     value: /etc/relayer-http/proxy-ca/ca.crt
-extraVolumes:
+
+volumes:
   - name: proxy-ca
     secret:
       secretName: kms-connector-proxy-tls
       items:
         - {key: ca.crt, path: ca.crt}
-extraVolumeMounts:
+volumeMounts:
   - {name: proxy-ca, mountPath: /etc/relayer-http/proxy-ca, readOnly: true}
-nodeSelector:
-  kubernetes.io/arch: amd64

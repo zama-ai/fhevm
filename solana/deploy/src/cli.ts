@@ -2,8 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
-import { writeKmsPublicDecryptionThreshold, writeSolanaAddressArtifact } from './artifact';
-import { kmsCertificateThreshold } from './bootstrap';
+import { writeSolanaAddressArtifact } from './artifact';
 import { SOLANA_DEPLOY_PROGRAMS, type SolanaDeployProgram } from './constants';
 import { registerSolanaCoprocessorSql } from './coprocessor';
 import { deployHostProgram } from './deploy-host';
@@ -113,19 +112,14 @@ const main = async () => {
       console.log(
         `coprocessor_signers=${gateway.coprocessorSigners.map(evmHex).join(',')}; kms_signers=${gateway.kmsSigners.map(evmHex).join(',')}`,
       );
-      const kmsCorruptionThreshold = integerEnv('KMS_THRESHOLD');
       ids = await deployHostProgram({
         ...parameters,
         chainId,
         programKeypairPath: programKeypairPaths.zama_host,
         gateway,
         coprocessorThreshold: integerEnv('COPROCESSOR_THRESHOLD', 1),
-        kmsCorruptionThreshold,
+        kmsCorruptionThreshold: integerEnv('KMS_THRESHOLD'),
       });
-      await writeKmsPublicDecryptionThreshold(
-        ADDRESSES_DIR,
-        kmsCertificateThreshold(kmsCorruptionThreshold, gateway.kmsSigners.length),
-      );
     } else {
       ids = await deployProgramArtifacts({ ...parameters, programs, programKeypairPaths });
     }
