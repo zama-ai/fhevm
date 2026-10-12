@@ -1,8 +1,7 @@
 // The KMS Connector's authorization of a Solana user or public decryption
 // (kms-connector/crates/kms-worker/src/core/solana/pipeline.rs and public_decrypt.rs), over the same
 // host accounts, read in the same order and judged by the same rules, and the leaf proofs of one
-// leaf record, asked and verified as the Connector asks and verifies a coprocessor's. The relayer's
-// scope and delegation pre-check, which runs before the Connector sees a request, is here too.
+// leaf record, asked and verified as the Connector asks and verifies a coprocessor's.
 //
 // solana/test-fixtures/authorization/decrypt_cases_v1.json holds the Connector's verdicts on a set
 // of cases; authorization.test.ts holds this module to them.
@@ -42,33 +41,39 @@ export type SolanaHostAccountsReader = (
   minContextSlot?: bigint,
 ) => Promise<{ readonly slot: bigint; readonly accounts: readonly MaybeEncodedAccount[] }>;
 
-/**
- * Whether the Connector may clear each failure on a later attempt (`failure.rs`). A failed account
- * or Merkle proof read is not listed: the cleartext client throws on one instead of judging.
- */
-export const CONNECTOR_FAILURE_RECOVERABLE = {
-  Signature: false,
-  'Window::NotYetValid': true,
-  'Window::Expired': false,
-  ProgramIdMismatch: false,
-  'Watermark::Invalidated': false,
-  'Watermark::InvalidHostRecord': false,
-  'EncryptedStore::Absent': true,
-  'EncryptedStore::ForeignOwner': false,
-  'EncryptedStore::NotAnEncryptedStore': false,
-  'EncryptedStore::AddressMismatch': false,
-  'EncryptedStore::InvalidHostRecord': false,
-  ScopeNotAllowed: false,
-  'HandleBinding::NoLeaf': true,
-  'HandleBinding::ProofRecordBehind': true,
-  'HandleBinding::AccountUnknownToProofRecord': true,
-  'HandleBinding::ProofDoesNotVerify': true,
-  'HandleBinding::LeafIndexOutOfRange': true,
-  'Delegation::NoLiveDelegation': true,
-  'Delegation::InvalidHostRecord': false,
-} as const satisfies Record<string, boolean>;
+const SIGNATURE_REJECTED = { code: 'user_signature_rejected', recoverable: false } as const;
+const ACL_DENIED = { code: 'acl_denied', recoverable: true } as const;
+const ACL_REFUSED = { code: 'acl_denied', recoverable: false } as const;
+const UNPROCESSABLE = { code: 'unprocessable', recoverable: false } as const;
 
-export type ConnectorFailure = keyof typeof CONNECTOR_FAILURE_RECOVERABLE;
+/**
+ * The code the Connector answers each failure with, and whether it may clear on a later attempt
+ * (`failure.rs`). A failed account or Merkle proof read is not listed: the cleartext client throws on
+ * one instead of judging.
+ */
+export const CONNECTOR_FAILURE_CLASS = {
+  Signature: SIGNATURE_REJECTED,
+  'Window::NotYetValid': { ...SIGNATURE_REJECTED, recoverable: true },
+  'Window::Expired': SIGNATURE_REJECTED,
+  ProgramIdMismatch: SIGNATURE_REJECTED,
+  'Watermark::Invalidated': SIGNATURE_REJECTED,
+  'Watermark::InvalidHostRecord': UNPROCESSABLE,
+  'EncryptedStore::Absent': ACL_DENIED,
+  'EncryptedStore::ForeignOwner': ACL_REFUSED,
+  'EncryptedStore::NotAnEncryptedStore': ACL_REFUSED,
+  'EncryptedStore::AddressMismatch': ACL_REFUSED,
+  'EncryptedStore::InvalidHostRecord': UNPROCESSABLE,
+  ScopeNotAllowed: ACL_REFUSED,
+  'HandleBinding::NoLeaf': ACL_DENIED,
+  'HandleBinding::ProofRecordBehind': ACL_DENIED,
+  'HandleBinding::AccountUnknownToProofRecord': ACL_DENIED,
+  'HandleBinding::ProofDoesNotVerify': ACL_DENIED,
+  'HandleBinding::LeafIndexOutOfRange': ACL_DENIED,
+  'Delegation::NoLiveDelegation': ACL_DENIED,
+  'Delegation::InvalidHostRecord': UNPROCESSABLE,
+} as const satisfies Record<string, { readonly code: string; readonly recoverable: boolean }>;
+
+export type ConnectorFailure = keyof typeof CONNECTOR_FAILURE_CLASS;
 
 export type ConnectorVerdict =
   | { readonly authorized: true }
@@ -302,74 +307,6 @@ function outsideSignedScopes(fields: SolanaPermitFields, store: SolanaEncryptedS
   if (fields.allowedScopes.length === 0) return false;
   const application = bytesToHex(concatBytes(encodeAddress(store.program), encodeAddress(store.scope)));
   return !fields.allowedScopes.some((scope) => bytesToHex(scope) === application);
-}
-
-/**
- * The relayer's advisory pre-check (`relayer/src/host/solana_user_decrypt_precheck.rs`), run before
- * it spends a gateway transaction: why an entry's store lies outside the permit's scopes, or why a
- * delegated entry's two delegation rows are both dead at the host's Clock, or `undefined`. What it
- * cannot judge, a store that does not resolve or a row the host could not have written, passes for
- * the Connector to decide.
- */
-export async function solanaRelayerPrecheckRefusal({
-  programAddress,
-  fields,
-  entries,
-  readAccounts,
-}: {
-  readonly programAddress: Address;
-  readonly fields: SolanaPermitFields;
-  readonly entries: readonly SolanaUserDecryptHandleEntry[];
-  readonly readAccounts: SolanaHostAccountsReader;
-}): Promise<string | undefined> {
-  const delegate = decodeAddress(fields.userAddress);
-  const requested = entries.map((entry) => ({
-    key: decodeAddress(entry.encryptedStore),
-    owner: decodeAddress(entry.ownerAddress),
-  }));
-  if (fields.allowedScopes.length === 0 && requested.every(({ owner }) => owner === delegate)) return undefined;
-
-  const first = await readAccounts(requested.map(({ key }) => key));
-  const nextStore = cursor(first.accounts, 'the host read');
-  const stores = [];
-  for (const [index, { key, owner }] of requested.entries()) {
-    const account = nextStore();
-    try {
-      stores.push({ owner, store: await resolveStore(account, programAddress, key, index) });
-    } catch (error) {
-      if (!(error instanceof ConnectorRefusal)) throw error;
-    }
-  }
-  // A store's application is its seeds, so a scope refusal needs no second read.
-  const outside = stores.find(({ store }) => outsideSignedScopes(fields, store));
-  if (outside !== undefined) {
-    return `the permit's allowed scopes do not cover the application (${outside.store.program}, ${outside.store.scope})`;
-  }
-
-  const planned = [];
-  for (const { owner, store } of stores) {
-    if (owner === delegate) continue;
-    planned.push({ delegator: owner, rows: await delegationRows(owner, delegate, store, programAddress) });
-  }
-  if (planned.length === 0) return undefined;
-
-  const rowKeys = planned.flatMap(({ rows }) => rows.map((row) => row.pda[0]));
-  const second = await readAccounts([...rowKeys, SYSVAR_CLOCK_ADDRESS], first.slot);
-  const nextRow = cursor(second.accounts, 'the host read');
-  const judged = planned.map((entry) => ({ ...entry, accounts: [nextRow(), nextRow()] as const }));
-  const clock = nextRow();
-  if (!clock.exists) return undefined;
-  const now = getSysvarClockDecoder().decode(clock.data).unixTimestamp;
-  for (const { delegator, rows, accounts } of judged) {
-    const verdicts = [
-      judgeRow(accounts[0], rows[0], delegator, delegate, programAddress, now),
-      judgeRow(accounts[1], rows[1], delegator, delegate, programAddress, now),
-    ];
-    if (verdicts.every((verdict) => verdict === 'dead')) {
-      return `${delegator} has no live delegation to ${delegate} at the host's clock ${now}`;
-    }
-  }
-  return undefined;
 }
 
 /**

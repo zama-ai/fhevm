@@ -5,10 +5,9 @@ import { hexToBytes } from '../../core/base/bytes.js';
 import { decodeSolanaPermitFields } from '../permit/validate.js';
 import type { SolanaMerkleProofOutcome, SolanaMerkleProofReader, SolanaLeafQuery } from './merkleProofs.js';
 import {
-  CONNECTOR_FAILURE_RECOVERABLE,
+  CONNECTOR_FAILURE_CLASS,
   judgeSolanaPublicDecryption,
   judgeSolanaUserDecryption,
-  solanaRelayerPrecheckRefusal,
   type ConnectorVerdict,
   type SolanaHostAccountsReader,
 } from './authorization.js';
@@ -39,14 +38,14 @@ type UserCase = {
   }[];
   readonly accounts: Accounts;
   readonly leaf_read: LeafRead;
-  readonly verdict: Verdict & { readonly recoverable?: boolean };
+  readonly verdict: Verdict & { readonly code?: string; readonly recoverable?: boolean };
 };
 type PublicCase = {
   readonly name: string;
   readonly handles: readonly { readonly handle: string; readonly encrypted_store: string }[];
   readonly accounts: Accounts;
   readonly leaf_read: LeafRead;
-  readonly verdict: Verdict & { readonly recoverable?: boolean };
+  readonly verdict: Verdict & { readonly code?: string; readonly recoverable?: boolean };
 };
 type Fixture = {
   readonly host_program: string;
@@ -190,7 +189,10 @@ describe('the cleartext client judges a user decryption as the KMS Connector doe
       expectVerdict(verdict, testCase.verdict);
       expect(record.asked()).toBe(testCase.leaf_read === null ? 0 : 1);
       if (!verdict.authorized) {
-        expect(CONNECTOR_FAILURE_RECOVERABLE[verdict.failure]).toBe(testCase.verdict.recoverable);
+        expect(CONNECTOR_FAILURE_CLASS[verdict.failure]).toEqual({
+          code: testCase.verdict.code,
+          recoverable: testCase.verdict.recoverable,
+        });
       }
     });
   }
@@ -199,7 +201,7 @@ describe('the cleartext client judges a user decryption as the KMS Connector doe
     const produced = new Set(
       fixture.user_decrypt_cases.flatMap((c) => (c.verdict.authorized ? [] : [c.verdict.failure])),
     );
-    expect(new Set(Object.keys(CONNECTOR_FAILURE_RECOVERABLE))).toEqual(produced);
+    expect(new Set(Object.keys(CONNECTOR_FAILURE_CLASS))).toEqual(produced);
     for (const { failure } of fixture.rust_only) expect(produced.has(failure)).toBe(false);
   });
 
@@ -239,61 +241,11 @@ describe('the cleartext client judges a public decryption as the KMS Connector d
       expectVerdict(verdict, testCase.verdict);
       expect(record.asked()).toBe(testCase.leaf_read === null ? 0 : 1);
       if (!verdict.authorized) {
-        expect(CONNECTOR_FAILURE_RECOVERABLE[verdict.failure]).toBe(testCase.verdict.recoverable);
+        expect(CONNECTOR_FAILURE_CLASS[verdict.failure]).toEqual({
+          code: testCase.verdict.code,
+          recoverable: testCase.verdict.recoverable,
+        });
       }
     });
   }
-});
-
-// The relayer judges scopes and delegation rows by the Connector's rules, over the same worlds, but
-// refuses only what the Connector could never authorize.
-describe("the relayer's pre-check", () => {
-  const precheck = (name: string, readAccounts = accountsReader(userCase(name).accounts)) => {
-    const { fields, entries } = requestOf(userCase(name));
-    return solanaRelayerPrecheckRefusal({ programAddress, fields, entries, readAccounts });
-  };
-
-  it('never refuses a request the Connector authorizes', async () => {
-    for (const testCase of fixture.user_decrypt_cases.filter(({ verdict }) => verdict.authorized)) {
-      await expect(precheck(testCase.name), testCase.name).resolves.toBeUndefined();
-    }
-  });
-
-  it("refuses an entry outside the permit's scopes on the store read, direct or delegated", async () => {
-    for (const name of [
-      "a store outside the permit's scopes",
-      "a delegated entry outside the permit's scopes, with no delegation row",
-    ]) {
-      const readAccounts = vi.fn(accountsReader(userCase(name).accounts));
-      await expect(precheck(name, readAccounts), name).resolves.toMatch(/allowed scopes do not cover the application/);
-      expect(readAccounts, name).toHaveBeenCalledTimes(1);
-    }
-  });
-
-  it('refuses a delegated entry whose rows are both dead at the host Clock', async () => {
-    for (const name of [
-      'a delegated entry with no delegation row',
-      'a revoked delegation',
-      "a delegation that has ended by the host's Clock but not by the local clock",
-    ]) {
-      await expect(precheck(name), name).resolves.toMatch(/has no live delegation .* at the host's clock/);
-    }
-  });
-
-  it('passes a live row, a row the host could not have written, and a store it cannot resolve', async () => {
-    for (const name of [
-      'a delegated entry through the wildcard row beside a revoked application row',
-      'a delegation row held by another program beside a live wildcard row',
-      'a wildcard row held by another program beside a live application row',
-      "a delegated entry's store is resolved before the watermark",
-    ]) {
-      await expect(precheck(name), name).resolves.toBeUndefined();
-    }
-  });
-
-  it('reads nothing for direct entries under a permissive permit', async () => {
-    const readAccounts = vi.fn<SolanaHostAccountsReader>();
-    await expect(precheck('a permissive permit and a store of any application', readAccounts)).resolves.toBeUndefined();
-    expect(readAccounts).not.toHaveBeenCalled();
-  });
 });

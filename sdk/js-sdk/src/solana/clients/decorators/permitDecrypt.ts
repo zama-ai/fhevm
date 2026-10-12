@@ -3,7 +3,7 @@ import { getAddressDecoder, getAddressEncoder } from '@solana/kit';
 // The permit-path decrypt actions: sign a permit once, run requests under it.
 //
 // This decorator is assembly and nothing else. Every rule it relies on lives in the modules it
-// fastens together — the permit builder and channel, the relayer transport, the retry session, the
+// fastens together — the permit builder and channel, the decryption relayer, the retry session, the
 // response verification — and what it adds is the wiring: the chain says where the deployment is,
 // the host program says whom to believe, and the caller brings the wallet and the handles.
 //
@@ -18,6 +18,7 @@ import type { RelayerUserDecryptOptions } from '../../../core/types/relayer.js';
 import type { SolanaPermitWallet } from '../../permit/index.js';
 import type {
   SolanaPermitSession,
+  SolanaSigncryptedShare,
   SolanaTransportKeyPair,
   SolanaUserDecryptHandleEntry,
   SolanaUserDecryptPlaintext,
@@ -30,11 +31,9 @@ import {
   signSolanaPermit,
   solanaPermitWarnings,
 } from '../../permit/index.js';
-import {
-  createSolanaUserDecryptRelayerTransport,
-  executeSolanaUserDecrypt,
-  generateSolanaTransportKeyPair,
-} from '../../userDecrypt/index.js';
+import { executeSolanaUserDecrypt, generateSolanaTransportKeyPair } from '../../userDecrypt/index.js';
+import { createSolanaDecryptionDeadline } from '../../decryption/deadline.js';
+import { postSolanaDecryption, solanaDecryptionUrl } from '../../decryption/relayerHttp.js';
 import { bytes32ToHandle } from '../../../core/handle/FhevmHandle.js';
 import { bytesToClearValueType } from '../../../core/handle/FheType.js';
 import { createClearValue, clearValueToTypedValue } from '../../../core/handle/ClearValue.js';
@@ -110,10 +109,10 @@ export type SolanaPermitDecryptActions = {
 };
 
 /**
- * Answers user decryptions through the relayer, verifying each response against the host's record
- * of the permit's KMS context.
+ * Answers user decryptions through the decryption relayer, verifying each response against the
+ * host's record of the permit's KMS context.
  *
- * @param chain - Where the deployment is; the relayer it names answers.
+ * @param chain - Where the deployment is; the decryption relayer it names answers.
  * @param host - The client's host KMS reads.
  * @param runtime - The client runtime; its configured auth reaches every relayer submission,
  * with per-call options taking precedence — the same merge the public-decrypt action runs.
@@ -127,12 +126,11 @@ export function relayerUserDecryptExecution(
 ): SolanaUserDecryptExecution {
   return {
     transportKeyPair: () => generateSolanaTransportKeyPair(runtime),
-    execute: async ({ session, entries, attempts, options }) => {
-      const transport = createSolanaUserDecryptRelayerTransport({
-        relayerUrl: chain.fhevm.relayerUrl,
-        logger: runtime.config.logger,
-        options: { auth: runtime.config.auth, ...options },
-      });
+    execute: async ({ session, entries, attempts, options: callOptions }) => {
+      const options = { auth: runtime.config.auth, ...callOptions };
+      const url = solanaDecryptionUrl(chain, 'v4/user-decrypt', options.auth !== undefined);
+      // One deadline bounds every submission and backoff of this decryption.
+      const deadline = createSolanaDecryptionDeadline({ operation: 'USER_DECRYPT', url, options });
       const verification = await userDecryptVerification(
         host,
         session.signedPermit.fields.kmsRouting.kmsContextId,
@@ -142,12 +140,14 @@ export function relayerUserDecryptExecution(
         runtime,
         session,
         entries,
-        transport,
-        clock: transport,
+        transport: {
+          submit: (body) => postSolanaDecryption<readonly SolanaSigncryptedShare[]>({ url, body, deadline, options }),
+        },
+        clock: deadline,
         attempts,
         verification,
       });
-      transport.throwIfAbortedOrExpired();
+      deadline.throwIfAbortedOrExpired();
       return plaintexts;
     },
   };

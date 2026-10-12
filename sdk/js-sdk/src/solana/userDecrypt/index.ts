@@ -19,9 +19,6 @@ export type {
 export { executeSolanaUserDecrypt, solanaUserDecryptRequestInputs } from './execute.js';
 export type { SolanaPermitSession, SolanaUserDecryptVerification } from './execute.js';
 
-export { SOLANA_USER_DECRYPT_LABEL_ACTIONS, classifySolanaUserDecryptRejection } from './failure.js';
-export type { SolanaUserDecryptRecovery, SolanaUserDecryptRejection } from './failure.js';
-
 export {
   generateSolanaTransportKeyPair,
   verifySolanaUserDecryptPlaintexts,
@@ -36,16 +33,5 @@ export type {
   SolanaUserDecryptRequestInputs,
 } from './response.js';
 
-export { createSolanaUserDecryptRelayerTransport } from './relayerTransport.js';
-
-export {
-  SOLANA_USER_DECRYPT_DEFAULT_ATTEMPTS,
-  SOLANA_USER_DECRYPT_RETRY_SECONDS,
-  SolanaUserDecryptRunError,
-  runSolanaUserDecrypt,
-} from './session.js';
-export type {
-  SolanaUserDecryptClock,
-  SolanaUserDecryptTransport,
-  SolanaUserDecryptTransportOutcome,
-} from './session.js';
+export { runSolanaUserDecrypt } from './session.js';
+export type { SolanaUserDecryptTransport } from './session.js';

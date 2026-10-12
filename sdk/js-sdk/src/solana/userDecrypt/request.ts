@@ -1,13 +1,13 @@
-// The v3 user-decryption request: one signed permit, and the handles asked for under it.
+// The user-decryption request: one signed permit, and the handles asked for under it.
 //
 // The permit is the reusable object and the request is not. Every request cites the one signature the
 // wallet produced, and this builder never signs, never asks a wallet for anything, and never mutates
 // the permit — which is what makes a retry cost no further signature.
 //
-// The JSON this produces is the relayer's v3 wire shape, pinned by
-// `solana/test-fixtures/user-decrypt/relayer_envelope_v1.json` and read from both sides of the seam.
-// Two conventions in it are load-bearing: every byte string is `0x`-hex, and every 64-bit number is a
-// decimal string — a JSON number would arrive at the relayer as a double and lose the chain id.
+// The JSON this produces is `SolanaUserDecryptionRequest` of `kms-connector-api` as it serializes,
+// which the decryption relayer forwards unchanged: byte strings are `0x`-hex and the two timestamps
+// are JSON numbers. The permit's typed rules cap both far below 2^53, so a number carries them
+// exactly.
 //
 // An entry names three things: the handle, the key it was allowed to (the requester on a direct
 // entry, the delegator on a delegated one), and the encrypted value account the handle lives in. It
@@ -15,8 +15,8 @@
 // coprocessors for the allow leaf (RFC 035), so the client has nothing to fetch and nothing to
 // verify before submitting.
 //
-// What this builder checks is what a layer before the Gateway can check without reading host state:
-// the handle count cap and the bit budget, the handles' host chain, the width of each identity
+// What this builder checks is what a layer before the Connector can check without reading host
+// state: the handle count cap and the bit budget, the handles' host chain, the width of each identity
 // field, and that there is at least one handle. Everything else — the allow itself, delegation, the
 // validity window, the revocation watermark — is authorization, and belongs to the Connector
 // against a state snapshot no client can hold.
@@ -31,7 +31,7 @@ import { bytes32ToHandle } from '../../core/handle/FhevmHandle.js';
 import { encodeSolanaKmsRouting } from '../permit/index.js';
 import { bytesToHex } from '../../core/base/bytes.js';
 
-/** The attestation type that selects this envelope at the relayer. */
+/** The attestation type that selects the Solana permit scheme at the Connector. */
 export const SOLANA_SRFC38_ATTESTATION_TYPE = 'solana-srfc38-user-decrypt-v1';
 
 /**
@@ -62,23 +62,23 @@ export interface SolanaUserDecryptHandleJson {
 }
 
 /**
- * The attested payload: the signed permit fields, plus the unsigned handle entries. The permit's
- * chain id does not travel: it is the one every handle embeds.
+ * The payload: the signed permit fields, plus the unsigned handle entries. The permit's chain id does
+ * not travel: it is the one every handle embeds. `publicKey` is the permit's transport key.
  */
 export interface SolanaUserDecryptPayloadJson {
+  readonly handles: readonly SolanaUserDecryptHandleJson[];
   readonly userAddress: string;
-  readonly transportKey: string;
+  readonly publicKey: string;
   readonly allowedScopes: readonly string[];
-  readonly requestValidity: { readonly startTimestamp: string; readonly durationSeconds: string };
+  readonly requestValidity: { readonly startTimestamp: number; readonly durationSeconds: number };
   readonly verifyingProgramId: string;
   readonly extraData: string;
-  readonly handles: readonly SolanaUserDecryptHandleJson[];
 }
 
-/** The request body posted to the relayer's v3 user-decrypt endpoint. */
+/** The request body posted to the decryption relayer's `v4/user-decrypt`. */
 export interface SolanaUserDecryptRequestJson {
   readonly attestationType: typeof SOLANA_SRFC38_ATTESTATION_TYPE;
-  readonly attestedPayload: SolanaUserDecryptPayloadJson;
+  readonly payload: SolanaUserDecryptPayloadJson;
   readonly signature: string;
 }
 
@@ -141,7 +141,7 @@ function describeRequestFailure(failure: SolanaUserDecryptRequestFailure): strin
 /**
  * The admission a request must pass: every rule checkable from the entries and the permit alone —
  * the handle count cap, the bit budget, each handle's host chain, the width of each identity field.
- * A request that can never be submitted is refused before it costs a relayer fee.
+ * A request that can never be answered is refused before it reaches the network.
  *
  * @param admission.chainId - The one host chain the permit was signed for.
  * @param admission.entries - The handles, in the order they will be requested.
@@ -205,21 +205,21 @@ export function buildSolanaUserDecryptRequest(request: {
 
   return {
     attestationType: SOLANA_SRFC38_ATTESTATION_TYPE,
-    attestedPayload: {
-      userAddress: bytesToHex(fields.userAddress),
-      transportKey: bytesToHex(fields.transportKey),
-      allowedScopes: fields.allowedScopes.map((scope) => bytesToHex(scope)),
-      requestValidity: {
-        startTimestamp: fields.startTimestamp.toString(),
-        durationSeconds: fields.durationSeconds.toString(),
-      },
-      verifyingProgramId: bytesToHex(fields.verifyingProgramId),
-      extraData: bytesToHex(encodeSolanaKmsRouting(fields.kmsRouting)),
+    payload: {
       handles: entries.map((entry) => ({
         handle: bytesToHex(entry.handle),
         ownerAddress: bytesToHex(entry.ownerAddress),
         encryptedStore: bytesToHex(entry.encryptedStore),
       })),
+      userAddress: bytesToHex(fields.userAddress),
+      publicKey: bytesToHex(fields.transportKey),
+      allowedScopes: fields.allowedScopes.map((scope) => bytesToHex(scope)),
+      requestValidity: {
+        startTimestamp: Number(fields.startTimestamp),
+        durationSeconds: Number(fields.durationSeconds),
+      },
+      verifyingProgramId: bytesToHex(fields.verifyingProgramId),
+      extraData: bytesToHex(encodeSolanaKmsRouting(fields.kmsRouting)),
     },
     signature: bytesToHex(signedPermit.signature),
   };

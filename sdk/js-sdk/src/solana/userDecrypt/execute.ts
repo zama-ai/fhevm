@@ -20,7 +20,8 @@ import type {
   SolanaUserDecryptRequestInputs,
 } from './response.js';
 import type { SolanaUserDecryptHandleEntry } from './request.js';
-import type { SolanaUserDecryptClock, SolanaUserDecryptTransport } from './session.js';
+import type { SolanaDecryptionClock } from '../decryption/retry.js';
+import type { SolanaUserDecryptTransport } from './session.js';
 import { runSolanaUserDecrypt } from './session.js';
 import { verifySolanaUserDecryptResponse } from './response.js';
 import { encodeSolanaKmsRouting } from '../permit/index.js';
@@ -82,7 +83,7 @@ export function solanaUserDecryptRequestInputs(
  * @param run.clock - Used for the backoff between attempts.
  * @param run.attempts - Submission budget; the session's default applies when absent.
  * @param run.verification - The signers of the permit's `KmsContext` and the gateway domain from `HostConfig`.
- * @throws SolanaUserDecryptRunError - When no attempt was answered.
+ * @throws SolanaDecryptionRunError - When no attempt was answered.
  * @throws If the answer does not verify as this request's.
  */
 export async function executeSolanaUserDecrypt(run: {
@@ -90,16 +91,16 @@ export async function executeSolanaUserDecrypt(run: {
   readonly session: SolanaPermitSession;
   readonly entries: readonly SolanaUserDecryptHandleEntry[];
   readonly transport: SolanaUserDecryptTransport<readonly SolanaSigncryptedShare[]>;
-  readonly clock: SolanaUserDecryptClock;
+  readonly clock: SolanaDecryptionClock;
   readonly attempts?: number | undefined;
   readonly verification: SolanaUserDecryptVerification;
 }): Promise<readonly SolanaUserDecryptPlaintext[]> {
-  const { response: shares } = await runSolanaUserDecrypt({
+  const shares = await runSolanaUserDecrypt({
     signedPermit: run.session.signedPermit,
     entries: run.entries,
     transport: run.transport,
     clock: run.clock,
-    ...(run.attempts === undefined ? {} : { attempts: run.attempts }),
+    attempts: run.attempts,
   });
 
   return verifySolanaUserDecryptResponse({

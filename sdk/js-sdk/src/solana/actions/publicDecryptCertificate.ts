@@ -7,12 +7,16 @@ import { uint256ToBytes32 } from '../../core/base/uint.js';
 import { createKmsExtraDataFromBytesHex, createKmsExtraDataV2, EXTRA_DATA_V2 } from '../../core/kms/kmsExtraData-p.js';
 import type { Bytes32, BytesHex, Uint256BigInt } from '../../core/types/primitives.js';
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
-import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
-import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
 import { hexToBytes } from '../../core/base/bytes.js';
 import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
+import { createSolanaDecryptionDeadline } from '../decryption/deadline.js';
+import { postSolanaDecryption, solanaDecryptionUrl } from '../decryption/relayerHttp.js';
+import { retrySolanaDecryption } from '../decryption/retry.js';
 import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
 import { readActiveKmsRouting, type SolanaHostKmsReads } from './hostKms.js';
+
+/** The scheme that selects the Solana public-decrypt body at the Connector; part of the decryption id. */
+export const SOLANA_PUBLIC_DECRYPT_SCHEME = 'solana-public-decrypt-v1';
 
 export type SolanaPublicDecryptCertificateContext = {
   readonly chain: FhevmSolanaChain;
@@ -33,7 +37,7 @@ export type SolanaPublicDecryptBatch = {
   readonly contextId: Uint8Array;
   /** The 32-byte KMS epoch id of that context the KMS decrypts with: the host's active epoch. */
   readonly epochId: Uint8Array;
-  /** Relayer HTTP/polling budget; RPC calls use the supplied signal and the RPC transport policy. */
+  /** Bounds every relayer submission and backoff; RPC calls use the signal and the RPC transport policy. */
   readonly options?: RelayerPublicDecryptOptions | undefined;
 };
 
@@ -69,7 +73,7 @@ export function publicDecryptAbortCheck(chain: FhevmSolanaChain, signal: AbortSi
     if (signal?.aborted === true)
       throw new RelayerAbortError({
         operation: 'PUBLIC_DECRYPT',
-        url: buildRelayerUrlString(validateRelayerBaseUrl(chain.fhevm.relayerUrl, false), 'v2/public-decrypt'),
+        url: solanaDecryptionUrl(chain, 'v4/public-decrypt', false),
       });
   };
 }
@@ -138,7 +142,15 @@ function assertFieldLen(name: string, bytes: Uint8Array, len: number): void {
   }
 }
 
-/** Requests one public-decrypt certificate for handles made public in their encrypted stores. */
+/**
+ * Requests one public-decrypt certificate for handles made public in their encrypted stores.
+ *
+ * The body is `SolanaPublicDecryptionRequest` of `kms-connector-api` as it serializes. A leaf the
+ * coprocessors have not indexed yet is refused for now, not for good, so the request goes through the
+ * same bounded retry as a user decryption.
+ *
+ * @throws SolanaDecryptionRunError - When the budget runs out, or the relayer refuses for good.
+ */
 export async function publicDecryptCertificate(
   context: SolanaPublicDecryptCertificateContext,
   parameters: SolanaPublicDecryptBatch,
@@ -148,28 +160,25 @@ export async function publicDecryptCertificate(
   const requestExtraDataHex = solanaPublicDecryptExtraData(parameters.contextId, parameters.epochId);
   for (const entry of parameters.entries) assertFieldLen('encryptedStore', entry.encryptedStore, 32);
   const options = { auth: context.runtime.config.auth, ...parameters.options };
-  const baseUrl = validateRelayerBaseUrl(context.chain.fhevm.relayerUrl, options.auth !== undefined);
-  const request = new RelayerAsyncRequest({
-    relayerOperation: 'PUBLIC_DECRYPT',
-    url: buildRelayerUrlString(baseUrl, 'v2/public-decrypt'),
-    payload: {
-      ciphertextHandles: handles,
-      extraData: requestExtraDataHex,
-      encryptedStores: parameters.entries.map((entry) => bytesToHex(entry.encryptedStore)),
-    },
-    options,
-    logger: context.runtime.config.logger,
-  });
-  const result = (await request.run()) as {
-    readonly decryptedValue: string;
-    readonly signatures: readonly string[];
-    readonly extraData?: string | undefined;
+  const url = solanaDecryptionUrl(context.chain, 'v4/public-decrypt', options.auth !== undefined);
+  const deadline = createSolanaDecryptionDeadline({ operation: 'PUBLIC_DECRYPT', url, options });
+  const body = {
+    scheme: SOLANA_PUBLIC_DECRYPT_SCHEME,
+    ctHandles: handles,
+    extraData: requestExtraDataHex,
+    encryptedStores: parameters.entries.map((entry) => bytesToHex(entry.encryptedStore)),
   };
+  const result = await retrySolanaDecryption({
+    submit: () =>
+      postSolanaDecryption<{
+        readonly decryptedValue: string;
+        readonly signatures: readonly string[];
+        readonly extraData: string;
+      }>({ url, body, deadline, options }),
+    clock: deadline,
+  });
 
-  if (
-    result.extraData !== undefined &&
-    !unsafeBytesEquals(hexToBytes(result.extraData), hexToBytes(requestExtraDataHex))
-  ) {
+  if (!unsafeBytesEquals(hexToBytes(result.extraData), hexToBytes(requestExtraDataHex))) {
     throw new Error('public-decrypt response extraData does not match the request');
   }
   if (
@@ -192,6 +201,6 @@ export async function publicDecryptCertificate(
     handles,
     abiEncodedCleartext: result.decryptedValue,
     signatures: result.signatures,
-    extraData: result.extraData ?? requestExtraDataHex,
+    extraData: result.extraData,
   };
 }

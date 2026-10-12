@@ -7,21 +7,18 @@
 
 import type {
   SolanaUserDecryptHandleEntry,
-  SolanaUserDecryptRejection,
   SolanaUserDecryptRequestJson,
   SolanaUserDecryptTransport,
-  SolanaUserDecryptTransportOutcome,
 } from './index.js';
+import type { SolanaDecryptionOutcome, SolanaDecryptionRejection } from '../decryption/retry.js';
 import type { SolanaPermitFields, SolanaSignedPermit } from '../permit/index.js';
 import { describe, expect, it, vi } from 'vitest';
+import { MAX_SOLANA_DECRYPT_HANDLES, SolanaUserDecryptRequestError, runSolanaUserDecrypt } from './index.js';
 import {
-  MAX_SOLANA_DECRYPT_HANDLES,
-  SOLANA_USER_DECRYPT_DEFAULT_ATTEMPTS,
-  SOLANA_USER_DECRYPT_RETRY_SECONDS,
-  SolanaUserDecryptRequestError,
-  SolanaUserDecryptRunError,
-  runSolanaUserDecrypt,
-} from './index.js';
+  SOLANA_DECRYPTION_DEFAULT_ATTEMPTS,
+  SOLANA_DECRYPTION_RETRY_SECONDS,
+  SolanaDecryptionRunError,
+} from '../decryption/retry.js';
 import {
   PERMIT_IDENTITY_LEN,
   PERMIT_KMS_ROUTING_LEN,
@@ -83,7 +80,7 @@ const ENTRIES: readonly SolanaUserDecryptHandleEntry[] = [
  * last entry of the script answers every attempt after it, so a one-entry script is an outcome that
  * repeats.
  */
-function scriptedTransport(script: readonly SolanaUserDecryptTransportOutcome<string>[]) {
+function scriptedTransport(script: readonly SolanaDecryptionOutcome<string>[]) {
   let attempt = 0;
   const submit = vi.fn((_request: SolanaUserDecryptRequestJson) => {
     const outcome = script[Math.min(attempt, script.length - 1)];
@@ -97,11 +94,11 @@ function scriptedTransport(script: readonly SolanaUserDecryptTransportOutcome<st
   return { submit, transport };
 }
 
-const rejectedWith = (rejection: SolanaUserDecryptRejection): SolanaUserDecryptTransportOutcome<string> => ({
+const rejectedWith = (rejection: SolanaDecryptionRejection): SolanaDecryptionOutcome<string> => ({
   ok: false,
   rejection,
 });
-const answered: SolanaUserDecryptTransportOutcome<string> = { ok: true, response: 'shares' };
+const answered: SolanaDecryptionOutcome<string> = { ok: true, response: 'shares' };
 
 function recordingClock() {
   const delay = vi.fn(() => Promise.resolve());
@@ -109,11 +106,11 @@ function recordingClock() {
 }
 
 /** The run error a call produced, or a failure if it produced anything else. */
-async function runErrorOf(call: () => Promise<unknown>): Promise<SolanaUserDecryptRunError> {
+async function runErrorOf(call: () => Promise<unknown>): Promise<SolanaDecryptionRunError> {
   try {
     await call();
   } catch (error) {
-    if (error instanceof SolanaUserDecryptRunError) {
+    if (error instanceof SolanaDecryptionRunError) {
       return error;
     }
     throw error;
@@ -130,7 +127,7 @@ describe('a request that is answered', () => {
 
     const result = await runSolanaUserDecrypt({ signedPermit: signedPermit(), entries: ENTRIES, transport, clock });
 
-    expect(result).toEqual({ response: 'shares', attempts: 1 });
+    expect(result).toBe('shares');
     expect(submit).toHaveBeenCalledTimes(1);
     expect(delay).not.toHaveBeenCalled();
   });
@@ -138,32 +135,33 @@ describe('a request that is answered', () => {
 
 describe('a rejection nothing repairs', () => {
   it('is reported after one submission, without waiting', async () => {
-    const { submit, transport } = scriptedTransport([rejectedWith({ kind: 'refused', label: 'validation_failed' })]);
+    const { submit, transport } = scriptedTransport([rejectedWith({ code: 'malformed' })]);
     const { clock, delay } = recordingClock();
 
     const error = await runErrorOf(() =>
       runSolanaUserDecrypt({ signedPermit: signedPermit(), entries: ENTRIES, transport, clock }),
     );
 
-    expect(error.rejection).toEqual({ kind: 'refused', label: 'validation_failed' });
+    expect(error.rejection).toEqual({ code: 'malformed' });
     expect(error.attempts).toBe(1);
     expect(submit).toHaveBeenCalledTimes(1);
     expect(delay).not.toHaveBeenCalled();
   });
 });
 
-describe('a request the Connector left unanswered', () => {
+describe('a request the Connector denied for now', () => {
   // The leaf the Connector asked the coprocessors for may not have been indexed yet when it asked.
   // The request itself is right, so the same bytes are submitted again after a wait.
   it('is submitted again unchanged, under the same signature, after the retry wait', async () => {
-    const { submit, transport } = scriptedTransport([rejectedWith({ kind: 'unanswered' }), answered]);
+    const { submit, transport } = scriptedTransport([rejectedWith({ code: 'acl_denied' }), answered]);
     const { clock, delay } = recordingClock();
     const permit = signedPermit();
 
     const result = await runSolanaUserDecrypt({ signedPermit: permit, entries: ENTRIES, transport, clock });
 
-    expect(result.attempts).toBe(2);
-    expect(delay).toHaveBeenCalledExactlyOnceWith(SOLANA_USER_DECRYPT_RETRY_SECONDS);
+    expect(result).toBe('shares');
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(delay).toHaveBeenCalledExactlyOnceWith(SOLANA_DECRYPTION_RETRY_SECONDS);
     const [first, second] = submit.mock.calls.map((call) => call[0]);
     expect(second).toBe(first);
     expect((second as { signature: string }).signature).toBe(bytesToHex(permit.signature));
@@ -173,37 +171,37 @@ describe('a request the Connector left unanswered', () => {
 describe('the backoff between attempts', () => {
   // Constant-rate retries spend the whole budget in a burst against a service that needed time. The
   // wait doubles with each attempt made.
-  it('waits before every resubmission of an unanswered request, and the wait grows', async () => {
-    const { transport } = scriptedTransport([rejectedWith({ kind: 'unanswered' })]);
+  it('waits before every resubmission of a denied request, and the wait grows', async () => {
+    const { transport } = scriptedTransport([rejectedWith({ code: 'acl_denied' })]);
     const { clock, delay } = recordingClock();
 
     await runErrorOf(() => runSolanaUserDecrypt({ signedPermit: signedPermit(), entries: ENTRIES, transport, clock }));
 
     // Four attempts and three waits between them: the last rejection is reported, not waited on.
     expect(delay.mock.calls).toEqual([
-      [SOLANA_USER_DECRYPT_RETRY_SECONDS],
-      [SOLANA_USER_DECRYPT_RETRY_SECONDS * 2],
-      [SOLANA_USER_DECRYPT_RETRY_SECONDS * 4],
+      [SOLANA_DECRYPTION_RETRY_SECONDS],
+      [SOLANA_DECRYPTION_RETRY_SECONDS * 2],
+      [SOLANA_DECRYPTION_RETRY_SECONDS * 4],
     ]);
   });
 });
 
-describe('a request that is never answered', () => {
+describe('a request that is denied every time', () => {
   it('stops at the attempt budget and reports what it last saw', async () => {
-    const { submit, transport } = scriptedTransport([rejectedWith({ kind: 'unanswered' })]);
+    const { submit, transport } = scriptedTransport([rejectedWith({ code: 'acl_denied' })]);
     const { clock } = recordingClock();
 
     const error = await runErrorOf(() =>
       runSolanaUserDecrypt({ signedPermit: signedPermit(), entries: ENTRIES, transport, clock }),
     );
 
-    expect(submit).toHaveBeenCalledTimes(SOLANA_USER_DECRYPT_DEFAULT_ATTEMPTS);
-    expect(error.attempts).toBe(SOLANA_USER_DECRYPT_DEFAULT_ATTEMPTS);
-    expect(error.rejection).toEqual({ kind: 'unanswered' });
+    expect(submit).toHaveBeenCalledTimes(SOLANA_DECRYPTION_DEFAULT_ATTEMPTS);
+    expect(error.attempts).toBe(SOLANA_DECRYPTION_DEFAULT_ATTEMPTS);
+    expect(error.rejection).toEqual({ code: 'acl_denied' });
   });
 
   it('honors a smaller budget when one is given', async () => {
-    const { submit, transport } = scriptedTransport([rejectedWith({ kind: 'unanswered' })]);
+    const { submit, transport } = scriptedTransport([rejectedWith({ code: 'acl_denied' })]);
     const { clock } = recordingClock();
 
     const error = await runErrorOf(() =>
@@ -216,7 +214,7 @@ describe('a request that is never answered', () => {
 
   // The property the whole retry design exists for, stated once over every attempt this runner makes.
   it('never changes the signature, however many attempts it makes', async () => {
-    const { submit, transport } = scriptedTransport([rejectedWith({ kind: 'unanswered' })]);
+    const { submit, transport } = scriptedTransport([rejectedWith({ code: 'acl_denied' })]);
     const { clock } = recordingClock();
     const permit = signedPermit();
 

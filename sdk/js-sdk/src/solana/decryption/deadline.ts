@@ -1,20 +1,26 @@
-// One deadline and one abort signal over a whole user decryption: every submission and every
-// backoff between them, whichever backend answers.
+// One deadline and one abort signal over a whole decryption: every submission and every backoff
+// between them, whichever backend answers.
 
-import type { RelayerUserDecryptOptions } from '../../core/types/relayer.js';
-import type { SolanaUserDecryptClock } from './session.js';
+import type { RelayerCommonOptions, RelayerProgressArgs } from '../../core/types/relayer.js';
+import type { SolanaDecryptionClock } from './retry.js';
 import { abortableSleep } from '../../core/base/timeout.js';
 import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
 import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
 import { RelayerTimeoutError } from '../../core/errors/RelayerTimeoutError.js';
 
-/** The retry clock of one user decryption, bounded by the caller's timeout and abort signal. */
-export type SolanaUserDecryptDeadline = SolanaUserDecryptClock & {
+/** The decryptions a deadline bounds, named as the relayer errors and progress events name them. */
+export type SolanaDecryptionOperation = 'USER_DECRYPT' | 'PUBLIC_DECRYPT';
+
+/** The caller's timeout, abort signal and progress callback for one decryption. */
+export type SolanaDecryptionOptions<O extends SolanaDecryptionOperation> = RelayerCommonOptions & {
+  onProgress?: ((args: RelayerProgressArgs<O>) => void) | undefined;
+};
+
+/** The retry clock of one decryption, bounded by the caller's timeout and abort signal. */
+export type SolanaDecryptionDeadline = SolanaDecryptionClock & {
   /** Milliseconds left; throws the abort or timeout error when the operation may not continue. */
   remaining(): number;
   throwIfAbortedOrExpired(): void;
-  /** Records that a request already reported the abort, so it is not reported twice. */
-  noteAbortReported(): void;
   /**
    * Runs `work` until it settles or the deadline ends it. `work` receives a signal that aborts
    * when the deadline does, for the requests it owns; a wait it shares with other operations is
@@ -24,17 +30,19 @@ export type SolanaUserDecryptDeadline = SolanaUserDecryptClock & {
 };
 
 /**
- * Starts the deadline of one user decryption.
+ * Starts the deadline of one decryption.
  *
+ * @param config.operation - The decryption, named by its errors and progress events.
  * @param config.url - Where the operation is sent, named by its errors.
  * @param config.options - The caller's timeout, abort signal and progress callback.
  * @throws RangeError - If the timeout is not a positive 32-bit millisecond count.
  */
-export function createSolanaUserDecryptDeadline(config: {
+export function createSolanaDecryptionDeadline<O extends SolanaDecryptionOperation>(config: {
+  readonly operation: O;
   readonly url: string;
-  readonly options?: RelayerUserDecryptOptions | undefined;
-}): SolanaUserDecryptDeadline {
-  const { url } = config;
+  readonly options?: SolanaDecryptionOptions<O> | undefined;
+}): SolanaDecryptionDeadline {
+  const { operation, url } = config;
   const timeout = config.options?.timeout ?? RelayerAsyncRequest.DEFAULT_GLOBAL_REQUEST_TIMEOUT_MS;
   if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 2_147_483_647) {
     throw new RangeError('timeout must be an integer from 1 to 2147483647 milliseconds');
@@ -43,12 +51,12 @@ export function createSolanaUserDecryptDeadline(config: {
   const expire = (): never => {
     const progress = {
       url,
-      operation: 'USER_DECRYPT' as const,
+      operation,
       retryCount: 0,
       step: 0,
       totalSteps: 0,
-      type: 'timeout' as const,
-    };
+      type: 'timeout',
+    } as RelayerProgressArgs<O>;
     const onProgress = config.options?.onProgress;
     if (onProgress) {
       queueMicrotask(() => {
@@ -56,7 +64,7 @@ export function createSolanaUserDecryptDeadline(config: {
       });
     }
 
-    throw new RelayerTimeoutError({ operation: 'USER_DECRYPT', url, timeoutMs: timeout });
+    throw new RelayerTimeoutError({ operation, url, timeoutMs: timeout });
   };
   let abortReported = false;
   const abort = (): never => {
@@ -65,18 +73,11 @@ export function createSolanaUserDecryptDeadline(config: {
       const onProgress = config.options?.onProgress;
       if (onProgress) {
         queueMicrotask(() => {
-          onProgress({
-            type: 'abort',
-            operation: 'USER_DECRYPT',
-            url,
-            retryCount: 0,
-            step: 0,
-            totalSteps: 0,
-          });
+          onProgress({ type: 'abort', operation, url, retryCount: 0, step: 0, totalSteps: 0 });
         });
       }
     }
-    throw new RelayerAbortError({ operation: 'USER_DECRYPT', url });
+    throw new RelayerAbortError({ operation, url });
   };
   const remaining = (): number => {
     if (config.options?.signal?.aborted === true) abort();
@@ -88,9 +89,6 @@ export function createSolanaUserDecryptDeadline(config: {
     remaining,
     throwIfAbortedOrExpired(): void {
       remaining();
-    },
-    noteAbortReported(): void {
-      abortReported = true;
     },
     async bound<T>(work: (signal: AbortSignal) => Promise<T>): Promise<T> {
       const milliseconds = remaining();

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
-import { RelayerAsyncRequest } from '../../core/modules/relayer/module/RelayerAsyncRequest.js';
+import { SolanaDecryptionRunError } from '../decryption/retry.js';
 import { bytesToHex } from '../../core/base/bytes.js';
 import {
   publicDecryptCertificate,
@@ -28,6 +28,7 @@ const context = {
     id: 0x0100000000000000n,
     fhevm: {
       relayerUrl: 'https://relayer.example.com',
+      decryptionRelayerUrl: 'https://decryption.relayer.example.com',
       programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },
     },
   },
@@ -66,6 +67,12 @@ describe('solanaPublicDecryptContextId', () => {
 const signature = 'ab'.repeat(65);
 const successResult = () => ({ decryptedValue: '00', signatures: [signature], extraData: requestExtraData() });
 
+/** A relayer answer: the success envelope around `result`, or an error body with its status. */
+const succeeded = (result: unknown) =>
+  new Response(JSON.stringify({ status: 'succeeded', requestId: 'r1', result }), { status: 200 });
+const refused = (status: number, code: string) =>
+  new Response(JSON.stringify({ code, message: `${code} for this request`, requestId: 'r1' }), { status });
+
 describe('publicDecryptCertificate', () => {
   const originalFetch = global.fetch;
 
@@ -75,39 +82,28 @@ describe('publicDecryptCertificate', () => {
     vi.restoreAllMocks();
   });
 
-  it('follows the queued relayer path and returns an untrusted claim over the whole batch', async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'queued', requestId: 'r1', result: { jobId: 'j1' } }), {
-          status: 202,
-          headers: { 'Retry-After': '1' },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'succeeded', requestId: 'r1', result: successResult() }), {
-          status: 200,
-        }),
-      );
+  it('posts the Connector body to the decryption relayer once and returns an untrusted claim over the batch', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(succeeded(successResult()));
     global.fetch = fetchMock;
 
     const otherHandle = handle.slice();
     otherHandle[0] = 0x07;
     const otherAccount = new Uint8Array(32).fill(8);
-    const pending = publicDecryptCertificate(context, {
+    const claim = await publicDecryptCertificate(context, {
       ...parameters(),
       entries: [
         { handle, encryptedStore: account },
         { handle: otherHandle, encryptedStore: otherAccount },
       ],
     });
-    await vi.runAllTimersAsync();
-    const claim = await pending;
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))).toEqual({
-      ciphertextHandles: [bytesToHex(handle), bytesToHex(otherHandle)],
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://decryption.relayer.example.com/v4/public-decrypt');
+    expect((init.headers as Record<string, string>)['x-api-key']).toBe('test');
+    expect(JSON.parse(String(init.body))).toStrictEqual({
+      scheme: 'solana-public-decrypt-v1',
+      ctHandles: [bytesToHex(handle), bytesToHex(otherHandle)],
       extraData: requestExtraData(),
       encryptedStores: [bytesToHex(account), bytesToHex(otherAccount)],
     });
@@ -119,32 +115,41 @@ describe('publicDecryptCertificate', () => {
     });
   });
 
-  it('does not retry a non-readiness 503', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          status: 'failed',
-          error: { label: 'gateway_not_reachable', message: 'KMS gateway is unavailable' },
-        }),
-        { status: 503 },
-      ),
-    );
+  // A public leaf the coprocessors have not indexed yet is denied for now: the same bytes, later.
+  it('submits the same body again after an ACL denial, and answers once it passes', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(refused(403, 'acl_denied'))
+      .mockResolvedValue(succeeded(successResult()));
     global.fetch = fetchMock;
 
-    await expect(publicDecryptCertificate(context, parameters())).rejects.toThrow('gateway_not_reachable');
+    const pending = publicDecryptCertificate(context, parameters());
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ abiEncodedCleartext: '00' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const bodies = fetchMock.mock.calls.map(([, init]) => (init as RequestInit).body);
+    expect(bodies[1]).toBe(bodies[0]);
+  });
+
+  it('gives up at once on a refusal nothing repairs, with the code the relayer sent', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(refused(410, 'kms_context_destroyed'));
+    global.fetch = fetchMock;
+
+    const error = await publicDecryptCertificate(context, parameters()).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SolanaDecryptionRunError);
+    expect((error as SolanaDecryptionRunError).rejection).toEqual({
+      code: 'kms_context_destroyed',
+      message: 'kms_context_destroyed for this request',
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('uses the requested extraData when the relayer omits the optional response field', async () => {
-    const result = successResult();
-    vi.spyOn(RelayerAsyncRequest.prototype, 'run').mockResolvedValue({
-      decryptedValue: result.decryptedValue,
-      signatures: result.signatures,
-    } as never);
-
-    await expect(publicDecryptCertificate(context, parameters())).resolves.toMatchObject({
-      extraData: requestExtraData(),
-    });
+  it('surfaces an answer that is neither envelope as the infrastructure error it is', async () => {
+    global.fetch = vi.fn().mockResolvedValue(new Response('<html>bad gateway</html>', { status: 502 }));
+    await expect(publicDecryptCertificate(context, parameters())).rejects.toThrow(
+      'answered HTTP 502 without an error body',
+    );
   });
 
   it.each([
@@ -158,19 +163,7 @@ describe('publicDecryptCertificate', () => {
     [{ ...successResult(), extraData: '0x00' }, 'extraData does not match'],
     [{ ...successResult(), extraData: `0x01${'05'.repeat(32)}` }, 'extraData does not match'],
   ])('rejects malformed certificate material %#', async (result, message) => {
-    vi.spyOn(RelayerAsyncRequest.prototype, 'run').mockResolvedValue(result as never);
+    global.fetch = vi.fn().mockResolvedValue(succeeded(result));
     await expect(publicDecryptCertificate(context, parameters())).rejects.toThrow(message);
-  });
-
-  it('preserves relayer terminal errors', async () => {
-    const terminal = Object.assign(new Error('relayer request failed'), { status: 'failed' });
-    vi.spyOn(RelayerAsyncRequest.prototype, 'run').mockRejectedValue(terminal);
-    let thrown: unknown;
-    try {
-      await publicDecryptCertificate(context, parameters());
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBe(terminal);
   });
 });

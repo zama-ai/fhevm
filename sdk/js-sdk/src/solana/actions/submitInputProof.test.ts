@@ -71,6 +71,7 @@ function solanaChain() {
     id: CHAIN_ID,
     fhevm: {
       relayerUrl: 'https://relayer.example.com',
+      decryptionRelayerUrl: 'https://decryption.relayer.example.com',
       programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },
     },
   } as const;

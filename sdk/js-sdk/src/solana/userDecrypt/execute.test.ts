@@ -21,12 +21,8 @@ import {
 } from '../permit/index.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 import { getSolanaRuntime } from '../internal/runtime.js';
-import {
-  SolanaUserDecryptRunError,
-  executeSolanaUserDecrypt,
-  generateSolanaTransportKeyPair,
-  solanaUserDecryptRequestInputs,
-} from './index.js';
+import { SolanaDecryptionRunError } from '../decryption/retry.js';
+import { executeSolanaUserDecrypt, generateSolanaTransportKeyPair, solanaUserDecryptRequestInputs } from './index.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -135,8 +131,7 @@ describe('executing one user decryption', () => {
 
   it('surfaces the session error of a run that was never answered, untouched', async () => {
     const transport = {
-      submit: () =>
-        Promise.resolve({ ok: false as const, rejection: { kind: 'refused', label: 'validation_failed' } as const }),
+      submit: () => Promise.resolve({ ok: false as const, rejection: { code: 'malformed' } }),
     };
 
     await expect(
@@ -149,6 +144,6 @@ describe('executing one user decryption', () => {
         attempts: 1,
         verification,
       }),
-    ).rejects.toThrow(SolanaUserDecryptRunError);
+    ).rejects.toThrow(SolanaDecryptionRunError);
   });
 });

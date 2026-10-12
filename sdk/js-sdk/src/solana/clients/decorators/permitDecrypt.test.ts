@@ -48,6 +48,7 @@ const chain = {
   id: 72057594037940281n,
   fhevm: {
     relayerUrl: 'http://relayer.local',
+    decryptionRelayerUrl: 'http://decryption.relayer.local',
     programs: { host: { address: PROGRAM_ID } },
   },
 } as const satisfies FhevmSolanaChain;
@@ -186,8 +187,8 @@ describe('signing a permit through the client', () => {
     });
 
     const fields = session.signedPermit.fields;
-    // The start norm: rounded down to the minute, and 12:34:56 rounds to 12:34:00.
-    expect(fields.startTimestamp).toBe(BigInt(Math.floor(Date.parse('2026-08-18T12:34:00Z') / 1000)));
+    // The start norm: a minute back for the host clock, then down to the minute: 12:34:56 starts at 12:33:00.
+    expect(fields.startTimestamp).toBe(BigInt(Math.floor(Date.parse('2026-08-18T12:33:00Z') / 1000)));
     expect(fields.durationSeconds).toBe(604_800n);
     expect(fields.chainId).toBe(chain.id);
     expect(fields.verifyingProgramId).toEqual(hexToBytes32(PROGRAM_ID));
@@ -330,37 +331,26 @@ describe('running a user decryption through the client', () => {
     });
 
   function jsonResponse(body: unknown, status = 200): Response {
-    return new Response(JSON.stringify(body), {
-      status,
-      headers: { 'content-type': 'application/json', 'Retry-After': '0' },
-    });
+    return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   }
+  const refused = (status: number, code: string) =>
+    jsonResponse({ code, message: 'refused by the test relayer', requestId: 'req-1' }, status);
+  const answered = (shares: readonly unknown[]) =>
+    jsonResponse({ status: 'succeeded', requestId: 'req-1', result: shares });
 
   it('sends the delegated key as given and defaults the direct one to the permit user', async () => {
     const { wallet } = conformingWallet();
     const decryptClient = client();
     const session = await decryptClient.signPermit({ wallet, durationSeconds: 3_600n });
 
-    let capturedBody:
-      | { attestedPayload: { handles: readonly { ownerAddress: string; encryptedStore: string }[] } }
-      | undefined;
+    let capturedBody: { payload: { handles: readonly { ownerAddress: string; encryptedStore: string }[] } } | undefined;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input instanceof Request ? input.url : input);
-        if (url.startsWith('http://relayer.local')) {
+        if (url === 'http://decryption.relayer.local/v4/user-decrypt') {
           capturedBody = JSON.parse(String(init?.body));
-          return jsonResponse(
-            {
-              status: 'failed',
-              error: {
-                label: 'validation_failed',
-                message: 'refused by the test relayer',
-                details: [{ field: 'handles', issue: 'refused by the test relayer' }],
-              },
-            },
-            400,
-          );
+          return refused(400, 'malformed');
         }
         throw new Error(`unexpected fetch to ${url}`);
       }),
@@ -377,11 +367,11 @@ describe('running a user decryption through the client', () => {
       }),
     ).rejects.toThrow('refused');
 
-    expect(capturedBody?.attestedPayload.handles.map((entry) => entry.ownerAddress)).toEqual([
+    expect(capturedBody?.payload.handles.map((entry) => entry.ownerAddress)).toEqual([
       hex(DELEGATOR),
       hex(USER_PUBKEY),
     ]);
-    expect(capturedBody?.attestedPayload.handles.map((entry) => entry.encryptedStore)).toEqual([
+    expect(capturedBody?.payload.handles.map((entry) => entry.encryptedStore)).toEqual([
       hex(ENCRYPTED_VALUE_ACCOUNT),
       hex(ENCRYPTED_VALUE_ACCOUNT),
     ]);
@@ -396,19 +386,7 @@ describe('running a user decryption through the client', () => {
     const switched = servingHostConfig(hostConfigAccountFor(new Uint8Array(32).fill(0x55)));
     vi.spyOn(rpc, 'getAccountInfo').mockImplementation(switched.getAccountInfo as never);
     const hostRead = vi.spyOn(rpc, 'getMultipleAccounts').mockImplementation(switched.getMultipleAccounts as never);
-    const relayer = vi.fn(async () =>
-      jsonResponse(
-        {
-          status: 'failed',
-          error: {
-            label: 'validation_failed',
-            message: 'refused by the test relayer',
-            details: [{ field: 'handles', issue: 'refused by the test relayer' }],
-          },
-        },
-        400,
-      ),
-    );
+    const relayer = vi.fn(async () => refused(400, 'malformed'));
     vi.stubGlobal('fetch', relayer);
 
     await expect(
@@ -439,18 +417,7 @@ describe('running a user decryption through the client', () => {
     vi.useFakeTimers();
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValueOnce(jsonResponse({ status: 'queued', requestId: 'req-1', result: { jobId: 'job-1' } }, 202))
-        .mockResolvedValueOnce(
-          jsonResponse({
-            status: 'succeeded',
-            requestId: 'req-1',
-            result: {
-              result: [{ payload: 'deadbeef', signature: 'ab'.repeat(65), extraData: '0x01' }],
-            },
-          }),
-        ),
+      vi.fn().mockResolvedValueOnce(answered([{ payload: 'deadbeef', signature: 'ab'.repeat(65), extraData: '0x01' }])),
     );
     const controller = new AbortController();
     const onProgress = vi.fn();
@@ -482,10 +449,7 @@ describe('running a user decryption through the client', () => {
     const session = await decryptClient.signPermit({ wallet, durationSeconds: 3_600n });
     trustHostVerification();
     vi.useFakeTimers();
-    const fetch = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ status: 'queued', requestId: 'req-1', result: { jobId: 'job-1' } }, 202))
-      .mockResolvedValueOnce(jsonResponse({ status: 'succeeded', requestId: 'req-1', result: { result: [] } }));
+    const fetch = vi.fn().mockResolvedValueOnce(refused(403, 'acl_denied'));
     vi.stubGlobal('fetch', fetch);
     const controller = new AbortController();
     const onProgress = vi.fn();
@@ -496,15 +460,15 @@ describe('running a user decryption through the client', () => {
     });
     const rejection = expect(result).rejects.toBeInstanceOf(RelayerAbortError);
     await vi.advanceTimersByTimeAsync(1_001);
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(1);
     controller.abort();
     await rejection;
     await vi.advanceTimersByTimeAsync(10_000);
     expect(onProgress.mock.calls.filter(([event]) => event.type === 'abort')).toHaveLength(1);
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch).toHaveBeenCalledTimes(1);
     expect(signOffchainMessage).toHaveBeenCalledTimes(1);
   });
-  it.each(['backoff', 'polling'])(
+  it.each(['backoff', 'a stalled submission'])(
     'expires the operation deadline during %s with consistent progress',
     async (phase) => {
       const { wallet, signOffchainMessage } = conformingWallet();
@@ -512,14 +476,11 @@ describe('running a user decryption through the client', () => {
       const session = await decryptClient.signPermit({ wallet, durationSeconds: 3_600n });
       trustHostVerification();
       vi.useFakeTimers();
-      const fetch = vi
-        .fn()
-        .mockResolvedValueOnce(jsonResponse({ status: 'queued', requestId: 'req-1', result: { jobId: 'job-1' } }, 202))
-        .mockResolvedValueOnce(
-          phase === 'backoff'
-            ? jsonResponse({ status: 'succeeded', requestId: 'req-1', result: { result: [] } })
-            : jsonResponse({ status: 'queued', requestId: 'req-1' }, 202),
-        );
+      const signals: AbortSignal[] = [];
+      const fetch = vi.fn((_url: string, init: RequestInit) => {
+        if (init.signal) signals.push(init.signal);
+        return phase === 'backoff' ? Promise.resolve(refused(403, 'acl_denied')) : new Promise<never>(() => undefined);
+      });
       vi.stubGlobal('fetch', fetch);
       const onProgress = vi.fn();
       const result = decryptClient.decryptValues({
@@ -529,18 +490,17 @@ describe('running a user decryption through the client', () => {
       });
       const rejection = expect(result).rejects.toBeInstanceOf(RelayerTimeoutError);
       await vi.advanceTimersByTimeAsync(1_001);
-      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(500);
       await rejection;
       const timeoutEvents = onProgress.mock.calls.filter(([event]) => event.type === 'timeout');
       expect(timeoutEvents).toHaveLength(1);
-      if (phase === 'backoff') {
-        expect(timeoutEvents[0]![0]).not.toHaveProperty('jobId');
-        expect(timeoutEvents[0]![0]).not.toHaveProperty('method');
-      }
+      expect(timeoutEvents[0]![0]).toMatchObject({ operation: 'USER_DECRYPT', type: 'timeout' });
       expect(onProgress.mock.calls.some(([event]) => event.type === 'abort')).toBe(false);
+      // The deadline ends a request it was still waiting on; one that answered is left alone.
+      expect(signals[0]?.aborted).toBe(phase !== 'backoff');
       await vi.advanceTimersByTimeAsync(10_000);
-      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch).toHaveBeenCalledTimes(1);
       expect(signOffchainMessage).toHaveBeenCalledTimes(1);
     },
   );

@@ -41,6 +41,7 @@ function makeMockContext(overrides?: { aclAddress?: string; chainId?: bigint | n
       id: overrides?.chainId ?? chainId,
       fhevm: {
         relayerUrl: 'http://mock',
+        decryptionRelayerUrl: 'http://decryption.mock',
         contracts: { acl },
       },
     },
@@ -572,6 +573,7 @@ it('builds a Solana proof without EVM contracts and preserves its exact chain id
       id: chainId,
       fhevm: {
         relayerUrl: 'http://solana-relayer',
+        decryptionRelayerUrl: 'http://decryption.solana-relayer',
         programs: { host: { address: asBytes32Hex(`0x${'22'.repeat(32)}`) } },
       },
     },

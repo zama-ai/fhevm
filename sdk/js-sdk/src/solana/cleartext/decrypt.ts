@@ -4,12 +4,11 @@
 // the client signs with the registered cleartext KMS key.
 //
 // Before answering a user decryption, the client runs the real stack's checks in its order: the
-// relayer's at submission and its scope and delegation pre-check, the gateway's validity window,
-// then the KMS Connector's authorization over the same host state (./authorization.ts). A public
-// decryption is judged by the Connector's rules for one. What the client does not reproduce is the
-// KMS itself: no signcryption, no response signatures, and so no check of the FHE parameter or the
-// KMS epoch. A refusal reaches the caller as it does on the real stack, except that a request the
-// Connector will never answer fails at once instead of timing out.
+// decryption relayer's stateless admission (the handles' chain, the validity window against wall
+// time), then the KMS Connector's authorization over the same host state (./authorization.ts). A
+// public decryption is judged by the Connector's rules for one. What the client does not reproduce is
+// the KMS itself: no signcryption, no response signatures, and so no check of the FHE parameter or
+// the KMS epoch. A refusal reaches the caller with the code the real stack answers it with.
 import { getAddressDecoder, parseBase64RpcAccount, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaRpc } from '../encryptedStore.js';
@@ -17,9 +16,9 @@ import type { SolanaUserDecryptExecution } from '../clients/decorators/permitDec
 import type {
   SolanaTransportKeyPair,
   SolanaUserDecryptPlaintext,
-  SolanaUserDecryptRejection,
   SolanaUserDecryptTransport,
 } from '../userDecrypt/index.js';
+import type { SolanaDecryptionRejection } from '../decryption/retry.js';
 import type { SolanaPublicDecryptCertifier } from '../actions/publicDecryptCertificate.js';
 import { asBytes32, bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '../../core/base/bytes.js';
 import { bytes32ToHandle, toFhevmHandle } from '../../core/handle/FhevmHandle.js';
@@ -27,7 +26,7 @@ import { createKmsPublicDecryptEip712 } from '../../core/kms/createKmsPublicDecr
 import { publicDecryptDigest } from '../actions/decryptPublicValue.js';
 import { runSolanaUserDecrypt } from '../userDecrypt/index.js';
 import { abortableSleep } from '../../core/base/timeout.js';
-import { createSolanaUserDecryptDeadline } from '../userDecrypt/deadline.js';
+import { createSolanaDecryptionDeadline } from '../decryption/deadline.js';
 import { verifySolanaUserDecryptPlaintexts } from '../userDecrypt/response.js';
 import { solanaPublicDecryptExtraData } from '../actions/publicDecryptCertificate.js';
 import {
@@ -40,13 +39,11 @@ import {
 } from '@fhevm/solana-zama-host';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { signAsCleartextParty } from './parties.js';
-import { verifySolanaPermitSignature } from '../permit/envelope.js';
 import { PERMIT_TRANSPORT_KEY_LEN } from '../permit/index.js';
 import {
-  CONNECTOR_FAILURE_RECOVERABLE,
+  CONNECTOR_FAILURE_CLASS,
   judgeSolanaPublicDecryption,
   judgeSolanaUserDecryption,
-  solanaRelayerPrecheckRefusal,
   type ConnectorVerdict,
   type SolanaHostAccountsReader,
 } from './authorization.js';
@@ -74,9 +71,13 @@ export function cleartextUserDecryptExecution(
   const execute: SolanaUserDecryptExecution['execute'] = async ({ session, entries, attempts, options }) => {
     const { fields, signature } = session.signedPermit;
     // The caller's timeout and abort signal bound the whole run, as on the relayer path.
-    const deadline = createSolanaUserDecryptDeadline({ url: `cleartext host ${programAddress}`, options });
+    const deadline = createSolanaDecryptionDeadline({
+      operation: 'USER_DECRYPT',
+      url: `cleartext host ${programAddress}`,
+      options,
+    });
     const transport: SolanaUserDecryptTransport<readonly SolanaUserDecryptPlaintext[]> = {
-      // The deadline ends an attempt stalled on a read, as the relayer's own timeout would.
+      // The deadline ends an attempt stalled on a read, as it ends a stalled relayer request.
       submit: () =>
         deadline.bound(async (signal) => {
           const readAccounts = hostAccountsReader(rpc, signal);
@@ -84,45 +85,23 @@ export function cleartextUserDecryptExecution(
           // context on every attempt.
           const host = await fetchHostDecryptionState(rpc, programAddress, fields.kmsRouting.kmsContextId, signal);
 
-          // The relayer, when the request is posted: the signature over the chain the handles name,
-          // which admission made the permit's, then that chain.
-          try {
-            verifySolanaPermitSignature(fields, signature);
-          } catch (error) {
-            const message = `the permit signature does not verify: ${String(error)}`;
-            return { ok: false, rejection: { kind: 'refused', label: 'validation_failed', message } };
-          }
+          // The decryption relayer's admission: the handles' chain, which admission made the permit's,
+          // and the validity window against its wall clock.
           if (fields.chainId !== host.config.chainId) {
             const message = `the handles are on host chain ${fields.chainId}; this host is chain ${host.config.chainId}`;
-            return { ok: false, rejection: { kind: 'refused', label: 'host_chain_id_not_supported', message } };
+            return { ok: false, rejection: { code: 'malformed', message } };
           }
-          // The relayer's pre-check, before it spends a gateway transaction.
-          const precheckRefusal = await solanaRelayerPrecheckRefusal({
-            programAddress,
-            fields,
-            entries,
-            readAccounts,
-          });
-          if (precheckRefusal !== undefined) {
-            return {
-              ok: false,
-              rejection: { kind: 'failed', label: 'not_allowed_on_host_acl', message: precheckRefusal },
-            };
-          }
-          // The gateway reverts a request outside its window, and the relayer reports the revert as its own error.
           const now = BigInt(Math.floor(Date.now() / 1000));
           const end = fields.startTimestamp + fields.durationSeconds;
-          if (fields.startTimestamp > now || end < now) {
-            const message = `the gateway refuses the window [${fields.startTimestamp}, ${end}] at ${now}`;
-            return { ok: false, rejection: { kind: 'failed', label: 'internal_server_error', message } };
+          if (fields.startTimestamp > now || end <= now) {
+            const message = `payload.requestValidity: [${fields.startTimestamp}, ${end}) does not hold ${now}`;
+            return { ok: false, rejection: { code: 'malformed', message } };
           }
 
           // The Connector.
           if (host.context.destroyed) {
-            neverAnswered(
-              'KmsContextDestroyed',
-              `KMS context ${bytesToHex(fields.kmsRouting.kmsContextId)} is destroyed`,
-            );
+            const message = `KMS context ${bytesToHex(fields.kmsRouting.kmsContextId)} is destroyed`;
+            return { ok: false, rejection: { code: 'kms_context_destroyed', message } };
           }
           const verdict = await judgeSolanaUserDecryption({
             programAddress,
@@ -144,12 +123,12 @@ export function cleartextUserDecryptExecution(
           return { ok: true, response: plaintexts };
         }),
     };
-    const { response } = await runSolanaUserDecrypt({
+    const response = await runSolanaUserDecrypt({
       signedPermit: session.signedPermit,
       entries,
       transport,
       clock: deadline,
-      ...(attempts === undefined ? {} : { attempts }),
+      attempts,
     });
     deadline.throwIfAbortedOrExpired();
     verifySolanaUserDecryptPlaintexts(
@@ -215,23 +194,13 @@ const hostAccountsReader =
     };
   };
 
-/** A request the Connector will never answer: the relayer would time it out after its own timeout. */
-function neverAnswered(failure: string, message: string): never {
-  throw new Error(
-    `the KMS Connector refuses this request for good (${failure}: ${message}); on the real stack it is never ` +
-      `answered, and the relayer ends it as response_timed_out`,
-  );
-}
-
 /**
- * What the caller sees of the Connector's verdict on the real stack. A failure a later attempt may
- * clear, the Connector retries itself: here the attempt goes unanswered and the retry loop submits
- * it again. Any other failure fails at once, where the real stack would leave the request to time out.
+ * What the caller sees of the Connector's verdict on the real stack: the code the Connector answers
+ * the failure with, which the decryption relayer forwards.
  */
-export function cleartextUserDecryptRejection(verdict: ConnectorVerdict): SolanaUserDecryptRejection | undefined {
+export function cleartextUserDecryptRejection(verdict: ConnectorVerdict): SolanaDecryptionRejection | undefined {
   if (verdict.authorized) return undefined;
-  if (CONNECTOR_FAILURE_RECOVERABLE[verdict.failure]) return { kind: 'unanswered' };
-  return neverAnswered(verdict.failure, verdict.message);
+  return { code: CONNECTOR_FAILURE_CLASS[verdict.failure].code, message: `${verdict.failure}: ${verdict.message}` };
 }
 
 /**
@@ -264,7 +233,7 @@ export function cleartextPublicDecryptCertifier(
         readMerkleProofs,
       });
       if (verdict.authorized) break;
-      if (!CONNECTOR_FAILURE_RECOVERABLE[verdict.failure] || attempt === PUBLIC_DECRYPT_ATTEMPTS) {
+      if (!CONNECTOR_FAILURE_CLASS[verdict.failure].recoverable || attempt === PUBLIC_DECRYPT_ATTEMPTS) {
         throw new Error(`the KMS Connector refuses to decrypt (${verdict.failure}): ${verdict.message}`);
       }
       await abortableSleep(PUBLIC_DECRYPT_RETRY_MS, signal);
