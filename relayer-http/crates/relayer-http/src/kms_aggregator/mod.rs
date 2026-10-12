@@ -18,6 +18,6 @@ pub use client::{
 pub use config::{
     ConfigError, KmsAggregatorConfig, PublicDecryptConfig, UserChecks, UserDecryptConfig,
 };
-pub use flows::public_decrypt::{PublicDecrypt, PublicDecryptOutput};
-pub use flows::user_decrypt::{UserDecrypt, UserDecryptOutput, UserDecryptShare};
+pub use flows::public_decrypt::{PublicDecrypt, PublicDecryptOutput, PublicRequest};
+pub use flows::user_decrypt::{UserDecrypt, UserDecryptOutput, UserDecryptShare, UserRequest};
 pub use flows::{Flow, RejectReason};

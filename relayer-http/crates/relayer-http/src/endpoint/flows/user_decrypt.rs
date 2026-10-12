@@ -1,19 +1,26 @@
 //! `POST /v4/user-decrypt`: the connector's v1 envelope topology (`attestationType`, `payload`, `signature`)
 //! with the relayer's own field names inside, validated, converted to the connector DTO and aggregated.
+//! `attestationType: "solana-srfc38-user-decrypt-v1"` is the connector's Solana DTO, forwarded equal field by
+//! field once its permit names this chain's zama-host program and its Ed25519 signature verifies.
 
 use alloy::primitives::{Address, B256, Bytes};
 use axum::extract::{Request, State};
 use axum::response::{IntoResponse, Response};
 use kms_connector_api::{
-    HandleEntry as ConnectorHandle, RequestValidity as ConnectorValidity, UserDecryptionPayload,
-    UserDecryptionRequest,
+    AttestationType, HandleEntry as ConnectorHandle, RequestValidity as ConnectorValidity,
+    SolanaUserDecryptionRequest, UserDecryptionPayload, UserDecryptionRequest,
 };
 use serde::{Deserialize, Deserializer};
+use serde_json::value::RawValue;
+use zama_solana_permit::verify_signature;
+use zama_solana_request::SolanaUserDecryptRequest;
 
-use super::{Reply, read_json};
+use super::{Reply, field, invalid, parse, read_json, rejected};
 use crate::App;
+use crate::config::{HttpConfig, SolanaChainConfig};
 use crate::endpoint::ApiError;
 use crate::endpoint::validate::{self, Invalid};
+use crate::kms_aggregator::UserRequest;
 use crate::logging::Log;
 
 pub const ATTESTATION_TYPE: &str = "eip712-unified-user-decrypt-v1";
@@ -89,7 +96,7 @@ pub fn validate(request: &UserDecryptRequest, chain_ids: &[u64], now: u64) -> Re
     validate::handles(
         "payload.handles",
         payload.handles.iter().map(|h| &h.ct_handle),
-        chain_ids,
+        |id| chain_ids.contains(&id),
     )?;
     if payload.allowed_contracts.len() > MAX_ALLOWED_CONTRACTS {
         return Err(Invalid::new(
@@ -101,23 +108,68 @@ pub fn validate(request: &UserDecryptRequest, chain_ids: &[u64], now: u64) -> Re
         return Err(Invalid::new("payload.publicKey", "must not be empty"));
     }
     let validity = &payload.request_validity;
-    if validity.start_timestamp > now {
-        return Err(Invalid::new(
-            "payload.requestValidity.startTimestamp",
-            "must not be in the future",
-        ));
-    }
-    if validity
-        .start_timestamp
-        .saturating_add(validity.duration_seconds)
-        <= now
-    {
-        return Err(Invalid::new(
-            "payload.requestValidity",
-            "window has already expired",
-        ));
-    }
+    validate::request_window(
+        "payload.requestValidity",
+        validity.start_timestamp,
+        validity.duration_seconds,
+        now,
+    )?;
     validate::extra_data("payload.extraData", &payload.extra_data)
+}
+
+/// The connector's cheap handle rules on a served Solana chain, the validity window and the `extraData` format,
+/// then the Solana form through the connector crate's `assemble()`. Returns the typed request and its chain's
+/// configuration.
+pub fn validate_solana<'a>(
+    request: &SolanaUserDecryptionRequest,
+    http: &'a HttpConfig,
+    now: u64,
+) -> Result<(SolanaUserDecryptRequest, &'a SolanaChainConfig), Invalid> {
+    let payload = &request.payload;
+    validate::handles(
+        "payload.handles",
+        payload.handles.iter().map(|h| &h.handle),
+        |id| http.solana_chains.contains_key(&id),
+    )?;
+    let validity = &payload.requestValidity;
+    validate::request_window(
+        "payload.requestValidity",
+        validity.startTimestamp,
+        validity.durationSeconds,
+        now,
+    )?;
+    validate::extra_data("payload.extraData", &payload.extraData)?;
+    let typed = request
+        .assemble()
+        .map_err(|e| Invalid::new("payload", e.to_string()))?;
+    let chain_id = typed.permit().chain_id();
+    let chain = http.solana_chains.get(&chain_id).ok_or_else(|| {
+        Invalid::new(
+            "payload.handles",
+            format!("chain id {chain_id} is not supported"),
+        )
+    })?;
+    Ok((typed, chain))
+}
+
+/// The permit names the chain's zama-host program and its Ed25519 signature verifies: the connector worker's
+/// checks behind `403 user_signature_rejected`.
+pub fn verify_permit(
+    typed: &SolanaUserDecryptRequest,
+    chain: &SolanaChainConfig,
+) -> Result<(), Invalid> {
+    let permit = typed.permit();
+    if permit.verifying_program_id().as_bytes() != &chain.program_id {
+        return Err(Invalid::new(
+            "payload.verifyingProgramId",
+            format!(
+                "is not the zama-host program of chain {}",
+                permit.chain_id()
+            ),
+        ));
+    }
+    verify_signature(permit, typed.signature())
+        .map_err(|e| Invalid::new("signature", e.to_string()))
 }
 
 /// One request, logged step by step under its own `Log`.
@@ -128,10 +180,40 @@ pub async fn handle(app: State<App>, request: Request) -> Response {
         .unwrap_or_else(IntoResponse::into_response)
 }
 
-/// Read and parse the body (bounded by `http.body_read_timeout`), validate, convert to the connector DTO,
+/// Read the body (bounded by `http.body_read_timeout`), dispatch on its `attestationType`, validate,
 /// aggregate, answer.
 async fn process(app: &App, request: Request, log: &mut Log) -> Result<Response, ApiError> {
-    let request: UserDecryptRequest = read_json(app, request, log).await?;
+    let body = read_json(app, request, log).await?;
+    let attestation = field(&body, "attestationType").and_then(|t| t.as_str()?.parse().ok());
+    if attestation == Some(AttestationType::SolanaSrfc38UserDecryptV1) {
+        process_solana(app, &body, log).await
+    } else {
+        process_evm(app, &body, log).await
+    }
+}
+
+/// The Solana body: checked, then forwarded as parsed once its permit checks pass.
+async fn process_solana(app: &App, body: &RawValue, log: &mut Log) -> Result<Response, ApiError> {
+    let request: SolanaUserDecryptionRequest = parse(body).map_err(|e| rejected(log, e))?;
+    log.received(request.payload.handles.iter().map(|h| h.handle).collect());
+    let (typed, chain) =
+        validate_solana(&request, &app.http, super::now()).map_err(|e| invalid(log, e))?;
+    verify_permit(&typed, chain).map_err(|e| {
+        log.validation_failed(&e.field, &e.issue);
+        ApiError::user_signature_rejected(log, e.to_string())
+    })?;
+    log.forwarded(request.id());
+    let output = app
+        .user_decrypt
+        .run(&log.request_id, UserRequest::Solana(request))
+        .await
+        .map_err(|e| ApiError::aggregation(log, e))?;
+    Ok(Reply::succeeded(log.clone(), output).into_response())
+}
+
+/// The EVM body: validated, converted to the connector DTO, aggregated.
+async fn process_evm(app: &App, body: &RawValue, log: &mut Log) -> Result<Response, ApiError> {
+    let request: UserDecryptRequest = parse(body).map_err(|e| rejected(log, e))?;
     log.received(
         request
             .payload
@@ -140,15 +222,12 @@ async fn process(app: &App, request: Request, log: &mut Log) -> Result<Response,
             .map(|h| h.ct_handle)
             .collect(),
     );
-    validate(&request, &app.http.supported_chain_ids, super::now()).map_err(|e| {
-        log.validation_failed(&e.field, &e.issue);
-        ApiError::malformed(log, e.to_string())
-    })?;
+    validate(&request, &app.http.supported_chain_ids, super::now()).map_err(|e| invalid(log, e))?;
     let request = UserDecryptionRequest::from(request);
     log.forwarded(request.id());
     let output = app
         .user_decrypt
-        .run(&log.request_id, request)
+        .run(&log.request_id, UserRequest::Evm(request))
         .await
         .map_err(|e| ApiError::aggregation(log, e))?;
     Ok(Reply::succeeded(log.clone(), output).into_response())
@@ -187,11 +266,117 @@ impl From<UserDecryptRequest> for UserDecryptionRequest {
 #[cfg(test)]
 pub(crate) mod tests {
     use alloy::primitives::address;
+    use ed25519_dalek::{Signer, SigningKey};
+    use kms_connector_api::{SolanaHandleEntry, SolanaUserDecryptionPayload};
+    use zama_solana_permit::{TRANSPORT_KEY_LEN, build_envelope};
 
     use super::*;
-    use crate::endpoint::validate::tests::handle;
+    use crate::endpoint::validate::tests::{PROGRAM, SOLANA, handle, http};
 
     pub(crate) const NOW: u64 = 1_800_000_000;
+
+    /// A Solana request for one handle on `SOLANA`, valid from `start` for 600 s, naming `program`,
+    /// signed by a fixed Ed25519 key over the envelope the shared permit crate builds.
+    pub(crate) fn signed_user_body(program: [u8; 32], start: u64) -> SolanaUserDecryptionRequest {
+        let key = SigningKey::from_bytes(&[7; 32]);
+        let user = B256::from(key.verifying_key().to_bytes());
+        let mut request = SolanaUserDecryptionRequest {
+            attestationType: AttestationType::SolanaSrfc38UserDecryptV1.to_string(),
+            payload: SolanaUserDecryptionPayload {
+                handles: vec![SolanaHandleEntry {
+                    handle: handle(SOLANA, 4),
+                    ownerAddress: user,
+                    encryptedStore: B256::repeat_byte(3),
+                }],
+                userAddress: user,
+                publicKey: Bytes::from(vec![0x5a; TRANSPORT_KEY_LEN]),
+                allowedScopes: vec![],
+                requestValidity: kms_connector_api::RequestValidity {
+                    startTimestamp: start,
+                    durationSeconds: 600,
+                },
+                verifyingProgramId: B256::from(program),
+                extraData: Bytes::from([[2u8; 1].as_slice(), &[0xbb; 32], &[0x77; 32]].concat()),
+            },
+            // Replaced below: the envelope is built from the typed permit, which needs 64 bytes here.
+            signature: Bytes::from(vec![0; 64]),
+        };
+        let typed = request.assemble().unwrap();
+        let signature = key.sign(&build_envelope(typed.permit()));
+        request.signature = Bytes::from(signature.to_bytes().to_vec());
+        request
+    }
+
+    /// The Solana checks on `request`: `Ok`, or the refusal's status and field.
+    fn check_solana(request: &SolanaUserDecryptionRequest) -> Result<(), (u16, String)> {
+        let http = http();
+        let (typed, chain) = validate_solana(request, &http, NOW).map_err(|e| (400, e.field))?;
+        verify_permit(&typed, chain).map_err(|e| (403, e.field))
+    }
+
+    #[test]
+    fn a_signed_solana_request_for_the_configured_program_passes() {
+        assert_eq!(check_solana(&signed_user_body(PROGRAM, NOW - 10)), Ok(()));
+    }
+
+    #[test]
+    fn a_solana_permit_for_another_program_is_a_rejected_signature() {
+        // Validly signed, but over another program id: the connector would refuse it the same way.
+        assert_eq!(
+            check_solana(&signed_user_body([0x4d; 32], NOW - 10)),
+            Err((403, "payload.verifyingProgramId".to_owned()))
+        );
+    }
+
+    #[test]
+    fn a_solana_signature_that_does_not_verify_is_rejected() {
+        let mut request = signed_user_body(PROGRAM, NOW - 10);
+        let mut signature = request.signature.to_vec();
+        signature[0] ^= 1;
+        request.signature = Bytes::from(signature);
+        assert_eq!(check_solana(&request), Err((403, "signature".to_owned())));
+    }
+
+    #[test]
+    fn each_solana_rule_names_its_field() {
+        type Mutation = Box<dyn Fn(&mut SolanaUserDecryptionRequest)>;
+        let cases: Vec<(Mutation, &str)> = vec![
+            (
+                Box::new(|r| r.payload.handles[0].handle = handle(31337, 4)),
+                "payload.handles[0]",
+            ),
+            (
+                Box::new(|r| r.payload.requestValidity.startTimestamp = NOW + 1),
+                "payload.requestValidity.startTimestamp",
+            ),
+            (
+                Box::new(|r| r.payload.requestValidity.durationSeconds = 5),
+                "payload.requestValidity",
+            ),
+            (
+                Box::new(|r| r.payload.extraData = Bytes::from_static(&[9])),
+                "payload.extraData",
+            ),
+            // A served EVM chain is not a Solana chain.
+            (
+                Box::new(|r| r.payload.handles[0].handle = handle(1, 4)),
+                "payload.handles[0]",
+            ),
+            (
+                Box::new(|r| r.payload.publicKey = Bytes::from_static(&[1])),
+                "payload",
+            ),
+            (
+                Box::new(|r| r.signature = Bytes::from_static(&[1])),
+                "payload",
+            ),
+        ];
+        for (mutate, field) in cases {
+            let mut request = signed_user_body(PROGRAM, NOW - 10);
+            mutate(&mut request);
+            assert_eq!(check_solana(&request), Err((400, field.to_owned())));
+        }
+    }
 
     /// The SDK's wire shape, one handle on chain 1.
     pub(crate) fn wire(start: &str, duration: &str) -> String {

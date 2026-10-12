@@ -4,12 +4,21 @@
 use alloy::primitives::B256;
 use kms_connector_api::{
     PUBLIC_DECRYPTION_ROUTE, PublicDecryptionRequest, PublicDecryptionResponse,
+    SolanaPublicDecryptionRequest,
 };
 use serde::Serialize;
 
 use super::{Flow, RejectReason, check_signature, hex};
 
 pub struct PublicDecrypt;
+
+/// The connector body, serialised as itself: the EVM `v1` body or the Solana one.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum PublicRequest {
+    Evm(PublicDecryptionRequest),
+    Solana(SolanaPublicDecryptionRequest),
+}
 
 /// `{ "decryptedValue", "signatures", "extraData" }`: the current relayer's public-decrypt result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -32,7 +41,7 @@ fn group_size(accepted: &[PublicDecryptionResponse], response: &PublicDecryption
 }
 
 impl Flow for PublicDecrypt {
-    type Request = PublicDecryptionRequest;
+    type Request = PublicRequest;
     type Response = PublicDecryptionResponse;
     type Output = PublicDecryptOutput;
     /// No optional check on public decrypt in this version.
@@ -41,11 +50,17 @@ impl Flow for PublicDecrypt {
     const ROUTE: &'static str = PUBLIC_DECRYPTION_ROUTE;
 
     fn decryption_id(request: &Self::Request) -> B256 {
-        request.id()
+        match request {
+            PublicRequest::Evm(request) => request.id(),
+            PublicRequest::Solana(request) => request.id(),
+        }
     }
 
     fn handles(request: &Self::Request) -> Vec<B256> {
-        request.ctHandles.clone()
+        match request {
+            PublicRequest::Evm(request) => request.ctHandles.clone(),
+            PublicRequest::Solana(request) => request.ctHandles.clone(),
+        }
     }
 
     fn check(
@@ -94,10 +109,10 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::kms_aggregator::mock::{self, PUBLIC_REQUEST_ID, PUBLIC_REQUEST_JSON};
+    use crate::kms_aggregator::mock::{self, PUBLIC_REQUEST_ID};
 
-    fn request() -> PublicDecryptionRequest {
-        serde_json::from_str(PUBLIC_REQUEST_JSON).unwrap()
+    fn request() -> PublicRequest {
+        mock::public_request()
     }
 
     fn response(node: usize, variant: u8) -> PublicDecryptionResponse {
@@ -118,6 +133,28 @@ mod tests {
                 b256!("0x1111111111111111111111111111111111111111111111111111111111111111"),
                 b256!("0x2222222222222222222222222222222222222222222222222222222222222222"),
             ]
+        );
+        let solana = mock::solana_public_request();
+        assert_eq!(
+            PublicDecrypt::decryption_id(&solana),
+            mock::vector("solanaPublicDecryption").1
+        );
+        assert_eq!(
+            PublicDecrypt::handles(&solana),
+            PublicDecrypt::handles(&request())
+        );
+    }
+
+    #[test]
+    fn each_request_serializes_as_its_connector_body() {
+        let json = |request: &PublicRequest| serde_json::to_value(request).unwrap();
+        assert_eq!(
+            json(&request()),
+            serde_json::from_str::<serde_json::Value>(mock::PUBLIC_REQUEST_JSON).unwrap()
+        );
+        assert_eq!(
+            json(&mock::solana_public_request()),
+            mock::vector("solanaPublicDecryption").0
         );
     }
 

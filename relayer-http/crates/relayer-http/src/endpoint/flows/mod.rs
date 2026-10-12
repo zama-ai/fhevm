@@ -12,30 +12,54 @@ use axum::extract::{FromRequest, Request};
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde_json::Value;
+use serde_json::value::RawValue;
 use tokio::time::timeout;
 
 use super::ApiError;
 use super::error::tag;
+use super::validate::Invalid;
 use crate::App;
 use crate::logging::Log;
 
-/// Reads and parses the JSON body within `http.body_read_timeout`: a total bound (not per chunk) started when the
-/// handler is entered, so a client trickling its body holds the request at most that long. Any failure (timeout,
-/// invalid JSON, unknown field, wrong content type, body above `max_body_bytes`) is `request body rejected` then
-/// `400 malformed`.
-pub async fn read_json<T: DeserializeOwned>(
-    app: &App,
-    request: Request,
-    log: &Log,
-) -> Result<T, ApiError> {
+/// Reads the JSON body within `http.body_read_timeout`: a total bound (not per chunk) started when the handler is
+/// entered, so a client trickling its body holds the request at most that long. Any failure (timeout, invalid JSON,
+/// wrong content type, body above `max_body_bytes`) is `request body rejected` then `400 malformed`.
+pub async fn read_json(app: &App, request: Request, log: &Log) -> Result<Box<RawValue>, ApiError> {
     let limit = app.http.body_read_timeout;
-    let reason = match timeout(limit, Json::<T>::from_request(request, &())).await {
+    let reason = match timeout(limit, Json::<Box<RawValue>>::from_request(request, &())).await {
         Ok(Ok(Json(body))) => return Ok(body),
         Ok(Err(rejection)) => rejection.body_text(),
         Err(_) => format!("request body not received within {limit:?}"),
     };
+    Err(rejected(log, reason))
+}
+
+/// Parses the typed body from the JSON [`read_json`] accepted. A failure (missing or unknown field, wrong type or
+/// format) is axum's rejection text, for [`rejected`].
+pub fn parse<T: DeserializeOwned>(body: &RawValue) -> Result<T, String> {
+    Json::<T>::from_bytes(body.get().as_bytes())
+        .map(|Json(value)| value)
+        .map_err(|rejection| rejection.body_text())
+}
+
+/// `request body rejected` then `400 malformed`.
+pub fn rejected(log: &Log, reason: String) -> ApiError {
     log.body_rejected(&reason);
-    Err(ApiError::malformed(log, reason))
+    ApiError::malformed(log, reason)
+}
+
+/// A top-level field of an object body: the tag a route dispatches on.
+pub fn field(body: &RawValue, name: &str) -> Option<Value> {
+    serde_json::from_str::<serde_json::Map<String, Value>>(body.get())
+        .ok()?
+        .remove(name)
+}
+
+/// `400 malformed` for a validation rule, logged with its field.
+pub fn invalid(log: &Log, error: Invalid) -> ApiError {
+    log.validation_failed(&error.field, &error.issue);
+    ApiError::malformed(log, error.to_string())
 }
 
 /// `{ "status": "succeeded", "requestId": "…", "result": … }`: the current relayer's success envelope.

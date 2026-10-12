@@ -80,6 +80,16 @@ impl<F: Flow> Aggregator<F> {
 
     /// Posts `request` to every node and answers when all nodes have finished or at the deadline
     /// (`call.timeout`). `request_id` is the relayer's own correlation id, never generated here.
+    pub async fn run(
+        &self,
+        request_id: &str,
+        request: F::Request,
+    ) -> Result<F::Output, AggregationError> {
+        self.run_at(request_id, request, self.threshold).await
+    }
+
+    /// [`Self::run`] at another threshold: a Solana public decrypt needs its chain's, validated
+    /// within `1..=nodes` with the configuration.
     #[instrument(
         name = "aggregation",
         skip_all,
@@ -90,13 +100,13 @@ impl<F: Flow> Aggregator<F> {
             handles = ?F::handles(&request),
         )
     )]
-    pub async fn run(
+    pub async fn run_at(
         &self,
         request_id: &str,
         request: F::Request,
+        threshold: usize,
     ) -> Result<F::Output, AggregationError> {
         let nodes = self.caller.endpoints().len();
-        let threshold = self.threshold;
         let timeout = self.caller.timeout();
         let started = Instant::now();
         // `timeout` is validated to be at most 60 s (see `Caller::new`): this cannot overflow.
@@ -275,15 +285,11 @@ fn dominant(codes: &[ErrorCode]) -> Option<ErrorCode> {
 mod tests {
     use std::time::Duration;
 
-    use kms_connector_api::{PublicDecryptionRequest, UserDecryptionRequest};
-
     use super::*;
     use crate::kms_aggregator::config::UserChecks;
     use crate::kms_aggregator::flows::public_decrypt::PublicDecrypt;
     use crate::kms_aggregator::flows::user_decrypt::UserDecrypt;
-    use crate::kms_aggregator::mock::{
-        Fixed, MockClient, PUBLIC_REQUEST_JSON, Reply, USER_REQUEST_JSON,
-    };
+    use crate::kms_aggregator::mock::{Fixed, MockClient, Reply, public_request, user_request};
 
     const OK: Reply = Reply::Fixed(Fixed::Ok);
     const HANG: Reply = Reply::Fixed(Fixed::Hang);
@@ -301,14 +307,6 @@ mod tests {
             .iter()
             .flat_map(|(count, reply)| std::iter::repeat_n(vec![*reply], *count))
             .collect()
-    }
-
-    fn user_request() -> UserDecryptionRequest {
-        serde_json::from_str(USER_REQUEST_JSON).unwrap()
-    }
-
-    fn public_request() -> PublicDecryptionRequest {
-        serde_json::from_str(PUBLIC_REQUEST_JSON).unwrap()
     }
 
     /// 13 mock nodes, 10 ms per attempt, 5 s deadline, no retries, the process token given.
@@ -352,7 +350,7 @@ mod tests {
     async fn attempt_lines_carry_the_request_identifiers() {
         let (_guard, sink) = crate::kms_aggregator::call::tests::capture_attempts().await;
         let request = user_request();
-        let decryption_id = request.id().to_string();
+        let decryption_id = UserDecrypt::decryption_id(&request).to_string();
         user(&[(1, ACL), (12, OK)], 9)
             .run("req-attempt", request)
             .await

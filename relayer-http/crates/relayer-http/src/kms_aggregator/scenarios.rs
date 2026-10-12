@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use kms_connector_api::{ErrorCode, PublicDecryptionRequest, UserDecryptionRequest};
+use kms_connector_api::ErrorCode;
 use serde::Deserialize;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -15,7 +15,7 @@ use super::config::UserChecks;
 use super::flows::Flow;
 use super::flows::public_decrypt::PublicDecrypt;
 use super::flows::user_decrypt::UserDecrypt;
-use super::mock::{MockClient, PUBLIC_REQUEST_JSON, Reply, USER_REQUEST_JSON};
+use super::mock::{self, MockClient, Reply};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -211,7 +211,7 @@ async fn run_file(path: &Path) -> Result<(), String> {
     }
     let observed = match scenario.flow {
         FlowName::UserDecrypt => {
-            let request: UserDecryptionRequest = serde_json::from_str(USER_REQUEST_JSON).unwrap();
+            let request = mock::user_request();
             let checks = scenario.checks.unwrap_or_default();
             run::<UserDecrypt>(&scenario, request, checks, |o| o.result.len()).await
         }
@@ -219,8 +219,7 @@ async fn run_file(path: &Path) -> Result<(), String> {
             if scenario.checks.is_some() {
                 return Err("`checks` applies to user_decrypt only".to_owned());
             }
-            let request: PublicDecryptionRequest =
-                serde_json::from_str(PUBLIC_REQUEST_JSON).unwrap();
+            let request = mock::public_request();
             run::<PublicDecrypt>(&scenario, request, (), |o| o.signatures.len()).await
         }
     };

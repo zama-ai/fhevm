@@ -7,7 +7,7 @@ change. It describes a minimal first version.
 
 The Zama relayer over HTTP. It replaces the gateway-chain decryption path: request handlers receive the SDK's
 decryption requests and the `kms_aggregator` module fans them out to the KMS connector endpoints and aggregates the
-t-of-n answers.
+t-of-n answers. Both routes serve EVM and Solana host chains; the body's tag selects the chain (`endpoint/docs.md`).
 
 **Minimal first version**: the handlers and the fan-out/aggregation only.
 - No ACL check and no ciphertext-commit (readiness) check in the relayer: the connector's worker performs them and their
@@ -48,7 +48,8 @@ configuration → behaviour). The implementation plans live outside the reposito
 ## Configuration
 
 One YAML file (`config/config.yaml` is the example), four sections: `name`, `log` (optional, defaults to JSON
-lines), `http` (bind address, body limit, body read timeout, supported chain ids) and `kms_aggregator` (deadline,
+lines), `http` (bind address, body limit, body read timeout, the EVM chain ids served, and per Solana chain served its zama-host
+program id and public-decrypt threshold) and `kms_aggregator` (deadline,
 retries, thresholds, optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
 unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`). API keys are never in the file: each endpoint names the env var
 holding its key. Local variants go to `config/*.local.yaml`, ignored by git.
@@ -76,8 +77,9 @@ each, from the e2e container), `make -C dev check` (the three commands above). S
 `Dockerfile` follows the relayer's and the kms-connector's model: the golden `rust-glibc` builder pinned by
 `RUST_IMAGE_VERSION` (single source of truth: `rust-toolchain.toml`, read by the CI template), `cargo build --locked
 --release`, a `glibc-dynamic` runtime running as the `fhevm` user, no configuration baked in. The build context is the
-**repository root**: the crate depends on `kms-connector/crates/api` by path and that workspace references its
-siblings, which the Dockerfile copies at the same relative places.
+**repository root**: the crate depends on `kms-connector/crates/api` and on the standalone Solana crates
+(`solana/crates/zama-solana-{acl,permit,request}`) by path, and the connector workspace references its siblings, which
+the Dockerfile copies at the same relative places.
 
 ```sh
 # from the repository root
@@ -91,7 +93,7 @@ CI publishes the image as `ghcr.io/zama-ai/fhevm/relayer-http` through `.github/
 `relayer-http-tests.yml` and `relayer-http-dependency-analysis.yml`, run on pull requests: the three commands above,
 then `cargo update -w --locked`, `cargo-deny check license` against `deny.toml` (every allowed license must be used)
 and `cargo-audit audit` with `.cargo/audit.toml`. All three are gated on changes under `relayer-http/**`,
-`kms-connector/crates/api/**` and `kms-connector/Cargo.toml`.
+`kms-connector/crates/api/**`, `kms-connector/Cargo.toml` and the three Solana crates.
 
 ## Rules
 
@@ -132,6 +134,12 @@ Production-ready means no panic, typed errors, logs, cancellation and tests, not
 
 **Compatibility.** The connector interface comes from the `kms-connector-api` crate (path dependency, never its
 `endpoint` feature): DTOs, routes, error codes and their `retryable` flag are used as they are, never redefined.
+
+**Solana.** The Solana bodies are the `kms-connector-api` Solana DTOs, forwarded equal field by field; their form is
+checked by the crate's `assemble()` (user) and `zama_solana_request::public_request_chain_id` (public), and the permit
+by `zama-solana-permit`, the code the connector runs.
+No Solana type, PDA or permit rule is written here. The relayer checks only what needs no chain read (the form, the
+program id, the Ed25519 signature); everything else is the connector's.
 
 **Tests.** A unit test per function, next to it. Paused tokio time (`start_paused`) for anything timed, so durations
 are exact and tests are instant. Behaviour is described in YAML scenarios run by `cargo test`; adding a case is adding

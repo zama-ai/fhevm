@@ -7,8 +7,9 @@ use alloy::primitives::{B256, Bytes as AlloyBytes, b256};
 use async_trait::async_trait;
 use bytes::Bytes;
 use kms_connector_api::{
-    ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, PublicDecryptionRequest,
-    PublicDecryptionResponse, USER_DECRYPTION_ROUTE, UserDecryptionRequest, UserDecryptionResponse,
+    AttestationType, ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, PublicDecryptionRequest,
+    PublicDecryptionResponse, SolanaPublicDecryptionRequest, SolanaUserDecryptionRequest,
+    USER_DECRYPTION_ROUTE, UserDecryptionRequest, UserDecryptionResponse,
 };
 use serde::Deserialize;
 use tokio::time::sleep;
@@ -20,6 +21,8 @@ use super::config::{
     AuthConfig, CallConfig, EndpointConfig, KmsAggregatorConfig, PublicDecryptConfig, RetryConfig,
     UserChecks, UserDecryptConfig,
 };
+use super::flows::public_decrypt::PublicRequest;
+use super::flows::user_decrypt::UserRequest;
 
 /// From `kms-connector/crates/api/tests/vectors.json`.
 pub const USER_REQUEST_JSON: &str = r#"{"attestationType":"eip712-unified-user-decrypt-v1","payload":{"handles":[{"handle":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","contractAddress":"0x3333333333333333333333333333333333333333","ownerAddress":"0x4444444444444444444444444444444444444444"}],"userAddress":"0x5555555555555555555555555555555555555555","publicKey":"0x20002000","allowedContracts":["0x3333333333333333333333333333333333333333"],"requestValidity":{"startTimestamp":1770000000,"durationSeconds":300},"extraData":"0x00"},"signature":"0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"}"#;
@@ -28,6 +31,42 @@ pub const USER_REQUEST_ID: B256 =
 pub const PUBLIC_REQUEST_JSON: &str = r#"{"ctHandles":["0x1111111111111111111111111111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222222222222222222222222222"],"extraData":"0x00"}"#;
 pub const PUBLIC_REQUEST_ID: B256 =
     b256!("0xaaa2956d918458882642374b5ef6fc9117ee708e1930c84510faa0e4afa018b8");
+
+/// The EVM user-decrypt fixture as the aggregator's request.
+pub fn user_request() -> UserRequest {
+    UserRequest::Evm(serde_json::from_str(USER_REQUEST_JSON).expect("mock: user fixture"))
+}
+
+/// The EVM public-decrypt fixture as the aggregator's request.
+pub fn public_request() -> PublicRequest {
+    PublicRequest::Evm(serde_json::from_str(PUBLIC_REQUEST_JSON).expect("mock: public fixture"))
+}
+
+/// The connector crate's request vectors.
+const VECTORS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../kms-connector/crates/api/tests/vectors.json"
+));
+
+/// The first vector of `kind` (`solanaUserDecryption`, …) in `vectors.json`: its body and `decryptionId`.
+pub fn vector(kind: &str) -> (serde_json::Value, B256) {
+    let vectors: serde_json::Value = serde_json::from_str(VECTORS).expect("mock: vectors.json");
+    let first = &vectors[kind][0];
+    let id = serde_json::from_value(first["decryptionId"].clone()).expect("mock: decryptionId");
+    (first["request"].clone(), id)
+}
+
+/// The Solana user-decrypt vector as the aggregator's request.
+pub fn solana_user_request() -> UserRequest {
+    let (body, _) = vector("solanaUserDecryption");
+    UserRequest::Solana(serde_json::from_value(body).expect("mock: Solana user vector"))
+}
+
+/// The Solana public-decrypt vector as the aggregator's request.
+pub fn solana_public_request() -> PublicRequest {
+    let (body, _) = vector("solanaPublicDecryption");
+    PublicRequest::Solana(serde_json::from_value(body).expect("mock: Solana public vector"))
+}
 
 /// A YAML string is either one of our fixed replies or a connector error code (`acl_denied`, `rate_limited`, …).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -62,6 +101,7 @@ pub struct MockClient {
     scripts: Vec<Vec<Reply>>,
     delay: Duration,
     attempts: Mutex<Vec<u32>>,
+    last_body: Mutex<Option<Bytes>>,
 }
 
 impl MockClient {
@@ -72,11 +112,17 @@ impl MockClient {
             scripts,
             delay,
             attempts,
+            last_body: Mutex::new(None),
         })
     }
 
     pub fn attempts(&self, node: usize) -> u32 {
         self.attempts.lock().unwrap()[node]
+    }
+
+    /// The body of the last call any node received.
+    pub fn last_body(&self) -> Option<Bytes> {
+        self.last_body.lock().unwrap().clone()
     }
 
     /// A validated config for `n` mock nodes (loopback urls, no auth, thresholds 1).
@@ -128,6 +174,7 @@ impl ConnectorClient for MockClient {
             .trim_start_matches("node-")
             .parse()
             .expect("mock endpoint name");
+        *self.last_body.lock().unwrap() = Some(body.clone());
         let attempt = {
             let mut attempts = self.attempts.lock().unwrap();
             attempts[node] += 1;
@@ -175,16 +222,32 @@ pub fn result(variant: u8) -> AlloyBytes {
     AlloyBytes::from(bytes)
 }
 
-/// The request's derived id and echoed `extraData`, by route.
+/// The request's derived id and echoed `extraData`, by route and, as the connector does, by the
+/// body's tag (`attestationType` on user decrypt, `scheme` on public decrypt).
 fn request_facts(route: &str, body: &[u8]) -> (B256, AlloyBytes) {
+    let json: serde_json::Value = serde_json::from_slice(body).expect("mock: JSON body");
     if route == USER_DECRYPTION_ROUTE {
-        let request: UserDecryptionRequest = serde_json::from_slice(body).expect("mock: user body");
-        (request.id(), request.payload.extraData)
+        let solana: &str = AttestationType::SolanaSrfc38UserDecryptV1.into();
+        if json["attestationType"] == solana {
+            let request: SolanaUserDecryptionRequest =
+                serde_json::from_value(json).expect("mock: Solana user body");
+            (request.id(), request.payload.extraData)
+        } else {
+            let request: UserDecryptionRequest =
+                serde_json::from_value(json).expect("mock: user body");
+            (request.id(), request.payload.extraData)
+        }
     } else {
         assert_eq!(route, PUBLIC_DECRYPTION_ROUTE, "mock: unknown route");
-        let request: PublicDecryptionRequest =
-            serde_json::from_slice(body).expect("mock: public body");
-        (request.id(), request.extraData)
+        if json.get("scheme").is_some() {
+            let request: SolanaPublicDecryptionRequest =
+                serde_json::from_value(json).expect("mock: Solana public body");
+            (request.id(), request.extraData)
+        } else {
+            let request: PublicDecryptionRequest =
+                serde_json::from_value(json).expect("mock: public body");
+            (request.id(), request.extraData)
+        }
     }
 }
 
@@ -249,6 +312,19 @@ mod tests {
         assert_eq!(user.id(), USER_REQUEST_ID);
         let public: PublicDecryptionRequest = serde_json::from_str(PUBLIC_REQUEST_JSON).unwrap();
         assert_eq!(public.id(), PUBLIC_REQUEST_ID);
+    }
+
+    #[test]
+    fn ok_reply_reads_a_solana_body_by_its_tag() {
+        for (route, kind) in [
+            (USER_DECRYPTION_ROUTE, "solanaUserDecryption"),
+            (PUBLIC_DECRYPTION_ROUTE, "solanaPublicDecryption"),
+        ] {
+            let (json, id) = vector(kind);
+            let reply = ok_reply(route, json.to_string().as_bytes(), 0, Fixed::Ok);
+            let body: serde_json::Value = serde_json::from_slice(&reply.body).unwrap();
+            assert_eq!(body["decryptionId"], id.to_string(), "{route}");
+        }
     }
 
     #[test]

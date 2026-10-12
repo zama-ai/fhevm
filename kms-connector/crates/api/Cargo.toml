@@ -21,6 +21,9 @@ serde = { version = "1", default-features = false, features = [
     "std",
 ] }
 strum = { version = "0.28", default-features = false, features = ["derive"] }
+thiserror = { version = "2", default-features = false }
+# The typed Solana user request: one mapping from the Solana user DTO for every consumer.
+zama-solana-request = { path = "../../../solana/crates/zama-solana-request" }
 
 # Endpoint specific dependencies.
 actix-web = { version = "4", default-features = false, optional = true }

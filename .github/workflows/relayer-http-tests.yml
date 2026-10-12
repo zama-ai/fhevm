@@ -34,6 +34,11 @@ jobs:
               # exchanged with the connectors, and the workspace manifest it inherits from.
               - kms-connector/crates/api/**
               - kms-connector/Cargo.toml
+              # Solana path dependencies: the request form (through `kms-connector-api`), the
+              # permit's Ed25519 verification and the host chain ids.
+              - solana/crates/zama-solana-acl/**
+              - solana/crates/zama-solana-permit/**
+              - solana/crates/zama-solana-request/**
 
   test:
     name: relayer-http-test/test (bpr)

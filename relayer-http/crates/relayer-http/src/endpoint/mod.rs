@@ -50,7 +50,9 @@ mod tests {
     use tower::ServiceExt;
 
     use super::*;
-    use crate::config::HttpConfig;
+    use crate::endpoint::flows::public_decrypt::tests::public_body;
+    use crate::endpoint::flows::user_decrypt::tests::signed_user_body;
+    use crate::endpoint::validate::tests::{PROGRAM, SOLANA, handle, http};
     use crate::kms_aggregator::mock::{Fixed, MockClient, Reply};
     use crate::kms_aggregator::{Aggregator, UserChecks};
     use crate::logging::Log;
@@ -58,23 +60,190 @@ mod tests {
 
     /// 13 mock nodes answering `reply`, thresholds 9 (user) and 5 (public), a 2 s deadline.
     fn app(reply: Reply, shutdown: CancellationToken) -> App {
-        let mock = MockClient::new(vec![vec![reply]; 13], Duration::from_millis(1));
-        let caller = mock.caller(Duration::from_secs(2), 0);
-        App {
-            user_decrypt: Arc::new(Aggregator::new(
-                caller.clone(),
-                9,
-                UserChecks::default(),
-                shutdown.clone(),
-            )),
+        scripted(vec![vec![reply]; 13], UserChecks::default(), shutdown).0
+    }
+
+    /// Mock nodes running `scripts`, thresholds 9 (user), 5 (EVM public) and 9 (Solana public), a 2 s
+    /// deadline, and the mock to count the calls.
+    fn scripted(
+        scripts: Vec<Vec<Reply>>,
+        checks: UserChecks,
+        shutdown: CancellationToken,
+    ) -> (App, Arc<MockClient>) {
+        let mock = MockClient::new(scripts, Duration::from_millis(1));
+        let caller = mock.clone().caller(Duration::from_secs(2), 0);
+        let app = App {
+            user_decrypt: Arc::new(Aggregator::new(caller.clone(), 9, checks, shutdown.clone())),
             public_decrypt: Arc::new(Aggregator::new(caller, 5, (), shutdown.clone())),
-            http: Arc::new(HttpConfig {
-                endpoint: "127.0.0.1:0".parse().unwrap(),
-                max_body_bytes: 4096,
-                body_read_timeout: Duration::from_secs(2),
-                supported_chain_ids: vec![1, 137],
-            }),
+            http: Arc::new(http()),
             shutdown,
+        };
+        (app, mock)
+    }
+
+    /// Connector calls across the 13 nodes.
+    fn calls(mock: &MockClient) -> u32 {
+        (0..13).map(|node| mock.attempts(node)).sum()
+    }
+
+    /// A signed Solana user body valid now, naming `program`.
+    fn solana_user_wire(program: [u8; 32]) -> String {
+        serde_json::to_string(&signed_user_body(program, flows::now() - 10)).unwrap()
+    }
+
+    /// The JSON the connector nodes last received.
+    fn forwarded(mock: &MockClient) -> Value {
+        serde_json::from_slice(&mock.last_body().unwrap()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn solana_user_decrypt_forwards_the_body_equal_field_by_field() {
+        // With the id match on, a node's share counts only if the connector derived the request's id from the
+        // body it received.
+        let checks = UserChecks {
+            decryption_id_match: true,
+            decryption_id_majority: false,
+        };
+        let (app, mock) = scripted(
+            vec![vec![Reply::Fixed(Fixed::Ok)]; 13],
+            checks,
+            CancellationToken::new(),
+        );
+        let wire = solana_user_wire(PROGRAM);
+        let (status, request_id, body) = call(app, "POST", "/v4/user-decrypt", &wire).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["requestId"], request_id);
+        assert_eq!(body["result"]["result"].as_array().unwrap().len(), 13);
+        assert_eq!(calls(&mock), 13);
+        assert_eq!(
+            forwarded(&mock),
+            serde_json::from_str::<Value>(&wire).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn an_evm_body_with_solana_handles_is_refused_before_any_connector_call() {
+        // Every connector would refuse it as a Solana chain in an EVM body: the relayer refuses it once.
+        let solana_handle = handle(SOLANA, 4).to_string();
+        for (route, body, expected) in [
+            (
+                "/v4/user-decrypt",
+                user_wire().replace(&handle(1, 4).to_string(), &solana_handle),
+                format!("payload.handles[0]: chain id {SOLANA} is not supported"),
+            ),
+            (
+                "/v4/public-decrypt",
+                format!(r#"{{ "ciphertextHandles": ["{solana_handle}"], "extraData": "0x00" }}"#),
+                format!("ciphertextHandles[0]: chain id {SOLANA} is not supported"),
+            ),
+        ] {
+            let (app, mock) = scripted(
+                vec![vec![Reply::Fixed(Fixed::Ok)]; 13],
+                UserChecks::default(),
+                CancellationToken::new(),
+            );
+            let (status, _, response) = call(app, "POST", route, &body).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{route}: {response}");
+            assert_eq!(response["message"], expected, "{route}");
+            assert_eq!(calls(&mock), 0, "{route}");
+        }
+    }
+
+    #[tokio::test]
+    async fn solana_user_decrypt_refuses_a_bad_permit_before_any_connector_call() {
+        let mut flipped = signed_user_body(PROGRAM, flows::now() - 10);
+        let mut signature = flipped.signature.to_vec();
+        signature[0] ^= 1;
+        flipped.signature = signature.into();
+        for (case, wire) in [
+            ("another program", solana_user_wire([0x4d; 32])),
+            ("bad signature", serde_json::to_string(&flipped).unwrap()),
+        ] {
+            let (app, mock) = scripted(
+                vec![vec![Reply::Fixed(Fixed::Ok)]; 13],
+                UserChecks::default(),
+                CancellationToken::new(),
+            );
+            let (status, _, body) = call(app, "POST", "/v4/user-decrypt", &wire).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{case}: {body}");
+            assert_eq!(body["code"], "user_signature_rejected", "{case}");
+            assert_eq!(calls(&mock), 0, "{case}");
+        }
+    }
+
+    #[tokio::test]
+    async fn solana_public_decrypt_waits_for_its_chain_threshold() {
+        // Five identical answers (t + 1) and eight refusals: enough for EVM's threshold of 5, not for the
+        // Solana chain's 9.
+        let mut scripts = vec![vec![Reply::Fixed(Fixed::Ok)]; 5];
+        scripts.extend(vec![vec![Reply::Error(ErrorCode::AclDenied)]; 8]);
+        let (app, _) = scripted(scripts, UserChecks::default(), CancellationToken::new());
+        let solana = serde_json::to_string(&public_body()).unwrap();
+        let (status, _, body) = call(app.clone(), "POST", "/v4/public-decrypt", &solana).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+        assert_eq!(body["code"], "acl_denied");
+        assert!(
+            body["message"].as_str().unwrap().contains("5 of 9"),
+            "{body}"
+        );
+        let (status, _, body) = call(
+            app,
+            "POST",
+            "/v4/public-decrypt",
+            &flows::public_decrypt::tests::wire(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["result"]["signatures"].as_array().unwrap().len(), 5);
+    }
+
+    #[tokio::test]
+    async fn solana_public_decrypt_forwards_the_body_and_answers_the_envelope() {
+        let (app, mock) = scripted(
+            vec![vec![Reply::Fixed(Fixed::Ok)]; 13],
+            UserChecks::default(),
+            CancellationToken::new(),
+        );
+        let solana = serde_json::to_string(&public_body()).unwrap();
+        let (status, request_id, body) = call(app, "POST", "/v4/public-decrypt", &solana).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            forwarded(&mock),
+            serde_json::from_str::<Value>(&solana).unwrap()
+        );
+        assert_eq!(body["status"], "succeeded");
+        assert_eq!(body["requestId"], request_id);
+        assert_eq!(body["result"]["signatures"].as_array().unwrap().len(), 13);
+        assert_eq!(body["result"]["extraData"], "0x00");
+    }
+
+    #[tokio::test]
+    async fn solana_bodies_need_their_tag() {
+        let tagged = serde_json::to_value(public_body()).unwrap();
+        let mut untagged = tagged.clone();
+        untagged.as_object_mut().unwrap().remove("scheme");
+        let mut unknown = tagged;
+        unknown["scheme"] = "solana-public-decrypt-v2".into();
+        let mut user = serde_json::to_value(signed_user_body(PROGRAM, flows::now() - 10)).unwrap();
+        user["attestationType"] = "solana-srfc38-user-decrypt-v2".into();
+        for (route, body, expected) in [
+            // No tag: the EVM body, which has no `ctHandles`.
+            ("/v4/public-decrypt", untagged, "unknown field `ctHandles`"),
+            (
+                "/v4/public-decrypt",
+                unknown,
+                "scheme: must be \"solana-public-decrypt-v1\"",
+            ),
+            // Another attestation type: the EVM body, whose payload has no `allowedScopes`.
+            ("/v4/user-decrypt", user, "unknown field"),
+        ] {
+            let (status, _, response) = call(healthy(), "POST", route, &body.to_string()).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{expected}: {response}");
+            assert_eq!(response["code"], "malformed");
+            assert!(
+                response["message"].as_str().unwrap().contains(expected),
+                "{expected}: {response}"
+            );
         }
     }
 

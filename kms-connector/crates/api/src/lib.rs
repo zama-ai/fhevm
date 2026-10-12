@@ -2,16 +2,18 @@
 //!
 //! This crate is the shared definition of the direct HTTP decryption interface between clients
 //! (relayers for example) and the KMS Connector: the request/response DTOs ([`types`]), the
-//! error contract ([`error`]), the body scheme discriminants ([`attestation`]), the
-//! route/version constants ([`version`]).
+//! error contract ([`error`]), the body scheme discriminants ([`attestation`]), the typed form
+//! of the Solana user body ([`solana`]), the route/version constants ([`version`]).
 
 pub mod attestation;
 pub mod error;
+pub mod solana;
 pub mod types;
 pub mod version;
 
 pub use attestation::{AttestationType, PublicDecryptionScheme};
 pub use error::{ErrorCode, ErrorResponse};
+pub use solana::SolanaFormError;
 pub use types::{
     HandleEntry, PublicDecryptionRequest, PublicDecryptionResponse, RequestValidity,
     SolanaHandleEntry, SolanaPublicDecryptionRequest, SolanaUserDecryptionPayload,
