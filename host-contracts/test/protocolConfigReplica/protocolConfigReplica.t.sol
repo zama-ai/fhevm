@@ -21,16 +21,6 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
     bytes32 internal constant INITIALIZABLE_STORAGE =
         0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
 
-    function _setupEmptyProxy() internal {
-        _deployACL(owner);
-        address emptyProxyImpl = address(new EmptyUUPSProxy());
-        deployCodeTo(
-            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
-            abi.encode(emptyProxyImpl, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
-            protocolConfigAdd
-        );
-    }
-
     /// @dev Bootstraps a replica on the same active context and epoch as a fresh canonical deploy.
     function _setupReplica() internal {
         _deployACL(owner);
@@ -151,7 +141,7 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
     // -----------------------------------------------------------------------
 
     function test_revertInitializeFromCanonicalInvalidEpochId() public {
-        _setupEmptyProxy();
+        _deployEmptyProtocolConfigProxy(owner);
 
         address impl = address(new ProtocolConfigReplica());
         uint256 canonicalContextId = KMS_CONTEXT_COUNTER_BASE + 1;
@@ -171,7 +161,7 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
     }
 
     function test_revertInitializeFromCanonicalInvalidContextId() public {
-        _setupEmptyProxy();
+        _deployEmptyProtocolConfigProxy(owner);
 
         address impl = address(new ProtocolConfigReplica());
         uint256 invalidContextId = KMS_CONTEXT_COUNTER_BASE;

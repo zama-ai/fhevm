@@ -214,6 +214,17 @@ abstract contract HostContractsDeployerTestUtils is Test {
         require(InputVerifier(inputVerifierAdd).getThreshold() == inputThreshold, "Input threshold wiring");
     }
 
+    function _deployEmptyProtocolConfigProxy(address owner) internal {
+        _deployACL(owner);
+        address emptyProxyImplementation = address(new EmptyUUPSProxy());
+
+        deployCodeTo(
+            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
+            abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            protocolConfigAdd
+        );
+    }
+
     function _deployProtocolConfig(
         address owner,
         KmsNodeParams[] memory initialKmsNodeParams,

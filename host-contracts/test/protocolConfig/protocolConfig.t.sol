@@ -31,20 +31,6 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     address internal kmsTxSender2 = address(0xA3);
     address internal kmsTxSender3 = address(0xA4);
 
-    function _deployEmptyProtocolConfigProxy() internal {
-        address emptyProxyImpl = address(new EmptyUUPSProxy());
-        deployCodeTo(
-            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
-            abi.encode(emptyProxyImpl, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
-            protocolConfigAdd
-        );
-    }
-
-    function _setupEmptyProxy() internal {
-        _deployACL(owner);
-        _deployEmptyProtocolConfigProxy();
-    }
-
     function _setupDefault() internal {
         _deployACL(owner);
         /// @dev Distinct per-field values so each getter proves it reads the correct storage slot.
@@ -92,7 +78,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     function _revertThreshold(KmsThresholds memory t, bytes memory expectedRevert) internal {
-        _setupEmptyProxy();
+        _deployEmptyProtocolConfigProxy(owner);
         _upgradeProxyExpectRevert(_makeKmsNodeParams(1), t, expectedRevert);
     }
 
@@ -542,7 +528,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     // -----------------------------------------------------------------------
 
     function test_revertEmptyNodes() public {
-        _setupEmptyProxy();
+        _deployEmptyProtocolConfigProxy(owner);
         KmsNodeParams[] memory emptyNodes = new KmsNodeParams[](0);
         _upgradeProxyExpectRevert(
             emptyNodes,
@@ -552,7 +538,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     function test_revertNullTxSender() public {
-        _setupEmptyProxy();
+        _deployEmptyProtocolConfigProxy(owner);
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(1);
         nodes[0].txSenderAddress = address(0);
         _upgradeProxyExpectRevert(
@@ -563,7 +549,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     function test_revertNullSigner() public {
-        _setupEmptyProxy();
+        _deployEmptyProtocolConfigProxy(owner);
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(1);
         nodes[0].signerAddress = address(0);
         _upgradeProxyExpectRevert(
@@ -574,7 +560,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     function test_revertDuplicateTxSender() public {
-        _setupEmptyProxy();
+        _deployEmptyProtocolConfigProxy(owner);
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
         nodes[1].txSenderAddress = nodes[0].txSenderAddress;
         _upgradeProxyExpectRevert(
@@ -585,7 +571,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     function test_revertDuplicateSigner() public {
-        _setupEmptyProxy();
+        _deployEmptyProtocolConfigProxy(owner);
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
         nodes[1].signerAddress = nodes[0].signerAddress;
         _upgradeProxyExpectRevert(
@@ -656,7 +642,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     function test_revertSignerSetExceedsProofFormatLimit() public {
-        _setupEmptyProxy();
+        _deployEmptyProtocolConfigProxy(owner);
         KmsNodeParams[] memory tooManyNodes = _makeKmsNodeParams(256);
         _upgradeProxyExpectRevert(
             tooManyNodes,
@@ -1907,7 +1893,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     }
 
     function test_emptyProxyInitializer_emitsNewKmsContext() public {
-        _setupEmptyProxy();
+        _deployEmptyProtocolConfigProxy(owner);
 
         address impl = address(new ProtocolConfig());
         KmsNodeParams[] memory nodeParams = _makeKmsNodeParams(2);
@@ -2141,7 +2127,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     ///      implementation left behind (3), as the upgrade tooling does. The pre-store check proves
     ///      the hardcoded slot is where OZ Initializable writes.
     function test_reinitializeV3SucceedsOnUpgradePath() public {
-        _setupEmptyProxy();
+        _deployEmptyProtocolConfigProxy(owner);
         address impl = address(new ProtocolConfig());
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(impl, "");
