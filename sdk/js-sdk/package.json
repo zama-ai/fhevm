@@ -53,7 +53,6 @@
     "version": "node ./scripts/generate-version.cjs",
     "start:localcleartext:v12": "./test/scripts/fhevm-anvil.sh --ethlib none --foundry-profile=v12",
     "start:localcleartext:v13": "./test/scripts/fhevm-anvil.sh --ethlib none --foundry-profile=v13",
-    "start:localcleartext:intree": "./test/scripts/fhevm-anvil.sh --ethlib none --foundry-profile=intree --skip-fhetest",
     "pack": "./test/scripts/rebuild_sdk_and_pack.sh"
   },
   "devDependencies": {
@@ -76,7 +75,7 @@
     "codama": "1.11.0",
     "eslint": "10.5.0",
     "eslint-plugin-jsdoc": "62.9.0",
-    "ethers": "^6.16.0",
+    "ethers": "^6.15.0",
     "license-checker": "25.0.1",
     "prettier": "3.8.3",
     "size-limit": "^12.0.1",

@@ -2225,23 +2225,6 @@ impl Database {
         Ok(inserted)
     }
 
-    /// Remove one key's allow for a handle.
-    pub async fn delete_allowed_handle(
-        &self,
-        tx: &mut Transaction<'_>,
-        handle: Vec<u8>,
-        account_address: String,
-    ) -> Result<bool, SqlxError> {
-        let query = sqlx::query(
-            "DELETE FROM allowed_handles WHERE handle = $1 AND account_address = $2 AND host_chain_id = $3",
-        )
-        .bind(handle)
-        .bind(account_address)
-        .bind(self.chain_id.as_i64());
-        let deleted = query.execute(tx.deref_mut()).await?.rows_affected() > 0;
-        Ok(deleted)
-    }
-
     async fn record_transaction_begin(
         &self,
         transaction_hash: &Option<Vec<u8>>,

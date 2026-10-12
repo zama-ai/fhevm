@@ -149,12 +149,8 @@ fi
 
 # ==============================================================================
 
-deployment_json="$(forge create src/FHETest.sol:FHETest \
-    --rpc-url "$rpc_url" --private-key "${private_key}" --broadcast --json)"
-if ! fhe_test_addr="$(jq -er '.deployedTo | select(type == "string" and test("^0x[0-9a-fA-F]{40}$"))' <<<"$deployment_json")"; then
-    printf 'Invalid forge deployment response:\n%s\n' "$deployment_json" >&2
-    exit 1
-fi
+fhe_test_addr="$(forge create src/FHETest.sol:FHETest \
+    --rpc-url "$rpc_url" --private-key "${private_key}" --broadcast --json | jq -r '.deployedTo')"
 
 # Wire FHETest to the host stack via setCoprocessorConfig(CoprocessorConfig).
 # Struct passed as a flat tuple: (ACLAddress, CoprocessorAddress, KMSVerifierAddress).

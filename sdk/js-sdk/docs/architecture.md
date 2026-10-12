@@ -34,19 +34,19 @@ tree-shakable surface.
 
 ## Directory map
 
-| Path                                  | Responsibility                                                 |
-| ------------------------------------- | -------------------------------------------------------------- |
-| `src/ethers/`, `src/viem/`            | Thin adapters: factories, runtime config, native signing.      |
-| `src/core/clients/`                   | Client construction and the decorator groups.                  |
-| `src/core/actions/`                   | Standalone action functions (base/encrypt/decrypt/chain/host). |
-| `src/core/runtime/`                   | The composable runtime and its lazy init.                      |
-| `src/core/modules/`                   | Runtime modules: `encrypt`, `decrypt`, `relayer`, `ethereum`.  |
-| `src/core/chains/`                    | Built-in chain definitions and `defineFhevmChain`.             |
-| `src/core/kms/`                       | Transport key pair, permits, KMS share flow.                   |
-| `src/core/coprocessor/`               | ZK proof building.                                             |
-| `src/core/handle/`, `src/core/types/` | Encrypted-value handles and the type system.                   |
-| `src/core/host-contracts/`            | Reads against ACL / verifier host contracts.                   |
-| `src/wasm/`                           | The TFHE and TKMS WASM libraries and loaders.                  |
+| Path                          | Responsibility                                              |
+| ----------------------------- | ---------------------------------------------------------- |
+| `src/ethers/`, `src/viem/`    | Thin adapters: factories, runtime config, native signing.  |
+| `src/core/clients/`           | Client construction and the decorator groups.              |
+| `src/core/actions/`           | Standalone action functions (base/encrypt/decrypt/chain/host). |
+| `src/core/runtime/`           | The composable runtime and its lazy init.                  |
+| `src/core/modules/`           | Runtime modules: `encrypt`, `decrypt`, `relayer`, `ethereum`. |
+| `src/core/chains/`            | Built-in chain definitions and `defineFhevmChain`.         |
+| `src/core/kms/`               | Transport key pair, permits, KMS share flow.               |
+| `src/core/coprocessor/`       | ZK proof building.                                          |
+| `src/core/handle/`, `src/core/types/` | Encrypted-value handles and the type system.        |
+| `src/core/host-contracts/`    | Reads against ACL / verifier host contracts.               |
+| `src/wasm/`                   | The TFHE and TKMS WASM libraries and loaders.              |
 
 The `ethers` and `viem` adapters are deliberately tiny. Everything real lives in
 `core`; an adapter only knows how to read a contract, sign typed data, and derive
@@ -198,3 +198,5 @@ The internals follow a consistent set of rules:
 - [Runtime configuration](runtime-configuration.md) — the lazy-init and WASM-loading surface.
 - [Actions](actions.md) — the standalone functional layer.
 - [Glossary](GLOSSARY.md) — the vocabulary used across these layers.
+```
+

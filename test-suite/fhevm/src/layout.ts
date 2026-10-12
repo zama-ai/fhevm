@@ -188,7 +188,6 @@ export const PORTS = [
   3001,
   POSTGRES_PORT,
   5433,
-  8088,
   DEFAULT_HOST_RPC_PORT,
   DEFAULT_GATEWAY_RPC_PORT,
   DEFAULT_EXTRA_HOST_RPC_PORT,
@@ -318,7 +317,10 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "kms-connector-proxy",
   ],
   "listener-core": ["listener-publisher-for-anvil"],
-  "relayer": ["relayer-db-migration", "relayer"],
+  "relayer": [
+    "relayer-db-migration",
+    "relayer",
+  ],
   "gateway-contracts": [
     "gateway-deploy-mocked-zama-oft",
     "gateway-set-relayer-mocked-payment",

@@ -218,7 +218,7 @@ async fn bridge_handle_with_out_of_range_dst_chain_id_is_ignored() {
                 BridgeContract::BridgeHandle {
                     senderDapp: Address::from([0xDA; 20]),
                     srcHandle: src_handle,
-                    dstChainId: 0x8000_0000_0000_0000,
+                    dstChainId: 1u64 << 63,
                     guid: FixedBytes::from([0x22; 32]),
                 }
                 .encode_log_data(),

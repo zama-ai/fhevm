@@ -53,7 +53,6 @@ axum = "0.8.8"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 tracing-chrome = { version = "0.7.2", optional = true }
-ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock", optional = true }
 prometheus = "0.14"
 clap = { version = "4.5.60", features = ["derive"] }
 rustls = { version = "0.23.36", features = [
@@ -88,6 +87,7 @@ chrono = { version = "0.4.43", features = ["serde"] }
 humantime = "2.3.0"
 governor = "0.10.4"
 indexmap = "2.13.0"
+ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock", optional = true }
 serde_yaml = "0.9"
 solana-pubkey = { version = "4.3.0", features = ["curve25519"] }
 base64 = "0.23.1"

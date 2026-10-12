@@ -12,7 +12,7 @@ COPY gateway-contracts ./gateway-contracts
 
 # Compiled gateway-contracts for gw-listener
 WORKDIR /app/gateway-contracts
-RUN npm ci && \
+RUN npm install && \
     DOTENV_CONFIG_PATH=.env.example npx hardhat task:deployAllGatewayContracts
 
 # Stage 1: Build GW Listener
@@ -60,6 +60,7 @@ COPY solana/programs ./solana/programs
 COPY solana/environments ./solana/environments
 COPY solana/runtime-tests ./solana/runtime-tests
 COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
+
 
 WORKDIR /app/coprocessor/fhevm-engine
 

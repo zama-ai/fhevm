@@ -1204,7 +1204,7 @@ async fn notify_coprocessor_upgrade_proposed(
         return Ok(());
     }
 
-    // Validate and materialize the complete set before touching persistent state.
+    // Validate and materialize the complete set before touching durable state.
     // Rejecting the whole event avoids a partially installed proposal.
     let mut seen_chain_ids = HashSet::new();
     let mut windows = Vec::with_capacity(event.chainUpgradeWindows.len());

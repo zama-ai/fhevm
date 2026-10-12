@@ -727,10 +727,6 @@ export function getFrozenContext(fhevm: unknown): FhevmClientFrozenContext | und
   return f[GET_FROZEN_CONTEXT]();
 }
 
-export function getResolvedProtocolVersion(fhevm: unknown): ProtocolVersionResolution | undefined {
-  return getFrozenContext(fhevm)?.tryProtocolVersion;
-}
-
 export function setFrozenContextPromise(
   fhevm: FhevmBase,
   frozenContextPromise: Promise<FhevmClientFrozenContext> | undefined,

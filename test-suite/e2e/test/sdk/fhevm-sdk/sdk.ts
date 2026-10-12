@@ -19,6 +19,8 @@ type CreateFhevmClientParameters = Parameters<typeof createFhevmClient>[0];
 type FhevmClientProvider = CreateFhevmClientParameters['provider'];
 type Auth = any;
 
+const CLEARTEXT = false;
+
 export class FhevmSdk implements SdkInstance {
   #fullClient: FhevmClient;
   #auth: Auth | undefined;
@@ -87,7 +89,6 @@ export class FhevmSdk implements SdkInstance {
     readonly rpcUrl: string;
     readonly gatewayChainId: number;
     readonly chainId: number;
-    readonly cleartext: boolean;
     readonly auth?: Auth;
   }): Promise<SdkInstance> {
     const {
@@ -101,7 +102,6 @@ export class FhevmSdk implements SdkInstance {
       rpcUrl,
       gatewayChainId,
       chainId,
-      cleartext,
       auth,
     } = parameters;
     let sanitizedRelayerUrl = relayerUrl;
@@ -150,7 +150,7 @@ export class FhevmSdk implements SdkInstance {
       }),
     };
 
-    const fullClient = cleartext ? createFhevmCleartextClient(args) : createFhevmClient(args);
+    const fullClient = CLEARTEXT ? createFhevmCleartextClient(args) : createFhevmClient(args);
     await fullClient.ready;
     return new FhevmSdk(fullClient, auth);
   }

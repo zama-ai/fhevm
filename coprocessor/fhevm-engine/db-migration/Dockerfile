@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # Stage 1: Build DB Migration
 # RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see coprocessor-docker-build.yml)
 ARG RUST_IMAGE_VERSION

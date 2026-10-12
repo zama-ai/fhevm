@@ -2,7 +2,7 @@
 //!
 //! Expected support is test-owned rather than derived from production validators. Execution runs
 //! natively through the host's own cleartext evaluator (`zama_host::cleartext`), the code the
-//! cleartext build runs on chain, and the host's own validators. Mollusk, real TFHE, and
+//! cleartext build runs on chain, and the host's own validators. Mollusk and
 //! full-stack smoke are deliberately separate test tiers.
 
 use std::collections::HashMap;

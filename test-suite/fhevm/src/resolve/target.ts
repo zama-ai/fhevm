@@ -135,12 +135,6 @@ export const mustVerifyPublishedImages = (env: NodeJS.Dict<string | undefined> =
 
 export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
-
-export const validateSha = (sha: string): void => {
-  if (!SHA_REF.test(sha)) {
-    throw new GitHubApiError(`Invalid sha ${sha}; expected 7 or 40 hex characters`);
-  }
-};
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
 export const SHA_RUNTIME_COMPAT_MIN_SHA = "1272b10b308b064e7477ca3272712b90b50280d9";
 
@@ -455,7 +449,9 @@ export const resolveTarget = async (
     if (!requested) {
       throw new GitHubApiError("--target sha requires --sha");
     }
-    validateSha(requested);
+    if (!SHA_REF.test(requested)) {
+      throw new GitHubApiError(`Invalid sha ${requested}; expected 7 or 40 hex characters`);
+    }
     const tag = shortSha(requested);
     const lockName = `sha-${tag}.json`;
     const baseSources = [`requested-sha=${requested.toLowerCase()}`];
