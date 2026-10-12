@@ -3,7 +3,8 @@
 //! The request bodies are declared with `sol!` for the EIP-712 hash implementation used to
 //! compute the `decryption_id`.
 //!
-//! Interface evolution happens via new versioned routes, not by adding fields to `v1` shapes.
+//! EVM `v1` shapes take no new fields. Another scheme is a new tag value on the same route:
+//! `attestationType` on user decryption, `scheme` on the Solana public decryption body.
 
 use alloy::{
     primitives::{B256, Bytes},
@@ -94,11 +95,13 @@ sol! {
         bytes extraData;
     }
 
-    /// The Solana body of `POST v1/public-decrypt`: each handle names the encrypted store its
+    /// The Solana body of `POST v1/public-decrypt`, tagged by `scheme` (see
+    /// [`crate::PublicDecryptionScheme`]): each handle names the encrypted store its
     /// public-decrypt leaf is proven against, as a store is not derivable from a handle.
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
     struct SolanaPublicDecryptionRequest {
+        string scheme;
         bytes32[] ctHandles;
         bytes extraData;
         bytes32[] encryptedStores;
@@ -265,6 +268,26 @@ mod tests {
     }
 
     #[test]
+    fn solana_public_id_binds_scheme_and_stores() {
+        let request = SolanaPublicDecryptionRequest {
+            scheme: crate::PublicDecryptionScheme::SolanaPublicDecryptV1.to_string(),
+            ctHandles: vec![B256::repeat_byte(0x11)],
+            extraData: Bytes::from(vec![0x00]),
+            encryptedStores: vec![B256::repeat_byte(0x33)],
+        };
+        let id = request.id();
+        let mut other = request.clone();
+        other.scheme = "solana-public-decrypt-v2".into();
+        assert_ne!(id, other.id());
+        let mut other = request.clone();
+        other.encryptedStores[0] = B256::repeat_byte(0x34);
+        assert_ne!(id, other.id());
+        let mut json = serde_json::to_value(&request).unwrap();
+        json.as_object_mut().unwrap().remove("scheme");
+        assert!(serde_json::from_value::<SolanaPublicDecryptionRequest>(json).is_err());
+    }
+
+    #[test]
     fn unknown_fields_are_rejected() {
         let json = r#"{
             "ctHandles": ["0x1111111111111111111111111111111111111111111111111111111111111111"],
@@ -328,6 +351,8 @@ mod vector_tests {
     struct Vectors {
         public_decryption: Vec<DecryptionVector<PublicDecryptionRequest>>,
         user_decryption: Vec<DecryptionVector<UserDecryptionRequest>>,
+        solana_public_decryption: Vec<DecryptionVector<SolanaPublicDecryptionRequest>>,
+        solana_user_decryption: Vec<DecryptionVector<SolanaUserDecryptionRequest>>,
     }
 
     #[derive(Deserialize)]
@@ -357,6 +382,17 @@ mod vector_tests {
     }
 
     #[test]
+    fn solana_decryption_id_vectors() {
+        let vs = vectors();
+        for v in vs.solana_public_decryption {
+            assert_eq!(v.request.id(), v.decryption_id, "{}", v.name);
+        }
+        for v in vs.solana_user_decryption {
+            assert_eq!(v.request.id(), v.decryption_id, "{}", v.name);
+        }
+    }
+
+    #[test]
     fn requests_round_trip_through_serde() {
         // The id vectors only exercise deserialization; this pins the serialize direction
         // (field casing, hex encodings) by re-parsing what we emit.
@@ -369,6 +405,16 @@ mod vector_tests {
         for v in vs.user_decryption {
             let json = serde_json::to_string(&v.request).unwrap();
             let back: UserDecryptionRequest = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, v.request, "{}", v.name);
+        }
+        for v in vs.solana_public_decryption {
+            let json = serde_json::to_string(&v.request).unwrap();
+            let back: SolanaPublicDecryptionRequest = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, v.request, "{}", v.name);
+        }
+        for v in vs.solana_user_decryption {
+            let json = serde_json::to_string(&v.request).unwrap();
+            let back: SolanaUserDecryptionRequest = serde_json::from_str(&json).unwrap();
             assert_eq!(back, v.request, "{}", v.name);
         }
     }

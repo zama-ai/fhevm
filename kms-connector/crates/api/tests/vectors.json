@@ -94,5 +94,61 @@
       },
       "decryptionId": "0x5d9fa43e1576121f83353800be7ee2c620b32de374336cab4fd92147d714e0c6"
     }
+  ],
+  "solanaPublicDecryption": [
+    {
+      "name": "two handles and their stores, one-byte extraData",
+      "request": {
+        "scheme": "solana-public-decrypt-v1",
+        "ctHandles": [
+          "0x1111111111111111111111111111111111111111111111111111111111111111",
+          "0x2222222222222222222222222222222222222222222222222222222222222222"
+        ],
+        "extraData": "0x00",
+        "encryptedStores": [
+          "0x3333333333333333333333333333333333333333333333333333333333333333",
+          "0x4444444444444444444444444444444444444444444444444444444444444444"
+        ]
+      },
+      "decryptionId": "0x3dea87e595c0204899d9301fc39a0206a0702f0cd4ecefce914b4cc7b62cbc25"
+    },
+    {
+      "name": "empty request",
+      "request": {
+        "scheme": "solana-public-decrypt-v1",
+        "ctHandles": [],
+        "extraData": "0x",
+        "encryptedStores": []
+      },
+      "decryptionId": "0xeee27c04d4073d8704e97af15250ca722a8c32d527ea720d273980adfcfdc3b4"
+    }
+  ],
+  "solanaUserDecryption": [
+    {
+      "name": "single handle, empty permit fields",
+      "request": {
+        "attestationType": "solana-srfc38-user-decrypt-v1",
+        "payload": {
+          "handles": [
+            {
+              "handle": "0x0101010101010101010101010101010101010101010101010101010101010101",
+              "ownerAddress": "0x0202020202020202020202020202020202020202020202020202020202020202",
+              "encryptedStore": "0x0303030303030303030303030303030303030303030303030303030303030303"
+            }
+          ],
+          "userAddress": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "publicKey": "0x",
+          "allowedScopes": [],
+          "requestValidity": {
+            "startTimestamp": 1,
+            "durationSeconds": 60
+          },
+          "verifyingProgramId": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "extraData": "0x"
+        },
+        "signature": "0x04040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404040404"
+      },
+      "decryptionId": "0x04e1a57fac578e2d2a40d1b8e596c2c142dc4507f41328586e524bd5cb8f8da1"
+    }
   ]
 }

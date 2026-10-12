@@ -1,4 +1,5 @@
-//! The `attestationType` discriminant of `v1/user-decrypt`.
+//! The scheme discriminants of the `v1` bodies: `attestationType` on `v1/user-decrypt`, `scheme`
+//! on the Solana `v1/public-decrypt` body.
 
 use strum::{Display, EnumIter, EnumString, IntoEnumIterator, IntoStaticStr};
 
@@ -19,4 +20,13 @@ impl AttestationType {
     pub fn supported() -> impl Iterator<Item = &'static str> {
         Self::iter().map(Self::into)
     }
+}
+
+/// The `scheme` tag of a tagged `v1/public-decrypt` body. The EVM body carries no tag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Display, EnumString, IntoStaticStr)]
+pub enum PublicDecryptionScheme {
+    /// Solana public decryption: each handle names the encrypted store its public-decrypt leaf
+    /// is proven against.
+    #[strum(serialize = "solana-public-decrypt-v1")]
+    SolanaPublicDecryptV1,
 }

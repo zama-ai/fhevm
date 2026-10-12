@@ -9,7 +9,8 @@ use crate::core::{
         decrypt::{self, DecryptionRoute},
     },
     validation::{
-        ValidationError, parse_body, validate_public_decryption, validate_solana_public_decryption,
+        ValidationError, parse_body, public_decryption_scheme, validate_public_decryption,
+        validate_solana_public_decryption,
     },
 };
 use actix_web::{
@@ -24,7 +25,7 @@ use connector_utils::types::{
 };
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PublicDecryptionRequest, PublicDecryptionResponse,
-    SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody,
+    PublicDecryptionScheme, SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody,
 };
 use serde_json::Value;
 use sqlx::{
@@ -51,20 +52,23 @@ pub async fn public_decrypt(
     decrypt::handle::<PublicRoute>(&state, id, &request).await
 }
 
-/// A Solana body names each handle's encrypted store; an EVM body has no such field.
+/// A Solana body carries a `scheme` tag; the EVM `v1` body has none.
 fn validate(
     body: Value,
     config: &Config,
 ) -> Result<(B256, ValidatedPublicDecryption), ValidationError> {
-    if body.get("encryptedStores").is_some() {
-        let request: SolanaPublicDecryptionBody = parse_body(body)?;
-        let id = request.id();
-        let request = validate_solana_public_decryption(id, &request, config)?;
-        Ok((id, ValidatedPublicDecryption::Solana(request)))
-    } else {
-        let request: PublicDecryptionRequest = parse_body(body)?;
-        validate_public_decryption(&request, config)?;
-        Ok((request.id(), ValidatedPublicDecryption::Evm(request)))
+    match public_decryption_scheme(&body)? {
+        Some(PublicDecryptionScheme::SolanaPublicDecryptV1) => {
+            let request: SolanaPublicDecryptionBody = parse_body(body)?;
+            let id = request.id();
+            let request = validate_solana_public_decryption(id, &request, config)?;
+            Ok((id, ValidatedPublicDecryption::Solana(request)))
+        }
+        None => {
+            let request: PublicDecryptionRequest = parse_body(body)?;
+            validate_public_decryption(&request, config)?;
+            Ok((request.id(), ValidatedPublicDecryption::Evm(request)))
+        }
     }
 }
 
