@@ -20,6 +20,9 @@
 #      branch SHA); CONTRACTS_CHART (charts/contracts of this
 #      checkout); GATEWAY_RPC_URL (optional, implementation checks on the gateway);
 #      FROM_TAG (default: contracts.version of the address ConfigMap; override to preview a plan);
+#      SKIP_CONTRACTS (space-separated contract names to leave out of the plan; use after a
+#      partially applied upgrade, where the ConfigMap still carries the old tag but some proxies
+#      are already on the new implementation and their reinitializer would revert);
 #      DRY_RUN (false: with true, `upgrade` renders the release and prints the Job script instead).
 set -euo pipefail
 DRY_RUN="${DRY_RUN:-false}"
@@ -118,6 +121,7 @@ plan_release() {
   current_ref=$(resolve_ref "${current}"); target_ref=$(resolve_ref "${TARGET_TAG}")
   PLAN=(); SKIPPED=()
   for c in $(contracts_of "${dir}"); do
+    if [[ " ${SKIP_CONTRACTS:-} " == *" ${c} "* ]]; then SKIPPED+=("${c}: skipped by SKIP_CONTRACTS"); continue; fi
     read -r key env <<<"$(contract_info "${dir}" "${c}")"
     proxy=$(cm_value "${cm}" "${key}")
     [[ -n "${proxy}" ]] || { SKIPPED+=("${c}: not deployed on this chain"); continue; }
