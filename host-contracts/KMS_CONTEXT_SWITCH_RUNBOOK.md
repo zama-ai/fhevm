@@ -262,8 +262,8 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
 ## 5. Mirroring onto non-canonical hosts (replicas)
 
 Ethereum is the canonical host: §3 and §4 run there and nowhere else. Every other host
-chain (e.g. Polygon) runs `ProtocolConfigReplica`, which has no lifecycle — no quorum, no
-reshare, no `KMSGeneration`. Its only write path is the two mirror methods, which import
+chain (e.g. Polygon) runs `ProtocolConfigReplica`, which has no lifecycle: no quorum, no
+reshare and no `KMSGeneration`. Its only write path is the two mirror methods, which import
 state Ethereum has already finalized and land it as immediately `Active`.
 **Bringing each replica forward after a canonical rotation is the operator's job** —
 nothing on-chain does it for you, and nothing flags a replica that fell behind.

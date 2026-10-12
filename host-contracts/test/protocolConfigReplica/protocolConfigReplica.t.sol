@@ -115,7 +115,7 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
     }
 
     function test_revertMirrorKmsEpochBeforePendingEpochCounter() public {
-        // Open a pending epoch on canonical, then upgrade the proxy in place to the replica: this is the
+        // Open a pending epoch on canonical, then upgrade the proxy in place to the replica. This is the
         // only way a replica holds an epoch counter above its active epoch.
         ProtocolConfig pc = _setupCanonical();
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
@@ -406,7 +406,7 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
     }
 
     function test_revertMirrorKmsContextAndEpochBeforePendingContextCounter() public {
-        // Open a pending context on canonical, then upgrade the proxy in place to the replica: this is the
+        // Open a pending context on canonical, then upgrade the proxy in place to the replica. This is the
         // only way a replica holds a context counter above its active context.
         ProtocolConfig pc = _setupCanonical();
         uint256 pendingContextId = KMS_CONTEXT_COUNTER_BASE + 2;
