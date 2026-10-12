@@ -614,11 +614,6 @@ export const runKmsContextSwitchProfile = async (
   runDecryption: DecryptionRunner,
   runSmoke: SmokeRunner,
 ) => {
-  if (state.scenario.kms.mode !== "threshold") {
-    throw new PreflightError(
-      "kms-context-switch requires a threshold-mode KMS cluster; rerun `fhevm-cli up --scenario five-party-swap-threshold-kms`",
-    );
-  }
   // The node-swap step needs a spare core, and the swap env files only exist when the cluster has
   // one — on a spare-less cluster the profile would only fail later, at the swap broadcast.
   if (state.scenario.kms.parties <= state.scenario.kms.committeeSize) {

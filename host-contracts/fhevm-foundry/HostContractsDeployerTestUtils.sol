@@ -16,7 +16,7 @@ import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
-import {KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
@@ -185,7 +185,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address inputVerifyingSource,
         uint64 chainIDSource,
         KmsNodeParams[] memory initialKmsNodeParams,
-        IProtocolConfig.KmsThresholds memory initialThresholds,
+        KmsThresholds memory initialThresholds,
         address[] memory inputSigners,
         uint256 inputThreshold
     ) internal {
@@ -216,7 +216,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
     function _deployProtocolConfig(
         address owner,
         KmsNodeParams[] memory initialKmsNodeParams,
-        IProtocolConfig.KmsThresholds memory initialThresholds
+        KmsThresholds memory initialThresholds
     ) internal returns (ProtocolConfig protocolConfigProxy, address protocolConfigImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
@@ -248,7 +248,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         uint256 initialContextId,
         uint256 initialEpochId,
         KmsNodeParams[] memory initialKmsNodeParams,
-        IProtocolConfig.KmsThresholds memory initialThresholds
+        KmsThresholds memory initialThresholds
     ) internal returns (ProtocolConfig protocolConfigProxy, address protocolConfigImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
@@ -304,8 +304,8 @@ abstract contract HostContractsDeployerTestUtils is Test {
         pauserSet = PauserSet(pauserSetAdd);
     }
 
-    function _defaultThresholds() internal pure returns (IProtocolConfig.KmsThresholds memory) {
-        return IProtocolConfig.KmsThresholds({publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1});
+    function _defaultThresholds() internal pure returns (KmsThresholds memory) {
+        return KmsThresholds({publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1});
     }
 
     function _computeSignature(uint256 privateKey, bytes32 digest) internal pure returns (bytes memory signature) {
@@ -442,10 +442,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
             _hashCrsgenWithDomain(_computeProtocolConfigDomainSeparator(), crsId, maxBitLength, crsDigest, extraData);
     }
 
-    function _defineNewKmsContextAndEpoch(
-        KmsNodeParams[] memory nodes,
-        IProtocolConfig.KmsThresholds memory thresholds
-    ) internal {
+    function _defineNewKmsContextAndEpoch(KmsNodeParams[] memory nodes, KmsThresholds memory thresholds) internal {
         PcrValues[] memory pcrValues = new PcrValues[](0);
         protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, "", pcrValues);
     }

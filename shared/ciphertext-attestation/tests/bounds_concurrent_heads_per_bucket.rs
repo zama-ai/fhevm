@@ -45,7 +45,7 @@ const ENTRIES: u8 = 6;
 /// requests it ever had open at once.
 ///
 /// 404 (rather than a real attestation) means the round can never reach consensus, which matters
-/// here: with a `threshold` of 1 (see the test below), the consensus tracker only reaches
+/// here: with a `threshold` of 1 (see the test below), the consensus round only reaches
 /// `NotReachedThisRound` once every slot is filled, so every entry's `HEAD` actually gets issued instead
 /// of the round exiting early and aborting whichever ones have not started yet.
 async fn concurrency_tracking_bucket(hold: Duration) -> (String, Arc<AtomicUsize>, JoinHandle<()>) {

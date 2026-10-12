@@ -9,6 +9,16 @@ url="${1:?url required}"
 body="${2:-}"
 job="preview-rpc-$(date +%s)-${RANDOM}"
 
+# Public https endpoints are reachable from here and the pod's busybox wget has no TLS: call direct.
+if [[ "${url}" == https://* ]]; then
+  if [[ -n "${body}" ]]; then
+    curl -sS -m 30 -X POST -H 'Content-Type: application/json' --data "${body}" "${url}"
+  else
+    curl -sS -m 30 "${url}"
+  fi
+  exit 0
+fi
+
 cleanup() {
   kubectl delete pod,configmap -n "${NAMESPACE}" "${job}" --ignore-not-found >/dev/null 2>&1 || true
 }

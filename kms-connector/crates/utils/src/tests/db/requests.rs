@@ -29,12 +29,9 @@ use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{
         AbortCrsgen, AbortKeygen, CrsgenRequest, KeygenRequest, PrepKeygenRequest,
     },
-    protocol_config::{
-        IProtocolConfig::KmsThresholds,
-        ProtocolConfig::{
-            KmsContextDestroyed, KmsEpochDestroyed, KmsNodeParams, NewKmsContext, NewKmsEpoch,
-            PcrValues,
-        },
+    protocol_config::ProtocolConfig::{
+        KmsContextDestroyed, KmsEpochDestroyed, KmsNodeParams, KmsThresholds, NewKmsContext,
+        NewKmsEpoch, PcrValues,
     },
 };
 use sqlx::{Pool, Postgres, types::chrono::Utc};

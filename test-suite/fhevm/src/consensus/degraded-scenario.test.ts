@@ -22,7 +22,7 @@ description: Preserve authored source selections and scheduling overrides.
 topology: { count: 3, threshold: 3 }
 hostChains:
   - { key: host, chainId: "12345", rpcPort: 8545 }
-kms: { mode: centralized, fheParams: Test }
+kms: { mode: threshold, fheParams: Test }
 instances:
   - index: 0
     source: { mode: registry, tag: abcdef0 }

@@ -78,18 +78,20 @@ describe("env", () => {
       },
     };
 
-    const centralized = await renderEnvMaps({ discovery: undefined }, stackSpecForState(baseState), templateEnvs, deriveWallet);
-    expect(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe("https://kms-connector-proxy:8443");
-    expect(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).toBe(templateEnvs["test-suite"].KMS_CONNECTOR_API_KEY);
-    expect(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).not.toBe("");
-    expect(centralized.componentEnvs["test-suite"].NODE_EXTRA_CA_CERTS).toBe("/etc/kms-connector/proxy/tls.crt");
-    expect(centralized.componentEnvs["test-suite"].KMS_THRESHOLD).toBe("0");
+    const withEndpoint = await renderEnvMaps({ discovery: undefined }, stackSpecForState(baseState), templateEnvs, deriveWallet);
+    expect(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe(
+      [1, 2, 3, 4].map((party) => `https://${party === 1 ? "kms-connector" : `kms-connector-${party}`}-proxy:8443`).join(","),
+    );
+    expect(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).toBe(templateEnvs["test-suite"].KMS_CONNECTOR_API_KEY);
+    expect(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).not.toBe("");
+    expect(withEndpoint.componentEnvs["test-suite"].NODE_EXTRA_CA_CERTS).toBe("/etc/kms-connector/proxy/tls.crt");
+    expect(withEndpoint.componentEnvs["test-suite"].KMS_THRESHOLD).toBe("1");
     // The proxy forwards to its own party's endpoint.
-    expect(centralized.componentEnvs["kms-connector"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-endpoint:8080");
+    expect(withEndpoint.componentEnvs["kms-connector"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-endpoint:8080");
 
     // The digest the proxies check is the sha256 of the key the e2e suite sends.
-    const digest = createHash("sha256").update(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).digest("hex");
-    expect(centralized.componentEnvs["kms-connector"].KMS_CONNECTOR_API_KEY_DIGEST).toBe(`0x${digest}`);
+    const digest = createHash("sha256").update(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).digest("hex");
+    expect(withEndpoint.componentEnvs["kms-connector"].KMS_CONNECTOR_API_KEY_DIGEST).toBe(`0x${digest}`);
 
     const gated = await renderEnvMaps({ discovery: undefined }, stackSpecForState(withoutEndpoint), templateEnvs, deriveWallet);
     expect(gated.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe("");
@@ -97,7 +99,7 @@ describe("env", () => {
     // Spares (parties beyond committeeSize) hold no key material and are left out of the list.
     const threshold: State = {
       ...baseState,
-      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+      scenario: testDefaultScenario({ kms: { parties: 5, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
     };
     const rendered = await renderEnvMaps({ discovery: undefined }, stackSpecForState(threshold), templateEnvs, deriveWallet);
     expect(rendered.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe(
@@ -182,7 +184,7 @@ describe("env", () => {
     expect(rendered.componentEnvs["host-sc"].KMS_GEN_THRESHOLD).toBe(
       rendered.componentEnvs["gateway-sc"].KMS_GENERATION_THRESHOLD,
     );
-    expect(rendered.componentEnvs["gateway-sc"].MPC_THRESHOLD).toBe("0");
+    expect(rendered.componentEnvs["gateway-sc"].MPC_THRESHOLD).toBe("1");
     expect(rendered.componentEnvs["host-sc"].MPC_THRESHOLD).toBe("1");
   });
 
@@ -201,7 +203,7 @@ describe("env", () => {
       requiresGitHub: true,
       versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
       overrides: [],
-      scenario: testDefaultScenario({ kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
+      scenario: testDefaultScenario({ kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" } }),
       discovery: {
         gateway: {},
         hosts: {},
@@ -238,56 +240,6 @@ describe("env", () => {
     // context params the deploy requires; no auto TLS => no PCR allowlist => zero PCRs.
     // softwareVersion must be valid
     // semver (the KMS core parses it) — never a bare git-SHA image tag like CORE_VERSION.
-    expect(host.KMS_SOFTWARE_VERSION).toMatch(/^\d+(\.\d+){0,2}(-[0-9A-Za-z.-]+)?$/);
-    const pcrValues = JSON.parse(host.KMS_PCR_VALUES);
-    expect(pcrValues).toHaveLength(1);
-    expect(pcrValues[0].pcr0).toMatch(/^0x0+$/);
-  });
-
-  test("projects centralized single-node KMS params into the host contract env", async () => {
-    const templateEnvs = Object.fromEntries(
-      await Promise.all(
-        COMPONENTS.map(async (component) => [
-          component,
-          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
-        ]),
-      ),
-    ) as Record<string, Record<string, string>>;
-    const state: State = {
-      target: "latest-main",
-      lockPath: "/tmp/latest-main.json",
-      requiresGitHub: true,
-      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
-      overrides: [],
-      scenario: testDefaultScenario({ kms: { mode: "centralized", parties: 1, threshold: 1, committeeSize: 1, fheParams: "Default" } }),
-      discovery: {
-        gateway: {},
-        hosts: {},
-        kmsSigners: ["0x1"],
-        kmsCaCerts: ["0xaa"],
-        objectStoreKeyPrefix: "PUB",
-        fheKeyId: "f".repeat(64),
-        crsKeyId: "c".repeat(64),
-        endpoints: {
-          gateway: { http: "http://gateway-node:8546", ws: "ws://gateway-node:8546" },
-          hosts: { host: { http: "http://host-node:8545", ws: "ws://host-node:8545" } },
-          objectStoreInternal: "http://object-store:9000",
-          objectStoreExternal: "http://localhost:9000",
-        },
-      },
-      completedSteps: [],
-      updatedAt: "2026-06-25T00:00:00.000Z",
-    };
-
-    const rendered = await renderEnvMaps({ discovery: state.discovery }, stackSpecForState(state), templateEnvs, deriveWallet);
-    const host = rendered.componentEnvs["host-sc"];
-
-    // The deploy reads the same per-node params as threshold, here for one node. The centralized
-    // core's public vault prefix is "PUB" (PUB-p{i} is threshold-only) — it tracks objectStoreKeyPrefix.
-    expect(host.KMS_NODE_PARTY_ID_0).toBe("1");
-    expect(host.KMS_NODE_MPC_IDENTITY_0).toBe("kms-core");
-    expect(host.KMS_NODE_STORAGE_PREFIX_0).toBe("PUB");
-    expect(host.KMS_NODE_CA_CERT_0).toBe("0xaa");
     expect(host.KMS_SOFTWARE_VERSION).toMatch(/^\d+(\.\d+){0,2}(-[0-9A-Za-z.-]+)?$/);
     const pcrValues = JSON.parse(host.KMS_PCR_VALUES);
     expect(pcrValues).toHaveLength(1);

@@ -21,12 +21,9 @@ use fhevm_host_bindings::{
         AbortCrsgen, AbortKeygen, CrsgenRequest, KMSGenerationEvents, KeygenRequest,
         PrepKeygenRequest,
     },
-    protocol_config::{
-        IProtocolConfig::KmsThresholds,
-        ProtocolConfig::{
-            KmsContextDestroyed, KmsEpochDestroyed, KmsNodeParams, NewKmsContext, NewKmsEpoch,
-            PcrValues, ProtocolConfigEvents,
-        },
+    protocol_config::ProtocolConfig::{
+        KmsContextDestroyed, KmsEpochDestroyed, KmsNodeParams, KmsThresholds, NewKmsContext,
+        NewKmsEpoch, PcrValues, ProtocolConfigEvents,
     },
 };
 use sqlx::{

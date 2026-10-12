@@ -114,8 +114,10 @@ CI path reuses `zama-ai/kms`'s own deploy pipeline as-is (see `preview-env-deplo
 ### Dedicated KMS version pins
 
 Preview-env **never builds** kms-core. It sparse-checkouts `zama-ai/kms` at
-`kms_repo_ref`, pulls `core-service-enclave:<kms_core_version>` for PCR
-attestation, and runs kms's `deploy.sh --tag … --num-parties "${NB_KMS_CORE}"`.
+`kms_repo_ref`, pulls the enclave image that checkout's `deploy.sh` will
+install (`core-service-enclave-insecure` on current kms main,
+`core-service-enclave` on `v0.14.1`) at `<kms_core_version>` for PCR
+attestation, and runs `deploy.sh --tag … --num-parties "${NB_KMS_CORE}"`.
 
 | Input | Override key | Meaning |
 | --- | --- | --- |

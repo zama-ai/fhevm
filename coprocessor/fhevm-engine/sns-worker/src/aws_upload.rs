@@ -510,16 +510,13 @@ fn validate_existing_attestation(
             expected.format, actual.format
         ));
     }
-    if actual.signer != expected_signer {
-        return Err(format!(
-            "signer mismatch: expected {}, got {}",
-            expected_signer, actual.signer
-        ));
-    }
-
     actual
-        .verify(expected.handle, expected.coprocessor_context_id)
-        .map_err(|err| format!("handle/context/signature mismatch: {err}"))?;
+        .verify(
+            expected.handle,
+            expected.coprocessor_context_id,
+            expected_signer,
+        )
+        .map_err(|err| format!("attestation verification failed: {err}"))?;
 
     Ok(())
 }
@@ -1462,7 +1459,7 @@ mod tests {
 
         let err =
             validate_existing_attestation(&expected, expected_signer, &attestation).unwrap_err();
-        assert!(err.contains("handle/context/signature mismatch"));
+        assert!(err.contains("signer mismatch: recovered"), "{err}");
     }
 
     #[tokio::test]
@@ -1473,7 +1470,7 @@ mod tests {
 
         let err =
             validate_existing_attestation(&expected, expected_signer, &attestation).unwrap_err();
-        assert!(err.contains("signer mismatch"));
+        assert!(err.contains("unexpected signer"), "{err}");
     }
 
     #[test]

@@ -665,7 +665,9 @@ fn compare_blocks<'a>(
         {
             let local_descriptor = local_descriptors.get(&handle).copied();
             let observed_descriptor = observed_descriptors.get(&handle).copied();
-            if same_consensus_material(local_descriptor, observed_descriptor) {
+            if same_consensus_material(local_descriptor, observed_descriptor)
+                || is_synthetic_probe(local_descriptor, observed_descriptor)
+            {
                 continue;
             }
             findings.push(DriftHandleFinding {
@@ -682,6 +684,22 @@ fn compare_blocks<'a>(
         }
     }
     Ok(findings)
+}
+
+/// The dry-run probe exists on no chain, so a mismatch on it is never drift:
+/// containing it would only stall TFHE batches, and there is nothing to heal it
+/// from. The block digest still differs, so verification reports the block
+/// disagreement, which is what fails the upgrade. Decided by this node's own
+/// descriptor when it has one, so a peer cannot hide drift on a handle this node
+/// holds as real by flagging it synthetic.
+fn is_synthetic_probe(
+    local: Option<&BlockCiphertextDescriptor>,
+    observed: Option<&BlockCiphertextDescriptor>,
+) -> bool {
+    match local {
+        Some(local) => local.synthetic,
+        None => observed.is_some_and(|observed| observed.synthetic),
+    }
 }
 
 fn same_consensus_material(
@@ -1187,6 +1205,49 @@ mod reason_tests {
             .expect("compare provenance-mixed blocks");
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].handle, drifted);
+    }
+
+    #[test]
+    fn synthetic_probe_mismatches_are_not_handle_findings() {
+        let computed = |handle: B256, ct64: u8| {
+            BlockCiphertextDescriptor::computed(
+                handle,
+                U256::ONE,
+                None,
+                B256::repeat_byte(ct64),
+                handle,
+                CiphertextFormat::CompressedOnCpu,
+            )
+        };
+        let probe = B256::repeat_byte(1);
+        let missing_probe = B256::repeat_byte(2);
+        let flagged_real = B256::repeat_byte(3);
+        let real = B256::repeat_byte(4);
+        let local = vec![
+            computed(probe, 0x11).into_synthetic(),
+            computed(flagged_real, 0x11),
+            computed(real, 0x11),
+        ];
+        let observed = vec![
+            computed(probe, 0x22).into_synthetic(),
+            BlockCiphertextDescriptor::from_uncomputed(missing_probe).into_synthetic(),
+            computed(flagged_real, 0x22).into_synthetic(),
+            computed(real, 0x22),
+        ];
+        let findings = compare_blocks(
+            [&test_block(local)],
+            [&test_block(observed)],
+            "legacy",
+            true,
+        )
+        .expect("compare blocks with a synthetic probe");
+        // A probe this node holds, or only peers report, never becomes drift.
+        // A peer's flag cannot hide drift on a handle this node holds as real.
+        let handles = findings
+            .iter()
+            .map(|finding| finding.handle)
+            .collect::<Vec<_>>();
+        assert_eq!(handles, vec![flagged_real, real]);
     }
 
     fn test_block(ciphertexts: Vec<BlockCiphertextDescriptor>) -> ManifestBlockEntry {

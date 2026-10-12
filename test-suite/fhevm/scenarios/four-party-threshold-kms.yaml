@@ -24,8 +24,8 @@ instances:
     args:
       host-listener-consumer:
         - --service-name=coprocessor1-host-listener-consumer
-# Optional `kms` block. Absent (every existing scenario) = today's single centralized
-# kms-core. Present with mode: threshold = an N-party threshold-mode cluster + per-party connectors.
+# Optional `kms` block. Absent = a 4-party cluster with fast insecure keygen (Default params).
+# Present = the topology and keygen it describes; here, a secure keygen with Test params.
 kms:
   mode: threshold
   parties: 4       # MPC nodes; KMS core requires parties == 3*threshold + 1

@@ -158,7 +158,7 @@ contract ACL is
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 5;
+    uint256 private constant MINOR_VERSION = 6;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -182,7 +182,7 @@ contract ACL is
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 6;
+    uint64 private constant REINITIALIZER_VERSION = 7;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ACL_STORAGE_LOCATION = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
@@ -202,11 +202,11 @@ contract ACL is
     }
 
     /**
-     * @notice Re-initializes the contract from V4.
+     * @notice Re-initializes the contract from V5.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice Accepts pending ownership and re-syncs the ConfidentialBridge's LayerZero
@@ -316,6 +316,7 @@ contract ACL is
     /**
      * @notice Delegates an account the access to handles for user decryption, for instance, in the context of account
      * abstraction for issuing user decryption requests from a smart contract account.
+     * @dev Cannot be called while the ACL is paused, including to extend or shorten an existing delegation.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to delegate access to, or `WILDCARD_DELEGATION_ADDRESS` for delegation across
      *        all contracts (until expiry). Mixing wildcard with per-contract delegations is allowed and can be useful,
@@ -377,11 +378,12 @@ contract ACL is
 
     /**
      * @notice Revokes the access to handles for user decryption delegated to an account.
+     * @dev Can be called while the ACL is paused. The one-delegate-or-revoke-per-block rule still applies.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to revoke access to, or `WILDCARD_DELEGATION_ADDRESS` to revoke the
      *        wildcard delegation across all contracts.
      */
-    function revokeDelegationForUserDecryption(address delegate, address contractAddress) public virtual whenNotPaused {
+    function revokeDelegationForUserDecryption(address delegate, address contractAddress) public virtual {
         ACLStorage storage $ = _getACLStorage();
         UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[msg.sender][delegate][
             contractAddress

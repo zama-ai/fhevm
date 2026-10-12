@@ -137,13 +137,17 @@ jobs:
         run: npm --workspace=library-solidity/codegen run rebuild
 
       - name: Install host-contracts dependencies
-        run: npm --workspace=host-contracts ci
+        # Any `npm ci` that precedes a codegen run must also include `library-solidity/codegen`:
+        # `npm ci` wipes the root node_modules, which may hold codegen's dependencies (e.g. commander).
+        run: npm ci --workspace=host-contracts --workspace=library-solidity/codegen
 
       - name: Run host-contracts codegen
         run: npm --workspace=host-contracts run codegen
 
       - name: Install library-solidity dependencies
-        run: npm --workspace=@fhevm/solidity ci
+        # Any `npm ci` that precedes a codegen run must also include `library-solidity/codegen`:
+        # `npm ci` wipes the root node_modules, which may hold codegen's dependencies (e.g. commander).
+        run: npm ci --workspace=@fhevm/solidity --workspace=library-solidity/codegen
 
       - name: Run library-solidity codegen
         run: npm --workspace=@fhevm/solidity run codegen

@@ -1,9 +1,9 @@
 /**
  * Single source of truth for per-party KMS naming, port, and quorum conventions.
  *
- * The one rule everything below encodes: party 1 keeps the bare single-node names
- * (`kms-core`, `kms-connector`, ...) so the centralized templates, existing container
- * references, and discovery keep working unchanged; parties 2..N get a party suffix.
+ * The one rule everything below encodes: party 1 keeps the bare names (`kms-core`,
+ * `kms-connector`, ...) so the base compose templates, existing container references, and
+ * discovery keep working unchanged; parties 2..N get a party suffix.
  * Derive every party-scoped name from here — never spell the convention inline.
  */
 
@@ -46,7 +46,7 @@ export const kmsConnectorEnvName = (party: number) =>
 export const kmsConnectorDbName = (party: number) =>
   party === 1 ? "kms-connector" : `kms-connector-${party}`;
 
-/** Party i's S3 vault prefixes (threshold only; the centralized core uses `PUB`/`PRIV`).
+/** Party i's S3 vault prefixes.
  * kms-gen-keys writes each party's signing key under these, the cores mount them as
  * their vaults, and signer discovery reads each party's VerfAddress from its public one. */
 export const kmsPublicPrefix = (party: number) => `PUB-p${party}`;

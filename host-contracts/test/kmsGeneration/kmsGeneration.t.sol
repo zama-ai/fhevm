@@ -7,8 +7,7 @@ import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/crypt
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
-import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
-import {KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
@@ -245,12 +244,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     /// @dev Define a new KMS context with 4 nodes and kmsGen threshold 3.
     function _switchToMultiSignerContext() internal {
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(4);
-        IProtocolConfig.KmsThresholds memory thresholds = IProtocolConfig.KmsThresholds({
-            publicDecryption: 3,
-            userDecryption: 3,
-            kmsGen: 3,
-            mpc: 3
-        });
+        KmsThresholds memory thresholds = KmsThresholds({publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 3});
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(nodes, thresholds);
         _activatePendingFourNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2);

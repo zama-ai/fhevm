@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO handle_producer_block (\n            host_chain_id,\n            handle,\n            producer_block_number,\n            producer_block_hash,\n            synthetic\n        )\n        VALUES ($1, $2, $3, $4, $5)\n        ON CONFLICT (host_chain_id, handle, producer_block_hash) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "98b7ff1494888e061406ecbff2bcc16b0bd65bdcbbbcab058ea613eb57384d56"
+}

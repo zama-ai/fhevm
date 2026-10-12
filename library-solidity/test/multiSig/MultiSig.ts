@@ -5,7 +5,7 @@ import hre from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { userDecryptSingleHandle } from '../utils';
+import { userDecryptSingleEuint } from '../utils';
 import { deploySimpleMultiSigFixture } from './MultiSig.fixture';
 
 describe('MultiSig', function () {
@@ -41,7 +41,7 @@ describe('MultiSig', function () {
 
     // now check that all 3 owners can user-decrypt the encryptedValue:
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const aliceDecrypted = await userDecryptSingleHandle(
+    const aliceDecrypted = await userDecryptSingleEuint(
       encryptedValue.handles[0],
       this.contractAddress,
       this.instances.alice,
@@ -51,7 +51,7 @@ describe('MultiSig', function () {
     );
     expect(aliceDecrypted).to.equal(clearValue);
     const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const bobDecrypted = await userDecryptSingleHandle(
+    const bobDecrypted = await userDecryptSingleEuint(
       encryptedValue.handles[0],
       this.contractAddress,
       this.instances.bob,
@@ -61,7 +61,7 @@ describe('MultiSig', function () {
     );
     expect(bobDecrypted).to.equal(clearValue);
     const { publicKey: publicKeyCarol, privateKey: privateKeyCarol } = this.instances.carol.generateKeypair();
-    const carolDecrypted = await userDecryptSingleHandle(
+    const carolDecrypted = await userDecryptSingleEuint(
       encryptedValue.handles[0],
       this.contractAddress,
       this.instances.carol,
@@ -105,7 +105,7 @@ describe('MultiSig', function () {
     await this.multiSig.executeTx(2); // anyone can execute it finally
 
     // finally all owners can user-decrypt the result:
-    const aliceDecrypted2 = await userDecryptSingleHandle(
+    const aliceDecrypted2 = await userDecryptSingleEuint(
       handleResult,
       await this.setter.getAddress(),
       this.instances.alice,
@@ -114,7 +114,7 @@ describe('MultiSig', function () {
       publicKeyAlice,
     );
     expect(aliceDecrypted2).to.equal(clearValue + 42); // because the setter adds 42 to the encrypted input value
-    const bobDecrypted2 = await userDecryptSingleHandle(
+    const bobDecrypted2 = await userDecryptSingleEuint(
       handleResult,
       await this.setter.getAddress(),
       this.instances.bob,
@@ -123,7 +123,7 @@ describe('MultiSig', function () {
       publicKeyBob,
     );
     expect(bobDecrypted2).to.equal(clearValue + 42); // because the setter adds 42 to the encrypted input value
-    const carolDecrypted2 = await userDecryptSingleHandle(
+    const carolDecrypted2 = await userDecryptSingleEuint(
       handleResult,
       await this.setter.getAddress(),
       this.instances.carol,
@@ -159,7 +159,7 @@ describe('MultiSig', function () {
 
     // finally all owners can user-decrypt the result:
     const { publicKey: publicKeyAlice, privateKey: privateKeyAlice } = this.instances.alice.generateKeypair();
-    const aliceDecrypted = await userDecryptSingleHandle(
+    const aliceDecrypted = await userDecryptSingleEuint(
       handleResult,
       await setter2.getAddress(),
       this.instances.alice,
@@ -170,7 +170,7 @@ describe('MultiSig', function () {
     expect(aliceDecrypted).to.equal(42); // because the setter adds 42 to 0 (the uninitialized input)
 
     const { publicKey: publicKeyBob, privateKey: privateKeyBob } = this.instances.bob.generateKeypair();
-    const bobDecrypted = await userDecryptSingleHandle(
+    const bobDecrypted = await userDecryptSingleEuint(
       handleResult,
       await setter2.getAddress(),
       this.instances.bob,
@@ -181,7 +181,7 @@ describe('MultiSig', function () {
     expect(bobDecrypted).to.equal(42); // because the setter adds 42 to 0 (the uninitialized input)
 
     const { publicKey: publicKeyCarol, privateKey: privateKeyCarol } = this.instances.carol.generateKeypair();
-    const carolDecrypted = await userDecryptSingleHandle(
+    const carolDecrypted = await userDecryptSingleEuint(
       handleResult,
       await setter2.getAddress(),
       this.instances.carol,

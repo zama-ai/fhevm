@@ -45,7 +45,7 @@ pub(super) async fn seal_seeded_block(
     assert!(is_block_manifest_ready(&mut trx, &block)
         .await
         .expect("check seeded block readiness"));
-    let descriptors = load_manifest_descriptors(&mut trx, &block, false)
+    let descriptors = load_manifest_descriptors(&mut trx, &block, false, None)
         .await
         .expect("load seeded block descriptors");
     seal_block_content(&mut trx, &block, context, &descriptors)

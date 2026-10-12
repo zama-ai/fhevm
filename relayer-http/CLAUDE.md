@@ -22,6 +22,7 @@ relayer-http/
 ├── Dockerfile                                     # container image, built from the repository root (see Container image)
 ├── .gitignore                                     # target/, config/*.local.yaml (local variants of the configuration)
 ├── config/config.yaml                             # example configuration: name, log, http, kms_aggregator
+├── dev/                                           # local development tooling: Makefile, per-topology configs, proxy port-forwards, flow scripts; start with its README.md
 └── crates/relayer-http/src/
     ├── main.rs                # load config → init logging → App → serve until SIGINT/SIGTERM → drain → exit
     ├── lib.rs                 # App: the one shared state (both aggregators, http config, shutdown token)
@@ -66,6 +67,10 @@ cargo run -p relayer-http -- config/config.yaml    # needs the KMS_<i>_API_KEY e
 
 Every change must pass the first three. Check exit codes strictly (a grep on the output hides a failing build).
 
+Against the local fhevm stack: `make -C dev up` (connector proxies and their host port-forwards), `make -C dev run`
+(the relayer with the config matching the running topology), `make -C dev public-decrypt` / `user-decrypt` (one flow
+each, from the e2e container), `make -C dev check` (the three commands above). See `dev/README.md`.
+
 ## Container image
 
 `Dockerfile` follows the relayer's and the kms-connector's model: the golden `rust-glibc` builder pinned by
@@ -81,8 +86,12 @@ docker run --rm -p 8080:8080 -v "$PWD/relayer-http/config/config.yaml:/app/confi
   -e KMS_00_API_KEY=... relayer-http            # the config is mounted at /app/config/config.yaml
 ```
 
-The CI workflow for this image (the reusable docker template, change filters on `relayer-http/**` and
-`kms-connector/crates/api/**`) is not wired yet.
+CI publishes the image as `ghcr.io/zama-ai/fhevm/relayer-http` through `.github/workflows/relayer-http-docker-build.yml`
+(pushes to `main`/`release/*`, releases, manual runs, or a call from the e2e orchestrator). The two other workflows,
+`relayer-http-tests.yml` and `relayer-http-dependency-analysis.yml`, run on pull requests: the three commands above,
+then `cargo update -w --locked`, `cargo-deny check license` against `deny.toml` (every allowed license must be used)
+and `cargo-audit audit` with `.cargo/audit.toml`. All three are gated on changes under `relayer-http/**`,
+`kms-connector/crates/api/**` and `kms-connector/Cargo.toml`.
 
 ## Rules
 

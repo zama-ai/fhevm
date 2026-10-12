@@ -33,8 +33,14 @@ const authHeaders = (): Record<string, string> => {
   return { authorization: `Bearer ${key}` };
 };
 
-/** MPC threshold `t` (0 in centralized mode); the decryption quorum is `2t+1`. */
-export const kmsThreshold = (): number => Number(process.env.KMS_THRESHOLD ?? '0') || 0;
+/** MPC threshold `t` of the KMS cluster (defaults to 1, the 4-party cluster); the decryption quorum is `2t+1`. */
+export const kmsThreshold = (): number => {
+  const threshold = Number(process.env.KMS_THRESHOLD ?? '1');
+  if (!Number.isInteger(threshold) || threshold < 1) {
+    throw new Error(`KMS_THRESHOLD must be a positive integer; got ${JSON.stringify(process.env.KMS_THRESHOLD)}`);
+  }
+  return threshold;
+};
 
 export const quorum = (): number => 2 * kmsThreshold() + 1;
 

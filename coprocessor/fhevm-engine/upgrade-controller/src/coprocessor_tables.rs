@@ -295,6 +295,13 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: false,
         conflict_cols: &[],
     },
+    // Written by cutover itself, in `public`, from the green schema it is about
+    // to drop: the dry-run probe's descriptor material for manifests only.
+    CoprocessorTable {
+        name: "synthetic_handle_digest",
+        duplicated: false,
+        conflict_cols: &[],
+    },
     // ---------------------------------------------------------------------
     // Deprecated wave1 branch-context state. Nothing in the upgrade-controller
     // reads, writes or deletes these any more: they get no gcs.* duplicate, the

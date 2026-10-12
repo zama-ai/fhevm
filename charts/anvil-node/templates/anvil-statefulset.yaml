@@ -33,8 +33,10 @@ spec:
             - name: MNEMONIC
               value: {{ .Values.network.mnemonic }}
           args:
+            {{- if .Values.network.blockTime }}
             - "--block-time"
             - "{{ .Values.network.blockTime }}"
+            {{- end }}
             - "--host"
             - "{{ .Values.network.host }}"
             - "--port"

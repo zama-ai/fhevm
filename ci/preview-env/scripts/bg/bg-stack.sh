@@ -33,14 +33,29 @@ COMMON_CHART="${COMMON_CHART:-oci://hub.zama.org/ghcr/zama-zws/helm-charts/commo
 COMMON_CHART_VERSION="${COMMON_CHART_VERSION:-0.3.3}"
 COMPONENTS="${COMPONENTS:-kms-connector relayer test-suite}"
 # Same precedence as bg-green.sh: the Green coprocessor carries the tag the round upgrades to.
-TARGET_TAG="${TARGET_TAG:-$(kubectl get deploy -n "${NAMESPACE}" coprocessor-1-gcs-tx-sender \
-  -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | sed 's/.*://')}"
-TARGET_TAG="${TARGET_TAG:-$(kubectl get deploy -n "${NAMESPACE}" listener-1-host \
-  -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | sed 's/.*://')}"
-[[ -n "${TARGET_TAG}" ]] || { echo "::error::could not resolve TARGET_TAG" >&2; exit 1; }
+GREEN_SLOT="${GREEN_SLOT--gcs}"
+fail() { echo "::error::$*" >&2; exit 1; }
+# Green is not up yet: derive the tag the deploy resolved for the coprocessor. Rebuilt on this
+# branch means HEAD's short SHA, otherwise the merge-base's. The listener is a separate component
+# with its own change detection, so its tag matches the coprocessor's only by coincidence.
+coprocessor_tag() {
+  local base
+  base=$(git -C "${root}" merge-base HEAD origin/main 2>/dev/null || true)
+  [[ -n "${base}" ]] || return 1
+  if git -C "${root}" diff --quiet "${base}" HEAD -- coprocessor/ 2>/dev/null; then
+    git -C "${root}" rev-parse --short=7 "${base}"
+  else
+    git -C "${root}" rev-parse --short=7 HEAD
+  fi
+}
+# `|| true`: before Green is started this lookup fails, and under `set -e` + pipefail a bare
+# substitution would kill the script here.
+TARGET_TAG="${TARGET_TAG:-$(kubectl get deploy -n "${NAMESPACE}" "coprocessor-1${GREEN_SLOT}-tx-sender" \
+  -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | sed 's/.*://' || true)}"
+TARGET_TAG="${TARGET_TAG:-$(coprocessor_tag || true)}"
+[[ -n "${TARGET_TAG}" ]] || fail "could not resolve TARGET_TAG (no Green fleet and no merge-base with origin/main); pass TARGET_TAG=<Green tag>"
 
 verb="${1:-status}"
-fail() { echo "::error::$*" >&2; exit 1; }
 
 nb_kms=$(helm list -n "${NAMESPACE}" -o json | jq '[.[] | select(.name | test("^kms-connector-[0-9]+$"))] | length')
 
@@ -84,7 +99,7 @@ upgrade)
     for i in $(seq 1 "${nb_kms}"); do
       echo "kms-connector-${i}: upgrading to ${TARGET_TAG}"
       # --reuse-values keeps every address, endpoint and wallet the deploy resolved; only the
-      # four image tags move. The chart runs its own db-migration, so a connector schema change
+      # six image tags move. The chart runs its own db-migration, so a connector schema change
       # between the releases is applied here.
       helm upgrade "kms-connector-${i}" "${KMS_CONNECTOR_CHART}" -n "${NAMESPACE}" --reuse-values \
         --set-string "kmsConnectorDbMigration.image.name=${reg}/kms-connector/db-migration" \
@@ -94,10 +109,16 @@ upgrade)
         --set-string "kmsConnectorKmsWorker.image.name=${reg}/kms-connector/kms-worker" \
         --set-string "kmsConnectorKmsWorker.image.tag=${TARGET_TAG}" \
         --set-string "kmsConnectorTxSender.image.name=${reg}/kms-connector/tx-sender" \
-        --set-string "kmsConnectorTxSender.image.tag=${TARGET_TAG}" >/dev/null
+        --set-string "kmsConnectorTxSender.image.tag=${TARGET_TAG}" \
+        --set-string "kmsConnectorEndpoint.image.name=${reg}/kms-connector/endpoint" \
+        --set-string "kmsConnectorEndpoint.image.tag=${TARGET_TAG}" \
+        --set-string "kmsConnectorProxy.image.name=${reg}/kms-connector/proxy" \
+        --set-string "kmsConnectorProxy.image.tag=${TARGET_TAG}" >/dev/null
     done
     for i in $(seq 1 "${nb_kms}"); do
-      for c in gw-listener kms-worker tx-sender; do
+      for c in gw-listener kms-worker tx-sender endpoint proxy; do
+        # A release predating endpoint/proxy has no such Deployment; nothing to wait for.
+        kubectl get deploy -n "${NAMESPACE}" "kms-connector-${i}-kms-connector-${c}" >/dev/null 2>&1 || continue
         kubectl rollout status -n "${NAMESPACE}" "deploy/kms-connector-${i}-kms-connector-${c}" \
           --timeout=300s >/dev/null || fail "kms-connector-${i}-${c} did not become ready"
       done

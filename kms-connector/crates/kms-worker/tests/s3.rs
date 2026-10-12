@@ -1,6 +1,5 @@
 use alloy::{hex, primitives::B256};
-use ciphertext_attestation::CiphertextFormat;
-use ciphertext_attestation::consensus::ConsensusMaterial;
+use ciphertext_attestation::{CiphertextFormat, ConsensusMaterial};
 use connector_utils::tests::setup::{
     S3_CT_BUCKET, S3_CT_DIGEST, S3_CT_HANDLE, S3_CT_KEY_ID, S3Instance, TestInstance,
 };

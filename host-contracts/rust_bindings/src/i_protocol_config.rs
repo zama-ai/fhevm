@@ -782,7 +782,7 @@ interface IProtocolConfig {
       {
         "name": "thresholds",
         "type": "tuple",
-        "internalType": "struct IProtocolConfig.KmsThresholds",
+        "internalType": "struct KmsThresholds",
         "components": [
           {
             "name": "publicDecryption",
@@ -1403,7 +1403,7 @@ interface IProtocolConfig {
       {
         "name": "thresholds",
         "type": "tuple",
-        "internalType": "struct IProtocolConfig.KmsThresholds",
+        "internalType": "struct KmsThresholds",
         "components": [
           {
             "name": "publicDecryption",
@@ -1812,7 +1812,7 @@ interface IProtocolConfig {
         "name": "thresholds",
         "type": "tuple",
         "indexed": false,
-        "internalType": "struct IProtocolConfig.KmsThresholds",
+        "internalType": "struct KmsThresholds",
         "components": [
           {
             "name": "publicDecryption",
@@ -1955,7 +1955,7 @@ interface IProtocolConfig {
         "name": "thresholds",
         "type": "tuple",
         "indexed": false,
-        "internalType": "struct IProtocolConfig.KmsThresholds",
+        "internalType": "struct KmsThresholds",
         "components": [
           {
             "name": "publicDecryption",

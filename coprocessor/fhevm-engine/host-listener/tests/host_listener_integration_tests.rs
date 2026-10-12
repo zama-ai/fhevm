@@ -356,40 +356,56 @@ async fn test_allowed_computation_records_its_producer_block(
     let caller = Address::repeat_byte(0x11);
     let handle = FixedBytes::<32>::repeat_byte(0x42);
     let unallowed_handle = FixedBytes::<32>::repeat_byte(0x43);
+    let probe_handle = FixedBytes::<32>::repeat_byte(0x44);
     let first_block_hash = FixedBytes::<32>::repeat_byte(0x33);
     let competing_block_hash = FixedBytes::<32>::repeat_byte(0x34);
 
-    let event =
-        |handle, transaction_hash, block_hash, is_allowed: bool, clear| {
-            LogTfhe {
-                event: EventLog {
-                    address: Address::ZERO,
-                    data: TfheContractEvents::TrivialEncrypt(
-                        TfheContract::TrivialEncrypt {
-                            caller,
-                            pt: ClearConst::from_be_slice(&[clear]),
-                            toType: 4,
-                            result: handle,
-                        },
-                    ),
-                },
-                transaction_hash: Some(transaction_hash),
-                allowed_outputs: if is_allowed {
-                    HashSet::from([handle])
-                } else {
-                    HashSet::new()
-                },
-                block_number: 7,
-                block_hash,
-                block_timestamp: PrimitiveDateTime::MAX,
-                dependence_chain: transaction_hash,
-                tx_depth_size: 0,
-                log_index: None,
-                operand_boundary_mask: Some(Default::default()),
-                is_executor_minted: true,
-                is_fallback_grant: false,
-            }
-        };
+    let synthetic_event = |handle,
+                           transaction_hash,
+                           block_hash,
+                           is_allowed: bool,
+                           clear,
+                           is_synthetic| {
+        LogTfhe {
+            event: EventLog {
+                address: Address::ZERO,
+                data: TfheContractEvents::TrivialEncrypt(
+                    TfheContract::TrivialEncrypt {
+                        caller,
+                        pt: ClearConst::from_be_slice(&[clear]),
+                        toType: 4,
+                        result: handle,
+                    },
+                ),
+            },
+            transaction_hash: Some(transaction_hash),
+            allowed_outputs: if is_allowed {
+                HashSet::from([handle])
+            } else {
+                HashSet::new()
+            },
+            block_number: 7,
+            block_hash,
+            block_timestamp: PrimitiveDateTime::MAX,
+            dependence_chain: transaction_hash,
+            tx_depth_size: 0,
+            log_index: None,
+            operand_boundary_mask: Some(Default::default()),
+            is_executor_minted: true,
+            is_fallback_grant: false,
+            is_synthetic,
+        }
+    };
+    let event = |handle, transaction_hash, block_hash, is_allowed, clear| {
+        synthetic_event(
+            handle,
+            transaction_hash,
+            block_hash,
+            is_allowed,
+            clear,
+            false,
+        )
+    };
 
     let mut tx = db
         .new_transaction()
@@ -428,15 +444,29 @@ async fn test_allowed_computation_records_its_producer_block(
         ),
     )
     .await?;
+    // The dry-run probe the GCS listener injects is recorded, flagged.
+    db.insert_tfhe_event(
+        &mut tx,
+        &synthetic_event(
+            probe_handle,
+            FixedBytes::repeat_byte(0x74),
+            first_block_hash,
+            true,
+            10,
+            true,
+        ),
+    )
+    .await?;
     tx.commit().await?;
 
     let rows = sqlx::query(
         "SELECT handle, producer_block_number, producer_block_hash
            FROM handle_producer_block
-          WHERE host_chain_id = $1
+          WHERE host_chain_id = $1 AND handle = $2
           ORDER BY producer_block_hash",
     )
     .bind(chain_id.as_i64())
+    .bind(handle.as_slice())
     .fetch_all(&pool)
     .await?;
 
@@ -452,6 +482,20 @@ async fn test_allowed_computation_records_its_producer_block(
             .map(|row| row.get::<Vec<u8>, _>("producer_block_hash"))
             .collect::<Vec<_>>(),
         vec![first_block_hash.to_vec(), competing_block_hash.to_vec()]
+    );
+
+    let flags = sqlx::query_as::<_, (Vec<u8>, bool)>(
+        "SELECT handle, synthetic FROM handle_producer_block
+          WHERE host_chain_id = $1 AND producer_block_hash = $2
+          ORDER BY handle",
+    )
+    .bind(chain_id.as_i64())
+    .bind(first_block_hash.as_slice())
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(
+        flags,
+        vec![(handle.to_vec(), false), (probe_handle.to_vec(), true)]
     );
 
     Ok(())

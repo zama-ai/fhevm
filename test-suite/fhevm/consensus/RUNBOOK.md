@@ -958,7 +958,7 @@ on a fresh stack. Candidate acceptance still uses the branch-built candidate.
 
 KMS releases before 0.15 publish the insecure test runtime as `core-service`;
 0.15 and newer publish it as `core-service-insecure`. The CLI selects the
-repository for centralized and threshold deployments from the release pin.
+repository from the release pin.
 Unversioned source tags use the current repository naming convention.
 
 

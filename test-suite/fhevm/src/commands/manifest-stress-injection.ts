@@ -1,0 +1,48 @@
+/**
+ * First handle byte mod 4 is 0. The SQL trigger uses the same predicate.
+ * Bytes 21..31 are not free: computed marker, chain id, FheType, then
+ * handle version 0. Only the leading keccak bytes vary.
+ */
+export function stressHandleIsCorrupted(handle: string): boolean {
+  const hex = handle.replace(/^0x/, "");
+  if (!/^[0-9a-fA-F]{64}$/.test(hex)) return false;
+  return Number.parseInt(hex.slice(0, 2), 16) % 4 === 0;
+}
+
+/** Test-only database objects installed on one isolated coprocessor. */
+export const INSTALL_STRESS_INJECTION = `
+BEGIN;
+CREATE TABLE e2e_manifest_noise (
+  handle BYTEA NOT NULL, ciphertext_version SMALLINT NOT NULL,
+  injected BOOLEAN NOT NULL, byte_offset INTEGER NOT NULL,
+  original_byte INTEGER NOT NULL, recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY(handle, ciphertext_version)
+);
+CREATE FUNCTION e2e_inject_ct64_noise() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  flip BOOLEAN;
+  mid INTEGER;
+BEGIN
+  IF NEW.is_input OR NEW.ciphertext_version <> 0 OR NEW.ciphertext_type <> 5
+     OR octet_length(NEW.ciphertext) <= 64 THEN RETURN NULL; END IF;
+  flip := get_byte(NEW.handle, 0) % 4 = 0;
+  mid := octet_length(NEW.ciphertext) / 2;
+  -- Only a handle's first computation is corrupted. A later insert of the same
+  -- handle is a recompute, and one with a finding is a heal installing quorum
+  -- bytes: neither is touched, and neither may fail the writer's insert.
+  IF EXISTS (SELECT 1 FROM drifted_handle d WHERE d.handle = NEW.handle) THEN RETURN NULL; END IF;
+  INSERT INTO e2e_manifest_noise(handle,ciphertext_version,injected,byte_offset,original_byte)
+    VALUES(NEW.handle,NEW.ciphertext_version,flip,mid,get_byte(NEW.ciphertext,mid))
+    ON CONFLICT (handle,ciphertext_version) DO NOTHING;
+  IF NOT FOUND THEN RETURN NULL; END IF;
+  IF flip THEN
+    UPDATE ciphertexts SET ciphertext=set_byte(ciphertext,mid,get_byte(ciphertext,mid) # 128)
+      WHERE handle=NEW.handle AND ciphertext_version=NEW.ciphertext_version;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+CREATE TRIGGER e2e_ciphertexts_noise AFTER INSERT ON ciphertexts
+  FOR EACH ROW EXECUTE FUNCTION e2e_inject_ct64_noise();
+COMMIT;`;
+export const DISABLE_STRESS_INJECTION = "DROP TRIGGER IF EXISTS e2e_ciphertexts_noise ON ciphertexts; DROP FUNCTION IF EXISTS e2e_inject_ct64_noise();";

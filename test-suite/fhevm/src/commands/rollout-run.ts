@@ -274,8 +274,8 @@ export const createRolloutContext = (
     },
     async upgradeKmsNodes(nodeIds, options) {
       const state = await loadState();
-      if (!state || state.scenario.kms.mode !== "threshold") {
-        throw new PreflightError("upgradeKmsNodes requires a running threshold KMS cluster");
+      if (!state) {
+        throw new PreflightError("upgradeKmsNodes requires a running stack");
       }
       if (nodeIds.length === 0) {
         throw new PreflightError("upgradeKmsNodes requires at least one node id");
@@ -319,8 +319,8 @@ export const createRolloutContext = (
     },
     async upgradeKmsOperators(operatorIds, options) {
       const state = await loadState();
-      if (!state || state.scenario.kms.mode !== "threshold") {
-        throw new PreflightError("upgradeKmsOperators requires a running threshold KMS cluster");
+      if (!state) {
+        throw new PreflightError("upgradeKmsOperators requires a running stack");
       }
       if (operatorIds.length === 0) {
         throw new PreflightError("upgradeKmsOperators requires at least one operator id");
@@ -364,8 +364,8 @@ export const createRolloutContext = (
     },
     async withRequiredKmsNode(nodeId, task) {
       const state = await loadState();
-      if (!state || state.scenario.kms.mode !== "threshold") {
-        throw new PreflightError("withRequiredKmsNode requires a running threshold KMS cluster");
+      if (!state) {
+        throw new PreflightError("withRequiredKmsNode requires a running stack");
       }
       const { committeeSize, threshold } = state.scenario.kms;
       if (!Number.isInteger(nodeId) || nodeId < 1 || nodeId > committeeSize) {

@@ -122,9 +122,9 @@ describe("rollout runbook", () => {
     expect(calls).toEqual(["test:rollout-standard"]);
   });
 
-  test("loads the checked-in v0.12 to v0.13 runbook", async () => {
+  test("loads the checked-in v0.13.21 to v0.13.22 KMS node-by-node runbook", async () => {
     await expect(
-      loadRolloutRunbook(path.join(CLI_DIR, "rollouts/v0.12-to-v0.13-protocol-upgrade/run.ts")),
+      loadRolloutRunbook(path.join(CLI_DIR, "rollouts/v0.13.21-to-v0.13.22-kms-node-by-node/run.ts")),
     ).resolves.toBeFunction();
   });
 
@@ -379,7 +379,7 @@ describe("rollout runbook", () => {
         versions,
         overrides: [],
         scenario: testDefaultScenario({
-          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+          kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
         }),
         completedSteps: ["base"],
         updatedAt: "2026-07-14T00:00:00.000Z",
@@ -432,7 +432,7 @@ describe("rollout runbook", () => {
         versions,
         overrides: [],
         scenario: testDefaultScenario({
-          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+          kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
         }),
         completedSteps: ["base"],
         updatedAt: "2026-07-14T00:00:00.000Z",
@@ -474,7 +474,7 @@ describe("rollout runbook", () => {
         versions,
         overrides: [],
         scenario: testDefaultScenario({
-          kms: { mode: "threshold", parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
+          kms: { parties: 4, threshold: 1, committeeSize: 4, fheParams: "Test" },
         }),
         completedSteps: ["base"],
         updatedAt: "2026-07-14T00:00:00.000Z",

@@ -1559,10 +1559,6 @@ pub fn perform_fhe_operation_impl(
                     SupportedFheCiphertexts::FheUint128(b),
                 ) => Ok(SupportedFheCiphertexts::FheUint128(a << b)),
                 (
-                    SupportedFheCiphertexts::FheUint160(a),
-                    SupportedFheCiphertexts::FheUint160(b),
-                ) => Ok(SupportedFheCiphertexts::FheUint160(a << b)),
-                (
                     SupportedFheCiphertexts::FheUint256(a),
                     SupportedFheCiphertexts::FheUint256(b),
                 ) => Ok(SupportedFheCiphertexts::FheUint256(a << b)),
@@ -1595,9 +1591,6 @@ pub fn perform_fhe_operation_impl(
                 }
                 (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint128(a << to_be_u128_bit(b)))
-                }
-                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
-                    Ok(SupportedFheCiphertexts::FheUint160(a << to_be_u160_bit(b)))
                 }
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint256(a << to_be_u256_bit(b)))
@@ -1645,10 +1638,6 @@ pub fn perform_fhe_operation_impl(
                     SupportedFheCiphertexts::FheUint128(b),
                 ) => Ok(SupportedFheCiphertexts::FheUint128(a >> b)),
                 (
-                    SupportedFheCiphertexts::FheUint160(a),
-                    SupportedFheCiphertexts::FheUint160(b),
-                ) => Ok(SupportedFheCiphertexts::FheUint160(a >> b)),
-                (
                     SupportedFheCiphertexts::FheUint256(a),
                     SupportedFheCiphertexts::FheUint256(b),
                 ) => Ok(SupportedFheCiphertexts::FheUint256(a >> b)),
@@ -1681,9 +1670,6 @@ pub fn perform_fhe_operation_impl(
                 }
                 (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint128(a >> to_be_u128_bit(b)))
-                }
-                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => {
-                    Ok(SupportedFheCiphertexts::FheUint160(a >> to_be_u160_bit(b)))
                 }
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint256(a >> to_be_u256_bit(b)))
@@ -1731,10 +1717,6 @@ pub fn perform_fhe_operation_impl(
                     SupportedFheCiphertexts::FheUint128(b),
                 ) => Ok(SupportedFheCiphertexts::FheUint128(a.rotate_left(b))),
                 (
-                    SupportedFheCiphertexts::FheUint160(a),
-                    SupportedFheCiphertexts::FheUint160(b),
-                ) => Ok(SupportedFheCiphertexts::FheUint160(a.rotate_left(b))),
-                (
                     SupportedFheCiphertexts::FheUint256(a),
                     SupportedFheCiphertexts::FheUint256(b),
                 ) => Ok(SupportedFheCiphertexts::FheUint256(a.rotate_left(b))),
@@ -1767,9 +1749,6 @@ pub fn perform_fhe_operation_impl(
                 ),
                 (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => Ok(
                     SupportedFheCiphertexts::FheUint128(a.rotate_left(to_be_u128_bit(b))),
-                ),
-                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => Ok(
-                    SupportedFheCiphertexts::FheUint160(a.rotate_left(to_be_u160_bit(b))),
                 ),
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => Ok(
                     SupportedFheCiphertexts::FheUint256(a.rotate_left(to_be_u256_bit(b))),
@@ -1817,10 +1796,6 @@ pub fn perform_fhe_operation_impl(
                     SupportedFheCiphertexts::FheUint128(b),
                 ) => Ok(SupportedFheCiphertexts::FheUint128(a.rotate_right(b))),
                 (
-                    SupportedFheCiphertexts::FheUint160(a),
-                    SupportedFheCiphertexts::FheUint160(b),
-                ) => Ok(SupportedFheCiphertexts::FheUint160(a.rotate_right(b))),
-                (
                     SupportedFheCiphertexts::FheUint256(a),
                     SupportedFheCiphertexts::FheUint256(b),
                 ) => Ok(SupportedFheCiphertexts::FheUint256(a.rotate_right(b))),
@@ -1853,9 +1828,6 @@ pub fn perform_fhe_operation_impl(
                 ),
                 (SupportedFheCiphertexts::FheUint128(a), SupportedFheCiphertexts::Scalar(b)) => Ok(
                     SupportedFheCiphertexts::FheUint128(a.rotate_right(to_be_u128_bit(b))),
-                ),
-                (SupportedFheCiphertexts::FheUint160(a), SupportedFheCiphertexts::Scalar(b)) => Ok(
-                    SupportedFheCiphertexts::FheUint160(a.rotate_right(to_be_u160_bit(b))),
                 ),
                 (SupportedFheCiphertexts::FheUint256(a), SupportedFheCiphertexts::Scalar(b)) => Ok(
                     SupportedFheCiphertexts::FheUint256(a.rotate_right(to_be_u256_bit(b))),

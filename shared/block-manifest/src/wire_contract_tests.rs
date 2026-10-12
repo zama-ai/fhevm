@@ -288,3 +288,65 @@ fn error_uncomputed_and_invalid_descriptor_digest_vectors_are_pinned() {
         assert_eq!(manifest.canonical_digest().unwrap(), signed_payload);
     }
 }
+
+#[test]
+fn synthetic_flag_is_consensus_material_and_omitted_from_json_when_false() {
+    // A non-synthetic descriptor keeps its pre-flag encoding: the pinned vectors
+    // above still hold. Setting the flag changes both the consensus commitment and
+    // the signed payload, so peers that disagree on it cannot agree on the block.
+    let real = BlockCiphertextDescriptor::from_uncomputed(B256::repeat_byte(1));
+    let probe = real.clone().into_synthetic();
+    assert_ne!(real.consensus_digest(), probe.consensus_digest());
+
+    let mut with_real = payload(Address::ZERO);
+    with_real.detailed_range.blocks[0].ciphertexts = vec![real.clone()];
+    refresh_digests(&mut with_real);
+    let mut with_probe = payload(Address::ZERO);
+    with_probe.detailed_range.blocks[0].ciphertexts = vec![probe.clone()];
+    refresh_digests(&mut with_probe);
+    assert_ne!(
+        with_real.detailed_range.blocks[0].block_content_digest,
+        with_probe.detailed_range.blocks[0].block_content_digest,
+    );
+    assert_ne!(
+        with_real.canonical_digest().unwrap(),
+        with_probe.canonical_digest().unwrap(),
+    );
+
+    let real_json = serde_json::to_value(&real).unwrap();
+    assert!(real_json.get("synthetic").is_none());
+    let probe_json = serde_json::to_value(&probe).unwrap();
+    assert_eq!(probe_json["synthetic"], true);
+    assert_eq!(
+        serde_json::from_value::<BlockCiphertextDescriptor>(probe_json).unwrap(),
+        probe
+    );
+    assert_eq!(
+        serde_json::from_value::<BlockCiphertextDescriptor>(real_json).unwrap(),
+        real
+    );
+}
+
+#[test]
+fn synthetic_computed_descriptor_digest_vector_is_pinned() {
+    let probe = BlockCiphertextDescriptor::computed(
+        B256::repeat_byte(1),
+        U256::from(1),
+        None,
+        B256::repeat_byte(2),
+        B256::repeat_byte(3),
+        CiphertextFormat::CompressedOnCpu,
+    )
+    .into_synthetic();
+    let mut manifest = payload(Address::ZERO);
+    manifest.detailed_range.blocks[0].ciphertexts = vec![probe];
+    refresh_digests(&mut manifest);
+    assert_eq!(
+        manifest.detailed_range.blocks[0].block_content_digest,
+        alloy_primitives::b256!("d3153908eb9014be9bdcaab6e9d38f5c09f846bd98d61898a267693f0edcf952")
+    );
+    assert_eq!(
+        manifest.canonical_digest().unwrap(),
+        alloy_primitives::b256!("5857bd2c03ed775a0c194fae7c686735bd79c26d7e3edf562cef233c8e739656")
+    );
+}

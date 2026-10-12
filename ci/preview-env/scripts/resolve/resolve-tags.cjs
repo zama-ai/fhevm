@@ -125,12 +125,25 @@ module.exports = async ({ core, context, github }) => {
     }
   }
 
-  // Fail fast in case of bad override tags
+  // Fail fast in case of bad override tags, judged per family: which images a release contains is
+  // a property of that release. Resolving for some of a family but not others means the missing
+  // ones postdate it (kms-connector/endpoint and /proxy exist from 0.15, so v0.14.1 has neither).
+  // Resolving for none means the pin is wrong, and still fails.
   const overridden = IMAGES.filter((image) => decisions.get(image.key)?.source === 'dispatch-override');
   const overrideExists = await Promise.all(overridden.map((image) => registry.manifestExists(image.repo, decisions.get(image.key).tag)));
+  const familyHasAnyTag = new Map();
+  overridden.forEach((image, i) => {
+    familyHasAnyTag.set(image.component, (familyHasAnyTag.get(image.component) || false) || overrideExists[i]);
+  });
   overridden.forEach((image, i) => {
     if (overrideExists[i]) return;
     const { tag } = decisions.get(image.key);
+    if (familyHasAnyTag.get(image.component)) {
+      // Unpinned for this image only: falls through to base-commit resolution below.
+      core.info(`${image.label}: '${tag}' predates this image; resolving from the base commit`);
+      decisions.delete(image.key);
+      return;
+    }
     decisions.set(image.key, { tag: '', source: 'unresolved', detail: `dispatch override '${tag}' not found in GHCR (${image.repo})` });
   });
 

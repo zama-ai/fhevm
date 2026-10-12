@@ -164,6 +164,19 @@ echo arm`);
   expect(run.stdout.toString()).toBe("registered\nreset\narm\n");
 });
 
+test("request recovery holds every KMS party, not just the first", () => {
+  const request = source("run-request-recovery.sh");
+  const fragment = section(request, "# KMS is the durable", "docker exec");
+  const run = shell(`KMS_WORKERS=(kms-connector-kms-worker kms-connector-2-kms-worker kms-connector-3-kms-worker kms-connector-4-kms-worker)
+sc_pause() { echo "pause $1"; }
+fail() { exit 1; }
+${fragment}`);
+  expect(run.exitCode, run.stderr.toString()).toBe(0);
+  expect(run.stdout.toString()).toBe(
+    "pause kms-connector-kms-worker\npause kms-connector-2-kms-worker\npause kms-connector-3-kms-worker\npause kms-connector-4-kms-worker\n",
+  );
+});
+
 test("crash restart budget is renewed before failpoint creation or workload arming", () => {
   const crash = source("run-crash-retry-consensus.sh");
   const fragment = section(crash, '  if [[ "$(sc_restart_budget "$container")" == exhausted ]]', "  require_observability");

@@ -209,8 +209,27 @@ async fn compute_and_insert_gw_input_hashes(
     gw_chain_id: i64,
     gw_start_block: i64,
     gw_tip: i64,
+    gw_window_rewound: bool,
     batch_limit: i64,
 ) -> anyhow::Result<()> {
+    // Compute nothing until BOTH hold:
+    //
+    //  * `gw_window_rewound` - the gw-listener's per-proposal alignment latch. The listener
+    //    sets it only in (or after) the transaction that aligned its scan cursor to
+    //    gw_start_block (rewinding when a gap existed). Without it, a proposal that
+    //    activates mid-tick - after the listener's top-of-tick alignment check but before
+    //    its synthetic injection and watermark write - leaves `gw_tip >= gw_start_block`
+    //    and the synthetic row with the window start's real inputs never scanned; hashing
+    //    then stamps a one-shot, permanent synthetic-only gw_start_block hash that the next
+    //    tick's rewind cannot repair.
+    //
+    //  * `gw_tip >= gw_start_block` - the watermark has reached the window start, so (the
+    //    scan being contiguous once aligned) every block in [gw_start_block, gw_tip) has
+    //    complete inputs. The latch alone is not enough either: right after a rewind the
+    //    cursor sits at gw_start_block - 1 with the window not yet re-scanned.
+    if !gw_window_rewound || gw_tip < gw_start_block {
+        return Ok(());
+    }
     let pending_sql = format!(
         r#"
         SELECT DISTINCT ih.block_number
@@ -332,6 +351,68 @@ where
     .fetch_optional(executor)
     .await?;
     Ok(row.and_then(|(v,)| v))
+}
+
+/// Whether the active GCS upgrade has already reached Gateway consensus. Once it has,
+/// the Gateway anchor is agreed and any further GW `state_hash` compute/upload is wasted
+/// work: the Gateway chain keeps producing blocks for the whole dry-run window, so left
+/// unchecked the worker firehoses thousands of GW hashes that no longer feed consensus and
+/// only steal throughput from the host tracks, delaying host unanimity. Stop GW work here
+/// as soon as the latch is set.
+pub(crate) async fn gw_consensus_reached<'e, E>(executor: E) -> Result<bool, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let v: Option<bool> = sqlx::query_scalar(
+        "SELECT BOOL_OR(gw_consensus_reached) FROM upgrade_state
+          WHERE stack_role = 'GCS' AND status = 'in_progress'",
+    )
+    .fetch_one(executor)
+    .await?;
+    Ok(v.unwrap_or(false))
+}
+
+/// Whether the GCS gw-listener has aligned its scan cursor to the active window's
+/// `gw_start_block` - the per-proposal `gw_window_rewound` latch, `BOOL_AND`ed over the
+/// in-progress rows so one unaligned row keeps the gate closed. `false` with no rows.
+///
+/// This closes the activation race on the watermark gate alone: a proposal that activates
+/// mid-tick - after the listener's top-of-tick alignment check but before its synthetic
+/// injection and watermark write - can leave `last_block_num >= gw_start_block` (and the
+/// synthetic `verify_proofs` row) WITHOUT the window start's real inputs having been
+/// scanned. Hashing then would stamp a one-shot, permanent synthetic-only `gw_start_block`
+/// hash that the next tick's rewind cannot repair. The latch is only written by the
+/// listener in (or after) its alignment transaction, so requiring it here holds the GW
+/// track until the listener has provably aligned to this window.
+///
+/// Returns `(gw_start_block, gw_tip, gw_window_rewound)` read in ONE statement, so all three
+/// come from one snapshot even under READ COMMITTED. The listener lowers the watermark and
+/// sets the latch in the same transaction; separate reads could pair a stale pre-rewind
+/// watermark with the post-rewind latch and seal a block still being re-ingested. `None`
+/// when `gw_start_block` or the watermark is unset.
+pub(crate) async fn gw_window_rewound<'e, E>(
+    executor: E,
+) -> Result<Option<(i64, i64, bool)>, sqlx::Error>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let (gw_start, gw_tip, rewound): (Option<i64>, Option<i64>, Option<bool>) =
+        sqlx::query_as(&format!(
+            "SELECT
+               (SELECT gw_start_block FROM upgrade_state
+                 WHERE stack_role = 'GCS' AND status = 'in_progress'
+                 ORDER BY host_chain_id
+                 LIMIT 1),
+               (SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+                 WHERE dummy_id = true),
+               (SELECT BOOL_AND(gw_window_rewound) FROM upgrade_state
+                 WHERE stack_role = 'GCS' AND status = 'in_progress')"
+        ))
+        .fetch_one(executor)
+        .await?;
+    Ok(gw_start
+        .zip(gw_tip)
+        .map(|(start, tip)| (start, tip, rewound.unwrap_or(false))))
 }
 
 /// Uploads GCS `state_hash` rows with `s3_uploaded_at IS NULL`, attaching the
@@ -622,7 +703,26 @@ async fn compute_and_upload_state_hashes(
 
     // GCS hashes are only produced during an active upgrade window; BCS hashes
     // are not produced because they would never be uploaded or consumed.
+    //
+    // Two independent reasons to skip the Gateway track this pass:
+    //  - skip_gw: the GW track has already anchored (gw_consensus_reached). Further GW hashes
+    //    feed nothing and would firehose thousands of hashes on the fast Gateway chain, starving
+    //    the host tracks' uploads and delaying host unanimity.
+    //  - watermark not yet at gw_start_block: the GCS gw-listener tails the Gateway from startup,
+    //    before the proposal activates (see upgrade-controller `run`), and gw_start_block is
+    //    pinned to the tip at proposal time, so a listener that was already tailing has processed
+    //    gw_start_block contiguously; `gw_tip >= gw_start` then means every hashed block in
+    //    [gw_start, gw_tip) has complete inputs. Uploading before that would let an operator that
+    //    never saw the window start contribute hashes, so the fleet could anchor on a later block
+    //    while that operator silently diverged at gw_start. (A listener first started after
+    //    activation, past gw_start, is out of scope - intended order is Green tailing before the
+    //    proposal.)
+    //
+    // gw_ready captures "GW track eligible this pass" (not anchored AND watermark past gw_start);
+    // it gates compute AND upload.
+    let mut gw_ready = false;
     if let Some((_, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
+        let skip_gw = gw_consensus_reached(&mut *tx).await?;
         for (chain_id, start, end) in windows {
             compute_and_insert_gcs(
                 &mut tx,
@@ -635,25 +735,41 @@ async fn compute_and_upload_state_hashes(
             .await?;
         }
 
-        // Gateway-inputs track: only once the GCS gw-listener has a watermark and
-        // gw_start_block is set. Bounded to sealed blocks (< gw_tip).
-        if let (Some(gw_start), Some(gw_tip)) = (
-            gw_start_block(&mut *tx).await?,
-            gw_listener_tip(&mut *tx).await?,
-        ) {
-            compute_and_insert_gw_input_hashes(&mut tx, gw_chain_id, gw_start, gw_tip, batch_limit)
+        // Gateway-inputs track: only while not yet anchored (skip_gw), once the GCS
+        // gw-listener has latched its window alignment (gw_window_rewound - closes the
+        // mid-tick activation race), and once its watermark has reached gw_start_block.
+        // The gate itself lives in compute_and_insert_gw_input_hashes (it self-skips);
+        // here it is mirrored into gw_ready to gate the upload.
+        if !skip_gw {
+            if let Some((gw_start, gw_tip, gw_aligned)) = gw_window_rewound(&mut *tx).await? {
+                gw_ready = gw_aligned && gw_tip >= gw_start;
+                compute_and_insert_gw_input_hashes(
+                    &mut tx,
+                    gw_chain_id,
+                    gw_start,
+                    gw_tip,
+                    gw_aligned,
+                    batch_limit,
+                )
                 .await?;
+            }
+        } else {
+            debug!("gw consensus reached — skipping GW state_hash compute/upload");
         }
     } else {
         compute_post_cutover_state_hashes(&mut tx, batch_limit).await?;
     }
     tx.commit().await?;
 
-    // S3 upload: drains pending rows; runs every pass so failed PUTs retry.
+    // S3 upload: drains pending rows; runs every pass so failed PUTs retry. Gateway uploads run
+    // only when the track was eligible this pass (gw_ready: not anchored and watermark past
+    // gw_start).
     if let Some(s3) = s3 {
         upload_pending_state_hashes(pool, s3, my_bucket, batch_limit, cutoff).await?;
-        upload_pending_gw_state_hashes(pool, s3, my_bucket, gw_chain_id, batch_limit, cutoff)
-            .await?;
+        if gw_ready {
+            upload_pending_gw_state_hashes(pool, s3, my_bucket, gw_chain_id, batch_limit, cutoff)
+                .await?;
+        }
     }
     Ok(())
 }
@@ -759,6 +875,120 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn gw_hashes_skipped_until_watermark_reaches_gw_start() {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None).await.unwrap();
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect(instance.db_url())
+            .await
+            .unwrap();
+
+        // Fresh gcs schema mirroring the tables the Gateway hash computation touches.
+        sqlx::query(&format!("CREATE SCHEMA {GCS_SCHEMA_QUOTED}"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        for table in [
+            "state_hash",
+            "input_handles",
+            "ciphertexts",
+            "verify_proofs",
+        ] {
+            sqlx::query(&format!(
+                "CREATE TABLE {GCS_SCHEMA_QUOTED}.{table} \
+                 (LIKE public.{table} INCLUDING ALL)"
+            ))
+            .execute(&pool)
+            .await
+            .unwrap_or_else(|e| panic!("create gcs.{table}: {e}"));
+        }
+
+        let gw_chain_id: i64 = 54321;
+        let gw_start: i64 = 100;
+
+        // A fully computable anchor block: one input handle with its is_input ciphertext, and a
+        // resolved (verified) synthetic verify_proofs row. Only gw_tip (the watermark) varies.
+        sqlx::query(&format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.input_handles (handle, block_number) \
+             VALUES ('\\xaa', $1)"
+        ))
+        .bind(gw_start)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(&format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.ciphertexts \
+                (tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type, is_input) \
+             VALUES (1, '\\xaa', '\\xbb', 0, 0, TRUE)"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(&format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.verify_proofs \
+                (zk_proof_id, chain_id, contract_address, user_address, block_number, verified) \
+             VALUES ($1, $2, '', '', $3, TRUE)"
+        ))
+        .bind(fhevm_engine_common::synthetic_input::SYNTHETIC_ZK_PROOF_ID_BASE)
+        .bind(gw_chain_id)
+        .bind(gw_start)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let hashes = |pool: Pool<Postgres>| async move {
+            sqlx::query_scalar::<_, i64>(&format!(
+                "SELECT COUNT(*) FROM {GCS_SCHEMA_QUOTED}.state_hash \
+                  WHERE chain_id = $1 AND block_number = $2"
+            ))
+            .bind(gw_chain_id)
+            .bind(gw_start)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        };
+
+        // Watermark has NOT reached gw_start (gw_tip < gw_start): no Gateway hash is produced,
+        // even though the synthetic row and inputs are present.
+        let mut tx = pool.begin().await.unwrap();
+        compute_and_insert_gw_input_hashes(&mut tx, gw_chain_id, gw_start, gw_start - 1, true, 10)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            hashes(pool.clone()).await,
+            0,
+            "no Gateway hash before the watermark reaches gw_start"
+        );
+
+        // Alignment latch NOT set (gw_window_rewound = false): no Gateway hash either, even
+        // with the watermark at gw_start - the mid-tick activation race leaves exactly this
+        // state with the window start unscanned.
+        let mut tx = pool.begin().await.unwrap();
+        compute_and_insert_gw_input_hashes(&mut tx, gw_chain_id, gw_start, gw_start, false, 10)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            hashes(pool.clone()).await,
+            0,
+            "no Gateway hash before the listener has latched its window alignment"
+        );
+
+        // Latched AND watermark at gw_start: the anchor hash is produced.
+        let mut tx = pool.begin().await.unwrap();
+        compute_and_insert_gw_input_hashes(&mut tx, gw_chain_id, gw_start, gw_start, true, 10)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(
+            hashes(pool.clone()).await,
+            1,
+            "Gateway hash is produced once the watermark reaches gw_start"
+        );
+    }
 
     #[tokio::test]
     async fn host_upload_stops_once_the_window_closes() {

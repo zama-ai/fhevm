@@ -214,7 +214,7 @@ async fn cross_bucket_disagreement_is_no_consensus() {
         matches!(
             err,
             ConsensusCheckError::Unreachable(ref round)
-                if round.attested().len() == 3 && round.agreeing() == 1
+                if round.attested().len() == 3 && round.largest_group_size() == 1
         ),
         "expected Unreachable with 3 attested and 1 agreeing, got {err:?}"
     );
@@ -347,9 +347,7 @@ async fn agreeing_buckets_reach_consensus_and_name_their_buckets() {
 
     assert_eq!(resolved.material.ciphertext_digest, CT_DIGEST);
     assert_eq!(resolved.material.sns_ciphertext_digest, SNS_DIGEST);
-    assert_eq!(resolved.signers.len(), 2);
-
-    let mut winning = resolved.winning_buckets;
+    let mut winning: Vec<String> = resolved.winners.into_iter().map(|w| w.bucket).collect();
     winning.sort();
     let mut expected = vec![buckets[0].url(), buckets[1].url()];
     expected.sort();

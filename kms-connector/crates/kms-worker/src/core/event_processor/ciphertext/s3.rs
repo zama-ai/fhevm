@@ -8,8 +8,8 @@ use crate::{
 use alloy::{primitives::B256, transports::http::Client};
 use anyhow::anyhow;
 use ciphertext_attestation::{
-    BoundedClient, COPROCESSOR_CONTEXT_ID_V1, CiphertextFormat, FetchCiphertextError,
-    consensus::ConsensusMaterial,
+    BoundedClient, COPROCESSOR_CONTEXT_ID_V1, CiphertextFormat, ConsensusMaterial,
+    FetchCiphertextError,
 };
 use connector_utils::types::handle::extract_fhe_type_from_handle;
 use kms_connector_api::ErrorCode;

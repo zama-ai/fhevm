@@ -532,8 +532,19 @@ The ACL enforces the following invariants — all must hold or the call reverts:
 - `contractAddress != address(this)` (reverts with `IACL-SenderCannotBeContractAddress`).
 - `delegate != address(this)` (reverts with `IACL-SenderCannotBeDelegate`).
 - `delegate != contractAddress` (reverts with `IACL-DelegateCannotBeContractAddress`).
+- `delegate != address(type(uint160).max)` (reverts with `IACL-DelegateCannotBeWildcard`).
 - `expirationDate > block.timestamp` (reverts with `IACL-ExpirationDateInThePast`).
 - At most one delegate-or-revoke per block for a given `(address(this), delegate, contractAddress)` tuple.
+
+#### Wildcard delegation
+
+Passing `address(type(uint160).max)` (the ACL's `WILDCARD_DELEGATION_ADDRESS`) as `contractAddress` delegates user decryption rights for **all** app contracts at once:
+
+```solidity
+FHE.delegateUserDecryption(relayer, address(type(uint160).max), expirationDate);
+```
+
+The delegate still needs both the delegator and the handle's app contract to be persistently allowed on each handle. The wildcard replaces per-contract entries but does not bypass the ACL. The wildcard entry and per-contract entries are independent: either one can make a delegation active, and each must be revoked separately. Grant this only to fully trusted delegates. See [Wildcard delegation](acl/delegation.md#wildcard-delegation).
 
 ### Batch delegate user decryption
 
@@ -580,8 +591,8 @@ function getDelegatedUserDecryptionExpirationDate(
 function isUserDecryptable(bytes32 handle, address user, address contractAddress) internal view returns (bool)
 ```
 
-- **`isDelegatedForUserDecryption`**: Checks if `delegate` has active decryption delegation from `delegator` for a specific handle and contract.
-- **`getDelegatedUserDecryptionExpirationDate`**: Returns the expiration timestamp of a delegation. Returns `0` if no delegation exists.
+- **`isDelegatedForUserDecryption`**: Checks if `delegate` has active decryption delegation from `delegator` for a specific handle and contract. It returns `true` when either a per-contract delegation or a wildcard delegation is active.
+- **`getDelegatedUserDecryptionExpirationDate`**: Returns the expiration timestamp of the delegation entry for exactly this `contractAddress`, so a wildcard delegation is not reflected unless you pass the wildcard address. Returns `0` if no delegation exists.
 - **`isUserDecryptable`**: Checks if a handle can be decrypted by `user` in the context of `contractAddress`. Returns `true` only if both the user and the contract have persistent ACL permission on the handle.
 
 ## Account deny list

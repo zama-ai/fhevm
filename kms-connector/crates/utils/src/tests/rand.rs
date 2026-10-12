@@ -1,7 +1,6 @@
 use alloy::primitives::{Address, FixedBytes, U256};
-use fhevm_host_bindings::protocol_config::{
-    IProtocolConfig::KmsThresholds,
-    ProtocolConfig::{KmsNodeParams, PcrValues},
+use fhevm_host_bindings::protocol_config::ProtocolConfig::{
+    KmsNodeParams, KmsThresholds, PcrValues,
 };
 use rand::Rng;
 

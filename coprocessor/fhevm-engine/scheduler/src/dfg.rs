@@ -831,7 +831,7 @@ impl std::fmt::Debug for OpNode {
     }
 }
 impl OpNode {
-    fn check_ready_inputs(&mut self, ct_map: &mut HashMap<Handle, Option<DFGTxInput>>) -> bool {
+    fn check_ready_inputs(&mut self, ct_map: &HashMap<Handle, Option<DFGTxInput>>) -> bool {
         for i in self.inputs.iter_mut() {
             match i {
                 DFGTaskInput::Value(_) | DFGTaskInput::Compressed(..) => continue,
