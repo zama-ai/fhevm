@@ -14,19 +14,27 @@ const coprocAddress = parsedEnvCoprocessor.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
 let firstBlockListening = 0;
 let lastBlockSnapshot = 0;
 let lastCounterRand = 0;
-let counterRand = 0;
+let counterRand: number = 0;
 let chainId: number;
 
 //const db = new Database('./sql.db'); // on-disk db for debugging
 const db = new Database(':memory:');
 
-export function insertSQL(handle: string, clearText: BigInt | string, replace: boolean = false) {
+export function insertSQL(handle: string, clearText: bigint | string, replace: boolean = false) {
   if (replace) {
     // this is useful if using snapshots while sampling different random numbers on each revert
     db.run('INSERT OR REPLACE INTO ciphertexts (handle, clearText) VALUES (?, ?)', [handle, clearText.toString()]);
   } else {
     db.run('INSERT OR IGNORE INTO ciphertexts (handle, clearText) VALUES (?, ?)', [handle, clearText.toString()]);
   }
+}
+
+export function getCounterRand(): number {
+  return counterRand;
+}
+
+export function getChainId(): number {
+  return chainId;
 }
 
 // Decrypt any handle, bypassing ACL
@@ -37,18 +45,23 @@ export const getClearText = async (handle: string | bigint): Promise<string> => 
     const maxRetries = 100;
 
     function executeQuery() {
-      db.get('SELECT clearText FROM ciphertexts WHERE handle = ?', [handle], (err, row) => {
-        if (err) {
-          reject(new Error(`Error querying database: ${err.message}`));
-        } else if (row) {
-          resolve((row as any).clearText);
-        } else if (attempts < maxRetries) {
-          attempts++;
-          executeQuery();
-        } else {
-          reject(new Error('No record found after maximum retries'));
-        }
-      });
+      // `row` is undefined when no ciphertext with this handle has been inserted yet
+      db.get<{ clearText: string } | undefined>(
+        'SELECT clearText FROM ciphertexts WHERE handle = ?',
+        [handle],
+        (err, row) => {
+          if (err) {
+            reject(new Error(`Error querying database: ${err.message}`));
+          } else if (row) {
+            resolve(row.clearText);
+          } else if (attempts < maxRetries) {
+            attempts++;
+            executeQuery();
+          } else {
+            reject(new Error('No record found after maximum retries'));
+          }
+        },
+      );
     }
 
     executeQuery();
@@ -102,7 +115,7 @@ function getRandomBigInt(numBits: number): bigint {
   return randomBigInt;
 }
 
-function bitwiseNotUintBits(value: BigInt, numBits: number) {
+function bitwiseNotUintBits(value: bigint, numBits: number) {
   if (typeof value !== 'bigint') {
     throw new TypeError('The input value must be a BigInt.');
   }
@@ -212,19 +225,21 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
   let shift: bigint;
 
   switch (event.eventName) {
-    case 'TrivialEncrypt':
+    case 'TrivialEncrypt': {
       clearText = event.args[1];
       handle = ethers.toBeHex(event.args[3], 32);
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'TrivialEncryptBytes':
+    case 'TrivialEncryptBytes': {
       clearText = event.args[1];
       handle = ethers.toBeHex(event.args[3], 32);
       insertSQL(handle, BigInt(clearText));
       break;
+    }
 
-    case 'FheAdd':
+    case 'FheAdd': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -239,8 +254,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
 
       insertSQL(ethers.toBeHex(handle, 32), clearText);
       break;
+    }
 
-    case 'FheSub':
+    case 'FheSub': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -256,8 +272,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheMul':
+    case 'FheMul': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -271,8 +288,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheDiv':
+    case 'FheDiv': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -283,8 +301,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheRem':
+    case 'FheRem': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -295,8 +314,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheBitAnd':
+    case 'FheBitAnd': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -310,8 +330,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheBitOr':
+    case 'FheBitOr': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -325,8 +346,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheBitXor':
+    case 'FheBitXor': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -340,6 +362,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
     case 'FheShl': {
       handle = ethers.toBeHex(event.args[4], 32);
@@ -363,7 +386,7 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       break;
     }
 
-    case 'FheRotl':
+    case 'FheRotl': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -381,8 +404,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheRotr':
+    case 'FheRotr': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -400,8 +424,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheEq':
+    case 'FheEq': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -415,8 +440,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
 
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheEqBytes':
+    case 'FheEqBytes': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -428,8 +454,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheNe':
+    case 'FheNe': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -441,8 +468,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheNeBytes':
+    case 'FheNeBytes': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -454,8 +482,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheGe':
+    case 'FheGe': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -467,8 +496,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheGt':
+    case 'FheGt': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -480,8 +510,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheLe':
+    case 'FheLe': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -493,8 +524,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheLt':
+    case 'FheLt': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -506,8 +538,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheMax':
+    case 'FheMax': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -519,8 +552,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheMin':
+    case 'FheMin': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearLHS = await getClearText(event.args[1]);
@@ -532,23 +566,26 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'Cast':
+    case 'Cast': {
       resultType = parseInt(event.args[2]);
       handle = ethers.toBeHex(event.args[3], 32);
       clearText = BigInt(await getClearText(event.args[1])) % 2n ** NumBits[resultType as keyof typeof NumBits];
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheNot':
+    case 'FheNot': {
       handle = ethers.toBeHex(event.args[2], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearText = BigInt(await getClearText(event.args[1]));
       clearText = bitwiseNotUintBits(clearText, Number(NumBits[resultType as keyof typeof NumBits]));
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheNeg':
+    case 'FheNeg': {
       handle = ethers.toBeHex(event.args[2], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       clearText = BigInt(await getClearText(event.args[1]));
@@ -556,8 +593,8 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       clearText = (clearText + 1n) % 2n ** NumBits[resultType as keyof typeof NumBits];
       insertSQL(handle, clearText);
       break;
-
-    case 'VerifyInput':
+    }
+    case 'VerifyInput': {
       handle = event.args[1];
       try {
         await getClearText(BigInt(handle));
@@ -565,8 +602,9 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
         throw Error(`User input handle was not found in DB: ${handle}`);
       }
       break;
+    }
 
-    case 'FheIfThenElse':
+    case 'FheIfThenElse': {
       handle = ethers.toBeHex(event.args[4], 32);
       resultType = parseInt(handle.slice(-4, -2), 16);
       handle = ethers.toBeHex(event.args[4], 32);
@@ -580,22 +618,25 @@ async function insertHandleFromEvent(event: FHEVMEvent) {
       }
       insertSQL(handle, clearText);
       break;
+    }
 
-    case 'FheRand':
+    case 'FheRand': {
       resultType = parseInt(event.args[1]);
       handle = ethers.toBeHex(event.args[3], 32);
       clearText = getRandomBigInt(Number(NumBits[resultType as keyof typeof NumBits]));
       insertSQL(handle, clearText, true);
       counterRand++;
       break;
+    }
 
-    case 'FheRandBounded':
+    case 'FheRandBounded': {
       resultType = parseInt(event.args[2]);
       handle = ethers.toBeHex(event.args[4], 32);
       clearText = getRandomBigInt(Number(log2(BigInt(event.args[1]))));
       insertSQL(handle, clearText, true);
       counterRand++;
       break;
+    }
 
     case 'FheSum': {
       handle = ethers.toBeHex(event.args[2], 32);
@@ -658,8 +699,8 @@ export function getTxHCUFromTxReceipt(
     return hcuMap[handle];
   }
 
-  let hcuMap: Record<string, number> = {};
-  let handleSet: Set<string> = new Set();
+  const hcuMap: Record<string, number> = {};
+  const handleSet: Set<string> = new Set();
 
   const contract = new ethers.Contract(coprocAddress, abi, ethers.provider);
   const relevantLogs = receipt.logs.filter((log: Log) => {
@@ -698,7 +739,7 @@ export function getTxHCUFromTxReceipt(
     let hcuConsumed: number;
 
     switch (event.name) {
-      case 'TrivialEncrypt':
+      case 'TrivialEncrypt': {
         typeIndex = parseInt(event.args[2]);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
@@ -711,8 +752,9 @@ export function getTxHCUFromTxReceipt(
         hcuMap[handleResult] = hcuConsumed;
         handleSet.add(handleResult);
         break;
+      }
 
-      case 'TrivialEncryptBytes':
+      case 'TrivialEncryptBytes': {
         typeIndex = parseInt(event.args[2]);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
         if (!type) {
@@ -725,8 +767,9 @@ export function getTxHCUFromTxReceipt(
         hcuMap[handleResult] = hcuConsumed;
         handleSet.add(handleResult);
         break;
+      }
 
-      case 'FheAdd':
+      case 'FheAdd': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -751,8 +794,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheSub':
+      case 'FheSub': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -777,8 +821,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheMul':
+      case 'FheMul': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -803,8 +848,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheDiv':
+      case 'FheDiv': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -821,8 +867,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheRem':
+      case 'FheRem': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -838,8 +885,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheBitAnd':
+      case 'FheBitAnd': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -861,8 +909,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheBitOr':
+      case 'FheBitOr': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -884,8 +933,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheBitXor':
+      case 'FheBitXor': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -907,8 +957,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheShl':
+      case 'FheShl': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -930,8 +981,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheShr':
+      case 'FheShr': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -953,8 +1005,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheRotl':
+      case 'FheRotl': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -976,8 +1029,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheRotr':
+      case 'FheRotr': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -999,8 +1053,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheEq':
+      case 'FheEq': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -1024,8 +1079,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheEqBytes':
+      case 'FheEqBytes': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -1049,8 +1105,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheNe':
+      case 'FheNe': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -1074,8 +1131,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheNeBytes':
+      case 'FheNeBytes': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -1099,8 +1157,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheGe':
+      case 'FheGe': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -1124,8 +1183,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheGt':
+      case 'FheGt': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -1148,8 +1208,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheLe':
+      case 'FheLe': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -1172,8 +1233,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheLt':
+      case 'FheLt': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
@@ -1196,8 +1258,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheMax':
+      case 'FheMax': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -1221,8 +1284,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheMin':
+      case 'FheMin': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -1247,8 +1311,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'Cast':
+      case 'Cast': {
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -1263,8 +1328,9 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         handleSet.add(handleResult);
         break;
+      }
 
-      case 'FheNot':
+      case 'FheNot': {
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -1277,8 +1343,9 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         handleSet.add(ethers.toBeHex(event.args[2], 32));
         break;
+      }
 
-      case 'FheNeg':
+      case 'FheNeg': {
         handle = ethers.toBeHex(event.args[1], 32);
         typeIndex = parseInt(handle.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -1291,8 +1358,9 @@ export function getTxHCUFromTxReceipt(
         totalHCUConsumed += hcuConsumed;
         handleSet.add(ethers.toBeHex(event.args[2], 32));
         break;
+      }
 
-      case 'FheIfThenElse':
+      case 'FheIfThenElse': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(handleResult.slice(-4, -2), 16);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -1312,8 +1380,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheRand':
+      case 'FheRand': {
         handleResult = ethers.toBeHex(event.args[3], 32);
         typeIndex = parseInt(event.args[1]);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -1325,8 +1394,9 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
-      case 'FheRandBounded':
+      case 'FheRandBounded': {
         handleResult = ethers.toBeHex(event.args[4], 32);
         typeIndex = parseInt(event.args[2]);
         type = FheTypes.find((t) => t.value === typeIndex)?.type;
@@ -1338,6 +1408,7 @@ export function getTxHCUFromTxReceipt(
         handleSet.add(handleResult);
         totalHCUConsumed += hcuConsumed;
         break;
+      }
 
       case 'FheSum': {
         handleResult = ethers.toBeHex(event.args[2], 32);

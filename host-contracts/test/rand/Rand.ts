@@ -42,12 +42,12 @@ describe('Rand', function () {
   });
 
   it('8 bits generate and decrypt', async function () {
-    const values: number[] = [];
+    const values: bigint[] = [];
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate8();
       await txn.wait();
       const valueHandle = await this.rand.value8();
-      const value = await decrypt8(valueHandle);
+      const value: bigint = await decrypt8(valueHandle);
       expect(value).to.be.lessThanOrEqual(0xff);
       values.push(value);
     }
@@ -57,12 +57,12 @@ describe('Rand', function () {
   });
 
   it('8 bits generate with upper bound and decrypt', async function () {
-    const values: number[] = [];
+    const values: bigint[] = [];
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate8UpperBound(128);
       await txn.wait();
       const valueHandle = await this.rand.value8();
-      const value = await decrypt8(valueHandle);
+      const value: bigint = await decrypt8(valueHandle);
       expect(value).to.be.lessThanOrEqual(127);
       values.push(value);
     }
@@ -72,13 +72,13 @@ describe('Rand', function () {
   });
 
   it('16 bits generate and decrypt', async function () {
-    const values: number[] = [];
+    const values: bigint[] = [];
     let has16bit: boolean = false;
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate16();
       await txn.wait();
       const valueHandle = await this.rand.value16();
-      const value = await decrypt16(valueHandle);
+      const value: bigint = await decrypt16(valueHandle);
       expect(value).to.be.lessThanOrEqual(0xffff);
       if (value > 0xff) {
         has16bit = true;
@@ -93,12 +93,12 @@ describe('Rand', function () {
   });
 
   it('16 bits generate with upper bound and decrypt', async function () {
-    const values: number[] = [];
+    const values: bigint[] = [];
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate16UpperBound(8192);
       await txn.wait();
       const valueHandle = await this.rand.value16();
-      const value = await decrypt16(valueHandle);
+      const value: bigint = await decrypt16(valueHandle);
       expect(value).to.be.lessThanOrEqual(8191);
       values.push(value);
     }
@@ -108,13 +108,13 @@ describe('Rand', function () {
   });
 
   it('32 bits generate and decrypt', async function () {
-    const values: number[] = [];
+    const values: bigint[] = [];
     let has32bit: boolean = false;
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate32();
       await txn.wait();
       const valueHandle = await this.rand.value32();
-      const value = await decrypt32(valueHandle);
+      const value: bigint = await decrypt32(valueHandle);
       expect(value).to.be.lessThanOrEqual(0xffffffff);
       if (value > 0xffff) {
         has32bit = true;
@@ -129,12 +129,12 @@ describe('Rand', function () {
   });
 
   it('32 bits generate with upper bound and decrypt', async function () {
-    const values: number[] = [];
+    const values: bigint[] = [];
     for (let i = 0; i < 5; i++) {
       const txn = await this.rand.generate32UpperBound(262144);
       await txn.wait();
       const valueHandle = await this.rand.value32();
-      const value = await decrypt32(valueHandle);
+      const value: bigint = await decrypt32(valueHandle);
       expect(value).to.be.lessThanOrEqual(262141);
       values.push(value);
     }
@@ -150,7 +150,7 @@ describe('Rand', function () {
       const txn = await this.rand.generate64();
       await txn.wait();
       const valueHandle = await this.rand.value64();
-      const value = await decrypt64(valueHandle);
+      const value: bigint = await decrypt64(valueHandle);
       expect(value).to.be.lessThanOrEqual(BigInt('0xffffffffffffffff'));
       if (value > BigInt('0xffffffff')) {
         has64bit = true;
@@ -171,7 +171,7 @@ describe('Rand', function () {
       const txn = await this.rand.generate64UpperBound(262144);
       await txn.wait();
       const valueHandle = await this.rand.value64();
-      const value = await decrypt64(valueHandle);
+      const value: bigint = await decrypt64(valueHandle);
       expect(value).to.be.lessThanOrEqual(262141);
       values.push(value);
     }
@@ -187,7 +187,7 @@ describe('Rand', function () {
       const txn = await this.rand.generate128();
       await txn.wait();
       const valueHandle = await this.rand.value128();
-      const value = await decrypt128(valueHandle);
+      const value: bigint = await decrypt128(valueHandle);
       expect(value).to.be.lessThanOrEqual(BigInt('0xffffffffffffffffffffffffffffffff'));
       if (value > BigInt('0xffffffffffffffff')) {
         has128bit = true;
@@ -207,7 +207,7 @@ describe('Rand', function () {
       const txn = await this.rand.generate128UpperBound(2n ** 100n);
       await txn.wait();
       const valueHandle = await this.rand.value128();
-      const value = await decrypt128(valueHandle);
+      const value: bigint = await decrypt128(valueHandle);
       expect(value).to.be.lessThanOrEqual(2n ** 100n);
       values.push(value);
     }
@@ -223,7 +223,7 @@ describe('Rand', function () {
       const txn = await this.rand.generate256();
       await txn.wait();
       const valueHandle = await this.rand.value256();
-      const value = await decrypt256(valueHandle);
+      const value: bigint = await decrypt256(valueHandle);
       expect(value).to.be.lessThanOrEqual(BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'));
       if (value > BigInt('0xffffffffffffffffffffffffffffffff')) {
         has256bit = true;
@@ -243,7 +243,7 @@ describe('Rand', function () {
       const txn = await this.rand.generate256UpperBound(2n ** 200n);
       await txn.wait();
       const valueHandle = await this.rand.value256();
-      const value = await decrypt256(valueHandle);
+      const value: bigint = await decrypt256(valueHandle);
       expect(value).to.be.lessThanOrEqual(2n ** 200n);
       values.push(value);
     }
@@ -256,12 +256,12 @@ describe('Rand', function () {
     if (network.name === 'hardhat') {
       // snapshots are only possible in hardhat node, i.e in mocked mode
       this.snapshotId = await ethers.provider.send('evm_snapshot');
-      const values: number[] = [];
+      const values: bigint[] = [];
       for (let i = 0; i < 5; i++) {
         const txn = await this.rand.generate8();
         await txn.wait();
         const valueHandle = await this.rand.value8();
-        const value = await decrypt8(valueHandle);
+        const value: bigint = await decrypt8(valueHandle);
         expect(value).to.be.lessThanOrEqual(0xff);
         values.push(value);
       }
@@ -272,12 +272,12 @@ describe('Rand', function () {
       await ethers.provider.send('evm_revert', [this.snapshotId]);
       this.snapshotId = await ethers.provider.send('evm_snapshot');
 
-      const values2: number[] = [];
+      const values2: bigint[] = [];
       for (let i = 0; i < 5; i++) {
         const txn = await this.rand.generate8();
         await txn.wait();
         const valueHandle = await this.rand.value8();
-        const value = await decrypt8(valueHandle);
+        const value: bigint = await decrypt8(valueHandle);
         expect(value).to.be.lessThanOrEqual(0xff);
         values2.push(value);
       }
@@ -286,13 +286,13 @@ describe('Rand', function () {
       expect(unique2.size).to.be.greaterThanOrEqual(2);
 
       await ethers.provider.send('evm_revert', [this.snapshotId]);
-      const values3: number[] = [];
+      const values3: bigint[] = [];
       let has16bit: boolean = false;
       for (let i = 0; i < 5; i++) {
         const txn = await this.rand.generate16();
         await txn.wait();
         const valueHandle = await this.rand.value16();
-        const value = await decrypt16(valueHandle);
+        const value: bigint = await decrypt16(valueHandle);
         expect(value).to.be.lessThanOrEqual(0xffff);
         if (value > 0xff) {
           has16bit = true;
@@ -303,7 +303,7 @@ describe('Rand', function () {
       expect(has16bit).to.be.true;
       // Expect at least two different generated values.
       const unique3 = new Set(values3);
-      expect(unique3.size).to.be.greaterThanOrEqual(2);
+      expect(unique3.size).to.be.greaterThanOrEqual(2n);
     }
   });
 
@@ -311,7 +311,7 @@ describe('Rand', function () {
     const txn = await this.rand.generate64Reverting();
     await txn.wait();
     const valueHandle = await this.rand.value64Bounded();
-    const value = await decrypt16(valueHandle);
-    expect(value).to.be.lessThan(1024);
+    const value: bigint = await decrypt16(valueHandle);
+    expect(value).to.be.lessThan(1024n);
   });
 });

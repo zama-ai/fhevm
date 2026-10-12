@@ -276,7 +276,7 @@ export async function buildSingleKeyAndCrsActivationPayload(
 
 function findEventArg(
   contract: ProtocolConfig,
-  logs: readonly { topics: string[]; data: string }[],
+  logs: readonly { topics: readonly string[]; data: string }[],
   eventName: string,
   argName: string,
 ): bigint {

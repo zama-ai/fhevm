@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 
-import type { FHEVMManualTestSuite } from '../../types/contracts/tests/FHEVMManualTestSuite';
+import type { FHEVMManualTestSuite } from '../../types/examples/tests/FHEVMManualTestSuite';
 import {
   createInstances,
   decrypt8,
@@ -14,7 +14,6 @@ import {
   decryptBool,
 } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { bigIntToBytes256 } from '../utils';
 
 async function deployFHEVMManualTestFixture(): Promise<FHEVMManualTestSuite> {
   const signers = await getSigners();

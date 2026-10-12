@@ -33,7 +33,7 @@ export const HOST_ADDRESSES_ENV_FILE_NAME = '.env.host';
 
 const NUM_ACCOUNTS = 15;
 
-extendProvider(async (provider, config, network) => {
+extendProvider(async (provider, _config, _network) => {
   const newProvider = new CustomProvider(provider);
   return newProvider;
 });
@@ -86,7 +86,7 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
   await runSuper(taskArgs);
 });
 
-task('test', async (taskArgs, hre, runSuper) => {
+task('test', async (_taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     await hre.run('task:deployAllHostContracts', { withKmsGeneration: true });

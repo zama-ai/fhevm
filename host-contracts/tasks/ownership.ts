@@ -2,6 +2,7 @@ import { Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
 
 import { getRequiredEnvVar } from './utils/loadVariables';
+import { TaskArguments } from 'hardhat/types';
 
 task('task:transferHostOwnership', "Transfers the deployer's ownership of the host contracts to the provided address.")
   .addParam('newOwnerAddress', 'Address of the new owner of the host contracts.', undefined, types.string)
@@ -34,7 +35,7 @@ task('task:transferHostOwnership', "Transfers the deployer's ownership of the ho
 task(
   'task:acceptHostOwnership',
   'Accepts ownership of the host contracts. This can only be used if the account is an EOA.',
-).setAction(async function ({}, { ethers }) {
+).setAction(async function (_taskArguments: TaskArguments, { ethers }) {
   // Get the new owner wallet.
   const newOwner = new Wallet(getRequiredEnvVar('NEW_OWNER_PRIVATE_KEY')).connect(ethers.provider);
 
