@@ -185,7 +185,6 @@ async function activateNewKmsContext(
     ],
   };
 
-  // Anyone may submit a signer's confirmation, so each signer account submits its own.
   let epochId;
   for (const signer of signerAccounts) {
     const signature = await signer.signTypedData(domain, contextCreationTypes, {

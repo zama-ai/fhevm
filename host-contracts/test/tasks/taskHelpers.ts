@@ -225,8 +225,8 @@ async function signConfirmation(
 }
 
 // Signs the signer's ContextCreationConfirmation for a pending context and submits it from the signer
-// account. `nodes`/`thresholds` are the pending context's definition, and the
-// previous context is the active one.
+// account. `nodes`/`thresholds` are the pending context's definition, and the previous context is the
+// active one.
 export async function confirmContextCreationBySigner(
   proxyAddress: string,
   signerSigner: Signer,
