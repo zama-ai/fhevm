@@ -4,18 +4,27 @@
 // test/protocolConfig/vectors.ts checks that the checked-in JSON matches this generator.
 //
 // Run: npx ts-node scripts/generateProtocolConfigVectors.ts
-import {
-  AbiCoder,
-  TypedDataDomain,
-  TypedDataEncoder,
-  TypedDataField,
-  Wallet,
-  id,
-  keccak256,
-  solidityPacked,
-} from 'ethers';
+import { TypedDataEncoder, Wallet, id } from 'ethers';
 import fs from 'fs';
 import path from 'path';
+
+import {
+  CONFIRMATION_TYPES,
+  CRSGEN_TYPES,
+  ConfirmationType,
+  CrsResult,
+  KEYGEN_TYPES,
+  KeyResult,
+  KmsNodeParams,
+  KmsThresholds,
+  crsHash,
+  encodeNodeConfig,
+  epochMaterialHash,
+  keyHash,
+  nodeConfigHash,
+  protocolConfigDomain,
+  resultExtraData,
+} from './protocolConfigEip712';
 
 export const VECTORS_PATH = path.join(__dirname, '..', 'test-vectors', 'protocol-config-eip712.json');
 
@@ -24,133 +33,6 @@ const EPOCH_COUNTER_BASE = 8n << 248n;
 const PREP_KEYGEN_COUNTER_BASE = 3n << 248n;
 const KEY_COUNTER_BASE = 4n << 248n;
 const CRS_COUNTER_BASE = 5n << 248n;
-const EXTRA_DATA_V2 = 2;
-
-export const CONFIRMATION_TYPES: Record<string, Record<string, TypedDataField[]>> = {
-  ContextCreationConfirmation: {
-    ContextCreationConfirmation: [
-      { name: 'previousContextId', type: 'uint256' },
-      { name: 'newContextId', type: 'uint256' },
-      { name: 'nodeConfigHash', type: 'bytes32' },
-      { name: 'extraData', type: 'bytes' },
-    ],
-  },
-  EpochActivationConfirmation: {
-    EpochActivationConfirmation: [
-      { name: 'contextId', type: 'uint256' },
-      { name: 'previousEpochId', type: 'uint256' },
-      { name: 'epochId', type: 'uint256' },
-      { name: 'epochMaterialHash', type: 'bytes32' },
-      { name: 'extraData', type: 'bytes' },
-    ],
-  },
-  ContextDestructionConfirmation: {
-    ContextDestructionConfirmation: [
-      { name: 'destroyedContextId', type: 'uint256' },
-      { name: 'destroyedEpochIds', type: 'uint256[]' },
-      { name: 'extraData', type: 'bytes' },
-    ],
-  },
-  EpochDestructionConfirmation: {
-    EpochDestructionConfirmation: [
-      { name: 'destroyedEpochId', type: 'uint256' },
-      { name: 'extraData', type: 'bytes' },
-    ],
-  },
-};
-
-export const KEYGEN_TYPES: Record<string, TypedDataField[]> = {
-  KeygenVerification: [
-    { name: 'prepKeygenId', type: 'uint256' },
-    { name: 'keyId', type: 'uint256' },
-    { name: 'keyDigests', type: 'KeyDigest[]' },
-    { name: 'extraData', type: 'bytes' },
-  ],
-  KeyDigest: [
-    { name: 'keyType', type: 'uint8' },
-    { name: 'digest', type: 'bytes' },
-  ],
-};
-
-export const CRSGEN_TYPES: Record<string, TypedDataField[]> = {
-  CrsgenVerification: [
-    { name: 'crsId', type: 'uint256' },
-    { name: 'maxBitLength', type: 'uint256' },
-    { name: 'crsDigest', type: 'bytes' },
-    { name: 'extraData', type: 'bytes' },
-  ],
-};
-
-export interface KmsNodeParams {
-  txSenderAddress: string;
-  signerAddress: string;
-  ipAddress: string;
-  storageUrl: string;
-  partyId: number;
-  mpcIdentity: string;
-  caCert: string;
-  storagePrefix: string;
-}
-
-export interface KmsThresholds {
-  publicDecryption: bigint;
-  userDecryption: bigint;
-  kmsGen: bigint;
-  mpc: bigint;
-}
-
-export interface KeyResult {
-  prepKeygenId: bigint;
-  keyId: bigint;
-  keyDigests: { keyType: number; digest: string }[];
-}
-
-export interface CrsResult {
-  crsId: bigint;
-  maxBitLength: bigint;
-  crsDigest: string;
-}
-
-const abi = AbiCoder.defaultAbiCoder();
-
-// keccak256(abi.encode(KmsNode[] nodes, KmsThresholds thresholds)). KmsNode is the projection of
-// KmsNodeParams that ProtocolConfig stores: (txSenderAddress, signerAddress, ipAddress, storageUrl).
-function encodeNodeConfig(params: KmsNodeParams[], thresholds: KmsThresholds): string {
-  return abi.encode(
-    ['tuple(address,address,string,string)[]', 'tuple(uint256,uint256,uint256,uint256)'],
-    [
-      params.map((p) => [p.txSenderAddress, p.signerAddress, p.ipAddress, p.storageUrl]),
-      [thresholds.publicDecryption, thresholds.userDecryption, thresholds.kmsGen, thresholds.mpc],
-    ],
-  );
-}
-
-export function nodeConfigHash(params: KmsNodeParams[], thresholds: KmsThresholds): string {
-  return keccak256(encodeNodeConfig(params, thresholds));
-}
-
-// keccak256(abi.encode(prepKeygenId, keyId, keyDigestsHash)), where keyDigestsHash is the EIP-712 hash of
-// the KeyDigest[] array.
-export function keyHash(key: KeyResult): string {
-  const keyDigestHashes = key.keyDigests.map((d) => TypedDataEncoder.hashStruct('KeyDigest', KEYGEN_TYPES, d));
-  const keyDigestsHash = keccak256(solidityPacked(['bytes32[]'], [keyDigestHashes]));
-  return keccak256(abi.encode(['uint256', 'uint256', 'bytes32'], [key.prepKeygenId, key.keyId, keyDigestsHash]));
-}
-
-// keccak256(abi.encode(crsId, maxBitLength, crsDigest)). Unlike keyHash, crsDigest is ABI-encoded as raw
-// dynamic bytes, not hashed first.
-export function crsHash(crs: CrsResult): string {
-  return keccak256(abi.encode(['uint256', 'uint256', 'bytes'], [crs.crsId, crs.maxBitLength, crs.crsDigest]));
-}
-
-export function epochMaterialHash(keys: KeyResult[], crsList: CrsResult[]): string {
-  return keccak256(abi.encode(['bytes32[]', 'bytes32[]'], [keys.map(keyHash), crsList.map(crsHash)]));
-}
-
-// Per-result extraData: abi.encodePacked(EXTRA_DATA_V2, contextId, epochId).
-export function resultExtraData(contextId: bigint, epochId: bigint): string {
-  return solidityPacked(['uint8', 'uint256', 'uint256'], [EXTRA_DATA_V2, contextId, epochId]);
-}
 
 // Deterministic (RFC 6979) 65-byte r || s || v signature, the same layout as foundry's vm.sign packed.
 function sign(wallet: Wallet, digest: string): string {
@@ -163,12 +45,7 @@ function json<T>(value: T): unknown {
 }
 
 export function generateVectors(): unknown {
-  const domain: TypedDataDomain = {
-    name: 'ProtocolConfig',
-    version: '1',
-    chainId: 12345n,
-    verifyingContract: '0x00000000000000000000000000000000C0FFEE01',
-  };
+  const domain = protocolConfigDomain(12345n, '0x00000000000000000000000000000000C0FFEE01');
   const wallets = [1, 2, 3, 4, 5, 6, 7].map(
     (i) => new Wallet('0x' + (BigInt(i) * 0x100n).toString(16).padStart(64, '0')),
   );
@@ -213,7 +90,7 @@ export function generateVectors(): unknown {
   ];
   const crsList: CrsResult[] = [{ crsId: CRS_COUNTER_BASE + 1n, maxBitLength: 4096n, crsDigest: '0xdeadbeef' }];
 
-  const message = (primaryType: string, wallet: Wallet, fields: Record<string, unknown>) => {
+  const message = (primaryType: ConfirmationType, wallet: Wallet, fields: Record<string, unknown>) => {
     const types = CONFIRMATION_TYPES[primaryType];
     const digest = TypedDataEncoder.hash(domain, types, fields);
     const typeString = TypedDataEncoder.from(types).encodeType(primaryType);

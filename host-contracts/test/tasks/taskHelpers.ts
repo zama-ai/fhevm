@@ -7,12 +7,14 @@ import path from 'path';
 import {
   CONFIRMATION_TYPES,
   CRSGEN_TYPES,
+  ConfirmationType,
   KEYGEN_TYPES,
   KmsNodeParams,
   epochMaterialHash,
   nodeConfigHash,
+  protocolConfigDomain,
   resultExtraData,
-} from '../../scripts/generateProtocolConfigVectors';
+} from '../../scripts/protocolConfigEip712';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
@@ -206,22 +208,21 @@ export async function buildControllableKmsCommittee(): Promise<ControllableKmsCo
   };
 }
 
-async function protocolConfigDomain(proxyAddress: string) {
-  return {
-    name: 'ProtocolConfig',
-    version: '1',
-    chainId: (await ethers.provider.getNetwork()).chainId,
-    verifyingContract: proxyAddress,
-  };
+async function protocolConfigDomainFor(proxyAddress: string) {
+  return protocolConfigDomain((await ethers.provider.getNetwork()).chainId, proxyAddress);
 }
 
 async function signConfirmation(
   signerSigner: Signer,
   proxyAddress: string,
-  primaryType: string,
+  primaryType: ConfirmationType,
   value: Record<string, unknown>,
 ): Promise<string> {
-  return signerSigner.signTypedData(await protocolConfigDomain(proxyAddress), CONFIRMATION_TYPES[primaryType], value);
+  return signerSigner.signTypedData(
+    await protocolConfigDomainFor(proxyAddress),
+    CONFIRMATION_TYPES[primaryType],
+    value,
+  );
 }
 
 // Signs the signer's ContextCreationConfirmation for a pending context and submits it from the signer
@@ -264,7 +265,7 @@ export async function confirmEpochActivationBySigner(
   extraData = '0x',
 ): Promise<ContractTransactionReceipt> {
   const pc = (await ethers.getContractAt('ProtocolConfig', proxyAddress, signerSigner)) as unknown as ProtocolConfig;
-  const domain = await protocolConfigDomain(proxyAddress);
+  const domain = await protocolConfigDomainFor(proxyAddress);
   // Single source of truth for the material, so the signed digests match the submitted payload.
   const prepKeygenId = 1n;
   const keyId = 1n;

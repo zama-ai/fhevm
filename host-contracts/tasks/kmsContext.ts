@@ -310,6 +310,12 @@ export interface DestructionConfirmationStatus {
   diverged: boolean;
 }
 
+// The active committee, the signer set the contract accepts for destruction confirmations.
+interface ActiveCommittee {
+  signers: string[]; // checksummed
+  threshold: number; // n - t
+}
+
 // Returns the elements of `expected` (checksummed addresses) that are not present in `confirmed`.
 function outstanding(expected: string[], confirmed: Set<string>): string[] {
   return expected.filter((address) => !confirmed.has(address));
@@ -335,6 +341,10 @@ export async function inspectKmsContextSwitch(
   const newEpochEvents = await pc.queryFilter(pc.filters.NewKmsEpoch(), fromBlock, toBlock);
 
   const checksum = (address: string) => ethers.getAddress(address);
+
+  // Fetched once, on first use. An eager fetch reverts when no context is active.
+  let committee: Promise<ActiveCommittee> | undefined;
+  const activeCommittee = () => (committee ??= fetchActiveCommittee(pc, activeContextId, checksum));
 
   const status: KmsContextSwitchStatus = {
     protocolConfig: protocolConfigAddress,
@@ -387,6 +397,7 @@ export async function inspectKmsContextSwitch(
       fromBlock,
       toBlock,
       checksum,
+      activeCommittee,
     );
   } else if (sameSetRotationPending) {
     await fillSameSetRotation(pc, status, latestNewEpoch.args.epochId, fromBlock, toBlock, checksum);
@@ -406,23 +417,37 @@ export async function inspectKmsContextSwitch(
       toBlock,
     );
     status.epochDestructions.push(
-      await destructionConfirmationStatus(pc, activeContextId, event.args.epochId, confirmations, checksum),
+      destructionConfirmationStatus(
+        event.args.epochId,
+        confirmations,
+        (confirmation) => confirmation.args.extraData,
+        await activeCommittee(),
+        checksum,
+      ),
     );
   }
 
   return status;
 }
 
-// Reports the destruction confirmations of `destroyedId` against the active committee, the signer set the
-// contract accepts.
-async function destructionConfirmationStatus(
+async function fetchActiveCommittee(
   pc: ProtocolConfig,
   activeContextId: bigint,
-  destroyedId: bigint,
-  confirmations: { args: { signer: string; extraData: string; destroyedEpochIds?: bigint[] } }[],
   checksum: (address: string) => string,
-): Promise<DestructionConfirmationStatus> {
-  const activeSigners: string[] = (await pc.getKmsSignersForContext(activeContextId)).map(checksum);
+): Promise<ActiveCommittee> {
+  const signers = (await pc.getKmsSignersForContext(activeContextId)).map(checksum);
+  return { signers, threshold: signers.length - Number(await pc.getMpcThresholdForContext(activeContextId)) };
+}
+
+// Reports the destruction confirmations of `destroyedId` against the active committee. `digestKey` returns
+// the signed fields that vary between confirmations, so equal keys mean equal digests.
+function destructionConfirmationStatus<E extends { args: { signer: string } }>(
+  destroyedId: bigint,
+  confirmations: E[],
+  digestKey: (confirmation: E) => string,
+  { signers: activeSigners, threshold }: ActiveCommittee,
+  checksum: (address: string) => string,
+): DestructionConfirmationStatus {
   const confirmed = new Set<string>();
   // Confirmations of an earlier committee stay in the events after a rotation. A replica cannot use them.
   const byDigest: Record<string, number> = {};
@@ -430,7 +455,7 @@ async function destructionConfirmationStatus(
     const signer = checksum(event.args.signer);
     if (!activeSigners.includes(signer)) continue;
     confirmed.add(signer);
-    const key = `${event.args.destroyedEpochIds?.join(',')}:${event.args.extraData}`;
+    const key = digestKey(event);
     byDigest[key] = (byDigest[key] ?? 0) + 1;
   }
   return {
@@ -438,7 +463,7 @@ async function destructionConfirmationStatus(
     signersConfirmed: [...confirmed],
     signersOutstanding: outstanding(activeSigners, confirmed),
     largestDigestGroup: Math.max(0, ...Object.values(byDigest)),
-    threshold: activeSigners.length - Number(await pc.getMpcThresholdForContext(activeContextId)),
+    threshold,
     diverged: Object.keys(byDigest).length > 1,
   };
 }
@@ -461,6 +486,7 @@ async function fillContextSwitch(
   fromBlock: number,
   toBlock: number,
   checksum: (address: string) => string,
+  activeCommittee: () => Promise<ActiveCommittee>,
 ): Promise<void> {
   status.flow = 'context-switch';
   status.pendingContextId = pendingContextId;
@@ -477,11 +503,11 @@ async function fillContextSwitch(
       fromBlock,
       toBlock,
     );
-    status.contextDestruction = await destructionConfirmationStatus(
-      pc,
-      status.activeContextId,
+    status.contextDestruction = destructionConfirmationStatus(
       pendingContextId,
       destructionConfirmations,
+      (confirmation) => `${confirmation.args.destroyedEpochIds.join(',')}:${confirmation.args.extraData}`,
+      await activeCommittee(),
       checksum,
     );
   }

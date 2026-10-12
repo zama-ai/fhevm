@@ -1,10 +1,8 @@
 use crate::core::tx_sender::{Error, get_revert_reason, overprovision_gas};
 use alloy::{
     hex,
-    primitives::Bytes,
     providers::Provider,
     rpc::types::{TransactionReceipt, TransactionRequest},
-    sol_types::SolValue,
 };
 use anyhow::anyhow;
 use connector_utils::types::{
@@ -13,10 +11,7 @@ use connector_utils::types::{
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::KMSGenerationInstance,
-    protocol_config::{
-        IProtocolConfig::{EpochCrsResult, EpochKeyResult},
-        ProtocolConfig::ProtocolConfigInstance,
-    },
+    protocol_config::ProtocolConfig::ProtocolConfigInstance,
 };
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
@@ -148,37 +143,24 @@ where
         &self,
         response: NewKmsContextResponse,
     ) -> Result<TransactionReceipt, Error> {
-        // Issue #1369 will supply the signature and extraData.
-        let call_builder = self.protocol_config_contract.confirmKmsContextCreation(
-            response.context_id,
-            Bytes::new(),
-            Bytes::new(),
-        );
-
-        let call = call_builder.into_transaction_request();
-        self.send_tx_with_retry(call).await
+        // `confirmKmsContextCreation` reverts without a KMS Core signature.
+        Err(Error::Irrecoverable(anyhow!(
+            "Cannot confirm KMS context #{:#066x}: the KMS Core signature is not available yet \
+            (planning-blockchain#1369)",
+            response.context_id
+        )))
     }
 
     pub async fn send_epoch_result_response(
         &self,
         response: EpochResultResponse,
     ) -> Result<TransactionReceipt, Error> {
-        let keys = <Vec<EpochKeyResult> as SolValue>::abi_decode(&response.keys)
-            .map_err(|e| Error::Irrecoverable(anyhow!("Failed to decode epoch keys: {e}")))?;
-        let crs_list = <Vec<EpochCrsResult> as SolValue>::abi_decode(&response.crs_list)
-            .map_err(|e| Error::Irrecoverable(anyhow!("Failed to decode epoch crs_list: {e}")))?;
-
-        // Issue #1369 will supply the signature and extraData.
-        let call_builder = self.protocol_config_contract.confirmEpochActivation(
-            response.epoch_id,
-            keys,
-            crs_list,
-            Bytes::new(),
-            Bytes::new(),
-        );
-
-        let call = call_builder.into_transaction_request();
-        self.send_tx_with_retry(call).await
+        // `confirmEpochActivation` reverts without a KMS Core signature.
+        Err(Error::Irrecoverable(anyhow!(
+            "Cannot confirm epoch #{:#066x} activation: the KMS Core signature is not available \
+            yet (planning-blockchain#1369)",
+            response.epoch_id
+        )))
     }
 
     /// Sends the requested transaction with retries.

@@ -69,6 +69,7 @@ pub mod pausable_upgradeable;
 pub mod pauser_set;
 pub mod protocol_config;
 pub mod protocol_config_base;
+pub mod protocol_config_confirmations;
 pub mod protocol_config_replica;
 pub mod safe_cast;
 pub mod safe_erc20;

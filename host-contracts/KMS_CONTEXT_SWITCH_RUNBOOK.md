@@ -404,9 +404,10 @@ filled placeholders, so the first mirrored switch is where a replica's event his
 carrying the real values.
 
 **Upgrade precondition (ProtocolConfig v0.4.0)**: settle any in-flight lifecycle operation
-first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. v0.3.0 votes do not count
-toward the signed quorums. An epoch destroyed before the upgrade cannot collect signed destruction
-confirmations. The replica owner applies that destruction through the mirror path.
+first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. v0.4.0 ignores v0.3.0 context
+creation and epoch activation votes, so they do not count toward the signed quorums. An epoch
+destroyed before the upgrade cannot collect signed destruction confirmations.
+The replica owner applies that destruction through the mirror path.
 
 `task:kmsContextSwitchStatus` is a canonical-side tool. Pointed at a replica it reports
 `idle`, because it tracks the pending/quorum path that replicas never run — that is the

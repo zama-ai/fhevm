@@ -3,6 +3,16 @@ import dotenv from 'dotenv';
 import * as fs from 'fs';
 import { ethers } from 'hardhat';
 
+import {
+  CONFIRMATION_TYPES,
+  CRSGEN_TYPES,
+  KEYGEN_TYPES,
+  epochMaterialHash,
+  nodeConfigHash,
+  protocolConfigDomain,
+  resultExtraData,
+} from '@fhevm/host-contracts/scripts/protocolConfigEip712';
+
 import { awaitCoprocessor, getClearText } from '../coprocessorUtils';
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
@@ -164,33 +174,20 @@ async function activateNewKmsContext(
   const txNewConfig = await protocolConfig.connect(deployer).defineNewKmsContextAndEpoch(nodes, thresholds, '', []);
   const newConfigReceipt = await txNewConfig.wait();
   const contextId = findEventArgs(protocolConfig, newConfigReceipt, 'NewKmsContext').contextId;
-  const domain = await protocolConfigDomain(protocolConfig);
-
-  // nodeConfigHash = keccak256(abi.encode(KmsNode[] nodes, KmsThresholds thresholds)) over the stored node fields.
-  const nodeConfigHash = ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      ['tuple(address,address,string,string)[]', 'tuple(uint256,uint256,uint256,uint256)'],
-      [
-        nodes.map((n) => [n.txSenderAddress, n.signerAddress, n.ipAddress, n.storageUrl]),
-        [thresholds.publicDecryption, thresholds.userDecryption, thresholds.kmsGen, thresholds.mpc],
-      ],
-    ),
-  );
-  const contextCreationTypes = {
-    ContextCreationConfirmation: [
-      { name: 'previousContextId', type: 'uint256' },
-      { name: 'newContextId', type: 'uint256' },
-      { name: 'nodeConfigHash', type: 'bytes32' },
-      { name: 'extraData', type: 'bytes' },
-    ],
-  };
+  const domain = await protocolConfigDomainFor(protocolConfig);
+  const newNodeConfigHash = nodeConfigHash(nodes, {
+    publicDecryption: BigInt(thresholds.publicDecryption),
+    userDecryption: BigInt(thresholds.userDecryption),
+    kmsGen: BigInt(thresholds.kmsGen),
+    mpc: BigInt(thresholds.mpc),
+  });
 
   let epochId;
   for (const signer of signerAccounts) {
-    const signature = await signer.signTypedData(domain, contextCreationTypes, {
+    const signature = await signer.signTypedData(domain, CONFIRMATION_TYPES.ContextCreationConfirmation, {
       previousContextId,
       newContextId: contextId,
-      nodeConfigHash,
+      nodeConfigHash: newNodeConfigHash,
       extraData: '0x',
     });
     const txConfirmContext = await protocolConfig.connect(signer).confirmKmsContextCreation(contextId, signature, '0x');
@@ -217,13 +214,8 @@ async function activateNewKmsContext(
   }
 }
 
-async function protocolConfigDomain(protocolConfig: any) {
-  return {
-    name: 'ProtocolConfig',
-    version: '1',
-    chainId: (await ethers.provider.getNetwork()).chainId,
-    verifyingContract: await protocolConfig.getAddress(),
-  };
+async function protocolConfigDomainFor(protocolConfig: any) {
+  return protocolConfigDomain((await ethers.provider.getNetwork()).chainId, await protocolConfig.getAddress());
 }
 
 // An empty `keys` or `crsList` reverts with EmptyEpochActivationAttestation, so supply one self-signed
@@ -237,82 +229,40 @@ async function buildEpochAttestations(
   previousEpochId: bigint,
   epochId: bigint,
 ) {
-  const domain = await protocolConfigDomain(protocolConfig);
-  const keygenTypes = {
-    KeygenVerification: [
-      { name: 'prepKeygenId', type: 'uint256' },
-      { name: 'keyId', type: 'uint256' },
-      { name: 'keyDigests', type: 'KeyDigest[]' },
-      { name: 'extraData', type: 'bytes' },
-    ],
-    KeyDigest: [
-      { name: 'keyType', type: 'uint8' },
-      { name: 'digest', type: 'bytes' },
-    ],
-  };
-  const crsgenTypes = {
-    CrsgenVerification: [
-      { name: 'crsId', type: 'uint256' },
-      { name: 'maxBitLength', type: 'uint256' },
-      { name: 'crsDigest', type: 'bytes' },
-      { name: 'extraData', type: 'bytes' },
-    ],
-  };
+  const domain = await protocolConfigDomainFor(protocolConfig);
   const keyId = (4n << 248n) + 1n; // KEY_COUNTER_BASE + 1
   const prepKeygenId = (3n << 248n) + 1n; // PREP_KEYGEN_COUNTER_BASE + 1
   const keyDigests = [{ keyType: 0, digest: '0x01020304' }];
   const crsId = (5n << 248n) + 1n; // CRS_COUNTER_BASE + 1
   const maxBitLength = 4096n;
   const crsDigest = '0x01020304';
-  // extraData mirrors abi.encodePacked(EXTRA_DATA_V2, contextId, epochId) with EXTRA_DATA_V2 = 0x02.
-  const extraData = ethers.solidityPacked(['uint8', 'uint256', 'uint256'], [2, contextId, epochId]);
-  const signature = await signerAccount.signTypedData(domain, keygenTypes, {
+  const extraData = resultExtraData(contextId, epochId);
+  const signature = await signerAccount.signTypedData(domain, KEYGEN_TYPES, {
     prepKeygenId,
     keyId,
     keyDigests,
     extraData,
   });
-  const crsSignature = await signerAccount.signTypedData(domain, crsgenTypes, {
+  const crsSignature = await signerAccount.signTypedData(domain, CRSGEN_TYPES, {
     crsId,
     maxBitLength,
     crsDigest,
     extraData,
   });
-  // epochMaterialHash = keccak256(abi.encode(keyHashes, crsHashes)). Each key hash covers the EIP-712 hash
-  // of its KeyDigest[] array. Each CRS hash ABI-encodes the raw crsDigest.
-  const abi = ethers.AbiCoder.defaultAbiCoder();
-  const keyDigestsHash = ethers.keccak256(
-    ethers.concat(
-      keyDigests.map((d) => ethers.TypedDataEncoder.hashStruct('KeyDigest', { KeyDigest: keygenTypes.KeyDigest }, d)),
-    ),
-  );
-  const epochMaterialHash = ethers.keccak256(
-    abi.encode(
-      ['bytes32[]', 'bytes32[]'],
-      [
-        [ethers.keccak256(abi.encode(['uint256', 'uint256', 'bytes32'], [prepKeygenId, keyId, keyDigestsHash]))],
-        [ethers.keccak256(abi.encode(['uint256', 'uint256', 'bytes'], [crsId, maxBitLength, crsDigest]))],
-      ],
-    ),
-  );
+  const keys = [{ prepKeygenId, keyId, keyDigests, signature }];
+  const crsList = [{ crsId, maxBitLength, crsDigest, signature: crsSignature }];
   const activationSignature = await signerAccount.signTypedData(
     domain,
+    CONFIRMATION_TYPES.EpochActivationConfirmation,
     {
-      EpochActivationConfirmation: [
-        { name: 'contextId', type: 'uint256' },
-        { name: 'previousEpochId', type: 'uint256' },
-        { name: 'epochId', type: 'uint256' },
-        { name: 'epochMaterialHash', type: 'bytes32' },
-        { name: 'extraData', type: 'bytes' },
-      ],
+      contextId,
+      previousEpochId,
+      epochId,
+      epochMaterialHash: epochMaterialHash(keys, crsList),
+      extraData: '0x',
     },
-    { contextId, previousEpochId, epochId, epochMaterialHash, extraData: '0x' },
   );
-  return {
-    keys: [{ prepKeygenId, keyId, keyDigests, signature }],
-    crsList: [{ crsId, maxBitLength, crsDigest, signature: crsSignature }],
-    signature: activationSignature,
-  };
+  return { keys, crsList, signature: activationSignature };
 }
 
 function findEventArgs(protocolConfig: any, receipt: any, eventName: string): any {

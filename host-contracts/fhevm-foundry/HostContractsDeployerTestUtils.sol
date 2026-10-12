@@ -18,6 +18,7 @@ import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {ProtocolConfigConfirmations} from "@fhevm-host-contracts/contracts/shared/ProtocolConfigConfirmations.sol";
 import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
@@ -53,20 +54,6 @@ abstract contract HostContractsDeployerTestUtils is Test {
         );
     bytes32 internal constant EIP712_CRSGEN_TYPE_HASH =
         keccak256("CrsgenVerification(uint256 crsId,uint256 maxBitLength,bytes crsDigest,bytes extraData)");
-    bytes32 internal constant EIP712_CONTEXT_CREATION_TYPE_HASH =
-        keccak256(
-            "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)"
-        );
-    bytes32 internal constant EIP712_EPOCH_ACTIVATION_TYPE_HASH =
-        keccak256(
-            "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)"
-        );
-    bytes32 internal constant EIP712_CONTEXT_DESTRUCTION_TYPE_HASH =
-        keccak256(
-            "ContextDestructionConfirmation(uint256 destroyedContextId,uint256[] destroyedEpochIds,bytes extraData)"
-        );
-    bytes32 internal constant EIP712_EPOCH_DESTRUCTION_TYPE_HASH =
-        keccak256("EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)");
 
     /// @dev Shared ProtocolConfig handle bound by each suite's setUp; used by the hoisted EIP-712 helpers below.
     ProtocolConfig internal protocolConfig;
@@ -464,16 +451,16 @@ abstract contract HostContractsDeployerTestUtils is Test {
         bytes32 nodeConfigHash,
         bytes memory extraData
     ) internal view returns (bytes32) {
-        bytes32 structHash = keccak256(
-            abi.encode(
-                EIP712_CONTEXT_CREATION_TYPE_HASH,
-                previousContextId,
-                newContextId,
-                nodeConfigHash,
-                keccak256(extraData)
-            )
-        );
-        return MessageHashUtils.toTypedDataHash(_computeProtocolConfigDomainSeparator(), structHash);
+        return
+            MessageHashUtils.toTypedDataHash(
+                _computeProtocolConfigDomainSeparator(),
+                ProtocolConfigConfirmations.contextCreationStructHash(
+                    previousContextId,
+                    newContextId,
+                    nodeConfigHash,
+                    extraData
+                )
+            );
     }
 
     function _hashEpochActivation(
@@ -483,17 +470,17 @@ abstract contract HostContractsDeployerTestUtils is Test {
         bytes32 epochMaterialHash,
         bytes memory extraData
     ) internal view returns (bytes32) {
-        bytes32 structHash = keccak256(
-            abi.encode(
-                EIP712_EPOCH_ACTIVATION_TYPE_HASH,
-                contextId,
-                previousEpochId,
-                epochId,
-                epochMaterialHash,
-                keccak256(extraData)
-            )
-        );
-        return MessageHashUtils.toTypedDataHash(_computeProtocolConfigDomainSeparator(), structHash);
+        return
+            MessageHashUtils.toTypedDataHash(
+                _computeProtocolConfigDomainSeparator(),
+                ProtocolConfigConfirmations.epochActivationStructHash(
+                    contextId,
+                    previousEpochId,
+                    epochId,
+                    epochMaterialHash,
+                    extraData
+                )
+            );
     }
 
     function _hashContextDestruction(
@@ -501,22 +488,23 @@ abstract contract HostContractsDeployerTestUtils is Test {
         uint256[] memory destroyedEpochIds,
         bytes memory extraData
     ) internal view returns (bytes32) {
-        bytes32 structHash = keccak256(
-            abi.encode(
-                EIP712_CONTEXT_DESTRUCTION_TYPE_HASH,
-                destroyedContextId,
-                keccak256(abi.encodePacked(destroyedEpochIds)),
-                keccak256(extraData)
-            )
-        );
-        return MessageHashUtils.toTypedDataHash(_computeProtocolConfigDomainSeparator(), structHash);
+        return
+            MessageHashUtils.toTypedDataHash(
+                _computeProtocolConfigDomainSeparator(),
+                ProtocolConfigConfirmations.contextDestructionStructHash(
+                    destroyedContextId,
+                    destroyedEpochIds,
+                    extraData
+                )
+            );
     }
 
     function _hashEpochDestruction(uint256 destroyedEpochId, bytes memory extraData) internal view returns (bytes32) {
-        bytes32 structHash = keccak256(
-            abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData))
-        );
-        return MessageHashUtils.toTypedDataHash(_computeProtocolConfigDomainSeparator(), structHash);
+        return
+            MessageHashUtils.toTypedDataHash(
+                _computeProtocolConfigDomainSeparator(),
+                ProtocolConfigConfirmations.epochDestructionStructHash(destroyedEpochId, extraData)
+            );
     }
 
     /// @dev nodeConfigHash of ContextCreationConfirmation, over the params projected onto the stored KmsNode shape.
@@ -533,7 +521,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
                 storageUrl: params[i].storageUrl
             });
         }
-        return keccak256(abi.encode(nodes, thresholds));
+        return ProtocolConfigConfirmations.nodeConfigHash(nodes, thresholds);
     }
 
     /// @dev epochMaterialHash of EpochActivationConfirmation. CRS entries encode the raw digest bytes.
