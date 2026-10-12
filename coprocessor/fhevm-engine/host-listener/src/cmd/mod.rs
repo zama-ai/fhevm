@@ -488,6 +488,15 @@ impl InfiniteLogIter {
                 logs[index + 1].block_number != log.block_number
         }
         last_of_block[last_index] = true;
+        // Startup catchup can include the unfinalized tip before any live
+        // header has entered block_history. Never manufacture finality from
+        // the requested page: containment relies on this flag being sound.
+        let head = match self.block_history.tip() {
+            Some(tip) => tip.number,
+            None => self.get_current_block().await?.header.number,
+        };
+        let finalized_through =
+            head.saturating_sub(self.catchup_finalization_in_blocks);
         // Regroup log by block in increasing block number order
         let mut blocks_logs = vec![];
         let mut current_logs: Vec<Log> = vec![];
@@ -513,7 +522,7 @@ impl InfiniteLogIter {
                 logs: std::mem::take(&mut current_logs),
                 summary,
                 catchup: true,
-                finalized: true,
+                finalized: summary.number <= finalized_through,
             };
             blocks_logs.push(block_logs);
         }
@@ -539,8 +548,9 @@ impl InfiniteLogIter {
                     .number
                     .saturating_sub(self.catchup_finalization_in_blocks)
             } else {
-                // happen at service start, assuming everything is finalized
-                info!("Unknown top block, assuming full finalized catchup");
+                // Startup may fetch recent blocks; split_by_block resolves the
+                // actual head before deciding which blocks are finalized.
+                info!("Unknown top block, fetching startup catchup page");
                 from_block + self.catchup_paging
             };
         if self.tracks_kms_generation {
@@ -1419,6 +1429,24 @@ mod tests {
         }
         *iter.provider.write().await = Some(provider);
         (anvil, iter, blocks)
+    }
+
+    #[tokio::test]
+    async fn startup_catchup_does_not_finalize_recent_history() {
+        let (_anvil, mut iter, blocks) =
+            setup_iter_with_chain(30, 50, 0..=0).await;
+        iter.block_history = BlockHistory::new(50);
+        // The configured lag is 20: height 10 is safe, height 11 is pending.
+        let logs = [10, 11, 30].map(|n| Log {
+            block_number: Some(n as u64),
+            block_hash: Some(blocks[n].hash),
+            ..Log::default()
+        });
+        let grouped = iter.split_by_block(logs.to_vec()).await.unwrap();
+        assert_eq!(
+            grouped.iter().map(|b| b.finalized).collect::<Vec<_>>(),
+            vec![true, false, false]
+        );
     }
 
     // Walks back 2 blocks before finding a known ancestor in history.

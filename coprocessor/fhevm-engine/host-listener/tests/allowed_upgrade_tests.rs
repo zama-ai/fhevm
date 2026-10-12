@@ -525,3 +525,154 @@ async fn shift_replay_preserves_legacy_and_current_contract_amounts(
     );
     Ok(())
 }
+
+#[tokio::test]
+#[serial(db)]
+async fn restart_replay_preserves_migrated_legacy_masks_and_ciphertexts(
+) -> anyhow::Result<()> {
+    use fhevm_engine_common::chain_recovery::{
+        is_halted, prepare_host_replay, readiness_blocked, HostReplayStartup,
+    };
+    for materialized in [false, true] {
+        let (mut db, pool, _instance) = setup().await?;
+        let block = block();
+        let output = computed_handle(0x25);
+        let tx_hash = FixedBytes::with_last_byte(0x94);
+        let event = trivial_encrypt(output);
+        let logs = vec![
+            rpc_log(&event, &block, tx_hash, 0),
+            rpc_log(&allowed(output), &block, tx_hash, 1),
+        ];
+        ingest(&mut db, &block, logs.clone(), false).await?;
+        // This is the schema migration's retained pre-upgrade row shape:
+        // no semantic backfill of the legacy boundary mask.
+        sqlx::query("UPDATE computations SET operand_boundary_mask=NULL, is_completed=$1")
+            .bind(materialized).execute(&pool).await?;
+        if materialized {
+            sqlx::query("INSERT INTO ciphertexts (handle,ciphertext,ciphertext_version,ciphertext_type) VALUES ($1,decode('cafe','hex'),0,5)")
+                .bind(output.to_vec()).execute(&pool).await?;
+        }
+        db.poller_set_last_caught_up_block(ChainId::try_from(42_u64)?, 100)
+            .await?;
+        let HostReplayStartup::Ready {
+            replay: Some(replay),
+            ..
+        } = prepare_host_replay(&pool, false, 42, 1, None).await?
+        else {
+            panic!("restart must replay the retained boundary");
+        };
+        ingest(&mut db, &block, logs, true).await?;
+        assert!(!replay.complete(&pool, 100).await?);
+        assert!(!readiness_blocked(&pool).await?);
+        assert!(!is_halted(&pool).await?);
+        let mask: Option<Vec<u8>> = sqlx::query_scalar(
+            "SELECT operand_boundary_mask FROM computations WHERE output_handle=$1",
+        ).bind(output.to_vec()).fetch_one(&pool).await?;
+        assert!(
+            mask.is_none(),
+            "legacy execution semantics must not be backfilled"
+        );
+        assert_eq!(
+            computation_flags(&pool, output).await?,
+            (true, materialized)
+        );
+        let ciphertext: Option<Vec<u8>> = sqlx::query_scalar(
+            "SELECT ciphertext FROM ciphertexts WHERE handle=$1",
+        )
+        .bind(output.to_vec())
+        .fetch_optional(&pool)
+        .await?;
+        assert_eq!(ciphertext, materialized.then_some(vec![0xca, 0xfe]));
+
+        // Missing legacy metadata is not permission to change recorded operands.
+        let mut changed = event;
+        changed.pt = U256::from(8);
+        assert!(ingest(
+            &mut db,
+            &block,
+            vec![rpc_log(&changed, &block, tx_hash, 0)],
+            true
+        )
+        .await
+        .is_err());
+        assert!(is_halted(&pool).await?);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn replay_contains_changed_operand_origin_before_releasing_work(
+) -> anyhow::Result<()> {
+    use fhevm_engine_common::chain_recovery::{
+        begin_replay, is_halted, readiness_blocked, ListenerSource,
+    };
+    for materialized in [false, true] {
+        let (mut db, pool, _instance) = setup().await?;
+        let block = block();
+        let tx_hash = FixedBytes::with_last_byte(0x93);
+        let input = computed_handle(0x23);
+        let output = computed_handle(0x24);
+        let consumer = TfheContract::FheAdd {
+            caller: Address::ZERO,
+            lhs: input,
+            rhs: input,
+            scalarByte: FixedBytes::ZERO,
+            result: output,
+        };
+        // Initial observation missed the transaction-local producer.
+        ingest(
+            &mut db,
+            &block,
+            vec![
+                rpc_log(&consumer, &block, tx_hash, 1),
+                rpc_log(&allowed(output), &block, tx_hash, 2),
+            ],
+            false,
+        )
+        .await?;
+        let mask: Vec<u8> = sqlx::query_scalar(
+            "SELECT operand_boundary_mask FROM computations WHERE output_handle=$1",
+        ).bind(output.to_vec()).fetch_one(&pool).await?;
+        assert!(mask.iter().any(|byte| *byte != 0));
+        if materialized {
+            sqlx::query("UPDATE computations SET is_completed=TRUE")
+                .execute(&pool)
+                .await?;
+            sqlx::query("INSERT INTO ciphertexts (handle,ciphertext,ciphertext_version,ciphertext_type) VALUES ($1,decode('01','hex'),0,5)")
+                .bind(output.to_vec()).execute(&pool).await?;
+        }
+        begin_replay(&pool, ListenerSource::Host, false, 42, 100, 100).await?;
+        let err = ingest(
+            &mut db,
+            &block,
+            vec![
+                rpc_log(&trivial_encrypt(input), &block, tx_hash, 0),
+                rpc_log(&consumer, &block, tx_hash, 1),
+                rpc_log(&allowed(output), &block, tx_hash, 2),
+            ],
+            true,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("execution metadata differs"),
+            "{err}"
+        );
+        assert!(is_halted(&pool).await?);
+        assert!(readiness_blocked(&pool).await?);
+        let retained: Vec<u8> = sqlx::query_scalar(
+            "SELECT operand_boundary_mask FROM computations WHERE output_handle=$1",
+        ).bind(output.to_vec()).fetch_one(&pool).await?;
+        assert_eq!(retained, mask, "preserve original execution evidence");
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM computations")
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(count, 1, "the newly seen producer must roll back too");
+        let pending: bool = sqlx::query_scalar("SELECT pending FROM public.listener_replay_state WHERE source='host' AND chain_id=42")
+            .fetch_one(&pool).await?;
+        assert!(pending, "failed replay must not release derived work");
+    }
+    Ok(())
+}
