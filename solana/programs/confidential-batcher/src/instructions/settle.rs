@@ -195,9 +195,6 @@ pub fn settle<'info>(
         Clock::get()?.unix_timestamp < ctx.accounts.batch.settle_deadline(),
         BatcherError::SettleDeadlinePassed
     );
-    // After the deadline check, as on EVM: past the deadline the batch can only cancel, paused or
-    // not. Before it, a paused batcher holds the batch dispatched without calling the vault.
-    require_not_paused(&ctx.accounts.batcher)?;
     require_keys_eq!(
         ctx.accounts.join_confidential_mint.key(),
         ctx.accounts.batcher.join_confidential_mint,
@@ -299,6 +296,9 @@ pub fn settle<'info>(
         });
         return Ok(());
     }
+    // Only the vault phase waits for unpause, as EVM checks the pause after its zero-total cancel
+    // and its deadline check.
+    require_not_paused(&ctx.accounts.batcher)?;
 
     // Phase 2: the one public number goes through the vault; the payout comes
     // back. The received payout is the batch payout account's balance DELTA

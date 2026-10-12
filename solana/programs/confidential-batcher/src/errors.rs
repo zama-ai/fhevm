@@ -86,7 +86,7 @@ pub enum BatcherError {
     /// A new admin must co-sign, unless it is an existing program-owned PDA.
     #[msg("the new admin must co-sign, or be an existing program-owned PDA")]
     NewAdminNotAccepted,
-    /// Joins, dispatches and settles are refused while the batcher is paused.
+    /// Joins, dispatches and settles of a nonzero total are refused while the batcher is paused.
     #[msg("batcher is paused")]
     Paused,
     /// Unpausing needs a paused batcher.

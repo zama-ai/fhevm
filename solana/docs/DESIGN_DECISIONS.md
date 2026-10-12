@@ -1064,20 +1064,24 @@ the default key, as OZ `Ownable` refuses `address(0)`. It is called `admin` beca
 account's owner is the program that owns it, and zama-host names the same role `HostConfig.admin`.
 The admin `pause`s and `unpause`s the batcher, sets the minimum batch age and settle deadline that
 batches opened from then on copy (`set_min_batch_age`, `set_settle_deadline`: at most 7 and 30 days,
-a zero deadline allowed, working while paused), and hands the role on with `set_admin`, where a new
-keypair co-signs and a new PDA must already be a program-owned account, as with zama-host's
-`set_admin`. EVM's `Ownable` transfers in one step and keeps a renounce; the batcher follows
-zama-host instead, so a mistyped key cannot take the role, and has no renounce, which would strand
-the pause and the policy. Each batch freezes the policy it opened with, as EVM's per-batch `Policy`
-does, so a setter cannot shorten the age its joiners saw nor force-cancel a dispatched batch. While
-paused, `join`, `dispatch` and `settle` are refused, and quits, claims and the deadline cancel stay
-open (INVARIANTS #71). A refused settle is the Solana form of EVM's paused callback, which collects
-the unwrap but does not call the vault: settle is one atomic instruction, so the batch stays
-dispatched until unpause or its deadline, and the deadline is checked first, as on EVM. The admin is
-not the join mint's wrapper authority, which stays the recipient of `reclaim_batch_authority`; the
-demo seeds the deployer as admin and the keeper as wrapper authority. `AUTHORITY.md` is generated
-for zama-host only, so the batcher's roles are recorded here. The batcher's events stay `emit!` app
-events for demo indexers; DD-044's event-CPI rule covers zama-host.
+a zero deadline allowed, working while paused), and hands the role on with `set_admin`, as with
+zama-host's `set_admin`. EVM's `Ownable` transfers in one step and keeps a renounce; the batcher
+follows zama-host instead. A keypair admin must co-sign, which proves it can sign, so a mistyped key
+cannot take the role. A new admin that is off the curve and owned by a program skips the co-sign, so
+a program PDA, such as a governance PDA, can hold the role. Handing the role to a PDA that no
+program signs for strands it, as on zama-host; there is no separate renounce. Each batch freezes the
+policy it opened with, as EVM's per-batch `Policy` does, so a setter cannot shorten the age its
+joiners saw nor force-cancel a dispatched batch. While paused, `join` and `dispatch` are refused,
+and `settle` is refused unless the certified total is zero, which cancels the batch, as EVM cancels
+a zero total before its pause check. Quits, claims, join-record closes, authority reclaims and the
+deadline cancel stay open (INVARIANTS #71). A refused settle is the Solana form of EVM's paused
+callback, which collects the unwrap but does not call the vault: settle is one atomic instruction,
+so the batch stays dispatched until unpause or its deadline, and the deadline is checked first, as
+on EVM. The admin is not the join mint's wrapper authority, which stays the recipient of
+`reclaim_batch_authority`; the demo seeds the deployer as admin and the keeper as wrapper authority.
+`AUTHORITY.md` is generated for zama-host only, so the batcher's roles are recorded here. The
+batcher's events stay `emit!` app events for demo indexers; DD-044's event-CPI rule covers
+zama-host.
 
 A deposit batch whose certified total floors to zero shares at the vault's current price settles
 into refunds. `demo_vault::deposit` would reject it with `ZeroShares`, and since a failed CPI aborts
@@ -1278,9 +1282,9 @@ by a role. Each batch copies the batcher's `settle_deadline_secs` (at most
 `MAX_SETTLE_DEADLINE_SECS`, zero allowed) when it opens, so a later change cannot shorten it, and
 each dispatch records its `dispatched_at`. Settle runs only before `dispatched_at +
 settle_deadline_secs`; from then on anyone may cancel the dispatch. So a cancel never races a
-settle, and a stuck batch never waits on an operator: a paused batcher refuses settle but not the
-cancel (DD-042). Cancellation enters the terminal, refund-only `Refunding` state: the batch cannot
-be reused, and anyone may run a participant's `quit`, which can only pay that participant's own
+settle, and a stuck batch never waits on an operator: a paused batcher refuses a nonzero settle but
+not the cancel (DD-042). Cancellation enters the terminal, refund-only `Refunding` state: the batch
+cannot be reused, and anyone may run a participant's `quit`, which can only pay that participant's own
 token account. A pending batch's `quit` still needs the user's signature, since leaving early is
 the user's choice. EVM's vault batcher also cancels a batch past its callback deadline, but only
 inside its dispatch callback; settle here is a pull rather than a callback, so the cancel is its own

@@ -3451,9 +3451,9 @@ fn mollusk_initialize_batcher_rejects_foreign_underlyings() {
 // Admin: pause, policy and the role itself
 // ---------------------------------------------------------------------------
 
-/// Only the admin pauses, unpauses, sets the policy or hands the role on.
+/// Only the admin pauses, unpauses, sets the policy or hands the role on, and it must sign.
 #[test]
-fn mollusk_admin_instructions_reject_another_signer() {
+fn mollusk_admin_instructions_need_the_admin_to_sign() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     run_initialize_batcher(&context, &fixture, 0);
@@ -3479,6 +3479,20 @@ fn mollusk_admin_instructions_reject_another_signer() {
         set_admin_ix(&fixture, stranger, stranger, true),
     ] {
         check_batcher_instruction(&context, &ix, &[mismatch()]);
+    }
+    // Mollusk checks no signatures, so the admin key without its signer flag must be refused.
+    for mut ix in [
+        batcher_admin_ix(&fixture, fixture.admin, batcher::instruction::Pause {}),
+        set_admin_ix(&fixture, fixture.admin, stranger, true),
+    ] {
+        ix.accounts[0].is_signer = false;
+        check_batcher_instruction(
+            &context,
+            &ix,
+            &[Check::err(ProgramError::Custom(
+                anchor_lang::error::ErrorCode::AccountNotSigner as u32,
+            ))],
+        );
     }
     let config = read_account::<batcher::Batcher>(&context, fixture.batcher);
     assert_eq!(
@@ -3514,8 +3528,8 @@ fn mollusk_pause_and_unpause_refuse_a_repeat() {
 }
 
 /// While paused, joins, dispatches and settles are refused, so no tokens move into the vault.
-/// Quits of a pending or refunding batch, claims and the deadline cancel stay open, as EVM keeps
-/// quit, recover and claim. Past the deadline, settle is refused for the deadline, paused or not.
+/// Quits of a pending or refunding batch, claims, join-record closes, authority reclaims and the
+/// deadline cancel stay open, as EVM keeps quit, recover and claim. Past the deadline, settle is refused for the deadline, paused or not.
 /// Unpausing restores joins and dispatches.
 #[test]
 fn mollusk_pause_blocks_join_dispatch_and_settle_only() {
@@ -3598,6 +3612,12 @@ fn mollusk_pause_blocks_join_dispatch_and_settle_only() {
     );
 
     run_claim(&context, &fixture, &settled, &fixture.alice);
+    check_batcher_instruction(
+        &context,
+        &close_join_record_ix(&settled, fixture.alice.user),
+        &[Check::success()],
+    );
+    run_reclaim_batch_authority(&context, &fixture, &settled);
     run_quit(&context, &fixture, &pending, &fixture.alice);
     reach_settle_deadline(&mut context);
     check_batcher_instruction(
@@ -3622,6 +3642,27 @@ fn mollusk_pause_blocks_join_dispatch_and_settle_only() {
         &context,
         &dispatch_ix(&fixture, &pending),
         &[Check::success()],
+    );
+}
+
+/// A paused batcher still cancels a zero-total batch at settle: nothing reaches the vault, and EVM
+/// cancels a zero total before its pause check.
+#[test]
+fn mollusk_a_paused_batcher_still_cancels_a_zero_total_batch() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
+    let keys = run_initialize_batcher(&context, &fixture, 0);
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    check_batcher_instruction(
+        &context,
+        &batcher_admin_ix(&fixture, fixture.admin, batcher::instruction::Pause {}),
+        &[Check::success()],
+    );
+    run_settle(&context, &fixture, &keys, burned_handle, 0);
+    assert_eq!(
+        read_batch(&context, keys.batch).status,
+        batcher::BatchStatus::Canceled
     );
 }
 

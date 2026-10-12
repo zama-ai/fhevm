@@ -69,7 +69,7 @@ export type Batcher = {
   vault: Address;
   /** Key that may pause the batcher, set its policy and hand the role on. */
   admin: Address;
-  /** While paused, joins, dispatches and settles are refused. */
+  /** While paused, joins, dispatches and settles of a nonzero total are refused. */
   paused: boolean;
   /** Minimum batch age copied into each batch when it opens. */
   minBatchAgeSecs: bigint;
@@ -96,7 +96,7 @@ export type BatcherArgs = {
   vault: Address;
   /** Key that may pause the batcher, set its policy and hand the role on. */
   admin: Address;
-  /** While paused, joins, dispatches and settles are refused. */
+  /** While paused, joins, dispatches and settles of a nonzero total are refused. */
   paused: boolean;
   /** Minimum batch age copied into each batch when it opens. */
   minBatchAgeSecs: number | bigint;

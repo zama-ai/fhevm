@@ -36,7 +36,7 @@ pub struct Batcher {
     pub vault: Pubkey,
     /// Key that may pause the batcher, set its policy and hand the role on.
     pub admin: Pubkey,
-    /// While paused, joins, dispatches and settles are refused.
+    /// While paused, joins, dispatches and settles of a nonzero total are refused.
     pub paused: bool,
     /// Minimum batch age copied into each batch when it opens.
     pub min_batch_age_secs: u64,

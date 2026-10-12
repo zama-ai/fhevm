@@ -127,8 +127,8 @@ pub mod confidential_batcher {
         )
     }
 
-    /// Pauses the batcher (admin-only): joins, dispatches and settles are refused until
-    /// `unpause`. Refuses when already paused.
+    /// Pauses the batcher (admin-only): joins, dispatches and settles of a nonzero total are
+    /// refused until `unpause`. Refuses when already paused.
     pub fn pause(ctx: Context<BatcherAdmin>) -> Result<()> {
         instructions::pause(ctx)
     }
@@ -217,7 +217,8 @@ pub mod confidential_batcher {
     /// the received payout into confidential payout tokens, and records the
     /// batch's informational public rate. A zero-total batch is canceled
     /// instead, and a deposit worth zero vault shares is wrapped back and opens
-    /// refunds. Permissionless, before the batch's settle deadline; refused while paused.
+    /// refunds. Permissionless, before the batch's settle deadline; refused while paused unless
+    /// the total is zero.
     /// Deny records: `(token, payout mint)` then `(token, join mint)` for the zero-shares refund, or
     /// none for a zero total, which runs no execution.
     pub fn settle<'info>(

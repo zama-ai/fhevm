@@ -638,15 +638,17 @@ open reverts, so the batch stays pending.
 Pinned by `mollusk_a_batcher_has_exactly_one_pending_batch`, `mollusk_initialize_batcher_opens_batch_zero`,
 `mollusk_dispatch_opens_the_next_batch` and `mollusk_dispatch_funds_the_next_batch_authority`.
 
-**71. [HOLDS]** While a batcher is paused, `join`, `dispatch` and `settle` are refused, so no join
-moves tokens into a batch and nothing reaches the vault. Quits of a pending or refunding batch, claims and the
-deadline cancel stay open, so no participant depends on the admin to get tokens back; past the
-deadline, settle is refused for the deadline whether or not the batcher is paused. Only the
-batcher's admin pauses, unpauses, sets the policy that batches opened from then on copy, or hands
-the role on, and a new admin keypair co-signs. Pinned by
-`mollusk_pause_blocks_join_dispatch_and_settle_only`, `mollusk_admin_instructions_reject_another_signer`
-and `mollusk_set_admin_needs_the_new_admin_to_cosign`. `close_join_record` and
-`reclaim_batch_authority` hold by construction: they do not read the pause.
+**71. [HOLDS]** While a batcher is paused, `join` and `dispatch` are refused, and `settle` is
+refused unless the certified total is zero, which cancels the batch as on EVM. So no join moves
+tokens into a batch and nothing reaches the vault. Quits of a pending or refunding batch, claims,
+join-record closes, authority reclaims and the deadline cancel stay open, so no participant depends
+on the admin to get tokens back; past the deadline, settle is refused for the deadline whether or
+not the batcher is paused. Only the batcher's admin, signing, pauses, unpauses, sets the policy that
+batches opened from then on copy, or hands the role on, and a new admin keypair co-signs. Pinned by
+`mollusk_pause_blocks_join_dispatch_and_settle_only`,
+`mollusk_a_paused_batcher_still_cancels_a_zero_total_batch`,
+`mollusk_admin_instructions_need_the_admin_to_sign` and
+`mollusk_set_admin_needs_the_new_admin_to_cosign`.
 
 ---
 
