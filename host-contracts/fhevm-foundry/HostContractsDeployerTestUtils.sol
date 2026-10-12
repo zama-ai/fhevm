@@ -214,22 +214,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         require(InputVerifier(inputVerifierAdd).getThreshold() == inputThreshold, "Input threshold wiring");
     }
 
-    function _deployEmptyProtocolConfigProxy(address owner) internal {
-        _deployACL(owner);
-        address emptyProxyImplementation = address(new EmptyUUPSProxy());
-
-        deployCodeTo(
-            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
-            abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
-            protocolConfigAdd
-        );
-    }
-
-    function _deployProtocolConfig(
-        address owner,
-        KmsNodeParams[] memory initialKmsNodeParams,
-        KmsThresholds memory initialThresholds
-    ) internal returns (ProtocolConfig protocolConfigProxy, address protocolConfigImplementation) {
+    function _deployEmptyProtocolConfigProxy() internal {
         address emptyProxyImplementation = address(new EmptyUUPSProxy());
 
         deployCodeTo(
@@ -238,6 +223,14 @@ abstract contract HostContractsDeployerTestUtils is Test {
             protocolConfigAdd
         );
         vm.label(protocolConfigAdd, "ProtocolConfig Proxy");
+    }
+
+    function _deployProtocolConfig(
+        address owner,
+        KmsNodeParams[] memory initialKmsNodeParams,
+        KmsThresholds memory initialThresholds
+    ) internal returns (ProtocolConfig protocolConfigProxy, address protocolConfigImplementation) {
+        _deployEmptyProtocolConfigProxy();
 
         protocolConfigImplementation = address(new ProtocolConfig());
         vm.label(protocolConfigImplementation, "ProtocolConfig Implementation");
@@ -262,13 +255,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         KmsNodeParams[] memory initialKmsNodeParams,
         KmsThresholds memory initialThresholds
     ) internal returns (ProtocolConfigReplica protocolConfigProxy, address protocolConfigImplementation) {
-        address emptyProxyImplementation = address(new EmptyUUPSProxy());
-
-        deployCodeTo(
-            "fhevm-foundry/HostContractsDeployerTestUtils.sol:DeployableERC1967Proxy",
-            abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
-            protocolConfigAdd
-        );
+        _deployEmptyProtocolConfigProxy();
         vm.label(protocolConfigAdd, "ProtocolConfigReplica Proxy");
 
         protocolConfigImplementation = address(new ProtocolConfigReplica());

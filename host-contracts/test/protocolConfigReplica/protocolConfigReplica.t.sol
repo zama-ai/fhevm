@@ -141,7 +141,8 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
     // -----------------------------------------------------------------------
 
     function test_revertInitializeFromCanonicalInvalidEpochId() public {
-        _deployEmptyProtocolConfigProxy(owner);
+        _deployACL(owner);
+        _deployEmptyProtocolConfigProxy();
 
         address impl = address(new ProtocolConfigReplica());
         uint256 canonicalContextId = KMS_CONTEXT_COUNTER_BASE + 1;
@@ -161,7 +162,8 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
     }
 
     function test_revertInitializeFromCanonicalInvalidContextId() public {
-        _deployEmptyProtocolConfigProxy(owner);
+        _deployACL(owner);
+        _deployEmptyProtocolConfigProxy();
 
         address impl = address(new ProtocolConfigReplica());
         uint256 invalidContextId = KMS_CONTEXT_COUNTER_BASE;
