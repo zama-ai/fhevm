@@ -211,6 +211,11 @@ export const resolveEnv = (
     ...overrides,
   };
   if (source === "devnet" && network !== "devnet") throw new Error('source "devnet" runs on network "devnet"');
+  // The local default names relayer-http on this machine's stack; a devnet run reaching it would
+  // decrypt against whatever happens to listen there.
+  if (network === "devnet" && overrides.decryptionRelayerUrl === undefined) {
+    throw new Error("SOLANA_DECRYPTION_RELAYER_URL must be set on devnet (the preview helper writes it to preview.env)");
+  }
   return {
     source,
     network,
