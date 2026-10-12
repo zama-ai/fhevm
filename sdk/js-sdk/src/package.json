@@ -161,8 +161,8 @@
     }
   },
   "dependencies": {
-    "@noble/curves": "2.0.1",
     "@noble/hashes": "2.0.1",
+    "@noble/curves": "2.0.1",
     "wasm-feature-detect": "1.8.0"
   },
   "repository": {

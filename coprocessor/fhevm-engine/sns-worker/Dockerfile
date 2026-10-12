@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # Stage 1: Build SNS Worker
 # RUST_IMAGE_VERSION is injected by CI from rust-toolchain.toml (see coprocessor-docker-build.yml)
 ARG RUST_IMAGE_VERSION
@@ -36,7 +34,7 @@ COPY solana/runtime-tests ./solana/runtime-tests
 
 WORKDIR /app/coprocessor/fhevm-engine
 
-# Build sns_worker binary
+# Build sns_executor binary
 # NOTE: We use a cache mount for the target directory to enable incremental compilation.
 # Because cache mounts are NOT committed to the image layer, we must copy the binary
 # to a non-mounted path (/tmp) during the same RUN instruction for COPY --from to work.

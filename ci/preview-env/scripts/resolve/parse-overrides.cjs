@@ -56,7 +56,6 @@ if (raw && raw !== "{}") {
     process.exit(1);
   }
   for (const [key, value] of Object.entries(parsed)) {
-    if (typeof value === "string" && /[\r\n]/.test(value)) throw new Error(`overrides.${key} must be a single line`);
     if (value !== undefined && value !== null && typeof value !== "string") {
       console.error(`::error::overrides.${key} must be a string`);
       process.exit(1);

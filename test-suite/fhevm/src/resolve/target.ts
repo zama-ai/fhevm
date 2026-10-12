@@ -135,12 +135,6 @@ export const mustVerifyPublishedImages = (env: NodeJS.Dict<string | undefined> =
 
 export const REPO_TAG = /^[0-9a-f]{7}$/;
 export const SHA_REF = /^(?:[0-9a-f]{7}|[0-9a-f]{40})$/i;
-
-export const validateSha = (sha: string): void => {
-  if (!SHA_REF.test(sha)) {
-    throw new GitHubApiError(`Invalid sha ${sha}; expected 7 or 40 hex characters`);
-  }
-};
 export const SIMPLE_ACL_MIN_SHA = COMPAT_MATRIX.anchors.SIMPLE_ACL_MIN_SHA;
 export const SHA_RUNTIME_COMPAT_MIN_SHA = "1272b10b308b064e7477ca3272712b90b50280d9";
 
@@ -211,7 +205,7 @@ export const findPublishedAncestorIndex = (commitShas: string[], publishedTags: 
  *
  * A missing tag is an exceptional state: on every push the docker-build workflows either build a
  * changed component or re-tag the previous image with the new sha, so a gap means one of those
- * jobs failed, has not finished, or was skipped for a replaced branch tip. Each affected
+ * jobs failed, has not finished, or was skipped for a superseded branch tip. Each affected
  * component independently falls back to its newest published tag on the requested sha's
  * ancestry, and the substitution is recorded in `sources`. A fallback deeper than
  * MAX_FALLBACK_COMMIT_DEPTH fails resolution instead — that lag means the component's publishing
@@ -455,7 +449,9 @@ export const resolveTarget = async (
     if (!requested) {
       throw new GitHubApiError("--target sha requires --sha");
     }
-    validateSha(requested);
+    if (!SHA_REF.test(requested)) {
+      throw new GitHubApiError(`Invalid sha ${requested}; expected 7 or 40 hex characters`);
+    }
     const tag = shortSha(requested);
     const lockName = `sha-${tag}.json`;
     const baseSources = [`requested-sha=${requested.toLowerCase()}`];

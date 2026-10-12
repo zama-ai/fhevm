@@ -66,9 +66,6 @@ compact-hex = []
 consensus-version-override = []
 stack-version-override = []
 
-[dev-dependencies]
-opentelemetry_sdk = { workspace = true, features = ["testing"] }
-
 [build-dependencies]
 tonic-prost-build = { workspace = true }
 

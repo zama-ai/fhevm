@@ -848,7 +848,7 @@ export const runStep = async (state: State, step: StepName) => {
       // because its bootstrap reads gateway addresses and the signer set that do not exist yet.
       for (const chain of extraHostChains(state).filter((c) => isEvmHost(c))) {
         await multiChainComposeUp(chain.node);
-        await waitForRpc(`http://localhost:${chain.rpcPort}`, chain.type);
+        await waitForRpc(`http://localhost:${chain.rpcPort}`);
       }
       break;
     }

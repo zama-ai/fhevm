@@ -131,10 +131,10 @@ keys (keep them aligned to the same kms release):
 | Key | Becomes | Role |
 | --- | --- | --- |
 | `kms_core_version` | `KMS_CORE_TAG` | GHCR tag passed to `deploy.sh --tag`. CI reads PCR labels from the enclave image that `deploy.sh` installs (`core-service-enclave-insecure` on current kms main, `core-service-enclave` on `v0.14.1`). |
-| `kms_repo_ref` | `KMS_REPO_REF` | Full 40-character SHA, branch, or tag sparse-checked out of `zama-ai/kms` (`deploy.sh`, charts, threshold wiring). A short SHA fails `actions/checkout`. |
+| `kms_repo_ref` | `KMS_REPO_REF` | Git ref sparse-checked out of `zama-ai/kms` (`deploy.sh`, charts, threshold wiring). |
 
 Current defaults (also in `parse-overrides.cjs`): `kms_core_version=v0.14.1`,
-`kms_repo_ref=v0.14.1` (`zama-ai/kms` release `v0.14.1`).
+`kms_repo_ref=v0.14.1` (`zama-ai/kms` release `v0.14.1` / `75b85afd`).
 
 **kms-connector is not kms-core.** `kms_connector_version` /
 `kms_connector_chart_version` are fhevm-owned (same resolve/build rules as
@@ -152,7 +152,7 @@ Dispatch examples:
 # Test a kms enclave + matching deploy scripts
 ci/preview-env/preview-env launch --ref <branch> --tests \
   --set kms_core_version=<tag> \
-  --set kms_repo_ref=<full-40-character-sha-or-branch-or-tag>
+  --set kms_repo_ref=<kms-commit-sha>
 
 # 13-party threshold KMS
 ci/preview-env/preview-env launch --ref <branch> --kms-parties 13 --tests

@@ -73,6 +73,8 @@ impl InputProofGatewayHandler {
         dispatcher.register_handler(
             &[
                 InputProofEventId::ReqRcvdFromUser.into(),
+                InputProofEventId::ReqSentToGw.into(),
+                InputProofEventId::RespRcvdFromGw.into(),
                 // NOTE: We don't use Failed Event Id here, to allow notifying users
                 InputProofEventId::InternalFailure.into(),
                 GatewayChainEventId::VerifyProofResponse.into(),

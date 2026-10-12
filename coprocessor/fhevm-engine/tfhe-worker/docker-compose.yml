@@ -22,8 +22,8 @@ services:
     container_name: db-migration
     build:
       context: ../../../.
-      dockerfile: coprocessor/fhevm-engine/db-migration/Dockerfile
-      target: prod
+      dockerfile: coprocessor/fhevm-engine/Dockerfile.workspace
+      target: db-migration
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/coprocessor
       ALLOW_DB_BOOTSTRAP: "true"
