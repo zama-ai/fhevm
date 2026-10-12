@@ -638,8 +638,8 @@ open reverts, so the batch stays pending.
 Pinned by `mollusk_a_batcher_has_exactly_one_pending_batch`, `mollusk_initialize_batcher_opens_batch_zero`,
 `mollusk_dispatch_opens_the_next_batch` and `mollusk_dispatch_funds_the_next_batch_authority`.
 
-**71. [HOLDS]** While a batcher is paused, `join`, `dispatch` and `settle` are refused, so no tokens
-enter a batch or move through the vault. Quits of a pending or refunding batch, claims and the
+**71. [HOLDS]** While a batcher is paused, `join`, `dispatch` and `settle` are refused, so no join
+moves tokens into a batch and nothing reaches the vault. Quits of a pending or refunding batch, claims and the
 deadline cancel stay open, so no participant depends on the admin to get tokens back; past the
 deadline, settle is refused for the deadline whether or not the batcher is paused. Only the
 batcher's admin pauses, unpauses, sets the policy that batches opened from then on copy, or hands

@@ -39,6 +39,7 @@ use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     program_error::ProgramError,
     pubkey::Pubkey,
+    signature::{Keypair, Signer},
     sysvar::SysvarId,
 };
 use std::collections::HashMap;
@@ -53,9 +54,10 @@ use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, coprocessor_signer_address,
     cost_report, deny_scope_record_account, encrypted_store_account, ensure_system_accounts,
     event_authority, handle_for_chain, hcu_trusted_app_record_account, host_config_account,
-    kms_context_account, new_encrypted_store, paused_host_config, read_account, read_spl_amount,
-    read_store_handle, readonly, serialized_account, spl_mint_account, spl_token_account,
-    system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
+    kms_context_account, new_encrypted_store, paused_host_config, program_owned_account,
+    read_account, read_spl_amount, read_store_handle, readonly, serialized_account,
+    spl_mint_account, spl_token_account, system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
+    DECIMALS,
 };
 
 const KMS_CONTEXT_ID: [u8; 32] = {
@@ -420,7 +422,7 @@ impl BatcherFixture {
             Pubkey::find_program_address(&[b"underlying", vault_key.as_ref()], &vault::id()).0;
         let underlying_cmint = ConfidentialMintKeys::new(underlying_cmint, underlying_mint, 3);
         let shares_cmint = ConfidentialMintKeys::new(shares_cmint, share_mint, 4);
-        // Derive two deterministic user keys from the seed key so the fixed
+        // Derive the users' and the admin's keys from the seed key so the fixed
         // fixture stays stable across runs.
         let mut alice_bytes = users_seed.to_bytes();
         alice_bytes[31] = alice_bytes[31].wrapping_add(1);
@@ -867,6 +869,7 @@ fn set_admin_ix(
         },
         batcher::instruction::SetAdmin {},
     );
+    // Account 2 is `new_admin`.
     ix.accounts[2].is_signer = cosign;
     ix
 }
@@ -3504,7 +3507,7 @@ fn mollusk_pause_and_unpause_refuse_a_repeat() {
 /// While paused, joins, dispatches and settles are refused, so no tokens move into the vault.
 /// Quits of a pending or refunding batch, claims and the deadline cancel stay open, as EVM keeps
 /// quit, recover and claim. Past the deadline, settle is refused for the deadline, paused or not.
-/// Unpausing restores joins, dispatches and settles.
+/// Unpausing restores joins and dispatches.
 #[test]
 fn mollusk_pause_blocks_join_dispatch_and_settle_only() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
@@ -3768,7 +3771,7 @@ fn mollusk_a_batch_keeps_the_policy_it_opened_with() {
 }
 
 /// Handing the admin role on needs the new key's co-signature, as zama-host's `set_admin` does,
-/// unless the new admin is an existing program-owned PDA. The old admin loses the role.
+/// unless the new admin is an off-curve PDA a program already owns. The old admin loses the role.
 #[test]
 fn mollusk_set_admin_needs_the_new_admin_to_cosign() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
@@ -3777,8 +3780,14 @@ fn mollusk_set_admin_needs_the_new_admin_to_cosign() {
     let admin = || read_account::<batcher::Batcher>(&context, fixture.batcher).admin;
     let not_accepted = || batcher_error(batcher::BatcherError::NewAdminNotAccepted);
     let keypair = Pubkey::new_unique();
-    let unfunded_pda = Pubkey::find_program_address(&[b"nobody"], &batcher::id()).0;
-    ensure_system_accounts(&context, &[keypair, unfunded_pda]);
+    let system_owned_pda = Pubkey::find_program_address(&[b"nobody"], &batcher::id()).0;
+    ensure_system_accounts(&context, &[keypair, system_owned_pda]);
+    // An on-curve key is refused without its signature even when a program owns its account.
+    let program_owned_keypair = Keypair::new().pubkey();
+    context
+        .account_store
+        .borrow_mut()
+        .insert(program_owned_keypair, program_owned_account(batcher::id()));
 
     check_batcher_instruction(
         &context,
@@ -3787,7 +3796,12 @@ fn mollusk_set_admin_needs_the_new_admin_to_cosign() {
     );
     check_batcher_instruction(
         &context,
-        &set_admin_ix(&fixture, fixture.admin, unfunded_pda, false),
+        &set_admin_ix(&fixture, fixture.admin, system_owned_pda, false),
+        &[not_accepted()],
+    );
+    check_batcher_instruction(
+        &context,
+        &set_admin_ix(&fixture, fixture.admin, program_owned_keypair, false),
         &[not_accepted()],
     );
     assert_eq!(admin(), fixture.admin);

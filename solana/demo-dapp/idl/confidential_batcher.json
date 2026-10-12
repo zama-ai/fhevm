@@ -2096,8 +2096,7 @@
       "name": "pause",
       "docs": [
         "Pauses the batcher (admin-only): joins, dispatches and settles are refused until",
-        "`unpause`. Quits, claims, the deadline cancel and the rest stay open. Refuses when already",
-        "paused."
+        "`unpause`. Refuses when already paused."
       ],
       "discriminator": [
         211,
@@ -2767,7 +2766,8 @@
       "name": "set_settle_deadline",
       "docs": [
         "Sets the settle deadline that batches opened from now on copy (admin-only), at most",
-        "`MAX_SETTLE_DEADLINE_SECS`; zero cancels every dispatch. Works while paused."
+        "`MAX_SETTLE_DEADLINE_SECS`. With zero, a batch cannot settle and anyone may cancel it once",
+        "dispatched. Works while paused."
       ],
       "discriminator": [
         33,

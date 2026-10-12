@@ -175,7 +175,7 @@ describe('findRecentJoin', () => {
 });
 
 describe('batch policy', () => {
-  it("times dispatch and the settle deadline by the policy the batch opened with", () => {
+  it('times dispatch and the settle deadline by the policy the batch opened with', () => {
     const batch = { openedAt: 1_000n, minBatchAgeSecs: 60n, dispatchedAt: 2_000n, settleDeadlineSecs: 0n } as BatchState;
     expect(dispatchableAt(batch)).toBe(1_060n);
     expect(settleDeadline(batch)).toBe(2_000n);

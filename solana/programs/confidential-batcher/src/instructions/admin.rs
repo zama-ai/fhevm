@@ -1,10 +1,5 @@
-//! The batcher admin's instructions: pause and unpause, the policy that batches opened from now on
-//! copy, and handing the role on.
-//!
-//! While paused, `join`, `dispatch` and `settle` are refused. Quits, claims, the deadline cancel,
-//! join-record closing and authority reclaims stay open, so no participant depends on the admin to
-//! get their tokens back. A batch keeps the policy it opened with: a setter cannot shorten the age
-//! its joiners saw, nor force-cancel a dispatched batch by lowering its deadline.
+//! The batcher admin's instructions: pause and unpause (INVARIANTS #71), the policy that batches
+//! opened from now on copy, and handing the role on.
 
 use anchor_lang::solana_program::system_program;
 

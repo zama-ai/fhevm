@@ -128,8 +128,7 @@ pub mod confidential_batcher {
     }
 
     /// Pauses the batcher (admin-only): joins, dispatches and settles are refused until
-    /// `unpause`. Quits, claims, the deadline cancel and the rest stay open. Refuses when already
-    /// paused.
+    /// `unpause`. Refuses when already paused.
     pub fn pause(ctx: Context<BatcherAdmin>) -> Result<()> {
         instructions::pause(ctx)
     }
@@ -146,7 +145,8 @@ pub mod confidential_batcher {
     }
 
     /// Sets the settle deadline that batches opened from now on copy (admin-only), at most
-    /// `MAX_SETTLE_DEADLINE_SECS`; zero cancels every dispatch. Works while paused.
+    /// `MAX_SETTLE_DEADLINE_SECS`. With zero, a batch cannot settle and anyone may cancel it once
+    /// dispatched. Works while paused.
     pub fn set_settle_deadline(
         ctx: Context<BatcherAdmin>,
         settle_deadline_secs: u64,

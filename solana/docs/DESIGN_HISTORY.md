@@ -1220,7 +1220,7 @@ a version 1 transaction holds the combined dispatch. The replaced wording:
 
 ### DD-045, replaced in part by the per-batch policy
 
-The batcher-admin change (pause, owner-set policy and per-batch policy, as on EVM) moved the settle
+zama-ai/fhevm#4395 (the batcher admin, pause and per-batch policy, as on EVM) moved the settle
 deadline from the batcher to each batch and accepted a zero deadline. The replaced DD-045 wording:
 
 > Each batcher fixes `settle_deadline_secs` (at most `MAX_SETTLE_DEADLINE_SECS`) when it is
