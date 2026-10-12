@@ -180,9 +180,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 If the ZamaHost Anchor IDL changes intentionally, refresh the vendored
-listener snapshot with `bash scripts/sync-zama-host-idl.sh`. After an
-intentional Mollusk CU change, regenerate baselines with
-`bash scripts/update-cost-snapshots.sh`. [`docs/TESTING.md`](docs/TESTING.md)
+listener snapshot with `bash scripts/sync-zama-host-idl.sh`. The solana-tests
+job summary reports Mollusk compute costs; no test gates on them. [`docs/TESTING.md`](docs/TESTING.md)
 lists focused commands, what each test layer proves, and build traps.
 
 Live end-to-end run against a local Alpenglow validator (mainnet-safe, validator

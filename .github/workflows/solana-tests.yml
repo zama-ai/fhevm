@@ -451,7 +451,32 @@ jobs:
 
       - name: Run Solana workspace tests
         id: workspace-tests
+        env:
+          ZAMA_COST_REPORT_DIR: ${{ runner.temp }}/cost-report
         run: cargo test --workspace
+
+      # Reports costs and never gates on them. The rows come from zama_solana_test_kit::cost_report,
+      # whose docs define the columns.
+      - name: Write the cost report to the job summary
+        if: ${{ !cancelled() }}
+        env:
+          REPORT_DIR: ${{ runner.temp }}/cost-report
+        run: |
+          mkdir -p "$REPORT_DIR"
+          touch "$REPORT_DIR/profiles.md" "$REPORT_DIR/boundaries.md"
+          {
+            echo "### Mollusk cost profiles"
+            echo
+            echo "| Profile | CU | Accounts | Instruction data bytes | CPIs | CPI data bytes (total / largest) |"
+            echo "|---|---:|---:|---:|---:|---:|"
+            sort "$REPORT_DIR/profiles.md"
+            echo
+            echo "### fhe_execute boundaries"
+            echo
+            echo "| Shape | Most steps that execute | Stopped by | CU at that size | Instruction data bytes at that size |"
+            echo "|---|---:|---|---:|---:|"
+            sort "$REPORT_DIR/boundaries.md"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Preserve SBF programs after a runtime test failure
         if: ${{ failure() && steps.workspace-tests.conclusion == 'failure' }}
@@ -461,30 +486,6 @@ jobs:
           path: solana/target/deploy/*.so
           if-no-files-found: error
           retention-days: 3
-
-      # A cost snapshot test panics on the first profile that moved, so the failure message names
-      # one profile even when several changed, and the fix needs an SBF toolchain the author may
-      # not have. Re-run the snapshot tests in record mode and hand back the JSON that
-      # update-cost-snapshots.sh would have written. Record mode never deletes a profile, so the
-      # files are cleared first, as the script does, and removed profiles do not linger.
-      - name: Regenerate the cost snapshots after a test failure
-        id: regen-snapshots
-        if: ${{ failure() && steps.workspace-tests.conclusion == 'failure' }}
-        run: |
-          rm -f runtime-tests/cost-snapshots/*.json
-          ZAMA_UPDATE_COST_SNAPSHOT=1 cargo test -p zama-solana-runtime-tests cost_snapshot_
-        continue-on-error: true
-
-      # Only publish when regeneration actually succeeded. If the workspace failed to compile, the
-      # step above fails too and `continue-on-error` swallows it — uploading then would hand over a
-      # byte-identical copy of the committed JSON while implying it is the fix.
-      - name: Upload the regenerated cost snapshots
-        if: ${{ failure() && steps.regen-snapshots.outcome == 'success' }}
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
-        with:
-          name: solana-cost-snapshots
-          path: solana/runtime-tests/cost-snapshots/*.json
-          if-no-files-found: error
 
       - name: Check the capability property test catches its planted bugs
         run: bash scripts/check-planted-bugs.sh

@@ -109,7 +109,7 @@ the result handles, which the listener re-derives only as a check.
 The host checks pause, canonical accounts, signers, all touched application deny records, operand types and current
 slot handles. Transaction HCU total and depth span calls and applications; block meters charge each execution to
 its producing Store's `(program, scope)`. Random steps require the host nonce. All failures roll back atomically.
-Resource bounds and their SBF measurements are documented in `docs/INVARIANTS.md` and runtime cost snapshots.
+Resource bounds are documented in `docs/INVARIANTS.md`; the solana-tests job summary reports their SBF measurements.
 
 ## External Inputs
 

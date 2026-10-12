@@ -1375,7 +1375,7 @@ Why not ship an allocator:
    These limits do not model live Store size or prevent the host from exhausting its separate
    heap; a runtime failure still rolls back the transaction. See INVARIANTS #54 and #61.
 3. A Store output creates no account per result, so no per-result system CPI bounds an
-   execution. The runtime snapshots show
+   execution. When this was decided, the runtime sweeps showed
    32-step dependent chains and 32 public outputs with eight viewers each reaching the step
    cap, and updates across Stores with 8, 32 and 55 MMR peaks reaching 16, 7 and 4 steps.
    These are shape limits; the allocator decision does not make
@@ -1577,7 +1577,7 @@ certificate and emits the certified handle and cleartext; it reads no Store and 
 label. Original token events establish provenance.
 
 The input-attestation, threshold-KMS, program-upgrade and RPC trust
-assumptions apply. Resource limits are shape-dependent; see runtime cost snapshots.
+assumptions apply. Resource limits are shape-dependent; see the solana-tests cost report.
 
 ## DD-050: Transient Storage Shared Across The Transaction
 
@@ -1602,8 +1602,8 @@ transaction. HCU total and depth use the same journal, while each application's 
 cost. Return data remains immediate CPI transport, independent of permissions and result storage.
 
 A transaction opens one transient store, apps pass no result-scratch or result-authority accounts, the host meters each
-execution once, and balances need no add-zero copy. Resource snapshots include lifecycle CU overhead and separate
-whole-transaction packet checks. Granting decrypt permission on historical handles is fhevm-internal#2007.
+execution once, and balances need no add-zero copy. Cost profiles include lifecycle CU overhead, and separate tests
+check whole-transaction packet fit. Granting decrypt permission on historical handles is fhevm-internal#2007.
 
 ## DD-051: A Zama Is One Host Program ID
 
@@ -1803,8 +1803,8 @@ of that handler, not a step towards leaving the framework.
 Pinocchio-level cost should come from the framework, and neither newer framework can be the code
 we audit and ship.
 
-Reopening condition: Anchor v2 published on crates.io with an audit. Measure a port against the
-runtime cost snapshots first: `Account<T>` becomes a Pod layout and `EncryptedStore`'s `Vec`
+Reopening condition: Anchor v2 published on crates.io with an audit. Compare a port's cost report
+with the current one first: `Account<T>` becomes a Pod layout and `EncryptedStore`'s `Vec`
 fields become a `Slab`. A port after the external audit needs its own audit.
 
 ## DD-055: The ledger is the work log, not a PDA queue
@@ -1907,7 +1907,7 @@ block context is the same kind of fact, and emitting it removes the live sysvar 
 handles go in too, so that what the listener stores does not depend on its own copy of the
 derivation; the derivation becomes a check that can fail without corrupting the leaf record.
 
-Cost, from the committed cost snapshots: the event CPI adds 1,859 CU and 161 bytes of CPI data to a
+Cost, measured when this was decided: the event CPI adds 1,859 CU and 161 bytes of CPI data to a
 three-step execution that used to emit nothing, and 3,981 CU and 1,089 bytes at the 32-step limit. A
 confidential transfer costs 2,129 CU more. The event is built on the host heap, so two heap-bound
 shapes run one step fewer: `attestation_per_step` 16 instead of 17 and `mature_updates_peaks_8` 15

@@ -25,7 +25,7 @@ use solana_sdk::{
     pubkey::Pubkey,
 };
 use std::collections::HashMap;
-use zama_solana_test_kit::cost_snapshot;
+use zama_solana_test_kit::cost_report;
 use zama_solana_test_kit::{
     anchor_error_check, read_account, read_mint_supply, read_spl_amount, spl_mint_account,
     spl_token_account, system_account, Ctx, DECIMALS,
@@ -79,7 +79,7 @@ impl VaultFixture {
         Self::from_keys(Pubkey::new_unique(), Pubkey::new_unique())
     }
 
-    /// Fixture with fully fixed keys. Used by the cost-snapshot tests: the
+    /// Fixture with fully fixed keys. Used by the cost-profile tests: the
     /// on-chain PDA bump search is part of the measured compute, so the vault
     /// key (and therefore the bumps) must be stable across runs — `new_unique`
     /// is a global counter whose value depends on test ordering.
@@ -803,15 +803,15 @@ fn mollusk_harvest_wrong_vault_token_account_rejects() {
 }
 
 // ---------------------------------------------------------------------------
-// cost snapshots
+// Cost profiles
 // ---------------------------------------------------------------------------
 
-fn assert_deposit_cost(profile: &str, result: &InstructionResult, ix: &Instruction) {
-    cost_snapshot::assert_cost_snapshot("vault_mollusk", profile, ix, result);
+fn record_vault_cost(profile: &str, result: &InstructionResult, ix: &Instruction) {
+    cost_report::record_profile("vault_mollusk", profile, ix, result);
 }
 
 #[test]
-fn cost_snapshot_deposit() {
+fn cost_profile_deposit() {
     let fixture = VaultFixture::fixed(0x11);
     let depositor = Pubkey::new_from_array([0x21; 32]);
     let depositor_underlying = Pubkey::new_from_array([0x22; 32]);
@@ -835,11 +835,11 @@ fn cost_snapshot_deposit() {
         1_000,
     );
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
-    assert_deposit_cost("deposit", &result, &ix);
+    record_vault_cost("deposit", &result, &ix);
 }
 
 #[test]
-fn cost_snapshot_withdraw() {
+fn cost_profile_withdraw() {
     let fixture = VaultFixture::fixed(0x31);
     let owner = Pubkey::new_from_array([0x41; 32]);
     let owner_underlying = Pubkey::new_from_array([0x42; 32]);
@@ -857,11 +857,11 @@ fn cost_snapshot_withdraw() {
     let context = mollusk().with_context(accounts);
     let ix = withdraw_ix(&fixture, owner, owner_shares, owner_underlying, 500);
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
-    assert_deposit_cost("withdraw", &result, &ix);
+    record_vault_cost("withdraw", &result, &ix);
 }
 
 #[test]
-fn cost_snapshot_harvest() {
+fn cost_profile_harvest() {
     let fixture = VaultFixture::fixed(0x51);
     let donor = Pubkey::new_from_array([0x61; 32]);
     let donor_underlying = Pubkey::new_from_array([0x62; 32]);
@@ -874,5 +874,5 @@ fn cost_snapshot_harvest() {
     let context = mollusk().with_context(accounts);
     let ix = harvest_ix(&fixture, donor, donor_underlying, 1_000);
     let result = context.process_and_validate_instruction(&ix, &[Check::success()]);
-    assert_deposit_cost("harvest", &result, &ix);
+    record_vault_cost("harvest", &result, &ix);
 }

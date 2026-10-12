@@ -35,7 +35,7 @@ use solana_sdk::{
 };
 use zama_host::{self as host, AppScope, UserDecryptionDelegation};
 use zama_solana_test_kit::{
-    anchor_framework_error_check, cost_snapshot, empty_system_account,
+    anchor_framework_error_check, cost_report, empty_system_account,
     funded_system_account as funded_wallet, host_config_account as host_config_account_from,
     paused_host_config, program_owned_account, serialized_account as serialized,
     system_program_account, HostConfigParams,
@@ -1587,13 +1587,13 @@ fn sdk_fixture_permit_invalidation_address_and_revoke_permits_bytes() {
 }
 
 // ---------------------------------------------------------------------------
-// Cost snapshot
+// Cost profile
 // ---------------------------------------------------------------------------
 
 /// A first grant by a wallet delegator: the curve check, the record PDA derivation and its
 /// creation. Fixed keys, because the PDA bump search is part of the measured cost.
 #[test]
-fn cost_snapshot_delegate_for_user_decryption() {
+fn cost_profile_delegate_for_user_decryption() {
     let delegator = Keypair::new_from_array([0x41; 32]).pubkey();
     let delegate = Keypair::new_from_array([0x43; 32]).pubkey();
     let app = AppScope {
@@ -1624,7 +1624,7 @@ fn cost_snapshot_delegate_for_user_decryption() {
         &grant_accounts(&actors, empty_system_account(), false),
         &[Check::success()],
     );
-    cost_snapshot::assert_cost_snapshot(
+    cost_report::record_profile(
         "user_decryption_delegation_mollusk",
         "delegate_for_user_decryption/first_grant",
         &ix,

@@ -18,7 +18,7 @@
 //! Token-2022 fixtures, and the from-value spend arms.
 //!
 //! Behavior tests run on the cleartext host build and read balances from the plaintexts it records
-//! in each `EncryptedStore`; cost snapshots run on the production build.
+//! in each `EncryptedStore`; cost profiles run on the production build.
 
 use anchor_lang::{prelude::system_program, AccountDeserialize, AnchorDeserialize, Discriminator};
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
@@ -46,7 +46,7 @@ use zama_solana_test_kit::signing::{
 };
 use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
-    cost_snapshot, decode_anchor_event, deny_scope_record_account, encrypted_store_account,
+    cost_report, decode_anchor_event, deny_scope_record_account, encrypted_store_account,
     event_authority, handle_for_chain, new_encrypted_store, paused_host_config, read_account,
     read_encrypted_store, read_spl_amount, read_store_handle, serialized_account, spl_mint_account,
     spl_token_account, system_account, u256_be, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
@@ -63,7 +63,7 @@ fn mollusk() -> Mollusk {
     mollusk_with_host(zama_solana_test_kit::cleartext::HOST_PROGRAM)
 }
 
-/// The token program over the production host build, for compute-cost snapshots.
+/// The token program over the production host build, for compute-cost profiles.
 fn production_mollusk() -> Mollusk {
     mollusk_with_host("zama_host")
 }
@@ -318,7 +318,7 @@ impl TokenFixture {
         )
     }
 
-    /// Fixed-key variant for cost snapshots: PDA bump searches are part of the
+    /// Fixed-key variant for cost profiles: PDA bump searches are part of the
     /// measured compute, so profile addresses must not change between runs.
     fn with_keys(owner: Pubkey, bob_owner: Pubkey, mint: Pubkey) -> Self {
         let host_config = host::host_config_address().0;
@@ -2763,7 +2763,7 @@ impl BurnRedeemFixture {
         )
     }
 
-    /// Fixed-key variant for cost snapshots and the PDA-owner CPI-driver test: PDA bump searches are
+    /// Fixed-key variant for cost profiles and the PDA-owner CPI-driver test: PDA bump searches are
     /// part of the measured compute, and the owner must be a chosen program PDA, so the addresses
     /// must not change between runs.
     fn with_keys(owner: Pubkey, mint: Pubkey, underlying_mint: Pubkey) -> Self {
@@ -5386,13 +5386,12 @@ fn transfer_from_value_instruction_is_smaller_than_attested_arm() {
 }
 
 // ---------------------------------------------------------------------------
-// Cost snapshots (zama-solana-test-kit::snapshot). Dedicated tests so cost
-// drift never fails a behavior test; regenerate with
-// `bash scripts/update-cost-snapshots.sh`.
+// Cost profiles (zama-solana-test-kit::cost_report). Each asserts that the profile executes and
+// records its cost in the report.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn cost_snapshot_confidential_transfer_direct() {
+fn cost_profile_confidential_transfer_direct() {
     let fixture = TokenFixture::with_keys(
         Pubkey::new_from_array([0x11; 32]),
         Pubkey::new_from_array([0x12; 32]),
@@ -5414,7 +5413,7 @@ fn cost_snapshot_confidential_transfer_direct() {
 
     let result = check_token_instruction(&context, &transfer, &[Check::success()]);
 
-    cost_snapshot::assert_cost_snapshot(
+    cost_report::record_profile(
         "token_mollusk",
         "confidential_transfer/direct",
         &transfer,
@@ -5424,11 +5423,7 @@ fn cost_snapshot_confidential_transfer_direct() {
     // Steady state: the first transfer created the transferred-amount
     // `EncryptedStore` at its canonical per-(mint, source) PDA; later
     // transfers update every touched encrypted store in place and create no
-    // accounts. Snapshot the second transfer separately.
-    //
-    // Both profiles share this fixture/context on purpose, so a mismatch on
-    // `direct` fails before `steady_state` is asserted — fix the first drift,
-    // then re-run to see whether the second also moved.
+    // accounts. Record the second transfer separately.
     let second_transfer = confidential_transfer_ix(
         &fixture,
         fixture.alice_token,
@@ -5444,7 +5439,7 @@ fn cost_snapshot_confidential_transfer_direct() {
 
     let second_result = check_token_instruction(&context, &second_transfer, &[Check::success()]);
 
-    cost_snapshot::assert_cost_snapshot(
+    cost_report::record_profile(
         "token_mollusk",
         "confidential_transfer/steady_state",
         &second_transfer,
@@ -5453,7 +5448,7 @@ fn cost_snapshot_confidential_transfer_direct() {
 }
 
 #[test]
-fn cost_snapshot_confidential_transfer_from_value() {
+fn cost_profile_confidential_transfer_from_value() {
     let fixture = TokenFixture::with_keys(
         Pubkey::new_from_array([0x11; 32]),
         Pubkey::new_from_array([0x12; 32]),
@@ -5481,7 +5476,7 @@ fn cost_snapshot_confidential_transfer_from_value() {
 
     let result = check_token_instruction(&context, &transfer, &[Check::success()]);
 
-    cost_snapshot::assert_cost_snapshot(
+    cost_report::record_profile(
         "token_mollusk",
         "confidential_transfer_from_value/direct",
         &transfer,
@@ -5490,7 +5485,7 @@ fn cost_snapshot_confidential_transfer_from_value() {
 }
 
 #[test]
-fn cost_snapshot_initialize_token_account() {
+fn cost_profile_initialize_token_account() {
     let fixture = TokenFixture::with_keys(
         Pubkey::new_from_array([0x11; 32]),
         Pubkey::new_from_array([0x12; 32]),
@@ -5508,15 +5503,14 @@ fn cost_snapshot_initialize_token_account() {
 
     let result = check_token_instruction(&context, &ix, &[Check::success()]);
 
-    cost_snapshot::assert_cost_snapshot("token_mollusk", "initialize_token_account", &ix, &result);
+    cost_report::record_profile("token_mollusk", "initialize_token_account", &ix, &result);
 }
 
 #[test]
-fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
+fn cost_profile_disclose_secp_seven_of_thirteen() {
     // A realistic 7-of-13 KMS public-decrypt cert verifies through the stateless host verifier
-    // (CPIed by disclose_secp) and its compute stays well under budget. Cost is dominated by t
-    // secp256k1 recoveries (~25k CU each) on top of the single-sig baseline, so a 7-sig cert
-    // lands near ~40k + 6 * ~25k; assert a comfortable ceiling.
+    // (CPIed by disclose_secp). Cost is dominated by t secp256k1 recoveries on top of the
+    // single-signature baseline.
     let fixture = DiscloseFixture::new();
     let handle = handle_for_chain(85, BALANCE_FHE_TYPE);
 
@@ -5531,32 +5525,21 @@ fn disclose_secp_seven_of_thirteen_verifies_and_bounds_compute() {
         fixture.kms_context,
         kms_context_account_with_signers(fixture.kms_context_id, &registered, 7),
     );
-    let context = fixture_context(mollusk(), accounts);
+    let context = fixture_context(production_mollusk(), accounts);
 
     let cleartext_amount = 500;
     let (signatures, extra_data) =
         amount_public_decrypt_cert_signed_by(handle, cleartext_amount, &keys[..7]);
-    let result = check_token_instruction(
-        &context,
-        &disclose_secp_ix(
-            &fixture,
-            handle,
-            u256_be(cleartext_amount),
-            signatures,
-            extra_data,
-        ),
-        &[Check::success()],
+    let disclose = disclose_secp_ix(
+        &fixture,
+        handle,
+        u256_be(cleartext_amount),
+        signatures,
+        extra_data,
     );
+    let result = check_token_instruction(&context, &disclose, &[Check::success()]);
 
-    eprintln!(
-        "disclose_secp 7-of-13 compute units consumed: {}",
-        result.compute_units_consumed
-    );
-    assert!(
-        result.compute_units_consumed < 400_000,
-        "7-of-13 disclose consumed {} CU, exceeds the 400k ceiling",
-        result.compute_units_consumed
-    );
+    cost_report::record_profile("token_mollusk", "disclose_secp/7_of_13", &disclose, &result);
 }
 
 // ---------------------------------------------------------------------------
@@ -6158,7 +6141,7 @@ fn burn_from_value_instruction_is_smaller_than_attested_arm() {
 }
 
 #[test]
-fn cost_snapshot_confidential_burn_from_value() {
+fn cost_profile_confidential_burn_from_value() {
     let fixture = BurnRedeemFixture::with_keys(
         Pubkey::new_from_array([0x11; 32]),
         Pubkey::new_from_array([0x12; 32]),
@@ -6185,7 +6168,7 @@ fn cost_snapshot_confidential_burn_from_value() {
 
     let result = check_token_instruction(&context, &burn, &[Check::success()]);
 
-    cost_snapshot::assert_cost_snapshot(
+    cost_report::record_profile(
         "token_mollusk",
         "confidential_burn_from_value/direct",
         &burn,

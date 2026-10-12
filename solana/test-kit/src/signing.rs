@@ -74,7 +74,7 @@ pub fn amount_attestation_for(
 }
 
 /// [`amount_attestation_for`] in the shape a real coprocessor returns, `extra_data = [0x00]` with
-/// no plaintext: for cost snapshots on the production host, which must measure the real
+/// no plaintext: for cost profiles on the production host, which must measure the real
 /// transaction.
 pub fn production_amount_attestation_for(
     amount_handle: [u8; 32],

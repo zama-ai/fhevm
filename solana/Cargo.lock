@@ -5180,8 +5180,6 @@ dependencies = [
  "bincode",
  "k256",
  "mollusk-svm",
- "serde",
- "serde_json",
  "solana-program",
  "solana-sdk",
  "zama-fhe",

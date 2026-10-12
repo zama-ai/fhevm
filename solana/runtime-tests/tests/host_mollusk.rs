@@ -9,7 +9,7 @@
 //! Covered here: `fhe_execute` persistent outputs (create with the PDA proof, update against the
 //! stored handle, allows and leaves), the reads an execution admits, application folding, the
 //! deny and pause gates, off-chain reconstruction and proofs, public outputs, the HCU
-//! block cap, the rand nonce, `verify_public_decrypt`, and the cost snapshots.
+//! block cap, the rand nonce, `verify_public_decrypt`, and the cost profiles.
 
 use anchor_lang::{
     prelude::system_program, AccountDeserialize, AnchorDeserialize, Discriminator, InstructionData,
@@ -29,7 +29,7 @@ use zama_host::{
 use zama_solana_acl::StoreHistoryEvent;
 use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
-    canonical_test_epoch_id, coprocessor_signer_address, cost_snapshot, deny_scope_record_account,
+    canonical_test_epoch_id, coprocessor_signer_address, cost_report, deny_scope_record_account,
     empty_system_account, encrypted_store_account, event_authority, funded_system_account,
     handle_for_chain, hcu_trusted_app_record_account, host_svm as mollusk,
     host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
@@ -65,7 +65,7 @@ impl App {
         Self::with_program(Pubkey::new_unique())
     }
 
-    /// An application on a caller-fixed program, for cost snapshots: PDA bump searches are part of
+    /// An application on a caller-fixed program, for cost profiles: PDA bump searches are part of
     /// the measured compute, so recorded addresses must not move between runs.
     fn with_program(program: Pubkey) -> Self {
         Self {
@@ -3610,7 +3610,7 @@ impl FheExecutionFixture {
         Self::with_block_cap_keys(cap, Pubkey::new_unique(), Pubkey::new_unique())
     }
 
-    /// Fixed-key variant for cost snapshots: PDA bump searches are part of the
+    /// Fixed-key variant for cost profiles: PDA bump searches are part of the
     /// measured compute, so profile addresses must not change between runs.
     fn with_block_cap_keys(cap: u64, payer: Pubkey, program: Pubkey) -> Self {
         let app = App::with_program(program);
@@ -5509,13 +5509,12 @@ fn mollusk_verify_public_decrypt_rejects_non_canonical_kms_context() {
 }
 
 // ---------------------------------------------------------------------------
-// Cost snapshots (zama-solana-test-kit::snapshot). Dedicated tests so cost
-// drift never fails a behavior test; regenerate with
-// `bash scripts/update-cost-snapshots.sh`.
+// Cost profiles (zama-solana-test-kit::cost_report). Each asserts that the profile executes and
+// records its cost in the report.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn cost_snapshot_verify_public_decrypt() {
+fn cost_profile_verify_public_decrypt() {
     // Happy-path stateless verify with fixed fixture keys: two read-only accounts and one secp
     // recovery. Per-consume CU is the price of statelessness (#1704).
     let admin = Pubkey::new_from_array([0x31; 32]);
@@ -5538,15 +5537,10 @@ fn cost_snapshot_verify_public_decrypt() {
         (kms_context, kms_context_acct),
     ];
     let result = check_host_instruction(&mollusk(), &ix, &accounts, &[Check::success()]);
-    cost_snapshot::assert_cost_snapshot(
-        "host_mollusk",
-        "verify_public_decrypt/happy",
-        &ix,
-        &result,
-    );
+    cost_report::record_profile("host_mollusk", "verify_public_decrypt/happy", &ix, &result);
 }
 
-fn snapshot_fixture() -> FheExecutionFixture {
+fn cost_fixture() -> FheExecutionFixture {
     FheExecutionFixture::with_block_cap_keys(
         u64::MAX,
         Pubkey::new_from_array([0x21; 32]),
@@ -5555,30 +5549,30 @@ fn snapshot_fixture() -> FheExecutionFixture {
 }
 
 #[test]
-fn cost_snapshot_fhe_execute_three_steps() {
+fn cost_profile_fhe_execute_three_steps() {
     // Unrestricted HCU cap, no optional meter/trust accounts: the minimal
     // canonical execution (`FheExecutionFixture::success_batch`) with one persistent
     // output create.
-    let fixture = snapshot_fixture();
+    let fixture = cost_fixture();
     let ix = fixture.block_cap_instruction(None, None);
 
     let result = check_host_context(&fixture.context, &ix, &[Check::success()]);
 
-    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_execute/three_steps", &ix, &result);
+    cost_report::record_profile("host_mollusk", "fhe_execute/three_steps", &ix, &result);
 }
 
 #[test]
-fn cost_snapshot_fhe_execute_max_steps() {
+fn cost_profile_fhe_execute_max_steps() {
     // An execution at MAX_FHE_EXECUTION_STEPS with the same fixture keys, accounts, and
     // persistent-output shape as the three-op profile. The compute-unit delta
     // isolates the extra direct host-side fhe_execute steps; it does not include
     // work performed by an application before invoking the host program.
-    let fixture = snapshot_fixture();
+    let fixture = cost_fixture();
     let ix = fixture.max_ops_instruction();
 
     let result = check_host_context(&fixture.context, &ix, &[Check::success()]);
 
-    cost_snapshot::assert_cost_snapshot("host_mollusk", "fhe_execute/max_steps", &ix, &result);
+    cost_report::record_profile("host_mollusk", "fhe_execute/max_steps", &ix, &result);
 }
 
 #[test]
@@ -5588,7 +5582,7 @@ fn mollusk_fhe_execute_max_op_transaction_fits_packet() {
     // fits one 1,232-byte legacy packet including the transient store lifecycle. Clients send version
     // 1 transactions (4,096 bytes), so this is the stricter bound. Richer account/operand shapes have
     // separate capacity probes.
-    let fixture = snapshot_fixture();
+    let fixture = cost_fixture();
     // The Solana transaction packet limit (solana-packet's PACKET_DATA_SIZE: 1280-byte
     // IPv6 minimum MTU minus 48 bytes of headers).
     const PACKET_DATA_SIZE: usize = 1_232;

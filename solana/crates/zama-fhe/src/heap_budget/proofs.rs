@@ -16,10 +16,10 @@ use super::harness::counted_bytes;
 use super::harness::{balance_handle, try_measure, ShapeBuilder, ADMITTED_FRONTIER_SHAPES};
 use super::shapes::*;
 
-/// Invariant #61: 16 updates to 8-peak Stores is one past the host's measured wall for that shape
-/// (`fhe_execute_boundary/mature_updates_peaks_8`), yet the builder admits it.
+/// Invariant #61: the builder admits 16 updates to 8-peak Stores without modelling the host heap.
+/// The cost report's `fhe_execute_boundary/mature_updates_peaks_8` row shows where the host stops.
 #[test]
-fn the_builder_admits_mature_updates_the_host_heap_cannot_run() {
+fn the_builder_admits_mature_updates_without_modelling_the_host_heap() {
     FheExecution::build(
         crate::StoreId::new(
             anchor_lang::prelude::Pubkey::new_from_array([0xA9; 32]),

@@ -15,7 +15,7 @@ been exercised. Commands are run from `solana/` unless a row changes directory.
 | Representative SBF operator admission | `bash scripts/check-zama-host-idl.sh && cargo test -p zama-solana-runtime-tests --test operator_mollusk_conformance`                                                               | The compiled cleartext host build admits representative operator shapes, binds operands, emits the expected handles and events, and records the resulting plaintexts in the output store, where tests read them.                                                                                                                                                                                                                                                                                                                                                                                                 | Exhaustive operator coverage, real TFHE, database/listener behavior, or the networked stack.                                                                                                                                                                           | Rebuilds the SBF artifacts. Eleven warm tests run in about 0.05 seconds; a cold SBF build is materially slower.                                                                                                                                                                                                                        |
 | Real SBF host runtime                 | `bash scripts/check-zama-host-idl.sh && cargo test -p zama-solana-runtime-tests --test host_mollusk -- --nocapture`                                                                | `zama-host` SBF behavior through account state, inner CPIs, return data, and rejection paths under Mollusk.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | A validator, off-chain listeners/workers, real TFHE, or the networked stack.                                                                                                                                                                                           | Rebuilds the SBF artifacts. Warm tests are fast; a cold SBF build is materially slower.                                                                                                                                                                                                                                                |
 | Host capability properties            | `bash scripts/check-zama-host-idl.sh && cargo test -p zama-solana-runtime-tests --test capability_invariants` | Over random sequences drawn from every host IDL instruction, with each admin and Store-authority role also filled by keys that lack it: trust roots change only when the admin signed, and a Store only when its authority signed, in the default build (INVARIANTS #11, #35). `bash scripts/check-planted-bugs.sh` rebuilds the host with each patch in `runtime-tests/planted-bugs/` and requires the suite to fail. | Authorization inside other programs, or that a signer was entitled to sign: Mollusk takes signer flags at face value. | About 10 seconds warm. The planted-bug check rebuilds `zama-host` once per patch. |
-| Real SBF token runtime                | `bash scripts/check-zama-host-idl.sh && cargo test -p zama-solana-runtime-tests --test token_mollusk -- --nocapture`                                                               | Instruction-first confidential-token flows through real host/token/SPL CPIs, with state transitions, events, settlement, and readable domain outcomes asserted under Mollusk. Behavior runs on the cleartext host build, which creates every store at full size; the four `cost_snapshot_*` tests run the production build, so store creation and growth are exercised there and in the host suite.                                                                                                                                                                                                                                                                                                                                                                                                               | A validator, relayer/coprocessor/KMS wiring, or real TFHE.                                                                                                                                                                                                             | Same SBF prerequisite and cold-build cost as the host suite.                                                                                                                                                                                                                                                                           |
+| Real SBF token runtime                | `bash scripts/check-zama-host-idl.sh && cargo test -p zama-solana-runtime-tests --test token_mollusk -- --nocapture`                                                               | Instruction-first confidential-token flows through real host/token/SPL CPIs, with state transitions, events, settlement, and readable domain outcomes asserted under Mollusk. Behavior runs on the cleartext host build, which creates every store at full size; the `cost_profile_*` tests run the production build, so store creation and growth are exercised there and in the host suite.                                                                                                                                                                                                                                                                                                                                                                                                               | A validator, relayer/coprocessor/KMS wiring, or real TFHE.                                                                                                                                                                                                             | Same SBF prerequisite and cold-build cost as the host suite.                                                                                                                                                                                                                                                                           |
 | Solana host decoding | `cd ../coprocessor/fhevm-engine && cargo test -p solana-host-follower host:: && SQLX_OFFLINE=true cargo test -p host-listener solana_reconstruct::` | Host instruction decoding, pairing each execution with its `FheExecutedEvent` and its steps, and the encrypted-store writes (`solana-host-follower`); the handle check and deterministic reconstruction of ordinary computation (`host-listener`). | Yellowstone transport, a live validator, database insertion, worker compute, or decrypt completion. | Coprocessor workspace dependencies and offline SQLx metadata. Warm: focused; cold compilation can take minutes. |
 | Solana block ingest | `cd ../coprocessor/fhevm-engine && cargo test -p solana-host-follower && SQLX_OFFLINE=true cargo test -p host-listener solana_listener::` | Streamed and `getTransaction` transactions prepare into the same host instructions, and a slot rebuilds from `getBlock` and `getTransaction` output alone. Each streamed message of a slot past the 64 MiB decoding limit stays far below it, and only host instructions are kept. The validator seals a slot on its block meta, skips a re-delivered slot, checked while it is in the validator's window, and a tip start's first slot, and stops on a late transaction, an out-of-order slot or a broken ancestry. Archive catch-up across a skipped slot hands the sink the blocks uninterrupted streaming does, and a sink's retryable failure replays its block while a fatal one stops the follower. Against Postgres: a step whose emitted handle does not re-derive is held back as a terminal error while the rest of the block commits and the alarm counter moves, and a slot reverted with the operator scripts replays with fresh rows. | A live provider, a live archive RPC, or the tfhe-worker ending the held step's dependents (the worker's own `errors` and `tfhe_worker` tests cover that). | Docker for the disposable Postgres; offline SQLx metadata. |
 | Solana Merkle proof service           | `cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo test -p solana-merkle-proof-service`                                         | The leaf record against a real Postgres: rows round-trip through the crate's migration, and `POST /v1/solana/merkle-proofs` answers with paths read by position from the stored nodes, which verify against the recorded peaks. A record built through a failure at each table's write equals the uninterrupted one. Re-handing the matching checkpoint block writes nothing. A conflicting hash or older slot fails. Rewinding only the checkpoint fails on the leaf count and leaves every table unchanged. A restored `pg_dump` resumes and catches up (DD-066). `--test store_tests -- --ignored` adds the 1,000,000-leaf timing (DD-063).                                                                                                                                                                                                                                                                                                                                                                                         | Yellowstone ingest, the connector's verification, or the full vertical.                                                                                                                                                                                                | Docker for the disposable Postgres; offline SQLx metadata.                                                                                                                                                                                                                                                                             |
@@ -44,7 +44,7 @@ contracts. A value nobody recorded, including anything a production build wrote,
 The token, batcher, counter, dep-chain and Mollusk operator suites run on this build and read
 results with `zama_solana_test_kit::cleartext` (`store_u64`, `handle_value`; fixtures give values
 with `fixture_context` and `seed`). `operator_conformance` runs the same evaluator natively.
-Cost snapshots and host admission suites stay on the production build.
+Cost profiles and host admission suites stay on the production build.
 
 It is not TFHE: randomness is a keccak of the seed, and a store keeps the plaintexts of its current
 slots and of its latest 64 results. Stores are 9.4 KB instead of growing from their minimum size,
@@ -66,6 +66,52 @@ asserted through the shared `zama-solana-test-kit` crate. Mollusk surfaces resul
 data**, which are the stable artifacts these suites assert on. Plain `emit!` program-data logs are
 intentionally not part of the runtime-test contract; tests should assert the state transition,
 emitted Anchor CPI event, return data, or CPI shape that makes the behavior observable.
+
+## Cost report
+
+Tests that measure cost record it and assert only that the instruction executes: a cost change
+never fails a test. When `ZAMA_COST_REPORT_DIR` names a directory,
+`zama_solana_test_kit::cost_report` appends one Markdown row per measurement there. CI sets it for
+`cargo test --workspace` in `solana-tests/build-and-test` and writes two tables to the job summary:
+
+- **Profiles**, from the `cost_profile_*` tests of the host, token, batcher, vault and
+  user-decryption-delegation suites: compute units, unique accounts, instruction data bytes, CPIs,
+  and the total and largest CPI instruction data.
+- **`fhe_execute` boundaries**, from `boundary_sweeps`: for each shape, the largest step count that
+  executes, the limit the next count hit, and the compute units and instruction data bytes at that
+  size.
+
+Locally, `ZAMA_COST_REPORT_DIR=/tmp/cost cargo test -p zama-solana-runtime-tests` writes
+`profiles.md` and `boundaries.md`. Compare a profile between two commits built the same way (see
+the traps below).
+
+These still fail a test:
+
+- a cost profile that no longer executes under its suite's compute-unit limit, the 32 KiB heap or
+  the instruction trace limit;
+- a transaction that no longer fits its packet-fit test;
+- `fhe_execute_boundary/dependent_chain` running fewer steps than `dep_chain::MAX_CHAIN_LINKS`, the
+  depth dep-chain's `extend` carries in one execution;
+- settle at `MAX_KMS_SIGNERS` over 1,400,000 compute units, and the admin sweep over the 200,000
+  default, which applies because `deploy/src/wipe.ts` sets no compute-unit limit.
+
+### Solana limits
+
+| Limit | Value | Can a transaction raise it? | Upstream symbol |
+|---|---|---|---|
+| Program heap per invocation | 32 KiB | No. `RequestHeapFrame` grants up to 256 KiB (`MAX_HEAP_FRAME_BYTES`), but the default bump allocator's length is a compile-time constant, so the grant is unusable without a custom allocator. None is shipped (DD-046, fhevm-internal#1872). | `solana_program_entrypoint::HEAP_LENGTH` |
+| Compute units per instruction, default | 200,000 | Yes. `SetComputeUnitLimit` raises it toward the transaction cap; the priority fee is charged on the requested limit, not on usage. | `solana_program_runtime::execution_budget::DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT` |
+| Compute units per transaction | 1,400,000 | No. | `solana_program_runtime::execution_budget::MAX_COMPUTE_UNIT_LIMIT` |
+| Transaction size | 4,096 bytes, at most 64 account keys | No. Clients send every transaction as version 1 (SIMD-0385). | No constant in the locked crates. The packet-fit tests check the stricter legacy packet, `solana_packet::PACKET_DATA_SIZE` (1,232 bytes). |
+| Instruction trace length | 64 | No. Every top-level instruction and CPI counts: Store and transient store creation, rent top-ups, lazy meter creation, host events, the final transient store close and the app's other CPIs. | `solana_transaction_context::MAX_INSTRUCTION_TRACE_LENGTH` |
+| CPI instruction data | 10,240 bytes per call | No. | `solana_program::syscalls::MAX_CPI_INSTRUCTION_DATA_LEN` |
+| CPI depth | 5, or 9 with SIMD-0268 | No. Mollusk runs with SIMD-0268 active, so the tests allow depth 9. | `solana_program_runtime::execution_budget::MAX_INSTRUCTION_STACK_DEPTH` and `MAX_INSTRUCTION_STACK_DEPTH_SIMD_0268` |
+| Stack frame | 4,096 bytes | No. | `solana_program_runtime::execution_budget::STACK_FRAME_SIZE` |
+| Return data | 1,024 bytes per `set_return_data` | No. | `solana_cpi::MAX_RETURN_DATA` |
+
+zama-host's own caps are constants: `MAX_FHE_EXECUTION_STEPS`, `MAX_INPUT_ATTESTATION_HANDLES` and
+`MAX_INPUT_ATTESTATION_EXTRA_DATA` in `programs/zama-host/src/constants.rs`, and
+`zama_solana_acl::MAX_MMR_PEAKS`.
 
 ## Running the suites
 
@@ -358,22 +404,18 @@ and a record that is behind is a retry.
   `bash scripts/check-zama-host-idl.sh`: it checks the default production IDL/ABI surface and
   rebuilds every program on the default feature set, plus the `admin-sweep` builds and the
   [cleartext host build](#the-cleartext-host-build). No program has a test-only entropy path. The
-  host suites and cost snapshots run the default build that ships; the token, batcher, counter,
+  host suites and cost profiles run the default build that ships; the token, batcher, counter,
   dep-chain and Mollusk operator suites run the cleartext host build, which adds plaintext tracking
   to the same instructions. `capability_invariants`, `fhe_execute_boundary` and `transient_mollusk`
   run both builds as parity checks.
-- **A small CU delta after an incremental SBF build is not a code change.** The committed
-  baselines are minted by `scripts/update-cost-snapshots.sh`, which runs `cargo clean` first. An
-  incremental rebuild of the same source can differ by a few CU: a doc-comment-only edit to
+- **A small CU delta after an incremental SBF build is not a code change.** An incremental
+  rebuild of the same source can differ by a few CU from a clean one: a doc-comment-only edit to
   `zama-host` was measured at −12 CU on two batcher profiles after
-  `sync-zama-host-idl.sh` (incremental), and byte-identical to the baselines after the snapshot
-  script's clean rebuild. So regenerate with the script before believing a delta of this size, and
-  do not attribute it to the edit in front of you.
-- **Cost snapshots are minted on x86_64 Linux.** CI measures there. Platform tools v1.57 build
+  `sync-zama-host-idl.sh` (incremental), and byte-identical after a `cargo clean` rebuild. Compare
+  clean builds before attributing a delta of this size to the edit in front of you.
+- **macOS and CI numbers differ.** CI measures on x86_64 Linux. Platform tools v1.57 build
   slightly different code on macOS: a clean build of the same commit measured 10 to 91 CU more on
-  most profiles (v1.52 matched). On macOS, the script still shows
-  the delta between two commits. Commit the `solana-cost-snapshots` artifact that a failing
-  `solana-tests` run uploads.
+  most profiles (v1.52 matched). Compare macOS numbers with macOS numbers.
 - **SPL Token CPIs in token tests.** `token_mollusk` executes real SPL Token CPIs through the
   matching `mollusk-svm-programs-token` program fixture.
 - **`anchor build` vs program ids.** `anchor build` checks that each program's declared id matches
