@@ -328,6 +328,35 @@ pub async fn ingest_block_logs(
         return Ok(());
     };
 
+    // The identity/parent check and all block writes share one per-chain
+    // admission lock. A second replica must observe this transaction's rows
+    // before it can admit a conflicting finalized block.
+    use fhevm_engine_common::chain_recovery::{
+        lock_history_tx, record_halt, ListenerSource,
+    };
+    lock_history_tx(
+        &mut tx,
+        ListenerSource::Host,
+        db.gcs_mode(),
+        chain_id.as_i64(),
+    )
+    .await?;
+    if let Some(conflict) =
+        host_history_conflict(&mut tx, chain_id, &block_logs.summary).await?
+    {
+        tx.rollback().await?;
+        record_halt(
+            &db.pool().await,
+            conflict.observation(
+                ListenerSource::Host,
+                db.gcs_mode(),
+                chain_id.as_i64(),
+            ),
+        )
+        .await?;
+        return Err(sqlx::Error::Protocol(conflict.reason.into()));
+    }
+
     // Queue `pg_notify('event_new_block', ...)` at the top of the transaction so
     // postgres defers delivery until `tx.commit()` below succeeds. Same
     // "after all events committed" guarantee as emitting post-commit, but
@@ -897,6 +926,51 @@ pub async fn ingest_block_logs(
         .await?;
     }
     tx.commit().await
+}
+
+/// Check both adjacent committed identities: replicas can finish neighboring
+/// heights out of order. A missing predecessor is permitted only as an initial
+/// anchor; an existing committed row must agree. Pending forks are left to the
+/// existing finalizer until a poller cursor or finalization commits them.
+async fn host_history_conflict(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    header: &BlockSummary,
+) -> Result<
+    Option<fhevm_engine_common::chain_recovery::HistoryConflict>,
+    sqlx::Error,
+> {
+    let height = i64::try_from(header.number)
+        .map_err(|err| sqlx::Error::Protocol(err.to_string()))?;
+    let rows: Vec<(i64, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+        "SELECT block_number, block_hash, parent_hash FROM host_chain_blocks_valid
+         WHERE chain_id = $1 AND block_number BETWEEN $2 - 1 AND $2 + 1
+           AND (block_status = 'finalized' OR (block_status <> 'orphaned' AND block_number <=
+                (SELECT last_caught_up_block FROM host_listener_poller_state WHERE chain_id = $1)))",
+    ).bind(chain_id.as_i64()).bind(height).fetch_all(&mut **tx).await?;
+    for (number, hash, parent) in rows {
+        let (boundary, expected, observed) = if number == height {
+            (height, hash, header.hash.to_vec())
+        } else if number == height - 1 {
+            (number, hash, header.parent_hash.to_vec())
+        } else if !parent.is_empty() {
+            (height, parent, header.hash.to_vec())
+        } else {
+            continue;
+        };
+        if expected != observed {
+            return Ok(Some(
+                fhevm_engine_common::chain_recovery::HistoryConflict {
+                    block_number: boundary,
+                    expected_hash: expected,
+                    observed_hash: observed,
+                    reason:
+                        "host block does not extend committed canonical history",
+                },
+            ));
+        }
+    }
+    Ok(None)
 }
 
 /// Synthetic logs for this block, or empty if it is not the designated one.

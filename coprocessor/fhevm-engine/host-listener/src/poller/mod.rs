@@ -1,5 +1,7 @@
 mod http_client;
 mod metrics;
+#[cfg(test)]
+mod recovery_tests;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -116,6 +118,38 @@ mod provenance_tests {
 }
 
 const MAX_DB_RETRIES: u64 = 10;
+
+/// A canonical replay may repair an omission on an unchanged block. It must
+/// never merge another fork into previously committed or finalized history.
+async fn validate_committed_header(
+    pool: &sqlx::PgPool,
+    chain_id: ChainId,
+    header: &BlockSummary,
+    committed_watermark: u64,
+    gcs_mode: bool,
+) -> Result<()> {
+    use fhevm_engine_common::chain_recovery::{
+        record_halt, HistoryMismatch, ListenerSource,
+    };
+    let height = i64::try_from(header.number)?;
+    let expected: Option<Vec<u8>> = sqlx::query_scalar(
+        "SELECT block_hash FROM host_chain_blocks_valid
+         WHERE chain_id = $1 AND block_number = $2
+           AND (block_status = 'finalized' OR ($2 <= $3 AND block_status <> 'orphaned'))
+           AND block_hash <> $4 LIMIT 1",
+    ).bind(chain_id.as_i64()).bind(height).bind(i64::try_from(committed_watermark)?)
+        .bind(header.hash.as_slice()).fetch_optional(pool).await?;
+    if let Some(expected) = expected {
+        record_halt(pool, HistoryMismatch {
+            source: ListenerSource::Host, gcs_mode, chain_id: chain_id.as_i64(),
+            block_number: height, expected_hash: Some(&expected),
+            observed_hash: Some(header.hash.as_slice()),
+            reason: "canonical host header changed after commitment or finalization",
+        }).await?;
+        anyhow::bail!("Committed host history changed at block {height}; operator recovery required");
+    }
+    Ok(())
+}
 /// Exit after this many consecutive RPC failures (after retries exhausted).
 /// Orchestrator will restart with fresh state.
 const MAX_CONSECUTIVE_RPC_FAILURES: u64 = 3;
@@ -153,7 +187,8 @@ fn handle_rpc_failure<E: std::fmt::Display>(
 }
 
 /// Seed for `host_listener_poller_state` when no anchor row exists yet; an
-/// existing row always wins in the caller, so restarts never rewind or skip.
+/// existing row remains the durable cursor; restarts separately replay the
+/// configured bounded window without lowering it.
 /// A non-negative value is an absolute height (0 = genesis, explicitly), a
 /// negative value means that many blocks behind the current head. Unset is an
 /// error: the first start for a chain must state where to begin.
@@ -227,6 +262,8 @@ pub struct PollerConfig {
     /// Initial sync anchor when no poller state exists yet
     /// (initialization-only; >= 0 absolute, negative from head).
     pub seed_start_block: Option<i64>,
+    /// Recent committed blocks re-fetched on every process start (1..=10_000).
+    pub replay_window: u64,
     // Dependence chain settings
     pub dependence_cache_size: u16,
     pub dependence_by_connexity: bool,
@@ -238,6 +275,10 @@ pub struct PollerConfig {
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
+    anyhow::ensure!(
+        (1..=10_000).contains(&config.replay_window),
+        "poller replay window must be between 1 and 10000 blocks"
+    );
     let acl_address = config.acl_address;
     let tfhe_address = config.tfhe_address;
     let kms_generation_address = config.kms_generation_address;
@@ -352,29 +393,50 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         cancel_token.clone(),
     );
 
-    let initial_anchor = db.poller_get_last_caught_up_block(chain_id).await?;
-    db.tick.update();
-    let mut last_caught_up_block = match initial_anchor {
-        Some(block) => u64::try_from(block)
-            .context("last_caught_up_block cannot be negative")?,
-        None => {
-            let initial = match resolve_start_anchor(config.seed_start_block)? {
-                StartAnchor::Block(block) => block,
-                StartAnchor::BehindHead(delta) => {
-                    let head = client.latest_block_number().await.context(
-                        "Failed to fetch head to resolve negative seed-start-block",
-                    )?;
-                    i64::try_from(head.saturating_sub(delta)).context(
-                        "start block computed from head is out of range",
-                    )?
-                }
-            };
-            db.poller_set_last_caught_up_block(chain_id, initial)
-                .await?;
-            db.tick.update();
-            u64::try_from(initial)
-                .context("initial last_caught_up_block cannot be negative")?
+    // Seed RPC resolution must not hold the cutover fence. Each attempt re-reads
+    // the routed cursor, so promotion and concurrent initialization win over a
+    // seed resolved before them. Replay ownership is returned with its token.
+    let mut seed = None;
+    let (mut last_caught_up_block, replay) = loop {
+        use fhevm_engine_common::chain_recovery::{
+            prepare_host_replay, HostReplayStartup,
+        };
+        let pool = db.pool.read().await.clone();
+        match prepare_host_replay(
+            &pool,
+            db.gcs_mode(),
+            chain_id.as_i64(),
+            config.replay_window,
+            seed,
+        )
+        .await?
+        {
+            HostReplayStartup::Ready { cursor, replay } => {
+                db.tick.update();
+                break (u64::try_from(cursor)?, replay);
+            }
+            HostReplayStartup::NeedsSeed => {
+                let initial = match resolve_start_anchor(
+                    config.seed_start_block,
+                )? {
+                    StartAnchor::Block(block) => block,
+                    StartAnchor::BehindHead(delta) => {
+                        let head = client.latest_block_number().await.context(
+                            "Failed to fetch head to resolve negative seed-start-block",
+                        )?;
+                        i64::try_from(head.saturating_sub(delta)).context(
+                            "start block computed from head is out of range",
+                        )?
+                    }
+                };
+                seed = Some(initial);
+            }
         }
+    };
+    let mut replay_pending = replay.is_some();
+    let mut next_block = match &replay {
+        Some(replay) => u64::try_from(replay.progress.from_block)?,
+        None => last_caught_up_block.saturating_add(1),
     };
 
     info!(
@@ -398,6 +460,12 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             sleep(config.poll_interval).await;
             continue;
         }
+        let pool = db.pool.read().await.clone();
+        if fhevm_engine_common::chain_recovery::is_halted(&pool).await? {
+            anyhow::bail!(
+                "Chain history is contained; operator recovery is required"
+            );
+        }
         let latest = match client.latest_block_number().await {
             Ok(block) => block,
             Err(err) => {
@@ -412,6 +480,33 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             }
         };
         consecutive_rpc_failures = 0;
+        // Check the committed tip even with no new blocks. Its hash commits to
+        // its entire ancestry; a changed descendant also detects a deeper fork.
+        if last_caught_up_block > 0 {
+            let header = match client
+                .header_for_block(last_caught_up_block)
+                .await
+            {
+                Ok(header) => header,
+                Err(err) => {
+                    warn!(%err, "Cannot verify committed tip; leaving progress unchanged");
+                    sleep(config.retry_interval).await;
+                    continue;
+                }
+            };
+            anyhow::ensure!(
+                header.number == last_caught_up_block,
+                "RPC returned the wrong committed-tip height"
+            );
+            validate_committed_header(
+                &pool,
+                chain_id,
+                &header.into(),
+                last_caught_up_block,
+                config.gcs_mode,
+            )
+            .await?;
+        }
         let safe_tip = latest.saturating_sub(config.finality_lag);
         let rpc_finalized_block = if kms_generation_address.is_some() {
             match client.finalized_block_number().await {
@@ -439,7 +534,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         )
         .await;
 
-        if safe_tip <= last_caught_up_block {
+        if safe_tip < next_block {
             info!(
                 chain_id = %chain_id,
                 latest_block = latest,
@@ -451,15 +546,17 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             continue;
         }
 
-        let target = safe_tip
-            .min(last_caught_up_block.saturating_add(config.batch_size));
-        let blocks_to_process = target - last_caught_up_block;
+        let iteration_start = next_block;
+        let target = safe_tip.min(
+            next_block.saturating_add(config.batch_size.saturating_sub(1)),
+        );
+        let blocks_to_process = target - next_block + 1;
 
         let mut processed_blocks = 0;
         let mut db_errors = 0;
         let mut rpc_errors = 0;
 
-        for block in (last_caught_up_block + 1)..=target {
+        for block in iteration_start..=target {
             let logs = match client.logs_for_block(block).await {
                 Ok(logs) => {
                     consecutive_rpc_failures = 0;
@@ -507,6 +604,14 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 rpc_errors += 1;
                 break;
             }
+            validate_committed_header(
+                &pool,
+                chain_id,
+                &summary,
+                last_caught_up_block,
+                config.gcs_mode,
+            )
+            .await?;
             let block_logs = BlockLogs {
                 logs,
                 summary,
@@ -538,6 +643,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 Ok(retries) => {
                     db_errors += retries;
                     processed_blocks += 1;
+                    next_block = block.saturating_add(1);
                     db.tick.update();
                 }
                 Err((err, retries)) => {
@@ -571,7 +677,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             }
         }
 
-        let new_anchor = last_caught_up_block + processed_blocks;
+        let new_anchor = last_caught_up_block.max(next_block.saturating_sub(1));
         let blocks_failed = blocks_to_process.saturating_sub(processed_blocks);
 
         if new_anchor > last_caught_up_block {
@@ -580,6 +686,13 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             db.poller_set_last_caught_up_block(chain_id, anchor).await?;
             db.tick.update();
             last_caught_up_block = new_anchor;
+        }
+        if let Some(replay) = replay.as_ref().filter(|replay| {
+            replay_pending && next_block > replay.progress.to_block as u64
+        }) {
+            replay_pending = replay
+                .complete(&pool, i64::try_from(next_block.saturating_sub(1))?)
+                .await?;
         }
 
         if processed_blocks > 0 {
@@ -598,7 +711,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             chain_id = %chain_id,
             latest_block = latest,
             safe_tip = safe_tip,
-            last_caught_up_block_before = new_anchor - processed_blocks,
+            first_requested_block = iteration_start,
             last_caught_up_block_after = last_caught_up_block,
             blocks_processed = processed_blocks,
             blocks_failed = blocks_failed,

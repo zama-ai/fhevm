@@ -155,6 +155,7 @@ async fn poller_catches_up_to_safe_tip(
     assert!(expected_acl > 0, "no finalized ACL events to ingest");
 
     let config = PollerConfig {
+        replay_window: 64,
         url: http_url,
         acl_address: *acl_contract.address(),
         tfhe_address: *tfhe_contract.address(),

@@ -523,8 +523,11 @@ impl<'a> WriteGuard<'a> {
 /// Controls GCS writes after a rollback.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GcsRollbackPolicy {
-    /// Used by raw chain ingestion.
+    /// Continue after rollback, but still honor chain recovery containment.
     Continue,
+    /// Raw ingestion may perform bounded replay while derived writes wait.
+    /// A durable history halt blocks raw ingestion too.
+    RawIngestion,
     /// Used by derived output workers.
     Skip,
 }
@@ -570,6 +573,14 @@ async fn cutover_gate(
         .bind(CUTOVER_LOCK_ID)
         .execute(&mut **tx)
         .await?;
+    if crate::chain_recovery::is_halted_tx(tx).await? {
+        return Ok(Some(GateBlock::Skip));
+    }
+    if rollback_policy != GcsRollbackPolicy::RawIngestion
+        && crate::chain_recovery::replay_pending_tx(tx).await?
+    {
+        return Ok(Some(GateBlock::Skip));
+    }
     if gcs_mode {
         if rollback_policy == GcsRollbackPolicy::Skip {
             let paused: bool = sqlx::query_scalar(

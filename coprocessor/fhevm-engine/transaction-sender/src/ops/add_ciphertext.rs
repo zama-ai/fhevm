@@ -59,15 +59,21 @@ where
 
         info!(handle = h, "Processing transaction");
 
-        let receipt = match self
+        // Keep the acceptance fence across submission. Release it before the
+        // bookkeeping helpers open their own guarded transactions.
+        let Some(submission_fence) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
+        let submission = self
             .provider
             .send_sync_with_overprovision(
                 txn_request,
                 self.conf.gas_limit_overprovision_percent,
                 Duration::from_secs(self.conf.send_txn_sync_timeout_secs.into()),
             )
-            .await
-        {
+            .await;
+        submission_fence.rollback().await?;
+        let receipt = match submission {
             Ok(receipt) => receipt,
             Err(e) if self.already_added_error(&e).is_some() => {
                 warn!(

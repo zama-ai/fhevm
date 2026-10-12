@@ -677,7 +677,7 @@ impl Database {
             fhevm_engine_common::versioning::begin_write_guarded_conn(
                 &mut connection,
                 self.stack_mode.gcs_mode(),
-                fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+                fhevm_engine_common::versioning::GcsRollbackPolicy::RawIngestion,
             )
             .await?
             .into_tx()
@@ -812,7 +812,7 @@ impl Database {
         Ok(fhevm_engine_common::versioning::begin_write_guarded(
             &pool,
             self.stack_mode.gcs_mode(),
-            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+            fhevm_engine_common::versioning::GcsRollbackPolicy::RawIngestion,
         )
         .await?
         .into_tx())
@@ -1817,7 +1817,7 @@ impl Database {
             INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block)
             VALUES ($1, $2)
             ON CONFLICT (chain_id) DO UPDATE
-            SET last_caught_up_block = EXCLUDED.last_caught_up_block,
+            SET last_caught_up_block = GREATEST(host_listener_poller_state.last_caught_up_block, EXCLUDED.last_caught_up_block),
                 updated_at = NOW()
             "#,
         )
