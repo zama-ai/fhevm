@@ -27,6 +27,7 @@ kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "511ac7e0521a5277
 bc2wrap = { git = "https://github.com/zama-ai/kms.git", rev = "511ac7e0521a5277e231abe729b163dcd0940e83", default-features = true }
 tfhe = { version = "=1.8.1", default-features = false }
 user-decryption-signature = { path = "../shared/user-decryption-signature", default-features = false }
+fhevm-sig-auth = { path = "../shared/fhevm-sig-auth" }
 ciphertext-attestation = { path = "../shared/ciphertext-attestation", features = ["client"] }
 
 #####################################################################
@@ -82,7 +83,6 @@ serde = { version = "=1.0.229", default-features = false, features = [
 serde_json = { version = "=1.0.145", default-features = false, features = [
     "std",
 ] }
-sha2 = { version = "=0.11.0", default-features = false }
 sha3 = { version = "=0.10.8", default-features = false }
 sqlx = { version = "=0.8.6", default-features = false, features = [
     "chrono",
@@ -92,7 +92,6 @@ sqlx = { version = "=0.8.6", default-features = false, features = [
     "runtime-tokio",
     "tls-rustls",
 ] }
-subtle = { version = "=2.6.1", default-features = false }
 thiserror = { version = "=2.0.20", default-features = false }
 tokio = { version = "=1.47.1", default-features = false, features = [
     "macros",
