@@ -65,7 +65,7 @@ beforeEach(() => {
 
 describe('ProtocolConfigReplica at the ProtocolConfig address', () => {
   it('accepts a replica and reads its context and epoch', async () => {
-    await expect(readContextAndEpoch('ProtocolConfigReplica v0.1.0')).resolves.toEqual({ contextId: 7n, epochId: 3n });
+    await expect(readContextAndEpoch('ProtocolConfigReplica v0.4.0')).resolves.toEqual({ contextId: 7n, epochId: 3n });
   });
 
   it('still rejects a ProtocolConfig before v0.2.0', async () => {

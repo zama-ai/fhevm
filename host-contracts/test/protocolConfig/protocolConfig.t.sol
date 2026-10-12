@@ -469,7 +469,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
 
         // Version and current context.
-        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.3.0");
+        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.4.0");
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
         assertEq(contextId, KMS_CONTEXT_COUNTER_BASE + 1);
         assertEq(protocolConfig.getCurrentKmsContextId(), contextId);
@@ -2122,19 +2122,19 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         protocolConfig.upgradeToAndCall(newImpl, "");
 
-        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.4.0");
+        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.5.0");
         // State preserved across upgrade.
         assertTrue(protocolConfig.isValidKmsContext(protocolConfig.getCurrentKmsContextId()));
     }
 
     // -----------------------------------------------------------------------
-    // reinitializeV3 upgrade path
+    // reinitializeV4 upgrade path
     // -----------------------------------------------------------------------
 
-    /// @dev Calls reinitializeV3() on a proxy pinned at the initialized version the v0.2.0
-    ///      implementation left behind (3), as the upgrade tooling does. The pre-store check proves
+    /// @dev Calls reinitializeV4() on a proxy pinned at the initialized version the v0.3.0
+    ///      implementation left behind (4), as the upgrade tooling does. The pre-store check proves
     ///      the hardcoded slot is where OZ Initializable writes.
-    function test_reinitializeV3SucceedsOnUpgradePath() public {
+    function test_reinitializeV4SucceedsOnUpgradePath() public {
         _deployACL(owner);
         _deployEmptyProtocolConfigProxy();
         address impl = address(new ProtocolConfig());
@@ -2143,13 +2143,13 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         bytes32 initializableStorage = 0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
         assertEq(uint256(vm.load(protocolConfigAdd, initializableStorage)), 1);
-        vm.store(protocolConfigAdd, initializableStorage, bytes32(uint256(3)));
+        vm.store(protocolConfigAdd, initializableStorage, bytes32(uint256(4)));
 
-        ProtocolConfig(protocolConfigAdd).reinitializeV3();
-        assertEq(uint256(vm.load(protocolConfigAdd, initializableStorage)), 4);
+        ProtocolConfig(protocolConfigAdd).reinitializeV4();
+        assertEq(uint256(vm.load(protocolConfigAdd, initializableStorage)), 5);
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        ProtocolConfig(protocolConfigAdd).reinitializeV3();
+        ProtocolConfig(protocolConfigAdd).reinitializeV4();
     }
 
     // -----------------------------------------------------------------------

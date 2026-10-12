@@ -132,7 +132,7 @@ The Ethereum `ProtocolConfig` is the source of truth for protocol state, so **ne
 seed their replica from it.
 
 An existing replica proxy that still runs `ProtocolConfig` does not need this flow. It migrates in
-place with `upgradeToAndCall(<ProtocolConfigReplica impl>, reinitializeV3())`. Both contracts use the
+place with `upgradeToAndCall(<ProtocolConfigReplica impl>, reinitializeV4())`. Both contracts use the
 same storage, so the KMS context, epoch and nodes stay as they are.
 
 The flow is artifact-centric — the same three steps in every environment:

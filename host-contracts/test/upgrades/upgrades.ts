@@ -52,7 +52,7 @@ describe('Upgrades', function () {
       },
     });
     await pc.waitForDeployment();
-    expect(await pc.getVersion()).to.equal('ProtocolConfig v0.3.0');
+    expect(await pc.getVersion()).to.equal('ProtocolConfig v0.4.0');
     const expectThresholds = async (c: any) => {
       expect(await c.getPublicDecryptionThreshold()).to.equal(1n);
       expect(await c.getUserDecryptionThreshold()).to.equal(2n);
@@ -62,7 +62,7 @@ describe('Upgrades', function () {
     await expectThresholds(pc);
     const pc2 = await upgrades.upgradeProxy(pc, factoryUpgraded);
     await pc2.waitForDeployment();
-    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.4.0');
+    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.5.0');
     await expectThresholds(pc2);
   });
 
@@ -78,16 +78,16 @@ describe('Upgrades', function () {
     });
     await pc.waitForDeployment();
     const [contextId, epochId] = await pc.getCurrentKmsContextAndEpoch();
-    // Existing replica proxies run the v0.14.2 ProtocolConfig, which is at initialized version 3.
+    // Existing replica proxies run the v0.15 ProtocolConfig, which is at initialized version 4.
     await ethers.provider.send('hardhat_setStorageAt', [
       await pc.getAddress(),
       INITIALIZABLE_STORAGE,
-      ethers.toBeHex(3, 32),
+      ethers.toBeHex(4, 32),
     ]);
 
-    const replica = await upgrades.upgradeProxy(pc, replicaFactory, { call: { fn: 'reinitializeV3' } });
+    const replica = await upgrades.upgradeProxy(pc, replicaFactory, { call: { fn: 'reinitializeV4' } });
     await replica.waitForDeployment();
-    expect(await replica.getVersion()).to.equal('ProtocolConfigReplica v0.1.0');
+    expect(await replica.getVersion()).to.equal('ProtocolConfigReplica v0.4.0');
     expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId]);
 
     await (await replica.mirrorKmsEpoch(contextId, epochId + 1n)).wait();
