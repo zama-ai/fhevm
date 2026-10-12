@@ -13,39 +13,39 @@ use crate::manifest_consensus::ExecutionError;
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_CT64_BYTES: usize = 16 * 1024 * 1024;
 
-/// A peer's attested ct64 digest and the epoch whose stack uploaded it.
+/// A peer's attested ct64 digest and the epoch that computed its bytes.
 pub(super) struct AttestedCt64 {
     pub(super) digest: B256,
     pub(super) consensus_epoch: String,
 }
 
 impl AttestedCt64 {
-    /// An object without the epoch tag was uploaded by the `legacy` epoch.
+    /// An object without the epoch tag comes from the `legacy` epoch.
     pub(super) fn new(digest: B256, consensus_epoch: Option<&str>) -> Self {
         Self {
             digest,
-            consensus_epoch: uploading_epoch(consensus_epoch),
+            consensus_epoch: tagged_epoch(consensus_epoch),
         }
     }
 }
 
-/// A peer's ct64 bytes and the epoch whose stack uploaded them.
+/// A peer's ct64 bytes and the epoch that computed them.
 pub(super) struct DownloadedCt64 {
     pub(super) bytes: Vec<u8>,
     pub(super) consensus_epoch: String,
 }
 
 impl DownloadedCt64 {
-    /// An object without the epoch tag was uploaded by the `legacy` epoch.
+    /// An object without the epoch tag comes from the `legacy` epoch.
     pub(super) fn new(bytes: Vec<u8>, consensus_epoch: Option<&str>) -> Self {
         Self {
             bytes,
-            consensus_epoch: uploading_epoch(consensus_epoch),
+            consensus_epoch: tagged_epoch(consensus_epoch),
         }
     }
 }
 
-fn uploading_epoch(consensus_epoch: Option<&str>) -> String {
+fn tagged_epoch(consensus_epoch: Option<&str>) -> String {
     consensus_epoch.unwrap_or(LEGACY_CONSENSUS_EPOCH).to_owned()
 }
 
@@ -57,7 +57,7 @@ pub(super) trait Ct64Source: Clone + Send + Sync + 'static {
         coprocessor_context_id: U256,
     ) -> Result<DownloadedCt64, ExecutionError>;
 
-    /// Attested ct64 digest and uploading epoch from object metadata (HEAD).
+    /// Attested ct64 digest and computing epoch from object metadata (HEAD).
     /// `expected_signer` is the registry signer for this bucket when known.
     async fn head_ct64_digest(
         &self,
