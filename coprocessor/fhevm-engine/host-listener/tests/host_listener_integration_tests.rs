@@ -1601,7 +1601,11 @@ async fn check_finalization_status(setup: &Setup) {
             Vec<(Vec<u8>, String)>,
         > = std::collections::HashMap::new();
         for block in blocks {
-            if block.block_number > block_max - 5 {
+            if block.block_number
+                > block_max
+                    - setup.args.catchup_finalization_in_blocks as i64
+                    - 2
+            {
                 continue; // pending blocks within finalization window can be ignored for this assert
             }
             blocks_by_number
@@ -1664,7 +1668,12 @@ async fn test_listener_no_event_loss(
     kill: bool,
     reorg: bool,
 ) -> Result<(), anyhow::Error> {
-    let setup = setup(None).await?;
+    let mut setup = setup(None).await?;
+    if reorg {
+        // This test exercises recoverable forks, not finalized-history loss.
+        // Its 25-block Anvil reorg must stay inside the configured finality lag.
+        setup.args.catchup_finalization_in_blocks = 32;
+    }
     let mut args = setup.args.clone();
     // This test intentionally aborts/restarts the listener many times.
     // Keep telemetry disabled here to avoid coupling event-loss assertions

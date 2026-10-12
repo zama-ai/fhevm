@@ -34,7 +34,7 @@ use crate::database::synthetic_ops::{
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handles,
     uniform_allowed_outputs, Chain, ChainHash, Database, Handle as EventHandle,
-    LogTfhe, TransactionHash,
+    LogTfhe, TransactionHash, REPLAY_METADATA_CONFLICT,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -327,6 +327,44 @@ pub async fn ingest_block_logs(
         info!("cutover completed — host-listener skipping block ingest (retired stack)");
         return Ok(());
     };
+
+    // The identity/parent check and all block writes share one per-chain
+    // admission lock. A second replica must observe this transaction's rows
+    // before it can admit a conflicting finalized block.
+    use fhevm_engine_common::chain_recovery::{
+        host_role_tx, lock_history_tx, record_halt, HistoryMismatch,
+        ListenerSource,
+    };
+    let history_role = host_role_tx(&mut tx).await?;
+    lock_history_tx(
+        &mut tx,
+        ListenerSource::Host,
+        history_role,
+        chain_id.as_i64(),
+    )
+    .await?;
+    if let Some(conflict) = host_history_conflict(
+        &mut tx,
+        chain_id,
+        i64::try_from(block_logs.summary.number)
+            .map_err(|err| sqlx::Error::Protocol(err.to_string()))?,
+        block_logs.summary.hash.as_slice(),
+        Some(block_logs.summary.parent_hash.as_slice()),
+    )
+    .await?
+    {
+        tx.rollback().await?;
+        record_halt(
+            &db.pool().await,
+            conflict.observation(
+                ListenerSource::Host,
+                history_role,
+                chain_id.as_i64(),
+            ),
+        )
+        .await?;
+        return Err(sqlx::Error::Protocol(conflict.reason.into()));
+    }
 
     // Queue `pg_notify('event_new_block', ...)` at the top of the transaction so
     // postgres defers delivery until `tx.commit()` below succeeds. Same
@@ -778,7 +816,28 @@ pub async fn ingest_block_logs(
     let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
     let mut dependent_ops_by_chain: HashMap<ChainHash, u64> = HashMap::new();
     for tfhe_log in tfhe_event_log {
-        let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
+        let inserted = match db.insert_tfhe_event(&mut tx, &tfhe_log).await {
+            Err(sqlx::Error::Protocol(reason))
+                if reason == REPLAY_METADATA_CONFLICT =>
+            {
+                tx.rollback().await?;
+                record_halt(
+                    &db.pool().await,
+                    HistoryMismatch {
+                        source: ListenerSource::Host,
+                        gcs_mode: history_role,
+                        chain_id: chain_id.as_i64(),
+                        block_number: block_logs.summary.number as i64,
+                        expected_hash: Some(block_logs.summary.hash.as_slice()),
+                        observed_hash: Some(block_logs.summary.hash.as_slice()),
+                        reason: REPLAY_METADATA_CONFLICT,
+                    },
+                )
+                .await?;
+                return Err(sqlx::Error::Protocol(reason));
+            }
+            result => result?,
+        };
         at_least_one_insertion |= inserted;
         // Count all newly inserted ops per chain to avoid underestimating
         // pressure from producer paths that are required by downstream work.
@@ -897,6 +956,57 @@ pub async fn ingest_block_logs(
         .await?;
     }
     tx.commit().await
+}
+
+/// Check both adjacent committed identities: replicas can finish neighboring
+/// heights out of order. A missing predecessor is permitted only as an initial
+/// anchor; an existing committed row must agree. Pending forks are left to the
+/// existing finalizer. Admission and deferred finalization both call this while
+/// holding the same history lock. An absent legacy parent is unknown, so only
+/// the same-height and successor checks apply in that case.
+async fn host_history_conflict(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    height: i64,
+    block_hash: &[u8],
+    parent_hash: Option<&[u8]>,
+) -> Result<
+    Option<fhevm_engine_common::chain_recovery::HistoryConflict>,
+    sqlx::Error,
+> {
+    let rows: Vec<(i64, Vec<u8>, Option<Vec<u8>>)> = sqlx::query_as(
+        "SELECT block_number, block_hash, parent_hash FROM host_chain_blocks_valid
+         WHERE chain_id = $1 AND block_number BETWEEN $2 - 1 AND $2 + 1
+           AND block_status = 'finalized'",
+    ).bind(chain_id.as_i64()).bind(height).fetch_all(&mut **tx).await?;
+    for (number, hash, parent) in rows {
+        let (boundary, expected, observed) = if number == height {
+            (height, hash, block_hash.to_vec())
+        } else if number == height - 1 {
+            let Some(observed_parent) =
+                parent_hash.filter(|hash| !hash.is_empty())
+            else {
+                continue;
+            };
+            (number, hash, observed_parent.to_vec())
+        } else if let Some(parent) = parent.filter(|hash| !hash.is_empty()) {
+            (height, parent, block_hash.to_vec())
+        } else {
+            continue;
+        };
+        if expected != observed {
+            return Ok(Some(
+                fhevm_engine_common::chain_recovery::HistoryConflict {
+                    block_number: boundary,
+                    expected_hash: expected,
+                    observed_hash: observed,
+                    reason:
+                        "host block does not extend committed canonical history",
+                },
+            ));
+        }
+    }
+    Ok(None)
 }
 
 /// Synthetic logs for this block, or empty if it is not the designated one.
@@ -1822,7 +1932,86 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             return;
         }
     };
+    // Finalization changes committed identity just like ingestion. Resolve the
+    // actual schema after acquiring the cutover fence, then serialize the
+    // entire batch with admissions and other finalizers for this chain.
+    use fhevm_engine_common::chain_recovery::{
+        host_role_tx, lock_history_tx, record_halt, ListenerSource,
+    };
+    let history_role = match async {
+        let role = host_role_tx(&mut tx).await?;
+        lock_history_tx(
+            &mut tx,
+            ListenerSource::Host,
+            role,
+            db.chain_id.as_i64(),
+        )
+        .await?;
+        Ok::<_, sqlx::Error>(role)
+    }
+    .await
+    {
+        Ok(role) => role,
+        Err(err) => {
+            error!(?err, "Failed to lock host history for finalization");
+            return;
+        }
+    };
     for (block_number, block_hash) in canonical {
+        let conflict = async {
+            let parent: Option<Option<Vec<u8>>> = sqlx::query_scalar(
+                "SELECT parent_hash FROM host_chain_blocks_valid
+                 WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3",
+            )
+            .bind(db.chain_id.as_i64())
+            .bind(block_number)
+            .bind(block_hash.as_slice())
+            .fetch_optional(&mut *tx)
+            .await?;
+            host_history_conflict(
+                &mut tx,
+                db.chain_id,
+                block_number,
+                block_hash.as_slice(),
+                parent.flatten().as_deref(),
+            )
+            .await
+        }
+        .await;
+        match conflict {
+            Ok(Some(conflict)) => {
+                // Never upgrade a shared lock while holding it. Roll back the
+                // batch first, then persist containment under the exclusive fence.
+                if let Err(err) = tx.rollback().await {
+                    error!(
+                        ?err,
+                        "Failed to roll back conflicting finalization"
+                    );
+                    return;
+                }
+                if let Err(err) = record_halt(
+                    &db.pool().await,
+                    conflict.observation(
+                        ListenerSource::Host,
+                        history_role,
+                        db.chain_id.as_i64(),
+                    ),
+                )
+                .await
+                {
+                    error!(?err, "Failed to contain conflicting finalization");
+                }
+                return;
+            }
+            Ok(None) => {}
+            Err(err) => {
+                error!(
+                    ?err,
+                    "Failed to check committed history before finalization"
+                );
+                return;
+            }
+        }
         match db
             .update_block_as_finalized(&mut tx, block_number, &block_hash)
             .await

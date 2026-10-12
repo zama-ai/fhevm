@@ -522,6 +522,7 @@ async fn reset_gcs_schema(tx: &mut Transaction<'_, Postgres>) -> Result<(), Erro
     let drop_sql = format!("DROP SCHEMA IF EXISTS {GCS_SCHEMA_QUOTED} CASCADE");
     sqlx::query(&drop_sql).execute(&mut **tx).await?;
     let duplicated = create_gcs_tables(tx).await?;
+    fhevm_engine_common::chain_recovery::reset_green_replay_tx(tx).await?;
     info!(
         schema = GCS_SCHEMA_QUOTED,
         tables = ?duplicated,
@@ -632,6 +633,9 @@ async fn check_dry_run_ready(
     let (ready,): (bool,) = sqlx::query_as(
         r#"
         SELECT
+          NOT EXISTS (SELECT 1 FROM public.chain_recovery_halts WHERE resolved_at IS NULL)
+          AND NOT EXISTS (SELECT 1 FROM public.listener_replay_state WHERE pending)
+          AND
           -- 1. Watermark: the host-listener has ingested at least up to start_block.
           --    Without this, an un-ingested start_block would make the two checks
           --    below vacuously true (nothing to find yet != nothing wrong).
@@ -727,6 +731,7 @@ async fn wait_until_dry_run_ready(
             NEW_BLOCK_CHANNEL,
             EVENT_CIPHERTEXT_COMPUTED_CHANNEL,
             EVENT_DRY_RUN_ROLLED_BACK,
+            fhevm_engine_common::chain_recovery::EVENT_RECOVERY_CHANGED,
         ])
         .await?;
 
@@ -812,6 +817,9 @@ async fn wait_until_dry_run_ready(
                 info!("readiness loop cancelled");
                 return Ok(false);
             }
+            // Notifications are hints; reconnects and operator recovery must
+            // not require new chain activity to release an otherwise-ready gate.
+            _ = tokio::time::sleep(Duration::from_secs(5)) => {}
             recv = listener.recv() => {
                 match recv {
                     Ok(notification) => {
@@ -903,6 +911,15 @@ async fn transition_to_dry_run_started(
         }
     }
 
+    let Some(mut readiness_tx) = fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        true,
+        fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+    )
+    .await?
+    .into_tx() else {
+        return Ok(());
+    };
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
@@ -915,8 +932,10 @@ async fn transition_to_dry_run_started(
     )
     .bind(proposal_id)
     .bind(proposal_block)
-    .execute(pool)
+    .execute(&mut *readiness_tx)
     .await?;
+
+    readiness_tx.commit().await?;
 
     if result.rows_affected() == 0 {
         warn!(
@@ -1009,7 +1028,9 @@ async fn check_gw_dry_run_ready(
 ) -> Result<bool, sqlx::Error> {
     let sql = format!(
         "SELECT
-           COALESCE(
+           NOT EXISTS (SELECT 1 FROM public.chain_recovery_halts WHERE resolved_at IS NULL)
+           AND NOT EXISTS (SELECT 1 FROM public.listener_replay_state WHERE pending)
+           AND COALESCE(
              (SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
               WHERE dummy_id = true),
              -1
@@ -1063,7 +1084,11 @@ async fn wait_until_gw_dry_run_ready(
     // and the host-chain readiness loop.
     let mut listener = PgListener::connect_with(&pool).await?;
     listener
-        .listen_all([GW_NEW_BLOCK_CHANNEL, EVENT_DRY_RUN_ROLLED_BACK])
+        .listen_all([
+            GW_NEW_BLOCK_CHANNEL,
+            EVENT_DRY_RUN_ROLLED_BACK,
+            fhevm_engine_common::chain_recovery::EVENT_RECOVERY_CHANGED,
+        ])
         .await?;
 
     loop {
@@ -1124,6 +1149,7 @@ async fn wait_until_gw_dry_run_ready(
                 info!("gw readiness loop cancelled");
                 return Ok(false);
             }
+            _ = tokio::time::sleep(Duration::from_secs(5)) => {}
             recv = listener.recv() => {
                 match recv {
                     Ok(notification) => {
@@ -1205,6 +1231,15 @@ async fn transition_to_gw_dry_run_started(
     proposal_id: &[u8],
     proposal_block: i64,
 ) -> Result<(), Error> {
+    let Some(mut readiness_tx) = fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        true,
+        fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+    )
+    .await?
+    .into_tx() else {
+        return Ok(());
+    };
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
@@ -1218,8 +1253,10 @@ async fn transition_to_gw_dry_run_started(
     )
     .bind(proposal_id)
     .bind(proposal_block)
-    .execute(pool)
+    .execute(&mut *readiness_tx)
     .await?;
+
+    readiness_tx.commit().await?;
 
     if result.rows_affected() == 0 {
         warn!(
@@ -2452,6 +2489,13 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         elapsed = acquire_start.elapsed().as_millis(),
         "cutover acquired exclusive advisory lock"
     );
+
+    if fhevm_engine_common::chain_recovery::is_halted_tx(&mut tx).await?
+        || fhevm_engine_common::chain_recovery::replay_pending_tx(&mut tx).await?
+    {
+        warn!("cutover blocked by chain history recovery");
+        return Ok(());
+    }
 
     // Read the GCS proposal rows under the lock, and return early if they are
     // not `UpgradeAuthorized` (normally because a previous attempt already committed).
@@ -4155,9 +4199,131 @@ mod tests {
         (instance, pool)
     }
 
+    #[tokio::test]
+    async fn green_schema_reset_invalidates_only_green_replay() {
+        use fhevm_engine_common::chain_recovery::{begin_replay, pending_replay, ListenerSource};
+        let (_db, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.unwrap();
+        begin_replay(&pool, ListenerSource::Host, true, 42, 1, 64)
+            .await
+            .unwrap();
+        begin_replay(&pool, ListenerSource::Host, false, 42, 1, 64)
+            .await
+            .unwrap();
+        // A real history halt must survive discarding an upgrade attempt.
+        sqlx::query("INSERT INTO public.chain_recovery_halts (source, stack_role, chain_id, block_number, reason) VALUES ('host', 'GCS', 42, 1, 'retained evidence')").execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(CUTOVER_LOCK_ID)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        reset_gcs_schema(&mut tx).await.unwrap();
+        tx.commit().await.unwrap();
+        assert!(pending_replay(&pool, ListenerSource::Host, true, 42)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(pending_replay(&pool, ListenerSource::Host, false, 42)
+            .await
+            .unwrap()
+            .is_some());
+        assert!(fhevm_engine_common::chain_recovery::is_halted(&pool)
+            .await
+            .unwrap());
+    }
+
     fn timeout_payload() -> String {
         serde_json::json!({ "proposal_id": vec![2; 32], "proposal_block": 10, "chain_id": 1_i64, "block_height": 200_i64, "block_hash": "0x00" })
             .to_string()
+    }
+
+    #[tokio::test]
+    async fn idle_readiness_recovers_after_replay_with_and_without_notification() {
+        use fhevm_engine_common::chain_recovery::{
+            begin_replay, complete_replay, ListenerSource, EVENT_RECOVERY_CHANGED,
+        };
+        use tokio::time::timeout;
+
+        for notify in [true, false] {
+            let (_db, pool) = test_pool().await;
+            seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await;
+            create_gcs_schema(&pool).await.unwrap();
+            sqlx::query("UPDATE upgrade_state SET gw_dry_run_started=FALSE, gw_window_rewound=TRUE WHERE stack_role='GCS'")
+                .execute(&pool).await.unwrap();
+            for schema in ["public", GCS_SCHEMA_QUOTED] {
+                sqlx::query(&format!("INSERT INTO {schema}.gw_listener_last_block (dummy_id,last_block_num) VALUES (TRUE,1) ON CONFLICT (dummy_id) DO UPDATE SET last_block_num=1"))
+                    .execute(&pool).await.unwrap();
+            }
+            sqlx::query("INSERT INTO public.host_chain_blocks_valid (chain_id,block_hash,block_number,block_status) VALUES (1,$1,100,'finalized')")
+                .bind(vec![1_u8;32]).execute(&pool).await.unwrap();
+            let replay = begin_replay(&pool, ListenerSource::Host, false, 1, 100, 100)
+                .await
+                .unwrap();
+            assert!(!check_dry_run_ready(&pool, 1, 100).await.unwrap());
+            assert!(!check_gw_dry_run_ready(&pool, 1).await.unwrap());
+
+            let cancel = CancellationToken::new();
+            let proposal = [0x02_u8; 32];
+            let mut host = Box::pin(wait_until_dry_run_ready(
+                pool.clone(),
+                cancel.clone(),
+                &proposal,
+                10,
+                1,
+                100,
+            ));
+            let mut gateway = Box::pin(wait_until_gw_dry_run_ready(
+                pool.clone(),
+                cancel.clone(),
+                &proposal,
+                10,
+                1,
+            ));
+            // Drive both real waiters while replay blocks them. Keep their
+            // futures alive across the timeout so recovery must wake them.
+            assert!(timeout(Duration::from_millis(200), async {
+                tokio::join!(&mut host, &mut gateway)
+            })
+            .await
+            .is_err());
+            let mut events = PgListener::connect_with(&pool).await.unwrap();
+            events.listen(EVENT_RECOVERY_CHANGED).await.unwrap();
+            if notify {
+                complete_replay(
+                    &pool,
+                    ListenerSource::Host,
+                    false,
+                    1,
+                    100,
+                    100,
+                    replay.generation,
+                )
+                .await
+                .unwrap();
+                timeout(Duration::from_secs(2), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap();
+            } else {
+                // Model a recovery whose notification was lost: no host or
+                // Gateway block, worker result or controller restart follows.
+                sqlx::query(
+                    "UPDATE public.listener_replay_state SET pending=FALSE WHERE chain_id=1",
+                )
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+            let deadline = Duration::from_secs(if notify { 2 } else { 8 });
+            let (host_ready, gateway_ready) =
+                timeout(deadline, async { tokio::join!(&mut host, &mut gateway) })
+                    .await
+                    .expect("idle readiness must recover without chain activity");
+            assert!(host_ready.unwrap());
+            assert!(gateway_ready.unwrap());
+            cancel.cancel();
+        }
     }
 
     /// Seed one GCS proposal row with all latches set.

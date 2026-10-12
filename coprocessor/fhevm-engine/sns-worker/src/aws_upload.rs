@@ -134,10 +134,27 @@ async fn run_uploader_loop(
                 //
                 // NOTE: the transaction stays open across the S3 upload, so the shared lock
                 // is held for a network round trip and cutover waits on it.
-                let mut trx =
+                let mut trx = loop {
                     match begin_write_guarded(&pool, false, GcsRollbackPolicy::Continue).await? {
-                        WriteGuard::Proceed(trx) => trx,
-                        WriteGuard::Stop | WriteGuard::Skip => {
+                        WriteGuard::Proceed(trx) => break trx,
+                        WriteGuard::Skip => {
+                            // Temporary containment is not retirement. Retain this
+                            // dequeued job and retry; do not terminate SNS or depend
+                            // on a container restart/rescan to recover it.
+                            select! {
+                                _ = token.cancelled() => {
+                                    while let Some(joined) = ongoing_upload_tasks.join_next().await {
+                                        propagate_joined_upload_error(joined)?;
+                                    }
+                                    return Ok(());
+                                }
+                                Some(joined) = ongoing_upload_tasks.join_next() => {
+                                    propagate_joined_upload_error(joined)?;
+                                }
+                                _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {}
+                            }
+                        }
+                        WriteGuard::Stop => {
                             info!(
                                 "Cutover completed — draining in-flight uploads, then stopping \
                                  the uploader"
@@ -149,7 +166,8 @@ async fn run_uploader_loop(
                             }
                             return Ok(());
                         }
-                    };
+                    }
+                };
 
                 // Normal jobs defer their enqueue into the spawned task: the
                 // provenance witness takes FOR KEY SHARE on the pbs row,
@@ -1621,7 +1639,7 @@ mod tests {
     #[tokio::test]
     #[serial(s3)]
     #[cfg(not(feature = "gpu"))]
-    async fn legacy_partial_ct128_without_bytes_uploads_ct64_and_preserves_legacy_s3_format(
+    async fn uploader_retains_job_during_halt_then_uploads_legacy_ct64_during_replay(
     ) -> anyhow::Result<()> {
         let db_instance = setup_test_db(ImportMode::None)
             .await
@@ -1692,17 +1710,81 @@ mod tests {
             verify_sha256_checksum: false,
         };
 
-        let mut trx = pool.begin().await?;
-        create_upload_task_savepoint(&mut trx).await?;
-        upload_ciphertexts(
-            &mut trx,
-            task,
-            &client,
-            &conf,
-            Arc::new(PrivateKeySigner::random()),
+        use fhevm_engine_common::chain_recovery::{
+            begin_replay, record_halt, HistoryMismatch, ListenerSource,
+        };
+        begin_replay(&pool, ListenerSource::Host, false, 42, 1, 64).await?;
+        record_halt(
+            &pool,
+            HistoryMismatch {
+                source: ListenerSource::Host,
+                gcs_mode: false,
+                chain_id: 1,
+                block_number: 1,
+                expected_hash: None,
+                observed_hash: None,
+                reason: "uploader containment regression",
+            },
         )
         .await?;
-        trx.commit().await?;
+        let (tx, rx) = mpsc::channel(1);
+        let token = CancellationToken::new();
+        let uploader = tokio::spawn(run_uploader_loop(
+            Arc::new(RwLock::new(rx)),
+            token.clone(),
+            Arc::new(client.clone()),
+            Arc::new(AtomicBool::new(true)),
+            pool.clone(),
+            conf,
+            Arc::new(PrivateKeySigner::random()),
+        ));
+        tx.send(UploadJob::DatabaseLock(task)).await?;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while tx.capacity() == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await?;
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        assert!(
+            !uploader.is_finished(),
+            "temporary halt must not retire SNS"
+        );
+        let digest: Option<Vec<u8>> =
+            sqlx::query_scalar("SELECT ciphertext FROM ciphertext_digest WHERE handle=$1")
+                .bind(&handle)
+                .fetch_one(&pool)
+                .await?;
+        assert!(digest.is_none(), "contained job must remain unpublished");
+
+        // Verified fixture recovery: leave a host replay pending. Neither that
+        // obligation nor the unrelated chain may prevent the retained upload.
+        let mut recovery = pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(fhevm_engine_common::versioning::CUTOVER_LOCK_ID)
+            .execute(&mut *recovery)
+            .await?;
+        sqlx::query("UPDATE public.chain_recovery_halts SET resolved_at=NOW(), recovery_note='verified test fixture' WHERE resolved_at IS NULL")
+            .execute(&mut *recovery).await?;
+        recovery.commit().await?;
+        tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                let digest: Option<Vec<u8>> =
+                    sqlx::query_scalar("SELECT ciphertext FROM ciphertext_digest WHERE handle=$1")
+                        .bind(&handle)
+                        .fetch_one(&pool)
+                        .await?;
+                if digest.is_some() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            Ok::<_, sqlx::Error>(())
+        })
+        .await??;
+        assert!(!uploader.is_finished());
+        token.cancel();
+        tokio::time::timeout(Duration::from_secs(5), uploader).await???;
 
         let row = sqlx::query!(
             "SELECT ciphertext, ciphertext128, s3_format_version

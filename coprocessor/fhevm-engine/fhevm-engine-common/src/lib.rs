@@ -1,6 +1,7 @@
 pub mod bootstrap_versioning;
 pub mod bridge;
 pub mod chain_id;
+pub mod chain_recovery;
 pub mod crs;
 pub mod database;
 pub mod db_keys;

@@ -43,6 +43,10 @@ use tracing::info;
 use tracing::warn;
 
 use crate::cmd::block_history::BlockHash;
+
+pub(crate) const REPLAY_METADATA_CONFLICT: &str =
+    "committed computation execution metadata differs on replay";
+
 use crate::cmd::block_history::BlockSummary;
 use crate::contracts::AclContract::AclContractEvents;
 use crate::contracts::BridgeContract::BridgeContractEvents;
@@ -809,13 +813,22 @@ impl Database {
         &self,
     ) -> Result<Option<Transaction<'_>>, SqlxError> {
         let pool = self.pool().await;
-        Ok(fhevm_engine_common::versioning::begin_write_guarded(
+        use fhevm_engine_common::versioning::{
+            begin_write_guarded, GcsRollbackPolicy, WriteGuard,
+        };
+        match begin_write_guarded(
             &pool,
             self.stack_mode.gcs_mode(),
-            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+            GcsRollbackPolicy::Continue,
         )
         .await?
-        .into_tx())
+        {
+            WriteGuard::Proceed(tx) => Ok(Some(tx)),
+            WriteGuard::Stop => Ok(None),
+            WriteGuard::Skip => Err(SqlxError::Protocol(
+                "host history is contained; ingestion cannot advance".into(),
+            )),
+        }
     }
 
     pub async fn pool(&self) -> sqlx::Pool<Postgres> {
@@ -992,6 +1005,47 @@ impl Database {
         // this INSERT references `computations` unqualified.
         let group_id_vec = group_id.map(|g| g.to_vec());
         let output_allowed = log.is_output_allowed(output_handle);
+        // A complete refetch can change the reconstructed operand origin when
+        // the initial response omitted a producer. Never silently retain (or
+        // overwrite) inconsistent execution metadata: workers may have already
+        // consumed it. The block-ingestion caller rolls back and durably halts.
+        // Chain grouping and ACL eligibility are deliberately not immutable:
+        // a cold replay can regroup work or restore a missing permission.
+        // The boundary-mask migration intentionally leaves legacy rows NULL.
+        // That means unknown metadata, not a conflicting mask. Preserve NULL
+        // (and the worker's legacy inference) instead of backfilling new
+        // execution semantics onto retained pre-upgrade work. All other
+        // metadata, and every already-recorded mask, remain immutable.
+        let conflicting: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM computations
+             WHERE output_handle = $1 AND transaction_id IS NOT DISTINCT FROM $2
+               AND ((dependencies, fhe_operation, is_scalar, host_chain_id, block_number,
+                     group_id, output_index, output_count)
+                   IS DISTINCT FROM
+                   ($3::bytea[], $4::smallint, $5::boolean, $6::bigint, $7::bigint,
+                    $9::bytea, $10::smallint, $11::smallint)
+                    OR (operand_boundary_mask IS NOT NULL
+                        AND operand_boundary_mask IS DISTINCT FROM $8::bytea)))",
+        )
+        .bind(output_handle)
+        .bind(log.transaction_hash.map(|hash| hash.to_vec()))
+        .bind(dependencies)
+        .bind(fhe_operation as i16)
+        .bind(is_scalar)
+        .bind(self.chain_id.as_i64())
+        .bind(log.block_number as i64)
+        .bind(operand_boundary_mask.as_slice())
+        .bind(&group_id_vec)
+        .bind(output_index)
+        .bind(output_count)
+        .fetch_one(tx.deref_mut()).await?;
+        if conflicting {
+            error!(
+                output_handle = to_hex(output_handle),
+                "{REPLAY_METADATA_CONFLICT}"
+            );
+            return Err(SqlxError::Protocol(REPLAY_METADATA_CONFLICT.into()));
+        }
         // A computation first ingested without its ACL allow event (e.g. a
         // partial get_logs during reorg recovery) is stored as not allowed and
         // already completed, so it is never scheduled. When a later ingestion
@@ -1213,6 +1267,9 @@ impl Database {
     /// `Ok(None)` when finalization was REFUSED (row missing, already
     /// orphaned, or parent linkage contradicting the finalized predecessor);
     /// callers must stop their ascending batch on `None`.
+    /// Production callers must hold the host-history lock and run the shared
+    /// adjacent-identity check before this mutation (both admission and deferred
+    /// finalization do so). This primitive does not persist recovery halts.
     pub async fn update_block_as_finalized(
         &self,
         tx: &mut Transaction<'_>,
@@ -1817,7 +1874,7 @@ impl Database {
             INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block)
             VALUES ($1, $2)
             ON CONFLICT (chain_id) DO UPDATE
-            SET last_caught_up_block = EXCLUDED.last_caught_up_block,
+            SET last_caught_up_block = GREATEST(host_listener_poller_state.last_caught_up_block, EXCLUDED.last_caught_up_block),
                 updated_at = NOW()
             "#,
         )
