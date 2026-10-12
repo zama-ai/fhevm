@@ -13,6 +13,7 @@ import {
   writeDemoConfig,
   type SolanaDemoConfig,
 } from "./config";
+import { RELAYER_HTTP_PORT } from "../src/layout";
 
 const addr = (fill: number): string => getAddressDecoder().decode(new Uint8Array(32).fill(fill));
 
@@ -23,7 +24,7 @@ const sampleConfig = (): SolanaDemoConfig => ({
   rpcUrl: "http://127.0.0.1:8899",
   wsUrl: "ws://127.0.0.1:8900",
   relayerUrl: "http://127.0.0.1:3000",
-  decryptionRelayerUrl: "http://127.0.0.1:3002",
+  decryptionRelayerUrl: `http://127.0.0.1:${RELAYER_HTTP_PORT}`,
   gatewayRpcUrl: "http://127.0.0.1:8546",
   aclProgram: `0x${"ab".repeat(32)}`,
   fheParameter: "test",

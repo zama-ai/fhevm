@@ -60,7 +60,7 @@ const session = {
       payoutConfidential: '11111111111111111111111111111111',
     },
     relayerUrl: 'http://127.0.0.1:3000',
-    decryptionRelayerUrl: 'http://127.0.0.1:3002',
+    decryptionRelayerUrl: 'http://127.0.0.1/decryption-relayer',
     rpcUrl: 'http://127.0.0.1:8899',
     aclProgram: `0x${'22'.repeat(32)}`,
     fheParameter: 'test',

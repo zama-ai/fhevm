@@ -85,7 +85,7 @@ const session = {
     rpcUrl: 'http://127.0.0.1:8899',
     wsUrl: 'ws://127.0.0.1:8900',
     relayerUrl: 'http://127.0.0.1:3000',
-    decryptionRelayerUrl: 'http://127.0.0.1:3002',
+    decryptionRelayerUrl: 'http://127.0.0.1/decryption-relayer',
     aclProgram: '11111111111111111111111111111111',
     mints: { joinConfidential: '11111111111111111111111111111111' },
     programs: { token: '11111111111111111111111111111111', host: ZAMA_HOST_PROGRAM_ADDRESS },
