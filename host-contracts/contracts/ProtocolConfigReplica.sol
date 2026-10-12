@@ -26,10 +26,9 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @dev Shared between `initializeFromCanonical` and `reinitializeV4`. Existing replica proxies
-    ///      run `ProtocolConfig` at initialized version 3 (v0.14.x release) or 4 (later builds).
-    ///      Version 5 is above both, so `reinitializeV4` works from either.
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    /// @dev Shared between `initializeFromCanonical` and `reinitializeV3`. Existing replica proxies
+    ///      run the v0.14.2 `ProtocolConfig`, which is at initialized version 3.
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     // -----------------------------------------------------------------------------------------
     // Constructor
@@ -83,7 +82,7 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     // -----------------------------------------------------------------------------------------
     // Mirror functions

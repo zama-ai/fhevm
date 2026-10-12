@@ -8,6 +8,7 @@ import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 const KEY_COUNTER_BASE = BigInt(4) << BigInt(248);
 const CRS_COUNTER_BASE = BigInt(5) << BigInt(248);
+const INITIALIZABLE_STORAGE = '0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00';
 
 describe('Upgrades', function () {
   before(async function () {
@@ -77,8 +78,14 @@ describe('Upgrades', function () {
     });
     await pc.waitForDeployment();
     const [contextId, epochId] = await pc.getCurrentKmsContextAndEpoch();
+    // Existing replica proxies run the v0.14.2 ProtocolConfig, which is at initialized version 3.
+    await ethers.provider.send('hardhat_setStorageAt', [
+      await pc.getAddress(),
+      INITIALIZABLE_STORAGE,
+      ethers.toBeHex(3, 32),
+    ]);
 
-    const replica = await upgrades.upgradeProxy(pc, replicaFactory, { call: { fn: 'reinitializeV4' } });
+    const replica = await upgrades.upgradeProxy(pc, replicaFactory, { call: { fn: 'reinitializeV3' } });
     await replica.waitForDeployment();
     expect(await replica.getVersion()).to.equal('ProtocolConfigReplica v0.1.0');
     expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId]);
