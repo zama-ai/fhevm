@@ -38,6 +38,57 @@ pub fn validate_computed_handle_metadata(
     Ok(())
 }
 
+/// Metadata guaranteed by a successful `InputVerifier.verifyInput` call.
+/// Proof signatures and ciphertext contents are deliberately outside this
+/// application-layer check. The proof's byte layout is bounded by two u8
+/// counts, so every offset below is safe after the length check.
+pub fn validate_verified_input_metadata(
+    handle: &[u8; HANDLE_LEN],
+    result: &[u8; HANDLE_LEN],
+    input_type: u8,
+    proof: &[u8],
+    chain_id: u64,
+) -> Result<(), &'static str> {
+    let index = usize::from(handle[21]);
+    if index == usize::from(COMPUTED_HANDLE_INDEX_MARKER) {
+        return Err("verified input handle index is out of range");
+    }
+    if handle[22..30] != chain_id.to_be_bytes() {
+        return Err("verified input handle has the wrong chain id");
+    }
+    if handle[30] > MAX_FHE_TYPE_BYTE || handle[30] != input_type {
+        return Err("verified input handle has an invalid type");
+    }
+    if handle[31] != HANDLE_VERSION {
+        return Err("verified input handle has an unknown version");
+    }
+    if result != handle {
+        return Err("verified input result differs from its input handle");
+    }
+    if proof.len() < 2 {
+        return Err("verified input proof has no count header");
+    }
+    let count = usize::from(proof[0]);
+    let signers = usize::from(proof[1]);
+    if count <= index {
+        return Err("verified input proof does not contain its index");
+    }
+    let minimum_len = 2 + HANDLE_LEN * count + 65 * signers;
+    if proof.len() < minimum_len {
+        return Err("verified input proof is truncated");
+    }
+    if proof[2 + HANDLE_LEN * index..2 + HANDLE_LEN * (index + 1)] != handle[..] {
+        return Err("verified input proof selects a different handle");
+    }
+    if proof[2..2 + HANDLE_LEN * count]
+        .chunks_exact(HANDLE_LEN)
+        .any(|entry| entry[31] != HANDLE_VERSION)
+    {
+        return Err("verified input proof contains an unknown handle version");
+    }
+    Ok(())
+}
+
 /// Application-level bounds, shared with the computation metadata adapter.
 pub const MAX_MULTI_OUTPUT_ARITY: usize = u8::MAX as usize;
 
@@ -64,5 +115,33 @@ mod computed_metadata_tests {
             invalid[index] = byte;
             assert!(validate_computed_handle_metadata(&invalid, 42).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod verified_metadata_tests {
+    use super::*;
+    #[test]
+    fn verified_input_checks_index_selection_counts_and_versions() {
+        let mut handle = [0_u8; HANDLE_LEN];
+        handle[22..30].copy_from_slice(&42_u64.to_be_bytes());
+        handle[30] = 5;
+        let mut proof = vec![1, 1];
+        proof.extend_from_slice(&handle);
+        proof.extend_from_slice(&[0_u8; 65]);
+        assert!(validate_verified_input_metadata(&handle, &handle, 5, &proof, 42).is_ok());
+        assert!(validate_verified_input_metadata(&handle, &handle, 5, &proof[..proof.len() - 1], 42).is_err());
+        assert!(validate_verified_input_metadata(&handle, &handle, 6, &proof, 42).is_err());
+        assert!(validate_verified_input_metadata(&handle, &handle, 5, &proof, 43).is_err());
+        let mut result = handle; result[0] = 1;
+        assert!(validate_verified_input_metadata(&handle, &result, 5, &proof, 42).is_err());
+        let mut invalid = handle; invalid[21] = 255;
+        assert!(validate_verified_input_metadata(&invalid, &invalid, 5, &proof, 42).is_err());
+        let mut other_version = proof.clone(); other_version[33] = HANDLE_VERSION + 1;
+        assert!(validate_verified_input_metadata(&handle, &handle, 5, &other_version, 42).is_err());
+        let mut bad_selection = proof.clone(); bad_selection[2] = 1;
+        assert!(validate_verified_input_metadata(&handle, &handle, 5, &bad_selection, 42).is_err());
+        let mut empty_count = proof; empty_count[0] = 0;
+        assert!(validate_verified_input_metadata(&handle, &handle, 5, &empty_count, 42).is_err());
     }
 }
