@@ -349,7 +349,9 @@ impl InfiniteLogIter {
         provider: &BlockchainProvider,
     ) -> Result<u64> {
         if let Some(last_seen_block) = self.last_valid_block {
-            return Ok(last_seen_block - self.catchup_margin + 1);
+            return Ok(last_seen_block
+                .saturating_add(1)
+                .saturating_sub(self.catchup_margin));
         }
         if let Some(start_at_block) = self.start_at_block {
             if start_at_block >= 0 {
@@ -1490,5 +1492,17 @@ mod tests {
         assert_eq!(got.hash, summary.hash);
         assert_eq!(got.parent_hash, summary.parent_hash);
         assert_eq!(got.timestamp, summary.timestamp);
+    }
+    #[tokio::test]
+    async fn catchup_start_near_genesis_saturates() {
+        let (_anvil, mut iter, _) = setup_iter_with_chain(1, 50, 0..=1).await;
+        let provider = iter.provider.read().await.clone().unwrap();
+        iter.catchup_margin = 5;
+        iter.last_valid_block = Some(1);
+        assert_eq!(iter.catchup_block_from(&provider).await.unwrap(), 0);
+        iter.last_valid_block = Some(5);
+        assert_eq!(iter.catchup_block_from(&provider).await.unwrap(), 1);
+        iter.catchup_margin = 0;
+        assert_eq!(iter.catchup_block_from(&provider).await.unwrap(), 6);
     }
 }
