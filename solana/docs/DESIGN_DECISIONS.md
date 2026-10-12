@@ -1059,6 +1059,24 @@ its deposit phase — never the share account's raw balance — because SPL dest
 incoming transfers: a preloaded share balance stays inert instead of inflating the rate past u64 and
 bricking the batch (pinned by `mollusk_preloaded_shares_do_not_poison_the_rate`).
 
+The batcher has an admin, as EVM's batcher has an owner. `initialize_batcher` names it; it is called
+`admin` because on Solana an account's owner is the program that owns it, and zama-host names the
+same role `HostConfig.admin`. The admin `pause`s and `unpause`s the batcher, sets the minimum batch
+age and settle deadline that batches opened from then on copy (`set_min_batch_age`,
+`set_settle_deadline`: at most 7 and 30 days, a zero deadline allowed, working while paused), and
+hands the role on with `set_admin`, where a new keypair co-signs and a new PDA must already be a
+program-owned account, as with zama-host's `set_admin`. There is no renounce, which would strand
+the pause and the policy. Each batch freezes the policy it opened with, as EVM's per-batch `Policy`
+does, so a setter cannot shorten the age its joiners saw nor force-cancel a dispatched batch. While
+paused, `join`, `dispatch` and `settle` are refused, and quits, claims and the deadline cancel stay
+open (INVARIANTS #71). A refused settle is the Solana form of EVM's paused callback, which collects
+the unwrap but does not call the vault: settle is one atomic instruction, so the batch stays
+dispatched until unpause or its deadline, and the deadline is checked first, as on EVM. The admin is
+not the join mint's wrapper authority, which stays the recipient of `reclaim_batch_authority`; the
+demo seeds both as the deployer. `AUTHORITY.md` is generated for zama-host only, so the batcher's
+roles are recorded here. The batcher's events stay `emit!` app events for demo indexers; DD-044's
+event-CPI rule covers zama-host.
+
 A deposit batch whose certified total floors to zero shares at the vault's current price settles
 into refunds. `demo_vault::deposit` would reject it with `ZeroShares`, and since a failed CPI aborts
 the whole transaction, settle cannot catch that error the way EVM's callback catches a route failure.
@@ -1254,15 +1272,17 @@ token_account)`, not from a caller-selected identifier. A second burn is rejecte
 until the first is settled by either `redeem_burned_amount` or `cancel_pending_burn`. Redeem pays the
 certified underlying amount and closes the account. Cancel restores encrypted balance and encrypted
 total supply, then closes it. The batcher exposes the same escape path, bounded by time rather than
-by a role. Each batcher fixes `settle_deadline_secs` (at most `MAX_SETTLE_DEADLINE_SECS`) when it is
-created, and each dispatch records its `dispatched_at`. Settle runs only before `dispatched_at +
+by a role. Each batch copies the batcher's `settle_deadline_secs` (at most
+`MAX_SETTLE_DEADLINE_SECS`, zero allowed) when it opens, so a later change cannot shorten it, and
+each dispatch records its `dispatched_at`. Settle runs only before `dispatched_at +
 settle_deadline_secs`; from then on anyone may cancel the dispatch. So a cancel never races a
-settle, and a stuck batch never waits on an operator. Cancellation enters the terminal, refund-only
-`Refunding` state: the batch cannot be reused, and anyone may run a participant's `quit`, which can
-only pay that participant's own token account. A pending batch's `quit` still needs the user's
-signature, since leaving early is the user's choice. EVM's vault batcher also cancels a batch past
-its callback deadline, but only inside its dispatch callback; settle here is a pull rather than a
-callback, so the cancel is its own instruction.
+settle, and a stuck batch never waits on an operator: a paused batcher refuses settle but not the
+cancel (DD-042). Cancellation enters the terminal, refund-only `Refunding` state: the batch cannot
+be reused, and anyone may run a participant's `quit`, which can only pay that participant's own
+token account. A pending batch's `quit` still needs the user's signature, since leaving early is
+the user's choice. EVM's vault batcher also cancels a batch past its callback deadline, but only
+inside its dispatch callback; settle here is a pull rather than a callback, so the cancel is its own
+instruction.
 
 The batcher stays upgradeable while it is a pre-production PoC, a deliberate divergence from EVM's
 immutable DAO-owned batchers. Its upgrade authority can deploy code that signs as every batch PDA,

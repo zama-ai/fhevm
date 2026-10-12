@@ -1218,6 +1218,19 @@ a version 1 transaction holds the combined dispatch. The replaced wording:
 > no longer being pending, rather than being folded into `dispatch` (keeps each instruction inside
 > one transaction envelope)
 
+### DD-045, replaced in part by the per-batch policy
+
+The batcher-admin change (pause, owner-set policy and per-batch policy, as on EVM) moved the settle
+deadline from the batcher to each batch and accepted a zero deadline. The replaced DD-045 wording:
+
+> Each batcher fixes `settle_deadline_secs` (at most `MAX_SETTLE_DEADLINE_SECS`) when it is
+> created, and each dispatch records its `dispatched_at`.
+
+and the replaced EVM_PARITY divergence:
+
+> EVM also accepts a deadline of 0, which cancels every batch when its decryption arrives. Solana
+> rejects 0: such a batcher could never settle.
+
 ### DD-044, replaced in part by DD-048, DD-056, DD-058 and DD-061
 
 Status: adopted

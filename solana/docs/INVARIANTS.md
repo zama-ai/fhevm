@@ -1,6 +1,6 @@
 # Protocol invariants — Solana fhevm
 
-Last synced: 2026-10-11.
+Last synced: 2026-10-12.
 
 Every entry carries a stable number and a tag. Numbers are never reused: an
 entry that dies is retired in place. The tags:
@@ -614,8 +614,10 @@ Holds by construction: the token program checks only `ConfidentialMint.authority
 neither the Host upgrade authority nor `HostConfig.admin`.
 
 **60. [HOLDS]** A dispatched confidential batch settles only before its settle
-deadline (`dispatched_at + settle_deadline_secs`, fixed per batcher) and can be
-cancelled by anyone only from that deadline on, so a cancel never races a settle.
+deadline (`dispatched_at + settle_deadline_secs`, with the deadline the batch opened with, so a
+later policy change cannot shorten it) and can be cancelled by anyone only from that deadline on,
+so a cancel never races a settle. With a zero deadline, the batch cannot settle and anyone may
+cancel it once it is dispatched.
 Cancellation restores the batch's confidential join balance and
 encrypted total supply, closes the pending burn, and moves the batch to the
 refund-only `Refunding` state. That state accepts quits, which anyone may run and which pay only
@@ -625,8 +627,9 @@ settle whose total is worth zero vault shares enters the same state: it wraps th
 the batch's join balance, and each quit pays the participant's exact join. Redeem and
 cancellation cannot consume the same pending burn twice.
 Pinned by `mollusk_cancel_dispatch_restores_burn_and_allows_refunds`,
-`mollusk_dust_total_settle_opens_exact_refunds` and
-`mollusk_redeem_current_pending_burn_then_rejects_double_settlement`.
+`mollusk_dust_total_settle_opens_exact_refunds`,
+`mollusk_redeem_current_pending_burn_then_rejects_double_settlement` and
+`mollusk_a_batch_keeps_the_policy_it_opened_with`.
 
 **70. [HOLDS]** A batcher has exactly one `Pending` batch, the last one opened. `initialize_batcher`
 opens batch 0, and `dispatch`, the only way out of `Pending` (`cancel_dispatch` and `settle` need a
@@ -634,6 +637,16 @@ dispatched batch), opens the next batch in the same instruction. A dispatch whos
 open reverts, so the batch stays pending.
 Pinned by `mollusk_a_batcher_has_exactly_one_pending_batch`, `mollusk_initialize_batcher_opens_batch_zero`,
 `mollusk_dispatch_opens_the_next_batch` and `mollusk_dispatch_funds_the_next_batch_authority`.
+
+**71. [HOLDS]** While a batcher is paused, `join`, `dispatch` and `settle` are refused, so no tokens
+enter a batch or move through the vault. Quits of a pending or refunding batch, claims and the
+deadline cancel stay open, so no participant depends on the admin to get tokens back; past the
+deadline, settle is refused for the deadline whether or not the batcher is paused. Only the
+batcher's admin pauses, unpauses, sets the policy that batches opened from then on copy, or hands
+the role on, and a new admin keypair co-signs. Pinned by
+`mollusk_pause_blocks_join_dispatch_and_settle_only`, `mollusk_admin_instructions_reject_another_signer`
+and `mollusk_set_admin_needs_the_new_admin_to_cosign`. `close_join_record` and
+`reclaim_batch_authority` hold by construction: they do not read the pause.
 
 ---
 
