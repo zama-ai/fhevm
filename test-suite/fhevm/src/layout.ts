@@ -40,6 +40,7 @@ const statePaths = (root: string) => {
     STATE_FILE: path.join(persistedStateDir, "state.json"),
     versionsEnvPath: path.join(envDir, "versions.env"),
     relayerConfigPath: path.join(generatedConfigDir, "relayer.yaml"),
+    relayerHttpConfigPath: path.join(generatedConfigDir, "relayer-http.yaml"),
     gatewayAddressesPath: path.join(addressDir, "gateway", ".env.gateway"),
     SOLANA_RUNTIME_DIR: solanaRuntimeDir,
     /** The seeded demo config (`demo:seed` writes it; the operator, dapp and smoke read it). */
@@ -65,6 +66,7 @@ export let GENERATED_CONFIG_DIR = currentStatePaths.GENERATED_CONFIG_DIR;
 export let STATE_FILE = currentStatePaths.STATE_FILE;
 export let versionsEnvPath = currentStatePaths.versionsEnvPath;
 export let relayerConfigPath = currentStatePaths.relayerConfigPath;
+export let relayerHttpConfigPath = currentStatePaths.relayerHttpConfigPath;
 export let gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
 export let SOLANA_RUNTIME_DIR = currentStatePaths.SOLANA_RUNTIME_DIR;
 export let solanaDemoConfigPath = currentStatePaths.solanaDemoConfigPath;
@@ -91,6 +93,7 @@ export const setStateDir = (root = process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_
   STATE_FILE = currentStatePaths.STATE_FILE;
   versionsEnvPath = currentStatePaths.versionsEnvPath;
   relayerConfigPath = currentStatePaths.relayerConfigPath;
+  relayerHttpConfigPath = currentStatePaths.relayerHttpConfigPath;
   gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
   SOLANA_RUNTIME_DIR = currentStatePaths.SOLANA_RUNTIME_DIR;
   solanaDemoConfigPath = currentStatePaths.solanaDemoConfigPath;
@@ -112,6 +115,8 @@ const TEMPLATE_CONFIG_DIR = path.join(TEMPLATE_DIR, "config");
 export const TEMPLATE_COMPOSE_DIR = path.join(CLI_DIR, "docker-compose");
 const STATIC_CONFIG_DIR = path.join(CLI_DIR, "static", "config");
 export const TEMPLATE_RELAYER_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer.yaml");
+/** relayer-http's own example config; the harness overrides only what depends on the stack. */
+export const RELAYER_HTTP_CONFIG_BASE = path.join(REPO_ROOT, "relayer-http", "config", "config.yaml");
 export const TEMPLATE_KMS_CORE_CONFIG_THRESHOLD = path.join(
   TEMPLATE_CONFIG_DIR,
   "kms-core-threshold.toml",
@@ -131,6 +136,8 @@ if (
 }
 export const PROJECT = configuredComposeProject ?? "fhevm";
 export const RELAYER_PORT = 3000;
+/** relayer-http's port, inside its container and on the host (its own default, 8080, is SOLANA_MERKLE_PROOF_PORT). */
+export const RELAYER_HTTP_PORT = 3002;
 /** The SDK's relayer auth: `ZAMA_FHEVM_API_KEY`, or the placeholder key a local relayer accepts. */
 export const relayerAuth = () => ({ type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" }) as const;
 export const DEFAULT_HOST_RPC_PORT = 8545;
@@ -294,6 +301,12 @@ export const GROUP_BUILD_COMPONENTS: Record<OverrideGroup, string[]> = {
   "test-suite": ["test-suite"],
 };
 
+/** relayer-http serves Solana's decryption, so only stacks with a Solana host run (or build) it. */
+export const RELAYER_HTTP_SERVICE = "relayer-http";
+export const RELAYER_HTTP_CONTAINER = "fhevm-relayer-http";
+export const runsRelayerHttp = (hostChains: readonly Pick<HostChainScenario, "type">[]) =>
+  hostChains.some((chain) => !isEvmHost(chain));
+
 export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
   "coprocessor": [
     "coprocessor-db-migration",
@@ -320,6 +333,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
   "relayer": [
     "relayer-db-migration",
     "relayer",
+    RELAYER_HTTP_SERVICE,
   ],
   "gateway-contracts": [
     "gateway-deploy-mocked-zama-oft",
@@ -364,6 +378,10 @@ export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fr
 
 /** The kms-connector services `supportsConnectorHttp` gates as a pair: HTTP endpoint + proxy. */
 export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-connector-proxy"];
+
+/** A group's services for a stack: the relayer group has relayer-http only when it runs. */
+export const groupBuildServices = (group: OverrideGroup, hostChains: readonly Pick<HostChainScenario, "type">[]) =>
+  GROUP_BUILD_SERVICES[group].filter((service) => service !== RELAYER_HTTP_SERVICE || runsRelayerHttp(hostChains));
 
 /** Services that run the same image and therefore must be built together by an override. */
 const IMAGE_SIBLINGS: Record<string, string[]> = {

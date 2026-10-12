@@ -81,7 +81,7 @@ job:
       sed -i "s|ACLAddress: 0x[0-9a-fA-F]*,|ACLAddress: ${ACL_CONTRACT_ADDRESS},|g" contracts/E2ECoprocessorConfigLocal.sol
       sed -i "s|CoprocessorAddress: 0x[0-9a-fA-F]*,|CoprocessorAddress: ${FHEVM_EXECUTOR_CONTRACT_ADDRESS},|g" contracts/E2ECoprocessorConfigLocal.sol
 
-      # The kms-connector proxies' self-signed certificate (see KMS_CONNECTOR_PROXY_CA
+      # The kms-connector proxies' test CA (see KMS_CONNECTOR_PROXY_CA
       # below): Node only trusts extra CAs from a file, so materialize the env var
       # where NODE_EXTRA_CA_CERTS points before any hardhat process starts.
       printf '%s\n' "${KMS_CONNECTOR_PROXY_CA}" > "${NODE_EXTRA_CA_CERTS}"

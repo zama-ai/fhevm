@@ -73,7 +73,8 @@ import {
   startGeyserValidator,
 } from './validator';
 
-export { bootstrapZamaHost, kmsCertificateThreshold } from '../../../../solana/deploy/src/bootstrap';
+export { bootstrapZamaHost } from '../../../../solana/deploy/src/bootstrap';
+export { kmsCertificateThreshold } from '../../../../solana/deploy/src/thresholds';
 
 const SOLANA_DIR = path.join(REPO_ROOT, 'solana');
 const ENGINE_DIR = path.join(REPO_ROOT, 'coprocessor', 'fhevm-engine');

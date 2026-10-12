@@ -77,6 +77,7 @@ const REPO_PACKAGES = {
   CONNECTOR_PROXY_VERSION: "fhevm%2Fkms-connector%2Fproxy",
   RELAYER_VERSION: "fhevm%2Frelayer",
   RELAYER_MIGRATE_VERSION: "fhevm%2Frelayer-migrate",
+  RELAYER_HTTP_VERSION: "fhevm%2Frelayer-http",
   TEST_SUITE_VERSION: "fhevm%2Ftest-suite%2Fe2e",
 } as const;
 
@@ -88,6 +89,7 @@ export const OPTIONAL_REPO_KEYS = new Set([
   "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
   "CONNECTOR_ENDPOINT_VERSION",
   "CONNECTOR_PROXY_VERSION",
+  "RELAYER_HTTP_VERSION",
 ]);
 
 export const PACKAGE_TO_REPOSITORY = {
@@ -112,6 +114,7 @@ export const PACKAGE_TO_REPOSITORY = {
   CORE_VERSION: "ghcr.io/zama-ai/kms/core-service-enclave",
   RELAYER_VERSION: "ghcr.io/zama-ai/console/relayer",
   RELAYER_MIGRATE_VERSION: "ghcr.io/zama-ai/console/relayer-migrate",
+  RELAYER_HTTP_VERSION: "ghcr.io/zama-ai/fhevm/relayer-http",
   TEST_SUITE_VERSION: "ghcr.io/zama-ai/fhevm/test-suite/e2e",
 } as const;
 

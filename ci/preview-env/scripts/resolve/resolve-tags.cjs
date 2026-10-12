@@ -62,6 +62,8 @@ module.exports = async ({ core, context, github }) => {
   const inputs = JSON.parse(process.env.INPUTS);
   const images = process.env.DEPLOY_SOLANA === 'true' ? [...IMAGES, {
     key: 'solana_programs', repo: 'fhevm/solana-programs', job: 'build-solana-programs', output: 'build_result', component: 'solana_programs', label: 'solana-programs',
+  }, {
+    key: 'relayer_http', repo: 'fhevm/relayer-http', job: 'build-relayer-http', output: 'build_result', component: 'relayer_http', label: 'relayer-http',
   }] : IMAGES;
   const { owner, repo } = context.repo;
   const short = (sha) => sha.substring(0, 7);

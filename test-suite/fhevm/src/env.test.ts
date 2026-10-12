@@ -85,7 +85,7 @@ describe("env", () => {
     );
     expect(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).toBe(templateEnvs["test-suite"].KMS_CONNECTOR_API_KEY);
     expect(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).not.toBe("");
-    expect(withEndpoint.componentEnvs["test-suite"].NODE_EXTRA_CA_CERTS).toBe("/etc/kms-connector/proxy/tls.crt");
+    expect(withEndpoint.componentEnvs["test-suite"].NODE_EXTRA_CA_CERTS).toBe("/etc/kms-connector/proxy/ca.crt");
     expect(withEndpoint.componentEnvs["test-suite"].KMS_THRESHOLD).toBe("1");
     // The proxy forwards to its own party's endpoint.
     expect(withEndpoint.componentEnvs["kms-connector"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-endpoint:8080");

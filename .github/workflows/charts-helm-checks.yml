@@ -31,6 +31,8 @@ jobs:
               - 'charts/**'
               - 'ci/preview-env/solana-host/**'
               - 'ci/preview-env/scripts/lib.sh'
+              - 'ci/preview-env/scripts/resolve/parse-overrides.cjs'
+              - 'ci/preview-env/scripts/deploy/deploy-kms-connector.sh'
   lint:
     name: charts-helm-checks/lint
     needs: check-changes
@@ -80,6 +82,7 @@ jobs:
           pip install pyyaml
           python3 ci/preview-env/solana-host/test_charts.py
           python3 ci/preview-env/solana-host/test_reset_preview.py
+          python3 ci/preview-env/solana-host/test_kms_connector_proxy_tls.py
 
       - name: Run chart-testing (list-changed)
         id: list-changed

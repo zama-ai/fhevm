@@ -441,19 +441,25 @@ and the **proxy** in front of it.
 The two out-of-chart inputs the proxy needs are produced at deploy time by
 `scripts/deploy-kms-connector.sh` instead of being checked in:
 
-- **TLS**: one self-signed P-256 certificate per namespace (`openssl` on the runner,
-  30-day lifetime), SANs = every party's proxy Service name, stored as the
-  `kubernetes.io/tls` Secret `kms-connector-proxy-tls` that all N releases mount
-  (`kmsConnectorProxy.tls.secretName`). Create-if-missing, so a re-run does not
-  rotate the cert under proxies that only read it at startup. The compose path's
+- **TLS**: one P-256 test CA and one server certificate per namespace (`openssl` on
+  the runner, 30-day lifetime), SANs = every party's proxy Service name, stored as
+  the `kubernetes.io/tls` Secret `kms-connector-proxy-tls` (`tls.crt`, `tls.key`,
+  `ca.crt`) that all N releases mount (`kmsConnectorProxy.tls.secretName`). Clients
+  trust `ca.crt`; the server certificate is not a CA, because rustls clients such as
+  relayer-http reject a CA certificate served as a server certificate.
+  Create-if-missing, so a re-run does not rotate the cert under proxies that only
+  read it at startup. A Secret without `ca.crt` predates the CA and is refused: destroy
+  the preview and deploy it again. The compose path's
   checked-in `test-suite/fhevm/static/config/kms-connector-proxy/tls.crt` is *not*
   reusable here: its SANs are the compose hostnames, and Node rejects a SAN mismatch.
 - **API key**: the fixed test literal `fhevm-e2e-kms-connector-api-key` (same as
-  `.env.test-suite`); its digest is inline in `values-kms-connector-e2e.yaml`
-  (`kmsConnectorProxy.apiKeyDigest.value`), no Secret.
+  `.env.test-suite`). The script stores it and its SHA-256 in the Secret
+  `kms-connector-proxy` (`api-key`, `api-key-digest`). The proxies read the digest
+  through the chart's default `kmsConnectorProxy.apiKeyDigest.secret`, and
+  relayer-http reads the key. The test-suite overlays still carry the literal.
 - **Test-suite wiring**: the script publishes ConfigMap **`kms-connector-http`**
   (`endpoint-urls` = one https URL per party, `kms-threshold` = MPC `t` from
-  `lib.sh`'s `kms_t`, `ca.crt` = the proxies' cert). The idle Job and the
+  `lib.sh`'s `kms_t`, `ca.crt` = the proxies' CA). The idle Job and the
   `@fhevm/sdk` + Polygon Argo Workflow overlays `configMapKeyRef` it into
   `KMS_CONNECTOR_ENDPOINT_URLS`, `KMS_THRESHOLD` and `KMS_CONNECTOR_PROXY_CA`, and
   their startup script writes the PEM to `NODE_EXTRA_CA_CERTS` (Node only trusts

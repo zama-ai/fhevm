@@ -340,10 +340,35 @@ class SolanaCharts(unittest.TestCase):
                                                 input=wallets, text=True)
         self.assertEqual(json.loads(proof_servers), PROOF_SERVERS)
 
-    def test_dispatch_overrides_reject_unknown_keys_and_multiline_values(self):
+    def test_relayer_http_serves_the_connector_chains_through_every_proxy(self):
+        # Runs deploy-preview.sh's generator on the connector's host chains (the e2e values plus the
+        # Solana overlay, as `helm get values --all` returns them), from the repository root like the script.
+        script = (VALUES / "deploy-preview.sh").read_text()
+        program = re.search(r"THRESHOLD=\$\(kms_reconstruct \"\$NB_KMS_CORE\"\) yq '(.*?)' \"\$work/connector\.yaml\"",
+                            script, re.S).group(1)
+        host_chains = {}
+        for values in [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml",
+                       VALUES / "values-solana-connector-e2e.yaml"]:
+            host_chains.update(yaml.safe_load(values.read_text())["commonConfig"]["hostChains"])
+        proxies = [f"https://kms-connector-{i}-kms-connector-proxy:8443" for i in range(1, 5)]
+        with tempfile.TemporaryDirectory() as tmp:
+            connector = pathlib.Path(tmp) / "connector.yaml"
+            connector.write_text(yaml.safe_dump({"commonConfig": {"hostChains": host_chains}}))
+            config = yaml.safe_load(subprocess.check_output(["yq", program, str(connector)], text=True, cwd=ROOT, env={
+                **os.environ, "ENDPOINT_URLS": ",".join(proxies), "PROGRAM_ID": "1" * 32, "THRESHOLD": "3"}))
+        # Chain ids stay strings: Helm would read 130140237723663404 as a float64 and round it.
+        self.assertEqual(config["http"]["supported_chain_ids"], ["12345"])
+        self.assertEqual(config["http"]["solana_chains"],
+                         {"130140237723663404": {"program_id": "1" * 32, "public_decrypt_threshold": 3}})
+        self.assertEqual([e["url"] for e in config["kms_aggregator"]["endpoints"]], proxies)
+        self.assertEqual({e["auth"]["value_env"] for e in config["kms_aggregator"]["endpoints"]}, {"KMS_CONNECTOR_API_KEY"})
+        # The rest of relayer-http's own config is kept.
+        self.assertEqual(config["kms_aggregator"]["call"]["timeout"], "5000ms")
+
+    def test_dispatch_overrides_reject_unknown_keys_and_non_string_values(self):
         script = ROOT / "ci/preview-env/scripts/resolve/parse-overrides.cjs"
         for value, valid in [({}, True), ({"solana_programs_version": "abcdef0"}, True),
-                             ({"unknown": "x"}, False), ({"kms_repo_ref": "a\nb"}, False),
+                             ({"unknown": "x"}, False),
                              ({"coprocessor_version": 1}, False), ([], False)]:
             with tempfile.NamedTemporaryFile() as output:
                 result = subprocess.run(["node", str(script)], env={**os.environ,

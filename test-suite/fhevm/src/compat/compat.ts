@@ -1,6 +1,7 @@
 /**
  * Encodes legacy runtime shims and incompatibility rules across supported fhevm component version combinations.
  */
+import { runsRelayerHttp } from "../layout";
 import { effectiveOverrides } from "../scenario/resolve";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { CoprocessorInstanceSource, ResolvedCoprocessorScenario, State } from "../types";
@@ -448,19 +449,26 @@ export const supportsUpgradeController = (state: Pick<CompatState, "versions">) 
   return !versionBeforeReleaseFamily(version, [0, 14, 0], { unparsed: "modern" });
 };
 
-/** Detects when the resolved kms-connector bundle includes the HTTP decryption path. */
-export const supportsConnectorHttp = (state: Pick<CompatState, "versions" | "overrides">) => {
-  const available = (service: string, versionKey: string) =>
-    Boolean(state.versions.env[versionKey]) ||
-    state.overrides.some(
-      (override) =>
-        override.group === "kms-connector" && (!override.services?.length || override.services.includes(service)),
-    );
-  return (
-    available("kms-connector-endpoint", "CONNECTOR_ENDPOINT_VERSION") &&
-    available("kms-connector-proxy", "CONNECTOR_PROXY_VERSION")
+/** A service is available when the bundle pins its version or a local override of its group builds it. */
+const serviceAvailable = (
+  state: Pick<CompatState, "versions" | "overrides">,
+  group: string,
+  service: string,
+  versionKey: string,
+) =>
+  Boolean(state.versions.env[versionKey]) ||
+  state.overrides.some(
+    (override) => override.group === group && (!override.services?.length || override.services.includes(service)),
   );
-};
+
+/** Detects when the resolved kms-connector bundle includes the HTTP decryption path. */
+export const supportsConnectorHttp = (state: Pick<CompatState, "versions" | "overrides">) =>
+  serviceAvailable(state, "kms-connector", "kms-connector-endpoint", "CONNECTOR_ENDPOINT_VERSION") &&
+  serviceAvailable(state, "kms-connector", "kms-connector-proxy", "CONNECTOR_PROXY_VERSION");
+
+/** Detects when the resolved bundle includes relayer-http. */
+export const supportsRelayerHttp = (state: Pick<CompatState, "versions" | "overrides">) =>
+  serviceAvailable(state, "relayer", "relayer-http", "RELAYER_HTTP_VERSION");
 
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>
@@ -651,6 +659,12 @@ export const assertSupportedBundleScenario = (state: CompatState) => {
     assertSingleCoprocessorRevision(state, scenario);
   }
   const hostChains = scenario.hostChains;
+  if (runsRelayerHttp(hostChains) && !(supportsConnectorHttp(state) && supportsRelayerHttp(state))) {
+    throw new Error(
+      "Solana host scenarios decrypt only over HTTP: the bundle needs CONNECTOR_ENDPOINT_VERSION, " +
+        "CONNECTOR_PROXY_VERSION and RELAYER_HTTP_VERSION, or local overrides that build those services.",
+    );
+  }
   if (hostChains.length <= 1 || !requiresLegacySingleChainCoprocessor(state)) {
     return;
   }

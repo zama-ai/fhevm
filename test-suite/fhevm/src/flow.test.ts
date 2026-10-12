@@ -436,9 +436,12 @@ describe("resumeRepairStep", () => {
       "kms-connector-tx-sender",
       "fhevm-relayer-db",
       "fhevm-relayer",
+      "fhevm-relayer-http",
       "fhevm-test-suite-e2e-debug",
     ];
     expect(resumeRepairStep(state, running)).toBeUndefined();
+    // A Solana host decrypts through relayer-http, so a stopped relayer-http reruns the relayer step.
+    expect(resumeRepairStep(state, running.filter((name) => name !== "fhevm-relayer-http"))).toBe("relayer");
   });
 
   test("repairs from coprocessor when a required runtime container is unhealthy", () => {
@@ -498,12 +501,14 @@ describe("runtime helpers", () => {
     expect(preflightPorts(state)).toContain(9666);
   });
 
-  test("preflight checks the Merkle record's port only for a Solana host, and never the validator's", async () => {
-    const { SOLANA_MERKLE_POSTGRES_PORT } = await import("./layout");
+  test("preflight checks the Merkle record's and relayer-http's ports only for a Solana host, and never the validator's", async () => {
+    const { RELAYER_HTTP_PORT, SOLANA_MERKLE_POSTGRES_PORT } = await import("./layout");
     const state = completeState();
     expect(preflightPorts(state)).not.toContain(SOLANA_MERKLE_POSTGRES_PORT);
+    expect(preflightPorts(state)).not.toContain(RELAYER_HTTP_PORT);
     state.scenario.hostChains.push({ key: "solana", type: "solana", chainId: "72057594037940281", rpcPort: 8899 });
     expect(preflightPorts(state)).toContain(SOLANA_MERKLE_POSTGRES_PORT);
+    expect(preflightPorts(state)).toContain(RELAYER_HTTP_PORT);
     expect(preflightPorts(state)).not.toContain(8899);
   });
 

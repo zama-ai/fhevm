@@ -520,6 +520,19 @@ jobs:
     permissions: *docker_permissions
     secrets: *docker_secrets
 
+  # Solana previews only: relayer-http serves their decryption over HTTP.
+  build-relayer-http:
+    name: build/relayer-http
+    needs: check-labels
+    if: >-
+      needs.check-labels.outputs.should_deploy == 'true' &&
+      needs.check-labels.outputs.build_images == 'true' &&
+      needs.check-labels.outputs.build_test_suite_only != 'true' &&
+      inputs.deploy_solana == true
+    uses: ./.github/workflows/relayer-http-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+
   build-test-suite:
     name: build/test-suite
     needs: check-labels
@@ -551,6 +564,7 @@ jobs:
       - build-coprocessor
       - build-listener
       - build-relayer
+      - build-relayer-http
       - build-test-suite
     if: >-
       !cancelled() &&

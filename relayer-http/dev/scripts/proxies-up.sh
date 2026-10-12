@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Starts, on the compose network of the local stack, one KMS connector proxy per party (the stack does not ship
 # them) and one socat forwarder per proxy, published on 127.0.0.1:8081..808N, for a relayer-http run on the host.
-# The forwarder terminates the proxy's self-signed TLS (a host process on macOS cannot trust it); the relayer
+# The forwarder terminates the proxy's TLS, issued by a test CA (a host process on macOS cannot trust it); the relayer
 # speaks plain http to loopback while the proxy still checks the API key over TLS. Idempotent.
 # Usage: proxies-up.sh N [TAG]   (TAG defaults to the running endpoint's image tag: proxy and endpoint must match)
 set -euo pipefail

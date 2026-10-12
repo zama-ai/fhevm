@@ -28,6 +28,8 @@ import {
   GROUP_BUILD_SERVICES,
   GROUP_SERVICE_SUFFIXES,
   KMS_CONNECTOR_HTTP_SERVICES,
+  RELAYER_HTTP_SERVICE,
+  groupBuildServices,
   REPO_ROOT,
   TEMPLATE_COMPOSE_DIR,
   composePath,
@@ -72,15 +74,15 @@ export const resolvedComposeEnv = (
 
 /** Computes which services in a component should be locally overridden. */
 const overriddenServicesForComponent = (
-  state: Pick<State, "overrides"> | Pick<StackSpec, "overrides">,
+  plan: Pick<StackSpec, "overrides" | "hostChains">,
   component: string,
 ) =>
   new Set(
-    state.overrides.flatMap((override) => {
+    plan.overrides.flatMap((override) => {
       if (override.group === "coprocessor" || !GROUP_BUILD_COMPONENTS[override.group].includes(component)) {
         return [];
       }
-      return override.services?.length ? override.services : GROUP_BUILD_SERVICES[override.group];
+      return override.services?.length ? override.services : groupBuildServices(override.group, plan.hostChains);
     }),
   );
 
@@ -134,6 +136,7 @@ const rustImageVersion = (toolchainRepoPath: string): string => {
 const COPROCESSOR_RUST_IMAGE_VERSION = rustImageVersion("coprocessor/fhevm-engine/rust-toolchain.toml");
 const KMS_CONNECTOR_RUST_IMAGE_VERSION = rustImageVersion("kms-connector/rust-toolchain.toml");
 const RELAYER_RUST_IMAGE_VERSION = rustImageVersion("relayer/rust-toolchain.toml");
+const RELAYER_HTTP_RUST_IMAGE_VERSION = rustImageVersion("relayer-http/rust-toolchain.toml");
 
 /**
  * Local connector images expose this revision from their health endpoint. It
@@ -230,6 +233,11 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     }),
     relayer: buildSpec("../../..", "relayer/docker/relayer/Dockerfile", {
       args: { RUST_IMAGE_VERSION: RELAYER_RUST_IMAGE_VERSION },
+    }),
+    // The Dockerfile ends with a `dev` stage.
+    [RELAYER_HTTP_SERVICE]: buildSpec("../../..", "relayer-http/Dockerfile", {
+      target: "prod",
+      args: { RUST_IMAGE_VERSION: RELAYER_HTTP_RUST_IMAGE_VERSION },
     }),
   },
   "gateway-mocked-payment": {
@@ -599,6 +607,9 @@ export const serviceNameList = (
 ) => {
   if (component === "kms-connector") {
     return kmsConnectorServiceNameList(state);
+  }
+  if (component === "relayer") {
+    return groupBuildServices("relayer", state.scenario.hostChains);
   }
   if (component !== "coprocessor") {
     return [];

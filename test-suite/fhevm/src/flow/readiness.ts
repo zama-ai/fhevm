@@ -19,6 +19,8 @@ import {
   KEYGEN_ID_SELECTOR,
   KMS_CORE_CONTAINER,
   OBJECT_STORE_EXTERNAL_URL,
+  RELAYER_HTTP_CONTAINER,
+  RELAYER_HTTP_PORT,
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
   defaultHostChainKey,
@@ -30,6 +32,7 @@ import { topologyForState } from "../stack-spec/stack-spec";
 import type { State } from "../types";
 import { hostReachableMaterialUrl, hostReachableRpcUrl, predictedCrsId, predictedKeyId, toServiceName, withHexPrefix } from "../utils/fs";
 import { run } from "../utils/process";
+import { until } from "../utils/until";
 
 const POST_BOOT_HEALTH_GATE_DELAY_MS = 5_000;
 const KMS_CONNECTOR_DECRYPTION_READY =
@@ -872,6 +875,14 @@ export const waitForKmsConnector = async (state: State) => {
   for (let party = 1; party <= kmsConnectorPartyCount(state); party += 1) {
     await waitForKmsConnectorParty(state, party);
   }
+};
+
+/** Waits for relayer-http to run and answer /healthz on its published port (the image has no shell). */
+export const waitForRelayerHttp = async () => {
+  await waitForContainer(RELAYER_HTTP_CONTAINER, "running");
+  await until(async () => (await fetch(`http://127.0.0.1:${RELAYER_HTTP_PORT}/healthz`)).ok, {
+    description: "relayer-http /healthz",
+  });
 };
 
 /** Waits for the e2e test-suite container to reach running state. */

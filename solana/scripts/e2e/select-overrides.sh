@@ -48,21 +48,22 @@ lock_keys_for() {
     gateway-contracts) echo "GATEWAY_VERSION" ;;
     host-contracts) echo "HOST_VERSION" ;;
     coprocessor) echo "COPROCESSOR_DB_MIGRATION_VERSION COPROCESSOR_HOST_LISTENER_VERSION COPROCESSOR_GW_LISTENER_VERSION COPROCESSOR_TFHE_WORKER_VERSION COPROCESSOR_ZKPROOF_WORKER_VERSION COPROCESSOR_SNS_WORKER_VERSION COPROCESSOR_TX_SENDER_VERSION COPROCESSOR_CONSENSUS_DETECTOR_VERSION" ;;
-    relayer) echo "RELAYER_VERSION RELAYER_MIGRATE_VERSION" ;;
-    kms-connector) echo "CONNECTOR_DB_MIGRATION_VERSION CONNECTOR_GW_LISTENER_VERSION CONNECTOR_KMS_WORKER_VERSION CONNECTOR_TX_SENDER_VERSION" ;;
+    relayer) echo "RELAYER_VERSION RELAYER_MIGRATE_VERSION RELAYER_HTTP_VERSION" ;;
+    kms-connector) echo "CONNECTOR_DB_MIGRATION_VERSION CONNECTOR_GW_LISTENER_VERSION CONNECTOR_KMS_WORKER_VERSION CONNECTOR_TX_SENDER_VERSION CONNECTOR_ENDPOINT_VERSION CONNECTOR_PROXY_VERSION" ;;
     *) echo "unknown group $1" >&2; return 1 ;;
   esac
 }
 
-# ghcr.io/zama-ai/<image> repositories per group; each must be published by solana-images-publish.yml,
-# which also publishes kms-connector/endpoint and /proxy for previews only.
+# ghcr.io/zama-ai/<image> repositories per group; each must be published by solana-images-publish.yml.
+# Solana decryption runs over HTTP, so every Solana scenario runs the connector endpoint and proxy and
+# relayer-http.
 images_for() {
   case "$1" in
     gateway-contracts) echo "fhevm/gateway-contracts" ;;
     host-contracts) echo "fhevm/host-contracts" ;;
     coprocessor) echo "fhevm/coprocessor/db-migration fhevm/coprocessor/host-listener fhevm/coprocessor/gw-listener fhevm/coprocessor/tfhe-worker fhevm/coprocessor/zkproof-worker fhevm/coprocessor/sns-worker fhevm/coprocessor/tx-sender fhevm/coprocessor/consensus-detector" ;;
-    relayer) echo "fhevm/relayer fhevm/relayer-migrate" ;;
-    kms-connector) echo "fhevm/kms-connector/db-migration fhevm/kms-connector/gw-listener fhevm/kms-connector/kms-worker fhevm/kms-connector/tx-sender" ;;
+    relayer) echo "fhevm/relayer fhevm/relayer-migrate fhevm/relayer-http" ;;
+    kms-connector) echo "fhevm/kms-connector/db-migration fhevm/kms-connector/gw-listener fhevm/kms-connector/kms-worker fhevm/kms-connector/tx-sender fhevm/kms-connector/endpoint fhevm/kms-connector/proxy" ;;
     *) echo "unknown group $1" >&2; return 1 ;;
   esac
 }
@@ -81,7 +82,9 @@ images_for() {
 #     inheritance), hence the dedicated rule below instead of the general solana fan-out.
 #   - relayer (relayer/docker/relayer[-migrate]/Dockerfile bind mounts): relayer/, both
 #     rust_bindings, shared/user-decryption-signature, whole solana Rust tree (zama-host +
-#     transitive path deps via relayer/Cargo.toml).
+#     transitive path deps via relayer/Cargo.toml); relayer-http (relayer-http/Dockerfile COPY
+#     lines): relayer-http/, both rust_bindings, shared/, kms-connector/ and the three solana crates
+#     kms-connector shares.
 #   - gateway-contracts / host-contracts images: their own trees + root package files.
 # Non-Rust solana/ paths (scripts, geyser, docs, test-fixtures) are no longer copied into any
 # builder stage, and runtime-tests sources are copied only for cargo workspace resolution and are
@@ -101,8 +104,9 @@ groups_for_path() {
       echo "all" ;;
     coprocessor/*) echo "coprocessor" ;;
     listener/*) echo "coprocessor" ;;
-    kms-connector/*) echo "kms-connector" ;;
-    relayer/*) echo "relayer" ;;
+    # relayer-http/Dockerfile copies the whole kms-connector tree (kms-connector-api is a path dependency).
+    kms-connector/*) echo "kms-connector relayer" ;;
+    relayer/*|relayer-http/*) echo "relayer" ;;
     gateway-contracts/*) echo "gateway-contracts coprocessor kms-connector relayer" ;;
     host-contracts/*) echo "host-contracts coprocessor kms-connector relayer" ;;
     shared/*) echo "coprocessor kms-connector relayer" ;;

@@ -52,5 +52,20 @@ services:
       relayer-db-migration:
         condition: service_started
 
+  # Decryption over HTTP for Solana scenarios: fans requests out to every kms-connector proxy.
+  # Started only by name (the relayer step lists it when the scenario has a Solana host).
+  relayer-http:
+    container_name: fhevm-relayer-http
+    image: ghcr.io/zama-ai/fhevm/relayer-http:${RELAYER_HTTP_VERSION}
+    environment:
+      KMS_CONNECTOR_API_KEY: ${KMS_CONNECTOR_API_KEY}
+      # The proxies' test CA, the only one relayer-http needs to trust.
+      SSL_CERT_FILE: /etc/kms-connector/proxy/ca.crt
+    volumes:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/config/relayer-http.yaml:/app/config/config.yaml:ro
+      - ../static/config/kms-connector-proxy/ca.crt:/etc/kms-connector/proxy/ca.crt:ro
+    ports:
+      - "${RELAYER_HTTP_PORT}:${RELAYER_HTTP_PORT}"
+
 volumes:
   relayer_postgres_data:

@@ -3,7 +3,8 @@ import YAML from "yaml";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { renderRelayerConfig } from "./generate/config";
+import { renderRelayerConfig, renderRelayerHttpConfig } from "./generate/config";
+import { RELAYER_HTTP_CONFIG_BASE, RELAYER_HTTP_PORT } from "./layout";
 import { predictedCrsId, predictedKeyId } from "./utils/fs";
 
 describe("config", () => {
@@ -168,6 +169,36 @@ describe("config", () => {
     );
     const parsed = YAML.parse(rendered) as { solana_proof?: unknown };
     expect(parsed.solana_proof).toBeUndefined();
+  });
+
+  test("renders relayer-http with EVM chains, Solana chains and one endpoint per proxy", () => {
+    const rendered = renderRelayerHttpConfig(
+      { discovery: { hosts: { solana: { ACL_CONTRACT_ADDRESS: "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ" } } } as never },
+      readFileSync(RELAYER_HTTP_CONFIG_BASE, "utf8"),
+      {
+        hostChains: [
+          { key: "host", chainId: "12345", rpcPort: 8545 },
+          { key: "solana", type: "solana", chainId: "130140237723663404", rpcPort: 8899 },
+        ],
+        kms: { threshold: 1, committeeSize: 4 } as never,
+      },
+      {
+        "gateway-sc": { PUBLIC_DECRYPTION_THRESHOLD: "3", USER_DECRYPTION_THRESHOLD: "3" },
+        "test-suite": { KMS_CONNECTOR_ENDPOINT_URLS: "https://kms-connector-proxy:8443,https://kms-connector-2-proxy:8443" },
+      },
+    );
+    const parsed = YAML.parse(rendered);
+    expect(parsed.http.endpoint).toBe(`0.0.0.0:${RELAYER_HTTP_PORT}`);
+    expect(parsed.http.supported_chain_ids).toEqual([12345]);
+    expect(parsed.http.solana_chains).toEqual({
+      "130140237723663404": { program_id: "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ", public_decrypt_threshold: 3 },
+    });
+    expect(parsed.kms_aggregator.public_decrypt.threshold).toBe(3);
+    expect(parsed.kms_aggregator.user_decrypt.threshold).toBe(3);
+    expect(parsed.kms_aggregator.endpoints).toEqual([
+      { name: "kms_0", url: "https://kms-connector-proxy:8443", auth: { type: "api_key", value_env: "KMS_CONNECTOR_API_KEY" } },
+      { name: "kms_1", url: "https://kms-connector-2-proxy:8443", auth: { type: "api_key", value_env: "KMS_CONNECTOR_API_KEY" } },
+    ]);
   });
 });
 
