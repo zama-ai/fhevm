@@ -167,7 +167,9 @@ export const prepareSolanaKmsContextLeg = async (
   /**
    * relayer-http's log of the decrypts of the leg's values made after `before` (the request ids it
    * had logged until then): in each answered decrypt, each party in `outsideParties` was refused at
-   * its first attempt, and the aggregation did not reach its deadline. The SDK authenticates each
+   * its first attempt, and the aggregation did not reach its deadline. One attempt, because a core
+   * with no role in the request's context answers NotFound, which the connector's worker turns into
+   * 422 unprocessable, a code relayer-http does not retry. The SDK authenticates each
    * share against the signers of its permit's context and needs 2t+1 of them
    * (userDecrypt/response.ts), so a share from outside that context could never count.
    */

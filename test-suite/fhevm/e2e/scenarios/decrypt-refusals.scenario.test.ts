@@ -178,7 +178,8 @@ describe.skipIf(!env.capabilities.protocolServices)('solana decrypt refusals thr
 
       // [expired] A genuine signature over a one-minute window that closed an hour ago. relayer-http
       // checks the window against its own clock before forwarding (endpoint/validate.rs
-      // `request_window`), so the Connectors never see it.
+      // `request_window`), so the Connectors never see it. Their own window check is defense in
+      // depth for a caller that reaches them directly; through relayer-http it is unreachable.
       const anHourAgo = (BigInt(Math.floor(Date.now() / 1000)) / 60n - 60n) * 60n;
       const expired = await signSolanaPermit(
         permitWallet,
