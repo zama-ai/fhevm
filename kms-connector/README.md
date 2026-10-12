@@ -21,6 +21,7 @@
   - [Wallet Configuration](#wallet-configuration)
     - [Security Considerations](#security-considerations)
 - [Architecture](#architecture)
+- [Solana decryption and the shared worker lifecycle](#solana-decryption-and-the-shared-worker-lifecycle)
 - [Support](#support)
 
 ## Getting Started
@@ -88,20 +89,6 @@ follows from those columns, and a CHECK makes a row that mixes the EVM and Solan
 unwritable. `from_user_decryption_row` is the only reader; it rebuilds the signed permit, so
 the worker authorizes exactly what the user signed.
 
-## Support
-
-<a target="_blank" href="https://community.zama.ai">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../docs/.gitbook/assets/support-banner-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="../docs/.gitbook/assets/support-banner-light.png">
-  <img alt="Support">
-</picture>
-</a>
-
-🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
-
-[![GitHub stars](https://img.shields.io/github/stars/zama-ai/fhevm?style=social)](https://github.com/zama-ai/fhevm/)
-
 ## Solana decryption and the shared worker lifecycle
 
 Every processing attempt, including an already-sent poll, checks the permit signature,
@@ -124,3 +111,17 @@ unresolved is retried only by the next attempt of the worker loop.
 Source controls response handling: Gateway requests use the worker's retry budget; HTTP
 requests receive the stored error response and can be retried by the caller. The relayer's
 end-to-end Solana path still enters through the Gateway event.
+
+## Support
+
+<a target="_blank" href="https://community.zama.ai">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../docs/.gitbook/assets/support-banner-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="../docs/.gitbook/assets/support-banner-light.png">
+  <img alt="Support">
+</picture>
+</a>
+
+🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
+
+[![GitHub stars](https://img.shields.io/github/stars/zama-ai/fhevm?style=social)](https://github.com/zama-ai/fhevm/)

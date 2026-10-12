@@ -14,8 +14,8 @@
 use alloy::primitives::{B256, keccak256};
 use connector_utils::types::db::EventType;
 
-/// Every event signature the user-decryption filter must subscribe by once this train
-/// block lands: the two EVM shapes it serves today, plus the Solana request event. The list is
+/// Every event signature the user-decryption filter subscribes by: the two EVM shapes it
+/// serves, plus the Solana request event. The list is
 /// compared in full (order-insensitively), so a topic appearing or disappearing fails with both
 /// lists visible.
 const USER_DECRYPTION_SUBSCRIBED_SIGS: &[&str] = &[
