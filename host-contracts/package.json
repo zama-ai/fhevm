@@ -52,7 +52,6 @@
     "@openzeppelin/foundry-upgrades": "^0.3.6",
     "@openzeppelin/hardhat-upgrades": "^3.9.1",
     "@openzeppelin/upgrades-core": "^1.44.1",
-    "@trivago/prettier-plugin-sort-imports": "^4.0.0",
     "@typechain/ethers-v6": "^0.5.1",
     "@typechain/hardhat": "^9.1.0",
     "@types/chai": "^4.3.20",
