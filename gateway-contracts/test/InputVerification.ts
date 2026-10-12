@@ -1097,5 +1097,41 @@ describe('InputVerification', function () {
         .withArgs(zkProofId, ctHandles, signatures.slice(0, 2));
       expect(await inputVerification.isProofVerified(zkProofId)).to.be.true;
     });
+
+    it('Should revert in case of invalid zkProofId in Solana verify proof response', async function () {
+      // Check that a Solana verify proof response with null (invalid) zkProofId reverts
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponseSolana(nullZkProofId, ctHandles, signatures[0], extraDataV0),
+      ).to.be.revertedWithCustomError(inputVerification, 'VerifyProofNotRequested');
+
+      // Check that a Solana verify proof response with too high (not requested yet) zkProofId reverts
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponseSolana(tooHighZkProofId, ctHandles, signatures[0], extraDataV0),
+      ).to.be.revertedWithCustomError(inputVerification, 'VerifyProofNotRequested');
+    });
+
+    it('Should revert when a Solana request is answered through the EVM verify proof response', async function () {
+      await inputVerification
+        .connect(tokenFundedTxSender)
+        .verifyProofRequestSolana(
+          contractChainId,
+          solanaContractAddress,
+          solanaUserAddress,
+          ciphertextWithZKProof,
+          extraDataV0,
+        );
+
+      // The EVM entry hashes the request's (empty) EVM inputs, so the bytes32 attestation recovers
+      // to an address that is not a coprocessor signer.
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0),
+      ).to.be.revertedWithCustomError(inputVerification, 'NotCoprocessorSigner');
+    });
   });
 });
