@@ -321,9 +321,23 @@ async fn grouping_to_chains_no_fork(
         for dep_hash in &tx.input_tx {
             // Only record dependences within the block as we don't
             // have a clean way of handling cross-block dependences
-            if let Some(linear_chain) =
-                used_tx.get(dep_hash).map(|tx| tx.linear_chain)
-            {
+            if let Some(parent_tx) = used_tx.get(dep_hash) {
+                let linear_chain = parent_tx.linear_chain;
+                // A producer in this block may already have extended a past
+                // chain. Its consumers then need an outer gate on the actual
+                // output they use, just as for a directly cached past input.
+                // Retain every consumed handle, even when several inputs map
+                // to the same producer chain.
+                if across_blocks && !block_tx_hashes.contains(&linear_chain) {
+                    for handle in &tx.input_handle {
+                        let boundary = (linear_chain, *handle);
+                        if parent_tx.allowed_handle.contains(handle)
+                            && !tx.outer_boundary.contains(&boundary)
+                        {
+                            tx.outer_boundary.push(boundary);
+                        }
+                    }
+                }
                 if !dependencies_seen.contains(&linear_chain) {
                     if block_tx_hashes.contains(&linear_chain) {
                         dependencies_block.push(linear_chain);
@@ -1007,6 +1021,51 @@ mod tests {
             allowed_handle: vec![],
             new_chain: false,
         }
+    }
+
+    #[tokio::test]
+    async fn join_of_extended_past_chains_retains_both_boundary_handles() {
+        use std::collections::HashSet;
+
+        let cache = new_cache();
+        let left_past = new_handle();
+        let right_past = new_handle();
+        let left_chain = past_chain(10).hash;
+        let right_chain = past_chain(20).hash;
+        cache.write().await.put(left_past, left_chain);
+        cache.write().await.put(right_past, right_chain);
+        let mut logs = vec![];
+        let left =
+            op1(left_past, &mut logs, TransactionHash::with_last_byte(1));
+        let right =
+            op1(right_past, &mut logs, TransactionHash::with_last_byte(2));
+        let join_tx = TransactionHash::with_last_byte(3);
+        op2(left, right, &mut logs, join_tx);
+        let chains = dependence_chains(
+            &mut logs,
+            &cache,
+            &new_guard(),
+            &new_sealed(),
+            false,
+            true,
+        )
+        .await;
+        let join = chains.iter().find(|chain| chain.hash == join_tx).unwrap();
+        assert!(join.dependencies.is_empty());
+        assert_eq!(
+            join.split_dependencies
+                .iter()
+                .copied()
+                .collect::<HashSet<_>>(),
+            HashSet::from([left_chain, right_chain])
+        );
+        assert_eq!(
+            join.outer_boundary_handles
+                .iter()
+                .copied()
+                .collect::<HashSet<_>>(),
+            HashSet::from([(left_chain, left), (right_chain, right)])
+        );
     }
 
     #[tokio::test]
