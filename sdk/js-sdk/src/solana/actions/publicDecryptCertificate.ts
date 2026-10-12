@@ -9,14 +9,13 @@ import type { Bytes32, BytesHex, Uint256BigInt } from '../../core/types/primitiv
 import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { hexToBytes } from '../../core/base/bytes.js';
 import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
-import { createSolanaDecryptionDeadline } from '../decryption/deadline.js';
-import { postSolanaDecryption, solanaDecryptionUrl } from '../decryption/relayerHttp.js';
+import { solanaDecryptionRelayer, solanaDecryptionUrl } from '../decryption/relayerHttp.js';
 import { retrySolanaDecryption } from '../decryption/retry.js';
 import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
 import { readActiveKmsRouting, type SolanaHostKmsReads } from './hostKms.js';
 
 /** The scheme that selects the Solana public-decrypt body at the Connector; part of the decryption id. */
-export const SOLANA_PUBLIC_DECRYPT_SCHEME = 'solana-public-decrypt-v1';
+const SOLANA_PUBLIC_DECRYPT_SCHEME = 'solana-public-decrypt-v1';
 
 export type SolanaPublicDecryptCertificateContext = {
   readonly chain: FhevmSolanaChain;
@@ -73,7 +72,7 @@ export function publicDecryptAbortCheck(chain: FhevmSolanaChain, signal: AbortSi
     if (signal?.aborted === true)
       throw new RelayerAbortError({
         operation: 'PUBLIC_DECRYPT',
-        url: solanaDecryptionUrl(chain, 'v4/public-decrypt', false),
+        url: solanaDecryptionUrl(chain, 'PUBLIC_DECRYPT', false),
       });
   };
 }
@@ -159,9 +158,10 @@ export async function publicDecryptCertificate(
 
   const requestExtraDataHex = solanaPublicDecryptExtraData(parameters.contextId, parameters.epochId);
   for (const entry of parameters.entries) assertFieldLen('encryptedStore', entry.encryptedStore, 32);
-  const options = { auth: context.runtime.config.auth, ...parameters.options };
-  const url = solanaDecryptionUrl(context.chain, 'v4/public-decrypt', options.auth !== undefined);
-  const deadline = createSolanaDecryptionDeadline({ operation: 'PUBLIC_DECRYPT', url, options });
+  const relayer = solanaDecryptionRelayer(context.chain, 'PUBLIC_DECRYPT', {
+    auth: context.runtime.config.auth,
+    ...parameters.options,
+  });
   const body = {
     scheme: SOLANA_PUBLIC_DECRYPT_SCHEME,
     ctHandles: handles,
@@ -170,12 +170,12 @@ export async function publicDecryptCertificate(
   };
   const result = await retrySolanaDecryption({
     submit: () =>
-      postSolanaDecryption<{
+      relayer.submit<{
         readonly decryptedValue: string;
         readonly signatures: readonly string[];
         readonly extraData: string;
-      }>({ url, body, deadline, options }),
-    clock: deadline,
+      }>(body),
+    clock: relayer.deadline,
   });
 
   if (!unsafeBytesEquals(hexToBytes(result.extraData), hexToBytes(requestExtraDataHex))) {

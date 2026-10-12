@@ -335,8 +335,9 @@ describe('running a user decryption through the client', () => {
   }
   const refused = (status: number, code: string) =>
     jsonResponse({ code, message: 'refused by the test relayer', requestId: 'req-1' }, status);
+  // relayer-http's user-decrypt reply: the shares sit in a `result` of their own inside the envelope.
   const answered = (shares: readonly unknown[]) =>
-    jsonResponse({ status: 'succeeded', requestId: 'req-1', result: shares });
+    jsonResponse({ status: 'succeeded', requestId: 'req-1', result: { result: shares } });
 
   it('sends the delegated key as given and defaults the direct one to the permit user', async () => {
     const { wallet } = conformingWallet();
@@ -415,10 +416,8 @@ describe('running a user decryption through the client', () => {
     });
     trustHostVerification();
     vi.useFakeTimers();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValueOnce(answered([{ payload: 'deadbeef', signature: 'ab'.repeat(65), extraData: '0x01' }])),
-    );
+    const shares = [{ payload: 'deadbeef', signature: 'ab'.repeat(65), extraData: '0x01' }];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(answered(shares)));
     const controller = new AbortController();
     const onProgress = vi.fn();
     const result = decryptClient.decryptValues({
@@ -432,6 +431,7 @@ describe('running a user decryption through the client', () => {
         : expect(result).rejects.toBeInstanceOf(RelayerAbortError);
     await vi.advanceTimersByTimeAsync(1001);
     expect(verify).toHaveBeenCalledOnce();
+    expect(verify.mock.calls[0]?.[0].shares).toEqual(shares);
     if (cause === 'timeout') {
       await vi.advanceTimersByTimeAsync(500);
     } else {

@@ -66,13 +66,13 @@ export interface SolanaUserDecryptHandleJson {
  * not travel: it is the one every handle embeds. `publicKey` is the permit's transport key.
  */
 export interface SolanaUserDecryptPayloadJson {
-  readonly handles: readonly SolanaUserDecryptHandleJson[];
   readonly userAddress: string;
   readonly publicKey: string;
   readonly allowedScopes: readonly string[];
   readonly requestValidity: { readonly startTimestamp: number; readonly durationSeconds: number };
   readonly verifyingProgramId: string;
   readonly extraData: string;
+  readonly handles: readonly SolanaUserDecryptHandleJson[];
 }
 
 /** The request body posted to the decryption relayer's `v4/user-decrypt`. */
@@ -206,11 +206,6 @@ export function buildSolanaUserDecryptRequest(request: {
   return {
     attestationType: SOLANA_SRFC38_ATTESTATION_TYPE,
     payload: {
-      handles: entries.map((entry) => ({
-        handle: bytesToHex(entry.handle),
-        ownerAddress: bytesToHex(entry.ownerAddress),
-        encryptedStore: bytesToHex(entry.encryptedStore),
-      })),
       userAddress: bytesToHex(fields.userAddress),
       publicKey: bytesToHex(fields.transportKey),
       allowedScopes: fields.allowedScopes.map((scope) => bytesToHex(scope)),
@@ -220,6 +215,11 @@ export function buildSolanaUserDecryptRequest(request: {
       },
       verifyingProgramId: bytesToHex(fields.verifyingProgramId),
       extraData: bytesToHex(encodeSolanaKmsRouting(fields.kmsRouting)),
+      handles: entries.map((entry) => ({
+        handle: bytesToHex(entry.handle),
+        ownerAddress: bytesToHex(entry.ownerAddress),
+        encryptedStore: bytesToHex(entry.encryptedStore),
+      })),
     },
     signature: bytesToHex(signedPermit.signature),
   };

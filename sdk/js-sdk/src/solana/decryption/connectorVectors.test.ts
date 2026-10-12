@@ -2,7 +2,7 @@
 //
 // `kms-connector/crates/api/tests/vectors.json` is written by the Connector's DTO tests, which check
 // each vector's serde round trip and decryption id. A body this SDK sends must have the same shape:
-// the same keys at the same depths, the same scheme strings, numbers where the DTO has numbers, and
+// the same keys at the same depths (in any order, as serde reads them), the same scheme strings, numbers where the DTO has numbers, and
 // hex of the same width where the DTO has fixed-width bytes. The vectors' values are not ones a valid
 // permit can carry (an all-zero user, an empty transport key), so the bodies here come from real
 // inputs and are compared by shape; `request.test.ts` pins the user body's values.
@@ -54,7 +54,10 @@ function shapeOf(value: unknown): unknown {
   return typeof value;
 }
 
-/** Compares shapes, letting an empty array stand for an array of any element. */
+/**
+ * Compares shapes, keys in any order, letting an empty array stand for an array of any element: the
+ * Connector's empty public request carries no handle to take an element shape from.
+ */
 function expectSameShape(actual: unknown, expected: unknown, path = '$'): void {
   if (Array.isArray(actual) && Array.isArray(expected)) {
     expect(actual[0], path).toBe('array');
@@ -63,9 +66,13 @@ function expectSameShape(actual: unknown, expected: unknown, path = '$'): void {
     return;
   }
   if (typeof actual === 'object' && actual !== null && typeof expected === 'object' && expected !== null) {
-    expect(Object.keys(actual), path).toEqual(Object.keys(expected));
+    expect(Object.keys(actual).sort(), path).toEqual(Object.keys(expected).sort());
     for (const key of Object.keys(expected)) {
-      expectSameShape((actual as Record<string, unknown>)[key], (expected as Record<string, unknown>)[key], `${path}.${key}`);
+      expectSameShape(
+        (actual as Record<string, unknown>)[key],
+        (expected as Record<string, unknown>)[key],
+        `${path}.${key}`,
+      );
     }
     return;
   }

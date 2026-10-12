@@ -18,8 +18,7 @@ export type SolanaDecryptionOptions<O extends SolanaDecryptionOperation> = Relay
 
 /** The retry clock of one decryption, bounded by the caller's timeout and abort signal. */
 export type SolanaDecryptionDeadline = SolanaDecryptionClock & {
-  /** Milliseconds left; throws the abort or timeout error when the operation may not continue. */
-  remaining(): number;
+  /** Throws the abort or timeout error when the operation may not continue. */
   throwIfAbortedOrExpired(): void;
   /**
    * Runs `work` until it settles or the deadline ends it. `work` receives a signal that aborts
@@ -79,6 +78,7 @@ export function createSolanaDecryptionDeadline<O extends SolanaDecryptionOperati
     }
     throw new RelayerAbortError({ operation, url });
   };
+  /** Milliseconds left; throws the abort or timeout error when the operation may not continue. */
   const remaining = (): number => {
     if (config.options?.signal?.aborted === true) abort();
     const milliseconds = deadline - Date.now();
@@ -86,7 +86,6 @@ export function createSolanaDecryptionDeadline<O extends SolanaDecryptionOperati
   };
 
   return {
-    remaining,
     throwIfAbortedOrExpired(): void {
       remaining();
     },

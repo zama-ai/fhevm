@@ -8,25 +8,22 @@
 // time), then the KMS Connector's authorization over the same host state (./authorization.ts). A
 // public decryption is judged by the Connector's rules for one. What the client does not reproduce is
 // the KMS itself: no signcryption, no response signatures, and so no check of the FHE parameter or
-// the KMS epoch. A refusal reaches the caller with the code the real stack answers it with.
+// the KMS epoch. A refusal reaches the production retry loop with the code the real stack answers it
+// with, so the caller sees what it would see there.
 import { getAddressDecoder, parseBase64RpcAccount, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaUserDecryptExecution } from '../clients/decorators/permitDecrypt.js';
-import type {
-  SolanaTransportKeyPair,
-  SolanaUserDecryptPlaintext,
-  SolanaUserDecryptTransport,
-} from '../userDecrypt/index.js';
-import type { SolanaDecryptionRejection } from '../decryption/retry.js';
+import type { SolanaTransportKeyPair, SolanaUserDecryptPlaintext } from '../userDecrypt/index.js';
+import type { SolanaDecryptionOutcome, SolanaDecryptionRejection } from '../decryption/retry.js';
 import type { SolanaPublicDecryptCertifier } from '../actions/publicDecryptCertificate.js';
 import { asBytes32, bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '../../core/base/bytes.js';
 import { bytes32ToHandle, toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { createKmsPublicDecryptEip712 } from '../../core/kms/createKmsPublicDecryptEip712.js';
 import { publicDecryptDigest } from '../actions/decryptPublicValue.js';
-import { runSolanaUserDecrypt } from '../userDecrypt/index.js';
-import { abortableSleep } from '../../core/base/timeout.js';
+import { buildSolanaUserDecryptRequest } from '../userDecrypt/index.js';
 import { createSolanaDecryptionDeadline } from '../decryption/deadline.js';
+import { retrySolanaDecryption } from '../decryption/retry.js';
 import { verifySolanaUserDecryptPlaintexts } from '../userDecrypt/response.js';
 import { solanaPublicDecryptExtraData } from '../actions/publicDecryptCertificate.js';
 import {
@@ -41,7 +38,7 @@ import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { signAsCleartextParty } from './parties.js';
 import { PERMIT_TRANSPORT_KEY_LEN } from '../permit/index.js';
 import {
-  CONNECTOR_FAILURE_CLASS,
+  CONNECTOR_FAILURE_CODE,
   judgeSolanaPublicDecryption,
   judgeSolanaUserDecryption,
   type ConnectorVerdict,
@@ -53,9 +50,6 @@ import { fetchCleartextStoreValue } from './storeValues.js';
 ////////////////////////////////////////////////////////////////////////////////
 
 const FINALIZED = { commitment: 'finalized' } as const;
-/** How often a public decryption is judged before a failure the Connector would retry stands. */
-const PUBLIC_DECRYPT_ATTEMPTS = 20;
-const PUBLIC_DECRYPT_RETRY_MS = 250;
 
 /**
  * Answers a user decryption with the plaintexts the host recorded for its handles, once the request
@@ -76,10 +70,12 @@ export function cleartextUserDecryptExecution(
       url: `cleartext host ${programAddress}`,
       options,
     });
-    const transport: SolanaUserDecryptTransport<readonly SolanaUserDecryptPlaintext[]> = {
+    // Admission as on the relayer path: a request that can never be submitted is refused here.
+    buildSolanaUserDecryptRequest({ signedPermit: session.signedPermit, entries });
+    const response = await retrySolanaDecryption({
       // The deadline ends an attempt stalled on a read, as it ends a stalled relayer request.
       submit: () =>
-        deadline.bound(async (signal) => {
+        deadline.bound(async (signal): Promise<SolanaDecryptionOutcome<readonly SolanaUserDecryptPlaintext[]>> => {
           const readAccounts = hostAccountsReader(rpc, signal);
           // Each attempt is judged against the host as it is then, as the Connector rechecks the KMS
           // context on every attempt.
@@ -112,7 +108,7 @@ export function cleartextUserDecryptExecution(
             readAccounts,
             readMerkleProofs,
           });
-          const rejection = cleartextUserDecryptRejection(verdict);
+          const rejection = cleartextConnectorRejection(verdict);
           if (rejection !== undefined) return { ok: false, rejection };
           const plaintexts = await Promise.all(
             entries.map(async (entry) => ({
@@ -122,11 +118,6 @@ export function cleartextUserDecryptExecution(
           );
           return { ok: true, response: plaintexts };
         }),
-    };
-    const response = await runSolanaUserDecrypt({
-      signedPermit: session.signedPermit,
-      entries,
-      transport,
       clock: deadline,
       attempts,
     });
@@ -198,14 +189,15 @@ const hostAccountsReader =
  * What the caller sees of the Connector's verdict on the real stack: the code the Connector answers
  * the failure with, which the decryption relayer forwards.
  */
-export function cleartextUserDecryptRejection(verdict: ConnectorVerdict): SolanaDecryptionRejection | undefined {
+export function cleartextConnectorRejection(verdict: ConnectorVerdict): SolanaDecryptionRejection | undefined {
   if (verdict.authorized) return undefined;
-  return { code: CONNECTOR_FAILURE_CLASS[verdict.failure].code, message: `${verdict.failure}: ${verdict.message}` };
+  return { code: CONNECTOR_FAILURE_CODE[verdict.failure], message: `${verdict.failure}: ${verdict.message}` };
 }
 
 /**
  * Certifies the plaintexts the host recorded for handles made public, signed by the registered
- * cleartext KMS key under the certificate's context, as the KMS signs one batch.
+ * cleartext KMS key under the certificate's context, as the KMS signs one batch. The Connector's
+ * verdict runs through the production retry loop, as on the relayer path.
  */
 export function cleartextPublicDecryptCertifier(
   rpc: SolanaRpc,
@@ -215,29 +207,33 @@ export function cleartextPublicDecryptCertifier(
   const programAddress = solanaHostProgram(chain);
   return async (parameters) => {
     const signal = parameters.options?.signal;
-    const readAccounts = hostAccountsReader(rpc, signal);
+    const deadline = createSolanaDecryptionDeadline({
+      operation: 'PUBLIC_DECRYPT',
+      url: `cleartext host ${programAddress}`,
+      options: parameters.options,
+    });
     const entries = parameters.entries.map((entry) => {
       const handle = toFhevmHandle(entry.handle);
       return { handle, handleBytes: hexToBytes(handle.bytes32Hex), encryptedStore: entry.encryptedStore };
     });
-    // The Connector retries a failure a later attempt may clear, such as a leaf record behind the store.
-    for (let attempt = 1; ; attempt += 1) {
-      signal?.throwIfAborted();
-      const verdict = await judgeSolanaPublicDecryption({
-        programAddress,
-        handles: entries.map(({ handleBytes, encryptedStore }) => ({
-          handle: handleBytes,
-          encryptedStore: getAddressDecoder().decode(encryptedStore),
-        })),
-        readAccounts,
-        readMerkleProofs,
-      });
-      if (verdict.authorized) break;
-      if (!CONNECTOR_FAILURE_CLASS[verdict.failure].recoverable || attempt === PUBLIC_DECRYPT_ATTEMPTS) {
-        throw new Error(`the KMS Connector refuses to decrypt (${verdict.failure}): ${verdict.message}`);
-      }
-      await abortableSleep(PUBLIC_DECRYPT_RETRY_MS, signal);
-    }
+    await retrySolanaDecryption({
+      submit: () =>
+        deadline.bound(async (attemptSignal): Promise<SolanaDecryptionOutcome<undefined>> => {
+          const rejection = cleartextConnectorRejection(
+            await judgeSolanaPublicDecryption({
+              programAddress,
+              handles: entries.map(({ handleBytes, encryptedStore }) => ({
+                handle: handleBytes,
+                encryptedStore: getAddressDecoder().decode(encryptedStore),
+              })),
+              readAccounts: hostAccountsReader(rpc, attemptSignal),
+              readMerkleProofs,
+            }),
+          );
+          return rejection === undefined ? { ok: true, response: undefined } : { ok: false, rejection };
+        }),
+      clock: deadline,
+    });
     const cleartexts = await Promise.all(
       entries.map(({ handleBytes, encryptedStore }) =>
         fetchCleartextStoreValue(rpc, programAddress, encryptedStore, handleBytes, signal),

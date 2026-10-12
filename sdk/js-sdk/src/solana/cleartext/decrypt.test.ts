@@ -24,8 +24,8 @@ import {
 import { SolanaDecryptionRunError } from '../decryption/retry.js';
 import {
   cleartextPublicDecryptCertifier,
+  cleartextConnectorRejection,
   cleartextUserDecryptExecution,
-  cleartextUserDecryptRejection,
 } from './decrypt.js';
 import { SOLANA_CLEARTEXT_SIGNER_ADDRESSES } from './parties.js';
 
@@ -47,27 +47,22 @@ const refusal = (failure: authorization.ConnectorFailure): authorization.Connect
 
 afterEach(() => vi.restoreAllMocks());
 
-describe('cleartextUserDecryptRejection', () => {
+// The code per failure is held to the Connector in `authorization.test.ts`; this pins the message.
+describe('cleartextConnectorRejection', () => {
   it('answers a request the Connector authorizes', () => {
-    expect(cleartextUserDecryptRejection({ authorized: true })).toBeUndefined();
+    expect(cleartextConnectorRejection({ authorized: true })).toBeUndefined();
   });
 
   it('answers a refusal with the code the Connector sends for it, naming the failure', () => {
-    expect(cleartextUserDecryptRejection(refusal('Delegation::NoLiveDelegation'))).toEqual({
+    expect(cleartextConnectorRejection(refusal('Delegation::NoLiveDelegation'))).toEqual({
       code: 'acl_denied',
       message: 'Delegation::NoLiveDelegation: entry 0: Delegation::NoLiveDelegation',
-    });
-    expect(cleartextUserDecryptRejection(refusal('ScopeNotAllowed'))).toMatchObject({ code: 'acl_denied' });
-    expect(cleartextUserDecryptRejection(refusal('Window::Expired'))).toMatchObject({
-      code: 'user_signature_rejected',
-    });
-    expect(cleartextUserDecryptRejection(refusal('Watermark::InvalidHostRecord'))).toMatchObject({
-      code: 'unprocessable',
     });
   });
 });
 
-// The Connector retries a public decryption it may authorize later, and stops on one it never will.
+// A public decryption goes through the production retry loop: a code it retries is judged again,
+// one it does not ends the request.
 describe('cleartextPublicDecryptCertifier', () => {
   const certify = cleartextPublicDecryptCertifier(rpc, chain, readMerkleProofs);
   const parameters = {
@@ -140,25 +135,27 @@ describe('cleartextPublicDecryptCertifier', () => {
     ).not.toThrow();
   });
 
-  it('fails at once on a failure the Connector never clears', async () => {
+  it('fails at once on a code the retry loop gives up on', async () => {
     vi.spyOn(authorization, 'judgeSolanaPublicDecryption').mockResolvedValue(
       refusal('EncryptedStore::InvalidHostRecord'),
     );
-    await expect(certify(parameters)).rejects.toThrow(/refuses to decrypt \(EncryptedStore::InvalidHostRecord\)/);
+    const error = await certify(parameters).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(SolanaDecryptionRunError);
+    expect(error).toMatchObject({ rejection: { code: 'unprocessable' }, attempts: 1 });
     expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(1);
   });
 
-  it('retries a failure the Connector may clear, within a bounded budget', async () => {
+  it('retries a code the retry loop retries, within its budget', async () => {
     vi.spyOn(authorization, 'judgeSolanaPublicDecryption').mockResolvedValue(
       refusal('HandleBinding::ProofRecordBehind'),
     );
     const outcome = certify(parameters).catch((error: unknown) => error);
     await vi.runAllTimersAsync();
-    expect(String(await outcome)).toMatch(/refuses to decrypt \(HandleBinding::ProofRecordBehind\)/);
-    expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(20);
+    expect(await outcome).toMatchObject({ rejection: { code: 'acl_denied' }, attempts: 4 });
+    expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(4);
   });
 
-  it('stops retrying when the signal aborts', async () => {
+  it('stops retrying when the signal aborts, as a public decryption', async () => {
     vi.spyOn(authorization, 'judgeSolanaPublicDecryption').mockResolvedValue(
       refusal('HandleBinding::ProofRecordBehind'),
     );
@@ -167,8 +164,10 @@ describe('cleartextPublicDecryptCertifier', () => {
     await vi.advanceTimersByTimeAsync(250);
     controller.abort();
     await vi.runAllTimersAsync();
-    expect(await outcome).toMatchObject({ name: 'AbortError' });
-    expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(2);
+    const error = await outcome;
+    expect(error).toBeInstanceOf(RelayerAbortError);
+    expect((error as RelayerAbortError).operation).toBe('PUBLIC_DECRYPT');
+    expect(authorization.judgeSolanaPublicDecryption).toHaveBeenCalledTimes(1);
   });
 });
 

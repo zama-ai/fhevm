@@ -10,8 +10,6 @@ export type TransactionEvidenceRecord = {
 export type DecryptionEvidenceRecord = {
   readonly label: 'cShares' | 'cUSDC';
   readonly handle: string;
-  readonly jobId: string;
-  readonly queueToResponseMs: number;
   readonly totalElapsedMs: number;
   readonly completedAt: number;
 };
@@ -79,14 +77,9 @@ export const readDecryptionEvidence = (session: DemoSession): readonly Decryptio
         (record.label !== 'cShares' && record.label !== 'cUSDC') ||
         typeof record.handle !== 'string' ||
         !HANDLE_PATTERN.test(record.handle) ||
-        typeof record.jobId !== 'string' ||
-        record.jobId.length === 0 ||
-        typeof record.queueToResponseMs !== 'number' ||
-        !Number.isFinite(record.queueToResponseMs) ||
-        record.queueToResponseMs < 0 ||
         typeof record.totalElapsedMs !== 'number' ||
         !Number.isFinite(record.totalElapsedMs) ||
-        record.totalElapsedMs < record.queueToResponseMs ||
+        record.totalElapsedMs < 0 ||
         typeof record.completedAt !== 'number' ||
         !Number.isSafeInteger(record.completedAt) ||
         record.completedAt <= 0
@@ -105,12 +98,12 @@ export const recordDecryptionEvidence = (
   record: DecryptionEvidenceRecord,
 ): void => {
   try {
-    const records = readDecryptionEvidence(session).filter(({ jobId }) => jobId !== record.jobId);
+    const records = readDecryptionEvidence(session).filter(({ handle }) => handle !== record.handle);
     localStorage.setItem(
       decryptionEvidenceKey(session),
       JSON.stringify([record, ...records].slice(0, MAX_DECRYPTION_RECORDS)),
     );
   } catch {
-    // Job ids, handles, and timings are public evidence; persistence remains best-effort.
+    // Handles and timings are public evidence; persistence remains best-effort.
   }
 };

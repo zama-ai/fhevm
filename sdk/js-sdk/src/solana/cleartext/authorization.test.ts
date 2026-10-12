@@ -5,7 +5,7 @@ import { hexToBytes } from '../../core/base/bytes.js';
 import { decodeSolanaPermitFields } from '../permit/validate.js';
 import type { SolanaMerkleProofOutcome, SolanaMerkleProofReader, SolanaLeafQuery } from './merkleProofs.js';
 import {
-  CONNECTOR_FAILURE_CLASS,
+  CONNECTOR_FAILURE_CODE,
   judgeSolanaPublicDecryption,
   judgeSolanaUserDecryption,
   type ConnectorVerdict,
@@ -38,14 +38,14 @@ type UserCase = {
   }[];
   readonly accounts: Accounts;
   readonly leaf_read: LeafRead;
-  readonly verdict: Verdict & { readonly code?: string; readonly recoverable?: boolean };
+  readonly verdict: Verdict & { readonly code?: string };
 };
 type PublicCase = {
   readonly name: string;
   readonly handles: readonly { readonly handle: string; readonly encrypted_store: string }[];
   readonly accounts: Accounts;
   readonly leaf_read: LeafRead;
-  readonly verdict: Verdict & { readonly code?: string; readonly recoverable?: boolean };
+  readonly verdict: Verdict & { readonly code?: string };
 };
 type Fixture = {
   readonly host_program: string;
@@ -189,10 +189,7 @@ describe('the cleartext client judges a user decryption as the KMS Connector doe
       expectVerdict(verdict, testCase.verdict);
       expect(record.asked()).toBe(testCase.leaf_read === null ? 0 : 1);
       if (!verdict.authorized) {
-        expect(CONNECTOR_FAILURE_CLASS[verdict.failure]).toEqual({
-          code: testCase.verdict.code,
-          recoverable: testCase.verdict.recoverable,
-        });
+        expect(CONNECTOR_FAILURE_CODE[verdict.failure]).toBe(testCase.verdict.code);
       }
     });
   }
@@ -201,7 +198,7 @@ describe('the cleartext client judges a user decryption as the KMS Connector doe
     const produced = new Set(
       fixture.user_decrypt_cases.flatMap((c) => (c.verdict.authorized ? [] : [c.verdict.failure])),
     );
-    expect(new Set(Object.keys(CONNECTOR_FAILURE_CLASS))).toEqual(produced);
+    expect(new Set(Object.keys(CONNECTOR_FAILURE_CODE))).toEqual(produced);
     for (const { failure } of fixture.rust_only) expect(produced.has(failure)).toBe(false);
   });
 
@@ -241,10 +238,7 @@ describe('the cleartext client judges a public decryption as the KMS Connector d
       expectVerdict(verdict, testCase.verdict);
       expect(record.asked()).toBe(testCase.leaf_read === null ? 0 : 1);
       if (!verdict.authorized) {
-        expect(CONNECTOR_FAILURE_CLASS[verdict.failure]).toEqual({
-          code: testCase.verdict.code,
-          recoverable: testCase.verdict.recoverable,
-        });
+        expect(CONNECTOR_FAILURE_CODE[verdict.failure]).toBe(testCase.verdict.code);
       }
     });
   }

@@ -5,12 +5,14 @@
 // `HostConfig` again — and the one field the permit does not carry, the gateway domain, from
 // `HostConfig`, handed in beside the signer set of the permit's `KmsContext`. So the link this
 // client computes can only disagree with the KMS if the permit does, or if `HostConfig`'s domain is
-// not the gateway's. The execute wiring around it: an answered transport feeds verification (which
-// refuses garbage shares), and an unanswered one surfaces the session's own error untouched.
+// not the gateway's. The execute wiring around it: every attempt submits the same bytes under the
+// permit's one signature, a request that can never be submitted is refused before the network, an
+// answer feeds verification (which refuses garbage shares), and an unanswered run surfaces the retry
+// loop's error untouched.
 
-import type { SolanaSigncryptedShare, SolanaUserDecryptHandleEntry } from './index.js';
+import type { SolanaSigncryptedShare, SolanaUserDecryptHandleEntry, SolanaUserDecryptRequestJson } from './index.js';
 import type { SolanaPermitFields, SolanaSignedPermit } from '../permit/index.js';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   PERMIT_IDENTITY_LEN,
   PERMIT_KMS_ROUTING_LEN,
@@ -22,7 +24,14 @@ import {
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 import { getSolanaRuntime } from '../internal/runtime.js';
 import { SolanaDecryptionRunError } from '../decryption/retry.js';
-import { executeSolanaUserDecrypt, generateSolanaTransportKeyPair, solanaUserDecryptRequestInputs } from './index.js';
+import { bytesToHex } from '../../core/base/bytes.js';
+import {
+  MAX_SOLANA_DECRYPT_HANDLES,
+  SolanaUserDecryptRequestError,
+  executeSolanaUserDecrypt,
+  generateSolanaTransportKeyPair,
+  solanaUserDecryptRequestInputs,
+} from './index.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -110,9 +119,51 @@ describe('executing one user decryption', () => {
     setFhevmRuntimeConfig({});
   });
 
-  it('feeds an answered transport into verification, which refuses shares that prove nothing', async () => {
+  // The property the whole retry design exists for: a retry is never a second wallet prompt.
+  it('submits the same bytes under the one signature on every attempt', async () => {
+    const submit = vi.fn((_request: SolanaUserDecryptRequestJson) =>
+      Promise.resolve({ ok: false as const, rejection: { code: 'acl_denied' } }),
+    );
+    const permit = session();
+
+    await expect(
+      executeSolanaUserDecrypt({
+        runtime: getSolanaRuntime(),
+        session: permit,
+        entries: ENTRIES,
+        submit,
+        clock,
+        verification,
+      }),
+    ).rejects.toThrow(SolanaDecryptionRunError);
+
+    const [first, ...rest] = submit.mock.calls.map(([request]) => request);
+    expect(rest.length).toBeGreaterThan(0);
+    for (const request of rest) expect(request).toBe(first);
+    expect(first?.signature).toBe(bytesToHex(permit.signedPermit.signature));
+  });
+
+  // The stateless limits are properties of the request itself; refusing here costs no submission.
+  it('refuses a request over the handle cap without submitting', async () => {
+    const submit = vi.fn();
+    const overCap = Array.from({ length: MAX_SOLANA_DECRYPT_HANDLES + 1 }, () => ENTRIES[0]!);
+
+    await expect(
+      executeSolanaUserDecrypt({
+        runtime: getSolanaRuntime(),
+        session: session(),
+        entries: overCap,
+        submit,
+        clock,
+        verification,
+      }),
+    ).rejects.toThrow(SolanaUserDecryptRequestError);
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it('feeds an answer into verification, which refuses shares that prove nothing', async () => {
     const shares: readonly SolanaSigncryptedShare[] = [{ signature: '0x00', payload: '0x00', extraData: '0x' }];
-    const transport = { submit: () => Promise.resolve({ ok: true as const, response: shares }) };
+    const submit = () => Promise.resolve({ ok: true as const, response: shares });
     // A real key pair, so the refusal comes from the KMS client reading the share rather than from
     // a malformed key rejected before any share is read.
     const keyPair = await generateSolanaTransportKeyPair(getSolanaRuntime());
@@ -122,24 +173,22 @@ describe('executing one user decryption', () => {
         runtime: getSolanaRuntime(),
         session: { ...session(), keyPair },
         entries: ENTRIES,
-        transport,
+        submit,
         clock,
         verification,
       }),
     ).rejects.toThrow(/response parsing failed/);
   });
 
-  it('surfaces the session error of a run that was never answered, untouched', async () => {
-    const transport = {
-      submit: () => Promise.resolve({ ok: false as const, rejection: { code: 'malformed' } }),
-    };
+  it('surfaces the retry loop error of a run that was never answered, untouched', async () => {
+    const submit = () => Promise.resolve({ ok: false as const, rejection: { code: 'malformed' } });
 
     await expect(
       executeSolanaUserDecrypt({
         runtime: getSolanaRuntime(),
         session: session(),
         entries: ENTRIES,
-        transport,
+        submit,
         clock,
         attempts: 1,
         verification,

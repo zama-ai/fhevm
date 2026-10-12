@@ -123,4 +123,24 @@ describe('retrySolanaDecryption', () => {
       [SOLANA_DECRYPTION_RETRY_SECONDS * 4],
     ]);
   });
+
+  it('honors a smaller budget when one is given', async () => {
+    const submit = scripted([denied]);
+    const error = await retrySolanaDecryption({ submit, clock: clock(), attempts: 2 }).catch(
+      (caught: unknown) => caught,
+    );
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect((error as SolanaDecryptionRunError).attempts).toBe(2);
+  });
+
+  it.each([NaN, Infinity, -Infinity, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects an attempt budget of %s before submitting',
+    async (attempts) => {
+      const submit = scripted([{ ok: true, response: 'answer' }]);
+      await expect(retrySolanaDecryption({ submit, clock: clock(), attempts })).rejects.toThrow(
+        'attempts must be a positive safe integer',
+      );
+      expect(submit).not.toHaveBeenCalled();
+    },
+  );
 });

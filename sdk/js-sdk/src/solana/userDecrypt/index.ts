@@ -32,6 +32,3 @@ export type {
   SolanaUserDecryptPlaintext,
   SolanaUserDecryptRequestInputs,
 } from './response.js';
-
-export { runSolanaUserDecrypt } from './session.js';
-export type { SolanaUserDecryptTransport } from './session.js';

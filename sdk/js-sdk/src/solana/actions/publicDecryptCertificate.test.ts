@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import { SolanaDecryptionRunError } from '../decryption/retry.js';
+import { RelayerTimeoutError } from '../../core/errors/RelayerTimeoutError.js';
 import { bytesToHex } from '../../core/base/bytes.js';
 import {
   publicDecryptCertificate,
@@ -20,7 +21,6 @@ const parameters = (): SolanaPublicDecryptBatch => ({
   entries: [{ handle, encryptedStore: account }],
   contextId,
   epochId,
-  options: { fetchRetries: 1 },
 });
 
 const context = {
@@ -143,6 +143,24 @@ describe('publicDecryptCertificate', () => {
       message: 'kms_context_destroyed for this request',
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('ends a stalled request at the caller timeout, as a public decryption', async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    global.fetch = vi.fn((_url: string, init: RequestInit) => {
+      signal = init.signal ?? undefined;
+      return new Promise<Response>(() => undefined);
+    }) as unknown as typeof fetch;
+
+    const pending = publicDecryptCertificate(context, { ...parameters(), options: { timeout: 1_000 } }).catch(
+      (caught: unknown) => caught,
+    );
+    await vi.advanceTimersByTimeAsync(1_001);
+    const error = await pending;
+    expect(error).toBeInstanceOf(RelayerTimeoutError);
+    expect((error as RelayerTimeoutError).operation).toBe('PUBLIC_DECRYPT');
+    expect(signal?.aborted).toBe(true);
   });
 
   it('surfaces an answer that is neither envelope as the infrastructure error it is', async () => {

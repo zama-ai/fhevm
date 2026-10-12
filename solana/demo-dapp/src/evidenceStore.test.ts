@@ -19,8 +19,6 @@ const transactionSignature =
 const decryption: DecryptionEvidenceRecord = {
   label: 'cShares',
   handle: `0x${'12'.repeat(32)}`,
-  jobId: 'job-1',
-  queueToResponseMs: 1_250,
   totalElapsedMs: 1_400,
   completedAt: 1_700_000_000_000,
 };
@@ -82,8 +80,8 @@ describe('public transaction evidence', () => {
       'fhevm-solana-demo:decrypt-evidence:boot-a:localnet:11111111111111111111111111111111',
       JSON.stringify([
         { ...decryption, handle: 'not-a-handle' },
-        { ...decryption, totalElapsedMs: 1_000 },
-        { ...decryption, jobId: '' },
+        { ...decryption, totalElapsedMs: -1 },
+        { ...decryption, completedAt: 0 },
       ]),
     );
 

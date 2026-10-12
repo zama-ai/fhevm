@@ -41,29 +41,28 @@ export type SolanaHostAccountsReader = (
   minContextSlot?: bigint,
 ) => Promise<{ readonly slot: bigint; readonly accounts: readonly MaybeEncodedAccount[] }>;
 
-const SIGNATURE_REJECTED = { code: 'user_signature_rejected', recoverable: false } as const;
-const ACL_DENIED = { code: 'acl_denied', recoverable: true } as const;
-const ACL_REFUSED = { code: 'acl_denied', recoverable: false } as const;
-const UNPROCESSABLE = { code: 'unprocessable', recoverable: false } as const;
+const SIGNATURE_REJECTED = 'user_signature_rejected';
+const ACL_DENIED = 'acl_denied';
+const UNPROCESSABLE = 'unprocessable';
 
 /**
- * The code the Connector answers each failure with, and whether it may clear on a later attempt
- * (`failure.rs`). A failed account or Merkle proof read is not listed: the cleartext client throws on
- * one instead of judging.
+ * The code the Connector answers each failure with (`failure.rs`), which the decryption relayer
+ * forwards. A failed account or Merkle proof read is not listed: the cleartext client throws on one
+ * instead of judging.
  */
-export const CONNECTOR_FAILURE_CLASS = {
+export const CONNECTOR_FAILURE_CODE = {
   Signature: SIGNATURE_REJECTED,
-  'Window::NotYetValid': { ...SIGNATURE_REJECTED, recoverable: true },
+  'Window::NotYetValid': SIGNATURE_REJECTED,
   'Window::Expired': SIGNATURE_REJECTED,
   ProgramIdMismatch: SIGNATURE_REJECTED,
   'Watermark::Invalidated': SIGNATURE_REJECTED,
   'Watermark::InvalidHostRecord': UNPROCESSABLE,
   'EncryptedStore::Absent': ACL_DENIED,
-  'EncryptedStore::ForeignOwner': ACL_REFUSED,
-  'EncryptedStore::NotAnEncryptedStore': ACL_REFUSED,
-  'EncryptedStore::AddressMismatch': ACL_REFUSED,
+  'EncryptedStore::ForeignOwner': ACL_DENIED,
+  'EncryptedStore::NotAnEncryptedStore': ACL_DENIED,
+  'EncryptedStore::AddressMismatch': ACL_DENIED,
   'EncryptedStore::InvalidHostRecord': UNPROCESSABLE,
-  ScopeNotAllowed: ACL_REFUSED,
+  ScopeNotAllowed: ACL_DENIED,
   'HandleBinding::NoLeaf': ACL_DENIED,
   'HandleBinding::ProofRecordBehind': ACL_DENIED,
   'HandleBinding::AccountUnknownToProofRecord': ACL_DENIED,
@@ -71,9 +70,9 @@ export const CONNECTOR_FAILURE_CLASS = {
   'HandleBinding::LeafIndexOutOfRange': ACL_DENIED,
   'Delegation::NoLiveDelegation': ACL_DENIED,
   'Delegation::InvalidHostRecord': UNPROCESSABLE,
-} as const satisfies Record<string, { readonly code: string; readonly recoverable: boolean }>;
+} as const satisfies Record<string, string>;
 
-export type ConnectorFailure = keyof typeof CONNECTOR_FAILURE_CLASS;
+export type ConnectorFailure = keyof typeof CONNECTOR_FAILURE_CODE;
 
 export type ConnectorVerdict =
   | { readonly authorized: true }

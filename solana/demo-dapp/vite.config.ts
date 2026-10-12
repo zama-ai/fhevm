@@ -6,9 +6,10 @@ import { readDemoAuthorizationFromEnv } from '../../test-suite/fhevm/demo/author
 // operator-server.ts). The dev server proxies the page's same-origin `/api` calls to it and adds
 // the boot capability on the way, so the browser never holds a token and the operator never trusts
 // a page context. `/api/relayer` and `/api/decryption-relayer` go straight to the two relayers.
-// The lifecycle and the preview helper always pass these three; the fallbacks are the local
-// stack's ports from test-suite/fhevm/src/layout.ts (not imported: that module is Bun-typed and
-// would pull the whole layout into this Node config).
+// The lifecycle passes these four, and the preview helper all but the decryption relayer, whose
+// port-forward comes with relayer-http's preview deployment. The fallbacks are the local stack's
+// ports from test-suite/fhevm/src/layout.ts (not imported: that module is Bun-typed and would pull
+// the whole layout into this Node config).
 const dappUrl = new URL(process.env.DEMO_DAPP_URL ?? 'http://127.0.0.1:5173');
 const operatorUrl = process.env.DEMO_OPERATOR_URL ?? 'http://127.0.0.1:8091';
 const relayerUrl = process.env.DEMO_RELAYER_URL ?? 'http://127.0.0.1:3000';

@@ -3,7 +3,7 @@ import { getAddressDecoder, getAddressEncoder } from '@solana/kit';
 // The permit-path decrypt actions: sign a permit once, run requests under it.
 //
 // This decorator is assembly and nothing else. Every rule it relies on lives in the modules it
-// fastens together — the permit builder and channel, the decryption relayer, the retry session, the
+// fastens together — the permit builder and channel, the decryption relayer, the retry loop, the
 // response verification — and what it adds is the wiring: the chain says where the deployment is,
 // the host program says whom to believe, and the caller brings the wallet and the handles.
 //
@@ -32,8 +32,7 @@ import {
   solanaPermitWarnings,
 } from '../../permit/index.js';
 import { executeSolanaUserDecrypt, generateSolanaTransportKeyPair } from '../../userDecrypt/index.js';
-import { createSolanaDecryptionDeadline } from '../../decryption/deadline.js';
-import { postSolanaDecryption, solanaDecryptionUrl } from '../../decryption/relayerHttp.js';
+import { solanaDecryptionRelayer } from '../../decryption/relayerHttp.js';
 import { bytes32ToHandle } from '../../../core/handle/FhevmHandle.js';
 import { bytesToClearValueType } from '../../../core/handle/FheType.js';
 import { createClearValue, clearValueToTypedValue } from '../../../core/handle/ClearValue.js';
@@ -127,10 +126,7 @@ export function relayerUserDecryptExecution(
   return {
     transportKeyPair: () => generateSolanaTransportKeyPair(runtime),
     execute: async ({ session, entries, attempts, options: callOptions }) => {
-      const options = { auth: runtime.config.auth, ...callOptions };
-      const url = solanaDecryptionUrl(chain, 'v4/user-decrypt', options.auth !== undefined);
-      // One deadline bounds every submission and backoff of this decryption.
-      const deadline = createSolanaDecryptionDeadline({ operation: 'USER_DECRYPT', url, options });
+      const relayer = solanaDecryptionRelayer(chain, 'USER_DECRYPT', { auth: runtime.config.auth, ...callOptions });
       const verification = await userDecryptVerification(
         host,
         session.signedPermit.fields.kmsRouting.kmsContextId,
@@ -140,14 +136,16 @@ export function relayerUserDecryptExecution(
         runtime,
         session,
         entries,
-        transport: {
-          submit: (body) => postSolanaDecryption<readonly SolanaSigncryptedShare[]>({ url, body, deadline, options }),
+        submit: async (body) => {
+          // relayer-http nests the shares in a `result` of their own, as on EVM's v4 user-decrypt.
+          const outcome = await relayer.submit<{ readonly result: readonly SolanaSigncryptedShare[] }>(body);
+          return outcome.ok ? { ok: true, response: outcome.response.result } : outcome;
         },
-        clock: deadline,
+        clock: relayer.deadline,
         attempts,
         verification,
       });
-      deadline.throwIfAbortedOrExpired();
+      relayer.deadline.throwIfAbortedOrExpired();
       return plaintexts;
     },
   };

@@ -4,8 +4,7 @@
 //
 //   [headless]  A wallet delegator: grant through the SDK builders -> the *delegate* decrypts the
 //               delegator's value (permit signed by the delegate, entry `ownerAddress` = delegator) ->
-//               identical repeat coalesces into one relayer job -> revoke -> the next request is
-//               terminally refused. The revocation lever is the delegator's; the delegate's own
+//               an identical repeat is answered again -> revoke -> the next request is refused. The revocation lever is the delegator's; the delegate's own
 //               permit stays valid throughout.
 //
 //   [squads]    A program-controlled delegator — the real Squads v4 program at its mainnet id: a
@@ -116,14 +115,14 @@ const squadsAvailable = (await squadsGenesisExtras()) !== undefined;
 // reason; this is the second gate, for a suite run against a stack that already booted.
 const squadsRequired = process.env.SOLANA_E2E_REQUIRE_SQUADS === "1";
 
-// A cleartext stack has no relayer to coalesce jobs and no Squads program: there the headless arc
-// skips its coalescing step and the squads arc does not run. Its client refuses a revoked delegation
+// A cleartext stack has no decryption relayer and no Squads program: there the headless arc skips
+// its repeat step and the squads arc does not run. Its client refuses a revoked delegation
 // as the Connector does.
 const protocolServices = loadEnv().capabilities.protocolServices;
 
 describe("solana delegated user-decrypt", () => {
   test(
-    "[headless] grant -> delegate decrypts 42 -> identical repeat is one job -> revoke -> refused",
+    "[headless] grant -> delegate decrypts 42 -> identical repeat is answered -> revoke -> refused",
     async () => {
       const setup = await verticalSetup();
       const { stack, context, wallet, config } = setup;
@@ -172,9 +171,10 @@ describe("solana delegated user-decrypt", () => {
       expect(await delegatedDecrypt(setup, { value, handle, delegateSecretKey })).toBe(42n);
 
       if (protocolServices) {
-        // A retry costs no signature: the same session sends the same bytes twice, which the
-        // Connectors read as one decryption id. Asserted at the wire: both POST bodies are
-        // byte-identical. The interception passes everything through untouched.
+        // A repeat costs no signature: the same session sends the same bytes twice, so the
+        // Connectors see one decryption id twice, and the stack must answer it the second time
+        // too. The wire check pins that the repeat really is the same request. The interception
+        // passes everything through untouched.
         setFhevmRuntimeConfig({ auth: relayerAuth() });
         const client = createFhevmDecryptClient({ chain, rpc: context.rpc, fheParameter: config.fheParameter });
         const session = await client.signPermit({

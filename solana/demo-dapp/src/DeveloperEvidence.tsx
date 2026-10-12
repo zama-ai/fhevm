@@ -311,11 +311,10 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
             <strong>Recorded user decryptions</strong>
             <ul>
               {decryptions.slice(0, 4).map((decryption) => (
-                <li key={decryption.jobId}>
+                <li key={decryption.handle}>
                   <span>{decryption.label}</span>
                   <span className="decryption-identifiers">
                     <CopyValue label="decryption handle" value={decryption.handle} />
-                    <CopyValue label="decryption job id" value={decryption.jobId} />
                     <a
                       className="evidence-link"
                       href={jaegerDecryptUrl(decryption.handle)}
@@ -326,8 +325,7 @@ export function DeveloperEvidence({ controller }: { readonly controller: DemoCon
                     </a>
                   </span>
                   <small>
-                    {(decryption.totalElapsedMs / 1_000).toFixed(2)}s wallet→cleartext ·{' '}
-                    {(decryption.queueToResponseMs / 1_000).toFixed(2)}s queued→response
+                    {(decryption.totalElapsedMs / 1_000).toFixed(2)}s wallet→cleartext
                   </small>
                 </li>
               ))}
