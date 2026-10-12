@@ -1,13 +1,24 @@
 //! User decrypt: every node returns a distinct signcrypted share; the SDK reconstructs from `threshold` of them.
 
 use alloy::primitives::B256;
-use kms_connector_api::{USER_DECRYPTION_ROUTE, UserDecryptionRequest, UserDecryptionResponse};
+use kms_connector_api::{
+    SolanaUserDecryptionRequest, USER_DECRYPTION_ROUTE, UserDecryptionRequest,
+    UserDecryptionResponse,
+};
 use serde::Serialize;
 
 use super::{Flow, RejectReason, check_signature, hex};
 use crate::kms_aggregator::config::UserChecks;
 
 pub struct UserDecrypt;
+
+/// The connector body, serialised as itself: the EVM `v1` body or the Solana one.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum UserRequest {
+    Evm(UserDecryptionRequest),
+    Solana(SolanaUserDecryptionRequest),
+}
 
 /// `{ "result": [ { "payload", "signature", "extraData" } ] }`: the current relayer's user-decrypt result.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -27,7 +38,7 @@ pub struct UserDecryptShare {
 }
 
 impl Flow for UserDecrypt {
-    type Request = UserDecryptionRequest;
+    type Request = UserRequest;
     type Response = UserDecryptionResponse;
     type Output = UserDecryptOutput;
     type Checks = UserChecks;
@@ -35,11 +46,19 @@ impl Flow for UserDecrypt {
     const ROUTE: &'static str = USER_DECRYPTION_ROUTE;
 
     fn decryption_id(request: &Self::Request) -> B256 {
-        request.id()
+        match request {
+            UserRequest::Evm(request) => request.id(),
+            UserRequest::Solana(request) => request.id(),
+        }
     }
 
     fn handles(request: &Self::Request) -> Vec<B256> {
-        request.payload.handles.iter().map(|h| h.handle).collect()
+        match request {
+            UserRequest::Evm(request) => request.payload.handles.iter().map(|h| h.handle).collect(),
+            UserRequest::Solana(request) => {
+                request.payload.handles.iter().map(|h| h.handle).collect()
+            }
+        }
     }
 
     fn check(
@@ -48,7 +67,7 @@ impl Flow for UserDecrypt {
         accepted: &[Self::Response],
         response: &Self::Response,
     ) -> Result<(), RejectReason> {
-        if checks.decryption_id_match && response.decryption_id != request.id() {
+        if checks.decryption_id_match && response.decryption_id != Self::decryption_id(request) {
             return Err(RejectReason::IdMismatch);
         }
         check_signature(
@@ -98,7 +117,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::kms_aggregator::mock::{self, USER_REQUEST_ID, USER_REQUEST_JSON};
+    use crate::kms_aggregator::mock::{self, USER_REQUEST_ID};
 
     const OFF: UserChecks = UserChecks {
         decryption_id_match: false,
@@ -113,8 +132,8 @@ mod tests {
         decryption_id_majority: true,
     };
 
-    fn request() -> UserDecryptionRequest {
-        serde_json::from_str(USER_REQUEST_JSON).unwrap()
+    fn request() -> UserRequest {
+        mock::user_request()
     }
 
     fn response(node: usize) -> UserDecryptionResponse {
@@ -141,6 +160,39 @@ mod tests {
             vec![b256!(
                 "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             )]
+        );
+        let solana = mock::solana_user_request();
+        assert_eq!(
+            UserDecrypt::decryption_id(&solana),
+            mock::vector("solanaUserDecryption").1
+        );
+        assert_eq!(UserDecrypt::handles(&solana), vec![B256::repeat_byte(1)]);
+    }
+
+    #[test]
+    fn id_match_compares_the_solana_request_id() {
+        let solana = mock::solana_user_request();
+        let matching = UserDecryptionResponse {
+            decryption_id: mock::vector("solanaUserDecryption").1,
+            ..response(0)
+        };
+        assert_eq!(UserDecrypt::check(&MATCH, &solana, &[], &matching), Ok(()));
+        assert_eq!(
+            UserDecrypt::check(&MATCH, &solana, &[], &response(0)),
+            Err(RejectReason::IdMismatch)
+        );
+    }
+
+    #[test]
+    fn each_request_serializes_as_its_connector_body() {
+        let json = |request: &UserRequest| serde_json::to_value(request).unwrap();
+        assert_eq!(
+            json(&request()),
+            serde_json::from_str::<serde_json::Value>(mock::USER_REQUEST_JSON).unwrap()
+        );
+        assert_eq!(
+            json(&mock::solana_user_request()),
+            mock::vector("solanaUserDecryption").0
         );
     }
 

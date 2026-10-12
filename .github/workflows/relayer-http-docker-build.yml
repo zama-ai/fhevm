@@ -70,6 +70,10 @@ jobs:
           # manifest it inherits from.
           - kms-connector/crates/api/**
           - kms-connector/Cargo.toml
+          # Solana path dependencies compiled into the image.
+          - solana/crates/zama-solana-acl/**
+          - solana/crates/zama-solana-permit/**
+          - solana/crates/zama-solana-request/**
 
   build:
     needs: [is-latest-commit, check-changes]

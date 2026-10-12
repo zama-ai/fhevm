@@ -5,10 +5,7 @@ use alloy::primitives::{B256, U256};
 use connector_utils::types::{
     extra_data::parse_extra_data,
     handle::{extract_chain_id_from_handle, extract_fhe_type_from_handle},
-    solana_request::{
-        SolanaEntryClaims, SolanaPublicDecryptionRequest, SolanaRequestBlob,
-        SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
-    },
+    solana_request::{SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1},
 };
 use kms_connector_api::{
     AttestationType, ErrorCode, PublicDecryptionRequest, PublicDecryptionScheme, RequestValidity,
@@ -133,46 +130,13 @@ pub fn validate_solana_user_decryption(
     validate_handles(payload.handles.iter().map(|h| &h.handle), config)?;
     validate_request_validity(&payload.requestValidity)?;
     validate_extra_data(&payload.extraData)?;
-    let invalid = |reason: String| ValidationError::InvalidSolanaRequest(reason);
-    let fields = SolanaUserDecryptFields {
-        handles: payload.handles.iter().map(|e| e.handle.0).collect(),
-        transport_key: payload.publicKey.to_vec(),
-        start_timestamp: payload.requestValidity.startTimestamp,
-        duration_seconds: payload.requestValidity.durationSeconds,
-        extra_data: payload.extraData.to_vec(),
-    };
-    let blob = SolanaRequestBlob {
-        user_address: payload.userAddress.0,
-        allowed_scopes: payload
-            .allowedScopes
-            .iter()
-            .map(|scope| {
-                scope[..].try_into().map_err(|_| {
-                    invalid(format!(
-                        "an allowed scope is {} bytes, expected 64",
-                        scope.len()
-                    ))
-                })
-            })
-            .collect::<Result<_, _>>()?,
-        verifying_program_id: payload.verifyingProgramId.0,
-        signature: request.signature[..].try_into().map_err(|_| {
-            invalid(format!(
-                "signature is {} bytes, expected 64",
-                request.signature.len()
-            ))
-        })?,
-        entries: payload
-            .handles
-            .iter()
-            .map(|e| SolanaEntryClaims {
-                owner_address: e.ownerAddress.0,
-                encrypted_store: e.encryptedStore.0,
-            })
-            .collect(),
-    };
-    SolanaUserDecryptionRequestV1::new(U256::from_be_bytes(id.0), fields, blob)
-        .map_err(|e| invalid(e.to_string()))
+    let request = request
+        .assemble()
+        .map_err(|e| ValidationError::InvalidSolanaRequest(e.to_string()))?;
+    Ok(SolanaUserDecryptionRequestV1 {
+        decryption_id: U256::from_be_bytes(id.0),
+        request,
+    })
 }
 
 /// Read before the payload, so an unsupported scheme is reported as such whatever shape its

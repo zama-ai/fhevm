@@ -15,6 +15,11 @@ COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared ./shared
 COPY kms-connector ./kms-connector
+# Standalone Solana crates (no workspace inheritance): the request form, the permit and the host
+# chain ids, path dependencies of kms-connector-api and of the relayer.
+COPY solana/crates/zama-solana-acl ./solana/crates/zama-solana-acl
+COPY solana/crates/zama-solana-permit ./solana/crates/zama-solana-permit
+COPY solana/crates/zama-solana-request ./solana/crates/zama-solana-request
 COPY relayer-http ./relayer-http
 
 WORKDIR /app/relayer-http
