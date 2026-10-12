@@ -131,7 +131,7 @@ ENDPOINT_URLS="$endpoint_urls" PROGRAM_ID="$program_id" THRESHOLD=$(kms_reconstr
 CONFIG="$work/relayer-http-config.yaml" yq -n '.configmapFiles.files."config.yaml" = load_str(strenv(CONFIG))' \
   > "$work/relayer-http.yaml"
 helm upgrade --install relayer-http "$COMMON_CHART" --version "$COMMON_CHART_VERSION" -n "$NAMESPACE" \
-  -f "$values/values-relayer-http-e2e.yaml" -f "$work/relayer-http.yaml" \
+  -f ci/preview-env/relayer/values-relayer-http-e2e.yaml -f "$work/relayer-http.yaml" \
   --set-string "image.tag=$(jq -er .relayer_http <<< "$TAGS_JSON")" --wait --timeout=10m
 
 # HTTP readiness alone does not prove that Yellowstone is delivering sealed blocks.
