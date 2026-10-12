@@ -99,7 +99,8 @@ spec:
           {{- end }}
           {{- /*
             Declarative host-chains seeding.
-            Rendered from .Values.chains so the dbMigration Job can seed the
+            Rendered from the coprocessor.chains helper (commonConfig.network
+            preset merged with .Values.chains) so the dbMigration Job can seed the
             `host_chains` Postgres table from the same source of truth the
             listeners use. Each entry produces three env vars consumed by
             initialize_db.sh -> seed_host_chains:
@@ -110,10 +111,11 @@ spec:
                                     per-chain listener uses)
             Empty chains[] is a no-op (no host_chains rows seeded).
           */}}
-          {{- if .Values.chains }}
+          {{- $chains := (include "coprocessor.chains" . | fromYaml).chains }}
+          {{- if $chains }}
           - name: HOST_CHAINS_COUNT
-            value: {{ len .Values.chains | quote }}
-          {{- range $i, $chain := .Values.chains }}
+            value: {{ len $chains | quote }}
+          {{- range $i, $chain := $chains }}
           - name: HOST_CHAIN_{{ $i }}_ID
             value: {{ $chain.chainId | quote }}
           - name: HOST_CHAIN_{{ $i }}_NAME

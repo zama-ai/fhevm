@@ -26,6 +26,10 @@ Usage: include "coprocessor.versionedName" (dict "root" $ "name" "eth-sc-address
 {{- end -}}
 {{- end -}}
 
+{{- define "coprocessor.contractConfigMapName" -}}
+{{- include "coprocessor.versionedName" (dict "root" . "name" .Values.contractConfigMap.name) -}}
+{{- end -}}
+
 {{- define "coprocessor.hostContractConfigMapName" -}}
 {{- include "coprocessor.versionedName" (dict "root" . "name" .Values.hostContractConfigMap.name) -}}
 {{- end -}}
@@ -36,6 +40,80 @@ Usage: include "coprocessor.versionedName" (dict "root" $ "name" "eth-sc-address
 
 {{- define "coprocessor.polygonContractConfigMapName" -}}
 {{- include "coprocessor.versionedName" (dict "root" . "name" .Values.polygonContractConfigMap.name) -}}
+{{- end -}}
+
+{{/*
+contractConfigMap data: configs/<commonConfig.network>.yaml overlaid with
+contractConfigMap.addresses. Returns YAML; parse with fromYaml.
+*/}}
+{{- define "coprocessor.contractAddresses" -}}
+{{- $cm := .Values.contractConfigMap | default dict -}}
+{{- $allowed := list "" "devnet" "testnet" "mainnet" -}}
+{{- $network := default "" .Values.commonConfig.network -}}
+{{- if not (has $network $allowed) -}}
+{{- fail (printf "commonConfig.network must be one of: devnet, testnet, mainnet (or empty); got %q" $network) -}}
+{{- end -}}
+{{- $preset := dict -}}
+{{- if $network -}}
+{{- $preset = .Files.Get (printf "configs/%s.yaml" $network) | fromYaml -}}
+{{- end -}}
+{{- toYaml (mergeOverwrite (deepCopy $preset) ($cm.addresses | default dict)) -}}
+{{- end -}}
+
+{{/*
+Effective host chains list, returned as YAML under a "chains" key:
+  (include "coprocessor.chains" . | fromYaml).chains
+
+When contractConfigMap is enabled and commonConfig.network is set, one entry is generated per
+"<prefix>.chain_id" key whose "<prefix>.acl.address" is non-empty (so the
+gateway and undeployed chains are skipped). Each entry gets:
+  name     <- "<prefix>.name", or the prefix itself
+  chainId  <- "<prefix>.chain_id"
+  *ContractAddressValueFrom -> configMapKeyRef on the contract ConfigMap for
+  every non-empty "<prefix>.{acl,fhevm_executor,kms_generation,protocol_config}.address"
+.Values.chains entries with the same name are merged on top (values win);
+entries matching no generated chain are appended unchanged.
+*/}}
+{{- define "coprocessor.chains" -}}
+{{- $cm := .Values.contractConfigMap | default dict -}}
+{{- $valuesChains := .Values.chains | default list -}}
+{{- $generated := list -}}
+{{- if and $cm.enabled .Values.commonConfig.network -}}
+{{- $addresses := include "coprocessor.contractAddresses" . | fromYaml -}}
+{{- $cmName := include "coprocessor.contractConfigMapName" . -}}
+{{- $fields := dict "aclContractAddressValueFrom" "acl" "fhevmExecutorContractAddressValueFrom" "fhevm_executor" "kmsGenerationContractAddressValueFrom" "kms_generation" "protocolConfigContractAddressValueFrom" "protocol_config" -}}
+{{- range $key, $chainId := $addresses -}}
+  {{- if hasSuffix ".chain_id" $key -}}
+    {{- $prefix := trimSuffix ".chain_id" $key -}}
+    {{- if get $addresses (printf "%s.acl.address" $prefix) -}}
+      {{- $chain := dict "name" (get $addresses (printf "%s.name" $prefix) | default $prefix | toString) "chainId" (toString $chainId) -}}
+      {{- range $field, $contract := $fields -}}
+        {{- $addrKey := printf "%s.%s.address" $prefix $contract -}}
+        {{- if get $addresses $addrKey -}}
+          {{- $_ := set $chain $field (dict "configMapKeyRef" (dict "name" $cmName "key" $addrKey)) -}}
+        {{- end -}}
+      {{- end -}}
+      {{- $generated = append $generated $chain -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $overrides := dict -}}
+{{- range $c := $valuesChains -}}
+  {{- $_ := set $overrides (toString $c.name) $c -}}
+{{- end -}}
+{{- $chains := list -}}
+{{- $seen := dict -}}
+{{- range $g := $generated -}}
+  {{- $chains = append $chains (mergeOverwrite $g (deepCopy (get $overrides $g.name | default dict))) -}}
+  {{- $_ := set $seen $g.name true -}}
+{{- end -}}
+{{- range $c := $valuesChains -}}
+  {{- if not (hasKey $seen (toString $c.name)) -}}
+    {{- $chains = append $chains $c -}}
+  {{- end -}}
+{{- end -}}
+{{- toYaml (dict "chains" $chains) -}}
 {{- end -}}
 
 {{/*
@@ -96,7 +174,7 @@ Usage: include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom)
 {{- define "coprocessor.failIfMultipleLegacyNameClaims" -}}
 {{- $componentKey := .componentKey -}}
 {{- $claims := 0 -}}
-{{- range $chain := .root.Values.chains -}}
+{{- range $chain := (include "coprocessor.chains" .root | fromYaml).chains -}}
   {{- if and (hasKey $chain $componentKey) ((index $chain $componentKey).useLegacyName | default false) -}}
     {{- $claims = add1 $claims -}}
   {{- end -}}
