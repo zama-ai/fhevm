@@ -1,5 +1,10 @@
 import type { ChecksummedAddress } from '../types/primitives.js';
-import type { HostContractName, HostContractVersion, HostContractVersionString } from '../types/hostContract.js';
+import type {
+  HostContractName,
+  HostContractNameMap,
+  HostContractVersion,
+  HostContractVersionString,
+} from '../types/hostContract.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import { assertIsNonEmptyString } from '../base/string.js';
 import { getVersionAbi } from './abi-fragments/fragments.js';
@@ -210,16 +215,30 @@ export function isVersionEqual(
 }
 
 /**
- * Asserts that a {@link HostContractVersion} belongs to a specific contract.
+ * The address role of each contract name (see {@link HostContractNameMap}).
+ */
+const HOST_CONTRACT_NAME_ROLES: Readonly<Record<HostContractNameMap[HostContractName], HostContractName>> = {
+  ACL: 'ACL',
+  FHEVMExecutor: 'FHEVMExecutor',
+  HCULimit: 'HCULimit',
+  InputVerifier: 'InputVerifier',
+  KMSVerifier: 'KMSVerifier',
+  ProtocolConfig: 'ProtocolConfig',
+  ProtocolConfigReplica: 'ProtocolConfig',
+};
+
+/**
+ * Asserts that a {@link HostContractVersion} belongs to a contract allowed at
+ * the `hostContractName` address role.
  * Narrows the type to `HostContractVersion<name>` on success.
  *
- * @throws If `v.contractName` does not match the expected name.
+ * @throws If `v.contractName` is not allowed at the expected address role.
  */
 export function assertIsHostContractVersionOf<hostContractName extends HostContractName>(
   v: HostContractVersion,
   hostContractName: hostContractName,
 ): asserts v is HostContractVersion<hostContractName> {
-  if (v.contractName !== hostContractName) {
+  if (HOST_CONTRACT_NAME_ROLES[v.contractName] !== hostContractName) {
     throw new Error(`Invalid contract name. Expecting '${hostContractName}', got ${v.contractName}.`);
   }
 }

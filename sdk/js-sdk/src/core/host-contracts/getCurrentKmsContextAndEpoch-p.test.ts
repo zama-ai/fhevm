@@ -1,6 +1,6 @@
 import type { EthereumModule } from '../modules/ethereum/types.js';
 import type { RelayerModule } from '../modules/relayer/types.js';
-import type { HostContractVersion, HostContractVersionString } from '../types/hostContract.js';
+import type { HostContractNameMap, HostContractVersion, HostContractVersionString } from '../types/hostContract.js';
 import type { ChecksummedAddress, UintNumber } from '../types/primitives.js';
 import { describe, expect, it, vi } from 'vitest';
 import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
@@ -16,10 +16,10 @@ import { getCurrentKmsContextAndEpoch } from './getCurrentKmsContextAndEpoch-p.j
 
 const PROTOCOL_CONFIG_ADDRESS = polygonAmoy.fhevm.contracts.protocolConfig?.address as ChecksummedAddress;
 
-function hostContractVersion<name extends 'ProtocolConfig' | 'ProtocolConfigReplica'>(
-  contractName: name,
+function protocolConfigVersion(
+  contractName: HostContractNameMap['ProtocolConfig'],
   minor: number,
-): HostContractVersion<name> {
+): HostContractVersion<'ProtocolConfig'> {
   return {
     version: `${contractName} v0.${minor}.0` as HostContractVersionString,
     contractName,
@@ -52,7 +52,7 @@ describe('getCurrentKmsContextAndEpoch', () => {
   it('reads the context and epoch from a ProtocolConfigReplica v0.1.0', async () => {
     const { client, readContract } = makeClient();
     const fhevmContext = createFhevmClientFrozenContext({
-      hostContractVersions: { ProtocolConfigReplica: hostContractVersion('ProtocolConfigReplica', 1) },
+      hostContractVersions: { ProtocolConfig: protocolConfigVersion('ProtocolConfigReplica', 1) },
     });
 
     await expect(
@@ -68,7 +68,7 @@ describe('getCurrentKmsContextAndEpoch', () => {
   it('reads the context and epoch from a ProtocolConfig v0.2.0', async () => {
     const { client } = makeClient();
     const fhevmContext = createFhevmClientFrozenContext({
-      hostContractVersions: { ProtocolConfig: hostContractVersion('ProtocolConfig', 2) },
+      hostContractVersions: { ProtocolConfig: protocolConfigVersion('ProtocolConfig', 2) },
     });
 
     await expect(
@@ -79,7 +79,7 @@ describe('getCurrentKmsContextAndEpoch', () => {
   it('rejects a ProtocolConfig before v0.2.0', async () => {
     const { client, readContract } = makeClient();
     const fhevmContext = createFhevmClientFrozenContext({
-      hostContractVersions: { ProtocolConfig: hostContractVersion('ProtocolConfig', 1) },
+      hostContractVersions: { ProtocolConfig: protocolConfigVersion('ProtocolConfig', 1) },
     });
 
     await expect(

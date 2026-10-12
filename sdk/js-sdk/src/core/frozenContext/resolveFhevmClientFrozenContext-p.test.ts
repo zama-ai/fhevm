@@ -54,18 +54,19 @@ describe('resolveFhevmClientFrozenContext', () => {
   it('stores a canonical ProtocolConfig version under ProtocolConfig', async () => {
     const fhevmContext = await resolveFhevmClientFrozenContext(makeClient('ProtocolConfig v0.2.0'));
 
-    expect(fhevmContext.hostContractVersion('ProtocolConfig').version).toBe('ProtocolConfig v0.2.0');
-    expect(fhevmContext.hasHostContractVersion('ProtocolConfigReplica')).toBe(false);
+    expect(fhevmContext.hostContractVersion('ProtocolConfig')).toMatchObject({
+      version: 'ProtocolConfig v0.2.0',
+      contractName: 'ProtocolConfig',
+    });
   });
 
-  it('accepts a ProtocolConfigReplica at the ProtocolConfig address', async () => {
+  it('stores a ProtocolConfigReplica version under ProtocolConfig', async () => {
     const fhevmContext = await resolveFhevmClientFrozenContext(makeClient('ProtocolConfigReplica v0.1.0'));
 
-    expect(fhevmContext.hostContractVersion('ProtocolConfigReplica')).toMatchObject({
+    expect(fhevmContext.hostContractVersion('ProtocolConfig')).toMatchObject({
       version: 'ProtocolConfigReplica v0.1.0',
       contractName: 'ProtocolConfigReplica',
     });
-    expect(fhevmContext.hasHostContractVersion('ProtocolConfig')).toBe(false);
   });
 
   it('rejects another host contract at the ProtocolConfig address', async () => {
