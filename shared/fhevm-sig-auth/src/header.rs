@@ -58,11 +58,16 @@ impl FromStr for FhevmSigHeader {
             .ok_or(AuthError::Malformed("first parameter must be `expires=`"))?
             .parse()
             .map_err(|_| AuthError::Malformed("`expires` is not a u64"))?;
-        let signature = sig
+        let signature: Signature = sig
             .strip_prefix("sig=")
             .ok_or(AuthError::Malformed("second parameter must be `sig=`"))?
             .parse()
             .map_err(|e| AuthError::InvalidSignature(format!("`sig`: {e}")))?;
+        // A high-s signature has a low-s twin for the same signer (EIP-2): refuse it so a valid
+        // request has a single signature.
+        if signature.normalize_s().is_some() {
+            return Err(AuthError::InvalidSignature("`sig`: high s".to_owned()));
+        }
         Ok(Self { expires, signature })
     }
 }
@@ -70,6 +75,7 @@ impl FromStr for FhevmSigHeader {
 #[cfg(test)]
 mod tests {
     use crate::test_utils::*;
+    use alloy::primitives::{Signature, U256};
 
     #[tokio::test]
     async fn display_and_parse_round_trip() {
@@ -139,6 +145,26 @@ mod tests {
         );
         // The scheme is case-insensitive (RFC 9110).
         assert!(FhevmSigHeader::parse(header.to_lowercase().as_bytes()).is_ok());
+    }
+
+    #[tokio::test]
+    async fn high_s_signature_is_rejected() {
+        let (signer, domain, audience) = setup();
+        let header: FhevmSigHeader = header(&signer, &domain, audience).await.parse().unwrap();
+        let n = U256::from_str_radix(
+            "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141",
+            16,
+        )
+        .unwrap();
+        let sig = header.signature;
+        let twin = FhevmSigHeader {
+            signature: Signature::new(sig.r(), n - sig.s(), !sig.v()),
+            ..header
+        };
+        assert_eq!(
+            twin.to_string().parse::<FhevmSigHeader>(),
+            Err(AuthError::InvalidSignature("`sig`: high s".to_owned()))
+        );
     }
 
     #[tokio::test]
