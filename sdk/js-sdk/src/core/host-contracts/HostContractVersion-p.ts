@@ -217,7 +217,7 @@ export function isVersionEqual(
 /**
  * The address role of each contract name (see {@link HostContractNameMap}).
  */
-const HOST_CONTRACT_NAME_ROLES: Readonly<Record<HostContractNameMap[HostContractName], HostContractName>> = {
+const HOST_CONTRACT_NAME_ROLES: { readonly [K in HostContractName as HostContractNameMap[K]]: K } = {
   ACL: 'ACL',
   FHEVMExecutor: 'FHEVMExecutor',
   HCULimit: 'HCULimit',
