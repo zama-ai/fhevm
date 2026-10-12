@@ -2,11 +2,7 @@ use crate::chain_id::ChainId;
 use crate::utils::to_hex;
 use bigdecimal::num_traits::ToPrimitive;
 use opentelemetry::{trace::TraceContextExt, trace::TracerProvider, KeyValue};
-use opentelemetry_otlp::WithExportConfig;
-use opentelemetry_sdk::{
-    trace::{BatchConfigBuilder, BatchSpanProcessor, SdkTracerProvider},
-    Resource,
-};
+use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
 use prometheus::{register_histogram, Histogram};
 use sqlx::PgConnection;
 use std::fmt;
@@ -14,17 +10,11 @@ use std::{
     num::NonZeroUsize,
     str::FromStr,
     sync::{Arc, LazyLock, OnceLock},
-    time::Duration,
 };
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use tracing_subscriber::{
-    filter::{filter_fn, LevelFilter},
-    layer::SubscriberExt,
-    util::SubscriberInitExt,
-    Layer,
-};
+use tracing_subscriber::{filter::LevelFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Calls provider shutdown exactly once when dropped.
 pub struct TracerProviderGuard {
@@ -54,9 +44,6 @@ impl Drop for TracerProviderGuard {
 }
 
 static TRACER_PROVIDER: OnceLock<SdkTracerProvider> = OnceLock::new();
-const DEFAULT_OTLP_EXPORT_TIMEOUT: Duration = Duration::from_secs(3);
-const OTLP_BATCH_MAX_QUEUE_SIZE: usize = 512;
-const OTLP_BATCH_MAX_EXPORT_BATCH_SIZE: usize = 128;
 
 /// Flush buffered OTLP spans; call before `std::process::exit`.
 pub fn flush() {
@@ -127,27 +114,11 @@ pub fn init_json_subscriber_with_filter(
         }
     };
 
-    base.with(otlp_layer(tracer)).try_init()?;
+    let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    base.with(telemetry_layer).try_init()?;
     opentelemetry::global::set_tracer_provider(trace_provider.clone());
     let _ = TRACER_PROVIDER.set(trace_provider.clone());
     Ok(Some(TracerProviderGuard::new(trace_provider)))
-}
-
-/// The span-exporting layer. It drops OpenTelemetry's own spans and events (targets starting
-/// with `opentelemetry`), which would otherwise be exported as child spans and span events.
-fn otlp_layer<S>(tracer: opentelemetry_sdk::trace::Tracer) -> impl Layer<S>
-where
-    S: tracing::Subscriber + for<'span> tracing_subscriber::registry::LookupSpan<'span>,
-{
-    tracing_opentelemetry::layer()
-        .with_tracer(tracer)
-        .with_filter(filter_fn(|metadata| {
-            !is_otel_internal_target(metadata.target())
-        }))
-}
-
-fn is_otel_internal_target(target: &str) -> bool {
-    target.starts_with("opentelemetry")
 }
 
 /// Initializes tracing with JSON logs and best-effort OTLP export.
@@ -215,7 +186,6 @@ fn setup_otel_with_tracer(
 > {
     let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
-        .with_timeout(otlp_export_timeout())
         .build()?;
 
     let resource = Resource::builder_empty()
@@ -225,36 +195,13 @@ fn setup_otel_with_tracer(
         )])
         .build();
 
-    let batch_config = BatchConfigBuilder::default()
-        .with_max_queue_size(OTLP_BATCH_MAX_QUEUE_SIZE)
-        .with_max_export_batch_size(OTLP_BATCH_MAX_EXPORT_BATCH_SIZE)
-        .build();
-    let batch_processor = BatchSpanProcessor::builder(otlp_exporter)
-        .with_batch_config(batch_config)
-        .build();
-
     let trace_provider = SdkTracerProvider::builder()
         .with_resource(resource)
-        .with_span_processor(batch_processor)
+        .with_batch_exporter(otlp_exporter)
         .build();
 
     let tracer = trace_provider.tracer(tracer_name);
     Ok((tracer, trace_provider))
-}
-
-// A timeout set with `with_timeout` overrides the OTLP timeout env vars, so we read them
-// here and fall back to our default only when neither is set.
-fn otlp_export_timeout() -> Duration {
-    parse_timeout_env(opentelemetry_otlp::OTEL_EXPORTER_OTLP_TRACES_TIMEOUT)
-        .or_else(|| parse_timeout_env(opentelemetry_otlp::OTEL_EXPORTER_OTLP_TIMEOUT))
-        .unwrap_or(DEFAULT_OTLP_EXPORT_TIMEOUT)
-}
-
-fn parse_timeout_env(var: &str) -> Option<Duration> {
-    std::env::var(var)
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .map(Duration::from_millis)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -661,36 +608,5 @@ mod tests {
         // A second shutdown is a no-op.
         guard.shutdown_once();
         assert!(guard.tracer_provider.is_none());
-    }
-
-    #[test]
-    fn otlp_layer_drops_opentelemetry_events() {
-        use opentelemetry_sdk::trace::InMemorySpanExporter;
-
-        let exporter = InMemorySpanExporter::default();
-        let provider = SdkTracerProvider::builder()
-            .with_simple_exporter(exporter.clone())
-            .build();
-        let subscriber = tracing_subscriber::registry().with(otlp_layer(provider.tracer("test")));
-
-        tracing::subscriber::with_default(subscriber, || {
-            let _span = tracing::info_span!("request").entered();
-            tracing::info!(target: "opentelemetry", "internal");
-            tracing::info!(target: "opentelemetry_sdk", "internal");
-            tracing::info!(target: "opentelemetry-otlp", "internal");
-            tracing::info!(target: "opentelemetry_otlp", "internal");
-            tracing::info!(target: "host_listener", "application");
-        });
-
-        let spans = exporter.get_finished_spans().expect("finished spans");
-        let [span] = spans.as_slice() else {
-            panic!("expected one exported span, got {}", spans.len());
-        };
-        let events: Vec<&str> = span
-            .events
-            .iter()
-            .map(|event| event.name.as_ref())
-            .collect();
-        assert_eq!(events, ["application"]);
     }
 }
