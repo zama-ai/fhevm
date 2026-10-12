@@ -6,6 +6,7 @@ use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
 use fhevm_engine_common::bridge::chain_id_from_handle;
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::handle_metadata::validate_computed_handle_metadata;
 use fhevm_engine_common::types::{
     Handle, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION,
 };
@@ -456,6 +457,15 @@ pub async fn ingest_block_logs(
                     validate_scalar_mode(&event.data).map_err(|reason| {
                         sqlx::Error::Protocol(reason.into())
                     })?;
+                    for handle in tfhe_result_handles(&event.data) {
+                        validate_computed_handle_metadata(
+                            &handle.0,
+                            chain_id.as_u64(),
+                        )
+                        .map_err(|reason| {
+                            sqlx::Error::Protocol(reason.into())
+                        })?;
+                    }
                     fhe_event_count = fhe_event_count.saturating_add(1);
                     let log = LogTfhe {
                         event,

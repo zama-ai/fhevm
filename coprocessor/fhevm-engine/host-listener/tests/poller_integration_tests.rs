@@ -107,6 +107,7 @@ async fn poller_catches_up_to_safe_tip(
             signer_address,
             U256::from(i + 1),
             4_u8,
+            chain_id.as_u64(),
         );
         let tfhe_receipt = provider
             .send_transaction(tfhe_txn_req)
@@ -125,7 +126,11 @@ async fn poller_catches_up_to_safe_tip(
             &acl_contract,
             signer_address,
             signer_address,
-            U256::from(i + 1).into(),
+            common::mock_trivial_encrypt_result(
+                U256::from(i + 1),
+                4_u8,
+                chain_id.as_u64(),
+            ),
         );
         let acl_receipt = provider
             .send_transaction(acl_txn_req)
