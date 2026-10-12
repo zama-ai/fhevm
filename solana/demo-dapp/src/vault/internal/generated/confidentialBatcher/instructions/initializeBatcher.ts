@@ -11,6 +11,8 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
+  getAddressDecoder,
+  getAddressEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -175,6 +177,7 @@ export type InitializeBatcherInstructionData = {
   settleDeadlineSecs: bigint;
   direction: BatchDirection;
   authorityFundingLamports: bigint;
+  admin: Address;
 };
 
 export type InitializeBatcherInstructionDataArgs = {
@@ -182,6 +185,7 @@ export type InitializeBatcherInstructionDataArgs = {
   settleDeadlineSecs: number | bigint;
   direction: BatchDirectionArgs;
   authorityFundingLamports: number | bigint;
+  admin: Address;
 };
 
 export function getInitializeBatcherInstructionDataEncoder(): FixedSizeEncoder<InitializeBatcherInstructionDataArgs> {
@@ -192,6 +196,7 @@ export function getInitializeBatcherInstructionDataEncoder(): FixedSizeEncoder<I
       ['settleDeadlineSecs', getU64Encoder()],
       ['direction', getBatchDirectionEncoder()],
       ['authorityFundingLamports', getU64Encoder()],
+      ['admin', getAddressEncoder()],
     ]),
     (value) => ({ ...value, discriminator: INITIALIZE_BATCHER_DISCRIMINATOR }),
   );
@@ -204,6 +209,7 @@ export function getInitializeBatcherInstructionDataDecoder(): FixedSizeDecoder<I
     ['settleDeadlineSecs', getU64Decoder()],
     ['direction', getBatchDirectionDecoder()],
     ['authorityFundingLamports', getU64Decoder()],
+    ['admin', getAddressDecoder()],
   ]);
 }
 
@@ -321,6 +327,7 @@ export type InitializeBatcherAsyncInput<
   settleDeadlineSecs: InitializeBatcherInstructionDataArgs['settleDeadlineSecs'];
   direction: InitializeBatcherInstructionDataArgs['direction'];
   authorityFundingLamports: InitializeBatcherInstructionDataArgs['authorityFundingLamports'];
+  admin: InitializeBatcherInstructionDataArgs['admin'];
 };
 
 export async function getInitializeBatcherInstructionAsync<
@@ -891,6 +898,7 @@ export type InitializeBatcherInput<
   settleDeadlineSecs: InitializeBatcherInstructionDataArgs['settleDeadlineSecs'];
   direction: InitializeBatcherInstructionDataArgs['direction'];
   authorityFundingLamports: InitializeBatcherInstructionDataArgs['authorityFundingLamports'];
+  admin: InitializeBatcherInstructionDataArgs['admin'];
 };
 
 export function getInitializeBatcherInstruction<

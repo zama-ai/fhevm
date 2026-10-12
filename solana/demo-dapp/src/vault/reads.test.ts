@@ -17,7 +17,15 @@ import { getJoinRecordEncoder } from './internal/generated/confidentialBatcher/a
 import { findBatchPda } from './internal/generated/confidentialBatcher/pdas/batch.js';
 import { findJoinRecordPda } from './internal/generated/confidentialBatcher/pdas/joinRecord.js';
 import type { VaultDemoRoots } from './derive.js';
-import { findRecentJoin, getBatchJoinRecords, getJoinRecord, RECENT_BATCH_SCAN_LIMIT } from './reads.js';
+import {
+  dispatchableAt,
+  findRecentJoin,
+  getBatchJoinRecords,
+  getJoinRecord,
+  RECENT_BATCH_SCAN_LIMIT,
+  settleDeadline,
+  type BatchState,
+} from './reads.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -81,6 +89,8 @@ describe('getBatchJoinRecords', () => {
         index: 0n,
         status: 0,
         openedAt: 0n,
+        minBatchAgeSecs: 0n,
+        settleDeadlineSecs: 0n,
         dispatchedAt: 0n,
         joinCount: 0n,
         totalJoined: 0n,
@@ -112,6 +122,8 @@ describe('findRecentJoin', () => {
       joinConfidentialMint: addr(4),
       payoutConfidentialMint: addr(13),
       vault: addr(10),
+      admin: addr(3),
+      paused: false,
       minBatchAgeSecs: 0n,
       settleDeadlineSecs: 60n,
       nextBatchIndex: pending + 1n,
@@ -159,5 +171,13 @@ describe('findRecentJoin', () => {
     await expect(findRecentJoin({} as never, roots, user)).resolves.toBe(null);
     expect(scanned()).toHaveLength(Number(RECENT_BATCH_SCAN_LIMIT));
     expect(scanned().at(-1)).toBe(await recordIn(6n));
+  });
+});
+
+describe('batch policy', () => {
+  it("times dispatch and the settle deadline by the policy the batch opened with", () => {
+    const batch = { openedAt: 1_000n, minBatchAgeSecs: 60n, dispatchedAt: 2_000n, settleDeadlineSecs: 0n } as BatchState;
+    expect(dispatchableAt(batch)).toBe(1_060n);
+    expect(settleDeadline(batch)).toBe(2_000n);
   });
 });

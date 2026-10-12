@@ -181,7 +181,7 @@ describe("demo and specimen PDA golden", () => {
         batcher: createNoopSigner(key("batcher")), vault: key("vault"),
         batchJoinTokenAccount: key("tokenAccount"), batchJoinBalanceStore: key("authority"),
         batchPayoutTokenAccount: key("tokenAccount"), batchPayoutBalanceStore: key("authority"),
-        minBatchAgeSecs: 0n, settleDeadlineSecs: 1n, direction: BatchDirection.Deposit,
+        minBatchAgeSecs: 0n, settleDeadlineSecs: 1n, direction: BatchDirection.Deposit, admin: key("authority"),
       }, config));
       const batch0Derived = await derived(batch0);
       expect(initialize.programAddress).toBe(programAddress);

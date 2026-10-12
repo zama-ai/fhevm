@@ -63,6 +63,13 @@ export type Batch = {
   status: BatchStatus;
   /** Unix time the batch opened at; dispatch requires `min_batch_age_secs` past. */
   openedAt: bigint;
+  /** Minimum seconds the batch stays open before dispatch, frozen when it opened. */
+  minBatchAgeSecs: bigint;
+  /**
+   * Seconds after dispatch during which only `settle` may finish the batch, frozen when it
+   * opened; from then on only `cancel_dispatch` may, and anyone can call it.
+   */
+  settleDeadlineSecs: bigint;
   /** Unix time the batch was dispatched at (zero before dispatch). */
   dispatchedAt: bigint;
   /** Number of join calls routed into this batch. */
@@ -94,6 +101,13 @@ export type BatchArgs = {
   status: BatchStatusArgs;
   /** Unix time the batch opened at; dispatch requires `min_batch_age_secs` past. */
   openedAt: number | bigint;
+  /** Minimum seconds the batch stays open before dispatch, frozen when it opened. */
+  minBatchAgeSecs: number | bigint;
+  /**
+   * Seconds after dispatch during which only `settle` may finish the batch, frozen when it
+   * opened; from then on only `cancel_dispatch` may, and anyone can call it.
+   */
+  settleDeadlineSecs: number | bigint;
   /** Unix time the batch was dispatched at (zero before dispatch). */
   dispatchedAt: number | bigint;
   /** Number of join calls routed into this batch. */
@@ -125,6 +139,8 @@ export function getBatchEncoder(): FixedSizeEncoder<BatchArgs> {
       ['index', getU64Encoder()],
       ['status', getBatchStatusEncoder()],
       ['openedAt', getI64Encoder()],
+      ['minBatchAgeSecs', getU64Encoder()],
+      ['settleDeadlineSecs', getU64Encoder()],
       ['dispatchedAt', getI64Encoder()],
       ['joinCount', getU64Encoder()],
       ['authorityBump', getU8Encoder()],
@@ -146,6 +162,8 @@ export function getBatchDecoder(): FixedSizeDecoder<Batch> {
     ['index', getU64Decoder()],
     ['status', getBatchStatusDecoder()],
     ['openedAt', getI64Decoder()],
+    ['minBatchAgeSecs', getU64Decoder()],
+    ['settleDeadlineSecs', getU64Decoder()],
     ['dispatchedAt', getI64Decoder()],
     ['joinCount', getU64Decoder()],
     ['authorityBump', getU8Decoder()],
@@ -213,5 +231,5 @@ export async function fetchAllMaybeBatch(
 }
 
 export function getBatchSize(): number {
-  return 131;
+  return 147;
 }

@@ -4,7 +4,6 @@ import { address, createNoopSigner } from '@solana/kit';
 const mocks = vi.hoisted(() => ({
   sendFheTransaction: vi.fn(),
   getBatchByIndex: vi.fn(),
-  getBatcher: vi.fn(),
   getBatchJoinRecords: vi.fn(),
   buildQuit: vi.fn((input: { user: string }) => Promise.resolve({ kind: 'quit', user: input.user })),
   buildCancel: vi.fn(() => Promise.resolve({ kind: 'cancel' })),
@@ -19,7 +18,6 @@ vi.mock('./vault/index.js', () => ({
   buildCancelDispatchInstruction: mocks.buildCancel,
   buildQuitInstruction: mocks.buildQuit,
   getBatchByIndex: mocks.getBatchByIndex,
-  getBatcher: mocks.getBatcher,
   getBatchJoinRecords: mocks.getBatchJoinRecords,
   readHostPolicy: () => Promise.resolve({}),
   settleDeadline: () => 100n,
@@ -62,7 +60,6 @@ describe('the keeper refunds every participant of a refunding batch', () => {
     mocks.getBatchByIndex
       .mockResolvedValueOnce(batchIn(BatchStatus.Dispatched))
       .mockResolvedValue(batchIn(BatchStatus.Refunding));
-    mocks.getBatcher.mockResolvedValue({});
     mocks.clock.mockResolvedValue({ unixTimestamp: 100n });
     mocks.getBatchJoinRecords.mockResolvedValue([{ user: 'alice' }]);
     expect(await settleOrCancelVaultBatch(session, position, 'deposit')).toBe('signature');

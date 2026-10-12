@@ -41,14 +41,14 @@ export async function getBatcher(rpc: SolanaRpc, batcher: Address): Promise<Batc
   return account.data;
 }
 
-/** Unix time from which a pending batch may be dispatched. */
-export function dispatchableAt(batch: BatchState, batcher: BatcherState): bigint {
-  return batch.openedAt + batcher.minBatchAgeSecs;
+/** Unix time from which a pending batch may be dispatched, by the policy it opened with. */
+export function dispatchableAt(batch: BatchState): bigint {
+  return batch.openedAt + batch.minBatchAgeSecs;
 }
 
 /** Unix time from which a dispatched batch can no longer settle and anyone may cancel it. */
-export function settleDeadline(batch: BatchState, batcher: BatcherState): bigint {
-  return batch.dispatchedAt + batcher.settleDeadlineSecs;
+export function settleDeadline(batch: BatchState): bigint {
+  return batch.dispatchedAt + batch.settleDeadlineSecs;
 }
 
 /**

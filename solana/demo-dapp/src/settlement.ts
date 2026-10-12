@@ -16,7 +16,6 @@ import {
   type VaultDemoRoots,
   findJoinRecordPda,
   getBatchByIndex,
-  getBatcher,
   getJoinRecord,
   getCloseJoinRecordInstructionAsync,
   readHostPolicy,
@@ -74,9 +73,8 @@ export const readVaultLifecycle = async (
 ): Promise<BatchLifecycle> => {
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
   if (batch.state.status === BatchStatus.Pending) {
-    const batcher = await getBatcher(rpc, vaultRoots(session.config, direction).batcher);
     const { unixTimestamp } = await fetchSysvarClock(rpc);
-    const from = dispatchableAt(batch.state, batcher);
+    const from = dispatchableAt(batch.state);
     return {
       kind: 'awaiting-dispatch',
       remainingSecs: unixTimestamp >= from ? 0n : from - unixTimestamp,
@@ -110,8 +108,7 @@ export const dispatchVaultBatch = async (
   const roots = vaultRoots(session.config, direction);
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
   if (batch.state.status >= BatchStatus.Dispatched) return null;
-  const batcher = await getBatcher(rpc, roots.batcher);
-  if ((await fetchSysvarClock(rpc)).unixTimestamp < dispatchableAt(batch.state, batcher)) {
+  if ((await fetchSysvarClock(rpc)).unixTimestamp < dispatchableAt(batch.state)) {
     throw new Error('The batch is not old enough to dispatch yet');
   }
   const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
@@ -187,8 +184,7 @@ export const settleOrCancelVaultBatch = async (
   let signature: Signature | null = null;
   if (status === BatchStatus.Dispatched) {
     const keeperClient = createDemoClient(session.config, session.keeper);
-    const batcher = await getBatcher(rpc, roots.batcher);
-    if ((await fetchSysvarClock(rpc)).unixTimestamp >= settleDeadline(batch.state, batcher)) {
+    if ((await fetchSysvarClock(rpc)).unixTimestamp >= settleDeadline(batch.state)) {
       // Settle is refused from the deadline on; cancelling opens the participants' refunds instead.
       const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
       const cancel = await buildCancelDispatchInstruction({

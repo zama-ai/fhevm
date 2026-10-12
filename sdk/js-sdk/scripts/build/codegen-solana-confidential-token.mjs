@@ -250,8 +250,8 @@ const targets = [
       // pruned (account-only).
       definedTypes: new Set(['batchDirection', 'batchStatus']),
       // Keep the three account decoders the vault-module reads consume: Batcher (direction + mints +
-      // vault + batch ages + next_batch_index), Batch (status + opened_at + dispatched_at + join_count +
-      // burned_total_handle), and JoinRecord (per-user claim state).
+      // vault + next_batch_index), Batch (status + opened_at + dispatched_at + the policy it opened
+      // with + join_count + burned_total_handle), and JoinRecord (per-user claim state).
       accounts: new Set(['batch', 'batcher', 'joinRecord']),
       pdas: new Set(['batch', 'batchAuthority', 'joinRecord', 'batchJoinUnderlying', 'batchPayoutUnderlying']),
     },

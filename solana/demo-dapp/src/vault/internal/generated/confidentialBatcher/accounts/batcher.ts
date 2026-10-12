@@ -17,6 +17,8 @@ import {
   fixEncoderSize,
   getAddressDecoder,
   getAddressEncoder,
+  getBooleanDecoder,
+  getBooleanEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -65,12 +67,13 @@ export type Batcher = {
   payoutConfidentialMint: Address;
   /** Public `demo_vault::Vault` the batcher fronts. */
   vault: Address;
-  /** Minimum seconds a batch must stay open before dispatch. */
+  /** Key that may pause the batcher, set its policy and hand the role on. */
+  admin: Address;
+  /** While paused, joins, dispatches and settles are refused. */
+  paused: boolean;
+  /** Minimum batch age copied into each batch when it opens. */
   minBatchAgeSecs: bigint;
-  /**
-   * Seconds after dispatch during which only `settle` may finish the batch; from then on only
-   * `cancel_dispatch` may, and anyone can call it.
-   */
+  /** Settle deadline copied into each batch when it opens. */
   settleDeadlineSecs: bigint;
   /** Index of the next batch to open; the pending batch is the one before it. */
   nextBatchIndex: bigint;
@@ -91,12 +94,13 @@ export type BatcherArgs = {
   payoutConfidentialMint: Address;
   /** Public `demo_vault::Vault` the batcher fronts. */
   vault: Address;
-  /** Minimum seconds a batch must stay open before dispatch. */
+  /** Key that may pause the batcher, set its policy and hand the role on. */
+  admin: Address;
+  /** While paused, joins, dispatches and settles are refused. */
+  paused: boolean;
+  /** Minimum batch age copied into each batch when it opens. */
   minBatchAgeSecs: number | bigint;
-  /**
-   * Seconds after dispatch during which only `settle` may finish the batch; from then on only
-   * `cancel_dispatch` may, and anyone can call it.
-   */
+  /** Settle deadline copied into each batch when it opens. */
   settleDeadlineSecs: number | bigint;
   /** Index of the next batch to open; the pending batch is the one before it. */
   nextBatchIndex: number | bigint;
@@ -111,6 +115,8 @@ export function getBatcherEncoder(): FixedSizeEncoder<BatcherArgs> {
       ['joinConfidentialMint', getAddressEncoder()],
       ['payoutConfidentialMint', getAddressEncoder()],
       ['vault', getAddressEncoder()],
+      ['admin', getAddressEncoder()],
+      ['paused', getBooleanEncoder()],
       ['minBatchAgeSecs', getU64Encoder()],
       ['settleDeadlineSecs', getU64Encoder()],
       ['nextBatchIndex', getU64Encoder()],
@@ -127,6 +133,8 @@ export function getBatcherDecoder(): FixedSizeDecoder<Batcher> {
     ['joinConfidentialMint', getAddressDecoder()],
     ['payoutConfidentialMint', getAddressDecoder()],
     ['vault', getAddressDecoder()],
+    ['admin', getAddressDecoder()],
+    ['paused', getBooleanDecoder()],
     ['minBatchAgeSecs', getU64Decoder()],
     ['settleDeadlineSecs', getU64Decoder()],
     ['nextBatchIndex', getU64Decoder()],
@@ -189,5 +197,5 @@ export async function fetchAllMaybeBatcher(
 }
 
 export function getBatcherSize(): number {
-  return 129;
+  return 162;
 }
