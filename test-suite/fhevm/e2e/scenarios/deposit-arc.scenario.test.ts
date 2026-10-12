@@ -36,7 +36,6 @@ import { targetsCleartext } from "../../src/solana/target";
 import { depositRoots, resolveDemoConfigPath, type VaultDemoRoots } from "../../demo/config";
 import { readDemoAuthorization } from "../../demo/lifecycle";
 import { demoKeypairs, loadDemoEnv } from "../../demo/loadDemoEnv";
-import { prepareNextBatch } from "@demo-dapp/batchProvisioning";
 import { createDemoClient } from "@demo-dapp/demoClient";
 import { parseRuntimeDemoConfig } from "@demo-dapp/demoConfig";
 
@@ -199,8 +198,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       expect(account.value).not.toBeNull();
       expect(account.value?.owner).toBe(vault.CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
 
-      // Step 5: the join targets the batcher's pending batch. A batcher always has one: the seeder's
-      // initialize_batcher opens batch 0, and each dispatch opens the next.
+      // Step 5: the join targets the batcher's pending batch (INVARIANTS #70).
       const roots = depositRoots(config);
       const batchBeforeJoin = await vault.getCurrentBatch(rpc, roots);
       expect(batchBeforeJoin.state.status).toBe(vault.BatchStatus.Pending);
@@ -304,7 +302,6 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
           roots,
           batchIndex: batchBeforeJoin.index,
           authorityFundingLamports: BigInt(config.authorityFundingLamports),
-          tokenProgram: TOKEN_PROGRAM_ADDRESS,
           host,
         }),
       ]);
@@ -505,7 +502,6 @@ test.skipIf(!runsDemoScenarios)(
     const readConfig = async () => parseRuntimeDemoConfig(
       JSON.parse(await fs.readFile(resolveDemoConfigPath(), 'utf8')), authorization.bootId,
     );
-    const dappConfig = await readConfig();
     const rpc = createFinalizedRpc(env.rpcUrl);
     const host = await vault.readHostPolicy(rpc);
     const aliceClient = createDemoClient(env, alice);
@@ -513,7 +509,6 @@ test.skipIf(!runsDemoScenarios)(
     const roots = depositRoots(config);
     const personas = await loadPersonas(env, { alice: demoKeypairs(env).alice, keeper: demoKeypairs(env).keeper });
     await personas.fund(personas.roles.keeper!, 0.2);
-    await prepareNextBatch(dappConfig, keeper, 'deposit');
     const current = await vault.getCurrentBatch(rpc, roots);
     expect(current.state.status).toBe(vault.BatchStatus.Pending);
     // Never cancel another participant's work, including an earlier failed run.

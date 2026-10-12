@@ -298,15 +298,20 @@ const eventAuthority = pdaNode({
   ],
 });
 
+// The seed prefix a program exports as the IDL constant `name`.
+function idlConstantSeed(idl, name) {
+  const constant = idl.constants.find((entry) => entry.name === name);
+  if (!constant) throw new Error(`${name} is missing from the committed ${idl.metadata.name} IDL`);
+  return constantPdaSeedNodeFromBytes('base58', getBase58Decoder().decode(Uint8Array.from(JSON.parse(constant.value))));
+}
+
 // zama-host derives an app's meter from the app its stores name at run time (block_cap.rs), so no
 // instruction declares the meter's seeds. Only the prefix comes from the IDL; the (appProgram, scope)
 // order is typed here and checked by pda-golden.test.ts.
-const hcuBlockMeterSeed = hostIdl.constants.find(({ name }) => name === 'HCU_BLOCK_METER_SEED');
-if (!hcuBlockMeterSeed) throw new Error('HCU_BLOCK_METER_SEED is missing from the committed zama-host IDL');
 const hcuBlockMeter = pdaNode({
   name: 'hcuBlockMeter',
   seeds: [
-    constantPdaSeedNodeFromBytes('base58', getBase58Decoder().decode(Uint8Array.from(JSON.parse(hcuBlockMeterSeed.value)))),
+    idlConstantSeed(hostIdl, 'HCU_BLOCK_METER_SEED'),
     variablePdaSeedNode('appProgram', publicKeyTypeNode()),
     variablePdaSeedNode('scope', publicKeyTypeNode()),
   ],
@@ -317,12 +322,10 @@ const hcuBlockMeter = pdaNode({
 // (batcher, index) order is typed here and checked by pda-golden.test.ts.
 const batcherTarget = targets.find(({ idlPath }) => idlPath === demoIdlUrl('confidential_batcher.json'));
 function batchPda(batcherIdl) {
-  const batchSeed = batcherIdl.constants.find(({ name }) => name === 'BATCH_SEED');
-  if (!batchSeed) throw new Error('BATCH_SEED is missing from the committed confidential-batcher IDL');
   return pdaNode({
     name: 'batch',
     seeds: [
-      constantPdaSeedNodeFromBytes('base58', getBase58Decoder().decode(Uint8Array.from(JSON.parse(batchSeed.value)))),
+      idlConstantSeed(batcherIdl, 'BATCH_SEED'),
       variablePdaSeedNode('batcher', publicKeyTypeNode()),
       variablePdaSeedNode('index', numberTypeNode('u64')),
     ],
@@ -379,7 +382,9 @@ for (const target of targets) {
         [name]: { pdas: [...pdas.filter((pda) => pda.name !== 'batch'), batchPda(anchorIdl)] },
       }),
     );
-    // dispatch's next batch derives its authority and SPL accounts with the batch's own seeds.
+    // Codama names a PDA after the account that declares its seeds, so dispatch would import
+    // findNextBatchAuthorityPda and siblings, which no program defines. They are the batch PDAs,
+    // keyed on the next batch.
     const ofNextBatch = (pda) => ({
       defaultValue: pdaValueNode(pdaLinkNode(pda), [pdaSeedValueNode('batch', accountValueNode('nextBatch'))]),
     });

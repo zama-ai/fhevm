@@ -18,7 +18,7 @@ import {
 } from './deposit';
 import { recordTransactionEvidence } from './evidenceStore';
 import { withWalletMutationLock } from './mutationLock';
-import { prepareDemoBatch, prepareDemoDepositBatch, runDemoOperatorAction } from './operatorClient';
+import { runDemoOperatorAction } from './operatorClient';
 import { clearPermitCache } from './permitCache';
 import {
   findCompletedRedeem,
@@ -478,8 +478,6 @@ export function useDemoController() {
         await ensureDemoFunding(session.config, session.signer.address, source === 'usdc' ? usdcToBaseUnits(amount) : 0n);
       }
       session.assertActive();
-      const target = await prepareDemoDepositBatch();
-      session.assertActive();
       const result = await withWalletMutationLock(session, () =>
         depositToVault(
           session,
@@ -487,7 +485,6 @@ export function useDemoController() {
           (stage) => {
             commit(generation, { deposit: { kind: 'running', stage } });
           },
-          target,
           source,
           revealedSource?.handle,
         ),
@@ -568,8 +565,6 @@ export function useDemoController() {
       commit(generation, { revealedShares: null });
       const amount = (shares.value * BigInt(percentage)) / 100n;
       if (amount === 0n) throw new Error(`The private share balance is too small to redeem ${percentage}%`);
-      await prepareDemoBatch('redeem');
-      session.assertActive();
       const result = await withWalletMutationLock(session, () =>
         joinRedeemBatch(session, amount, shares.handle, (stage) => {
           commit(generation, { redeem: { kind: 'running', stage } });

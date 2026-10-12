@@ -1,8 +1,7 @@
 //! Opens a batch: the `Batch` account, its per-batch authority, its own
 //! confidential token accounts (join and payout side), and its plain SPL
 //! accounts for settle's redeem/vault/wrap phases. `initialize_batcher` opens
-//! batch 0 and `dispatch` opens the next batch, so a batcher always has exactly
-//! one pending batch.
+//! batch 0 and `dispatch` opens the next batch (INVARIANTS #70).
 //!
 //! One batch, one token account: the burned/revealed total is exactly this
 //! batch's sum, so dust from an earlier batch can never leak into it (the EVM

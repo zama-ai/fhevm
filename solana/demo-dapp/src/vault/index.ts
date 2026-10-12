@@ -54,12 +54,14 @@ export {
 } from './derive.js';
 export {
   dispatchableAt,
+  findRecentJoin,
   getBatcher,
   getBatchByIndex,
   getBatchJoinRecords,
   getCurrentBatch,
   getEncryptedStore,
   getJoinRecord,
+  RECENT_BATCH_SCAN_LIMIT,
   settleDeadline,
   type BatcherState,
   type BatchState,

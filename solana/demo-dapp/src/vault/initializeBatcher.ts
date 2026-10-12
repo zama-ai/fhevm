@@ -1,7 +1,6 @@
-import { tokenStoreAddress } from './internal/encryptedStores.js';
 import { findEventAuthorityPda as findTokenEventAuthorityPda } from '@fhevm/confidential-token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
-import type { Address, Instruction, TransactionSigner } from '@solana/kit';
+import type { Instruction, TransactionSigner } from '@solana/kit';
 import { tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 import { getInitializeBatcherInstructionAsync } from './internal/generated/confidentialBatcher/instructions/initializeBatcher.js';
 import type { BatchDirection } from './internal/generated/confidentialBatcher/types/batchDirection.js';
@@ -20,8 +19,6 @@ export type SolanaVaultInitializeBatcherParameters = HostPolicyParameters & {
   readonly direction: BatchDirection;
   /** Lamports batch 0's authority is funded with to pay its owner-charged rent. */
   readonly authorityFundingLamports: bigint;
-  /** Token program that owns the underlying mints (`Tokenkeg` or Token-2022). */
-  readonly tokenProgram: Address;
 };
 
 /**
@@ -49,14 +46,14 @@ export async function buildInitializeBatcherInstruction(
     batch: batch.batch,
     joinConfidentialMint: roots.joinConfidentialMint,
     batchJoinTokenAccount: batch.batchJoinTokenAccount,
-    batchJoinBalanceStore: await tokenStoreAddress(roots.joinConfidentialMint, batch.batchJoinTokenAccount),
+    // A token account has one encrypted store, holding both its balance and its burned amount.
+    batchJoinBalanceStore: batch.batchBurnedAmountStore,
     payoutConfidentialMint: roots.payoutConfidentialMint,
     batchPayoutTokenAccount: batch.batchPayoutTokenAccount,
     batchPayoutBalanceStore: batch.batchPayoutBalanceStore,
     joinUnderlyingMint: roots.joinUnderlyingMint,
     payoutUnderlyingMint: roots.payoutUnderlyingMint,
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
-    tokenProgram: parameters.tokenProgram,
     minBatchAgeSecs: parameters.minBatchAgeSecs,
     settleDeadlineSecs: parameters.settleDeadlineSecs,
     direction: parameters.direction,

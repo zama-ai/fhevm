@@ -1,17 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const fetchEncodedAccount = vi.hoisted(() => vi.fn());
+const fetchEncodedAccounts = vi.hoisted(() => vi.fn());
 vi.mock('@solana/kit', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@solana/kit')>()),
   fetchEncodedAccount: (...args: unknown[]) => fetchEncodedAccount(...args),
+  fetchEncodedAccounts: (...args: unknown[]) => fetchEncodedAccounts(...args),
 }));
 
 import { address, getBase58Encoder, getBase64Decoder, type Address } from '@solana/kit';
 import { base58 } from '@scure/base';
 
 import { getBatchEncoder } from './internal/generated/confidentialBatcher/accounts/batch.js';
+import { getBatcherEncoder } from './internal/generated/confidentialBatcher/accounts/batcher.js';
 import { getJoinRecordEncoder } from './internal/generated/confidentialBatcher/accounts/joinRecord.js';
-import { getBatchJoinRecords, getJoinRecord } from './reads.js';
+import { findBatchPda } from './internal/generated/confidentialBatcher/pdas/batch.js';
+import { findJoinRecordPda } from './internal/generated/confidentialBatcher/pdas/joinRecord.js';
+import type { VaultDemoRoots } from './derive.js';
+import { findRecentJoin, getBatchJoinRecords, getJoinRecord, RECENT_BATCH_SCAN_LIMIT } from './reads.js';
 
 function addr(fill: number): Address {
   return address(base58.encode(new Uint8Array(32).fill(fill)));
@@ -90,5 +96,68 @@ describe('getBatchJoinRecords', () => {
     const records = await getBatchJoinRecords(rpc as never, addr(4));
 
     expect(records.map(({ user }) => user)).toEqual([addr(100), addr(102)]);
+  });
+});
+
+describe('findRecentJoin', () => {
+  const roots = { batcher: addr(2) } as VaultDemoRoots;
+  const user = addr(100);
+  const batchAt = async (index: bigint) => (await findBatchPda({ batcher: roots.batcher, index }))[0];
+  const recordIn = async (index: bigint) => (await findJoinRecordPda({ batch: await batchAt(index), user }))[0];
+
+  /** A batcher whose pending batch is `pending`, and a user who joined the batches at `joined`. */
+  const chain = async (pending: bigint, joined: readonly bigint[]) => {
+    const batcher = getBatcherEncoder().encode({
+      direction: 0,
+      joinConfidentialMint: addr(4),
+      payoutConfidentialMint: addr(13),
+      vault: addr(10),
+      minBatchAgeSecs: 0n,
+      settleDeadlineSecs: 60n,
+      nextBatchIndex: pending + 1n,
+    });
+    fetchEncodedAccount.mockResolvedValue({ exists: true, address: roots.batcher, data: batcher });
+    const records = new Map(
+      await Promise.all(
+        joined.map(async (index) => [await recordIn(index), await batchAt(index)] as const),
+      ),
+    );
+    fetchEncodedAccounts.mockImplementation(async (_rpc: unknown, addresses: Address[]) =>
+      addresses.map((address) => {
+        const batch = records.get(address);
+        return batch === undefined
+          ? { exists: false, address }
+          : { exists: true, address, data: getJoinRecordEncoder().encode({ batch, user, claimed: false, bump: 255 }) };
+      }),
+    );
+  };
+  const scanned = (): Address[] => fetchEncodedAccounts.mock.lastCall![1];
+
+  it('finds the newest join, including one in a batch already dispatched', async () => {
+    await chain(4n, [1n, 3n]);
+    await expect(findRecentJoin({} as never, roots, user)).resolves.toMatchObject({
+      batchIndex: 3n,
+      batch: await batchAt(3n),
+      joinRecord: { user, claimed: false },
+    });
+    expect(scanned()).toEqual(await Promise.all([4n, 3n, 2n, 1n, 0n].map(recordIn)));
+  });
+
+  it("looks in the preferred batch first, unless it is not one of the batcher's", async () => {
+    await chain(4n, [1n, 3n]);
+    const preferred = { batchIndex: 1n, batch: await batchAt(1n) };
+    await expect(findRecentJoin({} as never, roots, user, preferred)).resolves.toMatchObject({ batchIndex: 1n });
+    expect(scanned()).toEqual(await Promise.all([1n, 4n, 3n, 2n, 0n].map(recordIn)));
+    await expect(
+      findRecentJoin({} as never, roots, user, { batchIndex: 1n, batch: await batchAt(2n) }),
+    ).resolves.toMatchObject({ batchIndex: 3n });
+  });
+
+  it('looks back at most RECENT_BATCH_SCAN_LIMIT batches', async () => {
+    const pending = RECENT_BATCH_SCAN_LIMIT + 5n;
+    await chain(pending, [5n]);
+    await expect(findRecentJoin({} as never, roots, user)).resolves.toBe(null);
+    expect(scanned()).toHaveLength(Number(RECENT_BATCH_SCAN_LIMIT));
+    expect(scanned().at(-1)).toBe(await recordIn(6n));
   });
 });

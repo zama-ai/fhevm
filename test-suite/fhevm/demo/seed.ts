@@ -257,7 +257,6 @@ const main = async (): Promise<void> => {
         settleDeadlineSecs: DEMO_SETTLE_DEADLINE_SECS,
         direction,
         authorityFundingLamports: BATCH_AUTHORITY_FUNDING_LAMPORTS,
-        tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
         host: await vault.readHostPolicy(rpc),
       }),
     ]);

@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   lifecycle: vi.fn(),
   metrics: vi.fn(),
   operator: vi.fn(),
-  prepareBatch: vi.fn(),
   readBalances: vi.fn(),
   recordCompletedRedeem: vi.fn(),
   hasConfidentialUsdc: vi.fn(),
@@ -38,8 +37,6 @@ vi.mock('./mutationLock', () => ({
   withWalletMutationLock: async (_session: unknown, action: () => Promise<unknown>) => action(),
 }));
 vi.mock('./operatorClient', () => ({
-  prepareDemoBatch: mocks.prepareBatch,
-  prepareDemoDepositBatch: mocks.prepareBatch,
   runDemoOperatorAction: mocks.operator,
 }));
 vi.mock('./redeem', () => ({
@@ -139,7 +136,6 @@ describe('useDemoController generation safety', () => {
     mocks.hasShares.mockResolvedValue(true);
     mocks.lifecycle.mockResolvedValue(awaiting);
     mocks.metrics.mockResolvedValue({ totalAssets: 125n, totalShares: 100n });
-    mocks.prepareBatch.mockResolvedValue(position);
     mocks.readBalances.mockResolvedValue([5_000_000_000n, 1_000_000_000n]);
     mocks.hasConfidentialUsdc.mockResolvedValue(true);
     mocks.revealUsdc.mockResolvedValue({ handle: '0xcurrent', value: 1_000_000_000n });
@@ -235,10 +231,9 @@ describe('useDemoController generation safety', () => {
     expect(controller.state.vaultMetrics).toEqual({ totalAssets: 125n, totalShares: 100n });
   });
 
-  test('prepares a new batch and preserves the existing private position for another deposit', async () => {
+  test('joins the pending batch and preserves the existing private position for another deposit', async () => {
     const nextPosition = { ...position, batchIndex: 2n };
     mocks.lifecycle.mockResolvedValue(settled);
-    mocks.prepareBatch.mockResolvedValue(nextPosition);
     mocks.joinDeposit.mockResolvedValue({ ...nextPosition, amountBaseUnits: 50_000_000n });
     await connect(controller);
     await flush();
@@ -253,12 +248,10 @@ describe('useDemoController generation safety', () => {
       position.batch,
       50_000_000n,
     );
-    expect(mocks.prepareBatch).toHaveBeenCalledWith();
     expect(mocks.joinDeposit).toHaveBeenCalledWith(
       expect.anything(),
       50,
       expect.any(Function),
-      nextPosition,
       'usdc',
       undefined,
     );
@@ -306,7 +299,6 @@ describe('useDemoController generation safety', () => {
       expect.anything(),
       25,
       expect.any(Function),
-      position,
       'cusdc',
       '0xcurrent',
     );
@@ -406,19 +398,17 @@ describe('useDemoController generation safety', () => {
     expect(controller.state.publicUsdcBalance).toBe(800_000_000n);
   });
 
-  test('does not prepare a redeem batch for a known-zero share balance', async () => {
+  test('does not join a redeem batch for a known-zero share balance', async () => {
     mocks.findDeposit.mockResolvedValue(null);
     mocks.revealShares.mockResolvedValue({ value: 0n, handle: '0x01' });
     await connect(controller);
     await flush();
-    mocks.prepareBatch.mockClear();
 
     await act(async () => {
       await controller.actions.redeem(50);
     });
     await flush();
 
-    expect(mocks.prepareBatch).not.toHaveBeenCalled();
     expect(mocks.joinRedeem).not.toHaveBeenCalled();
     expect(controller.state.redeem).toMatchObject({ kind: 'error' });
   });
@@ -465,7 +455,6 @@ describe('useDemoController generation safety', () => {
     });
     await flush();
 
-    expect(mocks.prepareBatch).toHaveBeenCalledWith('redeem');
     expect(mocks.joinRedeem).toHaveBeenCalledWith(
       expect.anything(),
       50_000_000n,
@@ -481,7 +470,6 @@ describe('useDemoController generation safety', () => {
     });
     await flush();
 
-    expect(mocks.prepareBatch).toHaveBeenCalledTimes(2);
     expect(mocks.joinRedeem).toHaveBeenCalledTimes(2);
   });
 

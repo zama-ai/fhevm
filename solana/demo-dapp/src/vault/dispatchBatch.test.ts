@@ -30,7 +30,7 @@ import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confi
 import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 import { hcuSlots, testHostPolicy } from './testHostPolicy.js';
-import { encodedSize, testDemoClient } from '../testDemoClient';
+import { expectFitsV1, testDemoClient } from '../testDemoClient';
 import type { VaultDemoRoots } from './derive.js';
 
 function addr(fill: number): Address {
@@ -92,7 +92,6 @@ describe('buildDispatchBatchInstruction', () => {
     roots,
     batchIndex: 0n,
     authorityFundingLamports: 5_000_000n,
-    tokenProgram: SPL_TOKEN,
     host,
   });
 
@@ -204,17 +203,13 @@ describe('buildDispatchBatchInstruction', () => {
     expect(actual).toEqual(expected);
   });
 
-  // The largest dispatch: both mints' deny records and HCU witnesses. A v1 transaction is at most
-  // 4,096 bytes and 64 account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
+  // The largest dispatch: both mints' deny records and HCU witnesses.
   it('fits one v1 transaction with every witness', async () => {
     sendAndConfirm.mockReset().mockResolvedValue(undefined);
     const keeper = await generateKeyPairSigner();
     const { client } = testDemoClient(keeper);
     const parameters = await input(testHostPolicy(true, true), keeper);
     await client.sendFheTransaction(parameters.transientStore, [await buildDispatchBatchInstruction(parameters)]);
-    const size = encodedSize(sendAndConfirm.mock.lastCall![0] as Transaction);
-    expect(size.version).toBe(1);
-    expect(size.bytes).toBeLessThanOrEqual(4096);
-    expect(size.addresses).toBeLessThanOrEqual(64);
+    expectFitsV1(sendAndConfirm.mock.lastCall![0] as Transaction);
   });
 });

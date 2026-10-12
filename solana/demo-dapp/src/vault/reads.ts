@@ -14,12 +14,15 @@ import {
 import { fetchBatch, type Batch } from './internal/generated/confidentialBatcher/accounts/batch.js';
 import { fetchBatcher, type Batcher } from './internal/generated/confidentialBatcher/accounts/batcher.js';
 import {
+  fetchAllMaybeJoinRecord,
   fetchJoinRecord,
   getJoinRecordDecoder,
   getJoinRecordSize,
   JOIN_RECORD_DISCRIMINATOR,
   type JoinRecord,
 } from './internal/generated/confidentialBatcher/accounts/joinRecord.js';
+import { findBatchPda } from './internal/generated/confidentialBatcher/pdas/batch.js';
+import { findJoinRecordPda } from './internal/generated/confidentialBatcher/pdas/joinRecord.js';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { deriveBatchAddresses, type BatchAddresses, type VaultDemoRoots } from './derive.js';
 
@@ -99,6 +102,41 @@ export async function getBatchByIndex(
   const addresses = await deriveBatchAddresses(roots, index);
   const account = await fetchBatch(rpc, addresses.batch);
   return { index, addresses, state: account.data };
+}
+
+/** How many batches, the pending one included, a wallet's join is looked for in. */
+export const RECENT_BATCH_SCAN_LIMIT = 32n;
+
+/**
+ * Finds `user`'s join record in `preferred`, when it is one of the batcher's batches, and then in the
+ * last `RECENT_BATCH_SCAN_LIMIT` batches, newest first. A join therefore stays findable after its
+ * batch is dispatched, through settle and claim.
+ */
+export async function findRecentJoin(
+  rpc: SolanaRpc,
+  roots: VaultDemoRoots,
+  user: Address,
+  preferred?: { readonly batchIndex: bigint; readonly batch: Address },
+): Promise<{ readonly batchIndex: bigint; readonly batch: Address; readonly joinRecord: JoinRecordState } | null> {
+  const candidates: { batchIndex: bigint; batch: Address }[] = [];
+  const batchAt = async (index: bigint) => (await findBatchPda({ batcher: roots.batcher, index }))[0];
+  if (preferred !== undefined && (await batchAt(preferred.batchIndex)) === preferred.batch) {
+    candidates.push({ batchIndex: preferred.batchIndex, batch: preferred.batch });
+  }
+  const pending = (await getBatcher(rpc, roots.batcher)).nextBatchIndex - 1n;
+  const oldest = pending >= RECENT_BATCH_SCAN_LIMIT ? pending - RECENT_BATCH_SCAN_LIMIT + 1n : 0n;
+  for (let batchIndex = pending; batchIndex >= oldest; batchIndex -= 1n) {
+    const batch = await batchAt(batchIndex);
+    if (batch !== candidates[0]?.batch) candidates.push({ batchIndex, batch });
+  }
+  const records = await fetchAllMaybeJoinRecord(
+    rpc,
+    await Promise.all(candidates.map(async ({ batch }) => (await findJoinRecordPda({ batch, user }))[0])),
+  );
+  for (const [index, record] of records.entries()) {
+    if (record.exists) return { ...candidates[index]!, joinRecord: record.data };
+  }
+  return null;
 }
 
 /** Reads the host-owned slot dictionary and shared MMR at `finalized` through the SDK decoder. */

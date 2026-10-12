@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
   sendTransaction: vi.fn(),
   getBatcher: vi.fn(),
   getBatchByIndex: vi.fn(),
-  getCurrentBatch: vi.fn(),
   reclaim: vi.fn((input: { batch: string }) => ({ kind: 'reclaim', ...input })),
 }));
 
@@ -20,11 +19,10 @@ vi.mock('./vault/index.js', () => ({
   getReclaimBatchAuthorityInstructionAsync: mocks.reclaim,
   getBatcher: mocks.getBatcher,
   getBatchByIndex: mocks.getBatchByIndex,
-  getCurrentBatch: mocks.getCurrentBatch,
 }));
 vi.mock('./vaultRoots', () => ({ vaultRoots: () => ({ batcher: 'batcher-1' }) }));
 
-import { RECLAIM_SCAN_WINDOW, prepareNextBatch, reclaimFinishedBatchAuthorities } from './batchProvisioning';
+import { RECLAIM_SCAN_WINDOW, reclaimFinishedBatchAuthorities } from './batchProvisioning';
 import { BatchStatus } from './batchTypes';
 
 const config = {
@@ -43,7 +41,6 @@ const reclaimedBatches = (): string[] =>
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // The reclaim pass is covered on its own below; the prepare tests run it over no batches.
   mocks.getBatcher.mockResolvedValue({ nextBatchIndex: 0n });
   mocks.getBalanceSend.mockResolvedValue({ value: 0n });
   mocks.sendTransaction.mockResolvedValue({});
@@ -91,7 +88,7 @@ describe('the authority-reclaim crank drains every finished batch once', () => {
     expect(reclaimedBatches()).toEqual(['batch-1', 'batch-2']);
   });
 
-  test('inspects only the most recent batches so the join path stays bounded', async () => {
+  test('inspects only the most recent batches so each pass stays bounded', async () => {
     mocks.getBatcher.mockResolvedValue({ nextBatchIndex: RECLAIM_SCAN_WINDOW + 5n });
     mocks.getBatchByIndex.mockImplementation((_rpc: unknown, _roots: unknown, index: bigint) =>
       Promise.resolve({
@@ -104,11 +101,5 @@ describe('the authority-reclaim crank drains every finished batch once', () => {
     await expect(reclaimFinishedBatchAuthorities(config, keeper, 'deposit')).resolves.toBe(Number(RECLAIM_SCAN_WINDOW));
     expect(mocks.getBatchByIndex).toHaveBeenCalledTimes(Number(RECLAIM_SCAN_WINDOW));
     expect(reclaimedBatches()[0]).toBe('batch-5');
-  });
-
-  test('prepareNextBatch returns the pending batch and runs the reclaim pass', async () => {
-    mocks.getCurrentBatch.mockResolvedValue({ index: 4n, addresses: { batch: 'batch-4' }, state: { status: BatchStatus.Pending } });
-    await expect(prepareNextBatch(config, keeper, 'deposit')).resolves.toEqual({ batchIndex: 4n, batch: 'batch-4' });
-    expect(reclaimedBatches()).toEqual(['batch-1', 'batch-2']);
   });
 });

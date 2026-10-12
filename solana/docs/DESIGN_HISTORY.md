@@ -1183,10 +1183,9 @@ reverting. The replaced paragraph:
 
 ### DD-042, replaced in part by the dispatch rollover
 
-zama-ai/fhevm#4387 made `dispatch` open the next batch and `initialize_batcher` open batch 0, so a
-batcher always has a pending batch, as on EVM. The separate instruction was justified by the
-1,232-byte legacy transaction; a version 1 transaction holds the combined dispatch with room to
-spare. The replaced wording:
+zama-ai/fhevm#4387 made `dispatch` open the next batch and `initialize_batcher` open batch 0, as on
+EVM (INVARIANTS #70). The separate instruction was justified by the 1,232-byte legacy transaction;
+a version 1 transaction holds the combined dispatch. The replaced wording:
 
 > "next batch opens immediately" is a permissionless `open_batch` gated only on the previous batch
 > no longer being pending, rather than being folded into `dispatch` (keeps each instruction inside

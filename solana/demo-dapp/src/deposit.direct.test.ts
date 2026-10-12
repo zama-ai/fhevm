@@ -112,7 +112,7 @@ describe('direct cUSDC deposit', () => {
   test('rejects a stale handle before creating a proof', async () => {
     mocks.readHandle.mockResolvedValue('0xstale');
 
-    await expect(depositToVault(session, 5, vi.fn(), undefined, 'cusdc', '0xexpected')).rejects.toThrow(
+    await expect(depositToVault(session, 5, vi.fn(), 'cusdc', '0xexpected')).rejects.toThrow(
       'Reveal it again',
     );
 
@@ -123,7 +123,7 @@ describe('direct cUSDC deposit', () => {
   test('rejects a handle change after proof creation and before joining', async () => {
     mocks.readHandle.mockResolvedValueOnce('0xexpected').mockResolvedValueOnce('0xchanged');
 
-    await expect(depositToVault(session, 5, vi.fn(), undefined, 'cusdc', '0xexpected')).rejects.toThrow(
+    await expect(depositToVault(session, 5, vi.fn(), 'cusdc', '0xexpected')).rejects.toThrow(
       'Reveal it again',
     );
 
@@ -134,7 +134,7 @@ describe('direct cUSDC deposit', () => {
   test('skips shielding and sends one join when the handle stays current', async () => {
     mocks.readHandle.mockResolvedValue('0xexpected');
 
-    await expect(depositToVault(session, 5, vi.fn(), undefined, 'cusdc', '0xexpected')).resolves.toMatchObject({
+    await expect(depositToVault(session, 5, vi.fn(), 'cusdc', '0xexpected')).resolves.toMatchObject({
       batchIndex: 1n,
       amountBaseUnits: 5_000_000n,
     });

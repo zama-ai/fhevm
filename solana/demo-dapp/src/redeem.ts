@@ -10,6 +10,7 @@ import { createFhevmEncryptClient, defineFhevmSolanaChain, setFhevmRuntimeConfig
 import {
   deriveBatchAddresses,
   findJoinRecordPda,
+  findRecentJoin,
   getCurrentBatch,
   getBatchByIndex,
   getJoinRecord,
@@ -28,7 +29,6 @@ import { vaultRoots } from './vaultRoots';
 export type RedeemStage = 'proving' | 'joining' | 'joined';
 
 type Bytes32Hex = Parameters<typeof joinBatch>[0]['aclProgramAddress'];
-const RECENT_BATCH_SCAN_LIMIT = 32n;
 const addressEncoder = getAddressEncoder();
 
 const asBytes32Hex = (value: Address): Bytes32Hex =>
@@ -232,48 +232,22 @@ const recoverHandleChange = async (
 
 export const findExistingRedeem = async (session: DemoSession): Promise<BatchPosition | null> => {
   const rpc = createFinalizedRpc(session.config.rpcUrl);
-  const roots = vaultRoots(session.config, 'redeem');
-  let saved = readActiveRedeem(session);
-  const current = await getCurrentBatch(rpc, roots);
-  const candidates: Array<{ readonly batchIndex: bigint; readonly batch: Address }> = [];
-  if (saved !== null) {
-    const savedAddresses = await deriveBatchAddresses(roots, saved.batchIndex);
-    if (savedAddresses.batch === saved.batch) candidates.push(saved);
+  const saved = readActiveRedeem(session);
+  const join = await findRecentJoin(rpc, vaultRoots(session.config, 'redeem'), session.signer.address, saved ?? undefined);
+  if (join === null) {
+    if (saved !== null) await reconcileSubmittedIntent(rpc, session, saved);
+    return null;
   }
-  const oldestIndex =
-    current.index >= RECENT_BATCH_SCAN_LIMIT - 1n ? current.index - (RECENT_BATCH_SCAN_LIMIT - 1n) : 0n;
-  for (let index = current.index; ; index -= 1n) {
-    const addresses = await deriveBatchAddresses(roots, index);
-    if (!candidates.some((candidate) => candidate.batch === addresses.batch)) {
-      candidates.push({ batchIndex: index, batch: addresses.batch });
-    }
-    if (index === oldestIndex) break;
+  if (saved?.batch === join.batch && saved.transaction !== undefined) {
+    recordTransactionEvidence(session, { label: 'Redeem', signature: saved.transaction.signature as Signature });
   }
-  for (const candidate of candidates) {
-    const joinRecord = (await findJoinRecordPda({ batch: candidate.batch, user: session.signer.address }))[0];
-    const account = await rpc.getAccountInfo(joinRecord, { encoding: 'base64' }).send();
-    if (account.value === null) continue;
-    const join = await getJoinRecord(rpc, joinRecord);
-    if (join.claimed) {
-      if (saved?.batch === candidate.batch && saved.transaction !== undefined) {
-        recordTransactionEvidence(session, { label: 'Redeem', signature: saved.transaction.signature as Signature });
-      }
-      recordCompletedRedeem(session, redactRedeemPosition(candidate));
-      saved = null;
-      return null;
-    }
-    const position =
-      saved !== null && saved.batchIndex === candidate.batchIndex && saved.batch === candidate.batch
-        ? redactRedeemPosition(saved)
-        : redactRedeemPosition(candidate);
-    if (saved?.batch === candidate.batch && saved.transaction !== undefined) {
-      recordTransactionEvidence(session, { label: 'Redeem', signature: saved.transaction.signature as Signature });
-    }
-    writeActiveRedeem(session, position);
-    return position;
+  const position = redactRedeemPosition(join);
+  if (join.joinRecord.claimed) {
+    recordCompletedRedeem(session, position);
+    return null;
   }
-  if (saved !== null) await reconcileSubmittedIntent(rpc, session, saved);
-  return null;
+  writeActiveRedeem(session, position);
+  return position;
 };
 
 export const joinRedeemBatch = async (

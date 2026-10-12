@@ -4,9 +4,9 @@ import {
   findEventAuthorityPda as findTokenEventAuthorityPda,
   findTotalSupplyAuthorityPda,
 } from '@fhevm/confidential-token';
-import { findAssociatedTokenPda } from '@solana-program/token';
+import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import { INSTRUCTIONS_SYSVAR_ADDRESS, type TransientStore } from '@fhevm/sdk/solana';
-import type { Address, Instruction, TransactionSigner } from '@solana/kit';
+import type { Instruction, TransactionSigner } from '@solana/kit';
 import { getDispatchInstructionAsync } from './internal/generated/confidentialBatcher/instructions/dispatch.js';
 import { tokenApp, withDenyRecords, type HostPolicyParameters } from './internal/hostPolicy.js';
 import { deriveBatchAddresses, type VaultDemoRoots } from './derive.js';
@@ -31,8 +31,6 @@ export type SolanaVaultDispatchParameters = HostPolicyParameters & {
   readonly batchIndex: bigint;
   /** Lamports the next batch's authority is funded with to pay its owner-charged rent. */
   readonly authorityFundingLamports: bigint;
-  /** Token program that owns the underlying mints (`Tokenkeg` or Token-2022). */
-  readonly tokenProgram: Address;
 };
 
 /**
@@ -65,19 +63,19 @@ export async function buildDispatchBatchInstruction(parameters: SolanaVaultDispa
     joinUnderlyingMint: roots.joinUnderlyingMint,
     batchAuthorityAta: (await findAssociatedTokenPda({
       owner: batch.batchAuthority,
-      tokenProgram: parameters.tokenProgram,
+      tokenProgram: TOKEN_PROGRAM_ADDRESS,
       mint: roots.joinUnderlyingMint,
     }))[0],
     totalSupplyAuthority,
     batchJoinTokenAccount: batch.batchJoinTokenAccount,
-    batchBalanceStore: await tokenStoreAddress(joinConfidentialMint, batch.batchJoinTokenAccount),
+    // A token account has one encrypted store, holding both its balance and its burned amount.
+    batchBalanceStore: batch.batchBurnedAmountStore,
     totalSupplyStore: await tokenStoreAddress(joinConfidentialMint, totalSupplyAuthority),
     pendingBurn: (await findPendingBurnPda({ mint: joinConfidentialMint, tokenAccount: batch.batchJoinTokenAccount }))[0],
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
-    tokenProgram: parameters.tokenProgram,
     nextBatch: next.batch,
     nextBatchJoinTokenAccount: next.batchJoinTokenAccount,
-    nextBatchJoinBalanceStore: await tokenStoreAddress(joinConfidentialMint, next.batchJoinTokenAccount),
+    nextBatchJoinBalanceStore: next.batchBurnedAmountStore,
     payoutConfidentialMint,
     payoutUnderlyingMint: roots.payoutUnderlyingMint,
     nextBatchPayoutTokenAccount: next.batchPayoutTokenAccount,

@@ -7,8 +7,7 @@
 //! alias, deduped inside the token program), so the created-public burned handle
 //! certifies exactly this batch's sum and nothing else.
 //!
-//! The same instruction opens the next batch, as EVM's `dispatchBatch` does, so the batcher always
-//! has exactly one pending batch.
+//! The same instruction opens the next batch, as EVM's `dispatchBatch` does (INVARIANTS #70).
 
 use super::*;
 

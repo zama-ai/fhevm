@@ -7,7 +7,7 @@ import {
   type Transaction,
   type TransactionSigner,
 } from '@solana/kit';
-import { vi } from 'vitest';
+import { expect, vi } from 'vitest';
 
 import { createDemoClient } from './demoClient';
 
@@ -50,12 +50,13 @@ export function messageOf(transaction: Transaction) {
   return decompileTransactionMessage(getCompiledTransactionMessageDecoder().decode(transaction.messageBytes));
 }
 
-/** The version, wire size and account-key count of a signed transaction, as Kit encodes it. */
-export function encodedSize(transaction: Transaction) {
+/**
+ * Asserts a signed transaction fits one v1 transaction as Kit encodes it: at most 4,096 bytes and 64
+ * account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
+ */
+export function expectFitsV1(transaction: Transaction) {
   const compiled = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes);
-  return {
-    version: compiled.version,
-    bytes: getTransactionEncoder().encode(transaction).length,
-    addresses: compiled.staticAccounts.length,
-  };
+  expect(compiled.version).toBe(1);
+  expect(getTransactionEncoder().encode(transaction).length).toBeLessThanOrEqual(4096);
+  expect(compiled.staticAccounts.length).toBeLessThanOrEqual(64);
 }

@@ -1050,8 +1050,7 @@ encryption is a fromExternal input; `confidential_transfer_from_value` remains t
 JoinRecord owns its contribution Store, and the token returns the transferred handle and grants it
 to that Store through the transient store (DD-049); "next batch opens immediately" is `dispatch`
 itself: it opens the next batch in the same instruction, as EVM's `dispatchBatch` does, and
-`initialize_batcher` opens batch 0, so a batcher always has exactly one pending batch (INVARIANTS
-#70). Whoever dispatches pays the next batch's rent and funds its authority, as EVM's dispatcher pays
+`initialize_batcher` opens batch 0 (INVARIANTS #70). Whoever dispatches pays the next batch's rent and funds its authority, as EVM's dispatcher pays
 for the new batch's storage, and a next batch that cannot open reverts the dispatch; and the rate
 is fixed-point at `RATE_SCALE = 10^9` with both divisions rounding down, so the sum of claims can
 never exceed the wrapped shares (the claim MulDiv's 128-bit intermediate and euint64 result are

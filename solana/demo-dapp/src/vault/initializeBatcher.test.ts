@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { address, type Address, type TransactionSigner } from '@solana/kit';
 import { base58 } from '@scure/base';
 
+import { deriveBatchAddresses } from './derive.js';
 import { buildInitializeBatcherInstruction } from './initializeBatcher.js';
 import { parseInitializeBatcherInstruction } from './internal/generated/confidentialBatcher/instructions/initializeBatcher.js';
 import { BatchDirection } from './internal/generated/confidentialBatcher/types/batchDirection.js';
@@ -17,7 +18,6 @@ const signer = (value: Address): TransactionSigner =>
 
 describe('buildInitializeBatcherInstruction', () => {
   const payer = signer(addr(1));
-  // derive.test.ts's roots fixture, whose batch 0 it pins.
   const input = async (host = testHostPolicy(false)) => ({
     transientStore: await prepareTransientStore({ payer, host: ZAMA_HOST_PROGRAM_ADDRESS }),
     payer,
@@ -37,19 +37,22 @@ describe('buildInitializeBatcherInstruction', () => {
     settleDeadlineSecs: 120n,
     direction: BatchDirection.Deposit,
     authorityFundingLamports: 0n,
-    tokenProgram: address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
     host,
   });
 
   it('opens batch 0 of the batcher', async () => {
-    const { accounts } = parseInitializeBatcherInstruction((await buildInitializeBatcherInstruction(await input())) as never);
+    const parameters = await input();
+    const { accounts } = parseInitializeBatcherInstruction((await buildInitializeBatcherInstruction(parameters)) as never);
+    const batch = await deriveBatchAddresses({ ...parameters.roots, batcher: addr(2) }, 0n);
     expect(accounts.batcher.address).toBe(addr(2));
-    expect(accounts.batch.address).toBe('6qzexx3j3oQraXoc1Ji8SdrKBLZaorG8HxtPZtprtoUN');
-    expect(accounts.batchAuthority.address).toBe('7r6dp55LMSc1dKRiMzgizmrogFcB4bkkbC7ia9jpk1Fo');
-    expect(accounts.batchPayoutTokenAccount.address).toBe('33Z5S6e7F6Cc9JpJ4aA5sFTSmD63QcJtd4rqgkAquhXQ');
-    expect(accounts.batchPayoutBalanceStore.address).toBe('yjr2mdF8iyACXP41AAugk3NqyTmfa8HqjtRaNYQTj56');
-    expect(accounts.batchJoinUnderlying.address).toBe('Gv5fMGCo3efrXa83JnBJf1jTE2sJqvmDp4wSDAT16U4C');
-    expect(accounts.batchPayoutUnderlying.address).toBe('CW2QJ6TvQLBzm9T8zT26YMPZZMvC1pwkEUh2zGV7qUAp');
+    expect(accounts.batch.address).toBe(batch.batch);
+    expect(accounts.batchAuthority.address).toBe(batch.batchAuthority);
+    expect(accounts.batchJoinTokenAccount.address).toBe(batch.batchJoinTokenAccount);
+    expect(accounts.batchJoinBalanceStore.address).toBe(batch.batchBurnedAmountStore);
+    expect(accounts.batchPayoutTokenAccount.address).toBe(batch.batchPayoutTokenAccount);
+    expect(accounts.batchPayoutBalanceStore.address).toBe(batch.batchPayoutBalanceStore);
+    expect(accounts.batchJoinUnderlying.address).toBe(batch.batchJoinUnderlying);
+    expect(accounts.batchPayoutUnderlying.address).toBe(batch.batchPayoutUnderlying);
   });
 
   it('appends, under the deny list, the join then the payout mint deny record', async () => {

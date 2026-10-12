@@ -25,7 +25,7 @@ import { getSettleInstructionDataDecoder, parseSettleInstruction } from './inter
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { findDenyScopeRecordPda, findKmsContextPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
-import { encodedSize, messageOf, testDemoClient } from '../testDemoClient';
+import { expectFitsV1, messageOf, testDemoClient } from '../testDemoClient';
 import { hcuSlots, testHostPolicy } from './testHostPolicy.js';
 import { tokenApp } from './internal/hostPolicy.js';
 
@@ -137,8 +137,7 @@ describe('settleBatch', () => {
   });
 
   // The largest settle: a certificate at the host's maximum KMS threshold (MAX_KMS_SIGNERS = 16),
-  // with the SDK's 65-byte v2 extra data, both mints' deny records and HCU witnesses. A v1 transaction is at
-  // most 4,096 bytes and 64 account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
+  // with the SDK's 65-byte v2 extra data, both mints' deny records and HCU witnesses.
   it('fits one v1 transaction at the maximum KMS threshold with every witness', async () => {
     certificate.mockResolvedValue(claim(cleartextHex(800n), 16));
     const { client, opts } = await setup();
@@ -146,10 +145,7 @@ describe('settleBatch', () => {
       ...opts,
       host: testHostPolicy(true, true),
     });
-    const size = encodedSize(sent());
-    expect(size.version).toBe(1);
-    expect(size.bytes).toBeLessThanOrEqual(4096);
-    expect(size.addresses).toBeLessThanOrEqual(64);
+    expectFitsV1(sent());
   });
 
   it("puts both mints' HCU accounts in their slots for a wrap, and none for a zero total", async () => {

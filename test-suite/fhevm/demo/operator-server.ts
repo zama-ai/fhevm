@@ -21,7 +21,6 @@ import {
   getMintToInstruction,
 } from "@solana-program/token";
 
-import { prepareNextBatch } from "@demo-dapp/batchProvisioning";
 import { claimBatchPayout } from "@demo-dapp/claim";
 import { createDemoClient } from "@demo-dapp/demoClient";
 import { parseRuntimeDemoConfig } from "@demo-dapp/demoConfig";
@@ -146,10 +145,6 @@ const main = async (): Promise<void> => {
       encryptionKeyFingerprint: encryptionKey.fingerprint,
       encryptionKey: encryptionKey.key,
       vaultMetrics: async () => readDemoVaultMetrics((await session()).config),
-      prepareBatch: async (direction) => {
-        const { config } = await session();
-        return prepareNextBatch(config, keeper, direction);
-      },
       runOperator: async (request) => {
         const current = await session();
         const { position, direction } = request;

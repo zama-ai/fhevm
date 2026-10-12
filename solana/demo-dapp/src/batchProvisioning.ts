@@ -1,10 +1,5 @@
-import type { Address, TransactionSigner } from '@solana/kit';
-import {
-  getReclaimBatchAuthorityInstructionAsync,
-  getBatchByIndex,
-  getBatcher,
-  getCurrentBatch,
-} from './vault/index.js';
+import type { TransactionSigner } from '@solana/kit';
+import { getReclaimBatchAuthorityInstructionAsync, getBatchByIndex, getBatcher } from './vault/index.js';
 
 import { isBatchFinished, type VaultDirection } from './batchTypes';
 import { createDemoClient } from './demoClient';
@@ -12,9 +7,9 @@ import type { DemoConfig } from './demoConfig';
 import { vaultRoots } from './vaultRoots';
 
 /**
- * How many of the most recent batches the reclaim pass inspects. It runs on the page's join path
- * (two RPC reads per batch), so it is bounded; settle reclaims eagerly, and a batch that finishes
- * later than this window (a long-canceled straggler) is reclaimed by hand.
+ * How many of the most recent batches the reclaim pass inspects. It runs after every keeper settle
+ * pass (two RPC reads per batch), so it is bounded; a batch that finishes later than this window (a
+ * long-canceled straggler) is reclaimed by hand.
  */
 export const RECLAIM_SCAN_WINDOW = 8n;
 
@@ -23,12 +18,11 @@ export const RECLAIM_SCAN_WINDOW = 8n;
  * funded at open (and again at cancel/settle) to pay the rent token CPIs charge to the account
  * owner, and keeps whatever is left. Once the batch is settled, canceled or refunding nothing
  * charges the authority any more, so the operator takes the remainder back with
- * `reclaim_batch_authority`. `settleOrCancelVaultBatch` reclaims eagerly on the happy path; this pass
- * catches every batch that finished another way (a canceled dispatch, a zero-total cancel at
- * settle, a process that exited between settle and reclaim) and is idempotent: a drained
+ * `reclaim_batch_authority`. `settleOrCancelVaultBatch` runs this pass after each settle, cancel or
+ * refund, so it also catches a batch whose earlier pass failed; it is idempotent: a drained
  * authority is skipped. One batch read and one balance read per batch in the last
  * `RECLAIM_SCAN_WINDOW` the direction has opened. Returns how many batches were reclaimed;
- * failures are logged and retried by a later prepare.
+ * failures are logged and retried by a later pass.
  */
 export const reclaimFinishedBatchAuthorities = async (
   config: DemoConfig,
@@ -61,29 +55,9 @@ export const reclaimFinishedBatchAuthorities = async (
       reclaimed += 1;
     } catch (error) {
       console.warn(
-        `reclaiming the authority funding of ${direction} batch ${index} failed (a later prepare retries): ${error instanceof Error ? error.message : String(error)}`,
+        `reclaiming the authority funding of ${direction} batch ${index} failed (a later pass retries): ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
   return reclaimed;
-};
-
-export type PreparedBatch = {
-  readonly batchIndex: bigint;
-  readonly batch: Address;
-};
-
-/**
- * The batch a join lands in: the batcher's pending batch, which always exists because
- * `initialize_batcher` opens batch 0 and each `dispatch` opens the next one.
- */
-export const prepareNextBatch = async (
-  config: DemoConfig,
-  keeper: TransactionSigner,
-  direction: VaultDirection,
-): Promise<PreparedBatch> => {
-  const current = await getCurrentBatch(createDemoClient(config, keeper).rpc, vaultRoots(config, direction));
-  // Rent hygiene: drain this direction's finished batch authorities while we are here.
-  await reclaimFinishedBatchAuthorities(config, keeper, direction);
-  return { batchIndex: current.index, batch: current.addresses.batch };
 };

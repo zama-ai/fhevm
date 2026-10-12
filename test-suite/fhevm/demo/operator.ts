@@ -7,7 +7,6 @@
 //   GET  /demo-encryption-key-meta      -> { fingerprint } of the relayer's current FHE public key + CRS
 //   GET  /demo-encryption-key           -> the key material itself, cached per fingerprint
 //   GET  /demo-vault-metrics            -> the vault's total assets and shares
-//   POST /demo-batch     { direction }  -> the batch users may join next (opens one if needed)
 //   POST /demo-operator  OperatorRequest-> dispatch / settle / claim a batch as the keeper
 //   POST /demo-harvest   {}             -> one year of illustrative yield donated to the vault
 //   POST /demo-faucet/airdrop-sol { address, sol? }     -> SOL through the environment's funder
@@ -18,17 +17,16 @@
 // A direct caller on the tailnet (a teammate's script or curl through `tailscale serve`, which
 // sets the identity header and strips a client's own) is accepted for an allow-listed login; the
 // page itself never calls the operator cross-origin, it goes through its own origin's proxy. CORS
-// is exact-origin for the one dapp origin. Concurrency: one keeper action per batch at a time,
-// batch preparation serialized per registry, one harvest at a time.
+// is exact-origin for the one dapp origin. Concurrency: one keeper action per batch at a time, one
+// harvest at a time.
 //
 // `createOperator` is transport-free (a `Request -> Response` function over injected actions) so
 // it is unit-tested with stubs; `operator-server.ts` binds it to the live stack.
 
 import { address, type Address } from "@solana/kit";
 
-import type { PreparedBatch } from "@demo-dapp/batchProvisioning";
-import type { VaultDirection, VaultMetrics } from "@demo-dapp/batchTypes";
-import { encodeBatchTarget, encodeVaultMetrics, parseOperatorRequest, type OperatorRequest } from "@demo-dapp/demoApi";
+import type { VaultMetrics } from "@demo-dapp/batchTypes";
+import { encodeVaultMetrics, parseOperatorRequest, type OperatorRequest } from "@demo-dapp/demoApi";
 import type { UnderlyingMinter } from "@demo-dapp/harvestOperator";
 import { authorizeDemoHeaders, type DemoAuthorization } from "./authorization";
 
@@ -65,7 +63,6 @@ export type OperatorActions = {
   readonly encryptionKeyFingerprint: () => Promise<string>;
   readonly encryptionKey: () => Promise<DemoEncryptionKey>;
   readonly vaultMetrics: () => Promise<VaultMetrics>;
-  readonly prepareBatch: (direction: VaultDirection) => Promise<PreparedBatch>;
   readonly runOperator: (request: OperatorRequest) => Promise<string | null>;
   readonly harvest: () => Promise<{ readonly before: VaultMetrics; readonly after: VaultMetrics }>;
 };
@@ -105,9 +102,6 @@ export const parsePositiveNumber = (value: unknown, name: string, fallback: numb
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) invalid(`\`${name}\` must be a positive number`);
   return value as number;
 };
-
-const parseDirection = (value: unknown): VaultDirection =>
-  value === "deposit" || value === "redeem" ? value : invalid("invalid vault direction");
 
 /** One promise per key while it runs: concurrent callers share the result, a later call reruns. */
 export const runSingleFlight = async <T>(
@@ -184,9 +178,7 @@ const readJsonBody = async (request: Request): Promise<Record<string, unknown>> 
 export const createOperator = (config: OperatorConfig): ((request: Request) => Promise<Response>) => {
   const { actions, allowedOrigin } = config;
   const operatorInFlight = new Map<string, Promise<string | null>>();
-  const preparationInFlight = new Map<string, Promise<PreparedBatch>>();
   const fundingQueue: SerialQueue = { tail: Promise.resolve() };
-  const preparationQueue: SerialQueue = { tail: Promise.resolve() };
   let harvestInFlight: ReturnType<OperatorActions["harvest"]> | undefined;
 
   const corsHeaders = (request: Request): Record<string, string> =>
@@ -212,16 +204,6 @@ export const createOperator = (config: OperatorConfig): ((request: Request) => P
     },
     "/demo-encryption-key": { method: "GET", run: () => actions.encryptionKey() },
     "/demo-vault-metrics": { method: "GET", run: async () => encodeVaultMetrics(await actions.vaultMetrics()) },
-    "/demo-batch": {
-      method: "POST",
-      run: async (body) => {
-        const direction = parseDirection(body.direction);
-        const prepared = await runSingleFlight(preparationInFlight, direction, () =>
-          runSerialized(preparationQueue, () => actions.prepareBatch(direction)),
-        );
-        return encodeBatchTarget(prepared);
-      },
-    },
     "/demo-operator": {
       method: "POST",
       run: async (body) => {

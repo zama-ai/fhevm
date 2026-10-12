@@ -33,7 +33,7 @@ import { getJoinInstructionDataDecoder, parseJoinInstruction } from './internal/
 import { findDenyScopeRecordPda, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS } from './internal/generated/confidentialBatcher/programAddress.js';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
-import { encodedSize, TEST_BLOCKHASH, messageOf, testDemoClient } from '../testDemoClient';
+import { expectFitsV1, TEST_BLOCKHASH, messageOf, testDemoClient } from '../testDemoClient';
 import { hcuSlots, testHostPolicy } from './testHostPolicy.js';
 import { batchApp, tokenApp } from './internal/hostPolicy.js';
 
@@ -179,15 +179,11 @@ describe('joinBatch (attested arm)', () => {
   });
 
   // The largest join: the host's maximum coprocessor threshold (MAX_COPROCESSOR_SIGNERS = 8) with
-  // the deny records and both HCU witnesses of each app. A v1 transaction is at most 4,096 bytes
-  // and 64 account keys (solana-message v1::MAX_TRANSACTION_SIZE and MAX_ADDRESSES).
+  // the deny records and both HCU witnesses of each app.
   it('fits one v1 transaction at the maximum coprocessor threshold with every witness', async () => {
     const { client, params } = await sendable({ host: testHostPolicy(true, true) }, 8);
     await joinBatch(context, client, params);
-    const size = encodedSize(sent());
-    expect(size.version).toBe(1);
-    expect(size.bytes).toBeLessThanOrEqual(4096);
-    expect(size.addresses).toBeLessThanOrEqual(64);
+    expectFitsV1(sent());
   });
 
   it('neither journals nor sends a transaction a signer left unsigned', async () => {
