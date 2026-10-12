@@ -3746,6 +3746,11 @@
       "code": 6027,
       "name": "NotPaused",
       "msg": "batcher is not paused"
+    },
+    {
+      "code": 6028,
+      "name": "InvalidAdmin",
+      "msg": "admin cannot be the default key"
     }
   ],
   "types": [

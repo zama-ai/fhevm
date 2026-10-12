@@ -124,6 +124,7 @@ pub fn initialize_batcher<'info>(
 ) -> Result<()> {
     require_valid_min_batch_age(min_batch_age_secs)?;
     require_valid_settle_deadline(settle_deadline_secs)?;
+    require_keys_neq!(admin, Pubkey::default(), BatcherError::InvalidAdmin);
     // The join mint must wrap what the batch total goes INTO the vault as,
     // and the payout mint what comes back OUT.
     let (join_vault_mint, payout_vault_mint) = match direction {

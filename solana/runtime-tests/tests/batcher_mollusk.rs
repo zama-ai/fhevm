@@ -2899,41 +2899,50 @@ fn mollusk_pending_quit_requires_the_user_signature() {
 }
 
 /// The batch ages are bounded: at most seven days to dispatch and a settle deadline of at most thirty
-/// days. A zero deadline is accepted, as on EVM.
+/// days. A zero deadline is accepted, as on EVM. The admin cannot be the default key, as OZ
+/// `Ownable` rejects `address(0)`.
 #[test]
-fn mollusk_initialize_batcher_bounds_the_batch_ages() {
+fn mollusk_initialize_batcher_checks_its_arguments() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    let with_ages = |min_batch_age_secs, settle_deadline_secs| {
+    let with_args = |min_batch_age_secs, settle_deadline_secs, admin| {
         let mut ix = initialize_batcher_ix(&fixture, 0);
         ix.data = anchor_lang::InstructionData::data(&batcher::instruction::InitializeBatcher {
             min_batch_age_secs,
             settle_deadline_secs,
             direction: fixture.direction,
             authority_funding_lamports: AUTHORITY_FUNDING,
-            admin: fixture.admin,
+            admin,
         });
         ix
     };
-    for (ages, error) in [
+    for (args, error) in [
         (
-            (batcher::MAX_MIN_BATCH_AGE_SECS + 1, SETTLE_DEADLINE_SECS),
+            (
+                batcher::MAX_MIN_BATCH_AGE_SECS + 1,
+                SETTLE_DEADLINE_SECS,
+                fixture.admin,
+            ),
             batcher::BatcherError::InvalidMinBatchAge,
         ),
         (
-            (0, batcher::MAX_SETTLE_DEADLINE_SECS + 1),
+            (0, batcher::MAX_SETTLE_DEADLINE_SECS + 1, fixture.admin),
             batcher::BatcherError::InvalidSettleDeadline,
+        ),
+        (
+            (0, SETTLE_DEADLINE_SECS, Pubkey::default()),
+            batcher::BatcherError::InvalidAdmin,
         ),
     ] {
         check_batcher_instruction(
             &context,
-            &with_ages(ages.0, ages.1),
+            &with_args(args.0, args.1, args.2),
             &[batcher_error(error)],
         );
     }
     check_batcher_instruction(
         &context,
-        &with_ages(batcher::MAX_MIN_BATCH_AGE_SECS, 0),
+        &with_args(batcher::MAX_MIN_BATCH_AGE_SECS, 0, fixture.admin),
         &[Check::success()],
     );
 }
@@ -3802,6 +3811,12 @@ fn mollusk_set_admin_needs_the_new_admin_to_cosign() {
     check_batcher_instruction(
         &context,
         &set_admin_ix(&fixture, fixture.admin, program_owned_keypair, false),
+        &[not_accepted()],
+    );
+    // The default key is on the curve, so it would have to co-sign, which nobody can.
+    check_batcher_instruction(
+        &context,
+        &set_admin_ix(&fixture, fixture.admin, Pubkey::default(), false),
         &[not_accepted()],
     );
     assert_eq!(admin(), fixture.admin);

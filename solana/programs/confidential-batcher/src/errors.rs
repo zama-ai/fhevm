@@ -92,4 +92,7 @@ pub enum BatcherError {
     /// Unpausing needs a paused batcher.
     #[msg("batcher is not paused")]
     NotPaused,
+    /// The admin cannot be the default (all-zero) key.
+    #[msg("admin cannot be the default key")]
+    InvalidAdmin,
 }
