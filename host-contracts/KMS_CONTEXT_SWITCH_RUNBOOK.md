@@ -406,7 +406,7 @@ carrying the real values.
 **Upgrade precondition (ProtocolConfig v0.4.0)**: settle any in-flight lifecycle operation
 first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. v0.3.0 votes do not count
 toward the signed quorums. An epoch destroyed before the upgrade cannot collect signed destruction
-confirmations. The replica owner applies it through the mirror path.
+confirmations. The replica owner applies that destruction through the mirror path.
 
 `task:kmsContextSwitchStatus` is a canonical-side tool. Pointed at a replica it reports
 `idle`, because it tracks the pending/quorum path that replicas never run — that is the
@@ -462,7 +462,7 @@ Quorum cheat-sheet:
   the contract deduplicates and counts **by signer**.
 - **Destruction confirmations**: after `destroyKmsContext` or `destroyKmsEpoch`, each signer
   of the active committee signs a `ContextDestructionConfirmation` or
-  `EpochDestructionConfirmation`. The canonical only collects them. A replica applies the
+  `EpochDestructionConfirmation`. The canonical contract only collects them. A replica applies the
   destruction with `n − t` of them over one digest, so do not rotate the committee before
   the destruction reaches `n − t` confirmations.
 - **Quorums**:

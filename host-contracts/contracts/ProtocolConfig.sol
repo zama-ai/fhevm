@@ -248,9 +248,9 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     }
 
     /// @inheritdoc IProtocolConfig
-    /// @dev Context-switch: previous+new committee signers confirm on split-threshold quorum.
-    ///      Confirmations count per digest, so a completed quorum always signs one `extraData`, which
-    ///      is the signature set a replica verifies.
+    /// @dev Signers of the previous and the new committee confirm a context switch, each committee
+    ///      against its own threshold. The contract counts confirmations per digest, so all signatures
+    ///      of a completed quorum share one `extraData`. A replica verifies that signature set.
     function confirmKmsContextCreation(
         uint256 kmsContextId,
         bytes calldata signature,
@@ -411,7 +411,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /// @inheritdoc IProtocolConfig
     /// @dev Collects signatures only. Replicas need `n - t` of them over one digest. The canonical
-    ///      keeps no quorum and accepts signers of the active committee until the next rotation.
+    ///      contract keeps no quorum and accepts signers of the active committee until the next rotation.
     function confirmKmsContextDestruction(
         uint256 destroyedContextId,
         uint256[] calldata destroyedEpochIds,
@@ -567,7 +567,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
 
         // Activation requires one key and one CRS attestation from the signer. An empty array skips its loop
-        // in _verifyEpochResults, so the vote would be recorded without checking that attestation.
+        // in _verifyEpochResults, so the contract would record the vote without checking that attestation.
         if (keys.length == 0 || crsList.length == 0) {
             revert EmptyEpochActivationAttestation(epochId);
         }
@@ -624,9 +624,9 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /**
      * @dev Records `signer`'s vote for `digest`. Returns whether every signer of the epoch's context
      *      voted for it, and that context.
-     *      Unanimity is required by design: a single divergent epochMaterialHash or extraData splits the
-     *      vote so no digest reaches quorum. Confirmations are one-shot per signer, so a divergent vote can
-     *      never converge. The epoch stays Pending until governance settles it with destroyKmsEpoch()
+     *      The contract requires unanimity by design. One divergent epochMaterialHash or extraData splits
+     *      the vote, and no digest reaches quorum. Each signer confirms only once, so a divergent vote
+     *      cannot change. The epoch stays Pending until governance settles it with destroyKmsEpoch()
      *      and re-triggers the rotation.
      */
     function _recordEpochVote(

@@ -278,8 +278,8 @@ async function buildEpochAttestations(
     crsDigest,
     extraData,
   });
-  // epochMaterialHash = keccak256(abi.encode(keyHashes, crsHashes)). keyHashes hash the EIP-712 KeyDigest[]
-  // array hash, crsHashes ABI-encode the raw crsDigest.
+  // epochMaterialHash = keccak256(abi.encode(keyHashes, crsHashes)). Each key hash covers the EIP-712 hash
+  // of its KeyDigest[] array. Each CRS hash ABI-encodes the raw crsDigest.
   const abi = ethers.AbiCoder.defaultAbiCoder();
   const keyDigestsHash = ethers.keccak256(
     ethers.concat(

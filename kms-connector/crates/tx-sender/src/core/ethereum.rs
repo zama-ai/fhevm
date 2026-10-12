@@ -148,7 +148,7 @@ where
         &self,
         response: NewKmsContextResponse,
     ) -> Result<TransactionReceipt, Error> {
-        // Issue #1369 supplies the signature and extraData.
+        // Issue #1369 will supply the signature and extraData.
         let call_builder = self.protocol_config_contract.confirmKmsContextCreation(
             response.context_id,
             Bytes::new(),
@@ -168,7 +168,7 @@ where
         let crs_list = <Vec<EpochCrsResult> as SolValue>::abi_decode(&response.crs_list)
             .map_err(|e| Error::Irrecoverable(anyhow!("Failed to decode epoch crs_list: {e}")))?;
 
-        // Issue #1369 supplies the signature and extraData.
+        // Issue #1369 will supply the signature and extraData.
         let call_builder = self.protocol_config_contract.confirmEpochActivation(
             response.epoch_id,
             keys,

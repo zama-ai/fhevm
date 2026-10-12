@@ -314,8 +314,8 @@ export function generateVectors(): unknown {
       },
     ],
     messages: {
-      // Signed by the genesis committee, active when switch A is destroyed. The canonical does not check
-      // destroyedEpochIds, so the two-id list is valid digest material.
+      // Signed by the genesis committee, active when switch A is destroyed. The canonical contract does not
+      // check destroyedEpochIds, so the two-id list is valid digest material.
       contextDestruction: [
         message('ContextDestructionConfirmation', wallets[0], {
           destroyedContextId: switchAContextId,
