@@ -10,6 +10,7 @@ pub mod gcs_activation;
 pub mod gpu_arch;
 #[cfg(feature = "gpu")]
 pub mod gpu_memory;
+pub mod handle_metadata;
 pub mod healthz_server;
 pub mod host_chains;
 pub mod keys;

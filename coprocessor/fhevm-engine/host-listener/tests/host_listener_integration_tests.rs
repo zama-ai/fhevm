@@ -79,6 +79,7 @@ async fn emit_events<P, N>(
                     .signer_addresses()
                     .next()
                     .expect("anvil signer available");
+                let chain_id = provider.get_chain_id().await.unwrap();
                 let to_type: ToType = 4_u8;
                 let pt = U256::from(UNIQUE_INT.fetch_add(1, Ordering::SeqCst));
                 let tfhe_txn_req = trivial_encrypt_request(
@@ -86,6 +87,7 @@ async fn emit_events<P, N>(
                     caller,
                     pt,
                     to_type,
+                    chain_id,
                 );
                 let pending_txn = provider
                     .send_transaction(tfhe_txn_req.clone())
@@ -93,10 +95,13 @@ async fn emit_events<P, N>(
                     .unwrap();
                 let receipt = pending_txn.get_receipt().await.unwrap();
                 assert!(receipt.status());
-                // Mock quirk: allow() used plaintext-as-handle, not the
-                // trivialEncrypt result handle.
-                let acl_txn_req =
-                    allowed_request(&acl_contract, caller, caller, pt.into());
+                // Grant the actual result handle, including its validated metadata.
+                let acl_txn_req = allowed_request(
+                    &acl_contract,
+                    caller,
+                    caller,
+                    mock_trivial_encrypt_result(pt, to_type, chain_id),
+                );
                 if reorg_point && i_wallet == 0 {
                     // ensure no event is lost also on losing chain to facilitate the test assert
                     tokio::time::sleep(tokio::time::Duration::from_secs(5))
@@ -607,8 +612,13 @@ async fn emit_dependent_burst_seeded(
         .expect("anvil signer available");
 
     let mut pending = Vec::new();
-    let mut current = input_handle
-        .unwrap_or_else(|| mock_trivial_encrypt_result(U256::from(seed), 4_u8));
+    let mut current = input_handle.unwrap_or_else(|| {
+        mock_trivial_encrypt_result(
+            U256::from(seed),
+            4_u8,
+            setup.chain_id.as_u64(),
+        )
+    });
 
     if input_handle.is_none() {
         let trivial_tx = trivial_encrypt_request(
@@ -616,6 +626,7 @@ async fn emit_dependent_burst_seeded(
             signer_address,
             U256::from(seed),
             4_u8,
+            setup.chain_id.as_u64(),
         );
         pending.push(provider.send_transaction(trivial_tx).await?);
         let allow_trivial_tx = allowed_request(
