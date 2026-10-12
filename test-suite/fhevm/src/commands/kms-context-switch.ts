@@ -650,8 +650,10 @@ export const runKmsContextSwitchProfile = async (
     { rpcUrl, configAddress, where },
     baseline, false,
   );
+  const { spares, dropped } = committeePlan(state.scenario.kms);
   await solana?.mirrorContext(afterSwitch);
-  await solana?.checkDecrypts(afterSwitch.contextId);
+  await solana?.checkDecrypts(afterSwitch.contextId, spares);
+  await solana?.checkBaselinePermit();
 
   // 2) Same-committee key resharing (NewKmsEpoch). Then probes the new epoch ID activates.
   console.log("[kms-context-switch] broadcasting defineNewEpochForCurrentKmsContext (NewKmsEpoch)…");
@@ -726,7 +728,7 @@ export const runKmsContextSwitchProfile = async (
     recovered, true,
   );
   await solana?.mirrorContext(afterSwap);
-  await solana?.checkDecrypts(afterSwap.contextId);
+  await solana?.checkDecrypts(afterSwap.contextId, dropped);
 
   // 5b) Prove the promoted spare actually holds a working reshared key.
   await proveSpareInQuorum(state, runDecryption);

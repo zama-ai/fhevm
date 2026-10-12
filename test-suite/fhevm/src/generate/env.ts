@@ -449,6 +449,10 @@ const connectorEndpointPort = (envs: Record<string, Record<string, string>>) =>
 const connectorEndpointAddress = (envs: Record<string, Record<string, string>>, party: number) =>
   `${kmsConnectorPrefix(party)}-endpoint:${connectorEndpointPort(envs)}`;
 
+/** URL of party i's TLS proxy, on the port read from the (template) proxy bind address. */
+export const kmsConnectorProxyUrl = (envs: Record<string, Record<string, string>>, party: number) =>
+  `https://${kmsConnectorPrefix(party)}-proxy:${(envs["kms-connector"].KMS_CONNECTOR_PROXY_BIND_ADDRESS ?? "").split(":").pop() || "8443"}`;
+
 /** Builds per-instance coprocessor env maps and injects derived signer addresses. */
 const buildInstanceEnvs = async (
   envs: Record<string, Record<string, string>>,
@@ -516,10 +520,9 @@ const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, pla
   // parties 2..n get their own address in buildKmsConnectorInstanceEnvs.
   envs["kms-connector"].KMS_CONNECTOR_ENDPOINT_ADDRESSES = connectorEndpointAddress(envs, 1);
   const supported = supportsConnectorHttp(plan);
-  const proxyPort = (envs["kms-connector"].KMS_CONNECTOR_PROXY_BIND_ADDRESS ?? "").split(":").pop() || "8443";
   envs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS = supported
     ? kmsPartyIds(plan.kms.committeeSize)
-        .map((party) => `https://${kmsConnectorPrefix(party)}-proxy:${proxyPort}`)
+        .map((party) => kmsConnectorProxyUrl(envs, party))
         .join(",")
     : "";
   envs["test-suite"].KMS_THRESHOLD = String(plan.kms.threshold);

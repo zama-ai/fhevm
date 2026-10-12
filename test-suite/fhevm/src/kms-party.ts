@@ -37,6 +37,9 @@ export const kmsConnectorPrefix = (party: number) =>
  * on-chain transactions (confirmations, decryption responses). */
 export const kmsTxSenderName = (party: number) => `${kmsConnectorPrefix(party)}-tx-sender`;
 
+/** relayer-http's name for party i's endpoint: the `node` field of its aggregation log lines. */
+export const relayerHttpNodeName = (party: number) => `kms_${party}`;
+
 /** Connector env-file name (for `envPath`): `kms-connector`, then `kms-connector.{i}` —
  * dot separator, following the harness's per-instance env-file convention. */
 export const kmsConnectorEnvName = (party: number) =>

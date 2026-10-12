@@ -6,10 +6,18 @@
 // match the EVM context's. The leg checks Solana decrypts at the transitions that change what a
 // certificate proves: the first switch and the node swap (values written at the baseline still
 // decrypt, and the new context certifies them), and the destroy (the destroyed context's
-// certificate is refused, and the current context still serves). Each decrypt runs in a fresh
-// process, so the SDK's cached zama-host reads never hide a switch.
+// certificate is refused, and the current context still serves). Each decrypt that must see a
+// switch runs in a fresh process, so the SDK's cached zama-host reads never hide it. The two permits
+// signed at the baseline stay in this process: the SDK verifies an answer against the signers of
+// the context its permit names, which a switch does not change.
+//
+// Every Solana decrypt goes through relayer-http, which lists every party's proxy, spares included
+// (generate/config.ts). After the first switch and after the node swap, the leg reads relayer-http's
+// log of those decrypts: the party outside the active context must be refused at its first attempt,
+// and the aggregation must not wait for its deadline.
 import { bytesToHex } from '@fhevm/sdk/base';
 import { TOTAL_SUPPLY_KEY } from '@fhevm/confidential-token';
+import { address, getAddressEncoder } from '@solana/kit';
 import {
   ZAMA_HOST_ERROR__INVALID_KMS_CONTEXT,
   ZAMA_HOST_ERROR__NON_INCREASING_KMS_CONTEXT_ID,
@@ -23,6 +31,7 @@ import type { ContextAndEpoch } from '../commands/kms-context-switch';
 import { SOLANA_ACL_PROGRAM } from '../layout';
 import type { State } from '../types';
 import { readEvmKmsSignersForContext, uint256Bytes } from './addresses';
+import { aggregationOutcome, nodeOutcomes, relayerHttpRequestsSince } from './decryption-trace';
 import {
   assertActiveKmsPairMatchesEvmHost,
   assertKmsContextMatchesEvmHost,
@@ -45,7 +54,16 @@ import {
   readTokenBalanceStore,
   wrapUnderlying,
 } from './provision';
+import {
+  buildSolanaUserDecryptRequest,
+  decryptionChain,
+  decryptionClient,
+  hexToBytes,
+  solanaPermitWalletFromSecretKey,
+  submitUserDecryptOnce,
+} from './relayer-http-request';
 import { waitForSnsCommit } from './sns';
+import { relayerHttpNodeName } from '../kms-party';
 import { sdkVerifyModule } from './lazy-modules';
 import { discloseCertifiedHandle, sealTotalSupplyHandle, totalSupplyStore } from './token-vertical';
 
@@ -66,12 +84,20 @@ export type SolanaKmsContextLeg = {
   readonly mirrorEpoch: (pair: ContextAndEpoch) => Promise<void>;
   /**
    * Steps 1 and 5: values written at the baseline decrypt under `contextId`. zama-host accepts the
-   * certificate its committee signs, and the holder user-decrypts the balance.
+   * certificate its committee signs, and the holder user-decrypts the balance. relayer-http also
+   * asked `outsideParties`, which are not in `contextId`: each was refused at its first attempt, and
+   * no aggregation waited for its deadline.
    */
-  readonly checkDecrypts: (contextId: bigint) => Promise<void>;
+  readonly checkDecrypts: (contextId: bigint, outsideParties: readonly number[]) => Promise<void>;
+  /**
+   * Step 1: a permit signed at the baseline, before the switch, still decrypts. The baseline
+   * context is not destroyed yet, so it still serves, as on EVM.
+   */
+  readonly checkBaselinePermit: () => Promise<void>;
   /**
    * Step 3: destroys the baseline context on zama-host. Its certificate from before the switch is
-   * then refused, and a certificate of `currentContextId` is still accepted.
+   * then refused, and a certificate of `currentContextId` is still accepted. A new request under a
+   * baseline permit is refused with 410 kms_context_destroyed.
    */
   readonly destroyBaseline: (currentContextId: bigint) => Promise<void>;
 };
@@ -117,6 +143,61 @@ export const prepareSolanaKmsContextLeg = async (
     chainId,
     verifyingProgramId: SOLANA_ACL_PROGRAM,
     fheParameter: state.scenario.kms.fheParams.toLowerCase(),
+  };
+
+  // Two permits the holder signs at the baseline: one decrypts after the switch, the other is first
+  // sent after the baseline context is destroyed. Each must name the baseline context. They are
+  // valid for a day, longer than the profile runs.
+  const baselineClient = decryptionClient(decryptConfig);
+  const holderWallet = solanaPermitWalletFromSecretKey(holder.bytes.subarray(0, 32));
+  const baselinePermit = await baselineClient.signPermit({ wallet: holderWallet, durationSeconds: 86_400n });
+  const destroyProbePermit = await baselineClient.signPermit({ wallet: holderWallet, durationSeconds: 86_400n });
+  for (const permit of [baselinePermit, destroyProbePermit]) {
+    const named = bytesToHex(permit.signedPermit.fields.kmsRouting.kmsContextId);
+    if (named !== bytesToHex(uint256Bytes(baseline.contextId))) {
+      throw new Error(`a permit signed at the baseline names KMS context ${named}, expected ${baseline.contextId}`);
+    }
+  }
+  const balanceEntry = {
+    handle: hexToBytes(balance.currentHandle),
+    encryptedStore: new Uint8Array(getAddressEncoder().encode(address(balance.encryptedStore))),
+    ownerAddress: new Uint8Array(getAddressEncoder().encode(holder.signer.address)),
+  };
+
+  /**
+   * relayer-http's log of every decrypt of the leg's values since `since`: each party in
+   * `outsideParties` was refused at its first attempt, and no aggregation hit its deadline. The SDK
+   * authenticates each share against the signers of its permit's context and needs 2t+1 of them
+   * (userDecrypt/response.ts), so a share from outside that context could never count.
+   */
+  const assertOutsidePartiesRefusedAtOnce = async (since: Date, outsideParties: readonly number[]) => {
+    const handles = [bytesToHex(supplyHandle), balance.currentHandle.toLowerCase()];
+    const requests = [...(await relayerHttpRequestsSince(since)).values()].filter((lines) =>
+      lines.some((line) => handles.some((handle) => String(line.fields.handles).includes(handle))),
+    );
+    if (requests.length < 2) throw new Error(`relayer-http logged ${requests.length} decrypt(s) of the leg's values, expected 2`);
+    for (const lines of requests) {
+      const started = lines.find((line) => line.message === 'aggregation started');
+      const outcome = aggregationOutcome(lines);
+      if (started === undefined || outcome === undefined) throw new Error('relayer-http logged no aggregation for a decrypt');
+      const timeoutMs = Number(started.fields.timeout_ms);
+      if (outcome.fields.deadline_hit !== false) {
+        throw new Error(`a ${String(started.fields.flow)} decrypt waited for its ${timeoutMs} ms deadline`);
+      }
+      for (const party of outsideParties) {
+        const node = nodeOutcomes(lines).find((outcomeOfNode) => outcomeOfNode.node === relayerHttpNodeName(party));
+        if (node?.message !== 'call failed' || node.attempts !== 1) {
+          throw new Error(
+            `party ${party}, outside the context, ended its ${String(started.fields.flow)} call with ` +
+              `${node === undefined ? 'no line' : `"${node.message}" after ${node.attempts} attempt(s)`}, expected one refused attempt`,
+          );
+        }
+        console.log(
+          `[kms-context-switch] solana: ${String(started.fields.flow)}: party ${party} refused (${node.code}) in ` +
+            `${node.elapsedMs} ms; the aggregation took ${String(outcome.fields.elapsed_ms)} ms of its ${timeoutMs} ms`,
+        );
+      }
+    }
   };
 
   /**
@@ -191,7 +272,8 @@ export const prepareSolanaKmsContextLeg = async (
       );
     },
 
-    checkDecrypts: async (contextId) => {
+    checkDecrypts: async (contextId, outsideParties) => {
+      const since = new Date();
       const certificate = await certifySupply(contextId);
       await discloseCertifiedHandle(context, { payer: holder.signer, certificate });
       await userDecryptExpectInFreshProcess(decryptConfig, {
@@ -200,9 +282,21 @@ export const prepareSolanaKmsContextLeg = async (
         secretKey: bytesToHex(holder.bytes.subarray(0, 32)),
         expected: WRAP_AMOUNT,
       });
+      await assertOutsidePartiesRefusedAtOnce(since, outsideParties);
       console.log(
         `[kms-context-switch] solana: context ${contextId} certified the baseline supply and the holder ` +
           'user-decrypted the baseline balance',
+      );
+    },
+
+    checkBaselinePermit: async () => {
+      const [value] = await baselineClient.decryptValues({ session: baselinePermit, entries: [balanceEntry] });
+      if (BigInt(value!.value as bigint) !== WRAP_AMOUNT) {
+        throw new Error(`a baseline permit decrypted the balance to ${String(value!.value)}, expected ${WRAP_AMOUNT}`);
+      }
+      console.log(
+        `[kms-context-switch] solana: a permit signed under baseline context ${baseline.contextId} still ` +
+          'decrypts the balance after the switch',
       );
     },
 
@@ -219,9 +313,23 @@ export const prepareSolanaKmsContextLeg = async (
         payer: holder.signer,
         certificate: await certifySupply(currentContextId),
       });
+      // The probe permit was never sent, so its request has a decryption id no Connector has seen.
+      // A body answered before the destroy would come back with its stored 200: each Connector serves
+      // the response row it holds for a decryption id. The body is posted as built because the SDK's
+      // client reads the permit's context before sending and refuses a destroyed one.
+      const probe = await submitUserDecryptOnce(
+        decryptionChain(decryptConfig),
+        buildSolanaUserDecryptRequest({ signedPermit: destroyProbePermit.signedPermit, entries: [balanceEntry] }),
+      );
+      if (probe.status !== 410 || probe.code !== 'kms_context_destroyed') {
+        throw new Error(
+          `a new request under destroyed context ${baseline.contextId} was answered ${probe.status} ${probe.code ?? ''}, ` +
+            'expected 410 kms_context_destroyed',
+        );
+      }
       console.log(
-        `[kms-context-switch] solana: destroyed context ${baseline.contextId}; its certificate was refused ` +
-          `and context ${currentContextId} still certifies`,
+        `[kms-context-switch] solana: destroyed context ${baseline.contextId}; its certificate was refused, ` +
+          `a new request under it was refused with 410 kms_context_destroyed, and context ${currentContextId} still certifies`,
       );
     },
   };

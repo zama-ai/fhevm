@@ -171,7 +171,7 @@ describe("config", () => {
     expect(parsed.solana_proof).toBeUndefined();
   });
 
-  test("renders relayer-http with EVM chains, Solana chains and one endpoint per proxy", () => {
+  test("renders relayer-http with EVM chains, Solana chains and every party's proxy, spare included", () => {
     const rendered = renderRelayerHttpConfig(
       { discovery: { hosts: { solana: { ACL_CONTRACT_ADDRESS: "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ" } } } as never },
       readFileSync(RELAYER_HTTP_CONFIG_BASE, "utf8"),
@@ -180,14 +180,15 @@ describe("config", () => {
           { key: "host", chainId: "12345", rpcPort: 8545 },
           { key: "solana", type: "solana", chainId: "130140237723663404", rpcPort: 8899 },
         ],
-        kms: { threshold: 1, committeeSize: 4 } as never,
+        kms: { parties: 5, threshold: 1, committeeSize: 4 } as never,
       },
       {
         "gateway-sc": { PUBLIC_DECRYPTION_THRESHOLD: "3", USER_DECRYPTION_THRESHOLD: "3" },
-        "test-suite": { KMS_CONNECTOR_ENDPOINT_URLS: "https://kms-connector-proxy:8443,https://kms-connector-2-proxy:8443" },
+        "kms-connector": { KMS_CONNECTOR_PROXY_BIND_ADDRESS: "0.0.0.0:8443" },
       },
     );
     const parsed = YAML.parse(rendered);
+    expect(parsed.log.format).toBe("json");
     expect(parsed.http.endpoint).toBe(`0.0.0.0:${RELAYER_HTTP_PORT}`);
     expect(parsed.http.supported_chain_ids).toEqual([12345]);
     expect(parsed.http.solana_chains).toEqual({
@@ -195,10 +196,14 @@ describe("config", () => {
     });
     expect(parsed.kms_aggregator.public_decrypt.threshold).toBe(3);
     expect(parsed.kms_aggregator.user_decrypt.threshold).toBe(3);
-    expect(parsed.kms_aggregator.endpoints).toEqual([
-      { name: "kms_0", url: "https://kms-connector-proxy:8443", auth: { type: "api_key", value_env: "KMS_CONNECTOR_API_KEY" } },
-      { name: "kms_1", url: "https://kms-connector-2-proxy:8443", auth: { type: "api_key", value_env: "KMS_CONNECTOR_API_KEY" } },
-    ]);
+    // The spare (party 5) is listed, so the node swap reaches it without a new config.
+    expect(parsed.kms_aggregator.endpoints).toEqual(
+      [1, 2, 3, 4, 5].map((party) => ({
+        name: `kms_${party}`,
+        url: `https://${party === 1 ? "kms-connector" : `kms-connector-${party}`}-proxy:8443`,
+        auth: { type: "api_key", value_env: "KMS_CONNECTOR_API_KEY" },
+      })),
+    );
   });
 });
 
