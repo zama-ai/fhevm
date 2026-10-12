@@ -432,20 +432,21 @@ impl InfiniteLogIter {
         number: u64,
         log: &Log,
     ) -> Result<BlockSummary> {
-        // find in memory
-        if let Some(summary) = self.block_history.find_block_by_number(number) {
-            return Ok(*summary);
-        };
-        // ask the chain
-        if let Ok(block_header) = self.get_block_by_number(number).await {
-            return Ok(block_header.into());
-        };
-        error!(
-            log = ?log,
-            number,
-            "Cannot get block header from chain, stalling catchup until it is available"
-        );
-        anyhow::bail!("Cannot get block header for block {number}")
+        let log_hash = log.block_hash.ok_or_else(|| {
+            anyhow!("Catchup log in block {number} has no block hash")
+        })?;
+        // A same-height fork can leave the old header in block_history. Resolve
+        // the canonical header again, also catching a reorg between getLogs and
+        // getBlockByNumber so the range is retried instead of misattributed.
+        let block: BlockSummary =
+            self.get_block_by_number(number).await?.into();
+        if block.number != number || block.hash != log_hash {
+            anyhow::bail!(
+                "Catchup log block hash {log_hash} disagrees with canonical block {} at height {number}",
+                block.hash
+            );
+        }
+        Ok(block)
     }
 
     async fn split_by_block(
@@ -459,14 +460,21 @@ impl InfiniteLogIter {
         let mut last_of_block = vec![false; logs.len()];
         let mut prev_block_number = 0;
         let last_index = logs.len() - 1;
-        // Sort if needed and ensure log.block_number is not None
-        for log in &mut logs[0..last_index] {
-            let log_block_number =
-                log.block_number.unwrap_or(prev_block_number);
-            if log.block_number.is_none() {
-                error!(log = ?log, assumed_block_number = prev_block_number, "Log without block number, assuming same block");
-                log.block_number = Some(prev_block_number);
-            };
+        // Reject incomplete RPC responses instead of assigning their events to
+        // an adjacent block or an old fork in the local history.
+        for log in &logs {
+            if log.removed
+                || log.block_number.is_none()
+                || log.block_hash.is_none()
+            {
+                anyhow::bail!(
+                    "Catchup log is removed or lacks block number or hash: {log:?}"
+                );
+            }
+        }
+        // Sort if needed, preserving log order within a block.
+        for log in &logs {
+            let log_block_number = log.block_number.unwrap();
             is_sorted = is_sorted && prev_block_number <= log_block_number;
             prev_block_number = log_block_number;
         }
@@ -492,6 +500,15 @@ impl InfiniteLogIter {
                 .get_block_summary(log.block_number.unwrap(), &log)
                 .await?;
             current_logs.push(log);
+            if current_logs
+                .iter()
+                .any(|event| event.block_hash != Some(summary.hash))
+            {
+                anyhow::bail!(
+                    "Catchup response mixes block hashes at height {}",
+                    summary.number
+                );
+            }
             let block_logs = BlockLogs {
                 logs: std::mem::take(&mut current_logs),
                 summary,
@@ -1475,24 +1492,105 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_block_summary_uses_known_block_from_history() {
-        let mut iter = new_test_iter(50);
-        let summary = BlockSummary {
-            number: 7,
-            hash: BlockHash::with_last_byte(0xAA),
-            parent_hash: BlockHash::with_last_byte(0x99),
-            timestamp: 1000,
-        };
-        iter.block_history.add_block(summary);
-
-        let got = iter
-            .get_block_summary(7, &Log::default())
+    async fn catchup_uses_canonical_header_after_same_height_fork() {
+        let (_anvil, mut iter, blocks) =
+            setup_iter_with_chain(1, 50, 0..=1).await;
+        let provider = iter.provider.read().await.clone().unwrap();
+        let snapshot = provider.anvil_snapshot().await.unwrap();
+        provider.anvil_mine(Some(1), None).await.unwrap();
+        let old: BlockSummary = provider
+            .get_block_by_number(2.into())
             .await
-            .expect("known block resolves");
-        assert_eq!(got.hash, summary.hash);
-        assert_eq!(got.parent_hash, summary.parent_hash);
-        assert_eq!(got.timestamp, summary.timestamp);
+            .unwrap()
+            .unwrap()
+            .into();
+        iter.block_history.add_block(old);
+
+        assert!(provider.anvil_revert(snapshot).await.unwrap());
+        provider
+            .anvil_set_next_block_timestamp(old.timestamp + 60)
+            .await
+            .unwrap();
+        provider.anvil_mine(Some(1), None).await.unwrap();
+        let replacement: BlockSummary = provider
+            .get_block_by_number(2.into())
+            .await
+            .unwrap()
+            .unwrap()
+            .into();
+        assert_ne!(old.hash, replacement.hash);
+        assert_eq!(replacement.parent_hash, blocks[1].hash);
+
+        let replacement_log = Log {
+            block_number: Some(2),
+            block_hash: Some(replacement.hash),
+            ..Log::default()
+        };
+        let grouped = iter.split_by_block(vec![replacement_log]).await.unwrap();
+        assert_eq!(grouped.len(), 1);
+        assert_eq!(grouped[0].summary.hash, replacement.hash);
+        assert_eq!(grouped[0].summary.parent_hash, blocks[1].hash);
+        assert_eq!(grouped[0].summary.timestamp, replacement.timestamp);
+
+        let stale_log = Log {
+            block_number: Some(2),
+            block_hash: Some(old.hash),
+            ..Log::default()
+        };
+        assert!(iter.split_by_block(vec![stale_log]).await.is_err());
     }
+
+    #[tokio::test]
+    async fn catchup_rejects_incomplete_and_mixed_block_metadata() {
+        let (_anvil, mut iter, blocks) =
+            setup_iter_with_chain(2, 50, 0..=1).await;
+        let valid = Log {
+            block_number: Some(2),
+            block_hash: Some(blocks[2].hash),
+            ..Log::default()
+        };
+        assert!(iter
+            .split_by_block(vec![Log {
+                removed: true,
+                ..valid.clone()
+            }])
+            .await
+            .is_err());
+        assert!(iter
+            .split_by_block(vec![valid.clone(), Log::default()])
+            .await
+            .is_err());
+        assert!(iter
+            .split_by_block(vec![
+                valid.clone(),
+                Log {
+                    block_number: Some(2),
+                    block_hash: Some(blocks[1].hash),
+                    ..Log::default()
+                }
+            ])
+            .await
+            .is_err());
+        let earlier = Log {
+            block_number: Some(1),
+            block_hash: Some(blocks[1].hash),
+            ..Log::default()
+        };
+        let reordered = iter
+            .split_by_block(vec![valid.clone(), earlier])
+            .await
+            .unwrap();
+        assert_eq!(
+            reordered
+                .iter()
+                .map(|block| block.summary.number)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        let grouped = iter.split_by_block(vec![valid]).await.unwrap();
+        assert_eq!(grouped[0].summary.hash, blocks[2].hash);
+    }
+
     #[tokio::test]
     async fn catchup_start_near_genesis_saturates() {
         let (_anvil, mut iter, _) = setup_iter_with_chain(1, 50, 0..=1).await;

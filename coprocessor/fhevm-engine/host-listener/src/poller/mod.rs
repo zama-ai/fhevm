@@ -36,6 +36,85 @@ use crate::poller::metrics::{
     inc_blocks_processed, inc_db_errors, inc_rpc_errors, set_received_block,
 };
 
+/// Separate RPC calls may observe different forks. Validate every log against
+/// the requested canonical header before ingestion or a cursor write.
+fn validate_log_provenance(
+    requested_block: u64,
+    header: &BlockSummary,
+    logs: &[Log],
+) -> Result<()> {
+    anyhow::ensure!(
+        header.number == requested_block,
+        "RPC header has the wrong height"
+    );
+    for log in logs {
+        anyhow::ensure!(
+            !log.removed
+                && log.block_number == Some(requested_block)
+                && log.block_hash == Some(header.hash),
+            "RPC log does not belong to canonical block {requested_block}"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::*;
+    use alloy::primitives::FixedBytes;
+
+    #[test]
+    fn only_canonical_logs_are_admitted() {
+        let header = BlockSummary {
+            number: 7,
+            hash: FixedBytes::with_last_byte(7),
+            parent_hash: FixedBytes::with_last_byte(6),
+            timestamp: 100,
+        };
+        let canonical = Log {
+            block_number: Some(7),
+            block_hash: Some(header.hash),
+            ..Default::default()
+        };
+        assert!(validate_log_provenance(7, &header, &[]).is_ok());
+        assert!(
+            validate_log_provenance(7, &header, &[canonical.clone()]).is_ok()
+        );
+        assert!(
+            validate_log_provenance(8, &header, &[canonical.clone()]).is_err()
+        );
+        for invalid in [
+            Log {
+                block_hash: None,
+                ..canonical.clone()
+            },
+            Log {
+                block_number: None,
+                ..canonical.clone()
+            },
+            Log {
+                block_hash: Some(FixedBytes::with_last_byte(8)),
+                ..canonical.clone()
+            },
+            Log {
+                block_number: Some(8),
+                ..canonical.clone()
+            },
+            Log {
+                removed: true,
+                ..canonical.clone()
+            },
+        ] {
+            assert!(validate_log_provenance(
+                7,
+                &header,
+                &[canonical.clone(), invalid]
+            )
+            .is_err());
+        }
+    }
+}
+
 const MAX_DB_RETRIES: u64 = 10;
 /// Exit after this many consecutive RPC failures (after retries exhausted).
 /// Orchestrator will restart with fresh state.
@@ -418,6 +497,16 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             set_received_block(&chain_id_str, block);
 
             let summary: BlockSummary = header.into();
+            if let Err(err) = validate_log_provenance(block, &summary, &logs) {
+                handle_rpc_failure(
+                    &mut consecutive_rpc_failures,
+                    Some(block),
+                    &err,
+                    "RPC log/header identity mismatch; leaving cursor unchanged",
+                )?;
+                rpc_errors += 1;
+                break;
+            }
             let block_logs = BlockLogs {
                 logs,
                 summary,
