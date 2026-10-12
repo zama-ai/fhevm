@@ -307,70 +307,17 @@ contract InputVerification is
         bytes calldata signature,
         bytes calldata extraData
     ) external virtual onlyCoprocessorTxSender {
-        InputVerificationStorage storage $ = _getInputVerificationStorage();
-
-        // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
-        if (zkProofId > $.zkProofIdCounter || zkProofId == 0) {
-            revert VerifyProofNotRequested(zkProofId);
-        }
-
-        // Retrieve stored ZK Proof verification request inputs.
-        ZKProofInput memory zkProofInput = $.zkProofInputs[zkProofId];
-
-        // Initialize the CiphertextVerification structure for the signature validation.
-        CiphertextVerification memory ciphertextVerification = CiphertextVerification(
-            ctHandles,
-            zkProofInput.userAddress,
-            zkProofInput.contractAddress,
-            zkProofInput.contractChainId,
-            extraData
+        ZKProofInput memory zkProofInput = _getInputVerificationStorage().zkProofInputs[zkProofId];
+        bytes32 digest = _hashCiphertextVerification(
+            CiphertextVerification(
+                ctHandles,
+                zkProofInput.userAddress,
+                zkProofInput.contractAddress,
+                zkProofInput.contractChainId,
+                extraData
+            )
         );
-
-        // Compute the digest of the CiphertextVerification structure.
-        bytes32 digest = _hashCiphertextVerification(ciphertextVerification);
-
-        // Recover the signer address from the signature,
-        address signerAddress = ECDSA.recover(digest, signature);
-
-        // Check that the signer is a coprocessor signer, and that it corresponds to the transaction
-        // sender of the same coprocessor.
-        _checkCoprocessorSignerMatchesTxSender(signerAddress, msg.sender);
-
-        // Check that the coprocessor has not already responded to the ZKPoK verification request.
-        _checkCoprocessorAlreadyResponded(zkProofId, signerAddress);
-
-        bytes[] storage currentSignatures = $.zkProofSignatures[zkProofId][digest];
-        currentSignatures.push(signature);
-        $.signerVerifiedZKPoK[zkProofId][signerAddress] = true;
-
-        // Store the coprocessor transaction sender address for the proof verification response
-        // It is important to consider the same mapping fields used for the consensus
-        // A "late" valid coprocessor transaction sender address will still be added in the list.
-        $.verifyProofConsensusTxSenders[zkProofId][digest].push(msg.sender);
-
-        // Emit the event at each call for monitoring purposes.
-        emit VerifyProofResponseCall(zkProofId, ctHandles, signature, msg.sender, extraData);
-
-        // Send the event if and only if the consensus is reached in the current response call.
-        // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        // Make sure the proof has neither been verified nor rejected yet: this prevents "lazy"
-        // coprocessors to be able to send both a verification and a rejection response by waiting for
-        // a coprocessor threshold decrement before sending some responses.
-        if (
-            !$.verifiedZKProofs[zkProofId] &&
-            !$.rejectedZKProofs[zkProofId] &&
-            _isConsensusReached(currentSignatures.length)
-        ) {
-            $.verifiedZKProofs[zkProofId] = true;
-
-            // A "late" valid coprocessor could still see its transaction sender address be added to
-            // the list after consensus. This storage variable is here to be able to retrieve this list
-            // later by only knowing the zkProofId, since a consensus can only happen once per proof
-            // verification request.
-            $.verifyProofConsensusDigest[zkProofId] = digest;
-
-            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
-        }
+        _verifyProofResponse(zkProofId, digest, ctHandles, signature, extraData);
     }
 
     /**
@@ -386,72 +333,17 @@ contract InputVerification is
         bytes calldata signature,
         bytes calldata extraData
     ) external virtual onlyCoprocessorTxSender {
-        InputVerificationStorage storage $ = _getInputVerificationStorage();
-
-        // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
-        if (zkProofId > $.zkProofIdCounter || zkProofId == 0) {
-            revert VerifyProofNotRequested(zkProofId);
-        }
-
-        // Compute the digest of the Solana CiphertextVerification structure. Scoped so the
-        // stored-input and verification-struct locals are released before the consensus block
-        // below — the Solana path carries more locals than the EVM one and would otherwise
-        // exceed the stack depth limit.
-        bytes32 digest;
-        {
-            // Retrieve stored Solana ZK Proof verification request inputs (bytes32 identities).
-            SolanaZKProofInput memory solanaInput = $.solanaZkProofInputs[zkProofId];
-
-            // Initialize the bytes32 CiphertextVerification structure for the signature validation.
-            SolanaCiphertextVerification memory ciphertextVerification = SolanaCiphertextVerification(
+        SolanaZKProofInput memory solanaInput = _getInputVerificationStorage().solanaZkProofInputs[zkProofId];
+        bytes32 digest = _hashSolanaCiphertextVerification(
+            SolanaCiphertextVerification(
                 ctHandles,
                 solanaInput.userAddress,
                 solanaInput.contractAddress,
                 solanaInput.contractChainId,
                 extraData
-            );
-            digest = _hashSolanaCiphertextVerification(ciphertextVerification);
-        }
-
-        // Recover the signer address from the signature.
-        address signerAddress = ECDSA.recover(digest, signature);
-
-        // Check that the signer is a coprocessor signer matching the transaction sender.
-        _checkCoprocessorSignerMatchesTxSender(signerAddress, msg.sender);
-
-        // Check that the coprocessor has not already responded to the ZKPoK verification request.
-        _checkCoprocessorAlreadyResponded(zkProofId, signerAddress);
-
-        bytes[] storage currentSignatures = $.zkProofSignatures[zkProofId][digest];
-        currentSignatures.push(signature);
-        $.signerVerifiedZKPoK[zkProofId][signerAddress] = true;
-
-        // Store the coprocessor transaction sender address for the proof verification response.
-        $.verifyProofConsensusTxSenders[zkProofId][digest].push(msg.sender);
-
-        // Emit the event at each call for monitoring purposes.
-        emit VerifyProofResponseCall(zkProofId, ctHandles, signature, msg.sender, extraData);
-
-        // Send the event if and only if the consensus is reached in the current response call.
-        // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        // Make sure the proof has neither been verified nor rejected yet: this prevents "lazy"
-        // coprocessors to be able to send both a verification and a rejection response by waiting for
-        // a coprocessor threshold decrement before sending some responses.
-        if (
-            !$.verifiedZKProofs[zkProofId] &&
-            !$.rejectedZKProofs[zkProofId] &&
-            _isConsensusReached(currentSignatures.length)
-        ) {
-            $.verifiedZKProofs[zkProofId] = true;
-
-            // A "late" valid coprocessor could still see its transaction sender address be added to
-            // the list after consensus. This storage variable is here to be able to retrieve this list
-            // later by only knowing the zkProofId, since a consensus can only happen once per proof
-            // verification request.
-            $.verifyProofConsensusDigest[zkProofId] = digest;
-
-            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
-        }
+            )
+        );
+        _verifyProofResponse(zkProofId, digest, ctHandles, signature, extraData);
     }
 
     /// @notice See {IInputVerification-rejectProofResponse}.
@@ -588,6 +480,70 @@ contract InputVerification is
      */
     // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayOwner {}
+
+    /**
+     * @notice Records a coprocessor's verification of a ZKPoK request, given the EIP712 digest the
+     * coprocessor signed, and emits {VerifyProofResponse} when this response reaches consensus.
+     * @dev Shared by {verifyProofResponse} and {verifyProofResponseSolana}, which differ only in
+     * how they compute `digest`.
+     */
+    function _verifyProofResponse(
+        uint256 zkProofId,
+        bytes32 digest,
+        bytes32[] calldata ctHandles,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) internal virtual {
+        InputVerificationStorage storage $ = _getInputVerificationStorage();
+
+        // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
+        if (zkProofId > $.zkProofIdCounter || zkProofId == 0) {
+            revert VerifyProofNotRequested(zkProofId);
+        }
+
+        // Recover the signer address from the signature,
+        address signerAddress = ECDSA.recover(digest, signature);
+
+        // Check that the signer is a coprocessor signer, and that it corresponds to the transaction
+        // sender of the same coprocessor.
+        _checkCoprocessorSignerMatchesTxSender(signerAddress, msg.sender);
+
+        // Check that the coprocessor has not already responded to the ZKPoK verification request.
+        _checkCoprocessorAlreadyResponded(zkProofId, signerAddress);
+
+        bytes[] storage currentSignatures = $.zkProofSignatures[zkProofId][digest];
+        currentSignatures.push(signature);
+        $.signerVerifiedZKPoK[zkProofId][signerAddress] = true;
+
+        // Store the coprocessor transaction sender address for the proof verification response
+        // It is important to consider the same mapping fields used for the consensus
+        // A "late" valid coprocessor transaction sender address will still be added in the list.
+        $.verifyProofConsensusTxSenders[zkProofId][digest].push(msg.sender);
+
+        // Emit the event at each call for monitoring purposes.
+        emit VerifyProofResponseCall(zkProofId, ctHandles, signature, msg.sender, extraData);
+
+        // Send the event if and only if the consensus is reached in the current response call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
+        // Make sure the proof has neither been verified nor rejected yet: this prevents "lazy"
+        // coprocessors to be able to send both a verification and a rejection response by waiting for
+        // a coprocessor threshold decrement before sending some responses.
+        if (
+            !$.verifiedZKProofs[zkProofId] &&
+            !$.rejectedZKProofs[zkProofId] &&
+            _isConsensusReached(currentSignatures.length)
+        ) {
+            $.verifiedZKProofs[zkProofId] = true;
+
+            // A "late" valid coprocessor could still see its transaction sender address be added to
+            // the list after consensus. This storage variable is here to be able to retrieve this list
+            // later by only knowing the zkProofId, since a consensus can only happen once per proof
+            // verification request.
+            $.verifyProofConsensusDigest[zkProofId] = digest;
+
+            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
+        }
+    }
 
     /**
      * @notice Checks if the coprocessor has already verified or rejected a ZKPoK verification request.
