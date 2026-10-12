@@ -249,7 +249,7 @@ instruction arguments without the SDK. Pinned by the `compile_fail` doctest on `
 **61. [ANTI]** `FheExecution::build` does not guarantee that the host's CPI fits the host's heap or compute budget. The
 builder's typed limits (#54) cover the app's own heap. The host has a separate 32 KiB heap, and what it allocates
 depends on the live Store size, the number of MMR peaks and the permissions sealed per output, none of which the builder
-can see. `the_builder_admits_mature_updates_without_modelling_the_host_heap` builds 16 updates, each to its own Store
+can see. `the_builder_admits_mature_updates_without_modeling_the_host_heap` builds 16 updates, each to its own Store
 with 8 MMR peaks and the same eight viewers, and the builder admits 22 such updates at any peak count. The
 `fhe_execute_boundary/mature_updates*` rows of the solana-tests cost report show where the host heap stops those
 shapes. These are shape measurements, not an output cap. No
