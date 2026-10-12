@@ -368,10 +368,10 @@ failures: a transaction that fits on the cleartext build always fits in producti
   `the_committed_cases_are_the_connectors_verdicts` until the cases are rewritten:
   `ZAMA_UPDATE_AUTHORIZATION_CASES=1 cargo test -p kms-worker --test solana_authorization_cases`
   from `kms-connector/`. The SDK's `authorization.test.ts` then fails until
-  `cleartext/authorization.ts` reaches the same verdicts. Add a case there for a new rule.
-- **A change to the relayer's admission or user-decrypt pre-check, or to the gateway's validity
-  window,** has no generated check. Mirror it by hand in `cleartext/decrypt.ts` or
-  `cleartext/authorization.ts` (`solanaRelayerPrecheckRefusal`) and its test.
+  `cleartext/authorization.ts` reaches the same verdicts, and the code each failure is answered
+  with, as the cases record it. Add a case there for a new rule.
+- **A change to the decryption relayer's admission (relayer-http's stateless validation)** has no
+  generated check. Mirror it by hand in `cleartext/decrypt.ts` and its test.
 
 ## Where the two decrypt leaves are tested
 
@@ -447,7 +447,8 @@ and a record that is behind is a retry.
   The user-decrypt side of the mirror is pinned by committed vectors that both sides assert
   against. The permit's canonical text and offchain-message envelope come from `zama-solana-permit`
   (used by the connector and the relayer) and the SDK's TypeScript, pinned by
-  `solana/test-fixtures/permit/permit_v1.json`. The relayer envelope is mirrored by the relayer's
-  wire types (`UserDecryptV3RequestJson`) and the SDK, pinned by
-  `solana/test-fixtures/user-decrypt/relayer_envelope_v1.json`. Moving those bytes is a protocol
-  change (new domain tag / version byte), not a fixture refresh.
+  `solana/test-fixtures/permit/permit_v1.json`. The decryption request bodies are the
+  `kms-connector-api` Solana DTOs, which the decryption relayer forwards unchanged; the SDK's
+  `decryption/connectorVectors.test.ts` holds both bodies to the Connector's vectors in
+  `kms-connector/crates/api/tests/vectors.json`. Moving those bytes is a protocol change (new
+  domain tag / version byte), not a fixture refresh.

@@ -49,6 +49,7 @@ const revealConfidentialBalance = async (
     id: BigInt(session.config.chainId),
     fhevm: {
       relayerUrl: session.config.relayerUrl,
+      decryptionRelayerUrl: session.config.decryptionRelayerUrl,
       programs: { host: { address: session.config.aclProgram as Bytes32Hex } },
     },
   });
@@ -120,7 +121,7 @@ const createReadClient = (session: DemoSession) => createFhevmBaseClient({
   rpc: createFinalizedRpc(session.config.rpcUrl),
   chain: defineFhevmSolanaChain({
     id: BigInt(session.config.chainId),
-    fhevm: { relayerUrl: session.config.relayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
+    fhevm: { relayerUrl: session.config.relayerUrl, decryptionRelayerUrl: session.config.decryptionRelayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
   }),
 });
 

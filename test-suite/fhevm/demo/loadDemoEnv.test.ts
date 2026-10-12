@@ -17,6 +17,7 @@ const sampleConfig = (): SolanaDemoConfig => ({
   rpcUrl: "http://127.0.0.1:9999",
   wsUrl: "ws://127.0.0.1:9998",
   relayerUrl: "http://127.0.0.1:3001",
+  decryptionRelayerUrl: "http://127.0.0.1:3003",
   gatewayRpcUrl: "http://127.0.0.1:8547",
   aclProgram: `0x${"cd".repeat(32)}`,
   fheParameter: "test",

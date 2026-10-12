@@ -205,7 +205,7 @@ export const settleOrCancelVaultBatch = async (
       setFhevmRuntimeConfig({ auth: { type: 'ApiKeyHeader', value: session.relayerApiKey } });
       const chain = defineFhevmSolanaChain({
         id: BigInt(session.config.chainId),
-        fhevm: { relayerUrl: session.config.relayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
+        fhevm: { relayerUrl: session.config.relayerUrl, decryptionRelayerUrl: session.config.decryptionRelayerUrl, programs: { host: { address: session.config.aclProgram as Bytes32Hex } } },
       });
       const publicDecryptClient = createFhevmPublicDecryptClient({ chain, rpc });
       signature = await settleBatch(publicDecryptClient, keeperClient, {

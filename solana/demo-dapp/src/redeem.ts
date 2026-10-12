@@ -324,7 +324,7 @@ export const joinRedeemBatch = async (
   });
   const chain = defineFhevmSolanaChain({
     id: BigInt(config.chainId),
-    fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: config.aclProgram as Bytes32Hex } } },
+    fhevm: { relayerUrl: config.relayerUrl, decryptionRelayerUrl: config.decryptionRelayerUrl, programs: { host: { address: config.aclProgram as Bytes32Hex } } },
   });
   const encryptClient = createFhevmEncryptClient({
     chain,

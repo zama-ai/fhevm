@@ -3,7 +3,7 @@
 // chains: EncryptedERC20 selects 0 when the balance is short, and so does the confidential-token
 // program (solana/docs/INVARIANTS.md, `mollusk_overdrawn_confidential_transfer_succeeds_and_moves_an_encrypted_zero`).
 
-import { SolanaUserDecryptRunError } from "@fhevm/sdk/solana";
+import { SolanaDecryptionRunError } from "@fhevm/sdk/solana";
 import { parseAbi, type Address, type Hex } from "viem";
 
 import { generateSolanaKeypair } from "../../src/solana/provision";
@@ -39,15 +39,14 @@ const evmRefusal: RefusalReason = (error) =>
   (error as { contractName?: string } | null)?.contractName === "ACL" ? "SDK ACL check" : undefined;
 
 /**
- * Solana: B naming A as owner is a delegated entry with no delegation row, which the relayer's
- * delegation pre-check refuses (solana/docs/INVARIANTS.md #50). The pre-check runs on the queued
- * job, after the submission was accepted, so the refusal arrives as `failed`.
+ * Solana: B naming A as owner is a delegated entry with no delegation row, which the Connector's
+ * delegation check denies (solana/docs/INVARIANTS.md #50). The decryption relayer answers with the
+ * Connectors' code alone, so `acl_denied` is as specific as the client can see; a grant may land
+ * later, so the SDK resubmits within its attempt budget before it reports the denial.
  */
 const solanaRefusal: RefusalReason = (error) =>
-  error instanceof SolanaUserDecryptRunError &&
-  error.rejection.kind === "failed" &&
-  error.rejection.label === "not_allowed_on_host_acl"
-    ? "relayer delegation pre-check"
+  error instanceof SolanaDecryptionRunError && error.rejection.code === "acl_denied"
+    ? "Connector delegation check"
     : undefined;
 
 let evmHost: Promise<EvmHost> | undefined;
@@ -127,6 +126,7 @@ export const parityCase: ParityCase<{ fund: bigint; amount: bigint }> = {
       rpcUrl: env.rpcUrl,
       wsUrl: env.wsUrl,
       relayerUrl: env.relayerUrl,
+      decryptionRelayerUrl: env.decryptionRelayerUrl,
       aclProgram: env.aclProgram,
       funding: env.funding,
       funderKeypairPath: env.capabilities.faucet ? undefined : env.roots.deployerKeypairPath,

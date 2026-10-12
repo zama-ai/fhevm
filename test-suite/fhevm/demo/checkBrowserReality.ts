@@ -149,12 +149,17 @@ const main = async (): Promise<void> => {
         const response = await fetch(`${DAPP_URL}/api/demo-config`);
         if (!response.ok) throw new Error(`proxied demo config returned ${response.status}`);
         const text = await response.text();
-        const body = JSON.parse(text) as { readonly config?: { readonly demoBootId?: unknown; readonly relayerUrl?: unknown } };
+        const body = JSON.parse(text) as {
+          readonly config?: { readonly demoBootId?: unknown; readonly relayerUrl?: unknown; readonly decryptionRelayerUrl?: unknown };
+        };
         if (body.config?.demoBootId !== authorization.bootId) {
           throw new Error("proxied demo config did not return the current boot");
         }
         if (body.config?.relayerUrl !== `${DAPP_URL}/api/relayer`) {
           throw new Error("proxied demo config did not advertise the same-origin relayer proxy");
+        }
+        if (body.config?.decryptionRelayerUrl !== `${DAPP_URL}/api/decryption-relayer`) {
+          throw new Error("proxied demo config did not advertise the same-origin decryption relayer proxy");
         }
         if (/keypair/i.test(text) || text.includes(authorization.token)) {
           throw new Error("proxied demo config leaked key material or the capability");

@@ -24,6 +24,7 @@ const addressBytes = (value: Address): Uint8Array => new Uint8Array(getAddressEn
 export type FheVerticalConfig = {
   readonly rpcUrl: string;
   readonly relayerUrl: string;
+  readonly decryptionRelayerUrl: string;
   /** The Solana host chain id (`HostConfig.chain_id`, type byte `0x01`). */
   readonly chainId: bigint;
   /** The zama-host program id as bytes32 hex — the permit's verifying program. */
@@ -59,7 +60,7 @@ const publicDecryptClient = async (config: FheVerticalConfig) => {
   const solana = await loadSolanaSdk();
   const chain = solana.defineFhevmSolanaChain({
     id: config.chainId,
-    fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: asBytes32Hex(config.verifyingProgramId) } } },
+    fhevm: { relayerUrl: config.relayerUrl, decryptionRelayerUrl: config.decryptionRelayerUrl, programs: { host: { address: asBytes32Hex(config.verifyingProgramId) } } },
   });
   solana.setFhevmRuntimeConfig({ auth: relayerAuth() });
   return solana.createFhevmPublicDecryptClient({ chain, rpc: createFinalizedRpc(config.rpcUrl) });
@@ -116,7 +117,7 @@ export const userDecrypt = async (config: FheVerticalConfig, params: UserDecrypt
   const solana = await loadSolanaSdk();
   const chain = solana.defineFhevmSolanaChain({
     id: config.chainId,
-    fhevm: { relayerUrl: config.relayerUrl, programs: { host: { address: asBytes32Hex(config.verifyingProgramId) } } },
+    fhevm: { relayerUrl: config.relayerUrl, decryptionRelayerUrl: config.decryptionRelayerUrl, programs: { host: { address: asBytes32Hex(config.verifyingProgramId) } } },
   });
   solana.setFhevmRuntimeConfig({ auth: relayerAuth() });
   const client = solana.createFhevmDecryptClient({
