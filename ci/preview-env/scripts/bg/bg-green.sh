@@ -130,25 +130,15 @@ green_helm_args() {
     --set-string "commonConfig.stackVersion=${GCS_STACK_VERSION}"
     --set-string "commonConfig.canonicalProtocolConfigChainId=${canonical}"
     --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${party}:5432"
-    --set-string "hostListenerShared.serviceAccountName=coprocessor-${party}"
-    --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${party}"
-    --set-string "hostListenerCatchupOnlyShared.serviceAccountName=coprocessor-${party}"
-    --set-string "hostListenerConsumerShared.serviceAccountName=coprocessor-${party}"
-    --set-string "tfheWorker.serviceAccountName=coprocessor-${party}"
-    --set-string "zkProofWorker.serviceAccountName=coprocessor-${party}"
-    --set-string "snsWorker.serviceAccountName=coprocessor-${party}"
-    --set-string "upgradeController.serviceAccountName=coprocessor-${party}"
-    --set-string "consensusDetector.serviceAccountName=coprocessor-${party}"
+    # gwListener, txSender and dbMigration unset it in values-coprocessor-e2e.yaml.
+    --set-string "defaults.serviceAccountName=coprocessor-${party}"
     --set "snsWorker.config.s3BucketName.valueFrom.configMapKeyRef.name=coprocessor-${party}"
-    --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${party}-master:6379"
+    --set-string "hostListener.modes.consumer.config.brokerUrl.value=redis://coprocessor-redis-${party}-master:6379"
     --set-string "txSender.wallet.secret.value=${privkey}"
     --set-string "snsWorker.wallet.secret.value=${privkey}"
     --set-string "consensusDetector.wallet.secret.value=${privkey}"
+    --set-string "defaults.image.tag=${GCS_IMAGE_TAG}"
   )
-  for img in dbMigration gwListener hostListenerShared hostListenerPollerShared hostListenerCatchupOnlyShared \
-             hostListenerConsumerShared snsWorker tfheWorker txSender zkProofWorker upgradeController consensusDetector; do
-    GREEN_ARGS+=(--set-string "${img}.image.tag=${GCS_IMAGE_TAG}")
-  done
 }
 
 # The live fleet must be the one this round upgrades from, with no attempt still in progress
@@ -242,7 +232,7 @@ start)
         -f "${work}/${rel}.yaml" \
         --set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"$(green_fleet "${i}")\"}" \
         --set-string "commonConfig.stackVersion=${GCS_STACK_VERSION}" \
-        --set-string "hostListenerPollerShared.image.tag=${GCS_IMAGE_TAG}" \
+        --set-string "defaults.image.tag=${GCS_IMAGE_TAG}" \
         >/dev/null
     done
     if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
@@ -257,8 +247,8 @@ start)
         -f "${work}/polygon-${i}.yaml" \
         --set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"$(green_fleet "${i}")\"}" \
         --set-string "commonConfig.stackVersion=${GCS_STACK_VERSION}" \
-        --set-string "hostListenerConsumerShared.image.tag=${GCS_IMAGE_TAG}" \
-        --set-string "hostListenerConsumerShared.args.serviceName=host-listener-consumer${GREEN_SLOT:--bcs}" \
+        --set-string "defaults.image.tag=${GCS_IMAGE_TAG}" \
+        --set-string "hostListener.modes.consumer.serviceName=host-listener-consumer${GREEN_SLOT:--bcs}" \
         >/dev/null
     fi
   done

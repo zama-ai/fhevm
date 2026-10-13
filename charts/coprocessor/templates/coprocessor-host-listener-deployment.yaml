@@ -12,7 +12,7 @@
 {{- end }}
 - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
 - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-{{- if or $mode.kmsAlways $chain.kmsGenerationContractAddress $chain.kmsGenerationContractAddressValueFrom }}
+{{- if or $chain.kmsGenerationContractAddress $chain.kmsGenerationContractAddressValueFrom }}
 - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
 {{- end }}
 {{- if or $chain.protocolConfigContractAddress $chain.protocolConfigContractAddressValueFrom }}
@@ -28,7 +28,7 @@
 {{- if $mode.metricsArg }}
 - --metrics-addr=0.0.0.0:{{ $c.ports.metrics }}
 {{- end }}
-{{- with coalesce .cfg.serviceName ($c.args | default dict).serviceName }}
+{{- with coalesce .cfg.serviceName $c.serviceName }}
 - --service-name={{ . }}
 {{- end }}
 {{- if and $mode.tenant (or $tenant.value $tenant.valueFrom) }}

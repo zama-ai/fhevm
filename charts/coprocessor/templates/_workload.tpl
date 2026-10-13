@@ -5,6 +5,53 @@ can be concatenated and indented once by the caller.
 */}}
 
 {{/*
+Deep merge of .override onto .base, returned as YAML. Maps merge
+recursively; any other override value (including false, 0, "" and lists)
+replaces the base value; null keeps the base value.
+*/}}
+{{- define "coprocessor.deepMerge" -}}
+{{- $out := deepCopy (.base | default dict) -}}
+{{- range $k, $v := (.override | default dict) -}}
+  {{- $current := get $out $k -}}
+  {{- if and (kindIs "map" $v) (kindIs "map" $current) -}}
+    {{- $_ := set $out $k (include "coprocessor.deepMerge" (dict "base" $current "override" $v) | fromYaml) -}}
+  {{- else if not (kindIs "invalid" $v) -}}
+    {{- $_ := set $out $k $v -}}
+  {{- end -}}
+{{- end -}}
+{{- toYaml $out -}}
+{{- end -}}
+
+{{/*
+Probe spec without the "enabled" switch. A probe may carry one handler only,
+so an exec, tcpSocket or grpc handler drops the httpGet inherited from
+defaults.probes.
+*/}}
+{{- define "coprocessor.probe" -}}
+{{- $probe := omit . "enabled" -}}
+{{- if or .exec .tcpSocket .grpc -}}
+{{- $probe = omit $probe "httpGet" -}}
+{{- end -}}
+{{- toYaml $probe -}}
+{{- end -}}
+
+{{/*
+Image reference "<registry>/<repository>:<tag>" from a merged image block
+(defaults.image overlaid with the component image). The tag falls back to
+the chart appVersion.
+Usage: include "coprocessor.image" (dict "root" $ "image" $c.image)
+*/}}
+{{- define "coprocessor.image" -}}
+{{- $repository := required "image.repository is required" .image.repository -}}
+{{- $tag := required "image.tag is required (set defaults.image.tag or <component>.image.tag)" (.image.tag | default .root.Chart.AppVersion) -}}
+{{- with .image.registry -}}
+{{- printf "%s/%s:%s" (trimSuffix "/" .) $repository (toString $tag) -}}
+{{- else -}}
+{{- printf "%s:%s" $repository (toString $tag) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 One env entry from a {value, valueFrom} spec; renders nothing when neither is
 set. valueFrom is rendered through tpl (see coprocessor.valueFrom).
 Usage: include "coprocessor.envVar" (dict "root" $ "name" "X" "spec" .Values.commonConfig.databaseUser)
@@ -205,9 +252,10 @@ resources:
 {{/*
 Deployment shared by every long-running component.
   root                 chart root context
-  c                    component values: image, replicas, ports, resources,
-                       probes, updateStrategy, podLabels, scheduling,
-                       serviceAccountName
+  c                    merged component values (defaults overlaid with the
+                       component block): image, imagePullSecrets, replicas,
+                       ports, resources, probes, updateStrategy, podLabels,
+                       scheduling, serviceAccountName
   name                 resource name (also app.kubernetes.io/name)
   appLabel             value of the app label
   container            container name
@@ -260,8 +308,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
+      {{- with $c.imagePullSecrets }}
       imagePullSecrets:
-        - name: registry-credentials
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       restartPolicy: Always
       {{- with $c.nodeSelector }}
       nodeSelector:
@@ -280,7 +330,7 @@ spec:
       {{- end }}
       containers:
         - name: {{ .container }}
-          image: {{ $c.image.name }}:{{ $c.image.tag }}
+          image: {{ include "coprocessor.image" (dict "root" $root "image" $c.image) }}
           command: [{{ .command | quote }}]
           {{- if $probe.enabled }}
           startupProbe:
@@ -311,13 +361,13 @@ spec:
           {{- with $probes.liveness }}
           {{- if .enabled }}
           livenessProbe:
-            {{- toYaml (omit . "enabled") | nindent 12 }}
+            {{- include "coprocessor.probe" . | nindent 12 }}
           {{- end }}
           {{- end }}
           {{- with $probes.readiness }}
           {{- if .enabled }}
           readinessProbe:
-            {{- toYaml (omit . "enabled") | nindent 12 }}
+            {{- include "coprocessor.probe" . | nindent 12 }}
           {{- end }}
           {{- end }}
           {{- if $sslMount }}
@@ -341,23 +391,32 @@ components:
 {{- end -}}
 
 {{/*
+Values of a singleton component: .Values.defaults overlaid with
+.Values.<key>, as YAML.
+Usage: include "coprocessor.componentValues" (dict "root" $ "key" "dbMigration") | fromYaml
+*/}}
+{{- define "coprocessor.componentValues" -}}
+{{- include "coprocessor.deepMerge" (dict "base" .root.Values.defaults "override" (index .root.Values .key)) -}}
+{{- end -}}
+
+{{/*
 Every enabled workload, returned as YAML under "workloads". Each entry has
-key, name, appLabel, c (component values), service and extraSelectorLabels.
-Host listener entries also carry mode, chain and cfg (see
-coprocessor.hostListenerInstances).
+key, name, appLabel, c (merged component values), service and
+extraSelectorLabels. Host listener entries also carry mode, chain and cfg
+(see coprocessor.hostListenerInstances).
 */}}
 {{- define "coprocessor.workloads" -}}
 {{- $root := . -}}
 {{- $workloads := list -}}
 {{- range $s := (include "coprocessor.singletonComponents" . | fromYaml).components -}}
-  {{- $c := index $root.Values $s.key | default dict -}}
-  {{- if $c.enabled -}}
+  {{- if (index $root.Values $s.key | default dict).enabled -}}
+    {{- $c := include "coprocessor.componentValues" (dict "root" $root "key" $s.key) | fromYaml -}}
     {{- $name := include "coprocessor.componentName" (dict "root" $root "key" $s.key "suffix" $s.suffix) -}}
     {{- $workloads = append $workloads (dict "key" $s.key "name" $name "appLabel" (printf "coprocessor-%s" $s.suffix) "c" $c "service" $s.service "extraSelectorLabels" true) -}}
   {{- end -}}
 {{- end -}}
 {{- range $i := (include "coprocessor.hostListenerInstances" . | fromYaml).instances -}}
-  {{- $workloads = append $workloads (merge (dict "key" $i.mode.chainKey "service" true "extraSelectorLabels" $i.mode.extraSelectorLabels) $i) -}}
+  {{- $workloads = append $workloads (merge (dict "key" (printf "hostListener.%s" $i.mode.key) "service" true "extraSelectorLabels" $i.mode.extraSelectorLabels) $i) -}}
 {{- end -}}
 {{- toYaml (dict "workloads" $workloads) -}}
 {{- end -}}
@@ -377,19 +436,20 @@ Usage: with (include "coprocessor.workload" (dict "root" $ "key" "tfheWorker") |
 {{- end -}}
 
 {{/*
-Host listener modes. Each enabled chains[].<chainKey> entry deploys one
-instance of the mode, configured by .Values.<valuesKey>.
-  rpc         "ws" (wsUrl), "http" (httpUrl) or "" (no RPC)
-  metricsArg  pass --metrics-addr
-  tenant      pass TENANT_API_KEY / --coprocessor-api-key
-  broker      pass BROKER_URL / --broker-url from config.brokerUrl
-  chainIdArg  pass --chain-id
-  kmsAlways   pass --kms-generation-address even without an address
+Host listener modes. Each chains[] entry with hostListener.<key>.enabled
+deploys one instance of the mode, configured by hostListener.common overlaid
+with hostListener.modes.<key>.
+  rpc                  "ws" (wsUrl), "http" (httpUrl) or "" (no RPC)
+  metricsArg           pass --metrics-addr
+  tenant               pass TENANT_API_KEY / --coprocessor-api-key
+  broker               pass BROKER_URL / --broker-url from config.brokerUrl
+  chainIdArg           pass --chain-id
+  extraSelectorLabels  add commonConfig.extraSelectorLabels to the selector
+                       (selectors are immutable, so this is fixed per mode)
 */}}
 {{- define "coprocessor.hostListenerModes" -}}
 modes:
-  - chainKey: hostListener
-    valuesKey: hostListenerShared
+  - key: listener
     suffix: host-listener
     command: host_listener
     rpc: ws
@@ -397,10 +457,8 @@ modes:
     tenant: true
     broker: false
     chainIdArg: false
-    kmsAlways: false
     extraSelectorLabels: false
-  - chainKey: hostListenerPoller
-    valuesKey: hostListenerPollerShared
+  - key: poller
     suffix: host-listener-poller
     command: host_listener_poller
     rpc: http
@@ -408,10 +466,8 @@ modes:
     tenant: true
     broker: false
     chainIdArg: false
-    kmsAlways: false
     extraSelectorLabels: false
-  - chainKey: hostListenerCatchupOnly
-    valuesKey: hostListenerCatchupOnlyShared
+  - key: catchupOnly
     suffix: host-listener-catchup-only
     command: host_listener
     rpc: ws
@@ -419,10 +475,8 @@ modes:
     tenant: true
     broker: false
     chainIdArg: false
-    kmsAlways: false
     extraSelectorLabels: false
-  - chainKey: hostListenerConsumer
-    valuesKey: hostListenerConsumerShared
+  - key: consumer
     suffix: host-listener-consumer
     command: host_listener_consumer
     rpc: ""
@@ -430,24 +484,34 @@ modes:
     tenant: false
     broker: true
     chainIdArg: true
-    kmsAlways: true
     extraSelectorLabels: true
 {{- end -}}
 
 {{/*
 Enabled host listener instances, returned as YAML under "instances". Each has
-mode, chain, cfg (the chain's per-mode block), c (shared mode values), name
-and appLabel. useLegacyName drops the chain suffix from name and appLabel.
+mode, chain, cfg (chains[].hostListener.<mode>), c, name and appLabel.
+c is defaults, then hostListener.common, then hostListener.modes.<mode>; its
+env, extraArgs and disabledArgs are concatenated across those levels (and
+cfg.disabledArgs) instead of replaced. useLegacyName drops the chain suffix
+from name and appLabel.
 */}}
 {{- define "coprocessor.hostListenerInstances" -}}
 {{- $root := . -}}
+{{- $hl := .Values.hostListener | default dict -}}
+{{- $common := $hl.common | default dict -}}
+{{- $base := include "coprocessor.deepMerge" (dict "base" .Values.defaults "override" $common) | fromYaml -}}
 {{- $chains := (include "coprocessor.chains" . | fromYaml).chains -}}
 {{- $instances := list -}}
 {{- range $mode := (include "coprocessor.hostListenerModes" . | fromYaml).modes -}}
-  {{- $c := index $root.Values $mode.valuesKey | default dict -}}
+  {{- $modeValues := index ($hl.modes | default dict) $mode.key | default dict -}}
   {{- range $chain := $chains -}}
-    {{- $cfg := index $chain $mode.chainKey | default dict -}}
+    {{- $cfg := index ($chain.hostListener | default dict) $mode.key | default dict -}}
     {{- if $cfg.enabled -}}
+      {{- $c := include "coprocessor.deepMerge" (dict "base" $base "override" $modeValues) | fromYaml -}}
+      {{- range $field := list "env" "extraArgs" "disabledArgs" -}}
+        {{- $_ := set $c $field (concat (get $common $field | default list) (get $modeValues $field | default list)) -}}
+      {{- end -}}
+      {{- $_ := set $c "disabledArgs" (concat $c.disabledArgs ($cfg.disabledArgs | default list)) -}}
       {{- $legacy := $cfg.useLegacyName | default false -}}
       {{- $name := ternary (printf "%s-%s" $root.Release.Name $mode.suffix) (printf "%s-%s-%s" $root.Release.Name $mode.suffix $chain.name) $legacy | trunc 63 | trimSuffix "-" -}}
       {{- $appLabel := ternary (printf "coprocessor-%s" $mode.suffix) (printf "coprocessor-%s-%s" $mode.suffix $chain.name) $legacy -}}

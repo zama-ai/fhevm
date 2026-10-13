@@ -22,9 +22,9 @@ polygon_consumer() {
     helm upgrade --install "coprocessor-polygon-${i}${suffix}" "${COPROCESSOR_CHART}" \
       -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-polygon-consumer-e2e.yaml \
       --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
-      --set-string "hostListenerConsumerShared.serviceAccountName=coprocessor-${i}" \
-      --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${i}-master:6379" \
-      --set-string "hostListenerConsumerShared.image.tag=${tag}" \
+      --set-string "defaults.serviceAccountName=coprocessor-${i}" \
+      --set-string "hostListener.modes.consumer.config.brokerUrl.value=redis://coprocessor-redis-${i}-master:6379" \
+      --set-string "defaults.image.tag=${tag}" \
       ${fleet_args[@]+"${fleet_args[@]}"} "$@" &
   done
   wait
@@ -43,7 +43,7 @@ case "${kind}" in
     gcs_version="${GCS_STACK_VERSION:-$(yq -r '.commonConfig.stackVersion' ci/preview-env/coprocessor/values-coprocessor-gcs-e2e.yaml)}"
     polygon_consumer "-gcs" "${head_tag}" "gcs" \
       --set-string "commonConfig.stackVersion=${gcs_version}" \
-      --set-string "hostListenerConsumerShared.args.serviceName=host-listener-consumer-gcs"
+      --set-string "hostListener.modes.consumer.serviceName=host-listener-consumer-gcs"
     ;;
   poller)
     for i in $(seq 1 "${NB_COPROCESSOR}"); do
@@ -52,14 +52,14 @@ case "${kind}" in
         tracing=(
           --set "commonConfig.tracing.enabled=true"
           --set-string "commonConfig.tracing.endpoint=${OTLP_ENDPOINT}"
-          --set-string "hostListenerPollerShared.tracing.service=host-listener-poller-${i}"
+          --set-string "hostListener.modes.poller.tracing.service=host-listener-poller-${i}"
         )
       fi
       helm upgrade --install "coprocessor-poller-${i}" "${COPROCESSOR_CHART}" \
         -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-poller-e2e.yaml \
         --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
-        --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
-        --set-string "hostListenerPollerShared.image.tag=${poller_tag}" \
+        --set-string "defaults.serviceAccountName=coprocessor-${i}" \
+        --set-string "defaults.image.tag=${poller_tag}" \
         "${tracing[@]}" &
     done
     wait
@@ -69,8 +69,8 @@ case "${kind}" in
       helm upgrade --install "coprocessor-poller-polygon-${i}" "${COPROCESSOR_CHART}" \
         -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-poller-polygon-e2e.yaml \
         --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-${i}:5432" \
-        --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-${i}" \
-        --set-string "hostListenerPollerShared.image.tag=${poller_tag}" &
+        --set-string "defaults.serviceAccountName=coprocessor-${i}" \
+        --set-string "defaults.image.tag=${poller_tag}" &
     done
     wait
     ;;

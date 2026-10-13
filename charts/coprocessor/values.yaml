@@ -42,7 +42,8 @@ commonConfig:
   #   chains:
   #     - name: sepolia                 # must match <prefix>.name in the preset
   #       wsUrlValueFrom: {secretKeyRef: {name: rpc-credentials, key: ethereum-rpc-ws-url}}
-  #       hostListener: {enabled: true, useLegacyName: true}
+  #       hostListener:
+  #         listener: {enabled: true, useLegacyName: true}
   network: ""
   # Keep production Blue on legacy material during a compressed-key migration.
   # Fresh and GPU deployments must disable this safeguard explicitly.
@@ -104,13 +105,7 @@ commonConfig:
   # --coprocessor-api-key and v0.11 snsWorker renders --tenant-api-key.
   tenantApiKey: {}
 
-  # Host chain configuration
-  hostChainWsUrl: "ws://ethereum-node:8546"
-  hostChainHttpUrl: "http://ethereum-node:8545"
-  aclContractAddress: {}            # required — e.g. 0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c
-  fhevmExecutorContractAddress: {}  # required — e.g. 0x...
-  kmsGenerationContractAddress: {}  # optional — e.g. 0x...
-  protocolConfigContractAddress: {}  # optional — e.g. 0x...
+  # Host chain RPC URLs and contracts are per chain: see chains[].
 
   # Chain id of the canonical chain hosting the ProtocolConfig contract. Only
   # the host-listener whose own chain id matches this value decodes
@@ -166,6 +161,82 @@ commonConfig:
 # on key conflict.
 podAnnotations: {}
 podLabels: {}
+
+# -----------------------------------------------------------------------------
+# Workload defaults
+# -----------------------------------------------------------------------------
+# Base values for every workload (singleton components, host listener modes
+# and the dbMigration Job). A component block overlays them: maps deep-merge,
+# any other value replaces the default (false, 0 and "" included).
+# Example: run every image of a release from one tag and service account:
+#   defaults:
+#     image: {tag: v0.14.1}
+#     serviceAccountName: coprocessor
+#   tfheWorker:
+#     image: {tag: v0.14.1-gpu}   # still uses defaults.image.registry
+defaults:
+  # Image reference: <registry>/<repository>:<tag>. Components set repository;
+  # registry and tag fall back to these. An empty tag means the chart appVersion.
+  image:
+    registry: hub.zama.org/zama-protocol/zama-ai/fhevm
+    tag: ""
+
+  imagePullSecrets:
+    - name: registry-credentials
+
+  replicas: 1
+
+  # Existing SA for workload identity (e.g. IRSA). Unset = namespace default.
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Health check probes (ignored by the dbMigration Job). Components without a
+  # healthcheck port (consensusDetector, upgradeController) must keep them off.
+  probes:
+    liveness:
+      enabled: false
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: false
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+  # tracing.enabled unset follows commonConfig.tracing.enabled. tracing.service
+  # is the stable OTEL service name; empty falls back to the pod name, which
+  # fragments traces across replicas and rollouts.
+  tracing:
+    service: ""
+
+  serviceMonitor:
+    enabled: false
+
+  # Extra pod labels merged on top of global podLabels (these win on conflict).
+  podLabels: {}
+
+  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
 # Contract ConfigMap
@@ -241,14 +312,14 @@ dbMigration:
   #   "helm.sh/hook-weight": "5"
   #   "helm.sh/hook-delete-policy": "before-hook-creation"
 
+  # registry and tag default to defaults.image.
   image:
-    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/db-migration
-    tag: v0.11.0
+    repository: coprocessor/db-migration
 
   # Override the container command. Defaults to ["/initialize_db.sh"] when unset.
   command:
 
-  # Host-chains seeding is now driven entirely by the top-level `.Values.chains`
+  # Host-chains seeding is driven entirely by the top-level `.Values.chains`
   # list (see the `chains:` block lower in this file). The dbMigration Job
   # reads it via HOST_CHAINS_COUNT + HOST_CHAIN_<i>_{ID,NAME,ACL} env vars
   # rendered by coprocessor-db-migration.yaml. Add or remove entries in
@@ -258,497 +329,105 @@ dbMigration:
   # Additional Environment variables
   env: []
 
-  # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
-  serviceAccountName:
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
-  podLabels: {}
-
-  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
-  nodeSelector:
-  affinity:
-  tolerations:
-
 # -----------------------------------------------------------------------------
-# Host Listener Shared
+# Host Listener
 # -----------------------------------------------------------------------------
-# Processes blockchain events from the host chain via WebSocket.
-# Shared/default configuration for every chain entry that enables
-# hostListener. This block is the primary source for image, replicas,
-# resources, ports, probes, tracing, scheduling, and structured args.
-# Per-chain hostListener config does not deep-override this block; it only:
-#   - enables the listener for that chain
-#   - provides required chain-specific RPC/contracts via the parent chain entry
-#   - appends env and extraArgs
-#   - may override serviceName
-#   - may claim the unsuffixed legacy resource name via useLegacyName
-hostListenerShared:
-  image:
-    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
-    tag: v0.11.0
+# Four listener modes, each deployed once per chains[] entry that enables it
+# (chains[].hostListener.<mode>.enabled):
+#   listener     host_listener, real-time WebSocket subscription + catchup
+#   poller       host_listener_poller, HTTP polling
+#   catchupOnly  host_listener restricted to the catchup loop
+#   consumer     host_listener_consumer, reads listener events from the broker
+#
+# Effective values of a mode: defaults, then common, then modes.<mode>
+# (maps deep-merge, other values replace). env, extraArgs and disabledArgs are
+# concatenated instead: common, then modes.<mode>, then the chain entry.
+# Accepted keys in common and modes.<mode>: the defaults keys plus image.repository,
+# ports, config, env, disabledArgs, extraArgs and serviceName (--service-name;
+# chains[].hostListener.<mode>.serviceName wins).
+hostListener:
+  common:
+    image:
+      repository: coprocessor/host-listener
+    ports:
+      metrics: 9100
+      healthcheck: 8080
+    env: []
+    disabledArgs: []
+    extraArgs: []
 
-  replicas: 1
+  modes:
+    # Template-injected args: --database-url, --url, --acl-contract-address,
+    # --tfhe-contract-address, --kms-generation-address and
+    # --protocol-config-address (when the chain has them), --health-port,
+    # --service-name, --coprocessor-api-key (when commonConfig.tenantApiKey is set).
+    # Other host_listener flags for v0.11 / v0.12 images (extraArgs):
+    #   --initial-block-time=12                  # switches to observed block time once available
+    #   --log-level=INFO
+    #   --reorg-maximum-duration-in-blocks=50
+    #   --catchup-finalization-in-blocks=20      # wait N blocks before treating a block as finalized
+    #   --catchup-margin=5
+    #   --catchup-paging=100
+    #   --start-at-block=-40                     # can be negative from the latest block
+    #   --end-at-block=-15                       # stop catchup at a specific block
+    #   --only-catchup-loop                      # requires --end-at-block
+    #   --catchup-loop-sleep-secs=60
+    #   --dependence-cache-size=10000
+    #   --dependence-by-connexity                # connected components instead of linear chains
+    #   --dependence-cross-block                 # allow chains across L1 block boundaries
+    #   --timeout-request-websocket=15           # websocket RPC timeout in seconds
+    #   v0.12.* only:
+    #   --dependent-ops-max-per-chain=0          # 0 disables slow-lane decisions
+    listener: {}
 
-  # Component-specific configuration
-  config:
-    # Host chain RPC URL for v0.11 delegation management. Rendered as
-    # HOST_CHAIN_URL and referenced by the built-in --host-chain-url arg when
-    # set. Accepts `value` or `valueFrom` (secretKeyRef/configMapKeyRef).
-    # Leave unset to inject nothing.
-    hostChainUrl: {}
+    # Template-injected args: as listener (with --url from httpUrl) plus --metrics-addr.
+    # Other host_listener_poller flags (extraArgs):
+    #   --finality-lag=15
+    #   --batch-size=100                         # maximum number of blocks to process per iteration
+    #   --poll-interval-ms=6000                  # half block time on Ethereum
+    #   --retry-interval-ms=1000                 # backoff between RPC/DB retries
+    #   --max-http-retries=45                    # retries in addition to the initial attempt
+    #   --rpc-compute-units-per-second=1000
+    #   --log-level=INFO
+    #   --dependence-cache-size=10000
+    #   --dependence-by-connexity
+    #   --dependence-cross-block
+    #   v0.12 only:
+    #   --dependent-ops-max-per-chain=0
+    #   when the image supports it:
+    #   --seed-start-block=-10000                # starting block when no poller state exists yet;
+    #                                            # >= 0 absolute height, negative = blocks behind head.
+    #                                            # Used only at first startup: existing state always
+    #                                            # wins, so restarts never rewind or skip. Set this when
+    #                                            # onboarding a new host chain to avoid walking from genesis.
+    poller: {}
 
-  # Additional environment variables.
-  env: []
+    # Template-injected args: as listener. Typical extraArgs:
+    #   --only-catchup-loop                      # requires --end-at-block
+    #   --end-at-block=-15                       # relative to the latest block when negative
+    #   --start-at-block=-30                     # optional catchup start
+    #   --catchup-loop-sleep-secs=60
+    catchupOnly: {}
 
-  # Structured args. serviceName is the only modeled key; per-chain
-  # chains[].hostListener.serviceName takes precedence when set.
-  args:
-    # serviceName: host-listener
-
-  # Suppress any template-injected arg above. Values are kebab-case flag names (no leading `--`).
-  disabledArgs: []
-
-  # Additional raw CLI flags, appended after template-injected args.
-  # Full host_listener CLI for v0.11 / v0.12 images:
-  #   built-in via template: --database-url, --url, --acl-contract-address,
-  #     --tfhe-contract-address, --health-port, --service-name
-  #   v0.11 built-in only: --coprocessor-api-key
-  #   shared flags:
-  #     --initial-block-time=12                  # switches to observed block time once available
-  #     --log-level=INFO
-  #     --reorg-maximum-duration-in-blocks=50
-  #     --catchup-finalization-in-blocks=20      # wait N blocks before treating a block as finalized
-  #     --catchup-margin=5
-  #     --catchup-paging=100
-  #     --start-at-block=-40                     # can be negative from the latest block
-  #     --end-at-block=-15                       # stop catchup at a specific block
-  #     --only-catchup-loop                      # requires --end-at-block
-  #     --catchup-loop-sleep-secs=60
-  #     --dependence-cache-size=10000
-  #     --dependence-by-connexity                # connected components instead of linear chains
-  #     --dependence-cross-block                 # allow chains across L1 block boundaries
-  #     --timeout-request-websocket=15           # websocket RPC timeout in seconds
-  #   v0.12.* only:
-  #     --dependent-ops-max-per-chain=0          # 0 disables slow-lane decisions
-  extraArgs: []
-
-  # Service ports configuration
-  ports:
-    metrics: 9100
-    healthcheck: 8080
-
-  serviceMonitor:
-    enabled: false
-
-  # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
-  serviceAccountName:
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  # Health check probes
-  probes:
-    liveness:
-      enabled: false
-      httpGet:
-        path: /liveness
-        port: healthcheck
-      initialDelaySeconds: 10
-      periodSeconds: 10
-    readiness:
-      enabled: false
-      httpGet:
-        path: /healthz
-        port: healthcheck
-      initialDelaySeconds: 5
-      periodSeconds: 10
-
-  # Distributed tracing (inherits from commonConfig but can be overridden)
-  tracing:
-    enabled: false
-    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
-    # falls back to the pod name (metadata.name), which fragments traces across
-    # pod replicas and rollouts. Set a stable string per environment.
-    service: ""
-
-  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
-  podLabels: {}
-
-  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
-  nodeSelector:
-  affinity:
-  tolerations:
-
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-
-# -----------------------------------------------------------------------------
-# Host Listener Poller Shared
-# -----------------------------------------------------------------------------
-# Processes blockchain events from the host chain via HTTP polling
-# Shared/default configuration for every chain entry that enables
-# hostListenerPoller. This block is the primary source for image, replicas,
-# resources, ports, probes, tracing, scheduling, and structured args.
-# Per-chain hostListenerPoller config does not deep-override this block; it only:
-#   - enables the listener for that chain
-#   - provides required chain-specific RPC/contracts via the parent chain entry
-#   - appends env and extraArgs
-#   - may override serviceName
-#   - may claim the unsuffixed legacy resource name via useLegacyName
-hostListenerPollerShared:
-  image:
-    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
-    tag: v0.11.0
-
-  replicas: 1
-
-  # Additional environment variables.
-  env: []
-
-  # Structured args. serviceName is the only modeled key; per-chain
-  # chains[].hostListenerPoller.serviceName takes precedence when set.
-  args:
-    # serviceName: host-listener-poller
-
-  # Suppress any template-injected arg above. Values are kebab-case flag names
-  # (no leading `--`).
-  disabledArgs: []
-
-  # Additional raw CLI flags, appended after template-injected args.
-  # Full host_listener_poller CLI for v0.11 / v0.12 images:
-  #   built-in via template: --database-url, --url (alias: --rpc-url),
-  #     --acl-contract-address, --tfhe-contract-address, --health-port,
-  #     --metrics-addr, --service-name
-  #   v0.11 built-in only: --coprocessor-api-key
-  #   shared flags:
-  #     --finality-lag=15
-  #     --batch-size=100                        # maximum number of blocks to process per iteration
-  #     --poll-interval-ms=6000                 # half block time on Ethereum
-  #     --retry-interval-ms=1000                # backoff between RPC/DB retries
-  #     --max-http-retries=45                   # retries in addition to the initial attempt
-  #     --rpc-compute-units-per-second=1000
-  #     --log-level=INFO
-  #     --dependence-cache-size=10000
-  #     --dependence-by-connexity
-  #     --dependence-cross-block
-  #   v0.12 only:
-  #     --dependent-ops-max-per-chain=0
-  #   when the image supports it:
-  #     --seed-start-block=-10000            # starting block when no poller state exists yet;
-  #                                             # >= 0 absolute height, negative = blocks behind head.
-  #                                             # Used only at first startup: existing state always
-  #                                             # wins, so restarts never rewind or skip. Set this when
-  #                                             # onboarding a new host chain to avoid walking from genesis.
-  extraArgs: []
-
-  # Service ports configuration
-  ports:
-    metrics: 9100
-    healthcheck: 8080
-
-  serviceMonitor:
-    enabled: false
-
-  # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
-  serviceAccountName:
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  # Health check probes
-  probes:
-    liveness:
-      enabled: false
-      httpGet:
-        path: /liveness
-        port: healthcheck
-      initialDelaySeconds: 10
-      periodSeconds: 10
-    readiness:
-      enabled: false
-      httpGet:
-        path: /healthz
-        port: healthcheck
-      initialDelaySeconds: 5
-      periodSeconds: 10
-
-  # Distributed tracing (inherits from commonConfig but can be overridden)
-  tracing:
-    enabled: false
-    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
-    # falls back to the pod name (metadata.name), which fragments traces across
-    # pod replicas and rollouts. Set a stable string per environment.
-    service: ""
-
-  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
-  podLabels: {}
-
-  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
-  nodeSelector:
-  affinity:
-  tolerations:
-
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-
-# -----------------------------------------------------------------------------
-# Host Listener Catchup Only Shared
-# -----------------------------------------------------------------------------
-# Host listener variant that runs only the catchup loop without real-time subscription.
-# Shared/default configuration for every chain entry that enables
-# hostListenerCatchupOnly. This block is the primary source for image, replicas,
-# resources, ports, probes, tracing, scheduling, and structured args.
-# Per-chain hostListenerCatchupOnly config does not deep-override this block; it only:
-#   - enables the listener for that chain
-#   - provides required chain-specific RPC/contracts via the parent chain entry
-#   - appends env and extraArgs
-#   - may override serviceName
-#   - may claim the unsuffixed legacy resource name via useLegacyName
-hostListenerCatchupOnlyShared:
-  image:
-    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
-    tag: v0.11.0
-
-  replicas: 1
-
-  # Additional environment variables.
-  env: []
-
-  # Structured args. serviceName is the only modeled key; per-chain
-  # chains[].hostListenerCatchupOnly.serviceName takes precedence when set.
-  args:
-    # serviceName: host-listener-catchup-only
-
-  # Suppress any template-injected arg above. Values are kebab-case flag names
-  # (no leading `--`).
-  disabledArgs: []
-
-  # Additional raw CLI flags, appended after template-injected args.
-  # Full host_listener CLI for catchup-only releases:
-  #   built-in via template: --database-url, --url, --acl-contract-address,
-  #     --tfhe-contract-address, --health-port, --service-name
-  #   v0.11 built-in only: --coprocessor-api-key
-  #   shared flags:
-  #     --initial-block-time=12
-  #     --log-level=INFO
-  #     --reorg-maximum-duration-in-blocks=50
-  #     --catchup-finalization-in-blocks=20
-  #     --only-catchup-loop                      # requires --end-at-block
-  #     --end-at-block=-15                       # relative to the latest block when negative
-  #     --start-at-block=-30                     # optional catchup start
-  #     --catchup-loop-sleep-secs=60
-  #     --catchup-margin=5
-  #     --catchup-paging=100
-  #     --dependence-cache-size=10000
-  #     --dependence-by-connexity
-  #     --dependence-cross-block
-  #     --timeout-request-websocket=15
-  #   v0.12 only:
-  #     --dependent-ops-max-per-chain=0
-  extraArgs: []
-
-  # Service ports configuration
-  ports:
-    metrics: 9100
-    healthcheck: 8080
-
-  serviceMonitor:
-    enabled: false
-
-  # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
-  serviceAccountName:
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  # Health check probes
-  probes:
-    liveness:
-      enabled: false
-      httpGet:
-        path: /liveness
-        port: healthcheck
-      initialDelaySeconds: 10
-      periodSeconds: 10
-    readiness:
-      enabled: false
-      httpGet:
-        path: /healthz
-        port: healthcheck
-      initialDelaySeconds: 5
-      periodSeconds: 10
-
-  # Distributed tracing (inherits from commonConfig but can be overridden)
-  tracing:
-    enabled: false
-    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
-    # falls back to the pod name (metadata.name), which fragments traces across
-    # pod replicas and rollouts. Set a stable string per environment.
-    service: ""
-
-  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
-  podLabels: {}
-
-  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
-  nodeSelector:
-  affinity:
-  tolerations:
-
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-
-# -----------------------------------------------------------------------------
-# Host Listener Consumer Shared
-# -----------------------------------------------------------------------------
-# Consumes listener events from the database / broker queue (no chain RPC).
-# Shared/default configuration for every chain entry that enables
-# hostListenerConsumer. This block is the primary source for image, replicas,
-# resources, ports, probes, tracing, scheduling, and structured args.
-# Per-chain hostListenerConsumer config does not deep-override this block; it only:
-#   - enables the consumer for that chain
-#   - provides required chain-specific contracts and chainId via the parent chain entry
-#   - appends env and extraArgs
-#   - may override serviceName
-#   - may claim the unsuffixed legacy resource name via useLegacyName
-hostListenerConsumerShared:
-  image:
-    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/host-listener
-    tag: v0.11.0
-
-  replicas: 1
-
-  # Component-specific configuration
-  config:
-    # Broker URL (e.g. Redis) consumed by host_listener_consumer. Rendered as the
-    # BROKER_URL env var and injected into args via --broker-url=$(BROKER_URL).
-    # Accepts `value` (literal) or `valueFrom` (secretKeyRef/configMapKeyRef).
-    # Leave unset to inject nothing.
-    # Example:
-    #   brokerUrl:
-    #     value: "redis://coprocessor-redis-master.coproc.svc.cluster.local:6379"
-    brokerUrl: {}
-
-  # Additional environment variables.
-  env: []
-
-  # Structured args. serviceName is the only modeled key; per-chain
-  # chains[].hostListenerConsumer.serviceName takes precedence when set.
-  #
-  # serviceName is the telemetry label only. It does not decide which broker
-  # queue this consumer reads: that identity is compiled in, so two releases of
-  # the same deployment cannot drift apart by being renamed. Set this freely.
-  args:
-    # serviceName: host-listener-consumer
-
-  # Suppress any template-injected arg above. Values are kebab-case flag names
-  # (no leading `--`).
-  disabledArgs: []
-
-  # Additional raw CLI flags, appended after template-injected args.
-  # Template-injected args: --database-url, --acl-contract-address,
-  #   --tfhe-contract-address, --kms-generation-address, --chain-id (from
-  #   chains[].chainId), --broker-url (from config.brokerUrl), --health-port,
-  #   --metrics-addr, --service-name
-  extraArgs: []
-
-  # Service ports configuration
-  ports:
-    metrics: 9100
-    healthcheck: 8080
-
-  serviceMonitor:
-    enabled: false
-
-  # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
-  serviceAccountName:
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  # Health check probes
-  probes:
-    liveness:
-      enabled: false
-      httpGet:
-        path: /liveness
-        port: healthcheck
-      initialDelaySeconds: 10
-      periodSeconds: 10
-    readiness:
-      enabled: false
-      httpGet:
-        path: /healthz
-        port: healthcheck
-      initialDelaySeconds: 5
-      periodSeconds: 10
-
-  # Distributed tracing (inherits from commonConfig but can be overridden)
-  tracing:
-    enabled: false
-    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
-    # falls back to the pod name (metadata.name), which fragments traces across
-    # pod replicas and rollouts. Set a stable string per environment.
-    service: ""
-
-  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
-  podLabels: {}
-
-  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
-  nodeSelector:
-  affinity:
-  tolerations:
-
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+    # Template-injected args: --database-url, --acl-contract-address,
+    # --tfhe-contract-address, --kms-generation-address and
+    # --protocol-config-address (when the chain has them), --chain-id (from
+    # chains[].chainId), --broker-url (from config.brokerUrl), --health-port,
+    # --metrics-addr, --service-name.
+    consumer:
+      config:
+        # Broker URL (e.g. Redis), rendered as BROKER_URL and passed as
+        # --broker-url=$(BROKER_URL). Accepts `value` or `valueFrom`
+        # (secretKeyRef/configMapKeyRef). Leave unset to inject nothing.
+        # Example:
+        #   brokerUrl:
+        #     value: "redis://coprocessor-redis-master.coproc.svc.cluster.local:6379"
+        brokerUrl: {}
 
 # -----------------------------------------------------------------------------
 # Chains
 # -----------------------------------------------------------------------------
-# Each entry deploys up to four host listener variants for a given chain.
-# The top-level hostListenerShared / hostListenerPollerShared /
-# hostListenerCatchupOnlyShared / hostListenerConsumerShared blocks define
-# shared settings used by every enabled chain for that listener type. Chain
-# entries do not deep-merge or override arbitrary top-level fields.
+# Host chains, and which host listener modes run for each of them.
 #
 # Generated chains: when commonConfig.network is set (and
 # contractConfigMap.enabled is true), one entry is generated per host chain found
@@ -761,34 +440,25 @@ hostListenerConsumerShared:
 #     - name: sepolia
 #       wsUrl: "ws://eth-node:8546"
 #       hostListener:
-#         enabled: true
+#         listener: {enabled: true}
 # Entries with no matching generated chain are used as-is.
-#
-# What each chain entry provides:
-#   - required chain-specific connection values (wsUrl or wsUrlValueFrom,
-#     httpUrl or httpUrlValueFrom, and contracts as literal values or valueFrom refs)
-#   - chainId (quoted string), consumed by hostListenerConsumer via --chain-id
-#   - enabled toggles per listener type
-#   - additive env and extraArgs
-#   - optional serviceName override
-#   - optional useLegacyName flag to keep the unsuffixed legacy Kubernetes name
 #
 # Resource naming:
 #   - By default, resources are named <release>-host-listener-<name>,
 #     <release>-host-listener-poller-<name>, etc.
-#   - Set useLegacyName: true on exactly one chain per listener type to keep the
+#   - Set useLegacyName: true on exactly one chain per mode to keep the
 #     unsuffixed legacy name (<release>-host-listener, etc.) during migration.
 #
 # Example:
 # chains:
-#   - name: ethereum
-#     chainId: "11155111"               # required by hostListenerConsumer (--chain-id); quote to avoid YAML float coercion
-#     wsUrl: "ws://eth-node:8546"       # required by hostListener + hostListenerCatchupOnly unless wsUrlValueFrom is set
+#   - name: sepolia
+#     chainId: "11155111"               # required by the consumer (--chain-id); quote to avoid YAML float coercion
+#     wsUrl: "ws://eth-node:8546"       # required by listener + catchupOnly unless wsUrlValueFrom is set
 #     # wsUrlValueFrom:                 # secret/config-backed alternative to wsUrl
 #     #   secretKeyRef:
 #     #     name: rpc
 #     #     key: ethereum-rpc-ws-url
-#     httpUrl: "http://eth-node:8545"   # required by hostListenerPoller unless httpUrlValueFrom is set
+#     httpUrl: "http://eth-node:8545"   # required by poller unless httpUrlValueFrom is set
 #     # httpUrlValueFrom:
 #     #   secretKeyRef:
 #     #     name: rpc
@@ -799,39 +469,23 @@ hostListenerConsumerShared:
 #     #     name: '{{ include "coprocessor.contractConfigMapName" . }}'
 #     #     key: acl.address
 #     fhevmExecutorContractAddress: "0x..."
-#     # fhevmExecutorContractAddressValueFrom:
-#     #   configMapKeyRef:
-#     #     name: '{{ include "coprocessor.contractConfigMapName" . }}'
-#     #     key: fhevm_executor.address
-#     # kmsGenerationContractAddress: "0x..."  # optional; omit when KMSGeneration is not deployed on the host chain
-#     # kmsGenerationContractAddressValueFrom:
-#     #   configMapKeyRef:
-#     #     name: '{{ include "coprocessor.contractConfigMapName" . }}'
-#     #     key: kms_generation.address
+#     # kmsGenerationContractAddress: "0x..."     # optional; omit when KMSGeneration is not deployed on the host chain
+#     # protocolConfigContractAddress: "0x..."    # optional
 #     hostListener:
-#       enabled: true
-#       useLegacyName: true   # set true on exactly one chain to keep the unsuffixed legacy resource names
-#       serviceName:          # optional per-chain override for --service-name
-#       extraArgs: []         # appended after top-level hostListenerShared.extraArgs
-#       env: []               # appended after top-level hostListenerShared.env
-#     hostListenerPoller:
-#       enabled: true
-#       useLegacyName: true
-#       serviceName:
-#       extraArgs: []         # appended after top-level hostListenerPollerShared.extraArgs
-#       env: []               # appended after top-level hostListenerPollerShared.env
-#     hostListenerCatchupOnly:
-#       enabled: true
-#       useLegacyName: true
-#       serviceName:
-#       extraArgs: []         # appended after top-level hostListenerCatchupOnlyShared.extraArgs
-#       env: []               # appended after top-level hostListenerCatchupOnlyShared.env
-#     hostListenerConsumer:
-#       enabled: true
-#       useLegacyName: true   # often required: <release>-host-listener-consumer-<chain> can exceed K8s's 63-char name limit
-#       serviceName:
-#       extraArgs: []         # appended after top-level hostListenerConsumerShared.extraArgs
-#       env: []               # appended after top-level hostListenerConsumerShared.env
+#       listener:
+#         enabled: true
+#         useLegacyName: true   # set true on exactly one chain to keep the unsuffixed legacy resource names
+#         serviceName:          # optional per-chain override for --service-name
+#         extraArgs: []         # appended after hostListener.common/modes.listener extraArgs
+#         disabledArgs: []      # added to hostListener.common/modes.listener disabledArgs
+#         env: []               # appended after hostListener.common/modes.listener env
+#       poller:
+#         enabled: true
+#       catchupOnly:
+#         enabled: true
+#       consumer:
+#         enabled: true
+#         useLegacyName: true   # often required: <release>-host-listener-consumer-<chain> can exceed K8s's 63-char name limit
 chains: []
 
 # -----------------------------------------------------------------------------
@@ -844,10 +498,7 @@ gwListener:
   nameOverride:
 
   image:
-    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/gw-listener
-    tag: v0.12.0
-
-  replicas: 1
+    repository: coprocessor/gw-listener
 
   # Component-specific configuration
   config:
@@ -900,59 +551,6 @@ gwListener:
     metrics: 9100
     healthcheck: 8080
 
-  serviceMonitor:
-    enabled: false
-
-  # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
-  serviceAccountName:
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  # Health check probes
-  probes:
-    liveness:
-      enabled: false
-      httpGet:
-        path: /liveness
-        port: healthcheck
-      initialDelaySeconds: 10
-      periodSeconds: 10
-    readiness:
-      enabled: false
-      httpGet:
-        path: /healthz
-        port: healthcheck
-      initialDelaySeconds: 5
-      periodSeconds: 10
-
-  # Distributed tracing (inherits from commonConfig but can be overridden)
-  tracing:
-    enabled: false
-    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
-    # falls back to the pod name (metadata.name), which fragments traces across
-    # pod replicas and rollouts. Set a stable string per environment.
-    service: ""
-
-  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
-  podLabels: {}
-
-  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
-  nodeSelector:
-  affinity:
-  tolerations:
-
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-
 # -----------------------------------------------------------------------------
 # TFHE Worker
 # -----------------------------------------------------------------------------
@@ -963,10 +561,7 @@ tfheWorker:
   nameOverride:
 
   image:
-    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/tfhe-worker
-    tag: v0.11.0
-
-  replicas: 1
+    repository: coprocessor/tfhe-worker
 
   # Additional environment variables
   env: []
@@ -1170,56 +765,8 @@ tfheWorker:
     metrics: 9100
     healthcheck: 8080
 
-  serviceMonitor:
-    enabled: false
-
-  # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
-  serviceAccountName:
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  # Health check probes
-  probes:
-    liveness:
-      enabled: false
-      httpGet:
-        path: /liveness
-        port: healthcheck
-      initialDelaySeconds: 10
-      periodSeconds: 10
-    readiness:
-      enabled: false
-      httpGet:
-        path: /healthz
-        port: healthcheck
-      initialDelaySeconds: 5
-      periodSeconds: 10
-
-  # Distributed tracing configuration
-  # If enabled, overrides commonConfig.tracing.enabled for this component
   tracing:
-    enabled: false
     service: "tfhe-worker"
-
-  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
-  podLabels: {}
-
-  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
-  nodeSelector:
-  affinity:
-  tolerations:
-
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
 
   # Horizontal Pod Autoscaler configuration
   hpa:
@@ -1256,10 +803,7 @@ zkProofWorker:
   nameOverride:
 
   image:
-    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/zkproof-worker
-    tag: v0.11.0
-
-  replicas: 1
+    repository: coprocessor/zkproof-worker
 
   # Additional environment variables.
   env: []
@@ -1288,59 +832,6 @@ zkProofWorker:
   ports:
     metrics: 9100
     healthcheck: 8080
-
-  serviceMonitor:
-    enabled: false
-
-  # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
-  serviceAccountName:
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  # Health check probes
-  probes:
-    liveness:
-      enabled: false
-      httpGet:
-        path: /liveness
-        port: healthcheck
-      initialDelaySeconds: 10
-      periodSeconds: 10
-    readiness:
-      enabled: false
-      httpGet:
-        path: /healthz
-        port: healthcheck
-      initialDelaySeconds: 5
-      periodSeconds: 10
-
-  # Distributed tracing (inherits from commonConfig but can be overridden)
-  tracing:
-    enabled: false
-    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
-    # falls back to the pod name (metadata.name), which fragments traces across
-    # pod replicas and rollouts. Set a stable string per environment.
-    service: ""
-
-  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
-  podLabels: {}
-
-  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
-  nodeSelector:
-  affinity:
-  tolerations:
-
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
 
   # Horizontal Pod Autoscaler configuration
   hpa:
@@ -1377,10 +868,7 @@ snsWorker:
   nameOverride:
 
   image:
-    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/sns-worker
-    tag: v0.11.0
-
-  replicas: 1
+    repository: coprocessor/sns-worker
 
   # Component-specific configuration
   config:
@@ -1487,59 +975,6 @@ snsWorker:
     metrics: 9100
     healthcheck: 8080
 
-  serviceMonitor:
-    enabled: false
-
-  # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
-  serviceAccountName:
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  # Health check probes
-  probes:
-    liveness:
-      enabled: false
-      httpGet:
-        path: /liveness
-        port: healthcheck
-      initialDelaySeconds: 10
-      periodSeconds: 10
-    readiness:
-      enabled: false
-      httpGet:
-        path: /healthz
-        port: healthcheck
-      initialDelaySeconds: 5
-      periodSeconds: 10
-
-  # Distributed tracing (inherits from commonConfig but can be overridden)
-  tracing:
-    enabled: false
-    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
-    # falls back to the pod name (metadata.name), which fragments traces across
-    # pod replicas and rollouts. Set a stable string per environment.
-    service: ""
-
-  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
-  podLabels: {}
-
-  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
-  nodeSelector:
-  affinity:
-  tolerations:
-
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-
   # Horizontal Pod Autoscaler configuration
   hpa:
     enabled: false
@@ -1574,20 +1009,12 @@ consensusDetector:
   nameOverride:
 
   image:
-    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/consensus-detector
-    tag: v0.14.0
-
-  replicas: 1
+    repository: coprocessor/consensus-detector
 
   # Compatibility with the GCS control-plane configuration. config.s3BucketName
   # takes precedence, then myBucket, then snsWorker.config.s3BucketName.
   myBucket: {}
   s3Endpoint: {}
-  probes:
-    liveness:
-      enabled: false
-    readiness:
-      enabled: false
 
   config:
     # Accepts `value` or `valueFrom`; empty uses the bucket fallback below. Set value to the
@@ -1670,36 +1097,9 @@ consensusDetector:
   disabledArgs: []
   extraArgs: []
 
+  # No healthcheck port: probes stay disabled (defaults.probes).
   ports:
     metrics: 9100
-
-  serviceMonitor:
-    enabled: false
-
-  serviceAccountName:
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  tracing:
-    enabled: false
-    service: ""
-
-  podLabels: {}
-  nodeSelector:
-  affinity:
-  tolerations:
-
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
 # Transaction Sender
@@ -1711,10 +1111,7 @@ txSender:
   nameOverride:
 
   image:
-    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/tx-sender
-    tag: v0.11.0
-
-  replicas: 1
+    repository: coprocessor/tx-sender
 
   # Component-specific configuration
   config:
@@ -1799,59 +1196,6 @@ txSender:
     metrics: 9100
     healthcheck: 8080
 
-  serviceMonitor:
-    enabled: false
-
-  # serviceAccountName: existing SA for workload identity (e.g. IRSA). Unset = namespace default.
-  serviceAccountName:
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  # Health check probes
-  probes:
-    liveness:
-      enabled: false
-      httpGet:
-        path: /liveness
-        port: healthcheck
-      initialDelaySeconds: 10
-      periodSeconds: 10
-    readiness:
-      enabled: false
-      httpGet:
-        path: /healthz
-        port: healthcheck
-      initialDelaySeconds: 5
-      periodSeconds: 10
-
-  # Distributed tracing (inherits from commonConfig but can be overridden)
-  tracing:
-    enabled: false
-    # Stable logical service name for OTEL traces. If empty, OTEL_SERVICE_NAME
-    # falls back to the pod name (metadata.name), which fragments traces across
-    # pod replicas and rollouts. Set a stable string per environment.
-    service: ""
-
-  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
-  podLabels: {}
-
-  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
-  nodeSelector:
-  affinity:
-  tolerations:
-
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-
 # -----------------------------------------------------------------------------
 # Upgrade controller (RFC-021 GCS control plane)
 # -----------------------------------------------------------------------------
@@ -1862,41 +1206,11 @@ upgradeController:
   nameOverride:
 
   image:
-    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/upgrade-controller
-    tag: v0.14.0
+    repository: coprocessor/upgrade-controller
 
-  replicas: 1
   env: []
   disabledArgs: []
   extraArgs: []
 
-  serviceAccountName:
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  probes:
-    liveness:
-      enabled: false
-    readiness:
-      enabled: false
-
   tracing:
-    enabled: false
     service: "upgrade-controller"
-
-  podLabels: {}
-  nodeSelector:
-  affinity:
-  tolerations:
-
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0

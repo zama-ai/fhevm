@@ -165,34 +165,18 @@ Usage: include "coprocessor.componentName" (dict "root" $ "key" "tfheWorker" "su
 {{- default (printf "%s-%s" .root.Release.Name .suffix) $override | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "coprocessor.failIfDeprecatedTopLevelListenerKeysPresent" -}}
-{{- $deprecatedKeys := list -}}
-{{- if hasKey .Values "hostListener" -}}
-  {{- $deprecatedKeys = append $deprecatedKeys "hostListener" -}}
-{{- end -}}
-{{- if hasKey .Values "hostListenerPoller" -}}
-  {{- $deprecatedKeys = append $deprecatedKeys "hostListenerPoller" -}}
-{{- end -}}
-{{- if hasKey .Values "hostListenerCatchupOnly" -}}
-  {{- $deprecatedKeys = append $deprecatedKeys "hostListenerCatchupOnly" -}}
-{{- end -}}
-{{- if gt (len $deprecatedKeys) 0 -}}
-{{- fail (printf "deprecated top-level listener keys are no longer supported: %s. Use hostListenerShared / hostListenerPollerShared / hostListenerCatchupOnlyShared plus .Values.chains instead" (join ", " $deprecatedKeys)) -}}
-{{- end -}}
-{{- end -}}
-
 {{/* Fails when more than one chain claims the unsuffixed legacy name for the same listener mode. */}}
 {{- define "coprocessor.failIfMultipleLegacyNameClaims" -}}
 {{- $chains := (include "coprocessor.chains" . | fromYaml).chains -}}
 {{- range $mode := (include "coprocessor.hostListenerModes" . | fromYaml).modes -}}
   {{- $claims := 0 -}}
   {{- range $chain := $chains -}}
-    {{- if (index $chain $mode.chainKey | default dict).useLegacyName -}}
+    {{- if (index ($chain.hostListener | default dict) $mode.key | default dict).useLegacyName -}}
       {{- $claims = add1 $claims -}}
     {{- end -}}
   {{- end -}}
   {{- if gt $claims 1 -}}
-    {{- fail (printf "only one chains entry may set %s.useLegacyName=true" $mode.chainKey) -}}
+    {{- fail (printf "only one chains entry may set hostListener.%s.useLegacyName=true" $mode.key) -}}
   {{- end -}}
 {{- end -}}
 {{- end -}}

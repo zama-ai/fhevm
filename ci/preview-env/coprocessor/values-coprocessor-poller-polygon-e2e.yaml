@@ -5,11 +5,11 @@
 # poller does no S3 key download - only block finalization.
 #
 # WHY A SEPARATE RELEASE (not a second enabled chains[] entry in
-# coprocessor-poller-<i>): identical to values-coprocessor-polygon-consumer-e2e.yaml
-# - the chart glues consecutive per-chain documents (the range `---` separator
-# lacks a leading newline), so an ETH+Polygon poller pair in one render collapses
-# into a single YAML document and the second overwrites the first. A single-chain
-# release renders exactly one poller document.
+# coprocessor-poller-<i>): identical to values-coprocessor-polygon-consumer-e2e.yaml.
+# Charts before 0.13.28 glued consecutive per-chain documents (the range `---`
+# separator lacked a leading newline), so an ETH+Polygon poller pair in one
+# render collapsed into a single YAML document. Fixed since, but the per-chain
+# releases are kept as they are.
 #
 # dbMigration disabled: coprocessor-<i> already seeded host_chains for both ETH and
 # Polygon (values-coprocessor-polygon-e2e.yaml). Shares postgres-coprocessor-<i>.
@@ -19,8 +19,8 @@
 #     oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor \
 #     -n <namespace> -f this-file \
 #     --set-string commonConfig.databaseEndpoint.value=postgres-coprocessor-<i>:5432 \
-#     --set-string hostListenerPollerShared.serviceAccountName=coprocessor-<i> \
-#     --set-string hostListenerPollerShared.image.tag=<coprocessor_host_listener tag>
+#     --set-string defaults.serviceAccountName=coprocessor-<i> \
+#     --set-string defaults.image.tag=<coprocessor_host_listener tag>
 commonConfig:
   # Same in-cluster Postgres the coprocessor-<i> release uses (overridden per
   # party via --set). Shared DB: the poller finalizes the same host_chain_blocks
@@ -30,58 +30,48 @@ commonConfig:
   databaseEndpoint: {value: "postgres-coprocessor:5432"}
   databaseUrl: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e"
   databaseAuthMode: password
-  # The poller reads the Polygon chain over HTTP RPC (not WebSocket).
-  hostChainWsUrl: "ws://anvil-host-polygon-anvil-node:8545"
-  hostChainHttpUrl: "http://anvil-host-polygon-anvil-node:8545"
-  aclContractAddress:
-    valueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: acl.address}}
-  fhevmExecutorContractAddress:
-    valueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: fhevm_executor.address}}
-  # Polygon has no KMSGeneration; point at the canonical ETH contract.
-  kmsGenerationContractAddress:
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
-  protocolConfigContractAddress:
-    valueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: protocol_config.address}}
   canonicalProtocolConfigChainId: "12345"
+
+defaults:
+  image:
+    registry: hub.zama.org/ghcr/zama-ai/fhevm
+    tag: latest
+  # IRSA SA (coprocessor-<i>); overridden per party. Polygon triggers no keygen so
+  # no S3 download happens, but the SA is harmless and keeps parity with the ETH
+  # poller.
+  serviceAccountName: coprocessor
 
 # Migration + every other role are owned by the coprocessor-<i> /
 # coprocessor-poller-<i> releases; keep them off here.
 dbMigration: {enabled: false}
-hostListenerShared: {enabled: false}
-hostListenerConsumerShared: {enabled: false}
-hostListenerCatchupOnlyShared: {enabled: false}
 gwListener: {enabled: false}
 tfheWorker: {enabled: false}
 zkProofWorker: {enabled: false}
 snsWorker: {enabled: false}
 txSender: {enabled: false}
 
-hostListenerPollerShared:
-  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
-  replicas: 1
-  # IRSA SA (coprocessor-<i>); overridden per party. Polygon triggers no keygen so
-  # no S3 download happens, but the SA is harmless and keeps parity with the ETH
-  # poller.
-  serviceAccountName: coprocessor
-  # Same flags as the ETH poller (values-coprocessor-poller-e2e.yaml): single-node
-  # anvil never reorgs, so finality-lag stays small. --seed-start-block=0 is
-  # REQUIRED on the HEAD host-listener image (fresh namespace has no prior poller
-  # state); 0 = start from the Polygon anvil's genesis.
-  extraArgs:
-    - --log-level=INFO
-    - --dependence-cross-block
-    - --finality-lag=1
-    - --seed-start-block=0
-  resources:
-    requests: {cpu: "500m", memory: 1Gi}
-    limits: {cpu: "1", memory: 2Gi}
-  nodeSelector:
-    karpenter.sh/nodepool: zws-pool
-  tolerations:
-    - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
+# The poller reads the Polygon chain over HTTP RPC (chains[].httpUrl).
+hostListener:
+  modes:
+    poller:
+      # Same flags as the ETH poller (values-coprocessor-poller-e2e.yaml): single-node
+      # anvil never reorgs, so finality-lag stays small. --seed-start-block=0 is
+      # REQUIRED on the HEAD host-listener image (fresh namespace has no prior poller
+      # state); 0 = start from the Polygon anvil's genesis.
+      extraArgs:
+        - --log-level=INFO
+        - --dependence-cross-block
+        - --finality-lag=1
+        - --seed-start-block=0
+      resources:
+        requests: {cpu: "500m", memory: 1Gi}
+        limits: {cpu: "1", memory: 2Gi}
+      nodeSelector:
+        karpenter.sh/nodepool: zws-pool
+      tolerations:
+        - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
 
 chains:
-  # Single chain => single poller document => no separator collision.
   - name: polygon
     chainId: "80002"
     wsUrl: "ws://anvil-host-polygon-anvil-node:8545"
@@ -90,7 +80,5 @@ chains:
     fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: fhevm_executor.address}}
     kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
     protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: protocol_config.address}}
-    hostListener: {enabled: false, useLegacyName: true}
-    hostListenerPoller: {enabled: true, useLegacyName: true}
-    hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
-    hostListenerConsumer: {enabled: false, useLegacyName: true}
+    hostListener:
+      poller: {enabled: true, useLegacyName: true}

@@ -1,6 +1,8 @@
 name: coprocessor
 description: A helm chart to distribute and deploy Zama fhevm Co-Processor services
-version: 0.13.28
+version: 0.14.2
+# Default image tag of every component (defaults.image.tag overrides it).
+appVersion: v0.14.0
 apiVersion: v2
 keywords:
   - fhevm

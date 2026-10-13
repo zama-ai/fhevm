@@ -27,6 +27,7 @@ Empty chains[] is a no-op (no host_chains rows seeded).
 {{- end -}}
 
 {{- if .Values.dbMigration.enabled }}
+{{- $c := include "coprocessor.componentValues" (dict "root" . "key" "dbMigration") | fromYaml }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -35,7 +36,7 @@ metadata:
     app: coprocessor-db-migration
     app.kubernetes.io/name: {{ .Release.Name }}-db-migration
   namespace: {{ .Release.Namespace }}
-  {{- with .Values.dbMigration.annotations }}
+  {{- with $c.annotations }}
   annotations:
   {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -46,32 +47,34 @@ spec:
       labels:
         app: coprocessor-db-migration
         app.kubernetes.io/name: {{ .Release.Name }}-db-migration
-        {{- with merge (deepCopy (.Values.dbMigration.podLabels | default dict)) (.Values.podLabels | default dict) }}
+        {{- with merge (deepCopy ($c.podLabels | default dict)) (.Values.podLabels | default dict) }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      {{- with $c.imagePullSecrets }}
       imagePullSecrets:
-        - name: registry-credentials
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       restartPolicy: Never
-      {{- with .Values.dbMigration.nodeSelector }}
+      {{- with $c.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.dbMigration.affinity }}
+      {{- with $c.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.dbMigration.tolerations }}
+      {{- with $c.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.dbMigration.serviceAccountName }}
+      {{- with $c.serviceAccountName }}
       serviceAccountName: {{ . }}
       {{- end }}
       containers:
       - name: db-migration
-        image: {{ .Values.dbMigration.image.name }}:{{ .Values.dbMigration.image.tag }}
-        {{- with .Values.dbMigration.command }}
+        image: {{ include "coprocessor.image" (dict "root" . "image" $c.image) }}
+        {{- with $c.command }}
         command:
           {{- toYaml . | nindent 10 }}
         {{- else }}
@@ -79,18 +82,18 @@ spec:
         {{- end }}
         env:
           - name: ALLOW_DB_BOOTSTRAP
-            value: {{ ternary "true" "false" (.Values.dbMigration.allowBootstrap | default false) | quote }}
+            value: {{ ternary "true" "false" ($c.allowBootstrap | default false) | quote }}
           {{- include "coprocessor.env.dbConnection" . | nindent 10 }}
           {{- include "coprocessor.env.tenant" . | nindent 10 }}
           {{- include "coprocessor.dbMigration.hostChainsEnv" . | nindent 10 }}
           {{- include "coprocessor.env.dbIam" . | nindent 10 }}
-          {{- include "coprocessor.env.extra" (dict "root" . "lists" (list .Values.dbMigration.env)) | nindent 10 }}
-        {{- include "coprocessor.containerResources" .Values.dbMigration.resources | nindent 8 }}
+          {{- include "coprocessor.env.extra" (dict "root" . "lists" (list $c.env)) | nindent 10 }}
+        {{- include "coprocessor.containerResources" $c.resources | nindent 8 }}
         {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
         {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 8 }}
         {{- end }}
       {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
-      {{- if hasKey (.Values.dbMigration.annotations | default dict) "helm.sh/hook" }}
+      {{- if hasKey ($c.annotations | default dict) "helm.sh/hook" }}
       volumes:
         - name: rds-ca-cert
           configMap:
