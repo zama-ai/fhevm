@@ -1164,7 +1164,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UserDecryptV3RequestJson'
+              $ref: '#/components/schemas/AttestedUserDecryptRequestJson'
         required: true
       responses:
         '202':
@@ -1306,14 +1306,22 @@ components:
     AttestedUserDecryptRequestJson:
       type: object
       description: |-
-        The arm of the v3 user-decrypt envelope selected by
-        `attestationType == "eip712-unified-user-decrypt-v1"`. Its EIP-712 signature is verified on
-        chain by the gateway, so the relayer forwards `signature` and `extraData` verbatim without
-        re-hashing anything.
+        v3 user-decrypt request envelope. The relayer dispatches strictly by
+        `attestationType`; the currently supported value is
+        `"eip712-unified-user-decrypt-v1"`. Adding a Solana attestation later is
+        a one-line widening of the dispatch table, not a v4 bump.
       required:
+      - attestationType
       - attestedPayload
       - signature
       properties:
+        attestationType:
+          type: string
+          description: |-
+            The attestation/signature scheme used for the `signature` bytes.
+            Must equal `"eip712-unified-user-decrypt-v1"` for the current
+            release.
+          example: eip712-unified-user-decrypt-v1
         attestedPayload:
           $ref: '#/components/schemas/Eip712UnifiedUserDecryptPayloadJson'
           description: |-
@@ -1909,24 +1917,6 @@ components:
         status:
           type: string
           example: succeeded
-    UserDecryptV3RequestJson:
-      oneOf:
-      - allOf:
-        - $ref: '#/components/schemas/AttestedUserDecryptRequestJson'
-        - type: object
-          required:
-          - attestationType
-          properties:
-            attestationType:
-              type: string
-              enum:
-              - eip712-unified-user-decrypt-v1
-      description: |-
-        POST `/v3/user-decrypt` body: `{ attestationType, attestedPayload, signature }`.
-
-        Internally tagged so the HTTP handler parses one type. Each arm's inner struct is
-        `deny_unknown_fields` and does not repeat the tag. An unknown tag is a serde
-        error; it never becomes an arm.
     V2ApiError:
       type: object
       description: Simple error body — used for 400 (no details), 404, 429, 500, and 503.

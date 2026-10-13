@@ -39,7 +39,7 @@ impl ComputeCalldata {
     pub fn user_decryption_req(
         user_decrypt_request: UserDecryptRequest,
     ) -> Result<Bytes, EventProcessingError> {
-        let kind = user_decrypt_request.request_kind();
+        let kind = user_decrypt_request.attestation_kind();
 
         let calldata = match user_decrypt_request {
             UserDecryptRequest::LegacyDirect {

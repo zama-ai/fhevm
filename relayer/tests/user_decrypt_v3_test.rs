@@ -18,7 +18,6 @@ use crate::common::validation_helper::{
 use alloy::primitives::{Address, B256};
 use ethereum_rpc_mock::fhevm::UserDecryptKind;
 use ethereum_rpc_mock::Response;
-use fhevm_relayer::config::settings::HostChainConfig;
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
 use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptStatusResponseJson,
@@ -28,7 +27,6 @@ use rand::{rng, RngExt};
 use serde_json::json;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
-use zama_solana_acl::host_chain::solana_host_chain_id;
 
 mod helpers {
     use super::*;
@@ -129,22 +127,6 @@ mod helpers {
         });
         sign_v3_user_decrypt_envelope(&mut envelope, &signer);
         envelope
-    }
-
-    pub const SOLANA_CHAIN_ID: u64 = solana_host_chain_id(1);
-
-    /// A relayer serving [`SOLANA_CHAIN_ID`] beside its EVM host, as it does for input proofs.
-    pub async fn setup_with_a_solana_host() -> TestSetup {
-        TestSetup::new_with_settings(|settings| {
-            let url = settings.host_chains[0].url.clone();
-            settings.host_chains.push(HostChainConfig {
-                chain_id: SOLANA_CHAIN_ID,
-                url,
-                acl_address: solana_pubkey::Pubkey::new_from_array([0x02; 32]).to_string(),
-            });
-        })
-        .await
-        .expect("Failed to create test setup")
     }
 }
 
@@ -289,7 +271,7 @@ async fn v3_rejects_unknown_attestation_type() {
         &url,
         helpers::create_v3_envelope(),
         with_invalid_field("attestationType", json!("ed25519-solana-user-decrypt-v1")),
-        expect_v2_validation_error("request", "unknown variant"),
+        expect_v2_validation_error("attestationType", "Unsupported attestationType"),
     )
     .await;
 
@@ -370,29 +352,6 @@ async fn v3_rejects_wrong_payload_type() {
     setup.shutdown().await;
 }
 
-/// An EIP-712 request naming a Solana handle is a validation error, not a server error, even on
-/// a relayer that serves that Solana chain.
-#[tokio::test]
-async fn v3_rejects_eip712_request_with_a_solana_handle() {
-    let setup = helpers::setup_with_a_solana_host().await;
-    let url = helpers::v3_user_decrypt_post_url(&setup);
-
-    test_endpoint(
-        &url,
-        helpers::create_v3_envelope(),
-        |p: &mut serde_json::Value| {
-            let mut handle: [u8; 32] = rand::random();
-            handle[22..30].copy_from_slice(&helpers::SOLANA_CHAIN_ID.to_be_bytes());
-            p["attestedPayload"]["handles"][0]["ctHandle"] =
-                json!(format!("0x{}", hex::encode(handle)));
-        },
-        expect_v2_validation_error("attestedPayload.handles", "EVM host chain"),
-    )
-    .await;
-
-    setup.shutdown().await;
-}
-
 #[tokio::test]
 async fn v3_rejects_empty_handles() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
@@ -412,7 +371,7 @@ async fn v3_rejects_empty_handles() {
 }
 
 #[tokio::test]
-async fn v3_rejects_handle_entry_missing_contract_address() {
+async fn v3_rejects_handle_entry_missing_owner_address() {
     let setup = TestSetup::new().await.expect("Failed to create test setup");
     let url = helpers::v3_user_decrypt_post_url(&setup);
 
@@ -420,12 +379,14 @@ async fn v3_rejects_handle_entry_missing_contract_address() {
         &url,
         helpers::create_v3_envelope(),
         |p: &mut serde_json::Value| {
-            p["attestedPayload"]["handles"][0]
-                .as_object_mut()
-                .unwrap()
-                .remove("contractAddress");
+            // Strip ownerAddress from the first handle entry.
+            let entry = p["attestedPayload"]["handles"][0].as_object_mut().unwrap();
+            entry.remove("ownerAddress");
         },
-        expect_v2_missing_field("contractAddress"),
+        // Missing required field surfaces as a serde deserialization error,
+        // which the parsing layer maps to the `missing_fields` label with
+        // the missing field name (`ownerAddress`).
+        expect_v2_missing_field("ownerAddress"),
     )
     .await;
 

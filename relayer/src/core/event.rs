@@ -541,7 +541,7 @@ pub enum UserDecryptRequest {
 
 impl UserDecryptRequest {
     /// Short label for logs / metrics. Matches the serde tag values.
-    pub fn request_kind(&self) -> &'static str {
+    pub fn attestation_kind(&self) -> &'static str {
         match self {
             UserDecryptRequest::LegacyDirect { .. } => "legacy_direct",
             UserDecryptRequest::LegacyDelegated { .. } => "legacy_delegated",
@@ -549,7 +549,7 @@ impl UserDecryptRequest {
         }
     }
 
-    /// Whether this request uses the unified gateway entry.
+    /// Whether this request uses the unified EIP-712 gateway overload.
     pub fn is_unified(&self) -> bool {
         matches!(self, UserDecryptRequest::Eip712UnifiedV1 { .. })
     }
@@ -646,16 +646,6 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
     fn try_from(value: UserDecryptRequestJson) -> Result<Self, Self::Error> {
         info!("Converting UserDecryptRequestJson to UserDecryptRequest");
 
-        let contracts_chain_id = parse_chain_id(&value.contracts_chain_id)?;
-        // The DEPRECATED v2 legacy path is EVM-only: refuse any other chain instead of
-        // fabricating zeroed EVM address placeholders for it.
-        if !is_evm_host_chain_id(contracts_chain_id) {
-            anyhow::bail!(
-                "unsupported chain type byte 0x{:02x}: the legacy v2 path is EVM-only",
-                chain_type_byte(contracts_chain_id)
-            );
-        }
-
         let mut ct_handle_contract_pairs = Vec::new();
         for json_data in &value.handle_contract_pairs {
             let ct_handle = if json_data.handle.starts_with("0x") {
@@ -694,7 +684,10 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             duration_days,
         };
 
-        let contract_addresses = value
+        // Parse contract chain ID
+        let contracts_chain_id = parse_chain_id(&value.contracts_chain_id)?;
+
+        let contract_addresses = &value
             .contract_addresses
             .iter()
             .map(|addr| Address::from_str(addr))
@@ -707,7 +700,7 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             ct_handle_contract_pairs,
             request_validity,
             contracts_chain_id,
-            contract_addresses,
+            contract_addresses: contract_addresses.clone(),
             user_address: Address::from_str(&value.user_address)?,
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.public_key)?,
@@ -788,13 +781,14 @@ impl TryFrom<AttestedUserDecryptRequestJson> for UserDecryptRequest {
     type Error = anyhow::Error;
 
     fn try_from(value: AttestedUserDecryptRequestJson) -> Result<Self, Self::Error> {
-        // Reached only after the tagged envelope selected the EIP-712 arm. `signature`,
-        // `publicKey` and `extraData` are forwarded verbatim; the relayer never verifies the
-        // signature — the gateway does, on-chain.
+        info!("Converting AttestedUserDecryptRequestJson to UserDecryptRequest (Eip712UnifiedV1)");
+
+        // The envelope's `attestation_type` is validated at the HTTP layer
+        // to be exactly `"eip712-unified-user-decrypt-v1"`; the variant tag
+        // below carries that semantic implicitly, so we don't re-store it
+        // on the core type.
         let payload_inner = value.attested_payload;
 
-        // Each handle carries its EVM contract/owner addresses, which feed the gateway's
-        // per-handle ACL on the decryption call.
         let mut handles = Vec::with_capacity(payload_inner.handles.len());
         for entry in &payload_inner.handles {
             let ct_handle = if let Some(rest) = entry.ct_handle.strip_prefix("0x") {
@@ -1188,122 +1182,6 @@ mod tests {
         };
         let err = InputProofRequest::try_from(json).expect_err("unknown type byte is not EVM");
         assert!(err.to_string().contains("unsupported chain type byte 0x02"));
-    }
-
-    fn attested_envelope() -> AttestedUserDecryptRequestJson {
-        use crate::http::endpoints::common::types::{HandleEntryJson, RequestValiditySecondsJson};
-        use crate::http::endpoints::v3::types::Eip712UnifiedUserDecryptPayloadJson;
-
-        let mut extra = vec![0x01u8];
-        extra.extend_from_slice(&[0u8; 32]);
-
-        AttestedUserDecryptRequestJson {
-            attested_payload: Eip712UnifiedUserDecryptPayloadJson {
-                version: "2.0".to_string(),
-                r#type: "user_decryption".to_string(),
-                handles: vec![HandleEntryJson {
-                    ct_handle: format!("0x{}", "11".repeat(32)),
-                    contract_address: CONTRACT_ADDRESS.to_string(),
-                    owner_address: USER_ADDRESS.to_string(),
-                }],
-                user_address: USER_ADDRESS.to_string(),
-                allowed_contracts: vec![CONTRACT_ADDRESS.to_string()],
-                request_validity: RequestValiditySecondsJson {
-                    start_timestamp: "1700000000".to_string(),
-                    duration_seconds: "604800".to_string(),
-                },
-                public_key: "0x04b8e5d3".to_string(),
-                extra_data: format!("0x{}", hex::encode(&extra)),
-            },
-            signature: format!("0x{}", "ab".repeat(64)),
-        }
-    }
-
-    /// An unrecognized `attestationType` is a serde error: an unknown protocol must never
-    /// fall through onto the EVM arm (DD-027, validation is per-protocol). Retired Solana tags
-    /// are included so this is the refusal pin, not a leftover validator.
-    #[test]
-    fn attested_user_decrypt_rejects_unknown_attestation_type() {
-        for tag in [
-            "solana-srfc38-user-decrypt-v1",
-            "solana-ed25519-user-decrypt-v3",
-            "solana-ed25519-user-decrypt-v2",
-            "solana-ed25519-user-decrypt-v1",
-            "garbage",
-        ] {
-            let envelope = serde_json::json!({
-                "attestationType": tag,
-                "attestedPayload": {},
-                "signature": "0x00",
-            });
-            let err = serde_json::from_value::<
-                crate::http::endpoints::v3::types::UserDecryptV3RequestJson,
-            >(envelope)
-            .expect_err("an unknown tag must not select an attestation arm");
-            let message = err.to_string();
-            assert!(
-                message.contains("unknown variant"),
-                "unknown tag {tag} must be a serde unknown-variant error, got {message}"
-            );
-        }
-    }
-
-    /// The other arm of the same dispatch: the EVM inner type still routes to `Eip712UnifiedV1`,
-    /// so the rejection above is narrow and not a blanket refusal of well-formed EVM envelopes.
-    #[test]
-    fn attested_user_decrypt_routes_evm_attestation_type_to_eip712_unified() {
-        let request =
-            UserDecryptRequest::try_from(attested_envelope()).expect("the EVM envelope converts");
-        match request {
-            UserDecryptRequest::Eip712UnifiedV1 {
-                user_address,
-                allowed_contracts,
-                ..
-            } => {
-                assert_eq!(user_address, USER_ADDRESS.parse::<Address>().unwrap());
-                assert_eq!(
-                    allowed_contracts,
-                    vec![CONTRACT_ADDRESS.parse::<Address>().unwrap()]
-                );
-            }
-            other => panic!("expected Eip712UnifiedV1, got {}", other.request_kind()),
-        }
-    }
-
-    /// The DEPRECATED v2 user-decrypt path is EVM-only: a Solana host chain id is rejected at
-    /// conversion instead of being converted with zeroed EVM address placeholders. The EVM twin of
-    /// the same fixture must still convert, so the rejection is attributable to the chain id alone
-    /// and not to a malformed fixture.
-    #[test]
-    fn legacy_v2_user_decrypt_rejects_solana_host_chain_id() {
-        use crate::http::endpoints::common::types::{HandleContractPairJson, RequestValidityJson};
-
-        let envelope = |chain_id: &str| UserDecryptRequestJson {
-            handle_contract_pairs: vec![HandleContractPairJson {
-                handle: format!("0x{}", "11".repeat(32)),
-                contract_address: CONTRACT_ADDRESS.to_string(),
-            }],
-            request_validity: RequestValidityJson {
-                start_timestamp: "1700000000".to_string(),
-                duration_days: "1".to_string(),
-            },
-            contracts_chain_id: chain_id.to_string(),
-            contract_addresses: vec![CONTRACT_ADDRESS.to_string()],
-            user_address: USER_ADDRESS.to_string(),
-            signature: "ab".repeat(65),
-            public_key: "04b8e5d3".to_string(),
-            extra_data: EXTRA_DATA.to_string(),
-        };
-
-        UserDecryptRequest::try_from(envelope(CHAIN_ID)).expect("the EVM twin still converts");
-
-        let error = UserDecryptRequest::try_from(envelope(SOLANA_CHAIN_ID_HEX))
-            .expect_err("a Solana host chain id has no legal v2 shape");
-        let message = error.to_string();
-        assert!(
-            message.contains("the legacy v2 path is EVM-only"),
-            "unexpected rejection reason: {message}"
-        );
     }
 
     /// The Relayer must propagate `extraData` to the Gateway verbatim, without

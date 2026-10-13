@@ -1,12 +1,13 @@
-//! v3 `/v3/user-decrypt` handler (typed-attestation envelope).
+//! v3 `/v3/user-decrypt` handler (unified EIP-712 user-decryption).
 //!
-//! POST validates the envelope discriminated by `attestationType`, converts it
-//! to `UserDecryptRequest::Eip712UnifiedV1`, runs the same dedup/queue pipeline
-//! as v2, and dispatches a
+//! POST validates the typed-attestation envelope, converts it to the
+//! shared `UserDecryptRequest` with `UserDecryptPayload::Unified`, runs the
+//! same dedup/queue pipeline as v2, and dispatches a
 //! `RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser)`
-//! event. The orchestrator then builds the unified `userDecryptionRequest`
-//! gateway entry. GET is delegated verbatim to the v2 handler since the
-//! response schema is unchanged.
+//! event. From there the orchestrator funnels the job through the unified
+//! `userDecryptionRequest(HandleEntry[], …)` calldata builder and the
+//! shared receipt-handling path. GET is delegated verbatim to the v2
+//! handler since the response schema is unchanged.
 
 use crate::core::event::{
     ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
@@ -18,12 +19,12 @@ use crate::http::endpoints::v2::types::error::{ApiResponseStatus, RelayerV2Respo
 use crate::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptQueuedResult,
 };
-use crate::http::endpoints::v3::types::UserDecryptV3RequestJson;
+use crate::http::endpoints::v3::types::AttestedUserDecryptRequestJson;
 use crate::http::retry_after::{
     DecryptQueueInfo, ReadinessQueueInfo, RetryAfterState, TxQueueInfo,
 };
 use crate::http::utils::BounceChecker;
-use crate::http::{parse_and_validate, AppResponse, ParseError};
+use crate::http::{parse_and_validate, AppResponse};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::metrics::{
@@ -165,9 +166,12 @@ impl UserDecryptHandler {
             }
         };
 
-        let envelope =
-            match parse_and_validate::<UserDecryptV3RequestJson, UserDecryptV3RequestJson>(&body) {
-                Ok(envelope) => envelope,
+        // `TryFrom<AttestedUserDecryptRequestJson>` only constructs
+        // `Eip712UnifiedV1`; the downstream `UserDecryptReqData::Unified`
+        // tag relies on it.
+        let user_decrypt_request: UserDecryptRequest =
+            match parse_and_validate::<AttestedUserDecryptRequestJson, UserDecryptRequest>(&body) {
+                Ok(request) => request,
                 Err(parse_error) => {
                     return RelayerV2ResponseFailed::from_parse_error(
                         &parse_error,
@@ -176,17 +180,6 @@ impl UserDecryptHandler {
                     .into_response();
                 }
             };
-        let UserDecryptV3RequestJson::Eip712Unified(json) = envelope;
-        let user_decrypt_request = match UserDecryptRequest::try_from(json) {
-            Ok(request) => request,
-            Err(error) => {
-                return RelayerV2ResponseFailed::from_parse_error(
-                    &ParseError::ConversionFailed(error.to_string()),
-                    &request_id.to_string(),
-                )
-                .into_response();
-            }
-        };
 
         info!("Successfully parsed and validated v3 request");
 
@@ -428,7 +421,7 @@ impl UserDecryptHandler {
 #[utoipa::path(
     post,
     path = "/v3/user-decrypt",
-    request_body = UserDecryptV3RequestJson,
+    request_body = AttestedUserDecryptRequestJson,
     responses(
         (status = 202, description = "Request accepted for processing.", body = UserDecryptPostResponseJson),
         (status = 400, description = "Invalid request", body = crate::http::endpoints::v2::types::error::RelayerV2ResponseFailed),

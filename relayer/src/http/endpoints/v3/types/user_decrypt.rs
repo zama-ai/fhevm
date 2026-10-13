@@ -1,49 +1,33 @@
 //! v3 user-decrypt JSON wire types.
 //!
-//! The body is a typed-attestation envelope discriminated by `attestationType` (see the
-//! issue comment 4278777024); the field name is the external JSON boundary and is kept as
-//! it stands. [`UserDecryptV3RequestJson`] is that envelope: serde's internally tagged
-//! enum is the discriminant, so an unknown tag never reaches an arm.
-//!
-//! The one scheme carries the unified EIP-712 User-Decryption Request as `attestedPayload`; the
-//! relayer never re-hashes it, because the gateway contract verifies the EIP-712 signature on
-//! chain (#1288).
+//! The body is a typed-attestation envelope (see the issue comment
+//! 4278777024). Internally the `attestedPayload` is the EIP-712 Unified
+//! User-Decryption Request defined by the unified EIP-712 payload. The relayer never re-hashes
+//! the payload — `signature` is opaque and forwarded verbatim to the
+//! gateway (the KMS Connector verifies it off-chain, #1288).
 
 use crate::http::endpoints::common::types::{HandleEntryJson, RequestValiditySecondsJson};
 use crate::http::utils::redact::redact_len;
 use derivative::Derivative;
 use serde::Deserialize;
 use utoipa::ToSchema;
-use validator::{Validate, ValidationErrors};
+use validator::Validate;
 
-/// POST `/v3/user-decrypt` body: `{ attestationType, attestedPayload, signature }`.
-///
-/// Internally tagged so the HTTP handler parses one type. Each arm's inner struct is
-/// `deny_unknown_fields` and does not repeat the tag. An unknown tag is a serde
-/// error; it never becomes an arm.
-#[derive(Deserialize, Clone, Debug, ToSchema)]
-#[serde(tag = "attestationType")]
-pub enum UserDecryptV3RequestJson {
-    #[serde(rename = "eip712-unified-user-decrypt-v1")]
-    Eip712Unified(AttestedUserDecryptRequestJson),
-}
-
-impl Validate for UserDecryptV3RequestJson {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        match self {
-            Self::Eip712Unified(inner) => inner.validate(),
-        }
-    }
-}
-
-/// The arm of the v3 user-decrypt envelope selected by
-/// `attestationType == "eip712-unified-user-decrypt-v1"`. Its EIP-712 signature is verified on
-/// chain by the gateway, so the relayer forwards `signature` and `extraData` verbatim without
-/// re-hashing anything.
+/// v3 user-decrypt request envelope. The relayer dispatches strictly by
+/// `attestationType`; the currently supported value is
+/// `"eip712-unified-user-decrypt-v1"`. Adding a Solana attestation later is
+/// a one-line widening of the dispatch table, not a v4 bump.
 #[derive(Deserialize, Clone, ToSchema, Validate, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AttestedUserDecryptRequestJson {
+    /// The attestation/signature scheme used for the `signature` bytes.
+    /// Must equal `"eip712-unified-user-decrypt-v1"` for the current
+    /// release.
+    #[validate(custom(function = "crate::http::validate_v3_attestation_type"))]
+    #[schema(example = "eip712-unified-user-decrypt-v1")]
+    pub attestation_type: String,
+
     /// The EIP-712 Unified User-Decryption Request payload that the
     /// `signature` attests over.
     #[validate(nested)]

@@ -1,4 +1,3 @@
-use crate::host::handle_chain_id::extract_chain_id_from_handle;
 use crate::http::endpoints::common::types::{
     HandleContractPairJson, HandleEntryJson, RequestValidityJson, RequestValiditySecondsJson,
 };
@@ -8,7 +7,6 @@ use serde_json::Value;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 use validator::ValidationError;
-use zama_solana_acl::host_chain::is_solana_host_chain_id;
 
 // Generic validation error messages (reusable across fields)
 pub mod validation_messages {
@@ -32,7 +30,6 @@ pub mod validation_messages {
     pub const INVALID_EXTRA_DATA_FORMAT: &str =
         "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (0x07-tagged first byte), or 0x02 + 32-byte contextId (0x07-tagged) + 32-byte epochId (0x08-tagged)";
     pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";
-    pub const HANDLE_MUST_BE_ON_AN_EVM_HOST_CHAIN: &str = "Must be a handle on an EVM host chain";
 }
 
 pub fn de_string_or_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
@@ -100,19 +97,16 @@ pub fn validate_no_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
 }
 
 pub fn validate_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
-    decode_0x_hex(hex_str).map(|_| ())
-}
-
-/// Decodes a `0x`-prefixed hex string, failing as [`validate_0x_hex`] does.
-fn decode_0x_hex(hex_str: &str) -> Result<Vec<u8>, ValidationError> {
-    let Some(digits) = hex_str.strip_prefix("0x") else {
+    if !hex_str.starts_with("0x") {
         return Err(ValidationError::new("validation_error")
             .with_message(validation_messages::HEX_MUST_START_WITH_0X.into()));
     };
-    hex::decode(digits).map_err(|_| {
-        ValidationError::new("validation_error")
-            .with_message(validation_messages::HEX_INVALID_STRING.into())
-    })
+
+    if hex::decode(&hex_str[2..]).is_err() {
+        return Err(ValidationError::new("validation_error")
+            .with_message(validation_messages::HEX_INVALID_STRING.into()));
+    }
+    Ok(())
 }
 
 pub fn validate_0x_hexs(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
@@ -305,11 +299,30 @@ pub fn validate_request_validity(
 // v3 (unified EIP-712 user-decryption) validators
 // ---------------------------------------------------------------------------
 
+/// The single attestation-type value supported by the current v3 endpoint.
+/// Future signature schemes (e.g. Solana ed25519) plug in by widening this
+/// allowlist.
+pub const V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1: &str = "eip712-unified-user-decrypt-v1";
+
 /// Required `version` value in the EIP-712 payload.
 pub const V3_PAYLOAD_VERSION: &str = "2.0";
 
 /// Required `type` value in the EIP-712 payload.
 pub const V3_PAYLOAD_TYPE: &str = "user_decryption";
+
+/// v3 envelope: `attestationType` must match a supported scheme.
+pub fn validate_v3_attestation_type(value: &str) -> Result<(), ValidationError> {
+    if value != V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1 {
+        return Err(ValidationError::new("validation_error").with_message(
+            format!(
+                "Unsupported attestationType; expected one of: [{}]",
+                V3_ATTESTATION_TYPE_EIP712_UNIFIED_V1
+            )
+            .into(),
+        ));
+    }
+    Ok(())
+}
 
 /// v3 payload: `version` must be `"2.0"`.
 pub fn validate_v3_version(value: &str) -> Result<(), ValidationError> {
@@ -336,15 +349,10 @@ pub fn validate_v3_payload_type(value: &str) -> Result<(), ValidationError> {
 /// addresses. The list must be non-empty (enforced by `length(min = 1)`).
 pub fn validate_handle_entries(entries: &Vec<HandleEntryJson>) -> Result<(), ValidationError> {
     for entry in entries {
-        let handle: [u8; 32] = decode_0x_hex(&entry.ct_handle)?.try_into().map_err(|_| {
-            ValidationError::new("validation_error")
-                .with_message(validation_messages::LENGTH_MUST_BE_64_CHARACTERS.into())
-        })?;
-        // The EIP-712 arm is EVM-only: its signature is checked against an EVM host, which a
-        // Solana chain does not have.
-        if is_solana_host_chain_id(extract_chain_id_from_handle(&handle)) {
+        validate_0x_hex(&entry.ct_handle)?;
+        if entry.ct_handle.len() != 66 {
             return Err(ValidationError::new("validation_error")
-                .with_message(validation_messages::HANDLE_MUST_BE_ON_AN_EVM_HOST_CHAIN.into()));
+                .with_message(validation_messages::LENGTH_MUST_BE_64_CHARACTERS.into()));
         }
         validate_blockchain_address(&entry.contract_address)?;
         validate_blockchain_address(&entry.owner_address)?;
