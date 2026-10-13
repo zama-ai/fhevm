@@ -1,12 +1,12 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT stack_version, outcome\n          FROM consensus_epoch_history\n         WHERE consensus_epoch = $1\n        ",
+  "query": "\n        SELECT consensus_version, outcome\n          FROM consensus_epoch_history\n         WHERE consensus_epoch = $1\n        ",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "stack_version",
-        "type_info": "Text"
+        "name": "consensus_version",
+        "type_info": "Int8"
       },
       {
         "ordinal": 1,
@@ -24,5 +24,5 @@
       false
     ]
   },
-  "hash": "a4ec678b0b6314449e7e84d5fbc10d5518d108666a38b4cb0496ed9f7c6347cc"
+  "hash": "4084c409dc468c13bf536daa77995e916ac13af9a6a8c0f071331f6ef9b924b2"
 }

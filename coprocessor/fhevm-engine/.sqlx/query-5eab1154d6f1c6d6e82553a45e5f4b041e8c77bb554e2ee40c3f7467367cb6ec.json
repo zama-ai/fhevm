@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO consensus_epoch_history (\n            consensus_epoch, proposal_id, proposal_block, stack_version,\n            consensus_version, outcome\n        )\n        VALUES ($1, $2, $3, $4, $5, 'pending')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Bytea",
+        "Int8",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5eab1154d6f1c6d6e82553a45e5f4b041e8c77bb554e2ee40c3f7467367cb6ec"
+}
