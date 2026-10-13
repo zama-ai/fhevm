@@ -5,7 +5,7 @@ use std::{sync::RwLock, time::Duration};
 use block_manifest::LEGACY_CONSENSUS_EPOCH;
 use fhevm_engine_common::{
     gcs_activation::{EVENT_DRY_RUN_ROLLED_BACK, EVENT_DRY_RUN_STARTED, EVENT_UPGRADE_ACTIVATED},
-    versions_equal, STACK_VERSION,
+    CONSENSUS_PROTOCOL_VERSION,
 };
 use sqlx::{postgres::PgListener, PgPool};
 use tracing::info;
@@ -34,7 +34,7 @@ pub(crate) async fn load_validated_consensus_epoch(
     let consensus_epoch = load_consensus_epoch(pool).await?;
     let history = sqlx::query!(
         r#"
-        SELECT stack_version, outcome
+        SELECT consensus_version, outcome
           FROM consensus_epoch_history
          WHERE consensus_epoch = $1
         "#,
@@ -51,16 +51,13 @@ pub(crate) async fn load_validated_consensus_epoch(
     let valid = if consensus_epoch == LEGACY_CONSENSUS_EPOCH {
         history.outcome == "initial"
     } else {
-        history
-            .stack_version
-            .as_deref()
-            .is_some_and(|version| versions_equal(STACK_VERSION, version))
+        history.consensus_version == Some(i64::from(CONSENSUS_PROTOCOL_VERSION))
             && matches!(history.outcome.as_str(), "pending" | "succeeded")
     };
     if !valid {
         return Err(ExecutionError::InternalError(format!(
-            "manifest consensus_epoch {consensus_epoch} is not valid for stack version {STACK_VERSION} (history version {:?}, outcome {})",
-            history.stack_version, history.outcome,
+            "manifest consensus_epoch {consensus_epoch} is not valid for consensus protocol version {CONSENSUS_PROTOCOL_VERSION} (history version {:?}, outcome {})",
+            history.consensus_version, history.outcome,
         )));
     }
     Ok(consensus_epoch)
@@ -122,7 +119,7 @@ async fn load_gcs_active_consensus_epoch(pool: &PgPool) -> Result<Option<String>
         r#"
         SELECT upgrade.state,
                selector.consensus_epoch,
-               history.stack_version AS "stack_version?",
+               history.consensus_version AS "consensus_version?",
                history.outcome AS "outcome?"
           FROM upgrade_state upgrade
           CROSS JOIN blue_green_consensus_epoch selector
@@ -150,15 +147,13 @@ async fn load_gcs_active_consensus_epoch(pool: &PgPool) -> Result<Option<String>
     let valid = if row.consensus_epoch == LEGACY_CONSENSUS_EPOCH {
         row.outcome.as_deref() == Some("initial")
     } else {
-        row.stack_version
-            .as_deref()
-            .is_some_and(|version| versions_equal(STACK_VERSION, version))
+        row.consensus_version == Some(i64::from(CONSENSUS_PROTOCOL_VERSION))
             && matches!(row.outcome.as_deref(), Some("pending" | "succeeded"))
     };
     if !valid {
         return Err(ExecutionError::InternalError(format!(
-            "active manifest consensus_epoch {} is not valid for stack version {STACK_VERSION} (history version {:?}, outcome {:?})",
-            row.consensus_epoch, row.stack_version, row.outcome,
+            "active manifest consensus_epoch {} is not valid for consensus protocol version {CONSENSUS_PROTOCOL_VERSION} (history version {:?}, outcome {:?})",
+            row.consensus_epoch, row.consensus_version, row.outcome,
         )));
     }
     Ok(Some(row.consensus_epoch))
@@ -166,6 +161,7 @@ async fn load_gcs_active_consensus_epoch(pool: &PgPool) -> Result<Option<String>
 
 #[cfg(test)]
 mod tests {
+    use fhevm_engine_common::STACK_VERSION;
     use serial_test::serial;
     use test_harness::instance::{setup_test_db, ImportMode};
 
@@ -222,7 +218,7 @@ mod tests {
 
     #[tokio::test]
     #[serial(db)]
-    async fn consensus_epoch_pin_treats_v_prefix_as_the_same_stack_version() {
+    async fn consensus_epoch_pin_requires_the_compiled_protocol_version() {
         let instance = setup_test_db(ImportMode::None)
             .await
             .expect("create consensus_epoch pin database");
@@ -231,13 +227,59 @@ mod tests {
             .await
             .expect("connect consensus_epoch pin database");
 
-        let prefixed = format!(
-            "v{}",
-            STACK_VERSION
-                .trim_start_matches('v')
-                .trim_start_matches('V')
+        select_consensus_epoch_with_version(&pool, "9", 90, i64::from(CONSENSUS_PROTOCOL_VERSION))
+            .await;
+        assert_eq!(
+            load_gcs_active_consensus_epoch(&pool)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("9")
         );
-        select_consensus_epoch_with_stack_version(&pool, "9", 90, &prefixed).await;
+        sqlx::query(
+            "UPDATE blue_green_consensus_epoch SET consensus_epoch = '9' WHERE singleton = TRUE",
+        )
+        .execute(&pool)
+        .await
+        .expect("pin consensus_epoch for blue validation");
+        assert_eq!(load_validated_consensus_epoch(&pool).await.unwrap(), "9");
+
+        // An epoch minted for another protocol version is refused by both validators.
+        select_consensus_epoch_with_version(
+            &pool,
+            "8",
+            80,
+            i64::from(CONSENSUS_PROTOCOL_VERSION) - 1,
+        )
+        .await;
+        assert!(load_gcs_active_consensus_epoch(&pool).await.is_err());
+        assert!(load_validated_consensus_epoch(&pool).await.is_err());
+    }
+
+    /// A patch release rolls out without Blue/Green: same protocol version, another
+    /// stack version than the one that minted the active epoch. Both validators keep
+    /// accepting the epoch.
+    #[tokio::test]
+    #[serial(db)]
+    async fn consensus_epoch_pin_survives_a_patch_release() {
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .expect("create consensus_epoch pin database");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect(instance.db_url())
+            .await
+            .expect("connect consensus_epoch pin database");
+
+        select_consensus_epoch(&pool, "9", 90).await;
+        sqlx::query(
+            "UPDATE consensus_epoch_history SET stack_version = 'v999.0.0' \
+              WHERE consensus_epoch = '9'",
+        )
+        .execute(&pool)
+        .await
+        .expect("record the minting release");
+        assert_ne!(STACK_VERSION.trim_start_matches('v'), "999.0.0");
+
         assert_eq!(
             load_gcs_active_consensus_epoch(&pool)
                 .await
@@ -255,30 +297,30 @@ mod tests {
     }
 
     async fn select_consensus_epoch(pool: &PgPool, consensus_epoch: &str, proposal_block: i64) {
-        select_consensus_epoch_with_stack_version(
+        select_consensus_epoch_with_version(
             pool,
             consensus_epoch,
             proposal_block,
-            STACK_VERSION,
+            i64::from(CONSENSUS_PROTOCOL_VERSION),
         )
         .await;
     }
 
-    async fn select_consensus_epoch_with_stack_version(
+    async fn select_consensus_epoch_with_version(
         pool: &PgPool,
         consensus_epoch: &str,
         proposal_block: i64,
-        stack_version: &str,
+        consensus_version: i64,
     ) {
         sqlx::query(
             "INSERT INTO consensus_epoch_history ( \
-                 consensus_epoch, proposal_id, proposal_block, stack_version, outcome \
+                 consensus_epoch, proposal_id, proposal_block, consensus_version, outcome \
              ) VALUES ($1, $2, $3, $4, 'pending')",
         )
         .bind(consensus_epoch)
         .bind(vec![consensus_epoch.as_bytes()[0]; 32])
         .bind(proposal_block)
-        .bind(stack_version)
+        .bind(consensus_version)
         .execute(pool)
         .await
         .expect("allocate consensus_epoch");

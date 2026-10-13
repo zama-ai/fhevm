@@ -725,6 +725,7 @@ async fn test_garbage_collect() {
             ct64_digest: None,
             ct128_digest: None,
             s3_format_version: None,
+            ct64_consensus_version: None,
             span: tracing::Span::none(),
             transaction_id: None,
         };
@@ -1264,7 +1265,7 @@ async fn assert_ciphertext_uploaded(
             .get(block_manifest::S3_METADATA_CONSENSUS_EPOCH_KEY)
             .map(String::as_str),
         Some(block_manifest::LEGACY_CONSENSUS_EPOCH),
-        "ciphertext object should name the uploading stack's epoch"
+        "ciphertext object should name the epoch that computed it"
     );
 
     assert_eq!(

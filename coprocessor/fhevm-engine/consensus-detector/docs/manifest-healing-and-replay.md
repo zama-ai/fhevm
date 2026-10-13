@@ -172,13 +172,24 @@ highest block known then. While it is NULL (dry run, Green's uploader parked)
 an unpinned finding waits without spending its budget; below it the objects are
 Blue's and the attempt is charged; `legacy` has no window and uploads from
 block 0. That bound is only local: a peer that cuts over later still uploads
-Blue's bytes for a few blocks above it. So each vote also carries the epoch of
-the stack that uploaded it: sns-worker writes the `consensus-epoch` S3 metadata
-key (`S3_METADATA_CONSENSUS_EPOCH_KEY`), and healing counts a vote only when it
-names the finding's epoch. An object without it predates the tag and counts as
+Blue's bytes for a few blocks above it. So each vote also carries the epoch
+that computed it: sns-worker writes the `consensus-epoch` S3 metadata key
+(`S3_METADATA_CONSENSUS_EPOCH_KEY`), and healing counts a vote only when it
+names the finding's epoch. For a ct64 that epoch is the one of the row's
+`consensus_version` in `consensus_epoch_history`, not the uploader's: an SNS
+job is created when a handle is allowed, so a handle computed before an upgrade
+and first allowed after it is uploaded by the newer stack. A row without a
+version, or with one no epoch records, falls back to the uploader's epoch. An object without it predates the tag and counts as
 `legacy`. The tag is not signed; it can only exclude a vote, whose attestation
 is still verified. Pinned targets are unaffected and already reject bytes of
 another digest.
+The same tag dates the installed bytes. `ciphertexts.consensus_version`
+records the protocol version that computed a row; healing installs the bytes
+with the `consensus_version` that `consensus_epoch_history` records for the
+object's epoch (the number alone, not the epoch's proposal block), on insert and
+on replace, so a healed row matches the peer row it was copied from. An untagged
+object is `legacy`, whose version is 1 on networks that predate the column and
+the compiled one on a new database; an epoch unknown locally leaves it NULL.
 The handle is the unit of repair. A reorg can leave several findings for one
 handle in different blocks, and a single install heals them all. Only active
 siblings count: those with a healable reason that are unhealed and not
