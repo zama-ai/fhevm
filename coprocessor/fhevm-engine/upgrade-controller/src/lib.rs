@@ -4051,14 +4051,13 @@ mod tests {
 
         set_live_versions_behind(&pool).await;
 
-        sqlx::query(
+        sqlx::query(&format!(
             r#"
             INSERT INTO consensus_epoch_history (
-                consensus_epoch, proposal_id, proposal_block, stack_version, outcome
+                consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome
             )
-            VALUES ('1', $1, 50, 'v0.15', 'pending')
-            "#,
-        )
+            VALUES ('1', $1, 50, 'v0.15', {}, 'pending')
+            "#, fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION))
         .bind(&[0x02u8; 32][..])
         .execute(&pool)
         .await
@@ -4210,12 +4209,11 @@ mod tests {
 
         set_live_versions_behind(pool).await;
 
-        sqlx::query(
+        sqlx::query(&format!(
             "INSERT INTO consensus_epoch_history (
-                 consensus_epoch, proposal_id, proposal_block, stack_version, outcome
-             ) VALUES ('1', $1, 10, 'v0.15', 'pending')
-             ON CONFLICT (consensus_epoch) DO NOTHING",
-        )
+                 consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome
+             ) VALUES ('1', $1, 10, 'v0.15', {}, 'pending')
+             ON CONFLICT (consensus_epoch) DO NOTHING", fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION))
         .bind(&[0x02u8; 32][..])
         .execute(pool)
         .await

@@ -990,18 +990,21 @@ async fn synthetic_logs_for_block(
 /// Channel name the upgrade-controller LISTENs on for `CoprocessorUpgradeProposed` events.
 const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
 
-/// Records the event-derived consensus epoch for an accepted upgrade.
+/// Records the consensus epoch of an accepted upgrade and returns its identifier.
 ///
-/// The identifier is `{version}/block_{block}` of the
-/// `CoprocessorUpgradeProposed` log (`version` is currently software version).
-/// Replay of the same proposal returns the existing row.
+/// The identifier is `{consensus_version}/block_{block}` of the
+/// `CoprocessorUpgradeProposed` log, `consensus_version` being the live
+/// `versioning.consensus_version` plus one (see [`format_consensus_epoch`]).
+/// Blue and Green both ingest the log; reading the version in this transaction
+/// rather than from the binary makes them mint the same identifier. Replay of
+/// the same proposal returns the existing row without reading it again.
 async fn persist_upgrade_consensus_epoch(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     proposal_id: &[u8],
     proposal_block: i64,
     windows: &[(i64, i64, i64)],
     stack_version: &str,
-    consensus_epoch: &str,
+    block_number: u64,
 ) -> Result<String, sqlx::Error> {
     if let Some(consensus_epoch) = sqlx::query_scalar!(
         r#"
@@ -1018,17 +1021,28 @@ async fn persist_upgrade_consensus_epoch(
         return Ok(consensus_epoch);
     }
 
+    let live_consensus_version: i64 = sqlx::query_scalar!(
+        "SELECT consensus_version FROM versioning WHERE singleton = TRUE",
+    )
+    .fetch_one(tx.as_mut())
+    .await?;
+    let consensus_version = live_consensus_version + 1;
+    let consensus_epoch =
+        format_consensus_epoch(consensus_version, block_number);
+
     sqlx::query!(
         r#"
         INSERT INTO consensus_epoch_history (
-            consensus_epoch, proposal_id, proposal_block, stack_version, outcome
+            consensus_epoch, proposal_id, proposal_block, stack_version,
+            consensus_version, outcome
         )
-        VALUES ($1, $2, $3, $4, 'pending')
+        VALUES ($1, $2, $3, $4, $5, 'pending')
         "#,
         consensus_epoch,
         proposal_id,
         proposal_block,
         stack_version,
+        consensus_version,
     )
     .execute(tx.as_mut())
     .await?;
@@ -1050,7 +1064,7 @@ async fn persist_upgrade_consensus_epoch(
         .await?;
     }
 
-    Ok(consensus_epoch.to_owned())
+    Ok(consensus_epoch)
 }
 
 /// Decodes a log known to come from the configured ProtocolConfig contract on
@@ -1144,23 +1158,6 @@ async fn notify_coprocessor_upgrade_proposed(
             "Rejecting CoprocessorUpgradeProposed: block number exceeds u64"
         );
         return Ok(());
-    };
-    let minted_epoch = match format_consensus_epoch(
-        &event.softwareVersion,
-        block_number,
-    ) {
-        Ok(consensus_epoch) => consensus_epoch,
-        Err(reason) => {
-            error!(
-                listener_chain_id,
-                proposal_id = %proposal_id_hex,
-                software_version = %event.softwareVersion,
-                proposal_block,
-                reason,
-                "Rejecting CoprocessorUpgradeProposed: cannot derive consensus_epoch"
-            );
-            return Ok(());
-        }
     };
 
     // gwStartBlock is a single top-level field shared by every per-chain window.
@@ -1368,7 +1365,7 @@ async fn notify_coprocessor_upgrade_proposed(
         proposal_block,
         &windows,
         &event.softwareVersion,
-        &minted_epoch,
+        block_number,
     )
     .await?;
 
@@ -2194,6 +2191,12 @@ mod tests {
         .execute(&pool)
         .await
         .expect("seed legacy row");
+        // The epoch is the live protocol version plus one, read from the database,
+        // whichever binary ingests the log; 6 differs from any compiled version.
+        sqlx::query("UPDATE versioning SET consensus_version = 6")
+            .execute(&pool)
+            .await
+            .expect("set live consensus_version");
 
         let event = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(2u64),
@@ -2248,13 +2251,16 @@ mod tests {
         );
         assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
 
-        let consensus_epoch: String = sqlx::query_scalar(
-            "SELECT consensus_epoch FROM consensus_epoch_history WHERE proposal_block = 300",
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("consensus_epoch identifier");
-        assert_eq!(consensus_epoch, "v2/block_300");
+        let (consensus_epoch, consensus_version): (String, Option<i64>) =
+            sqlx::query_as(
+                "SELECT consensus_epoch, consensus_version
+                   FROM consensus_epoch_history WHERE proposal_block = 300",
+            )
+            .fetch_one(&pool)
+            .await
+            .expect("consensus_epoch identifier");
+        assert_eq!(consensus_epoch, "7/block_300");
+        assert_eq!(consensus_version, Some(7));
         let history_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM consensus_epoch_history WHERE consensus_epoch = $1",
         )
@@ -2286,6 +2292,10 @@ mod tests {
         .execute(&pool)
         .await
         .expect("seed host chains");
+        sqlx::query("UPDATE versioning SET consensus_version = 4")
+            .execute(&pool)
+            .await
+            .expect("set live consensus_version");
 
         let event = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(2u64),
@@ -2354,9 +2364,10 @@ mod tests {
         let consensus_epoch_windows = sqlx::query(
             "SELECT host_chain_id, start_block, consensus_deadline_block
                FROM consensus_epoch_block_window
-              WHERE consensus_epoch = 'v2/block_300'
+              WHERE consensus_epoch = $1
               ORDER BY host_chain_id",
         )
+        .bind("5/block_300")
         .fetch_all(&pool)
         .await
         .expect("consensus_epoch windows");

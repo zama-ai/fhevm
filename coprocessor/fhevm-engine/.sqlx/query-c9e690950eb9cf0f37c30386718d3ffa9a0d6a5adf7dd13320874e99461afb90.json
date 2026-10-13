@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT consensus_epoch\n           FROM public.consensus_epoch_history\n          WHERE consensus_version = $1 AND outcome <> 'failed'\n          ORDER BY allocated_at DESC\n          LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consensus_epoch",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "c9e690950eb9cf0f37c30386718d3ffa9a0d6a5adf7dd13320874e99461afb90"
+}
