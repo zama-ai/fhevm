@@ -2,7 +2,7 @@
 {{- if (($chain.hostListenerPoller).enabled) }}
 {{- $useLegacyName := $chain.hostListenerPoller.useLegacyName | default false -}}
 {{- $deploymentName := ternary (printf "%s-host-listener-poller" $.Release.Name) (printf "%s-host-listener-poller-%s" $.Release.Name $chain.name) $useLegacyName -}}
-{{- $appLabel := ternary "coprocessor-host-listener-poller" (printf "coprocessor-host-listener-poller-%s" $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener-poller" (printf "coprocessor-host-listener-poller-%s" $chain.name) $useLegacyName }}
 ---
 apiVersion: v1
 kind: Service

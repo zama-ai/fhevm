@@ -2,7 +2,7 @@
 {{- if (($chain.hostListener).enabled) }}
 {{- $useLegacyName := $chain.hostListener.useLegacyName | default false -}}
 {{- $deploymentName := ternary (printf "%s-host-listener" $.Release.Name) (printf "%s-host-listener-%s" $.Release.Name $chain.name) $useLegacyName -}}
-{{- $appLabel := ternary "coprocessor-host-listener" (printf "coprocessor-host-listener-%s" $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener" (printf "coprocessor-host-listener-%s" $chain.name) $useLegacyName }}
 ---
 apiVersion: v1
 kind: Service

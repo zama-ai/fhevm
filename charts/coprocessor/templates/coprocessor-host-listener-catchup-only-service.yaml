@@ -2,7 +2,7 @@
 {{- if (($chain.hostListenerCatchupOnly).enabled) }}
 {{- $useLegacyName := $chain.hostListenerCatchupOnly.useLegacyName | default false -}}
 {{- $deploymentName := ternary (printf "%s-host-listener-catchup-only" $.Release.Name | trunc 63 | trimSuffix "-") (printf "%s-host-listener-catchup-only-%s" $.Release.Name $chain.name | trunc 63 | trimSuffix "-") $useLegacyName -}}
-{{- $appLabel := ternary "coprocessor-host-listener-catchup-only" (printf "coprocessor-host-listener-catchup-only-%s" $chain.name) $useLegacyName -}}
+{{- $appLabel := ternary "coprocessor-host-listener-catchup-only" (printf "coprocessor-host-listener-catchup-only-%s" $chain.name) $useLegacyName }}
 ---
 apiVersion: v1
 kind: Service
