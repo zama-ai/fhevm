@@ -5,6 +5,7 @@ The rules every agent and reviewer applies to the Solana work: the code `AGENTS.
 ## Goal and gate
 
 - We harden `feature/solana` until the code can settle, then merge it to main piece by piece and commission external audits.
+- The hardening cycle covered every flow, failure and security outcome. We now keep all of those outcomes and cut the code none of them needs, before the merge to main.
 - "Ready" is a qualitative call: our reviewers judge the code S-tier production-ready. No scoring framework decides it.
 - Before that point we prove each flow on the preview env, run as the real environment.
 - Deployment follows the quarterly code freeze. If we are not ready at the freeze, public testnet moves; we do not lower the bar. After public testnet exists, every change reaches testnet before mainnet.
@@ -16,6 +17,9 @@ The rules every agent and reviewer applies to the Solana work: the code `AGENTS.
 3. **Generalize EVM code only when it pays.** Make shared EVM code generic (for example coprocessor ingestion) only where that removes a Solana copy. Otherwise leave EVM alone: a file that exists on main changes on our branch only for Solana glue. Any other change to EVM code is its own named PR. No wording-only edits to main's files.
 4. **One definition.** Types, contracts, clients, PDA seeds, decoders, constants, ids, limits and paths each have exactly one source, as `AGENTS.md` ("One source for everything that can change") and DD-072 define. This includes configured values: no hand-typed default for them.
 5. **Simplicity and lean code.** Smallest correct change, no speculative flexibility, no pass-through wrappers, no dual paths. Every PR deletes what it makes obsolete.
+    - Keep every outcome and cut every line no outcome needs. Every review includes a lean pass that asks, for each added or kept line, which outcome needs it.
+    - Every PR states its net handwritten line change, generated code excluded, and what it cut. A PR that grows handwritten code names the outcome that needs the growth.
+    - A cut keeps the evidence: a test that fails on a real defect stays (rule 15).
 6. **Public interfaces are contracts.** Stable numeric error codes with the table published in the SDK. Package manifests (dependencies, peers, exports) are checked, and every package is install-tested from its packed tarball.
 
 ## Security
