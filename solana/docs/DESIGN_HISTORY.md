@@ -1751,7 +1751,7 @@ its checks.
 ### DD-066, replaced in part by #4363
 
 #4363 let several Merkle indexer replicas apply every block, so a block below the checkpoint is one
-another replica already applied, and the indexer skips it.
+that another replica already applied, and the indexer skips it.
 
 > Re-handing the checkpoint block with the same hash writes nothing. A different hash at that
 > slot or a block below it stops the indexer.

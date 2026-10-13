@@ -9,10 +9,9 @@
 //! around it load the touched stores, persist the reduction, and move the checkpoint, all in
 //! one transaction per block.
 //!
-//! The indexer skips a block at or below the checkpoint, which an earlier apply already
-//! recorded. A different hash at the checkpoint's slot stops it. A wrong record is rebuilt from
-//! the start slot or restored from a dump; moving the checkpoint back does not rewind the store
-//! cursors.
+//! The indexer skips a block at or below the checkpoint, which an earlier apply already recorded.
+//! A different hash at the checkpoint's slot stops it. A wrong record is rebuilt from the start
+//! slot or restored from a dump; moving the checkpoint back does not rewind the store cursors.
 //!
 //! Each append also records the MMR nodes it completes, so a proof reads its path by
 //! position ([`load_proof`]) instead of rebuilding the mountain from every leaf. Node

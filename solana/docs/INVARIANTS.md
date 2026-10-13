@@ -390,7 +390,7 @@ have no reorg to unwind. Each block must name the last applied one by parent
 slot and parent block hash, or the stream stops (DD-062). The operator repair of
 DD-056 replays the same slots into computation rows and leaves the leaf record
 alone. A block at or below the Merkle indexer's checkpoint writes nothing; a
-different hash at the checkpoint's slot stops it (DD-066).
+different hash at the checkpoint's slot stops the indexer (DD-066).
 Pinned by `request_subscribes_to_host_transactions_and_block_meta`,
 `a_slot_that_does_not_extend_the_last_halts` and
 `only_a_different_hash_at_the_checkpoint_stops_the_indexer`. This also rests on #69.
