@@ -151,7 +151,7 @@ const solanaChainId = (value: string): bigint => {
   return id;
 };
 
-/** Reads TestEnv overrides from the process environment (the "now" source). */
+/** Reads TestEnv overrides from the process environment. */
 export const envOverrides = (env: NodeJS.ProcessEnv): Partial<TestEnvOverrides> => {
   const pick = <K extends keyof TestEnvOverrides>(key: K, name: string): Partial<Pick<TestEnvOverrides, K>> => {
     const value = env[name];

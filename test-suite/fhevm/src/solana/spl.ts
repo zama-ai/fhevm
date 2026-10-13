@@ -18,15 +18,13 @@ import {
  * require, and both REQUIRE it to already exist (they have no `init`; a missing escrow fails on-chain
  * with AnchorError 3012 AccountNotInitialized on `vault_usdc`). The seed must therefore create it
  * before any wrap/redeem — `initialize_vault`/`initialize_mint` do not.
- *
- * Returns the escrow address alongside the instruction so the caller can log/assert it.
  */
 export const buildVaultUnderlyingEscrowAtaInstruction = async (params: {
   readonly payer: TransactionSigner;
   readonly tokenProgram: Address;
   readonly confidentialMint: Address;
   readonly underlyingMint: Address;
-}): Promise<{ readonly escrow: Address; readonly instruction: Instruction }> => {
+}): Promise<Instruction> => {
   const [vaultAuthority] = await findVaultAuthorityPda(
     { mint: params.confidentialMint },
     { programAddress: params.tokenProgram },
@@ -36,13 +34,10 @@ export const buildVaultUnderlyingEscrowAtaInstruction = async (params: {
     tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
     mint: params.underlyingMint,
   });
-  return {
-    escrow,
-    instruction: getCreateAssociatedTokenIdempotentInstruction({
-      payer: params.payer,
-      ata: escrow,
-      owner: vaultAuthority,
-      mint: params.underlyingMint,
-    }),
-  };
+  return getCreateAssociatedTokenIdempotentInstruction({
+    payer: params.payer,
+    ata: escrow,
+    owner: vaultAuthority,
+    mint: params.underlyingMint,
+  });
 };

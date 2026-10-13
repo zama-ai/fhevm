@@ -214,7 +214,7 @@ const main = async (): Promise<void> => {
     confidentialMint: cSharesMint.address,
     underlyingMint: shareMint,
   });
-  await send(deployer, [cUsdcEscrow.instruction, cSharesEscrow.instruction]);
+  await send(deployer, [cUsdcEscrow, cSharesEscrow]);
 
   const commonRoots = {
     batcherProgram: vault.CONFIDENTIAL_BATCHER_PROGRAM_ADDRESS,

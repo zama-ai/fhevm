@@ -227,7 +227,7 @@ The harness (`e2e/harness/`):
 
 - `loadEnv()` → a `TestEnv` (RPC/WS/relayer/gateway URLs, the DD-052 chain id, the zama-host
   program id, the user-decrypt context, the coprocessor DB container, the deployer
-  keypair root, and capability flags `faucet` / `freshMints` / `fastSlots` / `protocolServices`).
+  keypair root, and capability flags `faucet` / `protocolServices`).
   Its source is the lifecycle-owned stack by default (env-var overridable), or `devnet`,
   `cleartext` or a seeded demo-config.
 - `personas` → named actors backed by on-disk keypairs, with a capability-gated `fund()` (local

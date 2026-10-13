@@ -37,7 +37,7 @@ describe("loadEnv", () => {
     expect(() => resolveEnv({ aclProgram: "0xdeadbeef" })).toThrow(/32-byte hex/);
   });
 
-  test("SOLANA_E2E_SOURCE=devnet: no faucet, no fast slots, small transfers from the deployer", () => {
+  test("SOLANA_E2E_SOURCE=devnet: no faucet, small transfers from the deployer", () => {
     const env = loadEnv({
       SOLANA_E2E_SOURCE: "devnet",
       SOLANA_DECRYPTION_RELAYER_URL: DEVNET_DECRYPTION_RELAYER_URL,
@@ -59,17 +59,17 @@ describe("loadEnv", () => {
     expect(() => resolveEnv({}, "demo-config", "devnet")).toThrow(/SOLANA_DECRYPTION_RELAYER_URL/);
   });
 
-  test("a demo-config seeded on devnet keeps pre-seeded mints and loses the faucet", () => {
+  test("a demo-config seeded on devnet loses the faucet", () => {
     const devnet = { decryptionRelayerUrl: DEVNET_DECRYPTION_RELAYER_URL };
     const env = resolveEnv(devnet, "demo-config", "devnet");
     expect(env.capabilities).toEqual({ faucet: false, protocolServices: true });
     expect(env.funding).toEqual(resolveEnv(devnet, "devnet").funding);
   });
 
-  test("the demo-config source labels its provenance and pre-seeds mints (no fresh mints)", () => {
+  test("the demo-config source labels its provenance", () => {
     const env = resolveEnv({ relayerUrl: "http://127.0.0.1:3000" }, "demo-config");
     expect(env.source).toBe("demo-config");
-    // Still a local validator: it can fund + advance slots, but mints are pre-seeded, not created.
+    // Still a local validator, so it keeps the faucet.
     expect(env.capabilities).toEqual({ faucet: true, protocolServices: true });
   });
 
