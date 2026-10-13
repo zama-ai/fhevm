@@ -87,20 +87,28 @@ pub struct MerkleProofResponse {
     pub proofs: Vec<MerkleProofOutcome>,
 }
 
-/// Error codes, in the vocabulary of RFC 033 (Direct HTTP Decryption Endpoint). Error bodies are
-/// JSON.
+/// Error codes, in the vocabulary of RFC 033 (Direct HTTP Decryption Endpoint). The `FhevmSig`
+/// codes are RFC 038's, one per failed verification step. Error bodies are JSON.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
-    /// Malformed body, missing key, too many leaves, or a query string.
+    /// Malformed body, missing key, too many leaves, or a body over the size limit.
     Malformed,
+    /// A query string, which `FhevmSig` does not sign.
+    NonCanonicalPath,
+    /// No `Authorization` header.
+    AuthMissing,
+    /// An `Authorization` header that is not `FhevmSig` with exactly `expires`, `digest` and
+    /// `sig`, in this order, or one valid for longer than the server accepts.
+    AuthMalformed,
     /// The `FhevmSig` signature expired; sign again.
     AuthExpired,
-    /// The `FhevmSig` signature is missing, malformed, too long-lived or for
-    /// another recipient, or its signer is not the tx-sender of a node in a live
-    /// KMS context.
-    SenderAuthenticationFailed,
+    /// The signature recovers no address, or one that is not the tx-sender of a node in a live
+    /// KMS context. A signature for another recipient recovers an unrelated address.
+    AuthUnknownSigner,
+    /// The body's keccak-256 is not the signed `digest`.
+    AuthBodyMismatch,
     /// The leaf record could not be read, or the KMS tx-sender set is not read
     /// yet; retry later.
     UpstreamTransient,

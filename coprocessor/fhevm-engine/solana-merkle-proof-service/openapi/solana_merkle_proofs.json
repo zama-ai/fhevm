@@ -42,7 +42,7 @@
             }
           },
           "400": {
-            "description": "Malformed request, or a query string",
+            "description": "Malformed or oversized body (`malformed`), or a query string (`non_canonical_path`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -52,7 +52,7 @@
             }
           },
           "401": {
-            "description": "Request signature expired (`auth_expired`, retryable) or refused",
+            "description": "`FhevmSig` refused before the body is read: missing (`auth_missing`), malformed or too long-lived (`auth_malformed`), expired (`auth_expired`, retryable), or not by a KMS tx-sender (`auth_unknown_signer`). Then the body: not the signed digest (`auth_body_mismatch`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -104,11 +104,15 @@
     "schemas": {
       "ErrorCode": {
         "type": "string",
-        "description": "Error codes, in the vocabulary of RFC 033 (Direct HTTP Decryption Endpoint). Error bodies are\nJSON.",
+        "description": "Error codes, in the vocabulary of RFC 033 (Direct HTTP Decryption Endpoint). The `FhevmSig`\ncodes are RFC 038's, one per failed verification step. Error bodies are JSON.",
         "enum": [
           "malformed",
+          "non_canonical_path",
+          "auth_missing",
+          "auth_malformed",
           "auth_expired",
-          "sender_authentication_failed",
+          "auth_unknown_signer",
+          "auth_body_mismatch",
           "upstream_transient",
           "rate_limited",
           "overloaded"
@@ -298,7 +302,7 @@
         "type": "apiKey",
         "in": "header",
         "name": "Authorization",
-        "description": "`FhevmSig expires=<unix seconds>, sig=0x<65 bytes>` (RFC 038): an EIP-712 signature over this path, the exact body, the expiry and this coprocessor's signer address as audience, by the tx-sender of a node in a live KMS context of the canonical ProtocolConfig. Accepted up to 30 s after expiry and at most 330 s ahead. The `shared/request-authorization` crate defines the typed data."
+        "description": "`FhevmSig expires=<unix seconds>, digest=0x<32 bytes>, sig=0x<65 bytes>`, exactly these parameters in this order (RFC 038): an EIP-712 signature over this path, the body's keccak-256 `digest`, the expiry and this coprocessor's signer address as audience, by the tx-sender of a node in a live KMS context of the canonical ProtocolConfig. The signer is authenticated from the header before the body is read, then the body must match `digest`. Accepted up to 30 s after expiry and at most 330 s ahead. The `shared/request-authorization` crate defines the typed data."
       }
     }
   }

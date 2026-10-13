@@ -35,8 +35,8 @@ use std::{
 
 use alloy::primitives::Address;
 use axum::{
-    body::Bytes,
-    extract::{rejection::BytesRejection, DefaultBodyLimit, State},
+    body::{Body, Bytes},
+    extract::State,
     http::{header, HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -256,10 +256,7 @@ fn merkle_proofs_router(
     Router::new()
         .route("/healthz", get(proof_server_healthz))
         .route("/liveness", get(liveness))
-        .route(
-            MERKLE_PROOFS_PATH,
-            post(merkle_proofs).layer(DefaultBodyLimit::max(MAX_REQUEST_BYTES)),
-        )
+        .route(MERKLE_PROOFS_PATH, post(merkle_proofs))
         .with_state(state)
 }
 
@@ -306,10 +303,14 @@ async fn proof_server_healthz(State(state): State<AppState>) -> StatusCode {
 
 fn http_status(code: ErrorCode) -> StatusCode {
     match code {
-        ErrorCode::Malformed => StatusCode::BAD_REQUEST,
-        ErrorCode::AuthExpired | ErrorCode::SenderAuthenticationFailed => {
-            StatusCode::UNAUTHORIZED
+        ErrorCode::Malformed | ErrorCode::NonCanonicalPath => {
+            StatusCode::BAD_REQUEST
         }
+        ErrorCode::AuthMissing
+        | ErrorCode::AuthMalformed
+        | ErrorCode::AuthExpired
+        | ErrorCode::AuthUnknownSigner
+        | ErrorCode::AuthBodyMismatch => StatusCode::UNAUTHORIZED,
         ErrorCode::UpstreamTransient => StatusCode::BAD_GATEWAY,
         ErrorCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
         ErrorCode::Overloaded => StatusCode::SERVICE_UNAVAILABLE,
@@ -396,8 +397,8 @@ fn decode_cbor<T: DeserializeOwned>(body: &[u8]) -> Result<T, HttpError> {
     request_body(content = MerkleProofRequest, content_type = "application/cbor"),
     responses(
         (status = 200, description = "One answer per queried leaf, in request order", body = MerkleProofResponse, content_type = "application/cbor"),
-        (status = 400, description = "Malformed request, or a query string", body = ErrorResponse, content_type = "application/json"),
-        (status = 401, description = "Request signature expired (`auth_expired`, retryable) or refused", body = ErrorResponse, content_type = "application/json"),
+        (status = 400, description = "Malformed or oversized body (`malformed`), or a query string (`non_canonical_path`)", body = ErrorResponse, content_type = "application/json"),
+        (status = 401, description = "`FhevmSig` refused before the body is read: missing (`auth_missing`), malformed or too long-lived (`auth_malformed`), expired (`auth_expired`, retryable), or not by a KMS tx-sender (`auth_unknown_signer`). Then the body: not the signed digest (`auth_body_mismatch`)", body = ErrorResponse, content_type = "application/json"),
         (status = 429, description = "Signer over its rate or holding as many signed requests as it may; `Retry-After` set", body = ErrorResponse, content_type = "application/json"),
         (status = 502, description = "Leaf record or KMS tx-sender set unavailable", body = ErrorResponse, content_type = "application/json"),
         (status = 503, description = "No database connection free in time; `Retry-After` set", body = ErrorResponse, content_type = "application/json"),
@@ -408,7 +409,7 @@ async fn merkle_proofs(
     State(state): State<AppState>,
     uri: Uri,
     headers: HeaderMap,
-    body: Result<Bytes, BytesRejection>,
+    body: Body,
 ) -> Result<Response, HttpError> {
     let started = Instant::now();
     let answer = answer_merkle_proofs(state, &uri, &headers, body).await;
@@ -433,24 +434,39 @@ struct Served {
     repeat: bool,
 }
 
+/// Authenticates the signer from the header, then reads the body and checks it against the signed
+/// digest (RFC 038), so an unauthenticated request is refused before its body is read. The digest
+/// is checked before the answer cache sees the request, so a header replayed with another body is
+/// never answered as a copy of the signed request.
 async fn answer_merkle_proofs(
     state: AppState,
     uri: &Uri,
     headers: &HeaderMap,
-    body: Result<Bytes, BytesRejection>,
+    body: Body,
 ) -> Result<Served, HttpError> {
     // `FhevmSig` does not sign a query string.
     if uri.query().is_some() {
-        return Err(HttpError::malformed("a query string is not signed"));
+        return Err(HttpError::new(
+            ErrorCode::NonCanonicalPath,
+            "a query string is not signed",
+        ));
     }
-    let body =
-        body.map_err(|rejection| HttpError::malformed(rejection.body_text()))?;
     let now = unix_now_secs();
     let authorization =
-        authenticate(&state.senders, state.audience, headers, &body, now)?;
+        authenticate(&state.senders, state.audience, headers, now)?;
     REQUESTS_BY_SIGNER
         .with_label_values(&[&authorization.signer.to_string()])
         .inc();
+    let body = axum::body::to_bytes(body, MAX_REQUEST_BYTES)
+        .await
+        .map_err(|err| {
+            HttpError::malformed(format!(
+                "body unreadable or over {MAX_REQUEST_BYTES} bytes: {err}"
+            ))
+        })?;
+    authorization.check_body(&body).map_err(|err| {
+        HttpError::new(ErrorCode::AuthBodyMismatch, err.to_string())
+    })?;
     // Parsing costs neither the rate nor a read, so a malformed request is
     // refused each time and never remembered.
     let queries = parse_request(&body)?;
@@ -584,48 +600,62 @@ fn cbor_response(body: Bytes) -> Response {
     ([(header::CONTENT_TYPE, CBOR)], body).into_response()
 }
 
-/// Returns what the KMS tx-sender that signed this exact body for this route and
-/// `audience` signed.
+/// Returns what the KMS tx-sender that signed this request for this route and
+/// `audience` signed, from the `Authorization` header alone.
 fn authenticate(
     senders: &KmsTxSenders,
     audience: Address,
     headers: &HeaderMap,
-    body: &[u8],
     now: u64,
 ) -> Result<Authorization, HttpError> {
-    let refused = |message: String| {
-        HttpError::new(ErrorCode::SenderAuthenticationFailed, message)
-    };
     let Some(set) = senders.current() else {
         return Err(HttpError::new(
             ErrorCode::UpstreamTransient,
             "KMS tx-sender set not read yet",
         ));
     };
-    let header = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or_default();
-    let authorization = request_authorization::recover_authorization(
-        &set.registry,
-        header,
-        MERKLE_PROOFS_PATH,
-        body,
-        audience,
-        now,
-    )
-    .map_err(|err| match err {
-        AuthorizationError::Expired { .. } => {
-            HttpError::new(ErrorCode::AuthExpired, err.to_string())
-        }
-        _ => refused(err.to_string()),
-    })?;
+    let Some(header) = headers.get(header::AUTHORIZATION) else {
+        return Err(HttpError::new(
+            ErrorCode::AuthMissing,
+            "no Authorization header",
+        ));
+    };
+    let authorization = header
+        .to_str()
+        .map_err(|_| AuthorizationError::Malformed)
+        .and_then(|header| {
+            request_authorization::recover_authorization(
+                &set.registry,
+                header,
+                MERKLE_PROOFS_PATH,
+                audience,
+                now,
+            )
+        })
+        .map_err(|err| {
+            let code = match err {
+                AuthorizationError::Expired { .. } => ErrorCode::AuthExpired,
+                AuthorizationError::BadSignature => {
+                    ErrorCode::AuthUnknownSigner
+                }
+                AuthorizationError::Malformed
+                | AuthorizationError::TooLongLived { .. } => {
+                    ErrorCode::AuthMalformed
+                }
+            };
+            HttpError::new(code, err.to_string())
+        })?;
     if !set.senders.contains(&authorization.signer) {
-        return Err(refused(format!(
-            "{} is not the tx-sender of a node in a live KMS context of \
-             ProtocolConfig {} on chain {}",
-            authorization.signer, set.registry.contract, set.registry.chain_id
-        )));
+        return Err(HttpError::new(
+            ErrorCode::AuthUnknownSigner,
+            format!(
+                "{} is not the tx-sender of a node in a live KMS context of \
+                 ProtocolConfig {} on chain {}",
+                authorization.signer,
+                set.registry.contract,
+                set.registry.chain_id
+            ),
+        ));
     }
     Ok(authorization)
 }
@@ -778,12 +808,14 @@ impl Modify for FhevmSigScheme {
                 SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::with_description(
                     "Authorization",
                     &format!(
-                        "`{} expires=<unix seconds>, sig=0x<65 bytes>` (RFC 038): an EIP-712 \
-                         signature over this path, the exact body, the expiry and this \
+                        "`{} expires=<unix seconds>, digest=0x<32 bytes>, sig=0x<65 bytes>`, \
+                         exactly these parameters in this order (RFC 038): an EIP-712 signature \
+                         over this path, the body's keccak-256 `digest`, the expiry and this \
                          coprocessor's signer address as audience, by the tx-sender of a node \
-                         in a live KMS context of the canonical ProtocolConfig. Accepted up to \
-                         {} s after expiry and at most {} s ahead. The \
-                         `shared/request-authorization` crate defines the typed data.",
+                         in a live KMS context of the canonical ProtocolConfig. The signer is \
+                         authenticated from the header before the body is read, then the body \
+                         must match `digest`. Accepted up to {} s after expiry and at most {} s \
+                         ahead. The `shared/request-authorization` crate defines the typed data.",
                         request_authorization::SCHEME,
                         request_authorization::CLOCK_SKEW_SECS,
                         request_authorization::MAX_AUTH_VALIDITY_SECS
@@ -1046,28 +1078,27 @@ mod tests {
             }
             request.send()
         };
-        let refused = |response: reqwest::Response| async move {
+        let refused = |response: reqwest::Response, code: ErrorCode| async move {
             assert_eq!(response.version(), reqwest::Version::HTTP_2);
             assert_eq!(response.status(), 401);
             let error = error_of(response).await;
-            assert_eq!(error.code, ErrorCode::SenderAuthenticationFailed);
+            assert_eq!(error.code, code);
             assert!(!error.retryable);
         };
 
-        refused(post(None, body.clone()).await.expect("send")).await;
-        let stranger = PrivateKeySigner::random();
-        let by_stranger = signed(&stranger, &body, unix_now_secs() + 30).await;
-        refused(post(Some(by_stranger), body.clone()).await.expect("send"))
-            .await;
-        let for_other_body =
-            signed(&connector, &[0xA0], unix_now_secs() + 30).await;
         refused(
-            post(Some(for_other_body), body.clone())
-                .await
-                .expect("send"),
+            post(None, body.clone()).await.expect("send"),
+            ErrorCode::AuthMissing,
         )
         .await;
-        // Signed for another coprocessor.
+        let stranger = PrivateKeySigner::random();
+        let by_stranger = signed(&stranger, &body, unix_now_secs() + 30).await;
+        refused(
+            post(Some(by_stranger), body.clone()).await.expect("send"),
+            ErrorCode::AuthUnknownSigner,
+        )
+        .await;
+        // Signed for another coprocessor: recovers an unrelated address.
         let for_other_audience = signed_for(
             &connector,
             &body,
@@ -1079,6 +1110,7 @@ mod tests {
             post(Some(for_other_audience), body.clone())
                 .await
                 .expect("send"),
+            ErrorCode::AuthUnknownSigner,
         )
         .await;
         let too_long_lived = signed(
@@ -1094,6 +1126,36 @@ mod tests {
             post(Some(too_long_lived), body.clone())
                 .await
                 .expect("send"),
+            ErrorCode::AuthMalformed,
+        )
+        .await;
+        // Exactly `expires`, `digest` and `sig`, in this order.
+        let valid = signed(&connector, &body, unix_now_secs() + 30).await;
+        let (expires, rest) = valid
+            .strip_prefix("FhevmSig ")
+            .and_then(|parameters| parameters.split_once(", "))
+            .expect("expires first");
+        let (digest, signature) = rest.split_once(", ").expect("digest, sig");
+        for malformed in [
+            format!("FhevmSig {digest}, {expires}, {signature}"),
+            format!("FhevmSig {expires}, {signature}, {digest}"),
+            format!("FhevmSig {expires}, {signature}"),
+        ] {
+            refused(
+                post(Some(malformed), body.clone()).await.expect("send"),
+                ErrorCode::AuthMalformed,
+            )
+            .await;
+        }
+        // The connector's valid header replayed with another body: the signer is known from the
+        // header, and the body does not match its digest.
+        let for_other_body =
+            signed(&connector, &[0xA0], unix_now_secs() + 30).await;
+        refused(
+            post(Some(for_other_body), body.clone())
+                .await
+                .expect("send"),
+            ErrorCode::AuthBodyMismatch,
         )
         .await;
 
@@ -1122,7 +1184,7 @@ mod tests {
             .await
             .expect("send");
         assert_eq!(response.status(), 400);
-        assert_eq!(error_of(response).await.code, ErrorCode::Malformed);
+        assert_eq!(error_of(response).await.code, ErrorCode::NonCanonicalPath);
 
         let not_cbor = b"{\"leaves\":[]}".to_vec();
         let authorization =
@@ -1145,6 +1207,7 @@ mod tests {
         let response =
             post(Some(authorization), too_large).await.expect("send");
         assert_eq!(response.status(), 400);
+        assert_eq!(error_of(response).await.code, ErrorCode::Malformed);
 
         let liveness = client
             .get(format!("{base}/liveness"))
@@ -1152,6 +1215,97 @@ mod tests {
             .await
             .expect("send");
         assert_eq!(liveness.status(), 200);
+
+        cancel.cancel();
+        server.await.expect("join");
+    }
+
+    /// Sends a request over HTTP/1.1 whose `Content-Length` announces more bytes than it sends, so
+    /// its body never ends, and returns the status and code of the answer. A server that reads the
+    /// body before it answers never answers, and this fails at its deadline.
+    async fn answer_to_an_unfinished_body(
+        base: &str,
+        authorization: &str,
+    ) -> (u16, ErrorCode) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let address = base.strip_prefix("http://").expect("an http base");
+        let mut stream = tokio::net::TcpStream::connect(address)
+            .await
+            .expect("connect");
+        let head = format!(
+            "POST {MERKLE_PROOFS_PATH} HTTP/1.1\r\nhost: {address}\r\n\
+             content-type: {CBOR}\r\ncontent-length: 1000\r\n\
+             authorization: {authorization}\r\n\r\n"
+        );
+        stream.write_all(head.as_bytes()).await.expect("write head");
+        stream
+            .write_all(&[0; 10])
+            .await
+            .expect("write part of the body");
+        let mut received = Vec::new();
+        let answer = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let mut chunk = [0; 4096];
+                let read = stream.read(&mut chunk).await.expect("read");
+                received.extend_from_slice(&chunk[..read]);
+                let text = String::from_utf8_lossy(&received);
+                if let Some((head, body)) = text.split_once("\r\n\r\n") {
+                    let length = head
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length: ")
+                                .map(|length| length.parse::<usize>().unwrap())
+                        })
+                        .expect("a content length");
+                    if body.len() >= length {
+                        let status = head[9..12].parse().expect("a status");
+                        let error: ErrorResponse =
+                            serde_json::from_str(&body[..length])
+                                .expect("a JSON error body");
+                        return (status, error.code);
+                    }
+                }
+                assert_ne!(read, 0, "the server closed without an answer");
+            }
+        })
+        .await;
+        answer.expect("the server answered before reading the body")
+    }
+
+    /// The signer is authenticated from the header before the body is read (RFC 038): an unknown
+    /// signer, or an expired signature, is refused while the body has not arrived.
+    #[tokio::test]
+    async fn a_request_is_authenticated_before_its_body_is_read() {
+        let connector = PrivateKeySigner::random();
+        let (base, cancel, server) = spawn(
+            KmsTxSenders::fixed(KmsTxSenderSet {
+                registry: REGISTRY,
+                senders: HashSet::from([connector.address()]),
+            }),
+            1000,
+            1 << 20,
+            1,
+        )
+        .await;
+        let body = [0; 1000];
+
+        let stranger = PrivateKeySigner::random();
+        let by_stranger = signed(&stranger, &body, unix_now_secs() + 30).await;
+        assert_eq!(
+            answer_to_an_unfinished_body(&base, &by_stranger).await,
+            (401, ErrorCode::AuthUnknownSigner)
+        );
+        let expired = signed(
+            &connector,
+            &body,
+            unix_now_secs() - request_authorization::CLOCK_SKEW_SECS - 60,
+        )
+        .await;
+        assert_eq!(
+            answer_to_an_unfinished_body(&base, &expired).await,
+            (401, ErrorCode::AuthExpired)
+        );
 
         cancel.cancel();
         server.await.expect("join");

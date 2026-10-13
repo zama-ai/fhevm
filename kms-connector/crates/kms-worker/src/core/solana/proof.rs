@@ -73,6 +73,24 @@ pub(super) fn check_length(requested: usize, returned: usize) -> Result<(), Proo
     }
 }
 
+/// Whether a coprocessor refused this connector's `FhevmSig` in a way signing again the same way
+/// cannot change: every RFC 038 `auth_*` code but `auth_expired`. The connector keys off the code,
+/// as RFC 038 asks, not the body's `retryable` flag.
+pub(super) fn refuses_the_sender(code: ErrorCode) -> bool {
+    match code {
+        ErrorCode::AuthMissing
+        | ErrorCode::AuthMalformed
+        | ErrorCode::AuthUnknownSigner
+        | ErrorCode::AuthBodyMismatch => true,
+        ErrorCode::Malformed
+        | ErrorCode::NonCanonicalPath
+        | ErrorCode::AuthExpired
+        | ErrorCode::UpstreamTransient
+        | ErrorCode::RateLimited
+        | ErrorCode::Overloaded => false,
+    }
+}
+
 /// Why a batch could not be read from a coprocessor. Every variant says nothing about any leaf.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum ProofReadError {
@@ -83,7 +101,7 @@ pub enum ProofReadError {
     #[error("Merkle proof read failed: {reason}")]
     Unavailable { reason: String },
     /// A coprocessor answered with an error body; from [`verify_proofs`], every coprocessor
-    /// refused with `code`.
+    /// refused this connector as a sender ([`refuses_the_sender`]), the first with `code`.
     ///
     /// [`verify_proofs`]: super::handle_binding::verify_proofs
     #[error("Merkle proof read refused with {code:?}: {reason}")]
@@ -557,21 +575,22 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let signer = |source: usize, audience: Address| {
+        let authorization = |source: usize, audience: Address| {
             request_authorization::recover_authorization(
                 &REGISTRY,
                 &batch.authorizations[source],
                 MERKLE_PROOFS_PATH,
-                &batch.body,
                 audience,
                 now,
             )
-            .map(|authorization| authorization.signer)
         };
         for source in 0..2 {
-            assert_eq!(signer(source, signer_address(source)), Ok(wallet.address()));
+            let own = authorization(source, signer_address(source)).unwrap();
+            assert_eq!(own.signer, wallet.address());
+            assert_eq!(own.check_body(&batch.body), Ok(()));
             assert_ne!(
-                signer(source, signer_address(1 - source)),
+                authorization(source, signer_address(1 - source))
+                    .map(|authorization| authorization.signer),
                 Ok(wallet.address())
             );
         }

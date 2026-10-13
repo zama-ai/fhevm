@@ -2489,13 +2489,15 @@ signature is `FhevmSig` (RFC 038, the scheme RFC 033 names for its own hops): EI
 `audience` is the registered signer address of the coprocessor the request is sent to. Each
 `solana_proof_servers` entry of the connector names its server's address, and the server is started
 with its own (`--coprocessor-signer-address`), until `ProtocolConfig` lists the coprocessors. The
-signature travels as `Authorization: FhevmSig expires=<unix seconds>, sig=0x<65 bytes>`. The
+signature travels as `Authorization: FhevmSig expires=<unix seconds>, digest=0x<32 bytes>,
+sig=0x<65 bytes>`, exactly these parameters in this order, where `digest` is `bodyDigest`. The
 `shared/request-authorization` crate builds and checks it for both sides, and pins its wire bytes
 against viem. A server refuses a signature with `expires < now - CLOCK_SKEW` (30 s) as
 `auth_expired` (401, retryable), and one with `expires > now + MAX_AUTH_VALIDITY + CLOCK_SKEW`
-(300 + 30 s) as too long-lived. It refuses a request with a query string as `malformed` (400),
-since the signature does not cover one. kms-worker signs for 30 seconds, once per coprocessor and
-in parallel before it asks the first, and waits at most `host_rpc_call_timeout` for the signatures.
+(300 + 30 s) as `auth_malformed`. It refuses a request with a query string as `non_canonical_path`
+(400), since the signature does not cover one. kms-worker signs for 30 seconds, once per
+coprocessor and in parallel before it asks the first, and waits at most `host_rpc_call_timeout` for
+the signatures.
 It asks the coprocessors one after another in a random order: the next one as soon as an answer
 leaves a query without a verified proof, or after `HEDGE_DELAY` (250 ms) without an answer.
 
@@ -2505,13 +2507,18 @@ the live context ids, then each context's nodes from its `NewKmsContext` event a
 anchor block, checked against the anchor's `contextInfoHash`. kms-worker reads a previous context
 the same way, through `shared/kms-context`. A refresh that fails, or takes more than 30 seconds,
 keeps the last set. Until the first read succeeds, every request gets `upstream_transient` (502,
-retryable) and `/healthz` answers 503. A missing, malformed, too long-lived or unknown signature,
-or one for another audience, gets `sender_authentication_failed` (401) before the database is read.
-A KMS connector that every coprocessor refuses this way fails the request `unprocessable`, final:
-its signer is in no live context the coprocessors have read, or its signature does not verify, and
-neither recovers within relayer-http's retries. A coprocessor learns a new context's tx-senders only
-at the finalized block and up to 60 seconds later, and a signature the connector builds wrongly
-stays wrong. For a node outside the KMS context, this is the EVM outcome.
+retryable) and `/healthz` answers 503. The server authenticates the signer from the header before it
+reads the body, with RFC 038's codes (401, not retryable): no header is `auth_missing`, a header of
+any other form `auth_malformed`, and a signature that recovers no address, or one that is not a live
+tx-sender, `auth_unknown_signer`. A signature for another audience recovers an unrelated address
+and lands there too. Then it reads the body, up to 64 KiB, and refuses one whose keccak-256 is not
+the header's `digest` as `auth_body_mismatch`: a valid header replayed with another body. A KMS
+connector that every coprocessor refuses with one of these four codes, in any mix, fails the request
+`unprocessable`, final: its signer is in no live context the coprocessors have read, or its
+signature does not verify, and neither recovers within relayer-http's retries. A coprocessor learns
+a new context's tx-senders only at the finalized block and up to 60 seconds later, and a signature
+the connector builds wrongly stays wrong. For a node outside the KMS context, this is the EVM
+outcome. kms-worker keys off the code, as RFC 038 asks, not the body's `retryable` flag.
 
 Request and success bodies are CBOR (RFC 8949) over HTTP/2 without TLS negotiation (prior
 knowledge). Hashes and keys travel as 32-byte byte strings, and the requests kms-worker sends one
@@ -2525,7 +2532,8 @@ reach the server it was signed for until the server stops accepting it, at `expi
 resent by anyone who reads the plain-HTTP traffic inside the cluster, or by the connector itself.
 The answers are public proofs, so a copy learns nothing, and it must not cost anything either. Each
 server remembers every signed request it admitted until then (`AnswerCache`, keyed by the EIP-712
-signing hash). A request whose body does not decode is refused before the cache. A request is
+signing hash). A request whose body does not match its digest or does not decode is refused before
+the cache, so a header replayed with another body is never answered as a copy. A request is
 admitted once its signer's rate accepts it, charged under the cache's lock, so two copies arriving
 together are charged once; an over-rate request is refused and never remembered. The first copy to
 arrive is answered once, in a task of its own, so a caller that disconnects does not cancel it.

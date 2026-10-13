@@ -7,7 +7,7 @@
 //! holds no grant, a shorter one may still catch up.
 
 use super::encrypted_store::ResolvedEncryptedStore;
-use super::proof::{HostProofReader, LeafQuery, ProofReadError, check_length};
+use super::proof::{HostProofReader, LeafQuery, ProofReadError, check_length, refuses_the_sender};
 use crate::monitoring::metrics::SOLANA_PROOF_ANSWER_COUNTER;
 use alloy::primitives::B256;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -101,8 +101,9 @@ pub async fn verify_proofs<P: HostProofReader, T: Sync>(
 }
 
 /// The error for a query no coprocessor answered, after every coprocessor's read failed: a refusal
-/// when every coprocessor refused this connector as a sender, because its signer is in no live KMS
-/// context the coprocessors have read or its request signature does not verify.
+/// when every coprocessor refused this connector as a sender ([`refuses_the_sender`]), because its
+/// signer is in no live KMS context the coprocessors have read or its request signature does not
+/// verify. It carries the first coprocessor's code; the reason names each one's.
 fn unanswered(read_failures: &[(String, ProofReadError)]) -> ProofReadError {
     let reason = format!(
         "no coprocessor answered: {}",
@@ -112,22 +113,19 @@ fn unanswered(read_failures: &[(String, ProofReadError)]) -> ProofReadError {
             .collect::<Vec<_>>()
             .join("; ")
     );
-    let not_a_sender = |(_, error): &(String, ProofReadError)| {
-        matches!(
-            error,
-            ProofReadError::Refused {
-                code: ErrorCode::SenderAuthenticationFailed,
-                ..
-            }
-        )
-    };
-    if read_failures.iter().all(not_a_sender) {
-        ProofReadError::Refused {
-            code: ErrorCode::SenderAuthenticationFailed,
+    let sender_refusals: Option<Vec<ErrorCode>> = read_failures
+        .iter()
+        .map(|(_, error)| match error {
+            ProofReadError::Refused { code, .. } if refuses_the_sender(*code) => Some(*code),
+            _ => None,
+        })
+        .collect();
+    match sender_refusals.as_deref() {
+        Some([code, ..]) => ProofReadError::Refused {
+            code: *code,
             reason,
-        }
-    } else {
-        ProofReadError::Unavailable { reason }
+        },
+        _ => ProofReadError::Unavailable { reason },
     }
 }
 
