@@ -162,7 +162,21 @@ pub struct Scenario {
     pub contract_address: String,
     pub user_address: String,
     pub scenario: Vec<(f64, u64)>,
+    // The step pairs take every remaining CSV field, so CSV lines leave this unset.
+    #[serde(default)]
     pub batch_size: Option<usize>,
+}
+
+/// Reads a semicolon-separated scenario file (format in the README).
+pub fn read_scenarios(path: &str) -> Result<Vec<Scenario>, csv::Error> {
+    csv::ReaderBuilder::new()
+        .delimiter(b';')
+        .trim(csv::Trim::All)
+        .has_headers(false)
+        .flexible(true)
+        .from_path(path)?
+        .deserialize()
+        .collect()
 }
 
 pub struct Job {
@@ -470,6 +484,40 @@ pub async fn insert_tfhe_event(
     listener_event_to_db.insert_tfhe_event(tx, &log).await?;
 
     tracing::debug!(target: "tool", duration = ?started_at.elapsed(), "TFHE event, db_query");
+    Ok(())
+}
+
+/// Writes the `dependence_chain` row the tfhe-worker acquires, as the host
+/// listener does: a new chain, or a waiting continuation of an existing one.
+/// Event helpers give each transaction its own chain; a dependent scenario
+/// moves its transactions into one chain.
+pub async fn file_into_dependence_chain(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    transaction_id: Handle,
+    dependence_chain: Handle,
+) -> Result<(), sqlx::Error> {
+    if dependence_chain != transaction_id {
+        sqlx::query("UPDATE computations SET dependence_chain_id = $2 WHERE transaction_id = $1")
+            .bind(transaction_id.to_vec())
+            .bind(dependence_chain.to_vec())
+            .execute(tx.deref_mut())
+            .await?;
+    }
+    sqlx::query(
+        "INSERT INTO dependence_chain ( \
+             dependence_chain_id, status, last_updated_at, dependency_count, dependents, \
+             block_hash, block_height, schedule_priority \
+         ) \
+         SELECT $2, 'updated', NOW(), 0, '{}', ''::bytea, 0, 0 \
+         WHERE EXISTS (SELECT 1 FROM computations WHERE transaction_id = $1) \
+         ON CONFLICT (dependence_chain_id) DO UPDATE SET status = 'updated', \
+             last_updated_at = CASE WHEN dependence_chain.status = 'processed' \
+                 THEN NOW() ELSE dependence_chain.last_updated_at END",
+    )
+    .bind(transaction_id.to_vec())
+    .bind(dependence_chain.to_vec())
+    .execute(tx.deref_mut())
+    .await?;
     Ok(())
 }
 

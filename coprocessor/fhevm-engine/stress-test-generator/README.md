@@ -43,6 +43,9 @@ The format is semicolon separated CSV with the following order:
    transactions will be chained together or ran independently
    (e.g. Dependent on ERC transfer means that all transfers generated
    in the scenario will transfer to the same destination wallet).
+   As the host listener would, the generator files the transactions of
+   a Dependent line into one dependence chain, and gives each other
+   transaction a chain of its own.
    
  - Contract address
  
