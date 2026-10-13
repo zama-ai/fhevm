@@ -89,7 +89,7 @@ check "zama-solana-permit change -> all rust consumers" \
   "$PINS_GATEWAY $PINS_HOST"
 
 check "zama-solana-request change -> all rust consumers" \
-  "solana/crates/zama-solana-request/src/codec.rs" \
+  "solana/crates/zama-solana-request/src/request.rs" \
   "true" \
   "coprocessor kms-connector relayer" \
   "$PINS_GATEWAY $PINS_HOST"

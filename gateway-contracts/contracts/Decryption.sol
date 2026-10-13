@@ -151,25 +151,6 @@ contract Decryption is
     uint256 internal constant MAX_DECRYPTION_REQUEST_BITS = 2048;
 
     /**
-     * @notice The maximum number of handles in a Solana user or public decryption request.
-     * @dev The KMS Connector authorizes a Solana request against a single atomic
-     * `getMultipleAccounts` snapshot, and a standard Solana RPC node serves at most 100 accounts
-     * per call (agave's `--rpc-max-multiple-accounts` default). The worst-case read, a delegated
-     * user decryption, carries 3 accounts per entry (its encrypted store plus the exact and
-     * wildcard delegation rows), the signer's permit-invalidation record and the Clock sysvar that
-     * delegation expiry is checked against: `3 * N + 2 <= 100` gives `N <= 32`. Enforced at
-     * admission, before the fee, so a request the Connector cannot read in one snapshot is never
-     * accepted or paid for. Counts list entries, not distinct handles, matching the Connector's
-     * own bound (`MAX_REQUEST_HANDLES` in zama-solana-request).
-     */
-    uint8 internal constant MAX_SOLANA_DECRYPT_HANDLES = 32;
-
-    /**
-     * @notice The type byte, the top byte of a chain id, that names a Solana host chain (DD-052).
-     */
-    uint256 internal constant SOLANA_CHAIN_TYPE = 0x01;
-
-    /**
      * @notice The hash of the EIP712Domain structure typed data definition.
      */
     bytes32 private constant DOMAIN_TYPE_HASH =
@@ -241,7 +222,7 @@ contract Decryption is
      */
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 8;
+    uint256 private constant MINOR_VERSION = 7;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -250,7 +231,7 @@ contract Decryption is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 9;
+    uint64 private constant REINITIALIZER_VERSION = 8;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -339,11 +320,11 @@ contract Decryption is
     }
 
     /**
-     * @notice Re-initializes the contract from V7.
+     * @notice Re-initializes the contract from V6.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV8() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV7() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IDecryption-publicDecryptionRequest}.
@@ -360,56 +341,12 @@ contract Decryption is
         // Check the handles' conformance
         _checkCtHandlesConformancePublic(ctHandles);
 
-        (uint256 publicDecryptionId, SnsCiphertextMaterial[] memory snsCtMaterials) = _registerPublicDecryptionRequest(
-            ctHandles,
-            extraData
-        );
-
-        // Dual emission: for both pre and post 0.15 consumers
-        emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials, extraData);
-        emit PublicDecryptionRequest(publicDecryptionId, ctHandles, extraData);
-    }
-
-    /**
-     * @notice See {IDecryption-solanaPublicDecryptionRequest}.
-     */
-    function solanaPublicDecryptionRequest(
-        bytes32[] calldata ctHandles,
-        bytes calldata extraData,
-        bytes32[] calldata encryptedStores
-    ) external virtual whenNotPaused {
-        if (ctHandles.length == 0) {
-            revert EmptyCtHandles();
-        }
-        if (ctHandles.length > MAX_SOLANA_DECRYPT_HANDLES) {
-            revert SolanaHandlesMaxLengthExceeded(MAX_SOLANA_DECRYPT_HANDLES, ctHandles.length);
-        }
-        if (encryptedStores.length != ctHandles.length) {
-            revert EncryptedStoresLengthMismatch(ctHandles.length, encryptedStores.length);
-        }
-        _checkSolanaCtHandlesConformance(ctHandles);
-
-        (uint256 publicDecryptionId, ) = _registerPublicDecryptionRequest(ctHandles, extraData);
-
-        // Single emission: this entry has no pre-0.15 consumer, like the Solana user decryption.
-        emit SolanaPublicDecryptionRequest(publicDecryptionId, ctHandles, extraData, encryptedStores);
-    }
-
-    /**
-     * @notice The body both public decryption entries share once their handles are checked:
-     * fetches the SNS ciphertexts, allocates the decryption ID, stores the handles for the
-     * response's signature check, pins the KMS context and collects the fee.
-     */
-    function _registerPublicDecryptionRequest(
-        bytes32[] calldata ctHandles,
-        bytes calldata extraData
-    ) internal virtual returns (uint256 publicDecryptionId, SnsCiphertextMaterial[] memory snsCtMaterials) {
         // Fetch the SNS ciphertexts from the CiphertextCommits contract
         // This call is reverted if any of the ciphertexts are not found in the contract, but
         // this should not happen for now as a ciphertext cannot be allowed for decryption
         // without being added to the contract first (and we currently have no ways of deleting
         // a ciphertext from the contract).
-        snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
         // Check that received snsCtMaterials have the same keyId.
         // TODO: This should be removed once batched decryption requests with different keys is
@@ -425,7 +362,7 @@ contract Decryption is
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
         $.publicDecryptionCounter++;
-        publicDecryptionId = $.publicDecryptionCounter;
+        uint256 publicDecryptionId = $.publicDecryptionCounter;
 
         // The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[publicDecryptionId] = ctHandles;
@@ -439,6 +376,10 @@ contract Decryption is
 
         // Collect the fee from the transaction sender for this public decryption request.
         _collectPublicDecryptionFee(msg.sender);
+
+        // Dual emission: for both pre and post 0.15 consumers
+        emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials, extraData);
+        emit PublicDecryptionRequest(publicDecryptionId, ctHandles, extraData);
     }
 
     /**
@@ -569,11 +510,39 @@ contract Decryption is
             contractsInfo.chainId
         );
 
-        SnsCiphertextMaterial[] memory snsCtMaterials = _getUserDecryptionCtMaterials(ctHandles);
-        // After the ciphertext lookup: an unknown handle is reported before a bad or unknown context.
-        uint256 contextId = _extractContextId(extraData);
-        _validateContextId(contextId);
-        uint256 userDecryptionId = _registerUserDecryptionRequest(ctHandles, publicKey, contextId);
+        // Fetch the ciphertexts from the CiphertextCommits contract
+        // This call is reverted if any of the ciphertexts are not found in the contract, but
+        // this should not happen for now as a ciphertext cannot be allowed for decryption
+        // without being added to the contract first (and we currently have no ways of deleting
+        // a ciphertext from the contract).
+        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+
+        // Check that received snsCtMaterials have the same keyId.
+        // TODO: This should be removed once batched decryption requests with different keys is
+        // supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
+        _checkCtMaterialKeyIds(snsCtMaterials);
+
+        DecryptionStorage storage $ = _getDecryptionStorage();
+
+        // Generate a globally unique decryptionId for the user decryption request.
+        // The counter is initialized at deployment such that decryptionId's first byte uniquely
+        // represents a user decryption request (including delegated user decryption requests),
+        // with format: [0000 0010 | counter_1..31]
+        // This counter is used to ensure the IDs' uniqueness, as there is no proper way
+        // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
+        // how IDs need to be handled off-chain in case of re-org.
+        $.userDecryptionCounter++;
+        uint256 userDecryptionId = $.userDecryptionCounter;
+
+        // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+
+        // Pin the KMS context at request time. See `decryptionContextId` storage docs.
+        {
+            uint256 contextId = _extractContextId(extraData);
+            _validateContextId(contextId);
+            $.decryptionContextId[userDecryptionId] = contextId;
+        }
 
         // Collect the fee from the transaction sender for this user decryption request.
         _collectUserDecryptionFee(msg.sender);
@@ -641,11 +610,39 @@ contract Decryption is
             );
         }
 
-        SnsCiphertextMaterial[] memory snsCtMaterials = _getUserDecryptionCtMaterials(ctHandles);
-        // After the ciphertext lookup: an unknown handle is reported before a bad or unknown context.
-        uint256 contextId = _extractContextId(extraData);
-        _validateContextId(contextId);
-        uint256 userDecryptionId = _registerUserDecryptionRequest(ctHandles, publicKey, contextId);
+        // Fetch the ciphertexts from the CiphertextCommits contract.
+        // This call is reverted if any of the ciphertexts are not found in the contract, but
+        // this should not happen for now as a ciphertext cannot be allowed for decryption
+        // without being added to the contract first (and we currently have no ways of deleting
+        // a ciphertext from the contract).
+        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+
+        // Check that received snsCtMaterials have the same keyId.
+        // TODO: This should be removed once batched decryption requests with different keys is
+        // supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376).
+        _checkCtMaterialKeyIds(snsCtMaterials);
+
+        DecryptionStorage storage $ = _getDecryptionStorage();
+
+        // Generate a globally unique decryptionId for the delegated user decryption request.
+        // The counter is initialized at deployment such that decryptionId's first byte uniquely
+        // represents a user decryption request (including delegated user decryption requests),
+        // with format: [0000 0010 | counter_1..31].
+        // This counter is used to ensure the IDs' uniqueness, as there is no proper way
+        // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
+        // how IDs need to be handled off-chain in case of re-org.
+        $.userDecryptionCounter++;
+        uint256 userDecryptionId = $.userDecryptionCounter;
+
+        // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+
+        // Pin the KMS context at request time. See `decryptionContextId` storage docs.
+        {
+            uint256 contextId = _extractContextId(extraData);
+            _validateContextId(contextId);
+            $.decryptionContextId[userDecryptionId] = contextId;
+        }
 
         // Collect the fee from the transaction sender for this delegated user decryption request.
         _collectUserDecryptionFee(msg.sender);
@@ -724,122 +721,30 @@ contract Decryption is
         uint256 contextId
     ) internal virtual {
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceHandleEntry(handles);
-        SnsCiphertextMaterial[] memory snsCtMaterials = _getUserDecryptionCtMaterials(ctHandles);
-        uint256 userDecryptionId = _registerUserDecryptionRequest(ctHandles, payload.publicKey, contextId);
 
-        // Dual emission: for both pre and post 0.15 consumers
-        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, handles, payload);
-        emit UserDecryptionRequest(userDecryptionId, handles, payload);
-    }
-
-    /**
-     * @notice See {IDecryption-solanaUserDecryptionRequest}.
-     */
-    function solanaUserDecryptionRequest(
-        bytes32[] calldata ctHandles,
-        RequestValiditySeconds calldata requestValidity,
-        bytes calldata publicKey,
-        bytes calldata extraData,
-        bytes calldata solanaRequest
-    ) external virtual whenNotPaused {
-        if (ctHandles.length == 0) {
-            revert EmptyHandles();
-        }
-        // Solana's KMS Connector reads one atomic account snapshot per request, so a longer
-        // list could never be authorized and is refused here, before the fee.
-        if (ctHandles.length > MAX_SOLANA_DECRYPT_HANDLES) {
-            revert SolanaHandlesMaxLengthExceeded(MAX_SOLANA_DECRYPT_HANDLES, ctHandles.length);
-        }
-        _checkUserDecryptionRequestValiditySeconds(requestValidity);
-
-        uint256 contextId = _extractSolanaKmsRoutingContextId(extraData);
-        _validateContextId(contextId);
-
-        _collectUserDecryptionFee(msg.sender);
-
-        _executeSolanaUserDecryptionRequest(ctHandles, requestValidity, publicKey, extraData, solanaRequest, contextId);
-    }
-
-    /**
-     * @notice Executes the post-validation body of `solanaUserDecryptionRequest`:
-     * conformance-checks the handles, fetches the SNS ciphertexts, updates storage, and emits
-     * `SolanaUserDecryptionRequest`.
-     * @dev The host-side authorization lives in the KMS Connector, which reads the opaque
-     * `solanaRequest` this function forwards verbatim.
-     */
-    function _executeSolanaUserDecryptionRequest(
-        bytes32[] calldata ctHandles,
-        RequestValiditySeconds calldata requestValidity,
-        bytes calldata publicKey,
-        bytes calldata extraData,
-        bytes calldata solanaRequest,
-        uint256 contextId
-    ) internal virtual {
-        bytes32[] memory ctHandlesMem = ctHandles;
-        _checkSolanaCtHandlesConformance(ctHandlesMem);
-        // Only the lookup's checks: the event carries handles, not materials.
-        _getUserDecryptionCtMaterials(ctHandlesMem);
-        uint256 userDecryptionId = _registerUserDecryptionRequest(ctHandlesMem, publicKey, contextId);
-
-        // Single emission: there is no pre-0.15 consumer of this entry to keep on the deprecated
-        // `SnsCiphertextMaterial[]` shape, so this event is handles-only from the start
-        // (consumers resolve materials off-chain from the signed S3 attestations, RFC-023 Part 2).
-        emit SolanaUserDecryptionRequest(
-            userDecryptionId,
-            ctHandles,
-            requestValidity,
-            publicKey,
-            extraData,
-            solanaRequest
-        );
-    }
-
-    /**
-     * @notice Fetches the SNS ciphertexts of a user decryption's handles. Reverts on an unknown
-     * handle or on handles under different keys.
-     */
-    function _getUserDecryptionCtMaterials(
-        bytes32[] memory ctHandles
-    ) internal view virtual returns (SnsCiphertextMaterial[] memory snsCtMaterials) {
-        // Fetch the ciphertexts from the CiphertextCommits contract
-        // This call is reverted if any of the ciphertexts are not found in the contract, but
-        // this should not happen for now as a ciphertext cannot be allowed for decryption
-        // without being added to the contract first (and we currently have no ways of deleting
-        // a ciphertext from the contract).
-        snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
+        // Reverts on any unknown handle.
+        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
         // TODO: remove when batched decryption requests with different keys is supported by the
         // KMS (see https://github.com/zama-ai/fhevm-internal/issues/376).
         _checkCtMaterialKeyIds(snsCtMaterials);
-    }
 
-    /**
-     * @notice Allocates a user decryption ID from the shared `userDecryptionCounter` (so
-     * `userDecryptionResponse` is oblivious to the request path), stores the public key and
-     * handles for the response's signature check and pins the KMS context.
-     */
-    function _registerUserDecryptionRequest(
-        bytes32[] memory ctHandles,
-        bytes memory publicKey,
-        uint256 contextId
-    ) internal virtual returns (uint256 userDecryptionId) {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
-        // Generate a globally unique decryptionId for the user decryption request.
-        // The counter is initialized at deployment such that decryptionId's first byte uniquely
-        // represents a user decryption request (including delegated user decryption requests),
-        // with format: [0000 0010 | counter_1..31]
-        // This counter is used to ensure the IDs' uniqueness, as there is no proper way
-        // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
-        // how IDs need to be handled off-chain in case of re-org.
+        // Reuses the shared `userDecryptionCounter` so IDs are stable across legacy and unified
+        // paths (`userDecryptionResponse` is oblivious to which path a request came from).
         $.userDecryptionCounter++;
-        userDecryptionId = $.userDecryptionCounter;
+        uint256 userDecryptionId = $.userDecryptionCounter;
 
         // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(payload.publicKey, ctHandles);
 
         // Pin the KMS context at request time. See `decryptionContextId` storage docs.
         $.decryptionContextId[userDecryptionId] = contextId;
+
+        // Dual emission: for both pre and post 0.15 consumers
+        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, handles, payload);
+        emit UserDecryptionRequest(userDecryptionId, handles, payload);
     }
 
     /**
@@ -1064,28 +969,6 @@ contract Decryption is
     }
 
     /**
-     * @notice Extracts the KMS context id from a Solana request's `extraData`, which must be
-     * exactly the signed KMS routing form: version `0x02` ‖ contextId(32) ‖ epochId(32),
-     * 65 bytes. This entry has no other legal use of `extraData` — everything Solana-specific
-     * rides in the opaque `solanaRequest` — so any other version or length is refused at
-     * admission, before the fee, instead of dying in the Connector after it.
-     */
-    function _extractSolanaKmsRoutingContextId(
-        bytes calldata extraData
-    ) internal view virtual returns (uint256 contextId) {
-        if (extraData.length != 65 || uint8(extraData[0]) != 2) {
-            revert KmsRoutingMalformed(extraData);
-        }
-
-        contextId = uint256(bytes32(extraData[1:33]));
-        // Reject the all-zeros payload: contextId 0 is reserved for the pre-pinning legacy
-        // fallback and must not be reachable from caller-supplied extraData.
-        if (contextId == 0) {
-            revert InvalidNullContextId();
-        }
-    }
-
-    /**
      * @notice Extracts the context ID from the extraData field.
      * @param extraData The extraData bytes.
      * @return contextId The extracted context ID (defaults to current KMS context for legacy/empty extraData).
@@ -1103,23 +986,23 @@ contract Decryption is
             return GATEWAY_CONFIG.getCurrentKmsContextId();
         }
 
-        // Versions 1 and 2 share the `version ‖ contextId(32 BE)` prefix and keep their extensible
-        // trailing data.
+        // Versions 1/2 -> extract contextId from bytes 1..33
         if (version == 1 || version == 2) {
             if (extraData.length < 33) {
                 revert InvalidExtraDataLength(extraData.length, 33);
             }
-        } else {
-            revert UnsupportedExtraDataVersion(version);
+
+            contextId = uint256(bytes32(extraData[1:33]));
+            // Reject the all-zeros payload: contextId 0 is reserved for the pre-pinning
+            // legacy fallback and must not be reachable from caller-supplied extraData.
+            if (contextId == 0) {
+                revert InvalidNullContextId();
+            }
+            return contextId;
         }
 
-        contextId = uint256(bytes32(extraData[1:33]));
-        // Reject the all-zeros payload: contextId 0 is reserved for the pre-pinning
-        // legacy fallback and must not be reachable from caller-supplied extraData.
-        if (contextId == 0) {
-            revert InvalidNullContextId();
-        }
-        return contextId;
+        // Unsupported version
+        revert UnsupportedExtraDataVersion(version);
     }
 
     /**
@@ -1359,21 +1242,19 @@ contract Decryption is
      * @param ctHandles The list of ciphertext handles
      */
     function _checkCtHandlesConformancePublic(bytes32[] memory ctHandles) internal view virtual {
-        _checkCtHandlesBitBudget(ctHandles);
-    }
-
-    /**
-     * @notice The request bit budget, in one place for every decryption path: sums the FHE-type
-     * widths of the handles (reverting on an invalid or unpriced type) and reverts when the sum
-     * exceeds `MAX_DECRYPTION_REQUEST_BITS`.
-     */
-    function _checkCtHandlesBitBudget(bytes32[] memory ctHandles) internal pure virtual {
         uint256 totalBitSize = 0;
         for (uint256 i = 0; i < ctHandles.length; i++) {
-            // Reverts if the FHE type is invalid or not supported.
-            totalBitSize += FHETypeBitSizes.getBitSize(HandleOps.extractFheType(ctHandles[i]));
+            bytes32 ctHandle = ctHandles[i];
+
+            // Extract the FHE type from the ciphertext handle
+            FheType fheType = HandleOps.extractFheType(ctHandle);
+
+            // Add the bit size of the FHE type to the total bit size
+            // This reverts if the FHE type is invalid or not supported.
+            totalBitSize += FHETypeBitSizes.getBitSize(fheType);
         }
 
+        // Revert if the total bit size exceeds the maximum allowed.
         if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
             revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
         }
@@ -1450,49 +1331,30 @@ contract Decryption is
         HandleEntry[] calldata handles
     ) internal view virtual returns (bytes32[] memory ctHandles) {
         ctHandles = new bytes32[](handles.length);
-        for (uint256 i = 0; i < handles.length; i++) {
-            ctHandles[i] = handles[i].handle;
-        }
-        _checkCtHandlesConformanceHostChain(ctHandles);
-    }
 
-    /**
-     * @notice The shared conformance core for every entry-shaped user decryption path: one
-     * registered host chain across the batch (derived from the first handle), a priced FHE type
-     * for every handle, and the request bit budget. Shape-specific extractors reduce their
-     * entries to `bytes32[]` and delegate here, so the checks cannot drift between paths.
-     * @dev For a Solana request submitted here this is the bit budget's one enforcer: the KMS
-     * Connector authorizes these typed `ctHandles` without re-checking their widths, so they must
-     * keep flowing through this check. A Solana request submitted to the Connector over HTTP is
-     * budgeted by the Connector's endpoint instead, against the same limit.
-     */
-    function _checkCtHandlesConformanceHostChain(bytes32[] memory ctHandles) internal view virtual {
-        uint256 chainId = HandleOps.extractChainId(ctHandles[0]);
+        uint256 chainId = HandleOps.extractChainId(handles[0].handle);
         if (!GATEWAY_CONFIG.isHostChainRegistered(chainId)) {
             revert IGatewayConfig.HostChainNotRegistered(chainId);
         }
 
-        for (uint256 i = 0; i < ctHandles.length; i++) {
-            uint256 handleChainId = HandleOps.extractChainId(ctHandles[i]);
+        uint256 totalBitSize = 0;
+        for (uint256 i = 0; i < handles.length; i++) {
+            bytes32 ctHandle = handles[i].handle;
+
+            uint256 handleChainId = HandleOps.extractChainId(ctHandle);
             if (handleChainId != chainId) {
-                revert CtHandleChainIdDiffersFromContractChainId(ctHandles[i], handleChainId, chainId);
+                revert CtHandleChainIdDiffersFromContractChainId(ctHandle, handleChainId, chainId);
             }
+
+            FheType fheType = HandleOps.extractFheType(ctHandle);
+            totalBitSize += FHETypeBitSizes.getBitSize(fheType);
+
+            ctHandles[i] = ctHandle;
         }
 
-        _checkCtHandlesBitBudget(ctHandles);
-    }
-
-    /**
-     * @notice The conformance check of both Solana entries: the handles name a Solana host chain,
-     * then pass the shared check. The KMS Connector authorizes these entries on Solana hosts only,
-     * so a handle of another chain kind is refused before the fee is kept.
-     */
-    function _checkSolanaCtHandlesConformance(bytes32[] memory ctHandles) internal view virtual {
-        uint256 chainId = HandleOps.extractChainId(ctHandles[0]);
-        if (chainId >> 56 != SOLANA_CHAIN_TYPE) {
-            revert NotSolanaHostChain(chainId);
+        if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
+            revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
         }
-        _checkCtHandlesConformanceHostChain(ctHandles);
     }
 
     /**

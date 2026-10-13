@@ -11064,7 +11064,6 @@ dependencies = [
 name = "zama-solana-request"
 version = "0.1.0"
 dependencies = [
- "borsh",
  "thiserror 2.0.20",
  "zama-solana-acl",
  "zama-solana-permit",

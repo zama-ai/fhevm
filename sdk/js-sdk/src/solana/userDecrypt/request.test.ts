@@ -245,10 +245,9 @@ describe('the entry list', () => {
 });
 
 describe('the handle count', () => {
-  // The Gateway refuses a request past the cap before any fee, and the Connector refuses the same
-  // count terminally — so a list the cap refuses can never be paid for and answered, and refusing it
-  // here is what the pre-check layer is for. The cap catches what the bit budget cannot: many small
-  // handles, far under the budget in bits.
+  // The Connector refuses a request past the cap terminally, so a list the cap refuses can never be
+  // answered, and refusing it here is what the pre-check layer is for. The cap catches what the bit
+  // budget cannot: many small handles, far under the budget in bits.
   it('admits a request of exactly the cap', () => {
     const body = buildSolanaUserDecryptRequest({
       signedPermit: signedPermit(),
@@ -267,15 +266,15 @@ describe('the handle count', () => {
     ).toEqual({ reason: 'too-many-handles', count, max: MAX_SOLANA_DECRYPT_HANDLES });
   });
 
-  // The cap is the Gateway's number, mirrored by hand; a mirror nobody checks is worth less than no
+  // The cap is the Connector's number, mirrored by hand; a mirror nobody checks is worth less than no
   // mirror at all.
-  it('matches the cap the Gateway declares', () => {
+  it('matches the cap the Connector declares', () => {
     const source = readFileSync(
-      new URL('../../../../../gateway-contracts/contracts/Decryption.sol', import.meta.url),
+      new URL('../../../../../solana/crates/zama-solana-request/src/request.rs', import.meta.url),
       'utf8',
     );
-    const declared = /MAX_SOLANA_DECRYPT_HANDLES = (\d+);/.exec(source)?.[1];
-    expect(declared, 'Decryption.sol declares MAX_SOLANA_DECRYPT_HANDLES').toBeDefined();
+    const declared = /pub const MAX_REQUEST_HANDLES: usize = (\d+);/.exec(source)?.[1];
+    expect(declared, 'zama-solana-request declares MAX_REQUEST_HANDLES').toBeDefined();
     expect(MAX_SOLANA_DECRYPT_HANDLES).toBe(Number(declared));
   });
 });
@@ -312,8 +311,8 @@ describe('the bit budget', () => {
   });
 
   it('names the handle whose type has no width', () => {
-    // Type 1 is the deprecated euint4: the Gateway assigns it no size and reverts on it, so the
-    // pre-check must refuse it rather than count it as free.
+    // Type 1 is the deprecated euint4: the Connector's endpoint assigns it no size and refuses it, so
+    // the pre-check must refuse it rather than count it as free.
     const unsized = handleOf(1);
     expect(decryptionRequestBitsOfHandle(unsized)).toBeUndefined();
     expect(

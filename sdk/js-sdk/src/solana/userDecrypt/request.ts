@@ -35,9 +35,9 @@ import { bytesToHex } from '../../core/base/bytes.js';
 export const SOLANA_SRFC38_ATTESTATION_TYPE = 'solana-srfc38-user-decrypt-v1';
 
 /**
- * The handle-count cap: `MAX_SOLANA_DECRYPT_HANDLES` in the Gateway's `Decryption.sol`. The
- * Connector refuses the same count terminally, so a request past it can only ever be paid for and
- * lost — the parity test beside this module pins the two constants to each other.
+ * The handle-count cap: `MAX_REQUEST_HANDLES` in `zama-solana-request`. The Connector refuses a
+ * longer request terminally, so this check spares it the round trip — the parity test beside this
+ * module pins the two constants to each other.
  */
 export const MAX_SOLANA_DECRYPT_HANDLES = 32;
 
@@ -226,8 +226,8 @@ export function buildSolanaUserDecryptRequest(request: {
 }
 
 /**
- * The volume admission the Gateway runs statelessly: the handle-count cap, then the bit cost of the
- * set as the Gateway sums it.
+ * The volume admission the Connector's endpoint runs statelessly: the handle-count cap, then the bit
+ * cost of the set as the endpoint sums it.
  *
  * @param handles - The 32-byte handles, in any order.
  * @throws SolanaUserDecryptRequestError - If the list is over the cap, a handle has no width, or the

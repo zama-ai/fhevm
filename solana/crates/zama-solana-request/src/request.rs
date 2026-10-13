@@ -42,8 +42,8 @@ use zama_solana_permit::{PermitFields, Signature};
 /// Solana RPC node serves at most 100 accounts per call. The worst-case read carries three
 /// accounts per entry (the encrypted store plus the exact and wildcard delegation rows), the
 /// signer's invalidation record and the Clock sysvar that delegation expiry is checked against:
-/// `1 + 1 + N + 2N <= 100` gives 32. The Gateway refuses a larger request before the fee with its
-/// own copy, `MAX_SOLANA_DECRYPT_HANDLES`, which a test below pins to this one.
+/// `1 + 1 + N + 2N <= 100` gives 32. The SDK refuses a larger request before the network with its
+/// own copy, `MAX_SOLANA_DECRYPT_HANDLES`, which its request test pins to this one.
 pub const MAX_REQUEST_HANDLES: usize = 32;
 
 /// A Solana user-decryption request: 1 to [`MAX_REQUEST_HANDLES`] handles of one Solana chain,
@@ -82,24 +82,4 @@ pub struct HandleEntry {
     pub owner_address: [u8; 32],
     /// The encrypted store whose history holds that leaf.
     pub encrypted_store: [u8; 32],
-}
-
-#[cfg(test)]
-mod tests {
-    use super::MAX_REQUEST_HANDLES;
-
-    #[test]
-    fn the_gateway_admits_the_same_handle_count() {
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../gateway-contracts/contracts/Decryption.sol"
-        );
-        let source = std::fs::read_to_string(path).expect("read Decryption.sol");
-        let declared = source
-            .split("uint8 internal constant MAX_SOLANA_DECRYPT_HANDLES = ")
-            .nth(1)
-            .and_then(|rest| rest.split(';').next())
-            .expect("Decryption.sol declares MAX_SOLANA_DECRYPT_HANDLES");
-        assert_eq!(declared.parse::<usize>(), Ok(MAX_REQUEST_HANDLES));
-    }
 }
