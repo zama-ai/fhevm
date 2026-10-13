@@ -31,9 +31,7 @@ use zama_solana_test_kit::{
     spl_token_account, system_account, Ctx, DECIMALS,
 };
 
-// ---------------------------------------------------------------------------
 // Harness
-// ---------------------------------------------------------------------------
 
 fn mollusk() -> Mollusk {
     // No previous-bank-hash sysvars: the vault is standalone plain-SPL code with no host/FHE
@@ -61,9 +59,7 @@ fn read_vault(context: &Ctx, address: Pubkey) -> vault::Vault {
     read_account(context, address)
 }
 
-// ---------------------------------------------------------------------------
 // Fixture for an already-initialized vault with a chosen assets/shares state
-// ---------------------------------------------------------------------------
 
 struct VaultFixture {
     vault: Pubkey,
@@ -209,9 +205,7 @@ fn harvest_ix(
     )
 }
 
-// ---------------------------------------------------------------------------
 // initialize_vault
-// ---------------------------------------------------------------------------
 
 #[test]
 fn mollusk_initialize_vault_creates_state_share_mint_and_token_account() {
@@ -268,9 +262,7 @@ fn mollusk_initialize_vault_creates_state_share_mint_and_token_account() {
     assert_eq!(token.amount, 0);
 }
 
-// ---------------------------------------------------------------------------
 // deposit / withdraw math
-// ---------------------------------------------------------------------------
 
 #[test]
 fn mollusk_first_deposit_is_one_to_one() {
@@ -529,9 +521,7 @@ fn mollusk_inflation_attack_leaves_victim_with_shares_and_no_attacker_profit() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // rejects
-// ---------------------------------------------------------------------------
 
 #[test]
 fn mollusk_deposit_zero_amount_rejects() {
@@ -618,9 +608,7 @@ fn mollusk_withdraw_from_empty_vault_rejects() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // account-constraint rejects (has_one / token-account constraints)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn mollusk_deposit_wrong_mint_token_account_rejects() {
@@ -802,9 +790,7 @@ fn mollusk_harvest_wrong_vault_token_account_rejects() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Cost profiles
-// ---------------------------------------------------------------------------
 
 fn record_vault_cost(profile: &str, result: &InstructionResult, ix: &Instruction) {
     cost_report::record_profile("vault_mollusk", profile, ix, result);

@@ -5,8 +5,8 @@
 //! touch `HostConfig` through the admin account contexts; they do not share the
 //! `FheExecutionFixture` harness.
 
+use anchor_lang::prelude::system_program;
 use anchor_lang::solana_program::bpf_loader_upgradeable;
-use anchor_lang::{prelude::system_program, InstructionData};
 use delegator_vault as vault;
 use mollusk_svm::result::Check;
 use solana_sdk::{
@@ -17,20 +17,16 @@ use solana_sdk::{
 };
 use zama_host::{self as host, errors::ZamaHostError};
 use zama_solana_test_kit::{
-    account_is_system_owned_and_empty, anchor_error_check, anchor_framework_error_check, anchor_ix,
-    event_authority, funded_system_account, paused_host_config, program_data_account,
-    system_account, writable, Ctx,
+    account_is_system_owned_and_empty, anchor_framework_error_check, anchor_ix, event_authority,
+    funded_system_account, host_error, paused_host_config, program_data_account, system_account,
+    writable, Ctx,
 };
 
 mod host_fixtures;
 use host_fixtures::{
-    host_config_account, host_program_account, mollusk_execute_context, read_host_config,
-    vault_and_host_svm,
+    host_admin_ix, host_config_account, host_program_account, mollusk_execute_context,
+    read_host_config, vault_and_host_svm,
 };
-
-fn custom_error(error: ZamaHostError) -> Check<'static> {
-    anchor_error_check(error as u32)
-}
 
 fn program_owned_account() -> Account {
     Account {
@@ -195,7 +191,7 @@ fn mollusk_initialize_host_config_rejects_invalid_coprocessor_sets() {
     ];
     for (name, signers, threshold, error) in cases {
         let init = InitializeHostConfig::new();
-        init.run(&init.ix(init_args(signers, threshold)), custom_error(error));
+        init.run(&init.ix(init_args(signers, threshold)), host_error(error));
         assert!(
             read_host_config(&init.context, init.host_config).is_none(),
             "{name}: config was created"
@@ -208,7 +204,7 @@ fn mollusk_initialize_host_config_rejects_admin_who_is_not_the_upgrade_authority
     let init = InitializeHostConfig::with_upgrade_authority(Some(Pubkey::new_unique()));
     init.run(
         &init.ix(init_args(vec![[0x11u8; 20]], 1)),
-        custom_error(ZamaHostError::HostConfigAdminMismatch),
+        host_error(ZamaHostError::HostConfigAdminMismatch),
     );
 }
 
@@ -217,7 +213,7 @@ fn mollusk_initialize_host_config_rejects_finalized_program() {
     let init = InitializeHostConfig::with_upgrade_authority(None);
     init.run(
         &init.ix(init_args(vec![[0x11u8; 20]], 1)),
-        custom_error(ZamaHostError::HostConfigAdminMismatch),
+        host_error(ZamaHostError::HostConfigAdminMismatch),
     );
 }
 
@@ -264,20 +260,6 @@ fn mollusk_initialize_host_config_rejects_wrong_program_data_address() {
 }
 
 // ---- HostAdmin setters ----
-
-/// A `HostAdmin`-context instruction; the payload names the setter at the call site.
-fn host_admin_ix(admin: Pubkey, host_config: Pubkey, data: impl InstructionData) -> Instruction {
-    anchor_ix(
-        host::id(),
-        host::accounts::HostAdmin {
-            admin,
-            host_config,
-            event_authority: event_authority(host::id()),
-            program: host::id(),
-        },
-        data,
-    )
-}
 
 fn set_admin_ix(admin: Pubkey, host_config: Pubkey, new_admin: Pubkey) -> Instruction {
     anchor_ix(
@@ -433,7 +415,7 @@ fn mollusk_withdrawing_an_absent_pauser_writes_a_disabled_record() {
     assert_eq!((record.pauser, record.enabled), (pauser, false));
     context.process_and_validate_instruction(
         &pause_ix(pauser, host_config, EXECUTION),
-        &[custom_error(ZamaHostError::NotPauser)],
+        &[host_error(ZamaHostError::NotPauser)],
     );
 
     context.process_and_validate_instruction(
@@ -456,7 +438,7 @@ fn mollusk_only_the_admin_sets_pausers() {
 
     context.process_and_validate_instruction(
         &set_pauser_ix(stranger, host_config, stranger, true),
-        &[custom_error(ZamaHostError::HostConfigAdminMismatch)],
+        &[host_error(ZamaHostError::HostConfigAdminMismatch)],
     );
 }
 
@@ -488,7 +470,7 @@ fn mollusk_a_pauser_pauses_and_only_the_admin_unpauses() {
             host_config,
             host::instruction::Unpause { areas: EXECUTION },
         ),
-        &[custom_error(ZamaHostError::HostConfigAdminMismatch)],
+        &[host_error(ZamaHostError::HostConfigAdminMismatch)],
     );
 
     // The admin clears only the areas it names.
@@ -617,7 +599,7 @@ fn mollusk_a_wallet_pause_forwarded_through_another_program_is_rejected() {
 
     context.process_and_validate_instruction(
         &forwarded,
-        &[custom_error(ZamaHostError::WalletPauseThroughCpi)],
+        &[host_error(ZamaHostError::WalletPauseThroughCpi)],
     );
     assert_eq!(paused(&context, host_config), host::PauseFlags::default());
 }
@@ -670,7 +652,7 @@ fn mollusk_only_an_enabled_pauser_pauses() {
 
     context.process_and_validate_instruction(
         &pause_ix(withdrawn, host_config, EXECUTION),
-        &[custom_error(ZamaHostError::NotPauser)],
+        &[host_error(ZamaHostError::NotPauser)],
     );
     // The admin holds no pauser record, so it cannot pause either (EVM `ACL.pause`).
     context.process_and_validate_instruction(
@@ -746,7 +728,7 @@ fn mollusk_set_admin_rejects_keypair_that_does_not_cosign() {
 
     context.process_and_validate_instruction(
         &set_admin_ix(admin, host_config, new_admin),
-        &[custom_error(ZamaHostError::HostConfigAdminMismatch)],
+        &[host_error(ZamaHostError::HostConfigAdminMismatch)],
     );
     assert_eq!(
         read_host_config(&context, host_config)
@@ -788,7 +770,7 @@ fn mollusk_set_admin_rejects_unallocated_off_curve_key() {
 
     context.process_and_validate_instruction(
         &set_admin_ix(admin, host_config, new_admin),
-        &[custom_error(ZamaHostError::HostConfigAdminMismatch)],
+        &[host_error(ZamaHostError::HostConfigAdminMismatch)],
     );
     assert_eq!(
         read_host_config(&context, host_config)
@@ -982,7 +964,7 @@ fn mollusk_close_owned_accounts_rejects_signer_who_is_not_upgrade_authority() {
 
     context.process_and_validate_instruction(
         &close_owned_accounts_ix(admin, &[host_config]),
-        &[custom_error(ZamaHostError::HostConfigAdminMismatch)],
+        &[host_error(ZamaHostError::HostConfigAdminMismatch)],
     );
     assert!(read_host_config(&context, host_config).is_some());
 }
@@ -1003,7 +985,7 @@ fn mollusk_close_owned_accounts_rejects_finalized_program() {
 
     context.process_and_validate_instruction(
         &close_owned_accounts_ix(admin, &[host_config]),
-        &[custom_error(ZamaHostError::HostConfigAdminMismatch)],
+        &[host_error(ZamaHostError::HostConfigAdminMismatch)],
     );
     assert!(read_host_config(&context, host_config).is_some());
 }

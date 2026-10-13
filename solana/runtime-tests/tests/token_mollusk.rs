@@ -47,15 +47,13 @@ use zama_solana_test_kit::signing::{
 use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
     cost_report, decode_anchor_event, deny_scope_record_account, encrypted_store_account,
-    event_authority, handle_for_chain, new_encrypted_store, paused_host_config, read_account,
-    read_encrypted_store, read_spl_amount, read_store_handle, serialized_account, spl_mint_account,
-    spl_token_account, system_account, u256_be, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
-    DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
+    event_authority, handle_for_chain, host_error, new_encrypted_store, paused_host_config,
+    read_account, read_encrypted_store, read_hcu_block_meter, read_spl_amount, read_store_handle,
+    serialized_account, spl_mint_account, spl_token_account, system_account, u256_be, Ctx,
+    HostConfigParams, BALANCE_FHE_TYPE, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
 };
 
-// ---------------------------------------------------------------------------
 // Harness
-// ---------------------------------------------------------------------------
 
 /// The token program over the cleartext host build, so behavior tests read plaintexts from chain
 /// state.
@@ -249,10 +247,6 @@ fn token_error(error: token::ConfidentialTokenError) -> Check<'static> {
     anchor_error_check(error as u32)
 }
 
-fn host_error(error: host::errors::ZamaHostError) -> Check<'static> {
-    anchor_error_check(error as u32)
-}
-
 fn anchor_error(error: anchor_lang::error::ErrorCode) -> Check<'static> {
     anchor_framework_error_check(error)
 }
@@ -289,9 +283,7 @@ fn store_handle(state: &host::EncryptedStore, key: [u8; 32]) -> [u8; 32] {
     state.get(&key).expect("encrypted store slot")
 }
 
-// ---------------------------------------------------------------------------
 // Fixture
-// ---------------------------------------------------------------------------
 
 struct TokenFixture {
     owner: Pubkey,
@@ -473,9 +465,7 @@ impl TokenFixture {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Instruction builders
-// ---------------------------------------------------------------------------
 
 fn initialize_mint_ix(
     authority: Pubkey,
@@ -845,9 +835,7 @@ fn make_total_supply_handle_public_ix(
     )
 }
 
-// ---------------------------------------------------------------------------
 // Viewer grants (allow-on-write) and public seals
-// ---------------------------------------------------------------------------
 
 #[test]
 fn mollusk_mint_authority_allows_total_supply_viewers() {
@@ -1124,9 +1112,7 @@ fn deny_enabled_transfer_accounts(
     (accounts, record)
 }
 
-// ---------------------------------------------------------------------------
 // initialize_mint / initialize_token_account
-// ---------------------------------------------------------------------------
 
 /// A mint authority, an unused confidential mint address, and `underlying` at `underlying_mint`.
 fn initialize_mint_context(
@@ -1378,9 +1364,7 @@ fn mollusk_initialize_token_account_keeps_an_existing_balance() {
     assert_eq!(balance(&context, fixture.token_account), 100);
 }
 
-// ---------------------------------------------------------------------------
 // confidential_transfer
-// ---------------------------------------------------------------------------
 
 /// An attestation over `amount_seed`'s handle with plaintext `amount`, authored by the fixture's
 /// sender and bound to this program (the `fromExternal` contract binding).
@@ -1880,9 +1864,7 @@ fn mollusk_confidential_transfer_self_transfer_preserves_history_and_returns_no_
     assert_eq!(receipt_after.peaks, receipt_before.peaks);
 }
 
-// ---------------------------------------------------------------------------
 // Deny list: one record per application (this program in the mint's scope)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn mollusk_confidential_transfer_with_deny_list_succeeds_when_mint_is_not_denied() {
@@ -2028,9 +2010,7 @@ fn mollusk_confidential_transfer_rejects_witness_while_deny_list_is_disabled() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Registered coprocessor signer set + threshold (EVM InputVerifier parity)
-// ---------------------------------------------------------------------------
 
 /// Base accounts with the singleton `host_config` overridden to carry `coprocessor_signers` at
 /// `threshold` (n-of-m), keeping every other account identical to `base_accounts`.
@@ -2549,7 +2529,6 @@ fn mollusk_confidential_transfer_rejects_balance_under_another_token_account() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // confidential_burn -> redeem_burned_amount
 //
 // Redeem is a thin consumer of the stateless host `verify_public_decrypt`: it verifies the KMS cert
@@ -2560,7 +2539,6 @@ fn mollusk_confidential_transfer_rejects_balance_under_another_token_account() {
 // Every burn is created publicly decryptable at the burn instant (ERC-7984 `unwrap` parity,
 // DD-036), so the KMS connectors can certify it. A burn writes two leaves: the owner's allow on
 // the burned handle, then its public-decrypt leaf.
-// ---------------------------------------------------------------------------
 
 use anchor_spl::token::spl_token;
 use anchor_spl::token_2022::spl_token_2022;
@@ -4424,14 +4402,12 @@ fn mollusk_confidential_burn_is_sequential_until_cancelled() {
     check_token_instruction(&context, &burn, &[Check::success()]);
 }
 
-// ---------------------------------------------------------------------------
 // wrap_usdc: escrows public USDC into the mint's SPL vault and credits the
 // confidential balance and total supply by the wrapped amount. Reuses
 // `BurnRedeemFixture`'s SPL-backed vault/underlying-mint accounts;
 // `destination_usdc` (an owner-owned SPL account of the underlying mint,
 // already present in `BurnRedeemFixture::accounts`) doubles as the wrap
 // source (`user_usdc`) since its shape is identical to what wrap needs.
-// ---------------------------------------------------------------------------
 
 /// Builder for a `wrap_usdc` instruction against `BurnRedeemFixture`'s accounts, with every
 /// account that a negative test needs to substitute exposed as a mutable field (defaulting to
@@ -4790,7 +4766,6 @@ fn mollusk_wrap_usdc_rejects_wrong_total_supply_authority_pda() {
 // `spl_token::transfer_checked` CPI does not reject a zero-amount transfer either — a zero-amount
 // wrap is a valid (if useless) no-op that would succeed, not a negative test.
 
-// ---------------------------------------------------------------------------
 // disclose_secp: ERC-7984 `discloseEncryptedAmount` parity. The instruction CPIs the stateless
 // host `verify_public_decrypt` with the caller's handle and certificate and emits
 // `HandleDisclosedEvent { handle, cleartext_amount }`. It reads no token state: a reader links the
@@ -4798,7 +4773,6 @@ fn mollusk_wrap_usdc_rejects_wrong_total_supply_authority_pda() {
 // (destroyed context, sub-threshold cert, certificate for another handle) are covered in
 // `host_mollusk.rs`; these tests cover what the token layer adds: the event, the euint64 width
 // check, and the intentional absence of a replay marker.
-// ---------------------------------------------------------------------------
 
 /// Host config and the KMS context its v0 certificates resolve to.
 struct DiscloseFixture {
@@ -4970,14 +4944,10 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
     );
 }
 
-// ===========================================================================
 // HCU per-app block cap enforced through the confidential-token -> fhe_execute CPI.
-//
-// Ported from PR #2991 ("per-app HCU limit per block"), rewritten against the merged
-// EncryptedStore persistent-output model: `confidential_transfer` reaches `fhe_execute` only by
-// CPI, so these tests prove the block cap (ban / metering-band charge / application pinning)
-// survives that CPI boundary — not just direct `fhe_execute` calls (see `host_mollusk.rs`).
-// ===========================================================================
+// `confidential_transfer` reaches `fhe_execute` only by CPI, so these tests prove the block cap
+// (ban / metering-band charge / application pinning) survives that CPI boundary — not just direct
+// `fhe_execute` calls (see `host_mollusk.rs`).
 
 /// Exact HCU cost of the combined transfer execution (`compute_transfer_handles`): `Ge` on
 /// euint64 operands (152_000) + debit `Sub` at euint64 (162_000) + `IfThenElse` at euint64
@@ -4986,30 +4956,18 @@ fn mollusk_disclose_secp_rejects_cleartext_wider_than_u64() {
 /// a step, so it adds no HCU. See `zama-host` `HCULimit` tables.
 const TRANSFER_BATCH_HCU: u64 = 152_000 + 162_000 + 55_000 + 162_000 + 162_000; // 693_000; no add-zero copy
 
-/// The fixture's host config with the per-app block cap overridden to `cap`.
+/// The fixture's host config with the per-app block cap set to `cap`.
 fn host_config_account_with_block_cap(
     admin: Pubkey,
     coprocessor_signer: [u8; 20],
     cap: u64,
 ) -> Account {
-    let mut account = host_config_account(admin, coprocessor_signer);
-    let mut config = {
-        let mut data = account.data.as_slice();
-        host::HostConfig::try_deserialize(&mut data).expect("valid host config")
-    };
-    config.hcu_block_cap_per_app = cap;
-    account.data = serialized_account(config);
-    account
-}
-
-fn read_hcu_block_meter(context: &Ctx, address: Pubkey) -> Option<host::HcuBlockMeter> {
-    let store = context.account_store.borrow();
-    let account = store.get(&address)?;
-    if account.owner != host::id() {
-        return None;
-    }
-    let mut data = account.data.as_slice();
-    host::HcuBlockMeter::try_deserialize(&mut data).ok()
+    zama_solana_test_kit::host_config_account(&HostConfigParams {
+        coprocessor_signers: vec![coprocessor_signer],
+        hcu_block_cap_per_app: cap,
+        ..HostConfigParams::new(admin)
+    })
+    .1
 }
 
 #[test]
@@ -5116,14 +5074,12 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
     .is_none());
 }
 
-// ---------------------------------------------------------------------------
-// confidential_transfer_from_value (spend an existing encrypted amount, fhevm-internal#1680)
+// confidential_transfer_from_value (spend an existing encrypted amount)
 //
 // The host admits a stored amount operand only when the value's authority signs the execution:
 // the sender's token account (which the token program signs for) or the sender's own wallet.
 // A recipient therefore cannot spend the sender's `transferred_amount` value directly; the
 // amount must be under an authority the spender controls.
-// ---------------------------------------------------------------------------
 
 /// Done-when 1: a transfer spends a computed handle produced under the same mint, with no
 /// attestation attached. Here the amount is an existing encrypted store under the
@@ -5426,10 +5382,8 @@ fn transfer_from_value_instruction_is_smaller_than_attested_arm() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Cost profiles (zama-solana-test-kit::cost_report). Each asserts that the profile executes and
 // records its cost in the report.
-// ---------------------------------------------------------------------------
 
 #[test]
 fn cost_profile_confidential_transfer_direct() {
@@ -5583,15 +5537,13 @@ fn cost_profile_disclose_secp_seven_of_thirteen() {
     cost_report::record_profile("token_mollusk", "disclose_secp/7_of_13", &disclose, &result);
 }
 
-// ---------------------------------------------------------------------------
-// confidential_burn_from_value (burn an existing encrypted amount, fhevm-internal#1755)
+// confidential_burn_from_value (burn an existing encrypted amount)
 //
-// The burn-side analog of confidential_transfer_from_value (#1680 / #3238): burn an amount given
+// The burn-side analog of confidential_transfer_from_value: burn an amount given
 // as an existing persistent handle the owner may use, instead of a fresh coprocessor attestation.
 // The burned-amount output shape is byte-identical to the attestation path (owner allow leaf then
 // public-decrypt leaf at its canonical burned_amount value), so redeem_burned_amount consumes it
 // unchanged.
-// ---------------------------------------------------------------------------
 
 /// Happy path: burn part of a balance from an existing computed/received `euint64` handle, no
 /// attestation attached. The burned delta is created publicly decryptable exactly as the
@@ -5671,7 +5623,7 @@ fn mollusk_burn_from_value_burns_existing_amount() {
     assert_eq!(amount_after.leaf_count, 3);
 }
 
-/// Whole-balance alias regression (the #3238 aliasing class): burning the entire balance uses the
+/// Whole-balance alias: burning the entire balance uses the
 /// account's own balance value AS the amount, so `amount_store` aliases the `balance` output. The
 /// execution merges them into one slot, and the dedup skips pushing the amount a second time, so
 /// the burn settles without tripping duplicate-account resolution.

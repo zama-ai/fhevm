@@ -23,7 +23,7 @@
 
 use anchor_lang::{
     prelude::{system_program, Instructions},
-    AccountDeserialize, Discriminator,
+    Discriminator,
 };
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token::spl_token;
@@ -54,10 +54,10 @@ use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, coprocessor_signer_address,
     cost_report, deny_scope_record_account, encrypted_store_account, ensure_system_accounts,
     event_authority, handle_for_chain, hcu_trusted_app_record_account, host_config_account,
-    kms_context_account, new_encrypted_store, paused_host_config, program_owned_account,
-    read_account, read_spl_amount, read_store_handle, readonly, serialized_account,
-    spl_mint_account, spl_token_account, system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
-    DECIMALS,
+    host_error, kms_context_account, new_encrypted_store, paused_host_config,
+    program_owned_account, read_account, read_hcu_block_meter, read_spl_amount, read_store_handle,
+    readonly, serialized_account, spl_mint_account, spl_token_account, system_account, Ctx,
+    HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
 };
 
 const KMS_CONTEXT_ID: [u8; 32] = {
@@ -70,9 +70,7 @@ const KMS_CONTEXT_ID: [u8; 32] = {
 /// Sized for the cleartext host build, whose stores carry a plaintext section and cost more rent.
 const AUTHORITY_FUNDING: u64 = 1_000_000_000;
 
-// ---------------------------------------------------------------------------
 // Harness
-// ---------------------------------------------------------------------------
 
 /// The batcher stack over the cleartext host build, so behavior tests read plaintexts from chain
 /// state.
@@ -99,10 +97,6 @@ fn mollusk_with_host(host_program: &str) -> Mollusk {
 }
 
 fn batcher_error(error: batcher::BatcherError) -> Check<'static> {
-    anchor_error_check(error as u32)
-}
-
-fn host_error(error: host::errors::ZamaHostError) -> Check<'static> {
     anchor_error_check(error as u32)
 }
 
@@ -155,9 +149,7 @@ fn read_join_record(context: &Ctx, address: Pubkey) -> batcher::JoinRecord {
     read_account(context, address)
 }
 
-// ---------------------------------------------------------------------------
 // Fixture
-// ---------------------------------------------------------------------------
 
 /// One confidential mint with its full PDA family.
 struct ConfidentialMintKeys {
@@ -766,9 +758,7 @@ impl BatcherFixture {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Instruction builders
-// ---------------------------------------------------------------------------
 
 /// The settle deadline every test batcher uses.
 const SETTLE_DEADLINE_SECS: u64 = 3_600;
@@ -1278,9 +1268,7 @@ fn run_reclaim_batch_authority(context: &Ctx, fixture: &BatcherFixture, keys: &B
     assert_eq!(lamports_of(context, fixture.payer), before + funding);
 }
 
-// ---------------------------------------------------------------------------
 // Lifecycle drivers
-// ---------------------------------------------------------------------------
 
 /// Initializes the batcher, which opens batch 0, returning batch 0's keys.
 fn run_initialize_batcher(
@@ -1406,9 +1394,7 @@ fn run_claim(context: &Ctx, fixture: &BatcherFixture, keys: &BatchKeys, user: &U
     assert_eq!(check_fhe_cpis(context, &result), 2);
 }
 
-// ---------------------------------------------------------------------------
 // Deposit lifecycle tests
-// ---------------------------------------------------------------------------
 
 /// Full multi-user lifecycle against a fresh (1:1) vault: two users join with
 /// encrypted amounts, only the total (800) is revealed by the burn+redeem, the
@@ -1720,8 +1706,7 @@ fn mollusk_repeat_join_accumulates_and_quit_refunds_exactly() {
     let keys = run_initialize_batcher(&context, &fixture, 0);
 
     // Two joins accumulate: the second join's execution reads the joined encrypted store
-    // as an operand AND updates it as the output (the #3238 aliasing class
-    // for the batcher's own execution — the standard same-slot update).
+    // as an operand AND updates it as the output (the standard same-slot update).
     run_join(
         &context,
         &fixture,
@@ -2083,9 +2068,7 @@ fn mollusk_settle_stops_only_under_the_execution_pause() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Redeem lifecycle tests
-// ---------------------------------------------------------------------------
 
 /// Redeem-shaped account set: users hold confidential shares (backed by plain
 /// vault shares in the shares mint's escrow) and claim underlying back.
@@ -2830,9 +2813,7 @@ fn mollusk_deposit_and_redeem_batchers_run_concurrently() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Lifecycle-gate rejects
-// ---------------------------------------------------------------------------
 
 /// Dispatch before `min_batch_age_secs` of wall-clock time is rejected, and succeeds from then on.
 /// Slots alone do not age a batch.
@@ -3447,9 +3428,7 @@ fn mollusk_initialize_batcher_rejects_foreign_underlyings() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Admin: pause, policy and the role itself
-// ---------------------------------------------------------------------------
 
 /// Only the admin pauses, unpauses, sets the policy or hands the role on, and it must sign.
 #[test]
@@ -3883,9 +3862,7 @@ fn mollusk_set_admin_needs_the_new_admin_to_cosign() {
     assert_eq!(admin(), keys.batch);
 }
 
-// ---------------------------------------------------------------------------
 // Cost profiles
-// ---------------------------------------------------------------------------
 
 fn record_batcher_cost(profile: &str, ix: &Instruction, result: &InstructionResult) {
     cost_report::record_profile("batcher_mollusk", profile, ix, result);
@@ -4017,9 +3994,7 @@ fn cost_profile_batcher_redeem_lifecycle() {
     cost_lifecycle(&fixture, &mut context, "redeem_");
 }
 
-// ---------------------------------------------------------------------------
 // Host levers: the deny list and the per-application block cap
-// ---------------------------------------------------------------------------
 
 /// Runs every batcher flow on the production host under `levers`, each instruction carrying the
 /// witnesses an honest client supplies. Batch 0 takes two joins and a quit, then dispatches,
@@ -4075,15 +4050,6 @@ fn run_every_flow(levers: HostLevers) -> (BatcherFixture, Ctx) {
     (fixture, context)
 }
 
-fn read_hcu_block_meter(context: &Ctx, app: host::AppScope) -> Option<host::HcuBlockMeter> {
-    let store = context.account_store.borrow();
-    let account = store.get(&host::hcu_block_meter_address(app).0)?;
-    (account.owner == host::id()).then(|| {
-        host::HcuBlockMeter::try_deserialize(&mut account.data.as_slice())
-            .expect("block meter deserializes")
-    })
-}
-
 /// Denying one application never stops another: with the deny list on and an unrelated
 /// application denied, every batcher flow succeeds, quit and claim included.
 #[test]
@@ -4102,7 +4068,7 @@ fn mollusk_every_flow_runs_under_a_binding_block_cap_when_trusted() {
         ..HostLevers::default()
     });
     for app in fixture.apps() {
-        assert!(read_hcu_block_meter(&context, app).is_none());
+        assert!(read_hcu_block_meter(&context, host::hcu_block_meter_address(app).0).is_none());
     }
 }
 
@@ -4114,7 +4080,8 @@ fn mollusk_every_flow_runs_under_a_binding_block_cap_when_metered() {
         ..HostLevers::default()
     });
     for app in fixture.apps() {
-        let meter = read_hcu_block_meter(&context, app).expect("the execution created the meter");
+        let meter = read_hcu_block_meter(&context, host::hcu_block_meter_address(app).0)
+            .expect("the execution created the meter");
         assert_eq!((meter.program, meter.scope), (app.program, app.scope));
         assert!(meter.used_hcu > 0);
     }
@@ -4270,9 +4237,7 @@ fn mollusk_claim_rejects_missing_or_wrong_witnesses() {
     run_claim(&context, &fixture, &keys, &fixture.alice);
 }
 
-// ---------------------------------------------------------------------------
 // Dust settlement refunds.
-// ---------------------------------------------------------------------------
 
 /// A deposit below one share's worth would mint zero shares, so settle wraps the redeemed total
 /// back and opens refunds instead of reverting; each participant gets their exact contribution back.
@@ -4509,9 +4474,7 @@ fn mollusk_settle_rejects_a_planted_vault_token_account() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Settle at the largest KMS certificate
-// ---------------------------------------------------------------------------
 
 /// Settle with a certificate at the host's largest KMS threshold, every witness present, stays
 /// within the compute a transaction may request. The client sets each transaction's compute limit
@@ -4571,9 +4534,7 @@ fn mollusk_settle_at_the_largest_kms_certificate_fits_the_compute_budget() {
     assert!(result.compute_units_consumed <= 1_400_000);
 }
 
-// ---------------------------------------------------------------------------
 // Preloaded shares must not poison the batch (settle prices the delta)
-// ---------------------------------------------------------------------------
 
 /// SPL destinations cannot refuse incoming transfers, so an attacker can push
 /// vault shares into the PDA-owned `batch_payout_underlying` account of a

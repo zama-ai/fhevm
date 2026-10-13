@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use anchor_lang::prelude::system_program;
-use anchor_lang::AccountDeserialize;
+use anchor_lang::{AccountDeserialize, InstructionData};
 use mollusk_svm::MolluskContext;
 use solana_sdk::{
     account::Account,
@@ -370,4 +370,22 @@ pub fn check_host_context(
     } else {
         context.process_and_validate_instruction(instruction, checks)
     }
+}
+
+/// A `HostAdmin`-context instruction; the payload names the setter at the call site.
+pub fn host_admin_ix(
+    admin: Pubkey,
+    host_config: Pubkey,
+    data: impl InstructionData,
+) -> Instruction {
+    anchor_ix(
+        host::id(),
+        host::accounts::HostAdmin {
+            admin,
+            host_config,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
+        data,
+    )
 }
