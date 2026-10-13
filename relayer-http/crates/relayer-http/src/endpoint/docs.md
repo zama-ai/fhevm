@@ -16,10 +16,8 @@ The error mapping is a first version (section 5).
 | `GET` | `/healthz` | the pod is ready to serve (503 while shutting down) |
 
 Configuration (`http:` in `config/config.yaml`): `endpoint` (bind address), `max_body_bytes` (default 1 MiB, the connector's limit),
-`body_read_timeout` (default 10 s, total time to receive a request body), `supported_chain_ids` (the EVM host chain
-ids a handle may carry; a Solana chain id there is a configuration error) and `solana_chains` (the Solana host chains,
-keyed by chain id: the zama-host `program_id`, base58). At least one of the two
-names a chain. One port for everything; no version endpoint yet.
+`body_read_timeout` (default 10 s, total time to receive a request body), `supported_chain_ids` (host chain ids a
+handle may carry). One port for everything; no version endpoint yet.
 
 Both routes take an EVM body and a Solana body. The handler reads the JSON once and dispatches on a tag, as the
 connector does: `attestationType` on user decrypt (`solana-srfc38-user-decrypt-v1` is Solana, any other value is
@@ -109,32 +107,29 @@ pins both shapes and their `decryptionId`.
 ## 3. Validation
 
 Stateless, before any fan-out. The current relayer's rules, plus the connector's cheap handle rules (it would reject
-these requests anyway; failing here saves n calls). Every failure of these rules is `400 malformed` with
-`"<field>: <issue>"`; the Solana permit checks below answer `403`.
+these requests anyway; failing here saves n calls). Every failure is `400 malformed` with `"<field>: <issue>"`.
 
 | field | rule |
 |---|---|
 | `attestationType` | `eip712-unified-user-decrypt-v1` (the Solana value selects the Solana body, below) |
-| `payload.handles`, `ciphertextHandles` | non-empty; each handle's FHE type byte (index 30) is decryptable (`ebool`, `euint8..256`, `eaddress`); all handles carry one chain id (bytes 22..30, big-endian) that this relayer serves for the body's chain, in `supported_chain_ids` (EVM body) or `solana_chains` (Solana body); total plaintext size at most 2048 bits |
+| `payload.handles`, `ciphertextHandles` | non-empty; each handle's FHE type byte (index 30) is decryptable (`ebool`, `euint8..256`, `eaddress`); all handles carry one chain id (bytes 22..30, big-endian) that is in `supported_chain_ids`, and not a Solana host chain in an EVM body (the connector's rule); total plaintext size at most 2048 bits |
 | `payload.allowedContracts` | at most 10 |
 | `payload.publicKey` | non-empty |
 | `payload.requestValidity` | `startTimestamp <= now` and `startTimestamp + durationSeconds > now` |
 | `extraData` | empty or `0x00` (v0), `0x01` + 32-byte context id (v1), `0x02` + context id + 32-byte epoch id (v2); trailing bytes allowed |
 
-Deliberately not checked here: the EVM user's signature and its length (EIP-712 or ERC-1271, connector worker), the
-ACL and the ciphertext readiness (connector worker; they surface as the dominant error, section 5). The Solana
-user's signature is checked here (below).
+Deliberately not checked here: the user's signature (EIP-712, ERC-1271 or a Solana permit's Ed25519 signature and
+zama-host program, connector worker), the EVM signature length, the ACL and the ciphertext readiness (connector
+worker; they surface as the dominant error, section 5).
 
 A Solana body gets the same `handles`, `requestValidity` (user decrypt) and `extraData` rules, then:
 
 | check | through | failure |
 |---|---|---|
 | the request's form: one store per handle (public), one entry per handle and a strictly decoded permit (user), at most the handle cap, every handle on one Solana chain | `kms-connector-api` `assemble()` (user) and `zama_solana_request::public_request_chain_id` (public), the code the connector endpoint runs | `400 malformed`, field `payload` (user), `ctHandles` or `encryptedStores` (public) |
-| the permit's `verifyingProgramId` is the `program_id` configured for the handles' chain | `http.solana_chains` | `403 user_signature_rejected`, field `payload.verifyingProgramId` |
-| the Ed25519 signature verifies over the envelope rebuilt from the permit | `zama_solana_permit::verify_signature` | `403 user_signature_rejected`, field `signature` |
 
-Both 403s are the connector worker's own answer to these requests; failing here saves the n calls. No chain is read:
-the delegation, the encrypted stores and the allow proofs are the connector's (they surface as the dominant error).
+No chain is read: the delegation, the encrypted stores and the allow proofs are the connector's (they surface as the
+dominant error).
 
 ## 4. Responses
 
@@ -171,7 +166,6 @@ One body for every error:
 | status | code | when |
 |---|---|---|
 | 400 | `malformed` | unreadable or oversized body, a body not received within `http.body_read_timeout`, invalid JSON, unknown field, wrong content type, or a validation rule; the message names the field |
-| 403 | `user_signature_rejected` | a Solana permit names another zama-host program than its chain's, or its Ed25519 signature does not verify (section 3); answered before any connector call |
 | 404 | `not_found` | no such route |
 | 405 | `method_not_allowed` | the route exists, the method does not |
 | 500 | `internal` | a bug (`AggregationError::Internal`) |
@@ -280,11 +274,9 @@ Unit tests next to every function (types, validation rules, conversions, error m
 `mod.rs` that drive the router in memory with the mock connector: the success envelopes, every 400 case, 404, 405,
 the oversized body, the dominant-error mapping, shutdown, the probes, and the log lines of three requests (success,
 validation failure, unparsable body) captured through a thread-local JSON subscriber: every `request …` line has
-the four identifiers, with the expected values at each step. The Solana arm: a body signed in the test with a fixed
-Ed25519 key over the shared crate's envelope, and a Solana public body, reach the nodes equal field by field to the
-JSON posted, a permit for another program or with a flipped signature byte is a 403 with no connector call, an EVM
-body with Solana handles is a 400 with no connector call, a Solana public decrypt with t + 1 identical answers
-fails at its chain's 2t + 1 while the EVM body completes at t + 1, and an untagged or unknown tag is a 400. `cargo test -p relayer-http endpoint`.
+the four identifiers, with the expected values at each step. The Solana arm: a Solana user body and a Solana public
+body reach the nodes equal field by field to the JSON posted, an EVM body with Solana handles is a 400 with no
+connector call, and an untagged or unknown tag is a 400. `cargo test -p relayer-http endpoint`.
 
 Manual smoke, with the API key env vars set:
 

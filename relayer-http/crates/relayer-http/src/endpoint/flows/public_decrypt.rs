@@ -14,7 +14,6 @@ use zama_solana_request::{SolanaRequestError, public_request_chain_id};
 
 use super::{Reply, field, invalid, parse, read_json, rejected};
 use crate::App;
-use crate::config::{HttpConfig, SolanaChainConfig};
 use crate::endpoint::ApiError;
 use crate::endpoint::validate::{self, Invalid};
 use crate::kms_aggregator::PublicRequest;
@@ -30,10 +29,10 @@ pub struct PublicDecryptRequest {
 
 /// The connector's cheap handle rules and the `extraData` format.
 pub fn validate(request: &PublicDecryptRequest, chain_ids: &[u64]) -> Result<(), Invalid> {
-    validate::handles(
+    validate::evm_handles(
         "ciphertextHandles",
         request.ciphertext_handles.iter(),
-        |id| chain_ids.contains(&id),
+        chain_ids,
     )?;
     validate::extra_data("extraData", &request.extra_data)
 }
@@ -61,29 +60,23 @@ pub fn scheme(body: &RawValue) -> Result<Option<PublicDecryptionScheme>, Invalid
         })
 }
 
-/// The connector's cheap handle rules on a served Solana chain, the `extraData` format, then the Solana form
-/// (one store per handle, the handle cap, one Solana chain) through `zama-solana-request`, as the connector
-/// checks it. Returns the chain's configuration.
-pub fn validate_solana<'a>(
+/// The connector's cheap handle rules, the `extraData` format, then the Solana form (one store per handle, the
+/// handle cap, one Solana chain) through `zama-solana-request`, as the connector checks it.
+pub fn validate_solana(
     request: &SolanaPublicDecryptionRequest,
-    http: &'a HttpConfig,
-) -> Result<&'a SolanaChainConfig, Invalid> {
-    validate::handles("ctHandles", request.ctHandles.iter(), |id| {
-        http.solana_chains.contains_key(&id)
-    })?;
+    chain_ids: &[u64],
+) -> Result<(), Invalid> {
+    validate::handles("ctHandles", request.ctHandles.iter(), chain_ids)?;
     validate::extra_data("extraData", &request.extraData)?;
     let handles: Vec<[u8; 32]> = request.ctHandles.iter().map(|h| h.0).collect();
-    let chain_id =
-        public_request_chain_id(&handles, request.encryptedStores.len()).map_err(|e| {
-            let field = match e {
-                SolanaRequestError::StoreCount { .. } => "encryptedStores",
-                _ => "ctHandles",
-            };
-            Invalid::new(field, e.to_string())
-        })?;
-    http.solana_chains
-        .get(&chain_id)
-        .ok_or_else(|| Invalid::new("ctHandles", format!("chain id {chain_id} is not supported")))
+    public_request_chain_id(&handles, request.encryptedStores.len()).map_err(|e| {
+        let field = match e {
+            SolanaRequestError::StoreCount { .. } => "encryptedStores",
+            _ => "ctHandles",
+        };
+        Invalid::new(field, e.to_string())
+    })?;
+    Ok(())
 }
 
 /// Read the body (bounded by `http.body_read_timeout`), dispatch on its `scheme`, validate, aggregate,
@@ -102,7 +95,7 @@ async fn process(app: &App, request: Request, log: &mut Log) -> Result<Response,
 async fn process_solana(app: &App, body: &RawValue, log: &mut Log) -> Result<Response, ApiError> {
     let request: SolanaPublicDecryptionRequest = parse(body).map_err(|e| rejected(log, e))?;
     log.received(request.ctHandles.clone());
-    validate_solana(&request, &app.http).map_err(|e| invalid(log, e))?;
+    validate_solana(&request, &app.http.supported_chain_ids).map_err(|e| invalid(log, e))?;
     log.forwarded(request.id());
     let output = app
         .public_decrypt
@@ -140,7 +133,7 @@ impl From<PublicDecryptRequest> for PublicDecryptionRequest {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::endpoint::validate::tests::{SOLANA, handle, http};
+    use crate::endpoint::validate::tests::{SOLANA, handle};
 
     /// A Solana public body: two handles on `SOLANA` and their stores.
     pub(crate) fn public_body() -> SolanaPublicDecryptionRequest {
@@ -192,14 +185,13 @@ pub(crate) mod tests {
             // A served EVM chain is not a Solana chain.
             (
                 Box::new(|r| r.ctHandles = vec![handle(1, 0), handle(1, 5)]),
-                "ctHandles[0]",
+                "ctHandles",
             ),
         ];
-        let http = http();
         for (mutate, field) in cases {
             let mut request = public_body();
             mutate(&mut request);
-            let error = validate_solana(&request, &http).unwrap_err();
+            let error = validate_solana(&request, &[1, SOLANA]).unwrap_err();
             assert_eq!(error.field, field, "{error}");
         }
     }

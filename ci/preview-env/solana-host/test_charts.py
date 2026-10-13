@@ -355,11 +355,9 @@ class SolanaCharts(unittest.TestCase):
             connector = pathlib.Path(tmp) / "connector.yaml"
             connector.write_text(yaml.safe_dump({"commonConfig": {"hostChains": host_chains}}))
             config = yaml.safe_load(subprocess.check_output(["yq", program, str(connector)], text=True, cwd=ROOT, env={
-                **os.environ, "ENDPOINT_URLS": ",".join(proxies), "PROGRAM_ID": "1" * 32, "THRESHOLD": "3"}))
+                **os.environ, "ENDPOINT_URLS": ",".join(proxies), "THRESHOLD": "3"}))
         # Chain ids stay strings: Helm would read 130140237723663404 as a float64 and round it.
-        self.assertEqual(config["http"]["supported_chain_ids"], ["12345"])
-        self.assertEqual(config["http"]["solana_chains"],
-                         {"130140237723663404": {"program_id": "1" * 32}})
+        self.assertEqual(config["http"]["supported_chain_ids"], ["12345", "130140237723663404"])
         self.assertEqual([e["url"] for e in config["kms_aggregator"]["endpoints"]], proxies)
         self.assertEqual({e["auth"]["value_env"] for e in config["kms_aggregator"]["endpoints"]}, {"KMS_CONNECTOR_API_KEY"})
         # The rest of relayer-http's own config is kept.

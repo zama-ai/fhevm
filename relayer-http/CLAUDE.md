@@ -48,8 +48,7 @@ configuration → behaviour). The implementation plans live outside the reposito
 ## Configuration
 
 One YAML file (`config/config.yaml` is the example), four sections: `name`, `log` (optional, defaults to JSON
-lines), `http` (bind address, body limit, body read timeout, the EVM chain ids served, and per Solana chain served its zama-host
-program id) and `kms_aggregator` (deadline,
+lines), `http` (bind address, body limit, body read timeout, supported chain ids) and `kms_aggregator` (deadline,
 retries, thresholds, optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
 unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`). API keys are never in the file: each endpoint names the env var
 holding its key. Local variants go to `config/*.local.yaml`, ignored by git.
@@ -136,10 +135,9 @@ Production-ready means no panic, typed errors, logs, cancellation and tests, not
 `endpoint` feature): DTOs, routes, error codes and their `retryable` flag are used as they are, never redefined.
 
 **Solana.** The Solana bodies are the `kms-connector-api` Solana DTOs, forwarded equal field by field; their form is
-checked by the crate's `assemble()` (user) and `zama_solana_request::public_request_chain_id` (public), and the permit
-by `zama-solana-permit`, the code the connector runs.
-No Solana type, PDA or permit rule is written here. The relayer checks only what needs no chain read (the form, the
-program id, the Ed25519 signature); everything else is the connector's.
+checked by the crate's `assemble()` (user) and `zama_solana_request::public_request_chain_id` (public), the code the
+connector runs. No Solana type, PDA or permit rule is written here. The relayer checks only the form; the permit's
+signature and program, and everything that needs a chain read, are the connector's.
 
 **Tests.** A unit test per function, next to it. Paused tokio time (`start_paused`) for anything timed, so durations
 are exact and tests are instant. Behaviour is described in YAML scenarios run by `cargo test`; adding a case is adding

@@ -11,7 +11,6 @@ publish.workspace = true
 alloy.workspace = true
 async-trait.workspace = true
 axum.workspace = true
-bs58.workspace = true
 bytes.workspace = true
 config.workspace = true
 humantime-serde.workspace = true
@@ -27,12 +26,11 @@ tracing-subscriber.workspace = true
 url.workspace = true
 uuid.workspace = true
 zama-solana-acl.workspace = true
-zama-solana-permit.workspace = true
 zama-solana-request.workspace = true
 
 [dev-dependencies]
-ed25519-dalek.workspace = true
 futures-util.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tower.workspace = true
 wiremock.workspace = true
+zama-solana-permit.workspace = true

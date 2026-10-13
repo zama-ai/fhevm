@@ -51,17 +51,6 @@ impl ApiError {
         Self::new(StatusCode::BAD_REQUEST, "malformed", log, message)
     }
 
-    /// A Solana permit names another program or its Ed25519 signature does not verify: the
-    /// connector's `403 user_signature_rejected`, answered before any connector call.
-    pub fn user_signature_rejected(log: &Log, message: impl Into<String>) -> Self {
-        Self::new(
-            StatusCode::FORBIDDEN,
-            ErrorCode::UserSignatureRejected.as_str(),
-            log,
-            message,
-        )
-    }
-
     /// The aggregator's verdict. A dominant connector error is answered with the connector's own status and code.
     pub fn aggregation(log: &Log, error: AggregationError) -> Self {
         match error {

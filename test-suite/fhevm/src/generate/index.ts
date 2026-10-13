@@ -129,7 +129,7 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
   if (runsRelayerHttp(plan.hostChains)) {
     await fs.writeFile(
       relayerHttpConfigPath,
-      renderRelayerHttpConfig(state, await fs.readFile(RELAYER_HTTP_CONFIG_BASE, "utf8"), plan, rendered.componentEnvs),
+      renderRelayerHttpConfig(await fs.readFile(RELAYER_HTTP_CONFIG_BASE, "utf8"), plan, rendered.componentEnvs),
     );
   }
   // Emit the single cluster-shared core config (checked-in template with the peer roster
