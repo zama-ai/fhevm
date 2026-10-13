@@ -580,19 +580,16 @@ contract ACL is
     }
 
     /**
-     * @notice Returns whether `account` has a stored permission for `handle`, with the handle's
-     *         carried depth and the block it was stored at (see HCULimit.setCrossTxDepthLimit).
+     * @notice Returns the carried depth stored with `account`'s permission for `handle` and the block
+     *         it was stored at (see HCULimit.setCrossTxDepthLimit). Both are 0 without a stored permission.
      */
-    function getStoredDepth(
-        bytes32 handle,
-        address account
-    ) external view returns (bool allowed, uint48 depth, uint48 storedBlock) {
+    function getStoredDepth(bytes32 handle, address account) external view returns (uint48 depth, uint48 storedBlock) {
         bytes32 slot = _permissionSlot(handle, account);
         uint256 word;
         assembly ("memory-safe") {
             word := sload(slot)
         }
-        return (uint8(word) != 0, uint48(word >> 8), uint48(word >> 56));
+        return (uint48(word >> 8), uint48(word >> 56));
     }
 
     /// @dev Storage slot of `persistedAllowedPairs[handle][account]`, following Solidity's mapping layout:

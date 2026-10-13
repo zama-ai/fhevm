@@ -133,8 +133,8 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         alice.share(address(bob));
         (, bytes32[] memory writes) = vm.accesses(aclAdd);
         assertEq(writes.length, 1);
-        (bool allowed, uint48 depth, uint48 storedBlock) = acl.getStoredDepth(alice.value(), address(bob));
-        assertTrue(allowed);
+        assertTrue(acl.isAllowed(alice.value(), address(bob)));
+        (uint48 depth, uint48 storedBlock) = acl.getStoredDepth(alice.value(), address(bob));
         assertEq(depth, start + step);
         assertEq(storedBlock, block.number);
 
@@ -155,25 +155,19 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         assertGt(_storedDepth(alice), 4 * step);
     }
 
-    function test_VerifiedInputsStartNewChains() public {
+    function test_PermissionWithoutStoredDepthStartsNewChain() public {
         (, uint48 step) = _startAndMeasure(alice);
-        // A verified input carries its index in byte 21; any depth stored next to its permission is ignored.
-        bytes32 input = keccak256("input") & ~bytes32(uint256(type(uint88).max));
-        input |= bytes32(uint256(uint8(FheType.Uint64)) << 8);
-        vm.store(aclAdd, _permissionSlot(input, address(alice)), bytes32(1 | (uint256(type(uint48).max) << 8)));
-
-        alice.addOne(input);
-        assertEq(_storedDepth(alice), step);
-    }
-
-    function test_PermissionsWithoutStoredDepthReadAsZero() public {
-        bytes32 handle = keccak256("old permission");
+        // A permission granted while the limit was off holds only the bool byte.
+        bytes32 handle = keccak256("old permission") & ~bytes32(uint256(type(uint88).max));
+        handle |= bytes32(uint256(uint8(FheType.Uint64)) << 8);
         vm.store(aclAdd, _permissionSlot(handle, address(alice)), bytes32(uint256(1)));
-        (bool allowed, uint48 depth, uint48 storedBlock) = acl.getStoredDepth(handle, address(alice));
-        assertTrue(allowed);
         assertTrue(acl.isAllowed(handle, address(alice)));
+        (uint48 depth, uint48 storedBlock) = acl.getStoredDepth(handle, address(alice));
         assertEq(depth, 0);
         assertEq(storedBlock, 0);
+
+        alice.addOne(handle);
+        assertEq(_storedDepth(alice), step);
     }
 
     function test_DisabledLimitStoresNoDepth() public {
@@ -184,12 +178,9 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         assertEq(_storedDepth(alice), 0);
     }
 
-    function test_DepthHooksRejectOtherCallers() public {
-        _setLimit(1_000_000, 1);
-        vm.expectRevert(HCULimit.CallerMustBeACLOrBridge.selector);
+    function test_LoadDepthRejectsOtherCallers() public {
+        vm.expectRevert(HCULimit.CallerMustBeACLContract.selector);
         hcu.loadDepth(keccak256("handle"), address(this));
-        vm.expectRevert(HCULimit.CallerMustBeConfidentialBridge.selector);
-        hcu.setBridgedDepths(new bytes32[](0), new uint48[](0), uint48(block.number));
     }
 
     function test_LimitAndDecayMustBeBothSetOrBothZero() public {
@@ -199,15 +190,6 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         vm.expectRevert(HCULimit.InvalidCrossTxDepthLimit.selector);
         hcu.setCrossTxDepthLimit(0, 1);
         vm.stopPrank();
-    }
-
-    function test_ComputedHandleWithoutPermissionHasUnknownDepth() public {
-        _setLimit(1_000_000, 1);
-        // Byte 21 is 0xff for computed handles; this one was never granted to the holder.
-        bytes32 handle = keccak256("computed") | bytes32(uint256(0xff) << 80);
-        vm.prank(aclAdd);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.UnknownHandleDepth.selector, handle));
-        hcu.loadDepth(handle, address(alice));
     }
 
     /// @dev Enables the limit without bound, starts `user`'s chain and returns its starting depth and the depth one addition adds.
@@ -225,7 +207,7 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
     }
 
     function _storedDepth(DepthUser user) internal view returns (uint48 depth) {
-        (, depth, ) = acl.getStoredDepth(user.value(), address(user));
+        (depth, ) = acl.getStoredDepth(user.value(), address(user));
     }
 
     function _permissionSlot(bytes32 handle, address account) internal pure returns (bytes32) {

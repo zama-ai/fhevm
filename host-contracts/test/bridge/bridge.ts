@@ -111,7 +111,7 @@ describe('Bridge', function () {
   describe('ConfidentialBridge: lzCompose authentication', function () {
     it('rejects calls from a non-endpoint caller', async function () {
       const composeMsg = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['uint32', 'bytes32', 'bytes32', 'bytes', 'bytes32[]', 'bytes32[]', 'uint48[]', 'uint48'],
+        ['uint32', 'bytes32', 'bytes32', 'bytes', 'bytes32[]', 'bytes32[]'],
         [
           SRC_EID,
           ethers.zeroPadValue(this.signers.alice.address, 32),
@@ -119,8 +119,6 @@ describe('Bridge', function () {
           '0x',
           [],
           [],
-          [],
-          0,
         ],
       );
       await expect(
@@ -139,7 +137,7 @@ describe('Bridge', function () {
     it('rejects compose messages whose `from` is not the bridge itself', async function () {
       const endpointAddr = await this.fx.dstEndpoint.getAddress();
       const composeMsg = ethers.AbiCoder.defaultAbiCoder().encode(
-        ['uint32', 'bytes32', 'bytes32', 'bytes', 'bytes32[]', 'bytes32[]', 'uint48[]', 'uint48'],
+        ['uint32', 'bytes32', 'bytes32', 'bytes', 'bytes32[]', 'bytes32[]'],
         [
           SRC_EID,
           ethers.zeroPadValue(this.signers.alice.address, 32),
@@ -147,8 +145,6 @@ describe('Bridge', function () {
           '0x',
           [],
           [],
-          [],
-          0,
         ],
       );
       await impersonate(endpointAddr);
