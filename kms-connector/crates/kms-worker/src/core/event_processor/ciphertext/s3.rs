@@ -123,7 +123,7 @@ mod tests {
     use super::*;
     use crate::core::event_processor::ProcessingErrorKind;
     use alloy::primitives::U256;
-    use ciphertext_attestation::sign::keccak_b256;
+    use ciphertext_attestation::keccak_b256;
     use tokio::{io::AsyncWriteExt, net::TcpListener, task::JoinHandle};
 
     fn material() -> ConsensusMaterial {
