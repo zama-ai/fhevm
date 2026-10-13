@@ -2423,9 +2423,10 @@ binaries:
   skips.
 - A block at or below the checkpoint was already applied, by this replica or another, and writes
   nothing. A different hash at the checkpoint's slot stops the indexer. The finalized follower
-  applies one block at a time and filters older redeliveries. Moving the checkpoint back does not rewind the Store cursors:
-  re-applying recorded leaves fails on their previous leaf count. A wrong record is rebuilt from
-  the start slot into an empty database or restored from another record's dump.
+  applies one block at a time and filters older redeliveries. Moving the checkpoint back does not
+  rewind the Store cursors: re-applying recorded leaves fails on their previous leaf count. A wrong
+  record is rebuilt from the start slot into an empty database or restored from another record's
+  dump.
 - `solana_merkle_proof_server` serves the proofs from that database over
   `POST /v1/solana/merkle-proofs` (DD-063, DD-064).
 
