@@ -16,26 +16,9 @@ const ENVIRONMENTS: Record<SolanaEnvironment, { programs: Record<string, string>
   'preview-env': previewEnv,
 };
 
-export type SolanaProgramIds = {
-  readonly zamaHost: Address;
-  readonly confidentialToken: Address;
-  readonly demoVault: Address;
-  readonly confidentialBatcher: Address;
-};
-
-export const programIdsFor = (environment: SolanaEnvironment): SolanaProgramIds => {
-  const programs = ENVIRONMENTS[environment].programs;
-  return {
-    zamaHost: programs.zama_host as Address,
-    confidentialToken: programs.confidential_token as Address,
-    demoVault: programs.demo_vault as Address,
-    confidentialBatcher: programs.confidential_batcher as Address,
-  };
-};
-
 type DeployedProgram = (typeof SOLANA_DEPLOY_PROGRAMS)[number];
 
-/** The same ids keyed by program crate name. */
+/** The environment's program ids, keyed by program crate name. */
 export const deployedProgramIds = (environment: SolanaEnvironment): Record<DeployedProgram, Address> => {
   const programs = ENVIRONMENTS[environment].programs;
   const ids = {} as Record<DeployedProgram, Address>;

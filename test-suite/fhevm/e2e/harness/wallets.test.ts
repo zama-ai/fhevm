@@ -39,7 +39,7 @@ const writeKeypairFile = async (): Promise<string> => {
 };
 
 const envWith = (deployerKeypairPath: string, faucet: boolean): TestEnv =>
-  ({ roots: { deployerKeypairPath }, capabilities: { faucet, freshMints: true, fastSlots: true } }) as unknown as TestEnv;
+  ({ roots: { deployerKeypairPath }, capabilities: { faucet } }) as unknown as TestEnv;
 
 const stubContext = () => {
   const funded: [string, number][] = [];

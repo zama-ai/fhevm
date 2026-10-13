@@ -18,7 +18,7 @@ import {
   SOLANA_VALIDATOR_RPC_PORT,
 } from "../src/layout";
 import { CORE_PLATFORM, kmsRenderOptionsFor } from "../src/generate/kms-core";
-import { solanaImages } from "../src/solana/images";
+import { readEnvFile } from "../src/utils/fs";
 import { run, runStreaming } from "../src/utils/process";
 import {
   authorizeDemoHeaders,
@@ -127,7 +127,9 @@ export const demoReservedPorts = (observability = false): readonly number[] => [
 ];
 const PROCESS_NAMES = ["validator", "listener", "indexer", "proofServer", "operator", "dapp"] as const;
 // Every kms-core in the threshold cluster runs this image, pinned to CORE_PLATFORM.
-const CORE_IMAGE = kmsRenderOptionsFor(solanaImages.CORE_VERSION).coreImage;
+const CORE_IMAGE = kmsRenderOptionsFor(
+  (await readEnvFile(path.join(REPO_ROOT, "test-suite/fhevm/solana-images.env"))).CORE_VERSION,
+).coreImage;
 const CORE_ARCHITECTURE = CORE_PLATFORM.slice("linux/".length);
 const REQUIRED_KEYPAIRS = [
   ...["alice", "bob", "keeper", "mint-authority"].map((name) =>
@@ -2219,12 +2221,12 @@ export const restartDemoSolanaListener = async (): Promise<void> =>
     }
     // Bootstrap commands must load before the stack installs its Solana dependency graph.
     const { startHostListeners } = await import("../src/solana/deploy");
-    const { programIdsFor, readSolanaEnvironment } = await import("../../../solana/deploy/src/environment");
+    const { deployedProgramIds, readSolanaEnvironment } = await import("../../../solana/deploy/src/environment");
     const runtimeDir = path.join(DEMO_RUNTIME_DIR, manifest.bootId);
     const logDir = path.join(runtimeDir, 'logs');
     await stopOwnedProcess('listener', manifest.processes.listener);
     await startHostListeners({
-      zamaHostId: programIdsFor(readSolanaEnvironment()).zamaHost,
+      zamaHostId: deployedProgramIds(readSolanaEnvironment()).zama_host,
       coprocessorCount: 1,
       grpcUrl: process.env.GRPC_URL ?? LOCAL_SOLANA_ENDPOINTS.listenerGrpc,
       logDir,

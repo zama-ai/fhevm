@@ -6,7 +6,7 @@ import path from "node:path";
 import { solanaPubkeyFromKeypairFile } from "../src/generate/solana";
 import {
   DEFAULT_SOLANA_ENVIRONMENT,
-  programIdsFor,
+  deployedProgramIds,
 } from "../../../solana/deploy/src/environment";
 import { gatewayAddHostChainArgs } from "../src/solana/deploy";
 import {
@@ -143,12 +143,12 @@ describe("demo lifecycle collision policy", () => {
       const deployer = path.join(directory, "deployer.json");
       await fs.writeFile(deployer, JSON.stringify(Array.from({ length: 64 }, (_, i) => i)));
       const programs = genesisDeployedPrograms(deployer, "/deploy");
-      const ids = programIdsFor(DEFAULT_SOLANA_ENVIRONMENT);
+      const ids = deployedProgramIds(DEFAULT_SOLANA_ENVIRONMENT);
       expect(programs.map((program) => program.address)).toEqual([
-        ids.zamaHost,
-        ids.confidentialToken,
-        ids.demoVault,
-        ids.confidentialBatcher,
+        ids.zama_host,
+        ids.confidential_token,
+        ids.demo_vault,
+        ids.confidential_batcher,
       ]);
       expect(programs.map((program) => program.soPath)).toEqual([
         "/deploy/zama_host.so",

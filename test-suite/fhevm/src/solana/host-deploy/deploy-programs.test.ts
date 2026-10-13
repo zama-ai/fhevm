@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { generateSolanaKeypair } from '../provision';
 import { deployProgramArtifacts } from '../../../../../solana/deploy/src/deploy-programs';
-import { programIdsFor } from '../../../../../solana/deploy/src/environment';
+import { deployedProgramIds } from '../../../../../solana/deploy/src/environment';
 
 const originalPath = process.env.PATH;
 let directory: string | undefined;
@@ -20,7 +20,7 @@ const fixture = async (
   options: { exists?: boolean; changed?: boolean; wrongAuthority?: boolean; failure?: boolean } = {},
 ) => {
   directory = await mkdtemp(path.join(tmpdir(), 'solana-deploy-test-'));
-  const host = programIdsFor('preview-env').zamaHost;
+  const host = deployedProgramIds('preview-env').zama_host;
   server = Bun.serve({
     port: 0,
     async fetch(request) {
@@ -73,7 +73,7 @@ if [ "$2" = dump ]; then printf '${options.changed ? 'different' : 'fixture\\000
 const calls = () => readFile(path.join(directory!, 'calls'), 'utf8');
 
 test('host deployment needs no demo keys or artifacts', async () => {
-  expect(await deployProgramArtifacts(await fixture())).toEqual({ zama_host: programIdsFor('preview-env').zamaHost });
+  expect(await deployProgramArtifacts(await fixture())).toEqual({ zama_host: deployedProgramIds('preview-env').zama_host });
   expect(await calls()).toBe('program deploy\nprogram show\n');
 });
 test('a subprocess failure cannot disclose the RPC credential', async () => {

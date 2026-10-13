@@ -1,12 +1,9 @@
 // provision — typed on-chain provisioning and balance probing for the live Solana token scenarios.
 //
-// This module replaces the Rust `poc-live-client` setup seams the two-holder transfer arc used to
-// shell out to (`initialize_mint`, `CONSUME_WRAP`, `INITIALIZE_TOKEN_ACCOUNT`, and the
-// `TOKEN_BALANCE_STATE` probe) plus the `spl-token`/`solana` CLI calls around them. Every step is
-// now a `@solana/kit` transaction built from the demo dapp's typed vault module — the same builders
-// `demo/seed.ts` live-verifies on every e2e run — with the official SPL and System clients.
-// Binding to explicit signers (instead of the ambient Solana CLI identity
-// the live-client read from `$HOME`) is what lets the arc target any stack the harness injects.
+// Every step is a `@solana/kit` transaction built from the demo dapp's typed vault module — the same
+// builders `demo/seed.ts` live-verifies on every e2e run — with the official SPL and System clients.
+// Each transaction is signed by an explicit signer, never the ambient Solana CLI identity, so the
+// scenarios can target any stack the harness injects.
 
 import fs from 'node:fs/promises';
 import {
@@ -30,7 +27,6 @@ import {
   getMintToInstruction,
 } from '@solana-program/token';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
-import { programDataAddressFor } from '../../../../solana/deploy/src/bootstrap';
 import { isSolanaHostChainId } from '../../../../sdk/js-sdk/src/core/chains/hostChainId';
 import {
   createFinalizedRpc,
@@ -50,9 +46,6 @@ import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, findTokenAccountPda, BALANCE_KEY as
 
 const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
   a.length === b.length && a.every((byte, index) => byte === b[index]);
-
-/** BPF upgradeable loader `ProgramData` PDA for zama-host (`[program_id]` under the loader). */
-export const zamaHostProgramDataAddress = (): Promise<Address> => programDataAddressFor(ZAMA_HOST_PROGRAM_ADDRESS);
 
 export type SolanaProvisioningContext = {
   readonly rpc: Rpc<SolanaRpcApi>;
@@ -231,13 +224,13 @@ export const createConfidentialMint = async (
       underlyingMint: params.underlyingMint,
     }),
   ]);
-  const escrow = await buildVaultUnderlyingEscrowAtaInstruction({
+  const createEscrow = await buildVaultUnderlyingEscrowAtaInstruction({
     payer: params.authority,
     tokenProgram: CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS,
     confidentialMint: mint.address,
     underlyingMint: params.underlyingMint,
   });
-  await authority.sendTransaction([escrow.instruction]);
+  await authority.sendTransaction([createEscrow]);
   return mint.address;
 };
 
