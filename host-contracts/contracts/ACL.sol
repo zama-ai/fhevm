@@ -142,6 +142,8 @@ contract ACL is
 
     /// @custom:storage-location erc7201:fhevm.storage.ACL
     struct ACLStorage {
+        /// @dev The bool's word also holds the handle's carried depth (bits 8-55) and the block it was
+        ///      stored at (bits 56-103), written by `allow` and read by `getStoredDepth`.
         mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
         mapping(bytes32 handle => bool isAllowedForDecryption) allowedForDecryption;
         // prettier-ignore
@@ -236,8 +238,7 @@ contract ACL is
             revert SenderNotAllowed(msg.sender);
         }
         if (!_getACLStorage().persistedAllowedPairs[handle][account]) {
-            // The handle's carried depth and the current block share the permission's storage word,
-            // above its bool byte. A repeated grant keeps the first record, which decays the same way.
+            // A repeated grant keeps the first record, which decays the same way.
             uint48 depth = HCULimit(hcuLimitAdd).loadDepth(handle, msg.sender);
             uint256 word = 1 | (uint256(depth) << 8) | (uint256(uint48(block.number)) << 56);
             bytes32 slot = _permissionSlot(handle, account);
