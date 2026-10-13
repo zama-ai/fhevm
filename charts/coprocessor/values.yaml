@@ -1233,6 +1233,27 @@ tfheWorker:
             value: 40
             periodSeconds: 60
 
+  # Queue-based autoscaling with KEDA (the cluster must run KEDA). Asks for one
+  # worker per --dependence-chains-per-batch chains held, waiting or with an
+  # expired lease; that per-worker number is read from extraArgs (default 20).
+  # Use instead of hpa, not with it.
+  keda:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 6
+    pollingInterval: 15
+    # Replicas to hold while the queue cannot be read; unset keeps the count.
+    fallbackReplicas:
+    # The scaling query connects with this env var of the worker container.
+    # A password-less URL (IAM auth) needs authenticationRef instead.
+    connectionFromEnv: DATABASE_URL
+    # TriggerAuthentication with a read-only role (connection or password).
+    authenticationRef: ""
+    # Keeps workers between waves of a burst.
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 120
+
 # -----------------------------------------------------------------------------
 # ZK Proof Worker
 # -----------------------------------------------------------------------------
@@ -1551,6 +1572,22 @@ snsWorker:
           - type: Percent
             value: 40
             periodSeconds: 60
+
+  # Queue-based autoscaling with KEDA (the cluster must run KEDA): one worker
+  # per readyTasksPerWorker SnS tasks whose input ciphertext is ready. Choose
+  # readyTasksPerWorker from measured throughput. Use instead of hpa.
+  keda:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 4
+    pollingInterval: 15
+    readyTasksPerWorker: 100
+    fallbackReplicas:
+    connectionFromEnv: DATABASE_URL
+    authenticationRef: ""
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 120
 
 # -----------------------------------------------------------------------------
 # Consensus Detector

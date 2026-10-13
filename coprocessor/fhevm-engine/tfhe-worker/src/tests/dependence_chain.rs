@@ -1498,6 +1498,26 @@ async fn test_chain_queue_counts_each_acquisition_state() {
             lease_expired: 1,
         }
     );
+
+    // The chart's KEDA queries must run on this schema; the tfhe one must
+    // count what the gauge counts.
+    let configs = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../charts/coprocessor/configs");
+    let Ok(tfhe_query) = std::fs::read_to_string(configs.join("tfhe-worker-scaling-query.sql"))
+    else {
+        eprintln!("skipping chart queries: {} not present", configs.display());
+        return;
+    };
+    let scaling_count: i64 = sqlx::query_scalar(&tfhe_query)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(scaling_count, 4);
+    let sns_query = std::fs::read_to_string(configs.join("sns-worker-scaling-query.sql")).unwrap();
+    let _: i64 = sqlx::query_scalar(&sns_query)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 }
 
 /// Insert one chain row with the given gate and dependents.
