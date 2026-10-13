@@ -42,8 +42,7 @@ use zama_solana_permit::{PermitFields, Signature};
 /// Solana RPC node serves at most 100 accounts per call. The worst-case read carries three
 /// accounts per entry (the encrypted store plus the exact and wildcard delegation rows), the
 /// signer's invalidation record and the Clock sysvar that delegation expiry is checked against:
-/// `1 + 1 + N + 2N <= 100` gives 32. The SDK refuses a larger request before the network with its
-/// own copy, `MAX_SOLANA_DECRYPT_HANDLES`, which its request test pins to this one.
+/// `1 + 1 + N + 2N <= 100` gives 32.
 pub const MAX_REQUEST_HANDLES: usize = 32;
 
 /// A Solana user-decryption request: 1 to [`MAX_REQUEST_HANDLES`] handles of one Solana chain,

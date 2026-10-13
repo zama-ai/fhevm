@@ -78,8 +78,8 @@ export function solanaUserDecryptRequestInputs(
  * verification.
  *
  * The request is built once, from the entries and the permit alone, and every attempt submits those
- * bytes under the permit's one signature. A request that can never be submitted — too many handles,
- * over the bit budget, a foreign chain, a malformed identity field — is refused before the network.
+ * bytes under the permit's one signature. A request that can never be submitted — no handles, over
+ * the bit budget, a foreign chain, a malformed identity field — is refused before the network.
  *
  * @param run.runtime - The client runtime that owns the KMS WASM module.
  * @param run.session - The signed permit and its transport keypair.

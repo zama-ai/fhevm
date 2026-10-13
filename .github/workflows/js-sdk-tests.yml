@@ -14,12 +14,6 @@ on:
       # The shared fixtures the SDK's Solana tests load; solana/scripts/check-path-filters.sh fails
       # when this is missing.
       - "solana/test-fixtures/**"
-      # The decryption-request budget parity test reads these three contracts at test time.
-      - "gateway-contracts/contracts/Decryption.sol"
-      - "gateway-contracts/contracts/shared/FheType.sol"
-      - "gateway-contracts/contracts/libraries/FHETypeBitSizes.sol"
-      # The Solana handle-cap parity test reads the Connector's cap here.
-      - "solana/crates/zama-solana-request/src/request.rs"
   push:
     branches:
       - devex/js-sdk

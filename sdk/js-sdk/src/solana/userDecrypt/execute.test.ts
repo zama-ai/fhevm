@@ -26,7 +26,6 @@ import { getSolanaRuntime } from '../internal/runtime.js';
 import { SolanaDecryptionRunError } from '../decryption/retry.js';
 import { bytesToHex } from '../../core/base/bytes.js';
 import {
-  MAX_SOLANA_DECRYPT_HANDLES,
   SolanaUserDecryptRequestError,
   executeSolanaUserDecrypt,
   generateSolanaTransportKeyPair,
@@ -144,15 +143,14 @@ describe('executing one user decryption', () => {
   });
 
   // The stateless limits are properties of the request itself; refusing here costs no submission.
-  it('refuses a request over the handle cap without submitting', async () => {
+  it('refuses a request with no handles without submitting', async () => {
     const submit = vi.fn();
-    const overCap = Array.from({ length: MAX_SOLANA_DECRYPT_HANDLES + 1 }, () => ENTRIES[0]!);
 
     await expect(
       executeSolanaUserDecrypt({
         runtime: getSolanaRuntime(),
         session: session(),
-        entries: overCap,
+        entries: [],
         submit,
         clock,
         verification,

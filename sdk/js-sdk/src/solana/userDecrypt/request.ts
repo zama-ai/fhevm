@@ -16,30 +16,20 @@
 // verify before submitting.
 //
 // What this builder checks is what a layer before the Connector can check without reading host
-// state: the handle count cap and the bit budget, the handles' host chain, the width of each identity
-// field, and that there is at least one handle. Everything else — the allow itself, delegation, the
-// validity window, the revocation watermark — is authorization, and belongs to the Connector
-// against a state snapshot no client can hold.
+// state: the KMS bit budget, the handles' host chain, the width of each identity field, and that
+// there is at least one handle. The handle count cap is `zama-solana-request`'s, which relayer-http
+// and the Connector both run. Everything else — the allow itself, delegation, the validity window,
+// the revocation watermark — is authorization, and belongs to the Connector against a state
+// snapshot no client can hold.
 
 import type { SolanaSignedPermit } from '../permit/index.js';
-import {
-  MAX_DECRYPTION_REQUEST_BITS,
-  decryptionRequestBitsOfHandle,
-} from '../../core/handle/decryptionRequestBudget.js';
-import { isBytes32 } from '../../core/base/bytes.js';
-import { bytes32ToHandle } from '../../core/handle/FhevmHandle.js';
+import { assertKmsDecryptionBitLimit } from '../../core/kms/utils.js';
+import { toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { encodeSolanaKmsRouting } from '../permit/index.js';
 import { bytesToHex } from '../../core/base/bytes.js';
 
 /** The attestation type that selects the Solana permit scheme at the Connector. */
 export const SOLANA_SRFC38_ATTESTATION_TYPE = 'solana-srfc38-user-decrypt-v1';
-
-/**
- * The handle-count cap: `MAX_REQUEST_HANDLES` in `zama-solana-request`. The Connector refuses a
- * longer request terminally, so this check spares it the round trip — the parity test beside this
- * module pins the two constants to each other.
- */
-export const MAX_SOLANA_DECRYPT_HANDLES = 32;
 
 /** One handle to decrypt: the handle, the owner address whose allow authorizes it, and its store. */
 export interface SolanaUserDecryptHandleEntry {
@@ -93,9 +83,6 @@ export interface SolanaUserDecryptRequestJson {
  */
 export type SolanaUserDecryptRequestFailure =
   | { readonly reason: 'no-handles' }
-  | { readonly reason: 'too-many-handles'; readonly count: number; readonly max: number }
-  | { readonly reason: 'handle-without-a-width'; readonly index: number }
-  | { readonly reason: 'budget-exceeded'; readonly bits: number; readonly budget: number }
   | { readonly reason: 'foreign-host-chain'; readonly index: number; readonly chainId: bigint }
   | {
       readonly reason: 'entry-field-width';
@@ -123,12 +110,6 @@ function describeRequestFailure(failure: SolanaUserDecryptRequestFailure): strin
   switch (failure.reason) {
     case 'no-handles':
       return 'a user-decryption request must name at least one handle; a permit on its own authorizes nothing';
-    case 'too-many-handles':
-      return `the request names ${failure.count} handles, above the cap of ${failure.max}`;
-    case 'handle-without-a-width':
-      return `handle ${failure.index} is not a handle of a type this protocol assigns a bit width to`;
-    case 'budget-exceeded':
-      return `the request sums to ${failure.bits} bits, above the decryption budget of ${failure.budget}`;
     case 'foreign-host-chain':
       return `handle ${failure.index} belongs to host chain ${failure.chainId}, which the permit was not signed for`;
     case 'entry-field-width':
@@ -140,7 +121,7 @@ function describeRequestFailure(failure: SolanaUserDecryptRequestFailure): strin
 
 /**
  * The admission a request must pass: every rule checkable from the entries and the permit alone —
- * the handle count cap, the bit budget, each handle's host chain, the width of each identity field.
+ * the KMS bit budget, each handle's host chain, the width of each identity field.
  * A request that can never be answered is refused before it reaches the network.
  *
  * @param admission.chainId - The one host chain the permit was signed for.
@@ -157,22 +138,17 @@ export function admitSolanaUserDecryptRequest(admission: {
     throw new SolanaUserDecryptRequestError({ reason: 'no-handles' });
   }
 
-  // Widths and the budget first, over the whole list: the sum is a property of the request, not of
-  // any one entry, so it is settled before the per-entry rules name individual positions.
-  solanaUserDecryptRequestBits(entries.map((entry) => entry.handle));
+  const handles = entries.map((entry) => toFhevmHandle(entry.handle));
+  assertKmsDecryptionBitLimit(handles);
+
+  // The chain id each handle embeds must be the one chain the permit was signed for.
+  for (const [index, handle] of handles.entries()) {
+    if (handle.chainId !== chainId) {
+      throw new SolanaUserDecryptRequestError({ reason: 'foreign-host-chain', index, chainId: handle.chainId });
+    }
+  }
 
   for (const [index, entry] of entries.entries()) {
-    // The handle parses — the width check above proved that much — so this narrowing cannot fail;
-    // it re-states the width failure only to convince the type system, not the reader.
-    if (!isBytes32(entry.handle)) {
-      throw new SolanaUserDecryptRequestError({ reason: 'handle-without-a-width', index });
-    }
-    // The chain id the handle embeds must be the one chain the permit was signed for.
-    const embeddedChainId = bytes32ToHandle(entry.handle).chainId;
-    if (embeddedChainId !== chainId) {
-      throw new SolanaUserDecryptRequestError({ reason: 'foreign-host-chain', index, chainId: embeddedChainId });
-    }
-
     if (entry.ownerAddress.length !== 32) {
       throw new SolanaUserDecryptRequestError({ reason: 'entry-field-width', index, field: 'ownerAddress' });
     }
@@ -223,40 +199,4 @@ export function buildSolanaUserDecryptRequest(request: {
     },
     signature: bytesToHex(signedPermit.signature),
   };
-}
-
-/**
- * The volume admission the Connector's endpoint runs statelessly: the handle-count cap, then the bit
- * cost of the set as the endpoint sums it.
- *
- * @param handles - The 32-byte handles, in any order.
- * @throws SolanaUserDecryptRequestError - If the list is over the cap, a handle has no width, or the
- * sum is above the budget.
- */
-export function solanaUserDecryptRequestBits(handles: readonly Uint8Array[]): number {
-  // The count first: it is a property of the list, so it is settled before any one handle is named.
-  if (handles.length > MAX_SOLANA_DECRYPT_HANDLES) {
-    throw new SolanaUserDecryptRequestError({
-      reason: 'too-many-handles',
-      count: handles.length,
-      max: MAX_SOLANA_DECRYPT_HANDLES,
-    });
-  }
-
-  let bits = 0;
-  for (const [index, handle] of handles.entries()) {
-    const width = decryptionRequestBitsOfHandle(handle);
-    if (width === undefined) {
-      throw new SolanaUserDecryptRequestError({ reason: 'handle-without-a-width', index });
-    }
-    bits += width;
-  }
-  if (bits > MAX_DECRYPTION_REQUEST_BITS) {
-    throw new SolanaUserDecryptRequestError({
-      reason: 'budget-exceeded',
-      bits,
-      budget: MAX_DECRYPTION_REQUEST_BITS,
-    });
-  }
-  return bits;
 }

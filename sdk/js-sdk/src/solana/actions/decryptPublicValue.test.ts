@@ -357,11 +357,12 @@ describe('public decrypt client account-to-plaintext flow', () => {
     f.claim.abiEncodedCleartext = '00'.repeat(size);
     await expect(f.client.decryptPublicValue({ handle, encryptedStore: store })).rejects.toThrow('32 bytes per handle');
   });
-  it('rejects an empty or oversized batch before I/O', async () => {
+  it('rejects an empty or over-budget batch before I/O', async () => {
     const f = await accountFixture();
     await expect(f.client.decryptPublicValues({ entries: [] })).rejects.toThrow('at least one');
-    const oversized = Array.from({ length: 33 }, () => ({ handle, encryptedStore: store }));
-    await expect(f.client.decryptPublicValues({ entries: oversized })).rejects.toThrow('at most 32');
+    // 33 euint64 handles are 2,112 bits, above the KMS's 2,048.
+    const overBudget = Array.from({ length: 33 }, () => ({ handle, encryptedStore: store }));
+    await expect(f.client.decryptPublicValues({ entries: overBudget })).rejects.toThrow('more than 2048');
     expect(f.rpc.getAccountInfo).not.toHaveBeenCalled();
     expect(f.request).not.toHaveBeenCalled();
   });

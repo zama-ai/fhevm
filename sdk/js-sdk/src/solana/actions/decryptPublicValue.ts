@@ -3,7 +3,6 @@ import type { ReadonlyUint8Array } from '@solana/kit';
 import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
 import type { RelayerPublicDecryptOptions } from '../../core/types/relayer.js';
 import type { SolanaPublicDecryptCertifier, SolanaPublicHandleEntry } from './publicDecryptCertificate.js';
-import { MAX_SOLANA_DECRYPT_HANDLES } from '../userDecrypt/request.js';
 import { publicDecryptAbortCheck, solanaPublicDecryptExtraData } from './publicDecryptCertificate.js';
 import { readActiveKmsRouting, readHostKmsContext, type SolanaHostKmsReads } from './hostKms.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
@@ -111,8 +110,6 @@ export async function decryptPublicValues(
   checkAbort();
   const handles = parameters.entries.map((entry) => toFhevmHandle(entry.handle));
   if (handles.length === 0) throw new Error('Public decrypt requires at least one handle');
-  if (handles.length > MAX_SOLANA_DECRYPT_HANDLES)
-    throw new Error(`Public decrypt takes at most ${MAX_SOLANA_DECRYPT_HANDLES} handles per request`);
   assertKmsDecryptionBitLimit(handles);
   if (handles.some((handle) => BigInt(handle.chainId) !== client.chain.id))
     throw new Error('Public decrypt handle belongs to another chain');
