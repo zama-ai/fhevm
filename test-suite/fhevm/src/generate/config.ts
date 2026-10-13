@@ -85,12 +85,10 @@ const rewriteHostChains = (
   if (!Array.isArray(config.host_chains)) return config;
   config.host_chains = hostChainRuntimes(chains).map((chain) => {
     if (chain.type === "solana") {
-      // RFC-021 ids exceed Number.MAX_SAFE_INTEGER; the relayer config parser accepts them only as strings (YAML
-      // quotes a JS string). acl_address = zama-host program (base58): the Solana-host
-      // discriminant, and the program the delegation rows are read under. `url` must be a live
-      // Solana RPC: the relayer's advisory pre-check of delegated user-decrypt entries reads
-      // delegation state through it (two getMultipleAccounts at finalized); direct entries never
-      // touch it, and the authoritative ACL check stays with the KMS connector.
+      // RFC-021 ids exceed Number.MAX_SAFE_INTEGER, so the id stays a string, which YAML quotes;
+      // the relayer accepts a quoted chain_id. The relayer serves Solana input proofs only and
+      // reads no Solana account: it checks that acl_address, the zama-host program, is base58,
+      // and never calls `url`.
       return {
         chain_id: chain.chainId,
         url: solanaValidatorUrl(chain),

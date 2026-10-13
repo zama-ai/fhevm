@@ -8,6 +8,7 @@ use crate::common::validation_helper::{
 use ethereum_rpc_mock::Response;
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
 use fhevm_relayer::http::endpoints::v2::types::input_proof::InputProofPostResponseJson;
+use fhevm_relayer::http::utils::solana_address::solana_address_messages;
 use fhevm_relayer::http::validation_messages as constants_validation;
 use rstest::rstest;
 use serde_json::json;
@@ -733,6 +734,7 @@ async fn test_v2_post_validation_error_has_status_and_request_id() {
 #[case::missing_0x_contract_address("contractAddress", json!("1234567890123456789012345678901234567890"), constants_validation::HEX_MUST_START_WITH_0X)]
 #[case::invalid_hex_contract_address("contractAddress", json!("0x123zzz5678901234567890123456789012345678"), constants_validation::HEX_INVALID_CHARACTERS)]
 #[case::contract_address_with_invalid_hex_g("contractAddress", json!("0x123456789012345678901234567890123456789g"), constants_validation::HEX_INVALID_CHARACTERS)]
+#[case::base58_contract_address_on_an_evm_chain("contractAddress", json!(SOLANA_CONTRACT), constants_validation::HEX_MUST_START_WITH_0X)]
 #[tokio::test]
 async fn test_error_invalid_fields_set_1(
     #[case] field: &str,
@@ -761,6 +763,7 @@ async fn test_error_invalid_fields_set_1(
 #[case::missing_0x_user_address("userAddress", json!("1234567890123456789012345678901234567890"), constants_validation::HEX_MUST_START_WITH_0X)]
 #[case::invalid_hex_user_address("userAddress", json!("0x123zzz5678901234567890123456789012345678"), constants_validation::HEX_INVALID_CHARACTERS)]
 #[case::user_address_with_invalid_hex_g("userAddress", json!("0x123456789012345678901234567890123456789g"), constants_validation::HEX_INVALID_CHARACTERS)]
+#[case::base58_user_address_on_an_evm_chain("userAddress", json!(SOLANA_USER), constants_validation::HEX_MUST_START_WITH_0X)]
 #[tokio::test]
 async fn test_error_invalid_fields_set_2(
     #[case] field: &str,
@@ -774,6 +777,43 @@ async fn test_error_invalid_fields_set_2(
         &helpers::v2_input_proof_post_url(&setup),
         base_payload,
         with_invalid_field(field, invalid_value),
+        expect_v2_validation_error(field, expected_issue),
+    )
+    .await;
+
+    setup.shutdown().await;
+}
+
+// Canonical 32-byte base58 Solana identities (Token program + wrapped-SOL mint).
+const SOLANA_CONTRACT: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const SOLANA_USER: &str = "So11111111111111111111111111111111111111112";
+
+/// A Solana chain id takes base58 addresses, and a chain id of another type is refused on itself.
+#[rstest]
+#[case::evm_contract_address_on_a_solana_chain("0x0100000000003039", "contractAddress", json!("0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836"), solana_address_messages::INVALID_BASE58_CHARACTER)]
+#[case::evm_user_address_on_a_solana_chain("0x0100000000003039", "userAddress", json!("0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836"), solana_address_messages::INVALID_BASE58_CHARACTER)]
+#[case::unknown_chain_type("0x0200000000003039", "contractChainId", json!("0x0200000000003039"), constants_validation::CHAIN_ID_MUST_BE_EVM_OR_SOLANA)]
+#[tokio::test]
+async fn test_error_invalid_fields_by_host_chain_type(
+    #[case] chain_id: &str,
+    #[case] field: &str,
+    #[case] invalid_value: serde_json::Value,
+    #[case] expected_issue: &str,
+) {
+    let setup = TestSetup::new().await.expect("Failed to create test setup");
+    let (base_payload, _, _) = helpers::create_input_proof_payload(&setup);
+    let chain_id = chain_id.to_string();
+    let field_name = field.to_string();
+
+    test_endpoint(
+        &helpers::v2_input_proof_post_url(&setup),
+        base_payload,
+        move |p: &mut serde_json::Value| {
+            p["contractChainId"] = json!(chain_id);
+            p["contractAddress"] = json!(SOLANA_CONTRACT);
+            p["userAddress"] = json!(SOLANA_USER);
+            p[&field_name] = invalid_value;
+        },
         expect_v2_validation_error(field, expected_issue),
     )
     .await;

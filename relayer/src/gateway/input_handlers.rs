@@ -3,8 +3,9 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            GatewayChainEventData, GatewayChainEventId, InputProofEventData, InputProofEventId,
-            InputProofRequest, InputProofResponse, RelayerEvent, RelayerEventData,
+            GatewayChainEventData, GatewayChainEventId, HostIdentities, InputProofEventData,
+            InputProofEventId, InputProofRequest, InputProofResponse, RelayerEvent,
+            RelayerEventData,
         },
         job_id::JobId,
     },
@@ -37,7 +38,7 @@ use crate::{
 use std::str::FromStr;
 use std::time::Duration;
 
-use alloy::primitives::{Address, TxHash};
+use alloy::primitives::{Address, TxHash, U256};
 
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
@@ -176,25 +177,25 @@ impl InputProofGatewayHandler {
                 ))
             })?;
 
-        // PRE-CALCULATE CALLDATA. Solana hosts carry 32-byte identities and submit
-        // via `verifyProofRequestSolana`; EVM hosts use the 20-byte address path.
-        let calldata_bytes = match (
-            input_proof_request.solana_contract_address,
-            input_proof_request.solana_user_address,
-        ) {
-            (Some(contract_address), Some(user_address)) => {
-                ComputeCalldata::verify_proof_req_solana(
-                    input_proof_request.contract_chain_id,
-                    contract_address,
-                    user_address,
-                    input_proof_request.ciphetext_with_zk_proof.clone(),
-                    input_proof_request.extra_data.clone(),
-                )?
-            }
-            _ => ComputeCalldata::verify_proof_req(
+        // PRE-CALCULATE CALLDATA
+        let calldata_bytes = match &input_proof_request.identities {
+            HostIdentities::Evm {
+                contract_address,
+                user_address,
+            } => ComputeCalldata::verify_proof_req(
                 input_proof_request.contract_chain_id,
-                input_proof_request.contract_address,
-                input_proof_request.user_address,
+                *contract_address,
+                *user_address,
+                input_proof_request.ciphetext_with_zk_proof.clone(),
+                input_proof_request.extra_data.clone(),
+            )?,
+            HostIdentities::Solana {
+                solana_contract_address,
+                solana_user_address,
+            } => ComputeCalldata::verify_proof_req_solana(
+                input_proof_request.contract_chain_id,
+                *solana_contract_address,
+                *solana_user_address,
                 input_proof_request.ciphetext_with_zk_proof.clone(),
                 input_proof_request.extra_data.clone(),
             )?,
@@ -743,26 +744,7 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
         job_id: &JobId,
         receipt: &TxResult,
     ) -> Result<ReceiptRecordOutcome, EventProcessingError> {
-        // EVM hosts emit VerifyProofRequest (address identities); Solana hosts (RFC-021)
-        // emit VerifyProofRequestSolana (bytes32 identities). Both carry the indexed
-        // zkProofId, and the response side shares the VerifyProofResponse event, so we
-        // only need to accept either request event when extracting the gateway id.
-        let gw_reference_id = TransactionHelper::extract_gateway_id_from_receipt::<
-            InputVerification::VerifyProofRequest,
-        >(
-            receipt,
-            InputVerification::VerifyProofRequest::SIGNATURE_HASH,
-            |event| event.zkProofId,
-        )
-        .or_else(|_| {
-            TransactionHelper::extract_gateway_id_from_receipt::<
-                InputVerification::VerifyProofRequestSolana,
-            >(
-                receipt,
-                InputVerification::VerifyProofRequestSolana::SIGNATURE_HASH,
-                |event| event.zkProofId,
-            )
-        })?;
+        let gw_reference_id = input_proof_gateway_id(receipt)?;
 
         let tx_hash = format!("{:?}", receipt.transaction_hash);
 
@@ -832,5 +814,136 @@ impl TxLifecycleHooks for InputProofGatewayHandler {
         }
 
         Ok(())
+    }
+}
+
+/// The Gateway's zkProofId for an input proof, read from the request event in its receipt.
+///
+/// The Gateway emits the request event of the entry the relayer called: `VerifyProofRequestSolana`
+/// for a Solana host, `VerifyProofRequest` for an EVM one. A receipt that carries the Solana event
+/// is decoded as Solana; any other is decoded as an EVM receipt, with its errors. So a Solana
+/// receipt with no request event at all reports `VerifyProofRequest` as missing.
+fn input_proof_gateway_id(receipt: &TxResult) -> Result<U256, EventProcessingError> {
+    let carries_solana_request = receipt.inner.logs().iter().any(|log| {
+        log.topics().first() == Some(&InputVerification::VerifyProofRequestSolana::SIGNATURE_HASH)
+    });
+    if carries_solana_request {
+        TransactionHelper::extract_gateway_id_from_receipt::<
+            InputVerification::VerifyProofRequestSolana,
+        >(
+            receipt,
+            InputVerification::VerifyProofRequestSolana::SIGNATURE_HASH,
+            |event| event.zkProofId,
+        )
+    } else {
+        TransactionHelper::extract_gateway_id_from_receipt::<InputVerification::VerifyProofRequest>(
+            receipt,
+            InputVerification::VerifyProofRequest::SIGNATURE_HASH,
+            |event| event.zkProofId,
+        )
+    }
+}
+
+#[cfg(test)]
+mod input_proof_gateway_id_tests {
+    use super::*;
+    use alloy::primitives::{Address, Bytes, FixedBytes};
+    use alloy::sol_types::SolEvent;
+
+    fn receipt_with(events: Vec<alloy::primitives::LogData>) -> TxResult {
+        let logs: Vec<alloy::rpc::types::Log> = events
+            .into_iter()
+            .map(|data| alloy::rpc::types::Log {
+                inner: alloy::primitives::Log {
+                    address: Address::ZERO,
+                    data,
+                },
+                ..Default::default()
+            })
+            .collect();
+        serde_json::from_value(serde_json::json!({
+            "transactionHash": FixedBytes::<32>::ZERO,
+            "transactionIndex": "0x0",
+            "blockHash": FixedBytes::<32>::ZERO,
+            "blockNumber": "0x1",
+            "from": Address::ZERO,
+            "to": Address::ZERO,
+            "contractAddress": null,
+            "gasUsed": "0x0",
+            "effectiveGasPrice": "0x0",
+            "cumulativeGasUsed": "0x0",
+            "type": "0x2",
+            "status": "0x1",
+            "logsBloom": alloy::primitives::Bloom::ZERO,
+            "logs": logs,
+        }))
+        .expect("receipt deserializes")
+    }
+
+    fn evm_request(zk_proof_id: u64) -> alloy::primitives::LogData {
+        InputVerification::VerifyProofRequest {
+            zkProofId: U256::from(zk_proof_id),
+            contractChainId: U256::from(12345),
+            contractAddress: Address::ZERO,
+            userAddress: Address::ZERO,
+            ciphertextWithZKProof: Bytes::from(vec![1]),
+            extraData: Bytes::from(vec![0]),
+        }
+        .encode_log_data()
+    }
+
+    fn solana_request(zk_proof_id: u64) -> alloy::primitives::LogData {
+        InputVerification::VerifyProofRequestSolana {
+            zkProofId: U256::from(zk_proof_id),
+            contractChainId: U256::from(zama_solana_acl::host_chain::solana_host_chain_id(12345)),
+            contractAddress: FixedBytes::ZERO,
+            userAddress: FixedBytes::ZERO,
+            ciphertextWithZKProof: Bytes::from(vec![1]),
+            extraData: Bytes::from(vec![0]),
+        }
+        .encode_log_data()
+    }
+
+    #[test]
+    fn an_evm_receipt_yields_its_zk_proof_id() {
+        let id = input_proof_gateway_id(&receipt_with(vec![evm_request(7)])).unwrap();
+        assert_eq!(id, U256::from(7));
+    }
+
+    #[test]
+    fn a_solana_receipt_yields_its_zk_proof_id() {
+        let id = input_proof_gateway_id(&receipt_with(vec![solana_request(8)])).unwrap();
+        assert_eq!(id, U256::from(8));
+    }
+
+    #[test]
+    fn an_evm_receipt_without_the_request_event_reports_it_missing() {
+        let err = input_proof_gateway_id(&receipt_with(vec![])).unwrap_err();
+        match err {
+            EventProcessingError::ValidationFailed { field, reason } => {
+                assert_eq!(field, "transaction_logs");
+                assert_eq!(
+                    reason,
+                    format!(
+                        "{} event not found",
+                        InputVerification::VerifyProofRequest::SIGNATURE
+                    )
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_undecodable_evm_request_event_reports_a_decoding_failure() {
+        let mut broken = evm_request(7);
+        broken = alloy::primitives::LogData::new_unchecked(broken.topics().to_vec(), Bytes::new());
+        let err = input_proof_gateway_id(&receipt_with(vec![broken])).unwrap_err();
+        match err {
+            EventProcessingError::EventDecodingFailed { event_type, .. } => {
+                assert_eq!(event_type, InputVerification::VerifyProofRequest::SIGNATURE);
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 }

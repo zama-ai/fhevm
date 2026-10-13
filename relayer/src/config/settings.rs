@@ -4,7 +4,7 @@ use config::{Config, Environment, File};
 use derivative::Derivative;
 use serde::Deserializer;
 use serde::{de::Error, Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fmt;
 use std::num::NonZeroUsize;
@@ -128,54 +128,24 @@ where
     D: Deserializer<'de>,
     T: Deserialize<'de>,
 {
-    // A manual Visitor (visit_seq / visit_map via deserialize_any) rather than a
-    // `#[serde(untagged)]` enum. Untagged enums buffer the value into serde's `Content`
-    // before trying each variant, and that buffering cannot round-trip a `u64`
-    // above the IEEE-754 mantissa (e.g. an RFC-021 Solana host `chain_id`) through
-    // the `config` crate — the whole list then fails with "data did not match any
-    // variant of untagged enum". The Visitor lets each element deserialize directly
-    // from the config value, so the element's own `deserialize_u64_from_str_or_num`
-    // handles large ids correctly.
-    struct VecVisitor<T>(std::marker::PhantomData<T>);
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum MapOrSeq<T> {
+        List(Vec<T>),
+        Map(HashMap<String, T>),
+    }
 
-    impl<'de, T> serde::de::Visitor<'de> for VecVisitor<T>
-    where
-        T: Deserialize<'de>,
-    {
-        type Value = Vec<T>;
-
-        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            f.write_str("a sequence, or a map keyed by integer index")
-        }
-
-        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-        where
-            A: serde::de::SeqAccess<'de>,
-        {
-            let mut out = Vec::with_capacity(seq.size_hint().unwrap_or(0));
-            while let Some(item) = seq.next_element::<T>()? {
-                out.push(item);
-            }
-            Ok(out)
-        }
-
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: serde::de::MapAccess<'de>,
-        {
-            // Keys are stringified indices ("0", "1", …); order by index, ignore non-numeric keys.
-            let mut items: Vec<(usize, T)> = Vec::new();
-            while let Some((key, value)) = map.next_entry::<String, T>()? {
-                if let Ok(idx) = key.parse::<usize>() {
-                    items.push((idx, value));
-                }
-            }
+    match MapOrSeq::deserialize(deserializer)? {
+        MapOrSeq::List(list) => Ok(list),
+        MapOrSeq::Map(map) => {
+            let mut items: Vec<(usize, T)> = map
+                .into_iter()
+                .filter_map(|(k, v)| k.parse::<usize>().ok().map(|idx| (idx, v)))
+                .collect();
             items.sort_by_key(|(idx, _)| *idx);
             Ok(items.into_iter().map(|(_, v)| v).collect())
         }
     }
-
-    deserializer.deserialize_any(VecVisitor(std::marker::PhantomData))
 }
 
 /// Unified listener pool configuration
@@ -779,10 +749,8 @@ impl ContractConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct HostChainConfig {
-    /// Host chain id. RFC-021 Solana host ids start at `2^56` and exceed the IEEE-754 mantissa,
-    /// so a bare YAML number can reach this field through a lossy f64. A quoted string is
-    /// accepted too, so the Solana host id can be configured exactly while EVM ids stay plain
-    /// numbers.
+    /// Host chain id, as a number or a quoted decimal string. RFC-021 Solana host ids start at
+    /// `2^56`, beyond what a JavaScript number holds exactly, so the e2e config writer quotes them.
     #[serde(deserialize_with = "deserialize_u64_from_str_or_num")]
     pub chain_id: u64,
     pub url: String,
@@ -1033,8 +1001,8 @@ impl Settings {
             };
             if !valid_acl_address {
                 return Err(AppConfigError::InvalidAddress(format!(
-                    "host_chains[{}].acl_address does not match chain_id {}: {}",
-                    i, hc.chain_id, hc.acl_address
+                    "host_chains[{}].acl_address is invalid: {}",
+                    i, hc.acl_address
                 )));
             }
         }
@@ -2233,8 +2201,9 @@ mod tests {
             .validate_host_chains()
             .expect_err("Solana chain id with EVM acl_address must be rejected");
         assert!(
-            err.to_string().contains("does not match chain_id"),
-            "Error should mention the chain/address mismatch, got: {err}"
+            err.to_string()
+                .contains("host_chains[0].acl_address is invalid"),
+            "Error should name the invalid acl_address, got: {err}"
         );
 
         settings.host_chains[0].chain_id = 8009;
@@ -2243,7 +2212,9 @@ mod tests {
         let err = settings
             .validate_host_chains()
             .expect_err("EVM chain id with Solana acl_address must be rejected");
-        assert!(err.to_string().contains("does not match chain_id"));
+        assert!(err
+            .to_string()
+            .contains("host_chains[0].acl_address is invalid"));
     }
 
     #[test]
@@ -2291,26 +2262,14 @@ mod tests {
         );
     }
 
-    /// Mirrors the real K8s deployment: YAML base config + env var overrides.
-    /// Loads env vars from tests/relayer-test-env-only.env, then calls
-    /// Settings::new (same code path as the real app).
-    /// Smoke test: a QUOTED RFC-021 Solana host chain id (above the IEEE-754 mantissa)
-    /// loads through the real `Settings::new` path to the exact u64. A bare YAML number
-    /// would coerce through a lossy f64, so the id must be a quoted string (as the e2e
-    /// side-stack setup writes it).
-    /// NOTE: this does NOT reproduce the env-specific `host_chains` "untagged MapOrSeq"
-    /// crash observed in the live stack after a config reconcile (not isolable in a unit test — it
-    /// needs the full live env). The manual `Visitor` in `deserialize_vec_from_map_or_seq` removes
-    /// the untagged-enum buffering that error names, but its effect on the live crash is confirmed
-    /// against the running relayer, not by this test (which passes with or without the Visitor).
+    /// An RFC-021 Solana host chain id is above the IEEE-754 mantissa, so the e2e config writes
+    /// it as a quoted string. It loads through `Settings::new` to the exact u64 because
+    /// `chain_id` takes a string; without `deserialize_u64_from_str_or_num` it fails as "data did
+    /// not match any variant of untagged enum MapOrSeq".
     #[test]
     #[serial] // avoid env var leakage from parallel tests
     fn test_settings_loads_quoted_solana_host_chain_id() {
         const SOLANA_CHAIN_ID: u64 = zama_solana_acl::host_chain::solana_host_chain_id(12345);
-        // Mirror the live config (the e2e setup deploy.ts writes the Solana host_chains entry with a
-        // QUOTED chain_id, because a bare YAML number above the IEEE-754 mantissa coerces to a
-        // lossy f64). Loading must succeed through the real
-        // Settings::new path; this regresses the untagged-enum crash the Visitor fix removed.
         let base = std::fs::read_to_string("tests/relayer-test-config.yaml")
             .expect("read tests/relayer-test-config.yaml");
         let solana_cfg = base
@@ -2336,6 +2295,9 @@ mod tests {
         assert_eq!(settings.host_chains[0].chain_id, SOLANA_CHAIN_ID);
     }
 
+    /// Mirrors the real K8s deployment: YAML base config + env var overrides.
+    /// Loads env vars from tests/relayer-test-env-only.env, then calls
+    /// Settings::new (same code path as the real app).
     /// Values in the env file intentionally differ from the YAML to prove
     /// env vars actually override. This catches map-vs-sequence and other
     /// type issues for any field set via env vars.
