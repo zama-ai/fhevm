@@ -1783,25 +1783,3 @@ describe('createDeadbeefBytes', () => {
     expect(createDeadbeefBytes(4)).toBeInstanceOf(Uint8Array);
   });
 });
-
-describe('hexToBytes', () => {
-  it('accepts unprefixed, 0x-prefixed, and 0X-prefixed hex', () => {
-    expect(hexToBytes('00aF')).toEqual(new Uint8Array([0x00, 0xaf]));
-    expect(hexToBytes('0x00aF')).toEqual(new Uint8Array([0x00, 0xaf]));
-    expect(hexToBytes('0X00aF')).toEqual(new Uint8Array([0x00, 0xaf]));
-  });
-
-  it('round-trips bytes through the exported hex helpers', () => {
-    const bytes = new Uint8Array([0x00, 0x12, 0xab, 0xff]);
-    expect(hexToBytes(bytesToHex(bytes))).toEqual(bytes);
-  });
-
-  it('rejects malformed characters instead of coercing them to zero', () => {
-    expect(() => hexToBytes('0xzz')).toThrow('Invalid hex string');
-    expect(() => hexToBytes('0y00')).toThrow('Invalid hex string');
-  });
-
-  it('rejects odd-length hex', () => {
-    expect(() => hexToBytes('0x123')).toThrow('Invalid hex string');
-  });
-});

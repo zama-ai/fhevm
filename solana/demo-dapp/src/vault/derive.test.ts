@@ -56,7 +56,6 @@ describe('deriveSettleAccounts', () => {
       joinMintVaultAuthority: 'BBwwKFwNxKrxBmSD6ey2cJ1VJYVkFhJAoBovc38ACjhk',
       batchBurnedAmountStore: 'BFahaYhwFQvt2cHGeHg4ujaWcC52RWgHdiEQuV7PT2oA',
       pendingBurn: 'BgV6GmgySEincRffgdRA8qLX8nUxpuSfjRF76WGrTAPy',
-      hostConfig: '8FL98RBTQ8LviLQ6c9F5j6pdtJPFSbnnTJgh3VVcLeKC',
       vault: 'gBxS1f6uyyGPuW5MzGBukidSb71jdsCb5fZaoSzULE5',
       vaultAuthority: 'CxnAjXqMPmT5xT8dmsFbMgVNgA8HPVa4WVWhCm3gZNL9',
       vaultTokenAccount: '3kdEZ36hPkUH2Hq2XhjBCdKVn7xBbpWLtbd9ePxSBf1o',
@@ -70,10 +69,6 @@ describe('deriveSettleAccounts', () => {
       payoutTotalSupplyStore: '5fZHscRuBSv8Kxnt1cCkBZC1zGX21eJhPar216jZMupZ',
       joinTotalSupplyAuthority: 'DsaavuNH2btNESBMAmD8uCWz5DZNvozkMYMqVdkpNJb9',
       joinTotalSupplyStore: '9HxM82Nsb6nvcCWonzJwwE6Tsm2h4qyQ4kyyw47MDwiv',
-      batchAuthority: '7r6dp55LMSc1dKRiMzgizmrogFcB4bkkbC7ia9jpk1Fo',
-      batchJoinUnderlying: 'Gv5fMGCo3efrXa83JnBJf1jTE2sJqvmDp4wSDAT16U4C',
-      batchPayoutUnderlying: 'CW2QJ6TvQLBzm9T8zT26YMPZZMvC1pwkEUh2zGV7qUAp',
-      zamaEventAuthority: 'CAspHyipvqeHA78sMa73uD2ThP84Zw4ywXG71dyrNpXp',
       confidentialTokenEventAuthority: 'FmW1wCB2eZQFwLVuALBH2Y3yh9uscwcExz1i4zFGYZgp',
     });
   });

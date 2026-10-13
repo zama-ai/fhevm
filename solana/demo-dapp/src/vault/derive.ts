@@ -1,5 +1,4 @@
 import { tokenStoreAddress } from './internal/encryptedStores.js';
-import { findEventAuthorityPda as findZamaEventAuthorityPda, findHostConfigPda } from '@fhevm/solana-zama-host';
 import { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 import type { Address } from '@solana/kit';
 import {
@@ -91,8 +90,8 @@ export async function deriveBatchAddresses(roots: VaultDemoRoots, batchIndex: bi
 }
 
 /**
- * The complete account set for one `settle`, derived from the roots and a batch's addresses. This is
- * the settle instruction's non-fixed, batch-scoped accounts and event authorities.
+ * The accounts of one `settle` that its generated builder cannot resolve on its own, derived from
+ * the roots and a batch's addresses.
  * The payer and transaction transient store are resolved when the transaction is assembled. `pendingBurn`
  * is derived from the join mint and batch join token account, so it is known when the batch opens.
  */
@@ -107,7 +106,6 @@ export interface SolanaVaultSettleAccounts {
   readonly batchBurnedAmountStore: Address;
   /** The batch join token account's single pending burn, known before dispatch. */
   readonly pendingBurn: Address;
-  readonly hostConfig: Address;
   readonly vault: Address;
   readonly vaultAuthority: Address;
   readonly vaultTokenAccount: Address;
@@ -121,10 +119,6 @@ export interface SolanaVaultSettleAccounts {
   readonly payoutTotalSupplyStore: Address;
   readonly joinTotalSupplyAuthority: Address;
   readonly joinTotalSupplyStore: Address;
-  readonly batchAuthority: Address;
-  readonly batchJoinUnderlying: Address;
-  readonly batchPayoutUnderlying: Address;
-  readonly zamaEventAuthority: Address;
   readonly confidentialTokenEventAuthority: Address;
 }
 
@@ -139,10 +133,6 @@ export async function deriveSettleAccounts(
   const [vaultAuthority] = await findDemoVaultAuthorityPda({ vault: roots.vault });
   const [vaultTokenAccount] = await findVaultTokenAccountPda({ vault: roots.vault });
   return {
-    batchAuthority: batch.batchAuthority,
-    batchJoinUnderlying: batch.batchJoinUnderlying,
-    batchPayoutUnderlying: batch.batchPayoutUnderlying,
-    zamaEventAuthority: (await findZamaEventAuthorityPda())[0],
     confidentialTokenEventAuthority: (await findTokenEventAuthorityPda())[0],
     batcher: roots.batcher,
     batch: batch.batch,
@@ -157,7 +147,6 @@ export async function deriveSettleAccounts(
     joinMintVaultAuthority,
     batchBurnedAmountStore: batch.batchBurnedAmountStore,
     pendingBurn: (await findPendingBurnPda({ mint: roots.joinConfidentialMint, tokenAccount: batch.batchJoinTokenAccount }))[0],
-    hostConfig: (await findHostConfigPda())[0],
     vault: roots.vault,
     vaultAuthority,
     vaultTokenAccount,
