@@ -66,11 +66,8 @@ jobs:
               - test-suite/fhevm/e2e/deployment/**
             dead-surface-check:
               - solana/scripts/dead-surface-check.sh
-            # Every tree dead-surface-check.sh sweeps. The check used to run only inside
-            # build-and-test, which is gated on `solana`, so an edit to the listener, the
-            # kms-connector, the SDK, or the test suite could introduce a retired name
-            # or a dead export without it ever running. Keep this list and the script's own
-            # sweep roots in step.
+            # Every tree dead-surface-check.sh sweeps, so an edit in any of them runs the check.
+            # Keep this list and the script's own sweep roots in step.
             dead-surface:
               - .github/workflows/solana-tests.yml
               - .github/workflows/solana-e2e.yml
@@ -178,9 +175,9 @@ jobs:
         run: bash scripts/dead-surface-check.sh --self-test
 
   # The vault module (batch provisioning, settle composition, the transaction size checks) lives in
-  # the demo dapp, and its unit tests run nowhere else: js-sdk-tests is scoped to PRs against
-  # main/devex, and solana-e2e only builds the dapp. Without this job a regression in settle
-  # composition or transaction size surfaces first as a live e2e failure.
+  # the demo dapp, and its unit tests run nowhere else: solana-e2e only builds the dapp. Without
+  # this job a regression in settle composition or transaction size surfaces first as a live e2e
+  # failure.
   demo-dapp:
     name: solana-tests/demo-dapp
     needs: check-changes

@@ -1,9 +1,7 @@
 // addresses — the live gateway inputs the Solana host bootstrap reads before it can configure
 // zama-host: the deployed EVM contract addresses from the fhevm-cli address artifact plus the
-// coprocessor/KMS signer sets registered on the gateway. This replaces the retired
-// `setup-solana-side.sh` "[1/5] gathering live gateway addresses" phase (dotenv `source` + `cast
-// call`) with the same reads done in-process, so the bootstrap tracks whatever signer the running
-// stack actually generated — no hardcoded values.
+// coprocessor/KMS signer sets registered on the gateway, read live so the bootstrap tracks whatever
+// signers the running stack generated.
 
 import type { KmsThresholds } from "@fhevm/solana-zama-host";
 import { type ContractFunctionName, createPublicClient, http, parseAbi } from "viem";

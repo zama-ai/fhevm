@@ -28,6 +28,7 @@ later decision replaced only part of a live entry, the replaced wording is under
 | DD-039 HCU Block Cap Meters The Signed `compute_subject`, Not A Separate Authority                         | DD-047                       |
 | Committed Cost Snapshots Gate CI On Exact Costs                                                            | the cost report              |
 | Solana decryption through the Gateway                                                                      | HTTP (relayer-http)          |
+| Bash e2e scripts and the Rust live client                                                                  | the bun:test suite (#3477)   |
 
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds
 
@@ -963,6 +964,30 @@ DD-060:
 > `every_blob_field_reaches_the_canonical_bytes` (every blob field changes the request bytes),
 > `every_field_lands_in_its_place_and_the_chain_comes_from_the_handles` (assembly puts each Gateway
 > and blob field in its permit role)
+
+## Bash e2e scripts and the Rust live client, replaced by the bun:test suite
+
+**Status:** replaced in zama-ai/fhevm#3477 by the typed suite under `test-suite/fhevm`: the
+side-stack modules in `src/solana/` and the scenarios in `e2e/scenarios/`.
+
+The live Solana e2e ran as shell scripts under `solana/scripts/e2e/` driving a Rust client,
+`solana/scripts/e2e/live-client`:
+
+| Replaced                                                                                                                   | Now                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `setup-solana-side.sh` "[2/5] fresh validator (Yellowstone geyser) + program deploy"                                       | `src/solana/validator.ts`, `src/solana/deploy.ts`                       |
+| `setup-solana-side.sh` "[1/5] gathering live gateway addresses + ProtocolConfig signer set" (dotenv `source`, `cast call`) | `src/solana/addresses.ts`, the same reads in-process                    |
+| `setup-solana-side.sh` "[3/5] bootstrap zama-host", the live client's `BOOTSTRAP=1` mode                                   | the typed zama-host bootstrap, `solana/deploy/src/bootstrap.ts`         |
+| `setup-solana-side.sh` "[4/5] register Solana host chain (coprocessor DB + gateway)" and "[5/5] run Solana host-listener"  | `src/solana/deploy.ts`                                                  |
+| psql polling loops for the SNS commit in `full-vertical.sh` and `adversarial-l4.sh`                                        | `src/solana/sns.ts`                                                     |
+| `full-vertical.sh`'s `==> [sdk-transfer]` phase                                                                            | `e2e/scenarios/confidential-transfer.scenario.test.ts`                  |
+| the live client's balance probe, three accounts in one `getMultipleAccounts`                                               | `readTokenBalanceStore` in `src/solana/provision.ts`, derived addresses |
+
+The probe read all three accounts in one call because it followed the token account's balance
+pointer, which could move between reads. `readTokenBalanceStore` derives every address instead.
+Before #3477 the CI check was `solana-e2e/full-vertical`, with a `-reconstruct` matrix leg, and a
+90-minute timeout. It was later named `solana-e2e/scenarios-reconstruct`, then
+`solana-e2e/scenarios`.
 
 ## Replaced parts of live decisions
 

@@ -1,11 +1,10 @@
 // deploy — brings the Solana side-stack online against a live fhevm-cli backend: program build +
 // deploy on the geyser validator, the typed zama-host bootstrap (HostConfig + active KMS context
 // from the REAL live gateway/ProtocolConfig values), the Solana host-chain registration
-// (coprocessor DB + gateway), and the host-listener. Absorbed from `setup-solana-side.sh`; the
-// bootstrap is the typed replacement for the retired live-client's `BOOTSTRAP=1` mode (the last
-// production duty that Rust crate had), built from the same generated Codama client the scenarios
-// use. Mock inputs and test shims stay OFF: everything is read live via `addresses.ts`, so the
-// whole sequence is reproducible from a clean `fhevm-cli up --scenario solana`.
+// (coprocessor DB + gateway), and the host-listener. The bootstrap uses the same generated Codama
+// client as the scenarios. Mock inputs and test shims stay OFF: everything is read live via
+// `addresses.ts`, so the whole sequence is reproducible from a clean
+// `fhevm-cli up --scenario solana`.
 //
 // Run directly (from test-suite/fhevm, after `fhevm-cli up --scenario solana`):
 //   bun run src/solana/deploy.ts
@@ -331,11 +330,10 @@ const registerSolanaHostChain = async (parameters: {
 
 /**
  * Builds and runs one Solana host-listener per coprocessor against the validator and that
- * coprocessor's DB, as each preview coprocessor runs its own. Always rebuilt from THIS
- * worktree's source: its event decoders are generated (build.rs -> OUT_DIR) from the program
- * IDLs, so a stale prebuilt binary silently decodes zero events when the program's event layout
- * has moved (it drops every event whose generated struct no longer matches), leaving the
- * coprocessor with no work and the vertical hanging at SNS commit.
+ * coprocessor's DB, as each preview coprocessor runs its own. Always rebuilt from this
+ * worktree's source: the listener decodes with zama-host's own types (`zama_host::decode`) and
+ * accepts only its own `EVENT_VERSION`, so a binary built for another version stops in
+ * `host_operations` at the first `fhe_execute` whose `FheExecutedEvent` it cannot accept.
  *
  * gRPC transport: the listener takes every output, public ones included, from each execution's
  * `FheExecutedEvent`, and re-derives the handles only as a check.

@@ -86,7 +86,7 @@ images_for() {
 #     lines): relayer-http/, both rust_bindings, shared/, kms-connector/ and the three solana crates
 #     kms-connector shares.
 #   - gateway-contracts / host-contracts images: their own trees + root package files.
-# Non-Rust solana/ paths (scripts, geyser, docs, test-fixtures) are no longer copied into any
+# Non-Rust solana/ paths (scripts, geyser, docs, test-fixtures) are not copied into any
 # builder stage, and runtime-tests sources are copied only for cargo workspace resolution and are
 # never compiled into a runtime image, so none of them trigger a rebuild. Programs that no image
 # consumes (demo-vault, encrypted-counter, dep-chain) are none-ruled explicitly; any other program,

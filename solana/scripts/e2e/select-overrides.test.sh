@@ -193,7 +193,6 @@ check "test-suite package.json change -> everything" \
   "gateway-contracts host-contracts coprocessor relayer kms-connector" \
   ""
 
-# The SDK-plus-scenario PR shape that used to pay for a full workspace rebuild.
 check "sdk + scenario change -> nothing" \
   $'sdk/js-sdk/src/solana/index.ts\ntest-suite/fhevm/e2e/scenarios/deposit-arc.scenario.test.ts' \
   "true" \

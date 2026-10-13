@@ -156,11 +156,11 @@ PY
 # NOTE: relayer + kms-connector run the worktree code (via --override). SOLANA_E2E_LOCK_PINS can
 # point them at the branch-published `feature-solana-<sha>` images instead (see select-overrides.sh).
 
-# 3. The Solana side-stack (fresh geyser validator + program deploy, the typed zama-host bootstrap,
-#    host-chain registration, the host-listener) is no longer a separate call: the `solana` scenario
-#    resolves its host chain to `nodeProvisioning: host-process`, so the `up` above ran it as the
-#    `host-process` pipeline step. `bun run src/solana/deploy.ts` still provisions the same thing
-#    standalone when a node needs rebuilding without a full stack cycle.
+# 3. The `solana` scenario resolves its host chain to `nodeProvisioning: host-process`, so the `up`
+#    above ran the Solana side-stack (geyser validator + program deploy, the typed zama-host
+#    bootstrap, host-chain registration, the host-listener) as its `host-process` pipeline step.
+#    `bun run src/solana/deploy.ts` provisions the same thing standalone, without a full stack
+#    cycle.
 
 echo "[clean-e2e] stack ready. Run the typed scenario suite (compute -> public/user-decrypt ->"
 echo "  input-flow -> transfer -> consume), user-decrypt is PURE-SDK (no kms checkout):"

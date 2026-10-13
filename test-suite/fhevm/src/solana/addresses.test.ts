@@ -151,7 +151,7 @@ describe("readGatewayBootstrapInputs", () => {
       };
       calls.push({ method: request.method, data: request.params?.[0]?.data });
       // 0x9164d0ae / 0x7eaac8f2 are viem's derived selectors for getCoprocessorSigners() /
-      // getKmsSigners() — the same ones the retired bash pinned for `cast call`.
+      // getKmsSigners().
       const result =
         request.method === "eth_chainId"
           ? "0xd903"
