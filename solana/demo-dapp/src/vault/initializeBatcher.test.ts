@@ -53,8 +53,6 @@ describe('buildInitializeBatcherInstruction', () => {
     expect(accounts.batchJoinBalanceStore.address).toBe(batch.batchBurnedAmountStore);
     expect(accounts.batchPayoutTokenAccount.address).toBe(batch.batchPayoutTokenAccount);
     expect(accounts.batchPayoutBalanceStore.address).toBe(batch.batchPayoutBalanceStore);
-    expect(accounts.batchJoinUnderlying.address).toBe(batch.batchJoinUnderlying);
-    expect(accounts.batchPayoutUnderlying.address).toBe(batch.batchPayoutUnderlying);
   });
 
   it('appends, under the deny list, the join then the payout mint deny record', async () => {

@@ -5,7 +5,7 @@ import type { EthereumModuleFactory } from '../../core/modules/ethereum/types.js
 //
 // The Solana host has no EVM ABI/RPC surface. The runtime requires an EthereumModule slot,
 // but the Solana user-decrypt path never touches it (no on-chain ACL/KMSVerifier reads, no
-// EIP-712 signing — the request is ed25519 and the KMS context is static). Every method
+// EIP-712 signing — the request is ed25519 and zama-host holds the KMS context). Every method
 // therefore throws: reaching one means a non-Solana code path leaked onto a Solana client.
 ////////////////////////////////////////////////////////////////////////////////
 

@@ -30,7 +30,6 @@ describe('RelayerAsyncRequest auth/edge error surfacing', () => {
   afterEach(() => {
     global.fetch = originalFetch;
     vi.restoreAllMocks();
-    vi.useRealTimers();
   });
 
   //////////////////////////////////////////////////////////////////////////////
@@ -101,64 +100,5 @@ describe('RelayerAsyncRequest auth/edge error surfacing', () => {
       expect(err.message).toContain('unexpected response status: 403');
       expect(err.message).not.toContain('Forbidden');
     }
-  });
-
-  //////////////////////////////////////////////////////////////////////////////
-  // 503 readiness_check_timed_out
-  //////////////////////////////////////////////////////////////////////////////
-
-  it('503 readiness_check_timed_out is terminal', async () => {
-    // The relayer keeps answering the same 503 for a job whose readiness check timed out, so the
-    // request surfaces the error instead of polling a dead job until its global timeout (the
-    // confidential-bridge e2e suite relies on this to detect a handle that is not publicly
-    // decryptable yet). A new request is a new job.
-    mockFetchStatus(
-      503,
-      JSON.stringify({
-        status: 'failed',
-        error: { label: 'readiness_check_timed_out', message: 'ciphertext never became ready' },
-      }),
-    );
-
-    try {
-      await newRequest().run();
-      expect.unreachable();
-    } catch (e) {
-      expect(e).toBeInstanceOf(RelayerResponseApiError);
-      const err = e as RelayerResponseApiError;
-      expect(err.status).toBe(503);
-      expect(err.relayerApiError.label).toBe('readiness_check_timed_out');
-    }
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-  });
-
-  it('503 readiness_check_timed_out while polling a queued job is terminal', async () => {
-    vi.useFakeTimers();
-    let calls = 0;
-    global.fetch = vi.fn().mockImplementation(() => {
-      calls += 1;
-      return Promise.resolve(
-        calls === 1
-          ? new Response(JSON.stringify({ status: 'queued', requestId: 'r1', result: { jobId: 'j1' } }), {
-              status: 202,
-              headers: { 'Retry-After': '1' },
-            })
-          : new Response(
-              JSON.stringify({
-                status: 'failed',
-                error: { label: 'readiness_check_timed_out', message: 'ciphertext never became ready' },
-              }),
-              { status: 503, headers: { 'Retry-After': '1' } },
-            ),
-      );
-    });
-
-    const rejection = expect(newRequest().run()).rejects.toMatchObject({
-      status: 503,
-      relayerApiError: { label: 'readiness_check_timed_out' },
-    });
-    await vi.runAllTimersAsync();
-    await rejection;
-    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 });

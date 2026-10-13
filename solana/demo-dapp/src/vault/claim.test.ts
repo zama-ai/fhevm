@@ -44,9 +44,6 @@ const batcherValuePda = (batch: Address, batchAuthority: Address): Promise<Addre
     base58.decode(batch),
   ]);
 describe('buildClaimInstruction', () => {
-  // Fixture aligned with derive.test.ts's consensus-critical golden: batcher = addr(2),
-  // batch = the golden batch PDA for index 0, payout mint = addr(13) — so the batch-side payout
-  // token-account / balance expectations can be pinned to the same golden base58 strings.
   const payer = signer(addr(1));
   const user = addr(100); // NOT a signer — permissionless pull
   const batcher = addr(2);
