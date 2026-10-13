@@ -59,8 +59,7 @@ pub struct SolanaListenerConfig {
     /// zama-host program id hashed into reconstructed handles (not the id this crate was
     /// compiled with).
     pub program_id: Pubkey,
-    /// On-chain HostConfig chain_id used in handle derivation (distinct from the
-    /// coprocessor host-chain id).
+    /// On-chain HostConfig chain_id, used in handle derivation and as the coprocessor host-chain id.
     pub chain_id: u64,
     /// Shared scheduler cap; zero disables the slow lane.
     pub dependent_ops_max_per_chain: u32,
@@ -244,7 +243,7 @@ async fn apply_block(
             tfhe_events = stats.tfhe_events,
             material_requests = stats.material_requests,
             inserted_records = stats.inserted_records,
-            "ingested Solana host records (gRPC)"
+            "ingested Solana host records"
         );
     }
     // Best effort, as on EVM: a failure only delays pruning.

@@ -100,6 +100,9 @@ WORKDIR /app
 
 # Copy contract artifacts from contract_builder stage
 COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
+
+# Copy Rust sources and dependencies
+# TODO fix
 COPY listener ./listener
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
@@ -114,6 +117,10 @@ COPY shared/kms-context ./shared/kms-context
 
 WORKDIR /app/coprocessor/fhevm-engine
 
+# Build entire workspace - tfhe compiles ONCE here
+# NOTE: We use cache mounts for incremental compilation. Because cache mounts
+# are NOT committed to the image layer, we must copy binaries to /out during
+# the same RUN instruction for COPY --from to work in later stages.
 # Install solc serially through gw-listener before the parallel workspace build. Otherwise the
 # listener build scripts can race while writing the shared svm binary and fail with ETXTBSY.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
