@@ -384,7 +384,7 @@ fn reconstruct_records_for_insert(
             ) else {
                 anyhow::bail!(
                     "reconstruct: fhe_execute in slot {slot} has an operand its event \
-                     or dictionary does not resolve"
+                     or dictionary does not resolve, or a step over 256 operands"
                 );
             };
             reconstructed.check_failures.extend(
@@ -543,6 +543,50 @@ mod fhe_execute_acl_tests {
 
     use crate::solana_adapter::SolanaHostRecord;
     use crate::solana_reconstruct::HandleMismatch;
+
+    /// The host refuses a step with more than 256 operands, so a successful execution never holds
+    /// one: reconstruction stops, and `apply_block` makes that error fatal.
+    #[test]
+    fn a_step_over_the_operand_limit_stops_reconstruction() {
+        let sum_of = |operands| DecodedInstruction {
+            accounts: vec![],
+            data: encoded_execution(FheExecuteArgs {
+                execution_store_index: 0,
+                account_count: 0,
+                dictionary: vec![[9; 32]],
+                steps: vec![FheExecuteStep::Sum {
+                    operands: vec![
+                        zama_host::FheExecuteOperand::StoreSlot {
+                            handle_index: 0,
+                            key_index: 0,
+                            store_index: 0,
+                        };
+                        operands
+                    ],
+                    fhe_type: 5,
+                }],
+                effects: vec![],
+                returned_results: vec![],
+            }),
+        };
+        assert!(reconstruct(&with_events([sum_of(256)])).is_ok());
+
+        let event = zama_host::FheExecutedEvent {
+            version: zama_host::EVENT_VERSION,
+            previous_bank_hash: context().previous_bank_hash,
+            unix_timestamp: context().unix_timestamp,
+            results: vec![[0x55; 32]],
+            seeds: vec![],
+        };
+        let Err(error) = reconstruct(&[sum_of(257), event_instruction(&event)])
+        else {
+            panic!("a 257-operand step was reconstructed");
+        };
+        assert!(
+            error.to_string().contains("or a step over 256 operands"),
+            "{error}"
+        );
+    }
 
     #[test]
     fn check_failures_name_the_execution_and_keep_the_emitted_handle() {
