@@ -53,9 +53,6 @@ pub struct SolanaChainConfig {
     /// The zama-host program id, base58. A user-decrypt permit must name it.
     #[serde(deserialize_with = "program_id_from_base58")]
     pub program_id: [u8; 32],
-    /// Identical public-decrypt answers needed. zama-host verifies a certificate against
-    /// `kms_context.thresholds.public_decryption` (2t + 1), more than EVM's t + 1.
-    pub public_decrypt_threshold: usize,
 }
 
 /// A base58 Solana address of exactly 32 bytes.
@@ -117,18 +114,12 @@ impl HttpConfig {
         Ok(())
     }
 
-    /// Every entry is a Solana chain, with a public-decrypt threshold within `1..=nodes`.
-    pub fn validate_solana_chains(&self, nodes: usize) -> Result<(), ConfigError> {
-        for (id, chain) in &self.solana_chains {
+    /// Every entry is a Solana chain.
+    pub fn validate_solana_chains(&self) -> Result<(), ConfigError> {
+        for id in self.solana_chains.keys() {
             if !is_solana_host_chain_id(*id) {
                 return Err(ConfigError(format!(
                     "http.solana_chains.{id} is not a Solana chain id"
-                )));
-            }
-            let threshold = chain.public_decrypt_threshold;
-            if threshold == 0 || threshold > nodes {
-                return Err(ConfigError(format!(
-                    "http.solana_chains.{id}.public_decrypt_threshold ({threshold}) must be within 1..={nodes}"
                 )));
             }
         }
@@ -179,9 +170,7 @@ impl RelayerConfig {
             .map_err(|e| ConfigError(format!("{path}: {e}")))?;
         config.http.validate()?;
         config.kms_aggregator.validate()?;
-        config
-            .http
-            .validate_solana_chains(config.kms_aggregator.endpoints.len())?;
+        config.http.validate_solana_chains()?;
         Ok(config)
     }
 }
@@ -352,7 +341,7 @@ mod tests {
     #[test]
     fn solana_chain_keys_load_as_chain_ids() {
         let yaml = format!(
-            "endpoint: \"0.0.0.0:8080\"\nsolana_chains:\n  \"{SOLANA}\":\n    program_id: \"{}\"\n    public_decrypt_threshold: 9\n",
+            "endpoint: \"0.0.0.0:8080\"\nsolana_chains:\n  \"{SOLANA}\":\n    program_id: \"{}\"\n",
             bs58::encode(PROGRAM).into_string()
         );
         let http: HttpConfig = Config::builder()
@@ -361,16 +350,13 @@ mod tests {
             .and_then(Config::try_deserialize)
             .unwrap();
         assert_eq!(http.solana_chains[&SOLANA].program_id, PROGRAM);
-        assert_eq!(http.solana_chains[&SOLANA].public_decrypt_threshold, 9);
         http.validate().unwrap();
     }
 
     #[test]
     fn program_id_is_32_bytes_of_base58() {
         let parse = |program: &str| {
-            serde_json::from_str::<SolanaChainConfig>(&format!(
-                r#"{{"program_id": "{program}", "public_decrypt_threshold": 9}}"#
-            ))
+            serde_json::from_str::<SolanaChainConfig>(&format!(r#"{{"program_id": "{program}"}}"#))
         };
         assert_eq!(
             parse(&bs58::encode(PROGRAM).into_string())
@@ -396,7 +382,7 @@ mod tests {
     fn solana_chains_rules() {
         let mut http = solana_http();
         http.validate().unwrap();
-        http.validate_solana_chains(13).unwrap();
+        http.validate_solana_chains().unwrap();
 
         http.supported_chain_ids = vec![1, SOLANA];
         assert!(
@@ -421,28 +407,11 @@ mod tests {
         let chain = http.solana_chains[&SOLANA].clone();
         http.solana_chains.insert(1, chain);
         assert!(
-            http.validate_solana_chains(13)
+            http.validate_solana_chains()
                 .unwrap_err()
                 .0
                 .contains("http.solana_chains.1 is not a Solana chain id")
         );
-
-        for threshold in [0, 14] {
-            let mut http = solana_http();
-            http.solana_chains
-                .get_mut(&SOLANA)
-                .unwrap()
-                .public_decrypt_threshold = threshold;
-            assert!(
-                http.validate_solana_chains(13)
-                    .unwrap_err()
-                    .0
-                    .contains(&format!(
-                        "public_decrypt_threshold ({threshold}) must be within 1..=13"
-                    )),
-                "{threshold}"
-            );
-        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 //! `POST /v4/public-decrypt`: the current relayer's body, validated, converted to the connector DTO and
 //! aggregated. A body tagged `scheme: "solana-public-decrypt-v1"` is the connector's Solana DTO, parsed, checked
-//! and forwarded equal field by field, then aggregated at its chain's threshold.
+//! and forwarded equal field by field.
 
 use alloy::primitives::{B256, Bytes};
 use axum::extract::{Request, State};
@@ -98,25 +98,21 @@ async fn process(app: &App, request: Request, log: &mut Log) -> Result<Response,
     }
 }
 
-/// The Solana body: checked, forwarded as parsed, aggregated at its chain's `public_decrypt_threshold`.
+/// The Solana body: checked, forwarded as parsed, aggregated.
 async fn process_solana(app: &App, body: &RawValue, log: &mut Log) -> Result<Response, ApiError> {
     let request: SolanaPublicDecryptionRequest = parse(body).map_err(|e| rejected(log, e))?;
     log.received(request.ctHandles.clone());
-    let chain = validate_solana(&request, &app.http).map_err(|e| invalid(log, e))?;
+    validate_solana(&request, &app.http).map_err(|e| invalid(log, e))?;
     log.forwarded(request.id());
     let output = app
         .public_decrypt
-        .run_at(
-            &log.request_id,
-            PublicRequest::Solana(request),
-            chain.public_decrypt_threshold,
-        )
+        .run(&log.request_id, PublicRequest::Solana(request))
         .await
         .map_err(|e| ApiError::aggregation(log, e))?;
     Ok(Reply::succeeded(log.clone(), output).into_response())
 }
 
-/// The EVM body: validated, converted to the connector DTO, aggregated at `kms_aggregator.public_decrypt`.
+/// The EVM body: validated, converted to the connector DTO, aggregated.
 async fn process_evm(app: &App, body: &RawValue, log: &mut Log) -> Result<Response, ApiError> {
     let request: PublicDecryptRequest = parse(body).map_err(|e| rejected(log, e))?;
     log.received(request.ciphertext_handles.clone());
@@ -144,7 +140,7 @@ impl From<PublicDecryptRequest> for PublicDecryptionRequest {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::endpoint::validate::tests::{SOLANA, SOLANA_PUBLIC_THRESHOLD, handle, http};
+    use crate::endpoint::validate::tests::{SOLANA, handle, http};
 
     /// A Solana public body: two handles on `SOLANA` and their stores.
     pub(crate) fn public_body() -> SolanaPublicDecryptionRequest {
@@ -174,13 +170,6 @@ pub(crate) mod tests {
         ] {
             assert_eq!(scheme(&raw(bad)).unwrap_err().field, "scheme", "{bad}");
         }
-    }
-
-    #[test]
-    fn a_solana_body_returns_its_chain_threshold() {
-        let http = http();
-        let chain = validate_solana(&public_body(), &http).unwrap();
-        assert_eq!(chain.public_decrypt_threshold, SOLANA_PUBLIC_THRESHOLD);
     }
 
     #[test]

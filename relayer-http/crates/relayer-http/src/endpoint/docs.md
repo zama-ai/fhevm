@@ -18,7 +18,7 @@ The error mapping is a first version (section 5).
 Configuration (`http:` in `config/config.yaml`): `endpoint` (bind address), `max_body_bytes` (default 1 MiB, the connector's limit),
 `body_read_timeout` (default 10 s, total time to receive a request body), `supported_chain_ids` (the EVM host chain
 ids a handle may carry; a Solana chain id there is a configuration error) and `solana_chains` (the Solana host chains,
-keyed by chain id: the zama-host `program_id`, base58, and the `public_decrypt_threshold`). At least one of the two
+keyed by chain id: the zama-host `program_id`, base58). At least one of the two
 names a chain. One port for everything; no version endpoint yet.
 
 Both routes take an EVM body and a Solana body. The handler reads the JSON once and dispatches on a tag, as the
@@ -105,10 +105,6 @@ pins both shapes and their `decryptionId`.
 ```json
 { "scheme": "solana-public-decrypt-v1", "ctHandles": ["0x…"], "extraData": "0x00", "encryptedStores": ["0x…"] }
 ```
-
-A Solana public decrypt is aggregated at its chain's `http.solana_chains.<id>.public_decrypt_threshold`: zama-host
-verifies a certificate against `kms_context.thresholds.public_decryption` (2t + 1), more than the EVM public
-threshold (t + 1). User decrypt keeps `kms_aggregator.user_decrypt.threshold` on both chains.
 
 ## 3. Validation
 

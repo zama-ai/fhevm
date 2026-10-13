@@ -7,7 +7,6 @@ import {
   requiresLegacyRelayerKeyUrlConfig,
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
-import { kmsCertificateThreshold } from "../../../../solana/deploy/src/thresholds";
 import { kmsPartyIds, relayerHttpNodeName } from "../kms-party";
 import { hostChainRuntimes, isEvmHost, OBJECT_STORE_INTERNAL_URL, RELAYER_HTTP_PORT } from "../layout";
 import { kmsConnectorProxyUrl } from "./env";
@@ -146,8 +145,8 @@ export const renderRelayerConfig = (
 
 /**
  * Renders relayer-http's config from its checked-in example: EVM chains in supported_chain_ids,
- * each Solana chain in solana_chains with the zama-host id and the certificate threshold its KMS
- * context was defined with, and one endpoint per kms-connector proxy, named after its party. Every
+ * each Solana chain in solana_chains with the zama-host id, and one endpoint per kms-connector
+ * proxy, named after its party. Every
  * party's proxy is listed, spares included, so a node swap needs no new config or restart: a party
  * outside the active context only adds a refused call, which the kms-context-switch leg checks ends
  * at its first attempt. A production deployment lists its current nodes and updates the list on a
@@ -164,7 +163,6 @@ export const renderRelayerHttpConfig = (
     http: Record<string, unknown>;
     kms_aggregator: { public_decrypt: { threshold: number }; user_decrypt: { threshold: number }; endpoints: unknown[] };
   };
-  const solanaThreshold = kmsCertificateThreshold(plan.kms.threshold, plan.kms.committeeSize);
   // JSON lines, as in the preview: the e2e reads a request's lines back by its request id.
   config.log.format = "json";
   config.http.endpoint = `0.0.0.0:${RELAYER_HTTP_PORT}`;
@@ -174,7 +172,7 @@ export const renderRelayerHttpConfig = (
       .filter((chain) => !isEvmHost(chain))
       .map((chain) => [
         chain.chainId,
-        { program_id: solanaProgramId(state.discovery, chain.key), public_decrypt_threshold: solanaThreshold },
+        { program_id: solanaProgramId(state.discovery, chain.key) },
       ]),
   );
   config.kms_aggregator.public_decrypt.threshold = Number(envs["gateway-sc"].PUBLIC_DECRYPTION_THRESHOLD);

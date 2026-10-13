@@ -10,11 +10,10 @@ http:
   max_body_bytes: 1048576      # 1 MiB, the connector's limit; bigger request bodies are answered 400 malformed
   body_read_timeout: 10s       # total time to receive a request body; after headers a request lasts at most this + call.timeout
   supported_chain_ids: [1, 137]   # EVM host chain ids a ciphertext handle may carry (bytes 22..30 of the handle)
-  # The Solana host chains, keyed by chain id, both values from the deployment's Solana environment:
+  # The Solana host chains, keyed by chain id, with the zama-host program id from the deployment's Solana environment:
   # solana_chains:
   #   "91542930698168068":
   #     program_id: "<base58 zama-host program id>"   # a user-decrypt permit must name it
-  #     public_decrypt_threshold: 9                    # zama-host's kms_context.thresholds.public_decryption (2t + 1)
 kms_aggregator:
   allow_insecure_http: false   # local/compose only: allows plain http and `auth: none` to non-loopback hosts (an api_key over http travels in clear)
   max_concurrent_calls: 4096   # HTTP calls in flight at once, all aggregations together (>= number of endpoints); ~200 decryptions/s with 13 nodes, see kms_aggregator/docs.md

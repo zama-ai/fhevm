@@ -192,7 +192,7 @@ describe("config", () => {
     expect(parsed.http.endpoint).toBe(`0.0.0.0:${RELAYER_HTTP_PORT}`);
     expect(parsed.http.supported_chain_ids).toEqual([12345]);
     expect(parsed.http.solana_chains).toEqual({
-      "130140237723663404": { program_id: "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ", public_decrypt_threshold: 3 },
+      "130140237723663404": { program_id: "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ" },
     });
     expect(parsed.kms_aggregator.public_decrypt.threshold).toBe(3);
     expect(parsed.kms_aggregator.user_decrypt.threshold).toBe(3);

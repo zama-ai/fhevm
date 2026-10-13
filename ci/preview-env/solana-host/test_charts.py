@@ -359,7 +359,7 @@ class SolanaCharts(unittest.TestCase):
         # Chain ids stay strings: Helm would read 130140237723663404 as a float64 and round it.
         self.assertEqual(config["http"]["supported_chain_ids"], ["12345"])
         self.assertEqual(config["http"]["solana_chains"],
-                         {"130140237723663404": {"program_id": "1" * 32, "public_decrypt_threshold": 3}})
+                         {"130140237723663404": {"program_id": "1" * 32}})
         self.assertEqual([e["url"] for e in config["kms_aggregator"]["endpoints"]], proxies)
         self.assertEqual({e["auth"]["value_env"] for e in config["kms_aggregator"]["endpoints"]}, {"KMS_CONNECTOR_API_KEY"})
         # The rest of relayer-http's own config is kept.

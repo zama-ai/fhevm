@@ -49,7 +49,7 @@ configuration → behaviour). The implementation plans live outside the reposito
 
 One YAML file (`config/config.yaml` is the example), four sections: `name`, `log` (optional, defaults to JSON
 lines), `http` (bind address, body limit, body read timeout, the EVM chain ids served, and per Solana chain served its zama-host
-program id and public-decrypt threshold) and `kms_aggregator` (deadline,
+program id) and `kms_aggregator` (deadline,
 retries, thresholds, optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
 unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`). API keys are never in the file: each endpoint names the env var
 holding its key. Local variants go to `config/*.local.yaml`, ignored by git.

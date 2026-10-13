@@ -104,8 +104,7 @@ helm upgrade relayer "$COMMON_CHART" --version "$COMMON_CHART_VERSION" -n "$NAME
 
 # relayer-http serves decryption over HTTP for the host chains the connectors serve, through every
 # party's proxy. EVM chains go in supported_chain_ids. Each Solana chain goes in solana_chains with
-# the zama-host id and its certificate threshold. The host deploy requires a 3t+1 committee, so that
-# threshold (2t+1, kmsCertificateThreshold) equals kms_reconstruct (n - t), the EVM thresholds' value.
+# the zama-host id.
 # Chain ids stay strings, and the config reaches the chart as one string: Helm reads numeric values
 # as float64.
 helm get values kms-connector-1 -n "$NAMESPACE" --all -o yaml > "$work/connector.yaml"
@@ -120,7 +119,7 @@ ENDPOINT_URLS="$endpoint_urls" PROGRAM_ID="$program_id" THRESHOLD=$(kms_reconstr
       "log": {"format": "json"},
       "http": {
         "supported_chain_ids": [$chains[] | select(has("solanaHostProgramId") | not) | .chainId],
-        "solana_chains": ([$chains[] | select(has("solanaHostProgramId")) | {.chainId: {"program_id": strenv(PROGRAM_ID), "public_decrypt_threshold": env(THRESHOLD)}}] | .[] as $entry ireduce ({}; . * $entry))
+        "solana_chains": ([$chains[] | select(has("solanaHostProgramId")) | {.chainId: {"program_id": strenv(PROGRAM_ID)}}] | .[] as $entry ireduce ({}; . * $entry))
       },
       "kms_aggregator": {
         "public_decrypt": {"threshold": env(THRESHOLD)},

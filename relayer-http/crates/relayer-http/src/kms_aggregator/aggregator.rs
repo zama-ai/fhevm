@@ -80,16 +80,6 @@ impl<F: Flow> Aggregator<F> {
 
     /// Posts `request` to every node and answers when all nodes have finished or at the deadline
     /// (`call.timeout`). `request_id` is the relayer's own correlation id, never generated here.
-    pub async fn run(
-        &self,
-        request_id: &str,
-        request: F::Request,
-    ) -> Result<F::Output, AggregationError> {
-        self.run_at(request_id, request, self.threshold).await
-    }
-
-    /// [`Self::run`] at another threshold: a Solana public decrypt needs its chain's, validated
-    /// within `1..=nodes` with the configuration.
     #[instrument(
         name = "aggregation",
         skip_all,
@@ -100,13 +90,13 @@ impl<F: Flow> Aggregator<F> {
             handles = ?F::handles(&request),
         )
     )]
-    pub async fn run_at(
+    pub async fn run(
         &self,
         request_id: &str,
         request: F::Request,
-        threshold: usize,
     ) -> Result<F::Output, AggregationError> {
         let nodes = self.caller.endpoints().len();
+        let threshold = self.threshold;
         let timeout = self.caller.timeout();
         let started = Instant::now();
         // `timeout` is validated to be at most 60 s (see `Caller::new`): this cannot overflow.

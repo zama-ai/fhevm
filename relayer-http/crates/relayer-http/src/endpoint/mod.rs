@@ -63,8 +63,8 @@ mod tests {
         scripted(vec![vec![reply]; 13], UserChecks::default(), shutdown).0
     }
 
-    /// Mock nodes running `scripts`, thresholds 9 (user), 5 (EVM public) and 9 (Solana public), a 2 s
-    /// deadline, and the mock to count the calls.
+    /// Mock nodes running `scripts`, thresholds 9 (user) and 5 (public), a 2 s deadline, and the mock to count
+    /// the calls.
     fn scripted(
         scripts: Vec<Vec<Reply>>,
         checks: UserChecks,
@@ -169,32 +169,6 @@ mod tests {
             assert_eq!(body["code"], "user_signature_rejected", "{case}");
             assert_eq!(calls(&mock), 0, "{case}");
         }
-    }
-
-    #[tokio::test]
-    async fn solana_public_decrypt_waits_for_its_chain_threshold() {
-        // Five identical answers (t + 1) and eight refusals: enough for EVM's threshold of 5, not for the
-        // Solana chain's 9.
-        let mut scripts = vec![vec![Reply::Fixed(Fixed::Ok)]; 5];
-        scripts.extend(vec![vec![Reply::Error(ErrorCode::AclDenied)]; 8]);
-        let (app, _) = scripted(scripts, UserChecks::default(), CancellationToken::new());
-        let solana = serde_json::to_string(&public_body()).unwrap();
-        let (status, _, body) = call(app.clone(), "POST", "/v4/public-decrypt", &solana).await;
-        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
-        assert_eq!(body["code"], "acl_denied");
-        assert!(
-            body["message"].as_str().unwrap().contains("5 of 9"),
-            "{body}"
-        );
-        let (status, _, body) = call(
-            app,
-            "POST",
-            "/v4/public-decrypt",
-            &flows::public_decrypt::tests::wire(),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK, "{body}");
-        assert_eq!(body["result"]["signatures"].as_array().unwrap().len(), 5);
     }
 
     #[tokio::test]

@@ -89,7 +89,7 @@ stateDiagram-v2
 | node | one KMS connector endpoint (`endpoints[i]`, named in logs) |
 | accepted | a `200` response that passed `Flow::check` |
 | counted | accepted responses that count toward the threshold: all of them for user decrypt, the largest agreeing group for public decrypt |
-| threshold | counted responses needed to answer (configured per flow, `1 <= threshold <= n`; a Solana public decrypt passes its chain's own to `run_at`) |
+| threshold | counted responses needed to answer (configured per flow, `1 <= threshold <= n`) |
 | deadline | `call.timeout` after the start: the aggregation, and every call in it, ends by then |
 | fail fast | `counted + pending < threshold`: even if every pending node answered we could not make it, so stop now |
 | dominant error | the most frequent connector error code among the failed calls; carried by the error for the caller to act on |
@@ -97,10 +97,6 @@ stateDiagram-v2
 | `decryptionId` | the connector's content hash of the request body, recomputed by every node; logged, never checked |
 
 ## 4. How an aggregation runs (`Aggregator::run`)
-
-`run` uses the flow's configured threshold; `run_at` takes another one, validated within `1..=n` with the
-configuration. Only a Solana public decrypt uses it, with `http.solana_chains.<id>.public_decrypt_threshold`
-(zama-host verifies a certificate against 2t + 1 signatures, where EVM needs t + 1).
 
 1. Serialise the request once. Spawn one task per node (`Caller::call`) sharing the body bytes, the deadline and a
    cancellation token (a child of the process shutdown token).

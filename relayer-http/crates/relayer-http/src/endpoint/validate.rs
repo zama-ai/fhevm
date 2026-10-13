@@ -132,8 +132,6 @@ pub(crate) mod tests {
     pub(crate) const SOLANA: u64 = 0x0145_39cf_79f6_6704;
     /// The zama-host program configured for `SOLANA`.
     pub(crate) const PROGRAM: [u8; 32] = [0x4c; 32];
-    /// `SOLANA`'s public-decrypt threshold, 2t + 1 at n = 13.
-    pub(crate) const SOLANA_PUBLIC_THRESHOLD: usize = 9;
 
     /// EVM chains 1 and 137, and `SOLANA` on `PROGRAM`.
     pub(crate) fn http() -> HttpConfig {
@@ -146,7 +144,6 @@ pub(crate) mod tests {
                 SOLANA,
                 SolanaChainConfig {
                     program_id: PROGRAM,
-                    public_decrypt_threshold: SOLANA_PUBLIC_THRESHOLD,
                 },
             )]),
         }
