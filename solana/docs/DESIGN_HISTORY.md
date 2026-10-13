@@ -788,6 +788,77 @@ limits with the upstream symbol that defines each.
 **Status:** replaced by HTTP decryption through relayer-http. A Solana decryption reaches the KMS
 connector only as `POST /v1/user-decrypt` or `POST /v1/public-decrypt`.
 
+**Gateway relayer** (zama-ai/fhevm#4408). The gateway relayer (`relayer/`) submitted Solana user
+decryptions to the Gateway's `solanaUserDecryptionRequest` and Solana public decryptions to
+`solanaPublicDecryptionRequest`, and pre-checked permit scopes and delegation rows before the
+Gateway fee (`relayer/src/host/solana_user_decrypt_precheck.rs`). It now submits no Solana
+decryption. A Solana host chain stays in its `host_chains` for input proofs, which the Gateway's
+`verifyProofRequestSolana` serves until transciphering replaces it; the ACL preflight and the
+EIP-712 signature pre-check skip that chain. The replaced statements, as written:
+
+DD-026:
+
+> The js-sdk builds the blob and the relayer submits the call.
+
+DD-048:
+
+> the relayer pre-checks scopes and dead delegation rows advisorily and nothing else (INVARIANTS
+> #50).
+
+DD-053:
+
+> The connector, relayer and SDK derive PDAs from configured ids
+
+DD-060:
+
+> The relayer requires `encryptedStores` for Solana handles and refuses it for EVM handles; the
+> stores are part of the request's content hash.
+
+> It emits one event, so the relayer looks for the Solana request event when the EVM one is absent
+> from the receipt.
+
+DD-070:
+
+> the relayer pre-checks delegations
+
+> - the relayer's user-decrypt pre-check (`relayer/src/host/acl_checker.rs`);
+
+> Neither service turns that into a terminal refusal:
+>
+> - the relayer pre-check reads a refused delegation again on its retry policy (`max_attempts`,
+>   `retry_interval_ms`) before the refusal stands. Pinned by
+>   `a_grant_that_finalizes_after_the_first_row_read_passes` and
+>   `rows_still_dead_on_the_last_attempt_refuse`. The example policy, three reads one second apart,
+>   covers Alpenglow's finality, not TowerBFT's 12.8 s. A refusal that stands costs at least
+>   `(max_attempts - 1) × retry_interval_ms` of waiting: two seconds with that policy.
+
+> `row_read_requires_the_first_read_slot` (the relayer pre-check's row read).
+
+`EVM_PARITY.md`, Gateway, coprocessor and KMS:
+
+> The relayer handles request shape and routing;
+
+`INVARIANTS.md`, delegation rows:
+
+> The relayer refuses dead rows advisorily before the gateway fee (#50).
+
+`INVARIANTS.md` #50:
+
+> **50. [OPERATIONAL]** The relayer's ACL preflight covers EVM host chains and, advisorily, Solana
+> user-decrypt entries (`relayer/src/host/solana_user_decrypt_precheck.rs`). Before the gateway fee
+> it refuses an entry whose encrypted store's application lies outside the permit's allowed scopes,
+> as EVM's `Decryption.sol` refuses a contract outside the signed contract addresses, and a
+> delegated entry whose delegation rows are dead at the host Clock of the read (absent, revoked,
+> expired); every ambiguity of data passes. Allow leaves and the permit watermark are not
+> pre-checked — the connector fetches the leaf, and there is no cheaper reading of it — so a
+> request refused on them is rejected by the KMS connectors after the gateway fee is paid. This
+> does not affect authorization (#42, #45); for now we accept that a rejected request can still
+> cost a fee, and that this leaves room for spam.
+
+`TESTING.md`, the roots that can see a Solana change:
+
+> `relayer` (the delegation pre-check reads records through `zama-solana-acl`)
+
 **KMS connector** (zama-ai/fhevm#4405). The gw-listener no longer subscribes to the Gateway's
 `SolanaUserDecryptionRequest` and `SolanaPublicDecryptionRequest` events, and the connector stores
 a Solana decryption only from its HTTP endpoint. The replaced wording, from DD-026:

@@ -164,8 +164,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 repository has more than a dozen, so the number is not the useful fact — what
 matters is which ones can see a Solana change, and the criterion is a path
 dependency on a crate under `solana/`. Three do: `coprocessor/fhevm-engine`
-(host-listener, solana-host-follower, solana-merkle-proof-service), `kms-connector`, and `relayer` (the delegation
-pre-check reads records through `zama-solana-acl`). Everything else in the repo — `shared/*`,
+(host-listener, solana-host-follower, solana-merkle-proof-service), `kms-connector`, and `relayer` (it reads the Solana
+host chain id's type byte through `zama-solana-acl`). Everything else in the repo — `shared/*`,
 `test-suite/gateway-stress`, the generated `*_bindings` — depends on no Solana
 crate and cannot break from one.
 
