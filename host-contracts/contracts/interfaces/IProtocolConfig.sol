@@ -8,11 +8,9 @@ import {IProtocolConfigBase} from "./IProtocolConfigBase.sol";
 /**
  * @title Interface for the ProtocolConfig contract.
  * @notice ProtocolConfig manages the KMS node set, threshold configuration, and context lifecycle
- * on the host chains.
+ * on the canonical host chain.
  * @dev Ethereum is the canonical host and source of truth: the lifecycle/quorum functions run only
- * there. The same contract is deployed on every other host chain as a read-replica, advancing state
- * only through the owner-only mirror functions, which copy already-finalized Ethereum state without
- * replaying confirmations.
+ * there. Every other host chain runs `ProtocolConfigReplica` (see `IProtocolConfigReplica`).
  */
 interface IProtocolConfig is IProtocolConfigBase {
     /**
@@ -150,31 +148,6 @@ interface IProtocolConfig is IProtocolConfigBase {
         uint64 gwStartBlock
     );
 
-    /**
-     * @notice Emitted when a canonical KMS context is mirrored and activated.
-     * @param contextId The mirrored canonical context ID.
-     * @param epochId The mirrored canonical epoch ID activated for the context.
-     * @param kmsNodeParams The KMS nodes mirrored from the canonical context, including MPC metadata.
-     * @param thresholds The thresholds mirrored from the canonical context.
-     * @param softwareVersion The KMS software version of the canonical context.
-     * @param pcrValues Accepted enclave PCR values of the canonical context.
-     */
-    event MirrorKmsContextAndEpoch(
-        uint256 indexed contextId,
-        uint256 indexed epochId,
-        KmsNodeParams[] kmsNodeParams,
-        KmsThresholds thresholds,
-        string softwareVersion,
-        PcrValues[] pcrValues
-    );
-
-    /**
-     * @notice Emitted when a canonical KMS epoch is mirrored and activated.
-     * @param contextId The active mirrored context ID.
-     * @param epochId The mirrored canonical epoch ID.
-     */
-    event MirrorKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
-
     // -----------------------------------------------------------------------------------------
     // Errors
     // -----------------------------------------------------------------------------------------
@@ -225,11 +198,6 @@ interface IProtocolConfig is IProtocolConfigBase {
     /// @param txSender The transaction sender.
     error EpochActivationSignerDoesNotMatchTxSender(address signer, address txSender);
 
-    /// @notice The mirrored epoch ID is not strictly greater than the latest known one.
-    /// @param epochId The rejected epoch ID.
-    /// @param currentEpochId The latest known epoch ID.
-    error NonIncreasingEpochId(uint256 epochId, uint256 currentEpochId);
-
     /// @notice The coprocessor `softwareVersion` argument is the empty string.
     error EmptySoftwareVersion();
 
@@ -261,13 +229,9 @@ interface IProtocolConfig is IProtocolConfigBase {
 
     /**
      * @notice Returns the context anchor recorded when NewKmsContext was emitted.
-     * @dev Canonical-only. The canonical definition and bootstrap paths record the anchor. The replica
-     *      paths (`initializeFromCanonical` and `mirrorKmsContextAndEpoch`) do not record it. On a
-     *      replica this returns `(0, 0x0)` for every mirrored context. Cross-chain verification tooling
-     *      must not compare the anchor on a replica.
      * @param contextId The context ID.
-     * @return emissionBlockNumber The block where NewKmsContext was emitted, or 0 on a replica.
-     * @return contextInfoHash Hash of the emitted context payload, or 0x0 on a replica.
+     * @return emissionBlockNumber The block where NewKmsContext was emitted, or 0 if no anchor was recorded.
+     * @return contextInfoHash Hash of the emitted context payload, or 0x0 if no anchor was recorded.
      */
     function getKmsContextAnchor(
         uint256 contextId
@@ -354,51 +318,4 @@ interface IProtocolConfig is IProtocolConfigBase {
         ChainUpgradeWindow[] calldata chainUpgradeWindows,
         uint64 gwStartBlock
     ) external;
-
-    // -----------------------------------------------------------------------------------------
-    // Mirror functions
-    //
-    // The write path for non-canonical replicas. Ethereum's quorum has already finalized the state
-    // these import, so they skip the confirmation flow and land it as Active. Owner-only; the
-    // operator must fan each Ethereum rotation out to every replica in order. The strictly-increasing
-    // ID checks guard against rollback, not skipped calls.
-    //
-    // The contract does not track deployment mode on-chain. The mirror entry points target a replica
-    // only. The committee and owner entry points target a canonical deployment only. Nothing reverts
-    // when a caller uses the wrong entry points on the wrong deployment. This wrong use is unsupported
-    // operator misuse.
-    // -----------------------------------------------------------------------------------------
-
-    /**
-     * @notice Mirror and immediately activate a canonical KMS context.
-     * @dev Non-canonical hosts use this to import signer/threshold state without replaying
-     *      context-creation confirmations. The `contextId` and `epochId` must be strictly greater
-     *      than the latest active context and latest known epoch IDs. Gaps are allowed (canonical
-     *      contexts/epochs that were destroyed or never activated are simply never mirrored).
-     * @param contextId The canonical context ID to mirror; must exceed the current active context ID.
-     * @param epochId The canonical epoch ID to activate for the mirrored context.
-     * @param kmsNodeParams The KMS nodes from the canonical context, including MPC metadata.
-     * @param thresholds The thresholds from the canonical context.
-     * @param softwareVersion The KMS software version of the canonical context.
-     * @param pcrValues Accepted enclave PCR values of the canonical context.
-     */
-    function mirrorKmsContextAndEpoch(
-        uint256 contextId,
-        uint256 epochId,
-        KmsNodeParams[] calldata kmsNodeParams,
-        KmsThresholds calldata thresholds,
-        string calldata softwareVersion,
-        PcrValues[] calldata pcrValues
-    ) external;
-
-    /**
-     * @notice Mirror and immediately activate a canonical KMS epoch for the active context.
-     * @dev Non-canonical hosts use this to advance the active epoch without replaying
-     *      epoch-activation confirmations. The `epochId` must be strictly greater than the
-     *      latest known epoch ID. The context must already be the active mirrored context
-     *      (mirror the context first with `mirrorKmsContextAndEpoch`).
-     * @param contextId The active mirrored context the epoch belongs to.
-     * @param epochId The canonical epoch ID to mirror; must exceed the latest known epoch ID.
-     */
-    function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
 }
