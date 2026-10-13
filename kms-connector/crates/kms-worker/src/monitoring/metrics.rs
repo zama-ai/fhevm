@@ -143,7 +143,7 @@ mod tests {
             ),
             None,
             PropagationContext::default(),
-            connector_utils::types::db::RequestSource::OnChain,
+            connector_utils::types::db::RequestSource::Http,
         );
         let histogram = DECRYPTION_LATENCY_HISTOGRAM
             .with_label_values(&[EventType::from(&event.kind).as_str()]);

@@ -387,7 +387,7 @@ pub async fn insert_solana_public_decryption<'e>(
             status = 'pending',
             created_at = EXCLUDED.created_at,
             otlp_context = EXCLUDED.otlp_context
-        WHERE existing.status = 'failed' AND existing.source = 'http' AND EXCLUDED.source = 'http'",
+        WHERE existing.status = 'failed' AND existing.source = 'http'",
         request.decryption_id.as_le_slice(),
         &column(request.ct_handles()),
         &column(request.encrypted_stores()),
@@ -433,7 +433,7 @@ pub async fn insert_solana_user_decryption<'e>(
             status = 'pending',
             created_at = EXCLUDED.created_at,
             otlp_context = EXCLUDED.otlp_context
-        WHERE existing.status = 'failed' AND existing.source = 'http' AND EXCLUDED.source = 'http'",
+        WHERE existing.status = 'failed' AND existing.source = 'http'",
         request.decryption_id.as_le_slice(),
         &column(|e| e.handle),
         permit.transport_key().as_bytes().as_slice(),

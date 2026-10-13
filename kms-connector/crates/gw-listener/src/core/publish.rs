@@ -96,11 +96,9 @@ async fn publish_event_inner<'e>(
             publish_user_decryption_v2(executor, e, tx_hash, created_at, otlp_ctx).await
         }
         ProtocolEventKind::SolanaPublicDecryption(_)
-        | ProtocolEventKind::SolanaUserDecryptionV1(_) => {
-            return Err(anyhow!(
-                "Solana decryptions arrive through HTTP, not on chain"
-            ));
-        }
+        | ProtocolEventKind::SolanaUserDecryptionV1(_) => Err(anyhow!(
+            "Solana decryptions arrive through HTTP, not on chain"
+        )),
         ProtocolEventKind::PrepKeygen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
             publish_prep_keygen_request(executor, e, params_type, tx_hash, created_at, otlp_ctx)

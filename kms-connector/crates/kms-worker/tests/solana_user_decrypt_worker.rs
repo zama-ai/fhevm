@@ -282,11 +282,11 @@ async fn a_handle_of_another_chain_fails_the_signature() {
     let world = World::at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
-    let (mut gateway, blob) = RequestBuilder::new(&wallet)
+    let (mut fields, blob) = RequestBuilder::new(&wallet)
         .direct(&encrypted_store, live)
         .parts();
-    gateway.handles[0][22..30].copy_from_slice(&(CHAIN_ID + 1).to_be_bytes());
-    let request = SolanaUserDecryptionRequestV1::new(U256::ONE, gateway, blob).unwrap();
+    fields.handles[0][22..30].copy_from_slice(&(CHAIN_ID + 1).to_be_bytes());
+    let request = SolanaUserDecryptionRequestV1::new(U256::ONE, fields, blob).unwrap();
 
     let failure = authorize_request(
         &ScriptedReader::constant(world.clone()),
@@ -378,8 +378,8 @@ impl Matcher for SolanaIdentity {
 }
 
 /// An authorized request reaches the KMS as its Solana signer: the signer's base58 public key as
-/// `client_address`, and the transport key the Gateway emitted. A poll of a
-/// request already sent authorizes it again and fetches the result without sending it twice.
+/// `client_address`, and the request's transport key. A poll of a request already sent
+/// authorizes it again and fetches the result without sending it twice.
 #[rstest]
 #[case::send(false)]
 #[case::poll(true)]

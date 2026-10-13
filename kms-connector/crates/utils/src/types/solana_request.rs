@@ -12,8 +12,8 @@ pub use zama_solana_request::{
     SolanaUserDecryptFields,
 };
 
-/// A Solana user decryption and the Gateway decryption id it answers. The signature is not
-/// verified here: the worker verifies it on every attempt.
+/// A Solana user decryption and the decryption id derived from its HTTP request. The signature
+/// is not verified here: the worker verifies it on every attempt.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SolanaUserDecryptionRequestV1 {
     pub decryption_id: U256,
@@ -55,7 +55,7 @@ pub struct SolanaPublicHandle {
 }
 
 /// A Solana public decryption: 1 to [`MAX_REQUEST_HANDLES`] handles of one chain, each with its
-/// encrypted store, and the KMS routing `extra_data` the Gateway pinned the context from.
+/// encrypted store, and the KMS routing `extra_data` that names the KMS context.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SolanaPublicDecryptionRequest {
     pub decryption_id: U256,

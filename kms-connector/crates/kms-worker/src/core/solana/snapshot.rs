@@ -7,9 +7,9 @@
 //! behind the first read refuses it. The first read only locates the rows; every rule that
 //! authorizes uses the last read.
 //!
-//! A refusal from a node behind is recoverable. The worker loop retries a Gateway request; an HTTP
-//! request is not retried internally, so its caller receives `upstream_transient` and resubmits,
-//! as for any transient failure of an EVM request.
+//! A refusal from a node behind is recoverable. A Solana request arrives over HTTP and is not
+//! retried internally, so its caller receives `upstream_transient` and resubmits, as for any
+//! transient failure of an EVM HTTP request.
 
 use solana_account_decoder_client_types::{UiAccountData, UiAccountEncoding};
 use solana_commitment_config::CommitmentConfig;
