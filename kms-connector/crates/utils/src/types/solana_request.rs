@@ -7,10 +7,7 @@ use alloy::primitives::{B256, U256};
 use solana_pubkey::Pubkey;
 use zama_solana_request::{SolanaUserDecryptRequest, public_request_chain_id};
 
-pub use zama_solana_request::{
-    MAX_REQUEST_HANDLES, SolanaEntryClaims, SolanaRequestBlob, SolanaRequestError,
-    SolanaUserDecryptFields,
-};
+pub use zama_solana_request::{MAX_REQUEST_HANDLES, SolanaRequestError, SolanaUserDecryptFields};
 
 /// A Solana user decryption and the decryption id derived from its HTTP request. The signature
 /// is not verified here: the worker verifies it on every attempt.
@@ -24,11 +21,10 @@ impl SolanaUserDecryptionRequestV1 {
     pub fn new(
         decryption_id: U256,
         fields: SolanaUserDecryptFields,
-        blob: SolanaRequestBlob,
     ) -> Result<Self, SolanaRequestError> {
         Ok(Self {
             decryption_id,
-            request: SolanaUserDecryptRequest::assemble(fields, blob)?,
+            request: SolanaUserDecryptRequest::assemble(fields)?,
         })
     }
 
@@ -119,7 +115,7 @@ impl SolanaPublicDecryptionRequest {
 #[cfg(all(test, feature = "tests"))]
 mod tests {
     use super::*;
-    use crate::tests::rand::{rand_solana_handle, solana_user_decryption_parts};
+    use crate::tests::rand::rand_solana_handle;
 
     #[test]
     fn a_public_request_pairs_each_handle_with_its_store() {
@@ -147,18 +143,5 @@ mod tests {
         );
         let at_cap = vec![rand_solana_handle(); MAX_REQUEST_HANDLES];
         assert!(SolanaPublicDecryptionRequest::new(U256::ONE, &at_cap, &at_cap, vec![]).is_ok());
-    }
-
-    #[test]
-    fn rejects_a_blob_that_names_another_entry_count() {
-        let (mut fields, blob) = solana_user_decryption_parts(rand_solana_handle());
-        fields.handles.push(fields.handles[0]);
-        assert_eq!(
-            SolanaUserDecryptionRequestV1::new(U256::ONE, fields, blob),
-            Err(SolanaRequestError::EntryCount {
-                handles: 2,
-                entries: 1
-            })
-        );
     }
 }

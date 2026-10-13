@@ -30,6 +30,8 @@ actix-web = { version = "4", default-features = false, optional = true }
 
 [dev-dependencies]
 serde_json = { version = "1", default-features = false, features = ["std"] }
+zama-solana-acl = { path = "../../../solana/crates/zama-solana-acl" }
+zama-solana-permit = { path = "../../../solana/crates/zama-solana-permit" }
 
 [features]
 # Server-side helpers for the connector endpoint (i.e. `actix_web::ResponseError` impls).

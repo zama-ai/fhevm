@@ -4765,6 +4765,8 @@ dependencies = [
  "serde_json",
  "strum 0.28.0",
  "thiserror 2.0.20",
+ "zama-solana-acl",
+ "zama-solana-permit",
  "zama-solana-request",
 ]
 

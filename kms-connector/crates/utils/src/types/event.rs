@@ -1,6 +1,5 @@
 use super::solana_request::{
-    SolanaEntryClaims, SolanaPublicDecryptionRequest, SolanaRequestBlob, SolanaUserDecryptFields,
-    SolanaUserDecryptionRequestV1,
+    SolanaPublicDecryptionRequest, SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
 };
 use crate::{
     monitoring::otlp::PropagationContext,
@@ -321,29 +320,30 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let extra_data: Vec<u8> = row.try_get("extra_data")?;
     let kind = match row.try_get::<AttestationType, _>("attestation_type")? {
         AttestationType::Solana => {
-            let fields = SolanaUserDecryptFields {
-                handles: ct_handles.iter().map(|h| h.0).collect(),
-                transport_key: public_key,
-                start_timestamp: u64::try_from(row.try_get::<i64, _>("start_timestamp")?)?,
-                duration_seconds: u64::try_from(row.try_get::<i64, _>("duration_seconds")?)?,
-                extra_data,
-            };
+            // The table's `user_decryption_requests_attestation_columns` check keeps both arrays
+            // the length of `ct_handles` on a Solana row, so the zip below drops nothing.
             let owner_addresses: Vec<Vec<u8>> = row.try_get("handle_owner_addresses")?;
             let encrypted_stores: Vec<Vec<u8>> = row.try_get("handle_encrypted_stores")?;
             let allowed_scopes: Vec<Vec<u8>> = row.try_get("allowed_scopes")?;
-            let blob = SolanaRequestBlob {
+            let fields = SolanaUserDecryptFields {
                 user_address: row.try_get("user_address")?,
+                transport_key: public_key,
                 allowed_scopes: allowed_scopes
                     .into_iter()
                     .map(|scope| fixed_width(scope, "allowed_scopes"))
                     .collect::<anyhow::Result<_>>()?,
+                start_timestamp: u64::try_from(row.try_get::<i64, _>("start_timestamp")?)?,
+                duration_seconds: u64::try_from(row.try_get::<i64, _>("duration_seconds")?)?,
                 verifying_program_id: row.try_get("verifying_program_id")?,
+                extra_data,
                 signature: row.try_get("signature")?,
-                entries: owner_addresses
-                    .into_iter()
+                entries: ct_handles
+                    .iter()
+                    .zip(owner_addresses)
                     .zip(encrypted_stores)
-                    .map(|(owner_address, encrypted_store)| {
-                        Ok(SolanaEntryClaims {
+                    .map(|((handle, owner_address), encrypted_store)| {
+                        Ok(zama_solana_request::HandleEntry {
+                            handle: handle.0,
                             owner_address: fixed_width(owner_address, "handle_owner_addresses")?,
                             encrypted_store: fixed_width(
                                 encrypted_store,
@@ -353,7 +353,7 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
                     })
                     .collect::<anyhow::Result<_>>()?,
             };
-            SolanaUserDecryptionRequestV1::new(decryption_id, fields, blob)?.into()
+            SolanaUserDecryptionRequestV1::new(decryption_id, fields)?.into()
         }
         AttestationType::Legacy => ProtocolEventKind::UserDecryption(UserDecryptionRequest {
             decryptionId: decryption_id,

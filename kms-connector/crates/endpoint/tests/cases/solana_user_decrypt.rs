@@ -64,6 +64,7 @@ async fn solana_rows_of_the_wrong_shape_are_unwritable() -> anyhow::Result<()> {
     for change in [
         "user_address = decode(repeat('00', 20), 'hex')",
         "handle_owner_addresses = NULL",
+        "handle_owner_addresses = ARRAY[handle_owner_addresses[1], handle_owner_addresses[1]]",
         "signature = NULL",
         "signature = decode(repeat('00', 63), 'hex')",
         "verifying_program_id = NULL",
