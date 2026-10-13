@@ -47,9 +47,13 @@ spec:
       labels:
         app: coprocessor-db-migration
         app.kubernetes.io/name: {{ .Release.Name }}-db-migration
-        {{- with merge (deepCopy ($c.podLabels | default dict)) (.Values.podLabels | default dict) }}
+        {{- with $c.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+      {{- with $c.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       {{- with $c.imagePullSecrets }}
       imagePullSecrets:

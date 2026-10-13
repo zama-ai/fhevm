@@ -1,33 +1,32 @@
 # =============================================================================
-# FHEVM Coprocessor Configuration
+# FHEVM Coprocessor
 # =============================================================================
-# This chart deploys the FHEVM coprocessor components including:
-# - Configuration setup
-# - Database migration
-# - Host listener (blockchain event processing)
-# - Gateway listener (gateway event processing)
-# - TFHE worker (FHE computation)
-# - ZK proof worker (zero-knowledge proof generation)
-# - SNS worker (notification service)
-# - Consensus detector (manifest publication and peer verification)
-# - Transaction sender (blockchain transaction submission)
-# - Upgrade controller / consensus detector (RFC-021 GCS control plane, off by default)
+# Components (each toggled by <component>.enabled):
+#   dbMigration        Job: schema migration and host_chains seeding
+#   hostListener       host chain events (listener, poller, catchupOnly, consumer)
+#   gwListener         gateway chain events
+#   tfheWorker         FHE computation
+#   zkProofWorker      input proof verification
+#   snsWorker          ciphertext switch-and-squash and S3 upload
+#   consensusDetector  manifest publication and peer verification
+#   txSender           gateway transaction submission
+#   upgradeController  RFC-021 GCS upgrade FSM (green fleet only)
+#
+# Every workload block is overlaid on `defaults` (see below). Keys accepted by
+# every component: enabled, nameOverride (resource name, default
+# <release>-<component>), image, env, disabledArgs (template-injected flags to
+# drop, kebab-case without `--`), extraArgs (raw flags appended after the
+# template-injected ones) and every `defaults` key.
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# Common Configuration
-# -----------------------------------------------------------------------------
-# Shared configuration across all coprocessor components
 commonConfig:
   # Single switch for contract configuration. Selects the bundled
-  # configs/<network>.yaml preset; allowed values: "" (off), "devnet",
-  # "testnet", "mainnet". An unrecognized value fails the render.
+  # configs/<network>.yaml preset: "" (off), "devnet", "testnet" or "mainnet".
   # When set (and contractConfigMap.enabled is true), the chart:
   #   - renders the <release>-contract-addresses ConfigMap (see contractConfigMap);
   #   - generates chains[] entries for every host chain in the preset;
   #   - fills empty gatewayContractAddresses fields from the preset.
-  # Values set explicitly always win over the preset. Per-release settings
-  # (RPC URLs, which listeners run, images, resources) still come from values.
+  # Values set explicitly always win over the preset.
   #
   # Minimal gateway release:
   #   commonConfig:
@@ -45,138 +44,105 @@ commonConfig:
   #       hostListener:
   #         listener: {enabled: true, useLegacyName: true}
   network: ""
+
   # Keep production Blue on legacy material during a compressed-key migration.
   # Fresh and GPU deployments must disable this safeguard explicitly.
   forceLegacyServerKey: true
 
-  # Database connection components. Each field accepts either a literal `value` or a
-  # `valueFrom` block (secretKeyRef or configMapKeyRef). Leave unset to inject nothing.
+  # Fields documented as "value spec" accept either a literal `value` or a
+  # `valueFrom` block (secretKeyRef / configMapKeyRef); unset injects nothing.
+
+  # Database connection (value specs).
   databaseUser: {}
   databasePassword: {}
   databaseEndpoint: {}
 
-  # Database connection string. Plain string. May reference other env vars via
-  # $(VAR_NAME) syntax — DATABASE_USER, DATABASE_PASSWORD, and DATABASE_ENDPOINT
-  # are all declared before DATABASE_URL and are available for substitution.
-  # Required for the coprocessor to connect.
-  #   password mode example: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/coprocessor"
-  #   iam mode example:      "postgresql://$(DATABASE_USER)@$(DATABASE_ENDPOINT)/coprocessor"
+  # Plain string. May reference $(DATABASE_USER), $(DATABASE_PASSWORD) and
+  # $(DATABASE_ENDPOINT), which are declared before DATABASE_URL.
+  #   password mode: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/coprocessor"
+  #   iam mode:      "postgresql://$(DATABASE_USER)@$(DATABASE_ENDPOINT)/coprocessor"
   databaseUrl: ""
 
-  # Database authentication mode. Controls which auxiliary env vars the chart
-  # injects:
-  #   "password" — injects DATABASE_PASSWORD (from databasePassword).
-  #   "iam"      — injects DATABASE_IAM_AUTH_ENABLED=true, DATABASE_IAM_REGION,
-  #                and DATABASE_SSL_ROOT_CERT_PATH; the runtime resolves
-  #                short-lived AWS RDS IAM tokens using the pod's AWS identity.
-  # Your databaseUrl should match: embed the password in password mode, omit
-  # it in iam mode (the runtime overwrites the URL password with the IAM token).
+  # "password" injects DATABASE_PASSWORD. "iam" injects
+  # DATABASE_IAM_AUTH_ENABLED=true, DATABASE_IAM_REGION and
+  # DATABASE_SSL_ROOT_CERT_PATH; the runtime replaces the URL password with a
+  # short-lived RDS IAM token from the pod's AWS identity.
   databaseAuthMode: password
 
-  # Optional when databaseAuthMode=iam. Pins the AWS region used for IAM token
-  # signing. If unset, the AWS SDK resolves the region from the environment
-  # (e.g. AWS_REGION set by IRSA). Accepts `value` or `valueFrom`
-  # (secretKeyRef/configMapKeyRef).
+  # iam mode only (value spec). Unset lets the AWS SDK resolve the region.
   databaseIamRegion: {}
 
-  # RDS CA bundle injection (databaseAuthMode=iam only). When enabled, the chart
-  # renders configs/global-rds-ca-root.pem into a ConfigMap, mounts it read-only
-  # into every component, and AUTO-SETS DATABASE_SSL_ROOT_CERT_PATH to
-  # mountPath/fileName — so you do not also set databaseSslRootCertPath below.
-  # The runtime enforces verify-full TLS against this bundle.
+  # iam mode only. Mounts the RDS CA bundle (configs/global-rds-ca-root.pem, or
+  # `content` when set) into every component and sets
+  # DATABASE_SSL_ROOT_CERT_PATH to mountPath/fileName (verify-full TLS).
   databaseSslRootCert:
     enabled: false
     mountPath: /etc/ssl/rds
     fileName: global-rds-ca-root.pem
-    # Optional: override the bundled AWS RDS global CA with your own PEM content.
-    # When empty, the chart uses configs/global-rds-ca-root.pem shipped here.
     content: ""
 
-  # Path inside the pod to the RDS CA bundle, used when databaseAuthMode=iam.
-  # Only needed as a fallback when databaseSslRootCert.enabled=false and you
-  # mount the cert yourself (e.g. via your own volume or an IRSA sidecar); when
-  # databaseSslRootCert.enabled=true this field is ignored (the path is derived
-  # from the mount). Accepts `value` or `valueFrom` (secretKeyRef/configMapKeyRef).
+  # iam mode only (value spec): path of a CA bundle you mount yourself. Ignored
+  # when databaseSslRootCert.enabled is true.
   databaseSslRootCertPath: {}
 
-  # Optional tenant API key. Accepts `value` or `valueFrom`
-  # (secretKeyRef/configMapKeyRef). Injected as TENANT_API_KEY for dbMigration,
-  # host listeners, and v0.11 snsWorker; host listeners also render
-  # --coprocessor-api-key and v0.11 snsWorker renders --tenant-api-key.
+  # v0.11 only (value spec). Injected as TENANT_API_KEY into dbMigration, host
+  # listeners and snsWorker, which also get --coprocessor-api-key /
+  # --tenant-api-key.
   tenantApiKey: {}
 
-  # Host chain RPC URLs and contracts are per chain: see chains[].
-
-  # Chain id of the canonical chain hosting the ProtocolConfig contract. Only
-  # the host-listener whose own chain id matches this value decodes
-  # ProtocolConfig.CoprocessorUpgradeProposed events.
+  # Chain id of the chain hosting the ProtocolConfig contract. Only the host
+  # listener of that chain decodes CoprocessorUpgradeProposed events.
   canonicalProtocolConfigChainId: ""
 
-  # Coprocessor stack version baked into the service images (the value printed
-  # by `<binary> --stack-version`). When set, it is surfaced as the
-  # `app.kubernetes.io/version` pod label so blue/green tooling can select pods
-  # by stack version. Should mirror the STACK_VERSION compiled into the images.
-  # Also appended to the contract-address ConfigMap names (see
-  # contractConfigMap below) so blue and green releases do not share them.
+  # Stack version compiled into the images (`<binary> --stack-version`).
+  # Surfaced as the app.kubernetes.io/version pod label for blue/green
+  # selection, and appended to the contract ConfigMap name.
   stackVersion: ""
-  # Extra Deployment/Service matchLabels. Leave empty for a single release
-  # (selector stays immutable). Set when installing a second fleet in the same
-  # namespace (blue-green BCS + GCS), e.g. {fhevm.zama.ai/fleet: bcs}.
+
+  # Extra Deployment/Service matchLabels, for a second fleet in the same
+  # namespace (blue-green), e.g. {fhevm.zama.ai/fleet: bcs}. Selectors are
+  # immutable: leave empty for a single release.
   extraSelectorLabels: {}
-  # Optional startup probe that runs `<binary> --stack-version` in-cluster to
-  # confirm the deployed image exposes the expected stack-version flag. Disabled
-  # by default so it does not affect existing deployments.
+
+  # Startup probe running `<binary> --stack-version` to check the image.
   stackVersionProbe:
     enabled: false
     periodSeconds: 10
     failureThreshold: 30
 
-  # Gateway chain configuration. Consumed by gwListener, txSender and
-  # consensusDetector. Each field accepts either a literal `value` or a
-  # `valueFrom` block (secretKeyRef or configMapKeyRef). Leave unset to inject
-  # nothing. When commonConfig.network is set, empty gatewayContractAddresses
-  # fields default to the preset's gateway.<contract>.address in the contract
-  # ConfigMap (multichainAcl included; disable its arg on v0.12+ as before).
-  gatewayUrl: {}              # required by consensusDetector
+  # Gateway chain (value specs), used by gwListener, txSender and
+  # consensusDetector. With commonConfig.network set, empty address fields
+  # default to the preset.
+  gatewayUrl: {}              # required by gwListener, txSender, consensusDetector
   gatewayContractAddresses:
     inputVerification: {}     # required by gwListener, txSender
     ciphertextCommits: {}     # required by txSender; optional for gwListener (drift detection)
     gatewayConfig: {}         # required by consensusDetector; optional for gwListener (drift detection)
-    multichainAcl: {}         # legacy v0.11 txSender only; disable the arg on v0.12+
+    multichainAcl: {}         # v0.11 txSender only; add multichain-acl-address to txSender.disabledArgs otherwise
 
-  # Distributed tracing configuration
   tracing:
     enabled: false
     endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
 
-  # Env vars applied to all components before component-level env (which wins).
-  # Use for shared vars or to override commonConfig-injected defaults.
+  # Env vars for every component, before component-level env (which wins).
   env: []
-
-# -----------------------------------------------------------------------------
-# Global Pod Configuration
-# -----------------------------------------------------------------------------
-# podLabels is merged into every pod template (Deployments + dbMigration Job).
-# Per-component overrides at <component>.podLabels are merged on top and win
-# on key conflict.
-podAnnotations: {}
-podLabels: {}
 
 # -----------------------------------------------------------------------------
 # Workload defaults
 # -----------------------------------------------------------------------------
-# Base values for every workload (singleton components, host listener modes
-# and the dbMigration Job). A component block overlays them: maps deep-merge,
-# any other value replaces the default (false, 0 and "" included).
-# Example: run every image of a release from one tag and service account:
+# Base values for every workload (components, host listener modes and the
+# dbMigration Job). A component block overlays them: maps deep-merge, any
+# other value replaces the default (false, 0 and "" included); null keeps the
+# default.
+# Example: one tag and service account for the whole release:
 #   defaults:
 #     image: {tag: v0.14.1}
 #     serviceAccountName: coprocessor
 #   tfheWorker:
-#     image: {tag: v0.14.1-gpu}   # still uses defaults.image.registry
+#     image: {tag: v0.14.1-gpu}
 defaults:
-  # Image reference: <registry>/<repository>:<tag>. Components set repository;
-  # registry and tag fall back to these. An empty tag means the chart appVersion.
+  # <registry>/<repository>:<tag>. Components set repository. An empty tag
+  # means the chart appVersion.
   image:
     registry: hub.zama.org/zama-protocol/zama-ai/fhevm
     tag: ""
@@ -186,7 +152,7 @@ defaults:
 
   replicas: 1
 
-  # Existing SA for workload identity (e.g. IRSA). Unset = namespace default.
+  # Existing service account (e.g. IRSA). Unset uses the namespace default.
   serviceAccountName:
 
   resources:
@@ -197,8 +163,8 @@ defaults:
       cpu: 500m
       memory: 512Mi
 
-  # Health check probes (ignored by the dbMigration Job). Components without a
-  # healthcheck port (consensusDetector, upgradeController) must keep them off.
+  # Ignored by the dbMigration Job. consensusDetector and upgradeController
+  # have no healthcheck port and must keep them off.
   probes:
     liveness:
       enabled: false
@@ -215,19 +181,42 @@ defaults:
       initialDelaySeconds: 5
       periodSeconds: 10
 
-  # tracing.enabled unset follows commonConfig.tracing.enabled. tracing.service
-  # is the stable OTEL service name; empty falls back to the pod name, which
-  # fragments traces across replicas and rollouts.
+  # tracing.enabled unset follows commonConfig.tracing.enabled. An empty
+  # service falls back to the pod name, which fragments traces across pods.
   tracing:
     service: ""
 
   serviceMonitor:
     enabled: false
 
-  # Extra pod labels merged on top of global podLabels (these win on conflict).
-  podLabels: {}
+  # CPU-based HorizontalPodAutoscaler, per component (hpa.enabled: true).
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 60
+        selectPolicy: Max
+        policies:
+          - type: Percent
+            value: 100
+            periodSeconds: 15
+          - type: Pods
+            value: 2
+            periodSeconds: 60
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        selectPolicy: Min
+        policies:
+          - type: Percent
+            value: 40
+            periodSeconds: 60
 
-  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
+  podLabels: {}
+  podAnnotations: {}
+
   nodeSelector: {}
   affinity: {}
   tolerations: []
@@ -241,110 +230,80 @@ defaults:
 # -----------------------------------------------------------------------------
 # Contract ConfigMap
 # -----------------------------------------------------------------------------
-# Rendered whenever commonConfig.network is set, from the bundled
-# configs/<commonConfig.network>.yaml preset (keys prefixed by chain, e.g.
-# ethereum.acl.address, gateway.input_verification.address).
-#
-# The chart wires it into every component by default:
-#   - chains[] entries are generated for each host chain in the preset (see the
-#     Chains section);
-#   - commonConfig.gatewayContractAddresses fields left empty are filled with a
-#     configMapKeyRef to the matching gateway.<contract>.address key.
-# Anything set explicitly in values wins over the preset.
-#
-# The default name is <release>-contract-addresses, so each release owns its
-# copy even when several releases share a namespace. commonConfig.stackVersion,
-# when set, is appended (e.g. coproc-workers-contract-addresses-v0-13-7).
-# valueFrom blocks and env lists are rendered through tpl, so reference the
-# computed name with:
+# Rendered when commonConfig.network is set, from configs/<network>.yaml (keys
+# prefixed by chain, e.g. ethereum.acl.address). Default name:
+# <release>-contract-addresses, suffixed with commonConfig.stackVersion when
+# set. valueFrom blocks and env lists go through tpl, so reference it with:
 #   configMapKeyRef:
 #     name: '{{ include "coprocessor.contractConfigMapName" . }}'
 contractConfigMap:
-  # Set to false to skip the ConfigMap and every preset-derived default even
-  # when commonConfig.network is set.
+  # false skips the ConfigMap and every preset-derived default.
   enabled: true
-
-  # Base resource name override. Empty means <release>-contract-addresses.
+  # Name override.
   name: ""
-
-  # Operator overrides, deep-merged on top of the configs/<commonConfig.network>.yaml
-  # preset. Keys are used as-is and prefixed by chain. Operator entries win on
-  # key collision with the preset, and also feed the generated defaults.
-  # Example:
+  # Deep-merged on top of the preset; also feeds the generated defaults.
   #   addresses:
-  #     ethereum.acl.address: "0xabc..."    # override preset
+  #     ethereum.acl.address: "0xabc..."
   #     polygon.acl.address: "0xdef..."     # enables the polygon chain entry
   addresses: {}
 
 # -----------------------------------------------------------------------------
 # Database Migration
 # -----------------------------------------------------------------------------
-# Sets up the database schema and initial data
+# Migrates the schema and seeds host_chains from chains[].
 dbMigration:
   enabled: true
-  # Whether this release may create the database (the database itself and its
-  # first setup). Off by default: the database must be created by the release
-  # that is live, and a green (new release) fleet finds it later. Set true only
-  # for the first install of an operator; keep it false for a green release.
+  # Allow this release to create the database. Only for the first install of
+  # an operator; the green (new release) fleet keeps it false.
   allowBootstrap: false
 
-  # Optional Helm hook annotations for Infra-owned deployment ordering.
-  #
-  # Default hooks are disabled because Helm pre-install/pre-upgrade hooks run
-  # before normal chart resources. The migration Job can depend on chart-created
-  # ConfigMaps (for example the contract-address ConfigMaps), which would not
-  # exist yet during a hook on fresh installs or first enablement.
-  #
-  # The wave1 *_branch shadow tables are deprecated in v0.15 (no v0.15 binary
-  # reads or writes them) but are only dropped by a v0.16 migration; see
-  # coprocessor/fhevm-engine/db-migration/DEPRECATIONS.md.
-  #
-  # Services pick their role from versioning.consensus_version at startup, a
-  # column this release's migration adds. A green (new release) fleet must start
-  # after its migration Job has run: a service that starts earlier exits with an
-  # error and restarts. For the green release, enable the hook below so Helm runs
-  # the Job before the Deployments. The RDS CA hook runs at the same events with
-  # weight one below the Job; its ConfigMap survives uninstall. Other dependencies
-  # must already exist.
+  # Job annotations. Services read their role from a column this migration
+  # adds, so a green fleet must start after its Job: enable the hook below so
+  # Helm runs it before the Deployments. Hooks run before the chart's other
+  # resources, so the Job must not depend on chart-created ConfigMaps on a
+  # fresh install (the RDS CA hook runs just before it).
   annotations: {}
   # annotations:
   #   "helm.sh/hook": "pre-install,pre-upgrade"
   #   "helm.sh/hook-weight": "5"
   #   "helm.sh/hook-delete-policy": "before-hook-creation"
 
-  # registry and tag default to defaults.image.
   image:
     repository: coprocessor/db-migration
 
-  # Override the container command. Defaults to ["/initialize_db.sh"] when unset.
+  # Container command; defaults to ["/initialize_db.sh"].
   command:
-
-  # Host-chains seeding is driven entirely by the top-level `.Values.chains`
-  # list (see the `chains:` block lower in this file). The dbMigration Job
-  # reads it via HOST_CHAINS_COUNT + HOST_CHAIN_<i>_{ID,NAME,ACL} env vars
-  # rendered by coprocessor-db-migration.yaml. Add or remove entries in
-  # `chains[]` to add or remove host chains.
-  config: {}
-
-  # Additional Environment variables
-  env: []
 
 # -----------------------------------------------------------------------------
 # Host Listener
 # -----------------------------------------------------------------------------
-# Four listener modes, each deployed once per chains[] entry that enables it
+# Four modes, each deployed once per chains[] entry that enables it
 # (chains[].hostListener.<mode>.enabled):
-#   listener     host_listener, real-time WebSocket subscription + catchup
+#   listener     host_listener, WebSocket subscription + catchup
 #   poller       host_listener_poller, HTTP polling
 #   catchupOnly  host_listener restricted to the catchup loop
 #   consumer     host_listener_consumer, reads listener events from the broker
 #
-# Effective values of a mode: defaults, then common, then modes.<mode>
-# (maps deep-merge, other values replace). env, extraArgs and disabledArgs are
-# concatenated instead: common, then modes.<mode>, then the chain entry.
-# Accepted keys in common and modes.<mode>: the defaults keys plus image.repository,
-# ports, config, env, disabledArgs, extraArgs and serviceName (--service-name;
-# chains[].hostListener.<mode>.serviceName wins).
+# Effective values of a mode: defaults, then common, then modes.<mode>.
+# env, extraArgs and disabledArgs are concatenated instead: common, then
+# modes.<mode>, then the chain entry. serviceName sets --service-name
+# (chains[].hostListener.<mode>.serviceName wins).
+#
+# Template-injected args: --database-url, --url (not consumer),
+# --acl-contract-address, --tfhe-contract-address, --kms-generation-address
+# and --protocol-config-address (when the chain has them), --health-port,
+# --service-name, and per mode: --metrics-addr (poller, consumer),
+# --chain-id and --broker-url (consumer), --coprocessor-api-key (v0.11, when
+# commonConfig.tenantApiKey is set).
+#
+# Flags shared by all modes (extraArgs):
+#   --log-level=INFO
+#   --dependence-cache-size=10000
+#   --dependence-by-connexity                # connected components instead of linear chains
+#   --dependence-cross-block                 # chains across blocks; on by default
+#   --dependent-ops-max-per-chain=0          # 0 disables slow-lane decisions
+#   --confidential-bridge-address=<address>
+#   --disable-synthetic-ops                  # stop the synthetic work a GCS listener uses to anchor consensus
 hostListener:
   common:
     image:
@@ -352,76 +311,45 @@ hostListener:
     ports:
       metrics: 9100
       healthcheck: 8080
-    env: []
-    disabledArgs: []
-    extraArgs: []
 
   modes:
-    # Template-injected args: --database-url, --url, --acl-contract-address,
-    # --tfhe-contract-address, --kms-generation-address and
-    # --protocol-config-address (when the chain has them), --health-port,
-    # --service-name, --coprocessor-api-key (when commonConfig.tenantApiKey is set).
-    # Other host_listener flags for v0.11 / v0.12 images (extraArgs):
-    #   --initial-block-time=12                  # switches to observed block time once available
-    #   --log-level=INFO
+    # host_listener flags:
+    #   --initial-block-time=12                  # replaced by the observed block time
     #   --reorg-maximum-duration-in-blocks=50
-    #   --catchup-finalization-in-blocks=20      # wait N blocks before treating a block as finalized
+    #   --catchup-finalization-in-blocks=20
     #   --catchup-margin=5
     #   --catchup-paging=100
-    #   --start-at-block=-40                     # can be negative from the latest block
-    #   --end-at-block=-15                       # stop catchup at a specific block
-    #   --only-catchup-loop                      # requires --end-at-block
+    #   --start-at-block=-40                     # negative: from the latest block
+    #   --end-at-block=-15
     #   --catchup-loop-sleep-secs=60
-    #   --dependence-cache-size=10000
-    #   --dependence-by-connexity                # connected components instead of linear chains
-    #   --dependence-cross-block                 # allow chains across L1 block boundaries
-    #   --timeout-request-websocket=15           # websocket RPC timeout in seconds
-    #   v0.12.* only:
-    #   --dependent-ops-max-per-chain=0          # 0 disables slow-lane decisions
+    #   --timeout-request-websocket=15           # seconds
     listener: {}
 
-    # Template-injected args: as listener (with --url from httpUrl) plus --metrics-addr.
-    # Other host_listener_poller flags (extraArgs):
+    # host_listener_poller flags:
     #   --finality-lag=15
-    #   --batch-size=100                         # maximum number of blocks to process per iteration
-    #   --poll-interval-ms=6000                  # half block time on Ethereum
-    #   --retry-interval-ms=1000                 # backoff between RPC/DB retries
-    #   --max-http-retries=45                    # retries in addition to the initial attempt
+    #   --batch-size=100                         # blocks per iteration
+    #   --poll-interval-ms=6000
+    #   --retry-interval-ms=1000
+    #   --max-http-retries=45
     #   --rpc-compute-units-per-second=1000
-    #   --log-level=INFO
-    #   --dependence-cache-size=10000
-    #   --dependence-by-connexity
-    #   --dependence-cross-block
-    #   v0.12 only:
-    #   --dependent-ops-max-per-chain=0
-    #   when the image supports it:
-    #   --seed-start-block=-10000                # starting block when no poller state exists yet;
-    #                                            # >= 0 absolute height, negative = blocks behind head.
-    #                                            # Used only at first startup: existing state always
-    #                                            # wins, so restarts never rewind or skip. Set this when
-    #                                            # onboarding a new host chain to avoid walking from genesis.
+    #   --seed-start-block=-10000                # first startup only (existing state wins);
+    #                                            # negative: blocks behind head. Set it when
+    #                                            # onboarding a chain to avoid walking from genesis.
     poller: {}
 
-    # Template-injected args: as listener. Typical extraArgs:
+    # host_listener flags, typically:
     #   --only-catchup-loop                      # requires --end-at-block
-    #   --end-at-block=-15                       # relative to the latest block when negative
-    #   --start-at-block=-30                     # optional catchup start
+    #   --end-at-block=-15
+    #   --start-at-block=-30
     #   --catchup-loop-sleep-secs=60
     catchupOnly: {}
 
-    # Template-injected args: --database-url, --acl-contract-address,
-    # --tfhe-contract-address, --kms-generation-address and
-    # --protocol-config-address (when the chain has them), --chain-id (from
-    # chains[].chainId), --broker-url (from config.brokerUrl), --health-port,
-    # --metrics-addr, --service-name.
+    # host_listener_consumer flags:
+    #   --database-retry-interval=1000           # ms
     consumer:
       config:
-        # Broker URL (e.g. Redis), rendered as BROKER_URL and passed as
-        # --broker-url=$(BROKER_URL). Accepts `value` or `valueFrom`
-        # (secretKeyRef/configMapKeyRef). Leave unset to inject nothing.
-        # Example:
-        #   brokerUrl:
-        #     value: "redis://coprocessor-redis-master.coproc.svc.cluster.local:6379"
+        # Broker URL (value spec), e.g.
+        #   brokerUrl: {value: "redis://coprocessor-redis-master.coproc.svc.cluster.local:6379"}
         brokerUrl: {}
 
 # -----------------------------------------------------------------------------
@@ -429,124 +357,78 @@ hostListener:
 # -----------------------------------------------------------------------------
 # Host chains, and which host listener modes run for each of them.
 #
-# Generated chains: when commonConfig.network is set (and
-# contractConfigMap.enabled is true), one entry is generated per host chain found
-# in configs/<network>.yaml (a "<prefix>.chain_id" key with a non-empty
-# "<prefix>.acl.address"). It provides name ("<prefix>.name", or the prefix),
-# chainId and the four *ContractAddressValueFrom refs pointing at the contract
-# ConfigMap. Entries below with the same name are merged on top and win, so
-# usually they only add wsUrl/httpUrl and the listener switches:
-#   chains:
-#     - name: sepolia
-#       wsUrl: "ws://eth-node:8546"
-#       hostListener:
-#         listener: {enabled: true}
-# Entries with no matching generated chain are used as-is.
+# With commonConfig.network set, one entry is generated per host chain of the
+# preset that has an ACL address, with name, chainId and the contract address
+# refs. Entries below with the same name are merged on top and win, so they
+# usually only add RPC URLs and the listener switches. Entries with no
+# matching generated chain are used as-is.
 #
-# Resource naming:
-#   - By default, resources are named <release>-host-listener-<name>,
-#     <release>-host-listener-poller-<name>, etc.
-#   - Set useLegacyName: true on exactly one chain per mode to keep the
-#     unsuffixed legacy name (<release>-host-listener, etc.) during migration.
+# Resources are named <release>-<mode suffix>-<name>; useLegacyName (on one
+# chain per mode) drops the chain suffix.
 #
-# Example:
 # chains:
 #   - name: sepolia
-#     chainId: "11155111"               # required by the consumer (--chain-id); quote to avoid YAML float coercion
-#     wsUrl: "ws://eth-node:8546"       # required by listener + catchupOnly unless wsUrlValueFrom is set
-#     # wsUrlValueFrom:                 # secret/config-backed alternative to wsUrl
-#     #   secretKeyRef:
-#     #     name: rpc
-#     #     key: ethereum-rpc-ws-url
-#     httpUrl: "http://eth-node:8545"   # required by poller unless httpUrlValueFrom is set
-#     # httpUrlValueFrom:
-#     #   secretKeyRef:
-#     #     name: rpc
-#     #     key: ethereum-rpc-url
-#     aclContractAddress: "0x..."
-#     # aclContractAddressValueFrom:  # valueFrom blocks are rendered through tpl
-#     #   configMapKeyRef:
-#     #     name: '{{ include "coprocessor.contractConfigMapName" . }}'
-#     #     key: acl.address
+#     chainId: "11155111"               # quoted; required by the consumer
+#     wsUrl: "ws://eth-node:8546"       # listener, catchupOnly (or wsUrlValueFrom)
+#     httpUrl: "http://eth-node:8545"   # poller (or httpUrlValueFrom)
+#     aclContractAddress: "0x..."       # each address also accepts <field>ValueFrom
 #     fhevmExecutorContractAddress: "0x..."
-#     # kmsGenerationContractAddress: "0x..."     # optional; omit when KMSGeneration is not deployed on the host chain
-#     # protocolConfigContractAddress: "0x..."    # optional
+#     kmsGenerationContractAddress: "0x..."     # optional
+#     protocolConfigContractAddress: "0x..."    # optional
 #     hostListener:
 #       listener:
 #         enabled: true
-#         useLegacyName: true   # set true on exactly one chain to keep the unsuffixed legacy resource names
-#         serviceName:          # optional per-chain override for --service-name
-#         extraArgs: []         # appended after hostListener.common/modes.listener extraArgs
-#         disabledArgs: []      # added to hostListener.common/modes.listener disabledArgs
-#         env: []               # appended after hostListener.common/modes.listener env
-#       poller:
-#         enabled: true
-#       catchupOnly:
-#         enabled: true
-#       consumer:
-#         enabled: true
-#         useLegacyName: true   # often required: <release>-host-listener-consumer-<chain> can exceed K8s's 63-char name limit
+#         useLegacyName: true
+#         serviceName: ""
+#         extraArgs: []
+#         disabledArgs: []
+#         env: []
+#       poller: {enabled: true}
+#       catchupOnly: {enabled: true}
+#       consumer: {enabled: true, useLegacyName: true}   # suffixed names can exceed 63 chars
 chains: []
 
 # -----------------------------------------------------------------------------
 # Gateway Listener
 # -----------------------------------------------------------------------------
-# Processes events from the gateway chain
 gwListener:
   enabled: false
-  # nameOverride: override default <release>-<component> resource name.
-  nameOverride:
 
   image:
     repository: coprocessor/gw-listener
 
-  # Component-specific configuration
   config:
-    # Host chain ID. Rendered as the CHAIN_ID env var, consumed by the
-    # gw_listener binary (also settable via --host-chain-id arg).
-    # Leave unset/empty to inject nothing.
+    # Host chain id, rendered as CHAIN_ID.
     chainId: ""
 
-  # Additional environment variables.
-  env: []
-
-  # Template-injected args (suppress individually via disabledArgs):
-  disabledArgs: []
-
-  # Additional raw CLI flags, appended after template-injected args.
-  # Full gw_listener CLI for v0.11 / v0.12 images:
-  #   built-in via template: --database-url, --gw-url,
-  #     --input-verification-address, --kms-generation-address,
-  #     --health-check-port, --metrics-addr
-  #   v0.12 built-in when values are set: --ciphertext-commits-address,
-  #     --gateway-config-address
-  #   shared flags:
-  #     --database-pool-size=16
-  #     --verify-proof-req-database-channel=event_zkpok_new_work
-  #     --error-sleep-initial-secs=1
-  #     --error-sleep-max-secs=10
-  #     --health-check-timeout=4s
-  #     --provider-max-retries=4294967295
-  #     --provider-retry-interval=4s
-  #     --log-level=INFO
-  #     --host-chain-id=1                        # or set CHAIN_ID in env
-  #     --get-logs-poll-interval=500ms
-  #     --get-logs-block-batch-size=100
-  #     --log-last-processed-every-number-of-updates=50
-  #     --service-name=gw-listener
-  #     --replay-from-block=-100                # can be negative from the last processed block
-  #       alias: --catchup-kms-generation-from-block
-  #   v0.12 only:
-  #     --replay-skip-verify-proof
-  #     --drift-no-consensus-timeout=5m
-  #     --drift-post-consensus-grace=5m
-  #     --drift-auto-revert-enabled=false
-  #       SAFETY: only enable with a majority quorum — >= 3 coprocessors and a
-  #       strict-majority coprocessor threshold. Never enable with <= 2
-  #       coprocessors. See docs/protocol/architecture/coprocessor.md.
+  # Template-injected args: --database-url, --gw-url,
+  # --input-verification-address, --ciphertext-commits-address and
+  # --gateway-config-address (when set), --health-check-port, --metrics-addr.
+  # Other gw_listener flags:
+  #   --database-pool-size=16
+  #   --verify-proof-req-database-channel=event_zkpok_new_work
+  #   --error-sleep-initial-secs=1
+  #   --error-sleep-max-secs=10
+  #   --health-check-timeout=4s
+  #   --provider-max-retries=4294967295
+  #   --provider-retry-interval=4s
+  #   --log-level=INFO
+  #   --get-logs-poll-interval=500ms
+  #   --get-logs-block-batch-size=100
+  #   --log-last-processed-every-number-of-updates=50
+  #   --service-name=gw-listener
+  #   --gateway-config-refresh-interval=30m
+  #   --drift-no-consensus-timeout=5m
+  #   --drift-post-consensus-grace=5m
+  #   --drift-auto-revert-enabled=false
+  #     SAFETY: only enable with a majority quorum — >= 3 coprocessors and a
+  #     strict-majority coprocessor threshold. Never enable with <= 2
+  #     coprocessors. See docs/protocol/architecture/coprocessor.md.
+  #   --drift-auto-revert-grace-period=120s
+  #   --drift-auto-revert-max-recent-attempts=10
+  #   --drift-auto-revert-recent-attempts-window=30m
   extraArgs: []
 
-  # Service ports configuration
   ports:
     metrics: 9100
     healthcheck: 8080
@@ -554,20 +436,11 @@ gwListener:
 # -----------------------------------------------------------------------------
 # TFHE Worker
 # -----------------------------------------------------------------------------
-# Performs FHE (Fully Homomorphic Encryption) computations
 tfheWorker:
   enabled: true
-  # nameOverride: override default <release>-<component> resource name.
-  nameOverride:
 
   image:
     repository: coprocessor/tfhe-worker
-
-  # Additional environment variables
-  env: []
-
-  # Suppress template-injected args
-  disabledArgs: []
 
   # Additional raw CLI flags, appended after template-injected args.
   #
@@ -760,7 +633,6 @@ tfheWorker:
   #     --maximum-handles-per-input=...
   extraArgs: []
 
-  # Service ports configuration
   ports:
     metrics: 9100
     healthcheck: 8080
@@ -768,149 +640,61 @@ tfheWorker:
   tracing:
     service: "tfhe-worker"
 
-  # Horizontal Pod Autoscaler configuration
-  hpa:
-    enabled: false
-    minReplicas: 1
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 80
-    behavior:
-      scaleUp:
-        stabilizationWindowSeconds: 60
-        selectPolicy: Max
-        policies:
-          - type: Percent
-            value: 100
-            periodSeconds: 15
-          - type: Pods
-            value: 2
-            periodSeconds: 60
-      scaleDown:
-        stabilizationWindowSeconds: 300
-        selectPolicy: Min
-        policies:
-          - type: Percent
-            value: 40
-            periodSeconds: 60
-
 # -----------------------------------------------------------------------------
 # ZK Proof Worker
 # -----------------------------------------------------------------------------
-# Generates zero-knowledge proofs for verification
 zkProofWorker:
   enabled: false
-  # nameOverride: override default <release>-<component> resource name.
-  nameOverride:
 
   image:
     repository: coprocessor/zkproof-worker
 
-  # Additional environment variables.
-  env: []
-
-  # Suppress template-injected args
-  disabledArgs: []
-
-  # Additional raw CLI flags, appended after template-injected args.
-  # Full zkproof_worker CLI for v0.11 / v0.12 images:
-  #   built-in via template: --database-url, --metrics-addr, --health-check-port
-  #   required extraArgs:
-  #     --pg-listen-channel=event_zkpok_new_work
-  #     --pg-notify-channel=event_zkpok_computed
-  #   other flags:
-  #     --pg-polling-interval=60
-  #     --pg-pool-connections=5
-  #     --pg-timeout=15s
-  #     --pg-auto-explain-with-min-duration=30s
-  #     --worker-thread-count=8
-  #     --service-name=zkproof-worker
-  #     --log-level=INFO
-  #     --metric-zkverify-op-latency=0.01:2.0:0.01
+  # Template-injected args: --database-url, --metrics-addr, --health-check-port.
+  # Required:
+  #   --pg-listen-channel=event_zkpok_new_work
+  #   --pg-notify-channel=event_zkpok_computed
+  # Other zkproof_worker flags:
+  #   --pg-polling-interval=60
+  #   --pg-pool-connections=5
+  #   --pg-timeout=15s
+  #   --pg-auto-explain-with-min-duration=30s
+  #   --worker-thread-count=8
+  #   --service-name=zkproof-worker
+  #   --log-level=INFO
+  #   --metric-zkverify-op-latency=0.01:2.0:0.01
   extraArgs: []
 
-  # Service ports configuration
   ports:
     metrics: 9100
     healthcheck: 8080
 
-  # Horizontal Pod Autoscaler configuration
-  hpa:
-    enabled: false
-    minReplicas: 1
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 80
-    behavior:
-      scaleUp:
-        stabilizationWindowSeconds: 60
-        selectPolicy: Max
-        policies:
-          - type: Percent
-            value: 100
-            periodSeconds: 15
-          - type: Pods
-            value: 2
-            periodSeconds: 60
-      scaleDown:
-        stabilizationWindowSeconds: 300
-        selectPolicy: Min
-        policies:
-          - type: Percent
-            value: 40
-            periodSeconds: 60
-
 # -----------------------------------------------------------------------------
 # SNS Worker
 # -----------------------------------------------------------------------------
-# Handles Simple Notification Service operations
 snsWorker:
   enabled: false
-  # nameOverride: override default <release>-<component> resource name.
-  nameOverride:
 
   image:
     repository: coprocessor/sns-worker
 
-  # Component-specific configuration
   config:
-    # S3 bucket name for ciphertext storage. Both ct64 and ct128 objects live in
-    # this single bucket, under their `ct64/` and `ct128/` key prefixes.
-    # Rendered as the S3_BUCKET_NAME env var and referenced by --bucket-name.
-    # Accepts `value` or `valueFrom`
-    # (secretKeyRef/configMapKeyRef). Leave unset to inject nothing.
-    # Example:
-    #   s3BucketName:
-    #     valueFrom:
-    #       configMapKeyRef:
-    #         name: coprocessor-infra
-    #         key: s3BucketName
+    # Ciphertext bucket (value spec), rendered as S3_BUCKET_NAME. ct64 and
+    # ct128 objects live under the ct64/ and ct128/ prefixes.
     s3BucketName: {}
-    # S3 object format migration parameters. Rendered as env vars instead of
-    # CLI flags so old pre-feature images ignore them during mixed-version
-    # rollouts.
-    # mode maps to S3_MIGRATION_MODE. Valid values: no, before,
-    # before-and-quit, concurrent, dry-run.
-    # sleepDuration maps to S3_MIGRATION_SLEEP_DURATION.
-    # maxRetries maps to S3_MIGRATION_MAX_RETRIES.
+    # S3 object format migration, rendered as env vars (S3_MIGRATION_MODE,
+    # S3_MIGRATION_SLEEP_DURATION, S3_MIGRATION_MAX_RETRIES) so older images
+    # ignore them. mode: no, before, before-and-quit, concurrent or dry-run.
     s3Migration:
       mode: concurrent
       sleepDuration: 5m
       maxRetries: 100
 
-  # Additional environment variables
-  env: []
-
-  # Wallet configuration for ciphertext attestation signing
+  # Optional ciphertext attestation signer. When disabled, no signer args or
+  # env are rendered and the pod needs no coprocessor-tx-sender Secret.
   wallet:
-    # Optional ciphertext-attestation signer. OFF by default (opt-in). Only
-    # sns-worker images that must sign ciphertext attestations need this. When
-    # false, the sns-worker runs without a signer: no --signer-type / --private-key
-    # args and no AWS_KEY_ID / TX_SENDER_PRIVATE_KEY env are injected, so the pod
-    # does not depend on a coprocessor-tx-sender Secret/ConfigMap. Set to true only
-    # when this worker must sign attestations, then configure awsKms or secret below.
     enabled: false
     awsKms:
-      # If set to true, will use the AWS KMS key specified in the configmap
-      # instead of the private key specified in the secret
+      # Use the AWS KMS key id from this ConfigMap instead of the private key.
       enabled: false
       configmap:
         name: coprocessor-tx-sender
@@ -918,95 +702,49 @@ snsWorker:
     secret:
       name: coprocessor-tx-sender
       key: private-key
-      value: ""  # devnet only: set a raw private key here to skip secret creation (not for production)
+      value: ""  # devnet only: raw private key instead of the Secret
 
-  # Suppress any template-injected arg above. Values are kebab-case flag names
-  # (no leading `--`).
-  disabledArgs: []
-
-  # Additional raw CLI flags, appended after template-injected args.
-  # Example for S3-compatible servers that reject SHA256 checksum headers:
-  # extraArgs:
-  #   - --s3-disable-sha256-checksum
-  # Full sns_worker CLI for v0.11 / v0.12 images:
-  #   built-in via template: --database-url, --bucket-name-ct64,
-  #     --bucket-name-ct128, --metrics-addr, --health-check-port
-  #   built-in via env from snsWorker.config.s3Migration:
-  #     S3_MIGRATION_MODE, S3_MIGRATION_SLEEP_DURATION,
-  #     S3_MIGRATION_MAX_RETRIES
-  #   built-in when wallet.enabled=true: --signer-type
-  #   built-in when wallet.enabled=true and wallet.awsKms.enabled=false: --private-key
-  #   v0.11 built-in when commonConfig.tenantApiKey is set: --tenant-api-key
-  #   shared extraArgs:
-  #     --pg-listen-channels
-  #     - event_pbs_computations
-  #     - event_ciphertext_computed
-  #     --pg-notify-channel
-  #     - event_ciphertext128_computed
-  #     --work-items-batch-size=4
-  #     --s3-migration-max-concurrent-handles=16
-  #     --pg-polling-interval=60
-  #     --pg-pool-connections=10
-  #     --pg-timeout=15s
-  #     --pg-auto-explain-with-min-duration=30s
-  #     --service-name=sns-executor
-  #     --s3-max-concurrent-uploads=100
-  #     --s3-max-retries-per-upload=100
-  #     --s3-max-backoff=10s
-  #     --s3-max-retries-timeout=120s
-  #     --s3-recheck-duration=2s
-  #     --s3-regular-recheck-duration=120s
-  #     --s3-disable-sha256-checksum             # for S3-compatible servers without checksum support
-  #     --cleanup-interval=15min
-  #     --gc-batch-size=1000                     # set to 0 to disable GC
-  #     --log-level=INFO
-  #     --liveness-threshold=70s
-  #     --lifo=false                             # default FIFO when false
-  #     --enable-compression=true
-  #     --schedule-policy=rayon_parallel
-  #     --metric-sns-op-latency=0.1:10.0:0.1
-  #     --gauge-update-interval-secs=10          # enable on only some workers to avoid duplicate DB load
-  #   v0.11 only:
-  #     --keys-file-path=/path/to/keys
+  # Template-injected args: --database-url, --bucket-name, --metrics-addr,
+  # --health-check-port, --signer-type and --private-key (wallet.enabled),
+  # --tenant-api-key (v0.11, when commonConfig.tenantApiKey is set).
+  # Other sns_worker flags:
+  #   --pg-listen-channels event_pbs_computations event_ciphertext_computed
+  #   --pg-notify-channel=event_ciphertext128_computed
+  #   --work-items-batch-size=4
+  #   --pg-polling-interval=60
+  #   --pg-pool-connections=10
+  #   --pg-timeout=15s
+  #   --pg-auto-explain-with-min-duration=30s
+  #   --service-name=sns-executor
+  #   --s3-max-concurrent-uploads=100
+  #   --s3-max-retries-per-upload=100
+  #   --s3-max-backoff=10s
+  #   --s3-max-retries-timeout=120s
+  #   --s3-recheck-duration=2s
+  #   --s3-regular-recheck-duration=120s
+  #   --s3-disable-sha256-checksum             # S3-compatible servers without checksum support
+  #   --s3-migration-max-concurrent-handles=16
+  #   --cleanup-interval=15min
+  #   --gc-batch-size=1000                     # 0 disables GC
+  #   --log-level=INFO
+  #   --liveness-threshold=70s
+  #   --lifo=false
+  #   --enable-compression=true
+  #   --schedule-policy=rayon_parallel
+  #   --metric-sns-op-latency=0.1:10.0:0.1
+  #   --gauge-update-interval-secs=10          # on a few workers only, to limit DB load
   extraArgs: []
 
-  # Service ports configuration
   ports:
     metrics: 9100
     healthcheck: 8080
 
-  # Horizontal Pod Autoscaler configuration
-  hpa:
-    enabled: false
-    minReplicas: 1
-    maxReplicas: 10
-    targetCPUUtilizationPercentage: 80
-    behavior:
-      scaleUp:
-        stabilizationWindowSeconds: 60
-        selectPolicy: Max
-        policies:
-          - type: Percent
-            value: 100
-            periodSeconds: 15
-          - type: Pods
-            value: 2
-            periodSeconds: 60
-      scaleDown:
-        stabilizationWindowSeconds: 300
-        selectPolicy: Min
-        policies:
-          - type: Percent
-            value: 40
-            periodSeconds: 60
-
 # -----------------------------------------------------------------------------
 # Consensus Detector
 # -----------------------------------------------------------------------------
-# Publishes generation-scoped manifests and always verifies peer manifests.
+# Publishes generation-scoped manifests and verifies peer manifests.
 consensusDetector:
   enabled: false
-  nameOverride:
 
   image:
     repository: coprocessor/consensus-detector
@@ -1017,71 +755,45 @@ consensusDetector:
   s3Endpoint: {}
 
   config:
-    # Accepts `value` or `valueFrom`; empty uses the bucket fallback below. Set value to the
-    # literal `none` only to explicitly disable manifest publication, verification and
-    # ct64 healing: drift is then neither detected nor healed.
+    # Value spec; empty uses the bucket fallback above. The literal `none`
+    # disables manifest publication, verification and ct64 healing: drift is
+    # then neither detected nor healed.
     s3BucketName: {}
-    # Interval between host-block discovery ticks (also seals/publishes
-    # already-tracked work). After bootstrap, new heights arrive parent→child,
-    # with a 5-block lookback for late producer rows. Extreme intervals can
-    # miss pruned host_chain_blocks_valid rows (BLOCKS_VALID_RETENTION is
-    # 10_000). Clap: --manifest-discovery-interval
+    # Interval between host-block discovery ticks. Extreme values can miss
+    # pruned host_chain_blocks_valid rows (10_000 blocks retained).
     manifestDiscoveryInterval: 10s
     # Per-chain publication cadence overlays (`CHAIN_ID:CADENCE`). Empty keeps
     # the built-in table (Ethereum mainnet/Sepolia/Hoodi 5, Polygon/Amoy and
-    # unknown 30). Insert-time only; existing rows keep their stored K. Every
-    # coprocessor must match. Tests overlay Anvil 31337 (and preview-env host
-    # 12345) to 1; do not set a fleet-wide override here.
-    # Clap: --manifest-publication-cadence
+    # unknown 30). Applied at insert time; every coprocessor must match. Do not
+    # set a fleet-wide override here.
     manifestPublicationCadence: []
-    # Delay between local manifest publication retries.
-    # Clap: --manifest-publication-retry-delay
     manifestPublicationRetryDelay: 1m
-    # Additional manifest publication attempts after the initial attempt.
-    # Exhausting this budget skips that identity; the next due object is still
-    # the next block_number mod K == 0. A later success retries the nearest
-    # skipped ancestor once (bound + 1). If that works, older skips peel next.
-    # Clap: --manifest-publication-retry-count
+    # Attempts after the first; exhausting them skips that manifest.
     manifestPublicationRetryCount: 30
-    # Delay after publication before the first peer verification attempt.
-    # Clap: --manifest-verification-delay
+    # Delay after publication before the first peer verification.
     manifestVerificationDelay: 10s
-    # Delay between peer verification retries.
-    # Clap: --manifest-verification-retry-delay
     manifestVerificationRetryDelay: 10s
-    # Additional peer verification attempts after the initial attempt.
-    # Clap: --manifest-verification-retry-count
     manifestVerificationRetryCount: 59
     # Concurrent ct64 downloads per healing pass.
-    # Clap: --manifest-healing-batch-size
     manifestHealingBatchSize: 8
     # Fallback poll while waiting for event_healing_work.
-    # Clap: --manifest-healing-poll-interval
     manifestHealingPollInterval: 30s
     # Delay after detection before an uncontained ct64 drift is healed anyway.
-    # Clap: --manifest-healing-containment-timeout
     manifestHealingContainmentTimeout: 5m
-    # Failed ct64 healing attempts (one every 30s) before a finding is abandoned.
-    # Clap: --manifest-healing-max-attempts
+    # Failed healing attempts (one every 30s) before a finding is abandoned.
     manifestHealingMaxAttempts: 120
-    # Wall-clock stall with no newly computed handle before missing
-    # ciphertext may be sealed as uncomputed. A computed handle resets it.
-    # Clap: --incomplete-block-timeout
+    # Stall with no newly computed handle before missing ciphertext may be
+    # sealed as uncomputed.
     incompleteBlockTimeout: 5m
-    # Host-chain lag, in due manifests (publication periods), before missing
-    # ciphertext may be sealed as uncomputed.
-    # Clap: --incomplete-manifest-max-lag
+    # Host-chain lag, in due manifests, before missing ciphertext may be
+    # sealed as uncomputed.
     incompleteManifestMaxLag: 3
-    # Manifest gauge refresh interval in seconds. Passed whenever metrics-addr
-    # is injected so pending_work / retry_exhausted are not left at 0.
-    # Clap: --gauge-update-interval-secs
-    # Disable with disabledArgs: [gauge-update-interval-secs].
+    # Manifest gauge refresh interval (seconds). Disable with
+    # disabledArgs: [gauge-update-interval-secs].
     gaugeUpdateIntervalSecs: 10
 
-  env: []
-
-  # Manifest signer. Required whenever s3BucketName is not literal `none`.
-  # Uses the same KMS/private-key sources as snsWorker and txSender.
+  # Manifest signer, required unless s3BucketName is `none`. Same sources as
+  # snsWorker and txSender.
   wallet:
     enabled: true
     awsKms:
@@ -1092,48 +804,33 @@ consensusDetector:
     secret:
       name: coprocessor-tx-sender
       key: private-key
-      value: ""  # devnet only; use a Secret in production
+      value: ""  # devnet only: raw private key instead of the Secret
 
-  disabledArgs: []
-  extraArgs: []
-
-  # No healthcheck port: probes stay disabled (defaults.probes).
+  # No healthcheck port: keep probes disabled.
   ports:
     metrics: 9100
 
 # -----------------------------------------------------------------------------
 # Transaction Sender
 # -----------------------------------------------------------------------------
-# Submits transactions to the blockchain
 txSender:
   enabled: false
-  # nameOverride: override default <release>-<component> resource name.
-  nameOverride:
 
   image:
     repository: coprocessor/tx-sender
 
-  # Component-specific configuration
   config:
-    # Sender-specific Gateway URL; accepts value or valueFrom. HTTP sender
-    # builds require http(s) here while commonConfig.gatewayUrl can remain
-    # ws(s) for gwListener. Unset falls back to commonConfig.gatewayUrl.
+    # Sender-specific gateway URL (value spec). HTTP sender builds need
+    # http(s) here while commonConfig.gatewayUrl can stay ws(s) for
+    # gwListener. Unset falls back to commonConfig.gatewayUrl.
     gatewayUrl: {}
-
-    # Host chain RPC URL for v0.11 delegation management. Rendered as
-    # HOST_CHAIN_URL and referenced by the built-in --host-chain-url arg when
-    # set. Accepts `value` or `valueFrom` (secretKeyRef/configMapKeyRef).
-    # Leave unset to inject nothing.
+    # v0.11 only (value spec): host chain RPC URL for delegation management,
+    # rendered as HOST_CHAIN_URL and --host-chain-url.
     hostChainUrl: {}
 
-  # Additional environment variables.
-  env: []
-
-  # Wallet configuration for transaction signing
   wallet:
     awsKms:
-      # If set to true, will use the AWS KMS key specified in the configmap
-      # instead of the private key specified in the secret
+      # Use the AWS KMS key id from this ConfigMap instead of the private key.
       enabled: false
       configmap:
         name: coprocessor-tx-sender
@@ -1141,76 +838,53 @@ txSender:
     secret:
       name: coprocessor-tx-sender
       key: private-key
-      value: ""  # devnet only: set a raw private key here to skip secret creation (not for production)
+      value: ""  # devnet only: raw private key instead of the Secret
 
-  # Suppress template-injected args
-  disabledArgs: []
-
-  # Additional raw CLI flags, appended after template-injected args.
-  # Full transaction_sender CLI for v0.11 / v0.12 images:
-  #   built-in via template: --database-url, --gateway-url,
-  #     --input-verification-address, --ciphertext-commits-address,
-  #     --signer-type, --health-check-port, --metrics-addr
-  #   built-in when wallet.awsKms.enabled=false: --private-key
-  #   v0.11 built-in when txSender.config.hostChainUrl is set: --host-chain-url
-  #   legacy built-in for v0.11 only: --multichain-acl-address
-  #     disable via disabledArgs on v0.12+ images
-  #   shared extraArgs:
-  #     --database-pool-size=10
-  #     --database-polling-interval-secs=1
-  #     --verify-proof-resp-database-channel=event_zkpok_computed
-  #     --add-ciphertexts-database-channel=event_ciphertexts_uploaded
-  #     --allow-handle-database-channel=event_allowed_handle
-  #     --verify-proof-resp-batch-limit=128
-  #     --verify-proof-resp-max-retries=6
-  #     --verify-proof-remove-after-max-retries=true
-  #     --add-ciphertexts-batch-limit=10
-  #     --allow-handle-batch-limit=10
-  #     --allow-handle-max-retries=2147483647
-  #     --add-ciphertexts-max-retries=2147483647
-  #     --error-sleep-initial-secs=1
-  #     --error-sleep-max-secs=4
-  #     --send-txn-sync-timeout-secs=4           # alias: --txn-receipt-timeout-secs
-  #     --review-after-unlimited-retries=30
-  #     --provider-max-retries=10               # finite: alloy retries internally, so we exit on BackendGone
-  #     --provider-retry-interval=4s
-  #     --health-check-timeout=4s
-  #     --log-level=INFO
-  #     --gas-limit-overprovision-percent=300  # default covers the quorum-completing addCiphertextMaterial
-  #     --graceful-shutdown-timeout=8s
-  #     --service-name=txn-sender
-  #     --metric-host-txn-latency=0.1:60.0:0.1
-  #     --metric-zkproof-txn-latency=0.1:60.0:0.1
-  #     --gauge-update-interval-secs=10
-  #     --required-txn-confirmations=0           # hidden/deprecated
-  #   v0.11 only:
-  #     --delegation-block-delay=10
-  #     --delegation-clear-after-n-blocks=648000
-  #     --delegation-fallback-polling=30
-  #     --delegation-max-retry=100000
-  #     --retry-immediately-on-nonce-error=0     # hidden/deprecated
+  # Template-injected args: --database-url, --gateway-url,
+  # --input-verification-address, --ciphertext-commits-address,
+  # --signer-type, --private-key (unless wallet.awsKms.enabled),
+  # --health-check-port, --metrics-addr, --host-chain-url (v0.11, when set),
+  # --multichain-acl-address (v0.11 only: add multichain-acl-address to
+  # disabledArgs on later images).
+  # Other transaction_sender flags:
+  #   --database-pool-size=10
+  #   --database-polling-interval-secs=1
+  #   --verify-proof-resp-database-channel=event_zkpok_computed
+  #   --add-ciphertexts-database-channel=event_ciphertexts_uploaded
+  #   --verify-proof-resp-batch-limit=128
+  #   --verify-proof-resp-max-retries=6
+  #   --verify-proof-remove-after-max-retries=true
+  #   --add-ciphertexts-batch-limit=10
+  #   --add-ciphertexts-max-retries=2147483647
+  #   --error-sleep-initial-secs=1
+  #   --error-sleep-max-secs=4
+  #   --send-txn-sync-timeout-secs=4
+  #   --review-after-unlimited-retries=30
+  #   --provider-retry-interval=4s
+  #   --health-check-timeout=4s
+  #   --log-level=INFO
+  #   --gas-limit-overprovision-percent=300
+  #   --graceful-shutdown-timeout=8s
+  #   --service-name=txn-sender
+  #   --metric-host-txn-latency=0.1:60.0:0.1
+  #   --metric-zkproof-txn-latency=0.1:60.0:0.1
+  #   --gauge-update-interval-secs=10
   extraArgs: []
 
-  # Service ports configuration
   ports:
     metrics: 9100
     healthcheck: 8080
 
 # -----------------------------------------------------------------------------
-# Upgrade controller (RFC-021 GCS control plane)
+# Upgrade Controller
 # -----------------------------------------------------------------------------
-# Owns the per-operator upgrade FSM and execute_cutover. Enable only on the
-# green fleet. Disabled by default so existing installs are unchanged.
+# RFC-021 GCS control plane: owns the per-operator upgrade FSM and
+# execute_cutover. Enable only on the green fleet.
 upgradeController:
   enabled: false
-  nameOverride:
 
   image:
     repository: coprocessor/upgrade-controller
-
-  env: []
-  disabledArgs: []
-  extraArgs: []
 
   tracing:
     service: "upgrade-controller"

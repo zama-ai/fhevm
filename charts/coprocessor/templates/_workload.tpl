@@ -300,10 +300,10 @@ spec:
         {{- with $root.Values.commonConfig.stackVersion }}
         app.kubernetes.io/version: {{ . | quote }}
         {{- end }}
-        {{- with merge (deepCopy ($c.podLabels | default dict)) ($root.Values.podLabels | default dict) }}
+        {{- with $c.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with $root.Values.podAnnotations }}
+      {{- with $c.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
