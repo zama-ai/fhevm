@@ -1,15 +1,13 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "coprocessor chart values",
-  "description": "Chart 0.14 schema. Legacy keys (hostListenerShared, hostListenerPollerShared, hostListenerCatchupOnlyShared, hostListenerConsumerShared, image.name, *ContractConfigMap, commonConfig.hostChain*/…ContractAddress) are rejected: see the chart values.yaml for their replacements.",
+  "description": "Chart 0.14 schema. Legacy keys (hostListenerShared, hostListenerPollerShared, hostListenerCatchupOnlyShared, hostListenerConsumerShared, image.name, *ContractConfigMap, commonConfig.hostChain*/…ContractAddress, top-level podLabels/podAnnotations) are rejected: see the chart values.yaml for their replacements.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "global": {"type": "object"},
     "nameOverride": {"type": ["string", "null"]},
     "fullnameOverride": {"type": ["string", "null"]},
-    "podAnnotations": {"$ref": "#/definitions/mapOrNull"},
-    "podLabels": {"$ref": "#/definitions/mapOrNull"},
     "commonConfig": {"$ref": "#/definitions/commonConfig"},
     "defaults": {"$ref": "#/definitions/workload"},
     "contractConfigMap": {
@@ -73,6 +71,8 @@
         "tracing": {"$ref": "#/definitions/mapOrNull"},
         "serviceMonitor": {"$ref": "#/definitions/mapOrNull"},
         "podLabels": {"$ref": "#/definitions/mapOrNull"},
+        "podAnnotations": {"$ref": "#/definitions/mapOrNull"},
+        "hpa": {"$ref": "#/definitions/mapOrNull"},
         "nodeSelector": {"$ref": "#/definitions/mapOrNull"},
         "affinity": {"$ref": "#/definitions/mapOrNull"},
         "tolerations": {"type": ["array", "null"]},
