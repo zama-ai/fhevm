@@ -35,7 +35,7 @@ const envWith = (deployerKeypairPath: string, faucet = true): TestEnv =>
   ({
     source: "demo-config",
     roots: { deployerKeypairPath },
-    capabilities: { faucet, freshMints: false, fastSlots: true },
+    capabilities: { faucet },
     rpcUrl: "http://127.0.0.1:8899",
   }) as unknown as TestEnv;
 

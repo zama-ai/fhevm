@@ -56,7 +56,6 @@ describe("loadDemoEnv", () => {
     expect(env.gatewayRpcUrl).toBe(cfg.gatewayRpcUrl);
     expect(env.chainId).toBe(BigInt(cfg.chainId));
     expect(env.aclProgram).toBe(cfg.aclProgram);
-    expect(env.capabilities.freshMints).toBe(false);
     // The vault roots stay in the config object, never leaking into TestEnv.
     expect(config.batchers.deposit.batcher).toBe(cfg.batchers.deposit.batcher);
     expect("vault" in env).toBe(false);

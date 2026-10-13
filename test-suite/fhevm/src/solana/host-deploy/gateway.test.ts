@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { evmAddressBytes, readGatewayBootstrapInputsFromEnv } from '../../../../../solana/deploy/src/gateway';
+import { readGatewayBootstrapInputsFromEnv } from '../../../../../solana/deploy/src/gateway';
 
 const ADDRESS_A = '0x000000000000000000000000000000000000aaaa';
 const ADDRESS_B = '0x1111111111111111111111111111111111111111';
@@ -57,11 +57,5 @@ describe('readGatewayBootstrapInputsFromEnv', () => {
     delete process.env.INPUT_VERIFICATION_ADDRESS;
     delete process.env.DECRYPTION_ADDRESS;
     await expect(readGatewayBootstrapInputsFromEnv()).rejects.toThrow('missing required env GATEWAY_RPC_URL');
-  });
-});
-
-describe('evmAddressBytes', () => {
-  test('is re-exported for the host-deploy CLI', () => {
-    expect(evmAddressBytes(ADDRESS_A)).toHaveLength(20);
   });
 });

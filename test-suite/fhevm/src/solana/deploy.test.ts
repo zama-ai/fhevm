@@ -30,7 +30,7 @@ import {
   SET_MAX_HCU_PER_TX_DISCRIMINATOR,
   ZAMA_HOST_PROGRAM_ADDRESS,
 } from '@fhevm/solana-zama-host';
-import { zamaHostProgramDataAddress } from './provision';
+import { programDataAddressFor } from '../../../../solana/deploy/src/bootstrap';
 import { loadCoprocessorScenario, resolveScenarioFile } from '../scenario/resolve';
 import { HCU_LIMITS } from '../../../../solana/deploy/src/constants';
 import type { HostDeployContext } from '../../../../solana/deploy/src/send';
@@ -221,7 +221,7 @@ describe('bootstrapZamaHost', () => {
     );
     expect(getSetMaxHcuPerTxInstructionDataDecoder().decode(setTotal.data!).value).toBe(HCU_LIMITS.maxHcuPerTx);
     expect(initialize.programAddress).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
-    const programData = await zamaHostProgramDataAddress();
+    const programData = await programDataAddressFor(ZAMA_HOST_PROGRAM_ADDRESS);
     expect(initialize.accounts?.some((account) => account.address === programData)).toBe(true);
     const initializeData = getInitializeHostConfigInstructionDataDecoder().decode(initialize.data ?? new Uint8Array());
     expect(initializeData.chainId).toBe(chainId);
@@ -251,12 +251,16 @@ describe('bootstrapZamaHost', () => {
     expect(accounts).not.toContain(defaultNonce);
     const [hostConfig] = await findHostConfigPda({ programAddress });
     const [eventAuthority] = await findEventAuthorityPda({ programAddress });
-    for (const instruction of sent[0]) {
+    const [kmsContext] = await findKmsContextPda({ contextId: BRINGUP_KMS_CONTEXT_ID }, { programAddress });
+    for (const instruction of sent.flat()) {
       expect(instruction.programAddress).toBe(programAddress);
       const addresses = instruction.accounts!.map((account) => account.address);
       expect(addresses).toContain(hostConfig);
       expect(addresses).toContain(eventAuthority);
     }
+    expect(sent.flat().flatMap((instruction) => instruction.accounts!.map((account) => account.address))).toContain(
+      kmsContext,
+    );
   });
 
   test('configured validator: skips initialize_host_config, still defines the context', async () => {

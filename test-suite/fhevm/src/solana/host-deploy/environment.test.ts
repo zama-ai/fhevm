@@ -10,7 +10,6 @@ import {
   DEFAULT_SOLANA_ENVIRONMENT,
   SOLANA_ENVIRONMENTS,
   deployedProgramIds,
-  programIdsFor,
   readSolanaEnvironment,
 } from '../../../../../solana/deploy/src/environment';
 
@@ -26,15 +25,10 @@ describe('solana environments', () => {
   });
 
   test('the default environment ids are the ids the generated clients carry', () => {
-    const ids = programIdsFor(DEFAULT_SOLANA_ENVIRONMENT);
-    expect(ids.zamaHost).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
-    expect(ids.confidentialToken).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
+    const ids = deployedProgramIds(DEFAULT_SOLANA_ENVIRONMENT);
+    expect(ids.zama_host).toBe(ZAMA_HOST_PROGRAM_ADDRESS);
+    expect(ids.confidential_token).toBe(CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS);
     expect(new Set(Object.values(ids)).size).toBe(SOLANA_DEPLOY_PROGRAMS.length);
-    const byName = deployedProgramIds(DEFAULT_SOLANA_ENVIRONMENT);
-    expect(byName.zama_host).toBe(ids.zamaHost);
-    expect(byName.confidential_token).toBe(ids.confidentialToken);
-    expect(byName.demo_vault).toBe(ids.demoVault);
-    expect(byName.confidential_batcher).toBe(ids.confidentialBatcher);
   });
 
   test('readSolanaEnvironment defaults to preview-env and rejects unknown values', () => {

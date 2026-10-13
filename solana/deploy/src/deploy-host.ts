@@ -2,7 +2,7 @@ import { bootstrapZamaHost } from './bootstrap';
 import { deployProgramArtifacts } from './deploy-programs';
 import type { GatewayBootstrapInputs } from './gateway';
 import { loadKeypairSigner } from './keypair';
-import { DEFAULT_SOLANA_ENVIRONMENT, programIdsFor } from './environment';
+import { DEFAULT_SOLANA_ENVIRONMENT, deployedProgramIds } from './environment';
 import { createHostDeployContext } from './send';
 
 /** The shared host lifecycle: validate bindings, deploy/upgrade, then complete initialization. */
@@ -15,7 +15,7 @@ export const deployHostProgram = async (
     readonly kmsCorruptionThreshold: number;
   },
 ) => {
-  const programAddress = programIdsFor(parameters.environment ?? DEFAULT_SOLANA_ENVIRONMENT).zamaHost;
+  const programAddress = deployedProgramIds(parameters.environment ?? DEFAULT_SOLANA_ENVIRONMENT).zama_host;
   const context = createHostDeployContext(parameters.rpcUrl, parameters.signal);
   const bootstrap = {
     payer: await loadKeypairSigner(parameters.deployerKeypairPath),

@@ -296,14 +296,8 @@ const registerSolanaHostChain = async (parameters: {
   readonly composeProject: string;
   readonly coprocessorCount: number;
 }): Promise<void> => {
-  // The relax-chain-id migration is baked into the db-migration override; apply idempotently as a
-  // safety net.
-  const migration = await Bun.file(
-    path.join(ENGINE_DIR, 'db-migration', 'migrations', '20260605120000_relax_chain_id_checks_for_solana_host.sql'),
-  ).text();
   for (let index = 0; index < parameters.coprocessorCount; index += 1) {
     const psql = ['docker', 'exec', '-i', COPROCESSOR_DB_CONTAINER, 'psql', '-U', 'postgres', '-d', coprocessorDatabaseName(index)];
-    await run(psql, { input: migration, allowFailure: true });
     await run([...psql, '-c', registerSolanaCoprocessorSql(parameters.zamaHostId, DEFAULT_CHAIN_ID, SOLANA_HOST_CHAIN_ID)]);
     // zkproof-worker loads the host-chains cache once at startup (fhevm-engine-common
     // HostChainsCache), as fhevm-cli's registerExtraChainInCoprocessor does for an EVM chain.

@@ -51,10 +51,6 @@ import { solanaE2eSource } from "../../src/solana/target";
 export type Capabilities = {
   /** Can fund actors with SOL (local validator airdrop). Local: true. Devnet/mainnet: false. */
   readonly faucet: boolean;
-  /** Can create brand-new SPL / confidential mints for a scenario. Local & devnet: true. */
-  readonly freshMints: boolean;
-  /** Slots advance on demand (local validator). Live networks: false. */
-  readonly fastSlots: boolean;
   /** A relayer, coprocessors and KMS serve the chain. Cleartext: false. */
   readonly protocolServices: boolean;
 };
@@ -62,7 +58,7 @@ export type Capabilities = {
 export type TestEnv = {
   /** Which runtime the env was assembled from. */
   readonly source: TestEnvSource;
-  /** The Solana cluster the programs run on; decides funding and slot behavior. */
+  /** The Solana cluster the programs run on; decides the faucet and funding. */
   readonly network: SolanaNetwork;
   readonly rpcUrl: string;
   readonly wsUrl: string;
@@ -130,13 +126,9 @@ const LOCAL_DEFAULTS = {
   merkleDbPsql: solanaMerkleDbPsql(),
 } as const;
 
-// A local validator airdrops and advances slots on demand; devnet does neither. The demo-config
-// source differs from the bare sources solely in provenance: mints/batchers are pre-seeded, not
-// created per scenario — the demo smoke reuses the seeded mints rather than minting fresh ones.
+// A local validator airdrops on demand; devnet does not.
 const capabilitiesFor = (source: TestEnvSource, network: SolanaNetwork): Capabilities => ({
   faucet: network === "localnet",
-  freshMints: source !== "demo-config",
-  fastSlots: network === "localnet",
   protocolServices: source !== "cleartext",
 });
 

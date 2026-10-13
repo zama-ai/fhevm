@@ -1,7 +1,7 @@
 import { isIP } from "node:net";
 import path from "node:path";
 
-import { programIdsFor, readSolanaEnvironment } from "../../../../solana/deploy/src/environment";
+import { deployedProgramIds, readSolanaEnvironment } from "../../../../solana/deploy/src/environment";
 import {
   requiresGatewayKmsGenerationAddress,
   requiresMultichainAclAddress,
@@ -119,7 +119,7 @@ export const discoverContracts = async (state: Pick<State, "scenario">) => {
           // Solana hosts have no EVM address artifacts; their ACL identity is the zama-host program
           // id, the same on every cluster (resolved without deploying).
           if (chain.type === "solana") {
-            return [chain.key, { ACL_CONTRACT_ADDRESS: programIdsFor(readSolanaEnvironment()).zamaHost }] as const;
+            return [chain.key, { ACL_CONTRACT_ADDRESS: deployedProgramIds(readSolanaEnvironment()).zama_host }] as const;
           }
           return [chain.key, await readAddressEnv(hostChainAddressesPath(chain.key))] as const;
         }),

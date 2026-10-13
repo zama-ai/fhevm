@@ -9,7 +9,7 @@ import { deployHostProgram } from './deploy-host';
 import { deployProgramArtifacts } from './deploy-programs';
 import { integerEnv, readGatewayBootstrapInputsFromEnv, requiredEnv } from './gateway';
 import { loadKeypairSigner, resolveKeypairPath } from './keypair';
-import { programIdsFor, readSolanaEnvironment } from './environment';
+import { deployedProgramIds, readSolanaEnvironment } from './environment';
 import { createHostDeployContext } from './send';
 import { recoverPreview } from './recover';
 import { wipeZamaHost } from './wipe';
@@ -55,7 +55,7 @@ if (process.argv.includes('--help')) {
 
 const main = async () => {
   const environment = readSolanaEnvironment();
-  const programIds = programIdsFor(environment);
+  const programIds = deployedProgramIds(environment);
 
   const [target, action, ...flags] = process.argv.slice(2);
   // Disposable environments redeploy every branch head onto the same program ids, so their
@@ -67,8 +67,7 @@ const main = async () => {
   if (target === 'environment' && action === 'prepare-reset') {
     const context = createHostDeployContext(requiredEnv('SOLANA_RPC_URL'));
     for (const program of SOLANA_DEPLOY_PROGRAMS) {
-      const names = { zama_host: programIds.zamaHost, confidential_token: programIds.confidentialToken, demo_vault: programIds.demoVault, confidential_batcher: programIds.confidentialBatcher };
-      if (!(await context.rpc.getAccountInfo(names[program], { encoding: 'base64' }).send()).value) continue;
+      if (!(await context.rpc.getAccountInfo(programIds[program], { encoding: 'base64' }).send()).value) continue;
       await deployProgramArtifacts({ rpcUrl: requiredEnv('SOLANA_RPC_URL'), deployerKeypairPath: await resolveDeployerKeypairPath(), artifactsDir: ARTIFACTS_DIR, programs: [program], programKeypairPaths: {}, upgrade: true, environment });
     }
   } else if (target === 'environment' && (action === 'recover' || action === 'recover-funding' || action === 'reset')) {
@@ -77,18 +76,18 @@ const main = async () => {
     await deployProgramArtifacts({ rpcUrl: requiredEnv('SOLANA_RPC_URL'), deployerKeypairPath: await resolveDeployerKeypairPath(), artifactsDir: ARTIFACTS_DIR, programs: ['zama_host'], programKeypairPaths: await resolveProgramKeypairs(['zama_host']), allowUpgrade: true, environment });
   } else if (target === 'coprocessor' && action === 'register') {
     const result = spawnSync('psql', ['-X', '-d', requiredEnv('DATABASE_URL'), '--set', 'ON_ERROR_STOP=1'], {
-      input: registerSolanaCoprocessorSql(programIds.zamaHost, requiredEnv('SOLANA_KEY_SOURCE_CHAIN_ID'), BigInt(requiredEnv('SOLANA_HOST_CHAIN_ID'))),
+      input: registerSolanaCoprocessorSql(programIds.zama_host, requiredEnv('SOLANA_KEY_SOURCE_CHAIN_ID'), BigInt(requiredEnv('SOLANA_HOST_CHAIN_ID'))),
       encoding: 'utf8',
     });
     if (result.error) throw new Error(`coprocessor registration failed: ${result.error.message}`);
     // psql reports RAISE EXCEPTION messages and connection failures on stderr.
     if (result.status !== 0) throw new Error(`coprocessor registration failed: ${result.stderr.trim()}`);
-    await writeSolanaAddressArtifact(ADDRESSES_DIR, { zama_host: programIds.zamaHost });
+    await writeSolanaAddressArtifact(ADDRESSES_DIR, { zama_host: programIds.zama_host });
   } else if (target === 'host' && action === 'wipe') {
     const context = createHostDeployContext(requiredEnv('SOLANA_RPC_URL'));
     const payer = await loadKeypairSigner(await resolveDeployerKeypairPath());
-    const closed = await wipeZamaHost(context, { payer, programAddress: programIds.zamaHost });
-    console.log(`environment=${environment}; host=${programIds.zamaHost}; swept ${closed} program-owned accounts; none remain`);
+    const closed = await wipeZamaHost(context, { payer, programAddress: programIds.zama_host });
+    console.log(`environment=${environment}; host=${programIds.zama_host}; swept ${closed} program-owned accounts; none remain`);
   } else {
     if ((target !== 'host' && target !== 'demos') || (action !== 'deploy' && action !== 'upgrade')) {
       throw new Error(USAGE);
@@ -108,7 +107,7 @@ const main = async () => {
     if (target === 'host') {
       const chainId = BigInt(requiredEnv('SOLANA_HOST_CHAIN_ID'));
       const gateway = await readGatewayBootstrapInputsFromEnv();
-      console.log(`environment=${environment}; host=${programIds.zamaHost}; gateway_chain_id=${gateway.gatewayChainId}`);
+      console.log(`environment=${environment}; host=${programIds.zama_host}; gateway_chain_id=${gateway.gatewayChainId}`);
       console.log(
         `coprocessor_signers=${gateway.coprocessorSigners.map(evmHex).join(',')}; kms_signers=${gateway.kmsSigners.map(evmHex).join(',')}`,
       );

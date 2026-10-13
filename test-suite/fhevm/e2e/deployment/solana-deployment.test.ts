@@ -7,7 +7,7 @@ import path from 'node:path';
 
 import { createFinalizedRpc, findHostConfigPda, getHostConfigDecoder } from '@fhevm/solana-zama-host';
 import { HCU_LIMITS } from '../../../../solana/deploy/src/constants';
-import { DEFAULT_SOLANA_ENVIRONMENT, programIdsFor } from '../../../../solana/deploy/src/environment';
+import { DEFAULT_SOLANA_ENVIRONMENT, deployedProgramIds } from '../../../../solana/deploy/src/environment';
 import { solanaPubkeyFromKeypairFile } from '../../src/generate/solana';
 import { REPO_ROOT } from '../../src/layout';
 import { assertAlpenglowActive, validatorStartArgs } from '../../src/solana/validator';
@@ -92,7 +92,7 @@ beforeAll(async () => {
         rpcPort: 18999,
         genesisUpgradeablePrograms: [
           {
-            address: programIdsFor(DEFAULT_SOLANA_ENVIRONMENT).zamaHost,
+            address: deployedProgramIds(DEFAULT_SOLANA_ENVIRONMENT).zama_host,
             soPath: path.join(directory, 'A/zama_host.so'),
             authority: solanaPubkeyFromKeypairFile(path.join(directory, 'payer.json')),
           },
@@ -247,7 +247,7 @@ test('coprocessor register connects to PostgreSQL and preserves registration on 
     expect(result.code, result.stderr).toBe(0);
   }
   expect((await sql('SELECT acl_contract_address FROM host_chains')).stdout.trim()).toBe(
-    programIdsFor(DEFAULT_SOLANA_ENVIRONMENT).zamaHost,
+    deployedProgramIds(DEFAULT_SOLANA_ENVIRONMENT).zama_host,
   );
   expect((await sql('SELECT count(*) FROM keys WHERE chain_id <> 12345')).stdout.trim()).toBe('1');
   expect((await sql("SELECT encode(pks_key,'hex') FROM keys WHERE chain_id <> 12345")).stdout.trim()).toBe('03');

@@ -23,7 +23,6 @@ import { run } from "../utils/process";
 import { until } from "../utils/until";
 
 export const VALIDATOR_RPC_URL = LOCAL_SOLANA_ENDPOINTS.validatorRpc;
-export const VALIDATOR_WS_URL = LOCAL_SOLANA_ENDPOINTS.validatorWs;
 /**
  * The e2e specimen programs: wallet-facing writers of encrypted values the scenarios drive. They
  * exist only on the test validator and deploy from the committed keypairs in

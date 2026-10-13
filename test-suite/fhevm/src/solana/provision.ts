@@ -30,7 +30,6 @@ import {
   getMintToInstruction,
 } from '@solana-program/token';
 import type { Bytes32Hex } from '@fhevm/sdk/types';
-import { programDataAddressFor } from '../../../../solana/deploy/src/bootstrap';
 import { isSolanaHostChainId } from '../../../../sdk/js-sdk/src/core/chains/hostChainId';
 import {
   createFinalizedRpc,
@@ -50,9 +49,6 @@ import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, findTokenAccountPda, BALANCE_KEY as
 
 const bytesEqual = (a: Uint8Array, b: Uint8Array): boolean =>
   a.length === b.length && a.every((byte, index) => byte === b[index]);
-
-/** BPF upgradeable loader `ProgramData` PDA for zama-host (`[program_id]` under the loader). */
-export const zamaHostProgramDataAddress = (): Promise<Address> => programDataAddressFor(ZAMA_HOST_PROGRAM_ADDRESS);
 
 export type SolanaProvisioningContext = {
   readonly rpc: Rpc<SolanaRpcApi>;
