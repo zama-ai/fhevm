@@ -10,8 +10,13 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "ci/preview-env/scripts/deploy/deploy-kms-connector.sh"
 MOCK = '''#!/usr/bin/env python3
-import base64,json,os,pathlib,shutil,sys
-p=pathlib.Path(os.environ['TLS_TEST_STATE']); s=json.loads(p.read_text()); a=sys.argv[1:]
+import base64,fcntl,json,os,pathlib,shutil,sys
+a=sys.argv[1:]
+# `kubectl create ... | kubectl apply -f -` runs two mocks at once: the lock, held until exit, makes
+# their read-modify-writes take turns. apply drains stdin first, as create needs the lock to write it.
+# Writes stay in place; a rename would leave a waiting mock locked on the old file.
+if a[:1]==['apply']: sys.stdin.read()
+p=pathlib.Path(os.environ['TLS_TEST_STATE']); f=p.open('r+'); fcntl.flock(f,fcntl.LOCK_EX); s=json.load(f)
 tool=pathlib.Path(sys.argv[0]).name
 s['calls'].append([tool]+a)
 if tool=='kubectl':
@@ -26,7 +31,8 @@ if tool=='kubectl':
     key,src=arg[len('--from-file='):].split('=',1)
     shutil.copy(src,p.parent/key)
     s['secret'][key]=base64.b64encode(pathlib.Path(src).read_bytes()).decode()
- elif a[0] in ('create','apply'): sys.stdin.read() if a[0]=='apply' else print('{}')
+ elif a[0]=='create': print('{}')
+ elif a[0]=='apply': pass
  else: raise Exception(a)
 p.write_text(json.dumps(s))
 '''
