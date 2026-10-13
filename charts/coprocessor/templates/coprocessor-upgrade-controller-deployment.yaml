@@ -4,12 +4,12 @@
 {{- include "coprocessor.env.extra" (dict "root" .root "lists" (list .c.env)) }}
 {{- end -}}
 
-{{- if .Values.upgradeController.enabled }}
-{{- $ctx := dict "root" . "c" .Values.upgradeController }}
+{{- with include "coprocessor.workload" (dict "root" . "key" "upgradeController") | fromYaml }}
+{{- $ctx := dict "root" $ "c" .c }}
 {{- include "coprocessor.deployment" (merge (dict
-  "name" (include "upgradeControllerName" .)
-  "appLabel" "coprocessor-upgrade-controller"
-  "container" "coprocessor-upgrade-controller"
+  "name" .name
+  "appLabel" .appLabel
+  "container" .appLabel
   "command" "upgrade-controller"
   "args" "- --database-url=$(DATABASE_URL)"
   "extraArgs" (list $ctx.c.extraArgs)

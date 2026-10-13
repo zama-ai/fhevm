@@ -155,34 +155,14 @@ Usage: include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom)
 {{- tpl (toYaml .valueFrom) .root -}}
 {{- end -}}
 
-{{- define "upgradeControllerName" -}}
-{{- $default := printf "%s-%s" .Release.Name "upgrade-controller" }}
-{{- default $default .Values.upgradeController.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "consensusDetectorName" -}}
-{{- $default := printf "%s-%s" .Release.Name "consensus-detector" }}
-{{- default $default .Values.consensusDetector.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "tfheWorkerName" -}}
-{{- $tfheWorkerNameDefault := printf "%s-%s" .Release.Name "tfhe-worker" }}
-{{- default $tfheWorkerNameDefault .Values.tfheWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "hostListenerName" -}}
-{{- $hostListenerNameDefault := printf "%s-%s" .Release.Name "host-listener" }}
-{{- default $hostListenerNameDefault .Values.hostListenerShared.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "hostListenerPollerName" -}}
-{{- $hostListenerPollerNameDefault := printf "%s-%s" .Release.Name "host-listener-poller" }}
-{{- default $hostListenerPollerNameDefault .Values.hostListenerPollerShared.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "hostListenerCatchupOnlyName" -}}
-{{- $hostListenerCatchupOnlyNameDefault := printf "%s-%s" .Release.Name "host-listener-catchup-only" }}
-{{- default $hostListenerCatchupOnlyNameDefault .Values.hostListenerCatchupOnlyShared.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{/*
+Resource name of a singleton component: <release>-<suffix>, or the
+component's nameOverride.
+Usage: include "coprocessor.componentName" (dict "root" $ "key" "tfheWorker" "suffix" "tfhe-worker")
+*/}}
+{{- define "coprocessor.componentName" -}}
+{{- $override := (index .root.Values .key | default dict).nameOverride -}}
+{{- default (printf "%s-%s" .root.Release.Name .suffix) $override | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "coprocessor.failIfDeprecatedTopLevelListenerKeysPresent" -}}
@@ -201,37 +181,20 @@ Usage: include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom)
 {{- end -}}
 {{- end -}}
 
+{{/* Fails when more than one chain claims the unsuffixed legacy name for the same listener mode. */}}
 {{- define "coprocessor.failIfMultipleLegacyNameClaims" -}}
-{{- $componentKey := .componentKey -}}
-{{- $claims := 0 -}}
-{{- range $chain := (include "coprocessor.chains" .root | fromYaml).chains -}}
-  {{- if and (hasKey $chain $componentKey) ((index $chain $componentKey).useLegacyName | default false) -}}
-    {{- $claims = add1 $claims -}}
+{{- $chains := (include "coprocessor.chains" . | fromYaml).chains -}}
+{{- range $mode := (include "coprocessor.hostListenerModes" . | fromYaml).modes -}}
+  {{- $claims := 0 -}}
+  {{- range $chain := $chains -}}
+    {{- if (index $chain $mode.chainKey | default dict).useLegacyName -}}
+      {{- $claims = add1 $claims -}}
+    {{- end -}}
+  {{- end -}}
+  {{- if gt $claims 1 -}}
+    {{- fail (printf "only one chains entry may set %s.useLegacyName=true" $mode.chainKey) -}}
   {{- end -}}
 {{- end -}}
-{{- if gt $claims 1 -}}
-{{- fail (printf "only one chains entry may set %s.useLegacyName=true" $componentKey) -}}
-{{- end -}}
-{{- end -}}
-
-{{- define "txSenderName" -}}
-{{- $txSenderNameDefault := printf "%s-%s" .Release.Name "tx-sender" }}
-{{- default $txSenderNameDefault .Values.txSender.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "gwListenerName" -}}
-{{- $gwListenerNameDefault := printf "%s-%s" .Release.Name "gw-listener" }}
-{{- default $gwListenerNameDefault .Values.gwListener.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "zkProofWorkerName" -}}
-{{- $zkProofWorkerNameDefault := printf "%s-%s" .Release.Name "zkproof-worker" }}
-{{- default $zkProofWorkerNameDefault .Values.zkProofWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "snsWorkerName" -}}
-{{- $snsWorkerNameDefault := printf "%s-%s" .Release.Name "sns-worker" }}
-{{- default $snsWorkerNameDefault .Values.snsWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 

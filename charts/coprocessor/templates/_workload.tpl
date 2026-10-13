@@ -328,6 +328,54 @@ spec:
       {{- end }}
 {{- end -}}
 
+{{/* Singleton components: values key, resource name suffix, and whether they expose a Service. */}}
+{{- define "coprocessor.singletonComponents" -}}
+components:
+  - {key: gwListener, suffix: gw-listener, service: true}
+  - {key: tfheWorker, suffix: tfhe-worker, service: true}
+  - {key: zkProofWorker, suffix: zkproof-worker, service: true}
+  - {key: snsWorker, suffix: sns-worker, service: true}
+  - {key: consensusDetector, suffix: consensus-detector, service: true}
+  - {key: txSender, suffix: tx-sender, service: true}
+  - {key: upgradeController, suffix: upgrade-controller, service: false}
+{{- end -}}
+
+{{/*
+Every enabled workload, returned as YAML under "workloads". Each entry has
+key, name, appLabel, c (component values), service and extraSelectorLabels.
+Host listener entries also carry mode, chain and cfg (see
+coprocessor.hostListenerInstances).
+*/}}
+{{- define "coprocessor.workloads" -}}
+{{- $root := . -}}
+{{- $workloads := list -}}
+{{- range $s := (include "coprocessor.singletonComponents" . | fromYaml).components -}}
+  {{- $c := index $root.Values $s.key | default dict -}}
+  {{- if $c.enabled -}}
+    {{- $name := include "coprocessor.componentName" (dict "root" $root "key" $s.key "suffix" $s.suffix) -}}
+    {{- $workloads = append $workloads (dict "key" $s.key "name" $name "appLabel" (printf "coprocessor-%s" $s.suffix) "c" $c "service" $s.service "extraSelectorLabels" true) -}}
+  {{- end -}}
+{{- end -}}
+{{- range $i := (include "coprocessor.hostListenerInstances" . | fromYaml).instances -}}
+  {{- $workloads = append $workloads (merge (dict "key" $i.mode.chainKey "service" true "extraSelectorLabels" $i.mode.extraSelectorLabels) $i) -}}
+{{- end -}}
+{{- toYaml (dict "workloads" $workloads) -}}
+{{- end -}}
+
+{{/*
+The workloads entry of an enabled singleton component, as YAML; empty when
+the component is disabled.
+Usage: with (include "coprocessor.workload" (dict "root" $ "key" "tfheWorker") | fromYaml)
+*/}}
+{{- define "coprocessor.workload" -}}
+{{- $key := .key -}}
+{{- range $w := (include "coprocessor.workloads" .root | fromYaml).workloads -}}
+  {{- if eq $w.key $key -}}
+    {{- toYaml $w -}}
+  {{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{/*
 Host listener modes. Each enabled chains[].<chainKey> entry deploys one
 instance of the mode, configured by .Values.<valuesKey>.

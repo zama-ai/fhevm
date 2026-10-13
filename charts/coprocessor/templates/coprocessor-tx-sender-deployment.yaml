@@ -24,12 +24,12 @@
 {{- include "coprocessor.env.extra" (dict "root" .root "lists" (list .c.env)) }}
 {{- end -}}
 
-{{- if .Values.txSender.enabled }}
-{{- $ctx := dict "root" . "c" .Values.txSender }}
+{{- with include "coprocessor.workload" (dict "root" . "key" "txSender") | fromYaml }}
+{{- $ctx := dict "root" $ "c" .c }}
 {{- include "coprocessor.deployment" (merge (dict
-  "name" (include "txSenderName" .)
-  "appLabel" "coprocessor-tx-sender"
-  "container" "coprocessor-tx-sender"
+  "name" .name
+  "appLabel" .appLabel
+  "container" .appLabel
   "command" "transaction_sender"
   "args" (include "coprocessor.txSender.args" $ctx)
   "extraArgs" (list $ctx.c.extraArgs)

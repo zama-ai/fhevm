@@ -11,12 +11,12 @@
 {{- include "coprocessor.env.extra" (dict "root" .root "lists" (list .c.env)) }}
 {{- end -}}
 
-{{- if .Values.tfheWorker.enabled }}
-{{- $ctx := dict "root" . "c" .Values.tfheWorker }}
+{{- with include "coprocessor.workload" (dict "root" . "key" "tfheWorker") | fromYaml }}
+{{- $ctx := dict "root" $ "c" .c }}
 {{- include "coprocessor.deployment" (merge (dict
-  "name" (include "tfheWorkerName" .)
-  "appLabel" "coprocessor-tfhe-worker"
-  "container" "coprocessor-tfhe-worker"
+  "name" .name
+  "appLabel" .appLabel
+  "container" .appLabel
   "command" "tfhe_worker"
   "args" (include "coprocessor.tfheWorker.args" $ctx)
   "extraArgs" (list $ctx.c.extraArgs)

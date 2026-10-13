@@ -1,0 +1,19 @@
+{{- range $w := (include "coprocessor.workloads" . | fromYaml).workloads }}
+{{- if and $w.service ($w.c.serviceMonitor).enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: {{ $w.appLabel }}
+    app.kubernetes.io/name: {{ $w.name }}
+  name: {{ $w.name }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ $w.appLabel }}
+      app.kubernetes.io/name: {{ $w.name }}
+  endpoints:
+    - port: metrics
+{{- end }}
+{{- end }}
