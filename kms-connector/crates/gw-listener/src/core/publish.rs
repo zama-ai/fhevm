@@ -7,10 +7,7 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
         ProtocolEvent, ProtocolEventKind,
-        db::{
-            ParamsTypeDb, RequestSource, insert_solana_public_decryption,
-            insert_solana_user_decryption, invalidate_kms_context, invalidate_kms_epoch,
-        },
+        db::{ParamsTypeDb, invalidate_kms_context, invalidate_kms_epoch},
     },
 };
 // Handle-only overloaded decryption events (authoritative ct-commits verifier, v0.15).
@@ -92,22 +89,16 @@ async fn publish_event_inner<'e>(
         ProtocolEventKind::PublicDecryption(e) => {
             publish_public_decryption(executor, e, tx_hash, created_at, otlp_ctx).await
         }
-        ProtocolEventKind::SolanaPublicDecryption(e) => {
-            let source = RequestSource::OnChain;
-            insert_solana_public_decryption(executor, &e, tx_hash, created_at, &otlp_ctx, source)
-                .await
-        }
         ProtocolEventKind::UserDecryption(e) => {
             publish_user_decryption(executor, e, tx_hash, created_at, otlp_ctx).await
         }
         ProtocolEventKind::UserDecryptionV2(e) => {
             publish_user_decryption_v2(executor, e, tx_hash, created_at, otlp_ctx).await
         }
-        ProtocolEventKind::SolanaUserDecryptionV1(e) => {
-            let source = RequestSource::OnChain;
-            insert_solana_user_decryption(executor, &e, tx_hash, created_at, &otlp_ctx, source)
-                .await
-        }
+        ProtocolEventKind::SolanaPublicDecryption(_)
+        | ProtocolEventKind::SolanaUserDecryptionV1(_) => Err(anyhow!(
+            "Solana decryptions arrive through HTTP, not on chain"
+        )),
         ProtocolEventKind::PrepKeygen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
             publish_prep_keygen_request(executor, e, params_type, tx_hash, created_at, otlp_ctx)

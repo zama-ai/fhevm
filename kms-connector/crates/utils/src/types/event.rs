@@ -926,8 +926,8 @@ impl TryFrom<DecryptionEvents> for ProtocolEventKind {
             // Handle-only overloads (v0.15): `_1` for public, `_2` for the legacy-style user
             // event and `_3` for the RFC016 unified user event
             // The `SnsCiphertextMaterial`-carrying variants (public `_0` and user `_0`, `_1`) are
-            // intentionally ignored. The Solana public `_2` and user `_4` are converted by the
-            // Gateway listener, which skips an event whose Solana request does not decode.
+            // intentionally ignored. Solana decryptions arrive through HTTP, so the listener does
+            // not subscribe to the Gateway's Solana events.
             DecryptionEvents::PublicDecryptionRequest_1(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_2(e) => Ok(e.into()),
             DecryptionEvents::UserDecryptionRequest_3(e) => Ok(e.into()),

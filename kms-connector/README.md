@@ -74,10 +74,11 @@ At least one of these two options must be provided.
 See the [architecture documentation](./docs/architecture.md) for more detail.
 
 Solana user decrypt uses the existing `user_decryption_requests` queue and worker.
-The Gateway's `SolanaUserDecryptionRequest` event is decoded and checked at ingress; its
-canonical request bytes are not persisted. `POST /v1/user-decrypt` accepts the same data
-under `{attestationType, payload, signature}` with `attestationType` set to
-`solana-srfc38-user-decrypt-v1`. The EVM value remains `eip712-unified-user-decrypt-v1`.
+Solana requests arrive only over HTTP; the gw-listener does not subscribe to the Gateway's
+Solana events. `POST /v1/user-decrypt` accepts a request under
+`{attestationType, payload, signature}` with `attestationType` set to
+`solana-srfc38-user-decrypt-v1`. It is decoded and checked at ingress; its canonical request
+bytes are not persisted. The EVM value remains `eip712-unified-user-decrypt-v1`.
 The Solana permit chain ID is derived from the handles; the HTTP payload has no numeric
 `chainId` field. This preserves the full chain ID in JavaScript clients.
 
@@ -109,8 +110,8 @@ a query unresolved, or after `HEDGE_DELAY` (250 ms) without an answer, while ear
 running. Once every query is resolved, the reads still running are dropped. A query still
 unresolved is retried only by the next attempt of the worker loop.
 Source controls response handling: Gateway requests use the worker's retry budget; HTTP
-requests receive the stored error response and can be retried by the caller. The relayer's
-end-to-end Solana path still enters through the Gateway event.
+requests, which include every Solana request, receive the stored error response and can be
+retried by the caller.
 
 ## Support
 

@@ -349,19 +349,6 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
-        ProtocolEventKind::SolanaPublicDecryption(e) => {
-            // The reader must reconstruct the same typed request. The Gateway assigns the id.
-            for r in rows {
-                if let ProtocolEventKind::SolanaPublicDecryption(mut stored) =
-                    connector_utils::types::event::from_public_decryption_row(r)?.kind
-                {
-                    stored.decryption_id = e.decryption_id;
-                    if stored == e {
-                        return Ok(());
-                    }
-                }
-            }
-        }
         ProtocolEventKind::UserDecryption(e) => {
             for r in rows {
                 if e.publicKey.to_vec() == r.try_get::<Vec<u8>, _>("public_key")?
@@ -381,18 +368,9 @@ pub fn check_event_in_db(rows: &[PgRow], event: ProtocolEventKind) -> anyhow::Re
                 }
             }
         }
-        ProtocolEventKind::SolanaUserDecryptionV1(e) => {
-            // The reader must reconstruct the same typed request. The Gateway assigns the id.
-            for r in rows {
-                if let ProtocolEventKind::SolanaUserDecryptionV1(mut stored) =
-                    connector_utils::types::event::from_user_decryption_row(r)?.kind
-                {
-                    stored.decryption_id = e.decryption_id;
-                    if stored == e {
-                        return Ok(());
-                    }
-                }
-            }
+        ProtocolEventKind::SolanaPublicDecryption(_)
+        | ProtocolEventKind::SolanaUserDecryptionV1(_) => {
+            anyhow::bail!("the gw-listener does not store Solana decryptions")
         }
         ProtocolEventKind::PrepKeygen(_) => {
             for r in rows {

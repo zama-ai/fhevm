@@ -51,7 +51,7 @@ pub fn check_not_invalidated(start_timestamp: u64, watermark: u64) -> Result<(),
 }
 
 /// The closed window `[start, start + duration]` against the Connector's clock: the bounds the
-/// Gateway applies on chain, so the two never disagree on a boundary second.
+/// worker applies to an EVM HTTP request, so the two paths never disagree on a boundary second.
 pub fn check_window(
     start_timestamp: u64,
     duration_seconds: u64,

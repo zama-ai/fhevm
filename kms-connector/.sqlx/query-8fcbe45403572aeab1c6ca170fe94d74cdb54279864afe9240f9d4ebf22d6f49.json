@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO public_decryption_requests AS existing (\n            decryption_id, ct_handles, handle_encrypted_stores, extra_data, created_at,\n            otlp_context, source\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, 'http')\n        ON CONFLICT (decryption_id) DO UPDATE SET\n            status = 'pending',\n            created_at = EXCLUDED.created_at,\n            otlp_context = EXCLUDED.otlp_context\n        WHERE existing.status = 'failed' AND existing.source = 'http'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "ByteaArray",
+        "ByteaArray",
+        "Bytea",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8fcbe45403572aeab1c6ca170fe94d74cdb54279864afe9240f9d4ebf22d6f49"
+}

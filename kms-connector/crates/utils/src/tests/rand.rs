@@ -2,9 +2,6 @@ use crate::types::solana_request::{
     SolanaEntryClaims, SolanaRequestBlob, SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
 };
 use alloy::primitives::{Address, FixedBytes, U256};
-use fhevm_gateway_bindings::decryption::{
-    Decryption::SolanaUserDecryptionRequest, IDecryption::RequestValiditySeconds,
-};
 use fhevm_host_bindings::protocol_config::ProtocolConfig::{
     KmsNodeParams, KmsThresholds, PcrValues,
 };
@@ -71,16 +68,6 @@ pub fn rand_pcr_values() -> PcrValues {
     }
 }
 
-/// A well-formed Solana user decryption event. Its signature is a placeholder, so it only passes
-/// the checks that precede signature verification.
-pub fn solana_user_decryption_event(
-    decryption_id: U256,
-    handle: FixedBytes<32>,
-) -> SolanaUserDecryptionRequest {
-    let (fields, blob) = solana_user_decryption_parts(handle);
-    solana_user_decryption_event_for(decryption_id, &fields, &blob)
-}
-
 /// The two carriers of a well-formed Solana request naming `handle`, with a placeholder
 /// signature.
 pub fn solana_user_decryption_parts(
@@ -106,36 +93,12 @@ pub fn solana_user_decryption_parts(
     (fields, blob)
 }
 
-/// The Gateway event carrying `fields` as its typed fields and `blob` as its opaque request.
-pub fn solana_user_decryption_event_for(
-    decryption_id: U256,
-    fields: &SolanaUserDecryptFields,
-    blob: &SolanaRequestBlob,
-) -> SolanaUserDecryptionRequest {
-    SolanaUserDecryptionRequest {
-        decryptionId: decryption_id,
-        ctHandles: fields
-            .handles
-            .iter()
-            .map(|handle| FixedBytes::from(*handle))
-            .collect(),
-        requestValidity: RequestValiditySeconds {
-            startTimestamp: U256::from(fields.start_timestamp),
-            durationSeconds: U256::from(fields.duration_seconds),
-        },
-        publicKey: fields.transport_key.clone().into(),
-        extraData: fields.extra_data.clone().into(),
-        solanaRequest: zama_solana_request::encode_solana_request(blob)
-            .unwrap()
-            .into(),
-    }
-}
-
+/// A well-formed Solana user decryption request. Its signature is a placeholder, so it only
+/// passes the checks that precede signature verification.
 pub fn solana_user_decryption_request(
     decryption_id: U256,
     handle: FixedBytes<32>,
 ) -> SolanaUserDecryptionRequestV1 {
-    solana_user_decryption_event(decryption_id, handle)
-        .try_into()
-        .unwrap()
+    let (fields, blob) = solana_user_decryption_parts(handle);
+    SolanaUserDecryptionRequestV1::new(decryption_id, fields, blob).unwrap()
 }

@@ -1,7 +1,7 @@
 use super::*;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
-    tests::rand::solana_user_decryption_event,
+    tests::rand::solana_user_decryption_request,
     types::{
         ProtocolEventKind,
         db::{AttestationType as RowAttestationType, insert_solana_user_decryption},
@@ -15,15 +15,14 @@ use kms_connector_api::{
 use sqlx::postgres::PgRow;
 
 #[tokio::test]
-async fn solana_http_and_gateway_requests_store_the_same_request() -> anyhow::Result<()> {
+async fn a_solana_http_request_is_stored_as_its_typed_request() -> anyhow::Result<()> {
     let endpoint = setup_with(|config| Config {
         supported_chain_ids: vec![SOLANA_CHAIN_ID],
         ..config
     })
     .await?;
-    let event = solana_user_decryption_event(U256::from(987), rand_handle(SOLANA_CHAIN_ID));
-    let gateway = SolanaUserDecryptionRequestV1::try_from(event)?;
-    let body = http_body(&gateway);
+    let request = solana_user_decryption_request(U256::from(987), rand_handle(SOLANA_CHAIN_ID));
+    let body = http_body(&request);
     let id = body.id();
 
     let pending = tokio::spawn({
@@ -37,29 +36,13 @@ async fn solana_http_and_gateway_requests_store_the_same_request() -> anyhow::Re
     );
     assert_eq!(
         http_row.get::<Vec<u8>, _>("user_address"),
-        gateway.request.permit().user_address().as_bytes()
+        request.request.permit().user_address().as_bytes()
     );
-
-    insert_solana_user_decryption(
-        &endpoint.db,
-        &gateway,
-        Some(B256::repeat_byte(9)),
-        sqlx::types::chrono::Utc::now(),
-        &PropagationContext::default(),
-        RequestSource::OnChain,
-    )
-    .await?;
-    let gateway_row =
-        sqlx::query("SELECT * FROM user_decryption_requests WHERE decryption_id = $1")
-            .bind(gateway.decryption_id.as_le_slice())
-            .fetch_one(&endpoint.db)
-            .await?;
 
     let mut from_http = stored_request(&http_row)?;
     assert_eq!(from_http.decryption_id, db_id(id));
-    from_http.decryption_id = gateway.decryption_id;
-    assert_eq!(from_http, gateway);
-    assert_eq!(stored_request(&gateway_row)?, gateway);
+    from_http.decryption_id = request.decryption_id;
+    assert_eq!(from_http, request);
 
     complete_udec(&endpoint.db, id).await?;
     assert_eq!(pending.await??.status(), StatusCode::OK);
@@ -69,17 +52,12 @@ async fn solana_http_and_gateway_requests_store_the_same_request() -> anyhow::Re
 #[tokio::test]
 async fn solana_rows_of_the_wrong_shape_are_unwritable() -> anyhow::Result<()> {
     let endpoint = setup().await?;
-    let request = SolanaUserDecryptionRequestV1::try_from(solana_user_decryption_event(
-        U256::from(1),
-        rand_handle(SOLANA_CHAIN_ID),
-    ))?;
+    let request = solana_user_decryption_request(U256::from(1), rand_handle(SOLANA_CHAIN_ID));
     insert_solana_user_decryption(
         &endpoint.db,
         &request,
-        None,
         sqlx::types::chrono::Utc::now(),
         &PropagationContext::default(),
-        RequestSource::Http,
     )
     .await?;
     let id = request.decryption_id;

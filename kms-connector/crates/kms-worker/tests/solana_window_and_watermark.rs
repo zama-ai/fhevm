@@ -55,8 +55,8 @@ fn the_window_is_open_at_its_exact_start() {
 }
 
 /// The window is open at its exact end and closed one second later: `[start, start + duration]`
-/// is the closed interval the Gateway applies on chain (`start + duration < now` rejects), and
-/// this second line has to agree with it second for second.
+/// is the closed interval the worker applies to an EVM HTTP request (`now > start + duration`
+/// rejects), and the Solana path has to agree with it second for second.
 #[test]
 fn the_window_is_open_at_its_exact_end() {
     let end = DEFAULT_START + DEFAULT_DURATION;

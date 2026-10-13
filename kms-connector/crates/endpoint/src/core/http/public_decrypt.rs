@@ -20,8 +20,7 @@ use actix_web::{
 use alloy::primitives::B256;
 use connector_utils::monitoring::otlp::PropagationContext;
 use connector_utils::types::{
-    db::{RequestSource, insert_solana_public_decryption},
-    solana_request::SolanaPublicDecryptionRequest,
+    db::insert_solana_public_decryption, solana_request::SolanaPublicDecryptionRequest,
 };
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PublicDecryptionRequest, PublicDecryptionResponse,
@@ -96,15 +95,7 @@ impl DecryptionRoute for PublicRoute {
                 upsert_public_decryption_request(executor, id, request, otlp_ctx).await
             }
             ValidatedPublicDecryption::Solana(request) => {
-                insert_solana_public_decryption(
-                    executor,
-                    request,
-                    None,
-                    Utc::now(),
-                    otlp_ctx,
-                    RequestSource::Http,
-                )
-                .await
+                insert_solana_public_decryption(executor, request, Utc::now(), otlp_ctx).await
             }
         }
     }

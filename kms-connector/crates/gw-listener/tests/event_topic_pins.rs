@@ -7,24 +7,19 @@
 //! stops matching. This suite turns that silence into a named failure: every hash the
 //! decryption filter subscribes by is asserted against the keccak of a spelled-out event
 //! signature, so a drifted suffix or a reshaped event fails here with both forms visible.
-//!
-//! The EVM signatures below are also this layer's EVM gate: the Solana gateway entries must not
-//! move them.
 
 use alloy::primitives::{B256, keccak256};
 use connector_utils::types::db::EventType;
 
 /// Every event signature the user-decryption filter subscribes by: the two EVM shapes it
-/// serves, plus the Solana request event. The list is
-/// compared in full (order-insensitively), so a topic appearing or disappearing fails with both
-/// lists visible.
+/// serves. The list is compared in full (order-insensitively), so a topic appearing or
+/// disappearing fails with both lists visible.
 const USER_DECRYPTION_SUBSCRIBED_SIGS: &[&str] = &[
     // The bytes32[] handles-only user-decryption shape the base binding name resolves to.
     "UserDecryptionRequest(uint256,bytes32[],address,bytes,bytes)",
     // The unified handles-only shape (RFC-023 Part 2); currently rides the positional
     // alias `UserDecryptionRequest_3`.
     "UserDecryptionRequest(uint256,(bytes32,address,address)[],(address,bytes,address[],(uint256,uint256),bytes,bytes))",
-    "SolanaUserDecryptionRequest(uint256,bytes32[],(uint256,uint256),bytes,bytes,bytes)",
 ];
 
 fn sorted_hashes(sigs: &[&str]) -> Vec<B256> {
@@ -47,11 +42,9 @@ fn the_user_decryption_subscription_pins_its_topics() {
 }
 
 /// Every event signature the public-decryption filter must subscribe by: the EVM handles-only
-/// shape, and the Solana one naming each handle's encrypted store.
-const PUBLIC_DECRYPTION_SUBSCRIBED_SIGS: &[&str] = &[
-    "PublicDecryptionRequest(uint256,bytes32[],bytes)",
-    "SolanaPublicDecryptionRequest(uint256,bytes32[],bytes,bytes32[])",
-];
+/// shape.
+const PUBLIC_DECRYPTION_SUBSCRIBED_SIGS: &[&str] =
+    &["PublicDecryptionRequest(uint256,bytes32[],bytes)"];
 
 #[test]
 fn the_public_decryption_subscription_pins_its_topics() {

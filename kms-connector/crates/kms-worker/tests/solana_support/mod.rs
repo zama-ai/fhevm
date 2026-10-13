@@ -319,7 +319,7 @@ impl<'a> RequestBuilder<'a> {
         self
     }
 
-    /// The request in its two carriers, signed: the fields the Gateway types, and the blob.
+    /// The request in its two carriers, signed: the typed fields and the blob.
     pub fn parts(&self) -> (SolanaUserDecryptFields, SolanaRequestBlob) {
         let signature = self.wallet.sign(&self.permit.typed());
         let permit = self.permit.wire();
