@@ -1207,7 +1207,16 @@ mod tests {
         let response =
             post(Some(authorization), too_large).await.expect("send");
         assert_eq!(response.status(), 400);
-        assert_eq!(error_of(response).await.code, ErrorCode::Malformed);
+        // Zero bytes do not decode either: the message tells the size limit from the parser.
+        let error = error_of(response).await;
+        assert_eq!(error.code, ErrorCode::Malformed);
+        assert!(
+            error
+                .message
+                .contains(&format!("over {MAX_REQUEST_BYTES} bytes")),
+            "{}",
+            error.message
+        );
 
         let liveness = client
             .get(format!("{base}/liveness"))
