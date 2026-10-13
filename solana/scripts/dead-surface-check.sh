@@ -192,9 +192,10 @@ SENTINEL_ROOTS=(
 # Files expected to still carry at least one retrofit sentinel. This is a STALENESS guard, not the
 # scan surface: check 4 finds retrofits anywhere in the owned trees, and this list fails loudly when
 # a file that used to carry one no longer does, so the list cannot rot into fake coverage.
-SENTINEL_FILES=(
-  relayer/src/core/event.rs
-)
+# Empty since the relayer's input-proof request typed its identities as an enum: its one entry,
+# `relayer/src/core/event.rs`, zero-filled the EVM addresses of a Solana request. The check stays for
+# the next one.
+SENTINEL_FILES=()
 # The two staleness arms below read a list that lives in code, so the self-test cannot violate them
 # by planting a file. It adds an entry through the environment instead, and one hook drives both: a
 # path that is not there at all, and a path that is there with no retrofit left on it.
@@ -774,7 +775,7 @@ if run_check 4; then
   # bash 3.2 (the macOS default) has no associative arrays, so covered files accumulate in a string.
   sentinel_seen=""
   retrofit_hits=$( (grep -rnE --include='*.rs' --include='*.ts' "${EXCLUDES[@]}" "$SENTINEL" \
-    "${SENTINEL_ROOTS[@]}" "${SENTINEL_FILES[@]}" 2>/dev/null || true) \
+    "${SENTINEL_ROOTS[@]}" ${SENTINEL_FILES[@]+"${SENTINEL_FILES[@]}"} 2>/dev/null || true) \
     | (grep -E "$EVM_SHAPED_FIELD" || true) \
     | (grep -vE '(^|/)tests?/|\.test\.tsx?:|tests\.rs:' || true) )
   while IFS= read -r hit; do
@@ -805,7 +806,7 @@ if run_check 4; then
       fail=1
     fi
   done <<< "$retrofit_hits"
-  for file in "${SENTINEL_FILES[@]}"; do
+  for file in ${SENTINEL_FILES[@]+"${SENTINEL_FILES[@]}"}; do
     [ -f "$file" ] || { echo "MISSING SENTINEL FILE: ${file} (update SENTINEL_FILES)"; fail=1; continue; }
     if ! grep -qF " ${file}" <<< "$sentinel_seen"; then
       echo "STALE SENTINEL ENTRY: ${file} has no production retrofit left (drop it from SENTINEL_FILES)"
@@ -1021,7 +1022,7 @@ if run_check 7; then
   # SENTINEL_ROOTS, SENTINEL_FILES, the retrofit-justification files, check 8's seed sources and its
   # allow-listed files are included: checks 4, 5 and 8 read them, so a path of theirs outside the trigger filter is the same hole as an untriggered sweep
   # root. Both `relayer/` files were exactly that until the filter above learned them.
-  for root in "${ALL_ROOTS[@]}" "${FHE_ROOTS[@]}" "${SENTINEL_ROOTS[@]}" "${SENTINEL_FILES[@]}" \
+  for root in "${ALL_ROOTS[@]}" "${FHE_ROOTS[@]}" "${SENTINEL_ROOTS[@]}" ${SENTINEL_FILES[@]+"${SENTINEL_FILES[@]}"} \
     "${RETROFIT_JUSTIFICATIONS[@]%%|*}" "${KMS_EXTRA_ROOTS[@]}" "${SEED_SOURCES[@]}" \
     "${HAND_DERIVATION_ROOTS[@]}" "${HAND_DERIVATIONS_ALLOWED[@]%%|*}" ${DEAD_SURFACE_EXTRA_ROOT:-}; do
     if ! root_is_triggered "$root"; then

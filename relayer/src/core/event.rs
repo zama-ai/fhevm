@@ -5,6 +5,7 @@ use crate::http::endpoints::v2::types::{
     InputProofRequestJson, PublicDecryptRequestJson, UserDecryptRequestJson,
 };
 use crate::http::endpoints::v3::types::AttestedUserDecryptRequestJson;
+use crate::http::utils::solana_address::decode_solana_address;
 use zama_solana_acl::host_chain::{chain_type_byte, is_evm_host_chain_id, is_solana_host_chain_id};
 
 use crate::orchestrator::traits::Event;
@@ -922,18 +923,47 @@ impl InputProofEventData {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InputProofRequest {
     pub contract_chain_id: u64,
-    pub contract_address: Address,
-    pub user_address: Address,
+    /// Flattened, so an EVM request is stored with `contract_address` and `user_address` beside
+    /// the other fields, the shape stored EVM rows already have.
+    #[serde(flatten)]
+    pub identities: HostIdentities,
     pub ciphetext_with_zk_proof: Bytes,
     pub extra_data: Bytes,
-    /// Solana 32-byte host identities, set only when `contract_chain_id` has
-    /// type byte `0x01`. EVM requests leave these `None` and use
-    /// the 20-byte `contract_address`/`user_address` fields above. Exactly one
-    /// representation is meaningful per request, decided by the chain id.
-    #[serde(default)]
-    pub solana_contract_address: Option<FixedBytes<32>>,
-    #[serde(default)]
-    pub solana_user_address: Option<FixedBytes<32>>,
+}
+
+/// The contract and user of an input proof, in the format of their host chain (RFC-021). The
+/// variant follows the chain id's type byte and selects the Gateway entry.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum HostIdentities {
+    Evm {
+        contract_address: Address,
+        user_address: Address,
+    },
+    Solana {
+        solana_contract_address: FixedBytes<32>,
+        solana_user_address: FixedBytes<32>,
+    },
+}
+
+/// The kind of host chain a chain id names, by its RFC-021 type byte.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostChainType {
+    Evm,
+    Solana,
+    Unknown,
+}
+
+impl HostChainType {
+    pub fn of(chain_id: u64) -> Self {
+        if is_evm_host_chain_id(chain_id) {
+            Self::Evm
+        } else if is_solana_host_chain_id(chain_id) {
+            Self::Solana
+        } else {
+            Self::Unknown
+        }
+    }
 }
 
 impl InputProofRequest {
@@ -946,39 +976,13 @@ impl InputProofRequest {
     ) -> InputProofRequest {
         InputProofRequest {
             contract_chain_id,
-            contract_address,
-            user_address,
+            identities: HostIdentities::Evm {
+                contract_address,
+                user_address,
+            },
             ciphetext_with_zk_proof,
             extra_data,
-            solana_contract_address: None,
-            solana_user_address: None,
         }
-    }
-
-    /// Builds a Solana-host input-proof request carrying 32-byte identities. The
-    /// 20-byte EVM `contract_address`/`user_address` are left zero — unused on
-    /// the Solana path, which submits via `verifyProofRequestSolana`.
-    pub fn new_solana(
-        contract_chain_id: u64,
-        contract_address: FixedBytes<32>,
-        user_address: FixedBytes<32>,
-        ciphetext_with_zk_proof: Bytes,
-        extra_data: Bytes,
-    ) -> InputProofRequest {
-        InputProofRequest {
-            contract_chain_id,
-            contract_address: Address::ZERO,
-            user_address: Address::ZERO,
-            ciphetext_with_zk_proof,
-            extra_data,
-            solana_contract_address: Some(contract_address),
-            solana_user_address: Some(user_address),
-        }
-    }
-
-    /// Whether this request targets a Solana host (type byte `0x01`).
-    pub fn is_solana(&self) -> bool {
-        is_solana_host_chain_id(self.contract_chain_id)
     }
 }
 
@@ -1015,52 +1019,37 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
         // Parse extraData (validated at HTTP layer)
         let extra_data = Bytes::from_str(&json.extra_data)?;
 
-        // The type byte selects how the (HTTP-validated) identity
-        // strings are interpreted: Solana hosts carry 32-byte base58 identities,
-        // EVM hosts the usual 20-byte 0x-hex addresses.
-        if is_solana_host_chain_id(contract_chain_id) {
-            let contract_address =
-                crate::http::utils::solana_address::decode_solana_address(&json.contract_address)
-                    .map_err(|e| {
-                    anyhow::anyhow!("Error parsing Solana contractAddress: {:?}", e.message)
-                })?;
-            let user_address =
-                crate::http::utils::solana_address::decode_solana_address(&json.user_address)
-                    .map_err(|e| {
-                        anyhow::anyhow!("Error parsing Solana userAddress: {:?}", e.message)
-                    })?;
-            return Ok(InputProofRequest::new_solana(
-                contract_chain_id,
-                FixedBytes::<32>::from(contract_address),
-                FixedBytes::<32>::from(user_address),
-                ciphetext_with_zk_proof,
-                extra_data,
-            ));
-        }
-        if !is_evm_host_chain_id(contract_chain_id) {
-            anyhow::bail!(
+        let identities = match HostChainType::of(contract_chain_id) {
+            HostChainType::Evm => HostIdentities::Evm {
+                contract_address: Address::from_str(&json.contract_address)
+                    .map_err(|e| anyhow::anyhow!("Error parsing contractAddress: {:?}", e))?,
+                user_address: Address::from_str(&json.user_address)
+                    .map_err(|e| anyhow::anyhow!("Error parsing userAddress: {:?}", e))?,
+            },
+            HostChainType::Solana => HostIdentities::Solana {
+                solana_contract_address: decode_solana_address(&json.contract_address)
+                    .map_err(|e| anyhow::anyhow!("Error parsing contractAddress: {:?}", e.message))?
+                    .into(),
+                solana_user_address: decode_solana_address(&json.user_address)
+                    .map_err(|e| anyhow::anyhow!("Error parsing userAddress: {:?}", e.message))?
+                    .into(),
+            },
+            HostChainType::Unknown => anyhow::bail!(
                 "unsupported chain type byte 0x{:02x} (expected 0x00 EVM or 0x01 Solana)",
                 chain_type_byte(contract_chain_id)
-            );
-        }
+            ),
+        };
 
-        let contract_address = Address::from_str(&json.contract_address)
-            .map_err(|e| anyhow::anyhow!("Error parsing contractAddress: {:?}", e))?;
-
-        let user_address = Address::from_str(&json.user_address)
-            .map_err(|e| anyhow::anyhow!("Error parsing userAddress: {:?}", e))?;
-
-        Ok(InputProofRequest::new(
+        Ok(InputProofRequest {
             contract_chain_id,
-            contract_address,
-            user_address,
+            identities,
             ciphetext_with_zk_proof,
             extra_data,
-        ))
+        })
     }
 }
 
-fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
+pub(crate) fn parse_chain_id(chain_id: &str) -> Result<u64, ParseIntError> {
     if let Some(stripped) = chain_id.strip_prefix("0x") {
         // Parse as hex if it starts with 0x
         u64::from_str_radix(stripped, 16)
@@ -1091,8 +1080,6 @@ mod tests {
 
     #[test]
     fn solana_input_proof_request_carries_bytes32_identities() {
-        use crate::http::utils::solana_address::decode_solana_address;
-
         let json = InputProofRequestJson {
             contract_chain_id: SOLANA_CHAIN_ID_HEX.to_string(),
             contract_address: SOLANA_CONTRACT.to_string(),
@@ -1103,46 +1090,18 @@ mod tests {
 
         let request = InputProofRequest::try_from(json).expect("Solana request should parse");
 
-        assert!(
-            request.is_solana(),
-            "type-byte 0x01 chain id is a Solana host"
-        );
         assert_eq!(request.contract_chain_id, solana_host_chain_id(12345));
-        // 20-byte EVM fields are unused on the Solana path.
-        assert_eq!(request.contract_address, Address::ZERO);
-        assert_eq!(request.user_address, Address::ZERO);
-        // 32-byte identities are populated from the base58 input.
         assert_eq!(
-            request.solana_contract_address,
-            Some(FixedBytes::<32>::from(
-                decode_solana_address(SOLANA_CONTRACT).unwrap()
-            ))
-        );
-        assert_eq!(
-            request.solana_user_address,
-            Some(FixedBytes::<32>::from(
-                decode_solana_address(SOLANA_USER).unwrap()
-            ))
+            request.identities,
+            HostIdentities::Solana {
+                solana_contract_address: decode_solana_address(SOLANA_CONTRACT).unwrap().into(),
+                solana_user_address: decode_solana_address(SOLANA_USER).unwrap().into(),
+            }
         );
     }
 
     #[test]
-    fn solana_input_proof_accepts_unpadded_type_byte_hex() {
-        // uintToHex0x used to emit this 15-nibble form; the relayer still parses it.
-        let json = InputProofRequestJson {
-            contract_chain_id: "0x100000000003039".to_string(),
-            contract_address: SOLANA_CONTRACT.to_string(),
-            user_address: SOLANA_USER.to_string(),
-            ciphertext_with_input_verification: "abcd".to_string(),
-            extra_data: "0x00".to_string(),
-        };
-        let request = InputProofRequest::try_from(json).expect("unpadded hex is still a u64");
-        assert_eq!(request.contract_chain_id, solana_host_chain_id(12345));
-        assert!(request.is_solana());
-    }
-
-    #[test]
-    fn evm_input_proof_request_carries_evm_fields_and_leaves_solana_identities_unset() {
+    fn evm_input_proof_request_carries_evm_identities() {
         let json = InputProofRequestJson {
             contract_chain_id: CHAIN_ID.to_string(),
             contract_address: CONTRACT_ADDRESS.to_string(),
@@ -1153,35 +1112,56 @@ mod tests {
 
         let request = InputProofRequest::try_from(json).expect("EVM request should parse");
 
-        assert!(!request.is_solana(), "type byte 0x00 ⇒ EVM host");
         assert_eq!(request.contract_chain_id, CHAIN_ID.parse::<u64>().unwrap());
         assert_eq!(
-            request.contract_address,
-            CONTRACT_ADDRESS.parse::<Address>().unwrap()
-        );
-        assert_eq!(
-            request.user_address,
-            USER_ADDRESS.parse::<Address>().unwrap()
+            request.identities,
+            HostIdentities::Evm {
+                contract_address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
+                user_address: USER_ADDRESS.parse::<Address>().unwrap(),
+            }
         );
         assert_eq!(
             request.ciphetext_with_zk_proof,
             Bytes::from(hex::decode(CIPHERTEXT).unwrap())
         );
-        assert_eq!(request.solana_contract_address, None);
-        assert_eq!(request.solana_user_address, None);
+    }
+
+    /// An EVM input proof row exactly as stored before Solana identities existed, read back by
+    /// startup recovery.
+    const STORED_EVM_INPUT_PROOF_ROW: &str = r#"{"contract_chain_id":123456,"contract_address":"0xab30999d17faab8c95b2ecd500cfefc8f658f15d","user_address":"0x12b064fb845c1cc05e9493856a1d637a73e944be","ciphetext_with_zk_proof":"0xabcd","extra_data":"0x00"}"#;
+
+    #[test]
+    fn a_stored_evm_input_proof_row_reads_back_and_serializes_unchanged() {
+        let request: InputProofRequest =
+            serde_json::from_str(STORED_EVM_INPUT_PROOF_ROW).expect("stored EVM row deserializes");
+        assert_eq!(request.contract_chain_id, 123456);
+        assert_eq!(
+            request.identities,
+            HostIdentities::Evm {
+                contract_address: CONTRACT_ADDRESS.parse::<Address>().unwrap(),
+                user_address: USER_ADDRESS.parse::<Address>().unwrap(),
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(&request).unwrap(),
+            serde_json::from_str::<serde_json::Value>(STORED_EVM_INPUT_PROOF_ROW).unwrap()
+        );
     }
 
     #[test]
-    fn input_proof_request_refuses_unknown_chain_type_byte() {
-        let json = InputProofRequestJson {
-            contract_chain_id: "0x0200000000003039".to_string(),
-            contract_address: CONTRACT_ADDRESS.to_string(),
-            user_address: USER_ADDRESS.to_string(),
-            ciphertext_with_input_verification: CIPHERTEXT.to_string(),
-            extra_data: EXTRA_DATA.to_string(),
+    fn a_solana_input_proof_round_trips_as_solana() {
+        let request = InputProofRequest {
+            contract_chain_id: solana_host_chain_id(12345),
+            identities: HostIdentities::Solana {
+                solana_contract_address: FixedBytes::from([0x11; 32]),
+                solana_user_address: FixedBytes::from([0x22; 32]),
+            },
+            ciphetext_with_zk_proof: Bytes::from(vec![0xab, 0xcd]),
+            extra_data: Bytes::from(vec![0]),
         };
-        let err = InputProofRequest::try_from(json).expect_err("unknown type byte is not EVM");
-        assert!(err.to_string().contains("unsupported chain type byte 0x02"));
+        let back: InputProofRequest =
+            serde_json::from_value(serde_json::to_value(&request).unwrap()).unwrap();
+        assert_eq!(back.identities, request.identities);
     }
 
     /// The Relayer must propagate `extraData` to the Gateway verbatim, without

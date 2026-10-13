@@ -1,24 +1,29 @@
 use super::error::{ApiResponseStatus, V2ErrorResponseBody};
 use super::ChainId;
+use crate::core::event::{parse_chain_id, HostChainType};
 use crate::http::de_string_or_number;
 use crate::http::utils::redact::{redact_count_opt, redact_len};
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use validator::Validate;
+use validator::{Validate, ValidateArgs};
 
 #[derive(Deserialize, Serialize, Validate, Clone, ToSchema, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
+#[validate(context = HostChainType)]
 pub struct InputProofRequestJson {
     #[serde(deserialize_with = "de_string_or_number")]
     #[schema(value_type = ChainId)]
-    #[validate(custom(function = "crate::http::validate_chain_id_string"))]
+    #[validate(
+        custom(function = "crate::http::validate_chain_id_string"),
+        custom(function = "crate::http::validate_host_chain_type", use_context)
+    )]
     pub contract_chain_id: String,
-    #[validate(custom(function = "crate::http::validate_host_address"))]
+    #[validate(custom(function = "crate::http::validate_host_address", use_context))]
     #[schema(example = "0x1234567890123456789012345678901234567890")]
     pub contract_address: String,
-    #[validate(custom(function = "crate::http::validate_host_address"))]
+    #[validate(custom(function = "crate::http::validate_host_address", use_context))]
     #[schema(example = "0x1234567890123456789012345678901234567890")]
     pub user_address: String,
     /// ABI-encoded ciphertext with its ZKPoK input verification data. Raw hex, no `0x` prefix.
@@ -35,6 +40,17 @@ pub struct InputProofRequestJson {
     #[validate(custom(function = "crate::http::validate_extra_data_field_input_proof"))]
     #[schema(example = "0x00")]
     pub extra_data: String,
+}
+
+/// Validates each field in the format of the request's host chain. A chain id that does not
+/// parse has its own error, and its addresses are checked as EVM ones.
+impl validator::Validate for InputProofRequestJson {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        let chain = parse_chain_id(&self.contract_chain_id)
+            .map(HostChainType::of)
+            .unwrap_or(HostChainType::Evm);
+        self.validate_with_args(&chain)
+    }
 }
 
 // POST response with job ID and request tracking

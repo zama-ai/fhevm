@@ -1,3 +1,4 @@
+use crate::core::event::HostChainType;
 use crate::http::endpoints::common::types::{
     HandleContractPairJson, HandleEntryJson, RequestValidityJson, RequestValiditySecondsJson,
 };
@@ -13,6 +14,8 @@ pub mod validation_messages {
     pub const GENERIC_REQUIRED_BUT_MISSING: &str = "Required but missing";
 
     pub const NUMBER_DECIMAL_OR_HEX: &str = "Must be decimal number or 0x hex string";
+    pub const CHAIN_ID_MUST_BE_EVM_OR_SOLANA: &str =
+        "Must be an EVM (type byte 0x00) or Solana (type byte 0x01) host chain id";
 
     pub const HEX_MUST_START_WITH_0X: &str = "Must start with 0x";
     pub const HEX_MUST_NOT_START_WITH_0X: &str = "Must not start with 0x";
@@ -66,21 +69,29 @@ pub fn validate_blockchain_addresses(addresses: &Vec<String>) -> Result<(), Vali
     Ok(())
 }
 
-/// Validates a host-chain account identity that may be either an EVM 0x-hex
-/// 20-byte address or a Solana base58 32-byte Ed25519 public key (RFC-021).
-///
-/// EVM acceptance is byte-identical to `validate_blockchain_address`; a non-EVM
-/// string is additionally accepted when it is a canonical Solana base58 address.
-/// The `contract_chain_id` (carrying the Solana type byte) decides how
-/// the accepted string is later interpreted in `InputProofRequest::try_from`.
-pub fn validate_host_address(address: &str) -> Result<(), ValidationError> {
-    if validate_blockchain_address(address).is_ok()
-        || crate::http::utils::solana_address::is_solana_address(address)
-    {
-        return Ok(());
+/// Validates a host-chain account identity in the format of the request's host chain (RFC-021):
+/// an EVM 0x-hex 20-byte address, as `validate_blockchain_address` does, or a Solana base58 32-byte
+/// public key. An unknown chain type is reported on the chain id, by `validate_host_chain_type`.
+pub fn validate_host_address(address: &str, chain: &HostChainType) -> Result<(), ValidationError> {
+    match chain {
+        HostChainType::Evm => validate_blockchain_address(address),
+        HostChainType::Solana => {
+            crate::http::utils::solana_address::validate_solana_address(address)
+        }
+        HostChainType::Unknown => Ok(()),
     }
-    // Surface the EVM error shape, which is the common case for malformed input.
-    validate_blockchain_address(address)
+}
+
+/// Refuses a chain id whose RFC-021 type byte is neither EVM (`0x00`) nor Solana (`0x01`).
+pub fn validate_host_chain_type(
+    _chain_id: &str,
+    chain: &HostChainType,
+) -> Result<(), ValidationError> {
+    if *chain == HostChainType::Unknown {
+        return Err(ValidationError::new("validation_error")
+            .with_message(validation_messages::CHAIN_ID_MUST_BE_EVM_OR_SOLANA.into()));
+    }
+    Ok(())
 }
 
 pub fn validate_no_0x_hex(hex_str: &str) -> Result<(), ValidationError> {

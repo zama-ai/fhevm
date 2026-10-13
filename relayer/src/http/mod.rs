@@ -42,6 +42,7 @@ pub use utils::{
     validate_handle_contract_pairs,
     validate_handle_entries,
     validate_host_address,
+    validate_host_chain_type,
     validate_no_0x_hex,
     validate_request_validity,
     validate_request_validity_seconds,
