@@ -266,6 +266,38 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn stores_that_do_not_match_the_handles_chain_are_malformed_before_any_connector_call() {
+        // The parse is the stores check: the EVM body has no `encryptedStores`, the Solana body requires it.
+        let mut evm_with_stores: Value =
+            serde_json::from_str(&flows::public_decrypt::tests::wire()).unwrap();
+        evm_with_stores["encryptedStores"] = serde_json::json!([B256::repeat_byte(0x03)]);
+        let mut solana_without_stores = serde_json::to_value(public_body()).unwrap();
+        solana_without_stores
+            .as_object_mut()
+            .unwrap()
+            .remove("encryptedStores");
+        for (body, expected) in [
+            (evm_with_stores, "unknown field `encryptedStores`"),
+            (solana_without_stores, "missing field `encryptedStores`"),
+        ] {
+            let (app, mock) = scripted(
+                vec![vec![Reply::Fixed(Fixed::Ok)]; 13],
+                UserChecks::default(),
+                CancellationToken::new(),
+            );
+            let (status, _, response) =
+                call(app, "POST", "/v4/public-decrypt", &body.to_string()).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{expected}: {response}");
+            assert_eq!(response["code"], "malformed");
+            assert!(
+                response["message"].as_str().unwrap().contains(expected),
+                "{expected}: {response}"
+            );
+            assert_eq!(calls(&mock), 0, "{expected}");
+        }
+    }
+
     fn healthy() -> App {
         app(Reply::Fixed(Fixed::Ok), CancellationToken::new())
     }

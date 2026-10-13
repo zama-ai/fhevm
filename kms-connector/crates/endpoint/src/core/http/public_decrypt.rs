@@ -192,4 +192,35 @@ mod tests {
             }
         }
     }
+
+    /// The parse is the stores check: an EVM body naming stores, or a Solana body without them, is
+    /// malformed before anything is stored.
+    #[test]
+    fn stores_that_do_not_match_the_handles_chain_are_malformed() {
+        let solana_chain = solana_host_chain_id(12345);
+        let config = Config {
+            supported_chain_ids: vec![1, solana_chain],
+            ..config()
+        };
+        let euint64 = FheTypes::Uint64 as u8;
+        let evm_with_stores = serde_json::json!({
+            "ctHandles": [handle(1, euint64)],
+            "extraData": "0x",
+            "encryptedStores": [B256::repeat_byte(0x03)],
+        });
+        let solana_without_stores = serde_json::json!({
+            "ctHandles": [handle(solana_chain, euint64)],
+            "extraData": "0x",
+        });
+        for (body, expected) in [
+            (evm_with_stores, "unknown field `encryptedStores`"),
+            (solana_without_stores, "missing field `encryptedStores`"),
+        ] {
+            let Err(error) = validate(body.clone(), &config) else {
+                panic!("{body} was accepted");
+            };
+            assert_eq!(error.code(), ErrorCode::Malformed, "{body}");
+            assert!(error.to_string().contains(expected), "{body}: {error}");
+        }
+    }
 }
