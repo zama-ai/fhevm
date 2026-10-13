@@ -1,313 +1,85 @@
-{{- if .Values.consensusDetector.enabled -}}
-{{- $gwAddrs := include "coprocessor.gatewayContractAddresses" . | fromYaml -}}
-{{- $component := .Values.consensusDetector -}}
-{{- $disabled := default (list) $component.disabledArgs -}}
-{{- $bucket := $component.config.s3BucketName -}}
-{{- if not (or $bucket.value $bucket.valueFrom) -}}
-{{- $bucket = $component.myBucket | default dict -}}
+{{- define "coprocessor.consensusDetector.args" -}}
+{{- $c := .c -}}
+{{- $config := $c.config -}}
+{{- $disabled := $c.disabledArgs | default list -}}
+- --database-url=$(DATABASE_URL)
+- --gw-url=$(GATEWAY_URL)
+- --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
+- --my-bucket=$(S3_BUCKET_NAME)
+- --manifest-discovery-interval={{ $config.manifestDiscoveryInterval }}
+{{- range $config.manifestPublicationCadence }}
+- --manifest-publication-cadence={{ . }}
+{{- end }}
+- --manifest-publication-retry-delay={{ $config.manifestPublicationRetryDelay }}
+- --manifest-publication-retry-count={{ $config.manifestPublicationRetryCount }}
+- --manifest-verification-delay={{ $config.manifestVerificationDelay }}
+- --manifest-verification-retry-delay={{ $config.manifestVerificationRetryDelay }}
+- --manifest-verification-retry-count={{ $config.manifestVerificationRetryCount }}
+- --manifest-healing-batch-size={{ $config.manifestHealingBatchSize }}
+- --manifest-healing-poll-interval={{ $config.manifestHealingPollInterval }}
+- --manifest-healing-containment-timeout={{ $config.manifestHealingContainmentTimeout }}
+- --manifest-healing-max-attempts={{ $config.manifestHealingMaxAttempts }}
+- --incomplete-block-timeout={{ $config.incompleteBlockTimeout }}
+- --incomplete-manifest-max-lag={{ $config.incompleteManifestMaxLag }}
+{{- if $c.wallet.enabled }}
+{{- include "coprocessor.args.wallet" (dict "wallet" $c.wallet) }}
+{{- end }}
+{{- if not (has "metrics-addr" $disabled) }}
+- --metrics-addr=0.0.0.0:{{ $c.ports.metrics }}
+- --gauge-update-interval-secs={{ $config.gaugeUpdateIntervalSecs }}
+{{- end }}
+{{- if or .s3Endpoint.value .s3Endpoint.valueFrom }}
+- --s3-endpoint=$(S3_ENDPOINT)
+{{- end }}
 {{- end -}}
-{{- if not (or $bucket.value $bucket.valueFrom) -}}
-{{- $bucket = .Values.snsWorker.config.s3BucketName | default dict -}}
+
+{{- define "coprocessor.consensusDetector.env" -}}
+{{- include "coprocessor.env.database" .root }}
+{{- include "coprocessor.envVar" (dict "root" .root "name" "GATEWAY_URL" "spec" .root.Values.commonConfig.gatewayUrl) }}
+{{- include "coprocessor.env.gateway" (dict "root" .root "fields" (list "gatewayConfig")) }}
+{{- include "coprocessor.envVar" (dict "root" .root "name" "S3_ENDPOINT" "spec" .s3Endpoint) }}
+{{- include "coprocessor.envVar" (dict "root" .root "name" "S3_BUCKET_NAME" "spec" .bucket) }}
+{{- if .c.wallet.enabled }}
+{{- include "coprocessor.env.wallet" (dict "wallet" .c.wallet) }}
+{{- end }}
+{{- include "coprocessor.env.tracing" . }}
+{{- include "coprocessor.env.extra" (dict "root" .root "lists" (list .c.env)) }}
 {{- end -}}
-{{- $s3Endpoint := $component.s3Endpoint | default dict -}}
-{{- if not (or $bucket.value $bucket.valueFrom) -}}
-{{- fail "consensusDetector.config.s3BucketName must set value or valueFrom when consensusDetector is enabled" -}}
-{{- end -}}
-{{- if and (or $bucket.valueFrom (ne ($bucket.value | default "") "none")) (not $component.wallet.enabled) -}}
-{{- fail "consensusDetector.wallet.enabled must be true when manifest publication is enabled" -}}
-{{- end -}}
+
+{{- if .Values.consensusDetector.enabled }}
+{{- $c := .Values.consensusDetector }}
+{{- $disabled := $c.disabledArgs | default list }}
+{{- $bucket := $c.config.s3BucketName | default dict }}
+{{- if not (or $bucket.value $bucket.valueFrom) }}
+{{- $bucket = $c.myBucket | default dict }}
+{{- end }}
+{{- if not (or $bucket.value $bucket.valueFrom) }}
+{{- $bucket = .Values.snsWorker.config.s3BucketName | default dict }}
+{{- end }}
+{{- if not (or $bucket.value $bucket.valueFrom) }}
+{{- fail "consensusDetector.config.s3BucketName must set value or valueFrom when consensusDetector is enabled" }}
+{{- end }}
+{{- if and (or $bucket.valueFrom (ne ($bucket.value | default "") "none")) (not $c.wallet.enabled) }}
+{{- fail "consensusDetector.wallet.enabled must be true when manifest publication is enabled" }}
+{{- end }}
 {{- /* Both are required by the binary: an unset variable leaves the literal
-     $(VAR) in the argument, which fails to parse and crash-loops the pod. */ -}}
-{{- $gatewayUrl := .Values.commonConfig.gatewayUrl | default dict -}}
-{{- if and (not (has "gw-url" $disabled)) (not (or $gatewayUrl.value $gatewayUrl.valueFrom)) -}}
-{{- fail "commonConfig.gatewayUrl must set value or valueFrom when consensusDetector is enabled" -}}
-{{- end -}}
-{{- $gatewayConfig := $gwAddrs.gatewayConfig | default dict -}}
-{{- if and (not (has "gateway-config-address" $disabled)) (not (or $gatewayConfig.value $gatewayConfig.valueFrom)) -}}
-{{- fail "commonConfig.gatewayContractAddresses.gatewayConfig must set value or valueFrom (or commonConfig.network must provide gateway.gateway_config.address) when consensusDetector is enabled" -}}
-{{- end -}}
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app: coprocessor-consensus-detector
-    app.kubernetes.io/name: {{ include "consensusDetectorName" . }}
-  name: {{ include "consensusDetectorName" . }}
-spec:
-  replicas: {{ $component.replicas }}
-  selector:
-    matchLabels:
-      app: coprocessor-consensus-detector
-      {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
-  {{- with $component.updateStrategy }}
-  strategy:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
-  template:
-    metadata:
-      labels:
-        app: coprocessor-consensus-detector
-        app.kubernetes.io/name: {{ include "consensusDetectorName" . }}
-        {{- include "coprocessor.extraSelectorLabels" . | nindent 8 }}
-        {{- with .Values.commonConfig.stackVersion }}
-        app.kubernetes.io/version: {{ . | quote }}
-        {{- end }}
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
-        {{- with $component.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
-      {{- with .Values.podAnnotations }}
-      annotations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-    spec:
-      imagePullSecrets:
-        - name: registry-credentials
-      restartPolicy: Always
-      {{- with $component.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with $component.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with $component.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with $component.serviceAccountName }}
-      serviceAccountName: {{ . }}
-      {{- end }}
-      containers:
-        - name: coprocessor-consensus-detector
-          image: {{ $component.image.name }}:{{ $component.image.tag }}
-          command: ["consensus-detector"]
-          {{- if .Values.commonConfig.stackVersionProbe.enabled }}
-          startupProbe:
-            exec:
-              command: ["consensus-detector", "--stack-version"]
-            periodSeconds: {{ .Values.commonConfig.stackVersionProbe.periodSeconds | default 10 }}
-            failureThreshold: {{ .Values.commonConfig.stackVersionProbe.failureThreshold | default 30 }}
-          {{- end }}
-          args:
-            {{- if not (has "database-url" $disabled) }}
-            - --database-url=$(DATABASE_URL)
-            {{- end }}
-            {{- if not (has "gw-url" $disabled) }}
-            - --gw-url=$(GATEWAY_URL)
-            {{- end }}
-            {{- if not (has "gateway-config-address" $disabled) }}
-            - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
-            {{- end }}
-            {{- if not (has "my-bucket" $disabled) }}
-            - --my-bucket=$(S3_BUCKET_NAME)
-            {{- end }}
-            {{- if not (has "manifest-discovery-interval" $disabled) }}
-            - --manifest-discovery-interval={{ $component.config.manifestDiscoveryInterval }}
-            {{- end }}
-            {{- if not (has "manifest-publication-cadence" $disabled) }}
-            {{- range $component.config.manifestPublicationCadence }}
-            - --manifest-publication-cadence={{ . }}
-            {{- end }}
-            {{- end }}
-            {{- if not (has "manifest-publication-retry-delay" $disabled) }}
-            - --manifest-publication-retry-delay={{ $component.config.manifestPublicationRetryDelay }}
-            {{- end }}
-            {{- if not (has "manifest-publication-retry-count" $disabled) }}
-            - --manifest-publication-retry-count={{ $component.config.manifestPublicationRetryCount }}
-            {{- end }}
-            {{- if not (has "manifest-verification-delay" $disabled) }}
-            - --manifest-verification-delay={{ $component.config.manifestVerificationDelay }}
-            {{- end }}
-            {{- if not (has "manifest-verification-retry-delay" $disabled) }}
-            - --manifest-verification-retry-delay={{ $component.config.manifestVerificationRetryDelay }}
-            {{- end }}
-            {{- if not (has "manifest-verification-retry-count" $disabled) }}
-            - --manifest-verification-retry-count={{ $component.config.manifestVerificationRetryCount }}
-            {{- end }}
-            {{- if not (has "manifest-healing-batch-size" $disabled) }}
-            - --manifest-healing-batch-size={{ $component.config.manifestHealingBatchSize }}
-            {{- end }}
-            {{- if not (has "manifest-healing-poll-interval" $disabled) }}
-            - --manifest-healing-poll-interval={{ $component.config.manifestHealingPollInterval }}
-            {{- end }}
-            {{- if not (has "manifest-healing-containment-timeout" $disabled) }}
-            - --manifest-healing-containment-timeout={{ $component.config.manifestHealingContainmentTimeout }}
-            {{- end }}
-            {{- if not (has "manifest-healing-max-attempts" $disabled) }}
-            - --manifest-healing-max-attempts={{ $component.config.manifestHealingMaxAttempts }}
-            {{- end }}
-            {{- if not (has "incomplete-block-timeout" $disabled) }}
-            - --incomplete-block-timeout={{ $component.config.incompleteBlockTimeout }}
-            {{- end }}
-            {{- if not (has "incomplete-manifest-max-lag" $disabled) }}
-            - --incomplete-manifest-max-lag={{ $component.config.incompleteManifestMaxLag }}
-            {{- end }}
-            {{- if $component.wallet.enabled }}
-            {{- if not (has "signer-type" $disabled) }}
-            {{- if $component.wallet.awsKms.enabled }}
-            - --signer-type=aws-kms
-            {{- else }}
-            - --signer-type=private-key
-            {{- end }}
-            {{- end }}
-            {{- if and (not $component.wallet.awsKms.enabled) (not (has "private-key" $disabled)) }}
-            - --private-key=$(TX_SENDER_PRIVATE_KEY)
-            {{- end }}
-            {{- end }}
-            {{- if not (has "metrics-addr" $disabled) }}
-            - --metrics-addr=0.0.0.0:{{ $component.ports.metrics }}
-            {{- if not (has "gauge-update-interval-secs" $disabled) }}
-            - --gauge-update-interval-secs={{ $component.config.gaugeUpdateIntervalSecs }}
-            {{- end }}
-            {{- end }}
-            {{- if and (or $s3Endpoint.value $s3Endpoint.valueFrom) (not (has "s3-endpoint" $disabled)) }}
-            - --s3-endpoint=$(S3_ENDPOINT)
-            {{- end }}
-            {{- with $component.extraArgs }}
-            {{- toYaml . | nindent 12 }}
-            {{- end }}
-          env:
-            {{- with .Values.commonConfig.databaseUser }}
-            - name: DATABASE_USER
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.databaseEndpoint }}
-            - name: DATABASE_ENDPOINT
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
-            {{- with .Values.commonConfig.databasePassword }}
-            - name: DATABASE_PASSWORD
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.databaseUrl }}
-            - name: DATABASE_URL
-              value: {{ . | quote }}
-            {{- end }}
-            {{- if eq (include "coprocessorDatabaseAuthMode" .) "iam" }}
-            - name: DATABASE_IAM_AUTH_ENABLED
-              value: "true"
-            {{- with .Values.commonConfig.databaseIamRegion }}
-            - name: DATABASE_IAM_REGION
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" .) "true" }}
-            {{- include "coprocessor.databaseSslRootCertEnv" . | nindent 12 }}
-            {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.gatewayUrl }}
-            - name: GATEWAY_URL
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- with $gwAddrs.gatewayConfig }}
-            - name: GATEWAY_CONFIG_ADDRESS
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- if or $s3Endpoint.value $s3Endpoint.valueFrom }}
-            - name: S3_ENDPOINT
-              {{- if $s3Endpoint.value }}
-              value: {{ $s3Endpoint.value | quote }}
-              {{- else }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $s3Endpoint.valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            - name: S3_BUCKET_NAME
-              {{- if $bucket.value }}
-              value: {{ $bucket.value | quote }}
-              {{- else }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $bucket.valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- if $component.wallet.enabled }}
-            {{- if $component.wallet.awsKms.enabled }}
-            - name: AWS_KEY_ID
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ $component.wallet.awsKms.configmap.name | quote }}
-                  key: {{ $component.wallet.awsKms.configmap.key | quote }}
-            {{- else if $component.wallet.secret.value }}
-            - name: TX_SENDER_PRIVATE_KEY
-              value: {{ $component.wallet.secret.value | quote }}
-            {{- else }}
-            - name: TX_SENDER_PRIVATE_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $component.wallet.secret.name | quote }}
-                  key: {{ $component.wallet.secret.key | quote }}
-            {{- end }}
-            {{- end }}
-          {{- if default .Values.commonConfig.tracing.enabled $component.tracing.enabled }}
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
-            - name: OTEL_SERVICE_NAME
-              {{- if $component.tracing.service }}
-              value: {{ $component.tracing.service | quote }}
-              {{- else }}
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-              {{- end }}
-          {{- end }}
-          {{- with .Values.commonConfig.env }}
-            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
-          {{- end }}
-          {{- with $component.env }}
-            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
-          {{- end }}
-          ports:
-            - name: metrics
-              containerPort: {{ $component.ports.metrics }}
-              protocol: TCP
-          resources:
-            {{- toYaml $component.resources | nindent 12 }}
-          {{- if $component.probes.liveness.enabled }}
-          livenessProbe:
-            {{- toYaml (omit $component.probes.liveness "enabled") | nindent 12 }}
-          {{- end }}
-          {{- if $component.probes.readiness.enabled }}
-          readinessProbe:
-            {{- toYaml (omit $component.probes.readiness "enabled") | nindent 12 }}
-          {{- end }}
-          {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
-          {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 10 }}
-          {{- end }}
-      {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
-      {{- include "coprocessor.databaseSslRootCertVolume" . | nindent 6 }}
-      {{- end }}
-{{- end -}}
+     $(VAR) in the argument, which fails to parse and crash-loops the pod. */}}
+{{- $gatewayUrl := .Values.commonConfig.gatewayUrl | default dict }}
+{{- if and (not (has "gw-url" $disabled)) (not (or $gatewayUrl.value $gatewayUrl.valueFrom)) }}
+{{- fail "commonConfig.gatewayUrl must set value or valueFrom when consensusDetector is enabled" }}
+{{- end }}
+{{- $gatewayConfig := (include "coprocessor.gatewayContractAddresses" . | fromYaml).gatewayConfig | default dict }}
+{{- if and (not (has "gateway-config-address" $disabled)) (not (or $gatewayConfig.value $gatewayConfig.valueFrom)) }}
+{{- fail "commonConfig.gatewayContractAddresses.gatewayConfig must set value or valueFrom (or commonConfig.network must provide gateway.gateway_config.address) when consensusDetector is enabled" }}
+{{- end }}
+{{- $ctx := dict "root" . "c" $c "bucket" $bucket "s3Endpoint" ($c.s3Endpoint | default dict) }}
+{{- include "coprocessor.deployment" (merge (dict
+  "name" (include "consensusDetectorName" .)
+  "appLabel" "coprocessor-consensus-detector"
+  "container" "coprocessor-consensus-detector"
+  "command" "consensus-detector"
+  "args" (include "coprocessor.consensusDetector.args" $ctx)
+  "extraArgs" (list $c.extraArgs)
+  "env" (include "coprocessor.consensusDetector.env" $ctx)
+  "extraSelectorLabels" true) $ctx) }}
+{{- end }}
