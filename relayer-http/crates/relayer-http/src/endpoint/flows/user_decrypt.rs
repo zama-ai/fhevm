@@ -265,7 +265,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn each_solana_rule_names_its_field() {
+    fn a_solana_request_passes_and_each_rule_names_its_field() {
         assert_eq!(
             validate_solana(&user_body(NOW - 10), &[1, SOLANA], NOW),
             Ok(())

@@ -108,13 +108,11 @@ helm upgrade relayer "$COMMON_CHART" --version "$COMMON_CHART_VERSION" -n "$NAME
 helm get values kms-connector-1 -n "$NAMESPACE" --all -o yaml > "$work/connector.yaml"
 endpoint_urls=$(kubectl get configmap kms-connector-http -n "$NAMESPACE" -o jsonpath='{.data.endpoint-urls}')
 require_nonempty "$endpoint_urls" "kms-connector-http[endpoint-urls] is empty"
-# shellcheck disable=SC2016  # $chains is a yq variable
 ENDPOINT_URLS="$endpoint_urls" THRESHOLD=$(kms_reconstruct "$NB_KMS_CORE") yq '
-  [.commonConfig.hostChains[] | select(. != null)] as $chains
-  | load("relayer-http/config/config.yaml") * {
+  load("relayer-http/config/config.yaml") * {
       "log": {"format": "json"},
       "http": {
-        "supported_chain_ids": [$chains[] | .chainId]
+        "supported_chain_ids": [.commonConfig.hostChains[] | select(. != null) | .chainId]
       },
       "kms_aggregator": {
         "public_decrypt": {"threshold": env(THRESHOLD)},

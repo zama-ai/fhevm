@@ -136,7 +136,7 @@ Production-ready means no panic, typed errors, logs, cancellation and tests, not
 
 **Solana.** The Solana bodies are the `kms-connector-api` Solana DTOs, forwarded equal field by field; their form is
 checked by the crate's `assemble()` (user) and `zama_solana_request::public_request_chain_id` (public), the code the
-connector runs. No Solana type, PDA or permit rule is written here. The relayer checks only the form; the permit's
+connector runs. No Solana type, PDA or permit rule is written here. The relayer checks only stateless rules; the permit's
 signature and program, and everything that needs a chain read, are the connector's.
 
 **Tests.** A unit test per function, next to it. Paused tokio time (`start_paused`) for anything timed, so durations

@@ -146,10 +146,10 @@ export const renderRelayerConfig = (
 /**
  * Renders relayer-http's config from its checked-in example: every host chain in
  * supported_chain_ids, as strings since a Solana chain id exceeds Number.MAX_SAFE_INTEGER, and one
- * endpoint per kms-connector proxy, named after its party. Every party's proxy is listed, spares included, so a node swap needs no new config or restart: a party
- * outside the active context only adds a refused call, which the kms-context-switch leg checks ends
- * at its first attempt. A production deployment lists its current nodes and updates the list on a
- * node change.
+ * endpoint per kms-connector proxy, named after its party. Every party's proxy is listed, spares
+ * included, so a node swap needs no new config or restart: a party outside the active context only
+ * adds a refused call, which the kms-context-switch leg checks ends at its first attempt. A
+ * production deployment lists its current nodes and updates the list on a node change.
  */
 export const renderRelayerHttpConfig = (
   baseText: string,

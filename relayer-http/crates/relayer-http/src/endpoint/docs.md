@@ -104,6 +104,10 @@ pins both shapes and their `decryptionId`.
 { "scheme": "solana-public-decrypt-v1", "ctHandles": ["0x…"], "extraData": "0x00", "encryptedStores": ["0x…"] }
 ```
 
+A Solana public decrypt is aggregated at `kms_aggregator.public_decrypt.threshold`, as an EVM one: zama-host accepts a
+certificate with its KMS context's public-decryption threshold of signatures (2t + 1), so a relayer serving Solana
+sets that threshold to at least 2t + 1, the value the test-suite and the preview configure for both chains.
+
 ## 3. Validation
 
 Stateless, before any fan-out. The current relayer's rules, plus the connector's cheap handle rules (it would reject
@@ -118,15 +122,15 @@ these requests anyway; failing here saves n calls). Every failure is `400 malfor
 | `payload.requestValidity` | `startTimestamp <= now` and `startTimestamp + durationSeconds > now` |
 | `extraData` | empty or `0x00` (v0), `0x01` + 32-byte context id (v1), `0x02` + context id + 32-byte epoch id (v2); trailing bytes allowed |
 
-Deliberately not checked here: the user's signature (EIP-712, ERC-1271 or a Solana permit's Ed25519 signature and
-zama-host program, connector worker), the EVM signature length, the ACL and the ciphertext readiness (connector
-worker; they surface as the dominant error, section 5).
+Deliberately not checked here: the user's signature (ERC-1271, or a Solana permit's Ed25519 signature and zama-host
+program, connector worker), the signature length, the ACL and
+the ciphertext readiness (connector worker; they surface as the dominant error, section 5).
 
-A Solana body gets the same `handles`, `requestValidity` (user decrypt) and `extraData` rules, then:
-
-| check | through | failure |
-|---|---|---|
-| the request's form: one store per handle (public), one entry per handle and a strictly decoded permit (user), at most the handle cap, every handle on one Solana chain | `kms-connector-api` `assemble()` (user) and `zama_solana_request::public_request_chain_id` (public), the code the connector endpoint runs | `400 malformed`, field `payload` (user), `ctHandles` or `encryptedStores` (public) |
+A Solana body gets the same `handles`, `requestValidity` (user decrypt) and `extraData` rules, then its form, checked
+by the code the connector endpoint runs (`kms-connector-api` `assemble()` for user decrypt,
+`zama_solana_request::public_request_chain_id` for public decrypt): one store per handle (public), one entry per
+handle and a strictly decoded permit (user), at most the handle cap, every handle on one Solana chain. A failure is
+`400 malformed`, field `payload` (user), `ctHandles` or `encryptedStores` (public).
 
 No chain is read: the delegation, the encrypted stores and the allow proofs are the connector's (they surface as the
 dominant error).
