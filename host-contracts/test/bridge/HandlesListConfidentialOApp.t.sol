@@ -343,7 +343,9 @@ contract HandlesListConfidentialOAppTest is TestHelperOz5, HostContractsDeployer
             _addressToBytes32(address(appDst)),
             payload,
             srcList,
-            dstList
+            dstList,
+            new uint48[](2),
+            uint48(block.number)
         );
 
         _allow(dstH0, address(dstBridge));

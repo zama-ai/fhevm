@@ -235,25 +235,15 @@ contract ACL is
         if (!isAllowed(handle, msg.sender)) {
             revert SenderNotAllowed(msg.sender);
         }
-        ACLStorage storage $ = _getACLStorage();
-        uint48 depth = HCULimit(hcuLimitAdd).getDepthForPersistence(handle, msg.sender);
-        mapping(address => bool) storage pairs = $.persistedAllowedPairs[handle];
-        bytes32 slot;
-        uint256 previous;
-        assembly ("memory-safe") {
-            mstore(0, and(account, 0xffffffffffffffffffffffffffffffffffffffff))
-            mstore(32, pairs.slot)
-            slot := keccak256(0, 64)
-            previous := sload(slot)
-        }
-        if (uint8(previous) != 0) {
-            uint48 previousDepth = HCULimit(hcuLimitAdd).decayDepth(uint48(previous >> 8), uint48(previous >> 56));
-            if (previousDepth > depth) depth = previousDepth;
-        }
-        // Keep the existing bool byte and mapping layout; metadata shares its word.
-        uint256 packed = 1 | (uint256(depth) << 8) | (uint256(uint48(block.number)) << 56);
-        assembly ("memory-safe") {
-            sstore(slot, packed)
+        if (!_getACLStorage().persistedAllowedPairs[handle][account]) {
+            // The handle's carried depth and the current block share the permission's storage word,
+            // above its bool byte. A repeated grant keeps the first record, which decays the same way.
+            uint48 depth = HCULimit(hcuLimitAdd).loadDepth(handle, msg.sender);
+            uint256 word = 1 | (uint256(depth) << 8) | (uint256(uint48(block.number)) << 56);
+            bytes32 slot = _permissionSlot(handle, account);
+            assembly ("memory-safe") {
+                sstore(slot, word)
+            }
         }
         emit Allowed(msg.sender, account, handle);
     }
@@ -320,12 +310,9 @@ contract ACL is
             if (!isAllowed(handle, msg.sender)) {
                 revert SenderNotAllowed(msg.sender);
             }
-        }
 
-        // Executor outputs are finalized by the HCU check after this grant.
-        // Bridge grants cannot silently initialize an unknown lineage to zero.
-        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) {
-            HCULimit(hcuLimitAdd).importDepth(handle, msg.sender);
+            // The recipient may compute on the handle in this transaction without holding a stored permission.
+            HCULimit(hcuLimitAdd).loadDepth(handle, msg.sender);
         }
 
         bytes32 key = keccak256(abi.encodePacked(handle, account));
@@ -609,19 +596,30 @@ contract ACL is
         return $.persistedAllowedPairs[handle][account];
     }
 
-    /// @notice Returns depth metadata without changing the legacy permission getter.
-    function getPermissionDepth(
+    /**
+     * @notice Returns whether `account` has a stored permission for `handle`, with the handle's
+     *         carried depth and the block it was stored at (see HCULimit.setCrossTxDepthLimit).
+     */
+    function getStoredDepth(
         bytes32 handle,
         address account
-    ) external view returns (bool allowed, uint48 depth, uint48 savedBlock) {
+    ) external view returns (bool allowed, uint48 depth, uint48 storedBlock) {
+        bytes32 slot = _permissionSlot(handle, account);
+        uint256 word;
+        assembly ("memory-safe") {
+            word := sload(slot)
+        }
+        return (uint8(word) != 0, uint48(word >> 8), uint48(word >> 56));
+    }
+
+    /// @dev Storage slot of `persistedAllowedPairs[handle][account]`.
+    function _permissionSlot(bytes32 handle, address account) private view returns (bytes32 slot) {
         mapping(address => bool) storage pairs = _getACLStorage().persistedAllowedPairs[handle];
-        uint256 packed;
         assembly ("memory-safe") {
             mstore(0, and(account, 0xffffffffffffffffffffffffffffffffffffffff))
             mstore(32, pairs.slot)
-            packed := sload(keccak256(0, 64))
+            slot := keccak256(0, 64)
         }
-        return (uint8(packed) != 0, uint48(packed >> 8), uint48(packed >> 56));
     }
 
     /**

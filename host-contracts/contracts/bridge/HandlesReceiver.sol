@@ -47,11 +47,13 @@ import {IDstApp} from "./interfaces/IDstApp.sol";
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer, ACLOwnable, BridgeEvents {
-    struct InboundMessage {
+    /// @dev Decoded message fields; a struct keeps decoding within the stack limit without via-ir.
+    struct BridgeMessage {
         bytes32 srcApp;
         bytes32 dstApp;
         bytes payload;
         bytes32[] handles;
+        uint48[] depths;
     }
 
     /// @notice Returned when `lzCompose` is invoked by an unauthorized caller.
@@ -107,8 +109,6 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
     bytes32 private constant HANDLE_CHAIN_ID_MASK = 0x00000000000000000000000000000000000000000000ffffffffffffffff0000;
 
     error WrongChainIdInDstHandle();
-    error DepthListLengthMismatch();
-    error SourceDepthTrackingDisabled();
 
     /// @notice Returned when byte 21 of `dstHandle` is not the `0xff` computation marker.
     error WrongIndexByteInDstHandle();
@@ -210,28 +210,28 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
      *      16-slot stack limit on without-via-ir builds.
      */
     function _grantAndDispatch(bytes calldata message, bytes32 guid) internal virtual {
-        _registerDepths(message);
         // Wire format: both srcApp and dstApp are bytes32 (see HandlesSender._dispatch
         // for the rationale). On EVM, srcApp is a zero-padded address; dstApp must
         // also fit in 20 bytes for the local IDstApp dispatch — non-EVM destinations
         // never reach this lzCompose path because they run their own (non-Solidity)
         // bridge implementation.
-        (
-            uint32 srcEid,
-            bytes32 srcApp,
-            bytes32 dstApp,
-            bytes memory payload,
-            bytes32[] memory srcHandleList,
-            bytes32[] memory dstHandleList
-        ) = abi.decode(message, (uint32, bytes32, bytes32, bytes, bytes32[], bytes32[]));
+        BridgeMessage memory m;
+        uint32 srcEid;
+        bytes32[] memory dstHandleList;
+        uint48 receivedBlock;
+        (srcEid, m.srcApp, m.dstApp, m.payload, m.handles, dstHandleList, m.depths, receivedBlock) = abi.decode(
+            message,
+            (uint32, bytes32, bytes32, bytes, bytes32[], bytes32[], uint48[], uint48)
+        );
 
-        address dstAppEvm = address(uint160(uint256(dstApp)));
+        HCULimit(hcuLimitAdd).setBridgedDepths(dstHandleList, m.depths, receivedBlock);
+        address dstAppEvm = address(uint160(uint256(m.dstApp)));
         uint256 nHandles = dstHandleList.length;
         for (uint256 i = 0; i < nHandles; i++) {
             ACL_CONTRACT.allowTransient(dstHandleList[i], dstAppEvm);
         }
 
-        IDstApp(dstAppEvm).onConfidentialBridgeReceived(srcEid, srcApp, payload, srcHandleList, dstHandleList, guid);
+        IDstApp(dstAppEvm).onConfidentialBridgeReceived(srcEid, m.srcApp, m.payload, m.handles, dstHandleList, guid);
     }
 
     /**
@@ -254,16 +254,17 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
      */
     function _handleInbound(uint32 srcEid, bytes32 guid, bytes calldata message) internal virtual {
         // Wire format mirrors HandlesSender._dispatch: srcApp+dstApp as bytes32.
-        InboundMessage memory inbound;
-        (inbound.srcApp, inbound.dstApp, inbound.payload, inbound.handles) = abi.decode(
+        BridgeMessage memory inbound;
+        (inbound.srcApp, inbound.dstApp, inbound.payload, inbound.handles, inbound.depths) = abi.decode(
             message,
-            (bytes32, bytes32, bytes, bytes32[])
+            (bytes32, bytes32, bytes, bytes32[], uint48[])
         );
 
         bytes32[] memory dstHandleList = _deriveAndEmit(inbound.dstApp, inbound.handles, guid);
 
         // Dispatch a compose message back to self. The HandlesReceiver is also the
         // compose target, configured via LayerZero options on the source side.
+        // Carried depths decay from this block, so a compose retried later can pass.
         endpoint.sendCompose(
             address(this),
             guid,
@@ -275,47 +276,10 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
                 inbound.payload,
                 inbound.handles,
                 dstHandleList,
-                _depthData(message)
+                inbound.depths,
+                uint48(block.number)
             )
         );
-    }
-
-    // The appended ABI fields leave the existing payload and handle lists intact.
-    // Legacy messages have a four-word header and carry no lineage attestation.
-    function _depthData(bytes calldata message) private view returns (bytes memory) {
-        uint256 payloadOffset;
-        assembly {
-            payloadOffset := calldataload(add(message.offset, 64))
-        }
-        if (payloadOffset == 128) return "";
-        (, , , bytes32[] memory handles, uint48[] memory depths, bool tracked) = abi.decode(
-            message,
-            (bytes32, bytes32, bytes, bytes32[], uint48[], bool)
-        );
-        if (depths.length != handles.length) revert DepthListLengthMismatch();
-        return abi.encode(uint48(block.number), depths, tracked);
-    }
-
-    function _registerDepths(bytes calldata message) private {
-        uint256 payloadOffset;
-        assembly {
-            payloadOffset := calldataload(add(message.offset, 96))
-        }
-        // Legacy compose messages remain readable; enabled throttling rejects
-        // their unknown handles when ACL.allowTransient tries to import depth.
-        if (payloadOffset == 192) return;
-        (, , , , , bytes32[] memory handles, bytes memory data) = abi.decode(
-            message,
-            (uint32, bytes32, bytes32, bytes, bytes32[], bytes32[], bytes)
-        );
-        if (data.length == 0) return;
-        (uint48 receivedBlock, uint48[] memory depths, bool tracked) = abi.decode(data, (uint48, uint48[], bool));
-        (uint48 lineageLimit, ) = HCULimit(hcuLimitAdd).getLineageDepthLimit();
-        if (lineageLimit != 0 && !tracked) revert SourceDepthTrackingDisabled();
-        if (depths.length != handles.length) revert DepthListLengthMismatch();
-        for (uint256 i; i < handles.length; i++) {
-            HCULimit(hcuLimitAdd).registerBridgeDepth(handles[i], depths[i], receivedBlock);
-        }
     }
 
     /**

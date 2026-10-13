@@ -186,8 +186,8 @@ export async function forgeDelivery(
   const nonce: bigint = (await endpoint.inboundNonce(ctx.dstBridge, params.srcEid, sender)) + 1n;
   const guid = ethers.zeroPadValue(ethers.toBeHex(nonce), 32);
   const message = ethers.AbiCoder.defaultAbiCoder().encode(
-    ['bytes32', 'bytes32', 'bytes', 'bytes32[]'],
-    [sender, ethers.zeroPadValue(params.dstApp, 32), params.payload, [params.srcHandle]],
+    ['bytes32', 'bytes32', 'bytes', 'bytes32[]', 'uint48[]'],
+    [sender, ethers.zeroPadValue(params.dstApp, 32), params.payload, [params.srcHandle], [0]],
   );
   const encodedPacket = encodePacket({
     nonce,

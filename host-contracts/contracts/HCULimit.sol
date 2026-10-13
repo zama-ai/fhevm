@@ -56,12 +56,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     error InvalidZeroHandle();
 
     error UnknownHandleDepth(bytes32 handle);
-    error CallerMustBeACLOrExecutor();
+    error CallerMustBeACLOrBridge();
     error CallerMustBeConfidentialBridge();
-    error InvalidLineageLimit();
-    error HCULineageDepthLimitExceeded();
+    error InvalidCrossTxDepthLimit();
+    error HCUCrossTxDepthLimitExceeded();
 
-    event LineageDepthLimitSet(uint48 maxDepth, uint48 creditPerBlock);
+    event CrossTxDepthLimitSet(uint48 maxDepth, uint48 decayPerBlock);
 
     /// @notice Emitted when the global block HCU cap is updated.
     /// @param hcuPerBlock New global block HCU cap.
@@ -98,7 +98,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice FHEVMExecutor address.
     address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
 
-    // One transient word holds known | lineage depth | transaction-local depth.
+    /// @dev Per-handle transient word: bit 255 marks the depths as known, bits 128-254 hold the
+    ///      depth carried across transactions and bits 0-127 the depth within this transaction.
     uint256 private constant DEPTH_KNOWN = 1 << 255;
 
     /// `fheMulDiv` `scalarByte` bitmask: bit 0 (divisor) is always set; bit 1 marks `factor2` as scalar.
@@ -120,8 +121,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint48 maxHCUPerTx;
         /// @notice Whitelisted callers bypass block-level cap.
         mapping(address account => bool isWhitelisted) blockHCUWhitelist;
-        uint48 maxLineageDepth;
-        uint48 lineageCreditPerBlock;
+        /// @notice Maximum depth carried across transactions; 0 disables the check.
+        uint48 maxCrossTxDepth;
+        /// @notice Carried depth the coprocessors are assumed to drain per block.
+        uint48 crossTxDepthDecayPerBlock;
     }
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
@@ -1389,7 +1392,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             revert UnsupportedOperation();
         }
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
-        _setHCUForHandle(result, _depthIncrement(opHCU));
+        _setHCUForHandle(result, _opDepths(opHCU));
     }
 
     /**
@@ -1459,7 +1462,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             revert UnsupportedOperation();
         }
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
-        _setHCUForHandle(result, _depthIncrement(opHCU));
+        _setHCUForHandle(result, _opDepths(opHCU));
     }
 
     /**
@@ -1487,7 +1490,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             revert UnsupportedOperation();
         }
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
-        _setHCUForHandle(result, _depthIncrement(opHCU));
+        _setHCUForHandle(result, _opDepths(opHCU));
     }
 
     /**
@@ -1536,10 +1539,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
         uint256 maxInputDepth = 0;
         for (uint256 i = 0; i < values.length; i++) {
-            maxInputDepth = _maxDepthPair(maxInputDepth, _getDepthPair(values[i]));
+            maxInputDepth = _maxDepths(maxInputDepth, _handleDepths(values[i], caller));
         }
 
-        uint256 totalHCU = _depthIncrement(opHCU) + maxInputDepth;
+        uint256 totalHCU = _opDepths(opHCU) + maxInputDepth;
         if (uint128(totalHCU) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
@@ -1600,12 +1603,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         }
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
-        uint256 maxInputDepth = _getDepthPair(value);
+        uint256 maxInputDepth = _handleDepths(value, caller);
         for (uint256 i = 0; i < values.length; i++) {
-            maxInputDepth = _maxDepthPair(maxInputDepth, _getDepthPair(values[i]));
+            maxInputDepth = _maxDepths(maxInputDepth, _handleDepths(values[i], caller));
         }
 
-        uint256 totalHCU = _depthIncrement(opHCU) + maxInputDepth;
+        uint256 totalHCU = _opDepths(opHCU) + maxInputDepth;
         if (uint128(totalHCU) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
@@ -1710,92 +1713,82 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         emit BlockHCUWhitelistRemoved(account);
     }
 
-    /// @notice Configures per-chain recovery; (0, 0) keeps lineage throttling disabled.
-    /// @dev Drain outstanding work before activation: legacy permissions have no inherited depth.
-    function setLineageDepthLimit(uint48 maxDepth, uint48 creditPerBlock) external onlyACLOwner {
-        if ((maxDepth == 0) != (creditPerBlock == 0)) revert InvalidLineageLimit();
+    /**
+     * @notice Sets the cross-transaction depth limit and how much carried depth decays per block.
+     * @dev (0, 0) disables it. Permissions granted while disabled carry no depth.
+     */
+    function setCrossTxDepthLimit(uint48 maxDepth, uint48 decayPerBlock) external onlyACLOwner {
+        if ((maxDepth == 0) != (decayPerBlock == 0)) revert InvalidCrossTxDepthLimit();
         HCULimitStorage storage $ = _getHCULimitStorage();
-        $.maxLineageDepth = maxDepth;
-        $.lineageCreditPerBlock = creditPerBlock;
-        emit LineageDepthLimitSet(maxDepth, creditPerBlock);
+        $.maxCrossTxDepth = maxDepth;
+        $.crossTxDepthDecayPerBlock = decayPerBlock;
+        emit CrossTxDepthLimitSet(maxDepth, decayPerBlock);
     }
 
-    function getLineageDepthLimit() external view returns (uint48 maxDepth, uint48 creditPerBlock) {
+    function getCrossTxDepthLimit() external view returns (uint48 maxDepth, uint48 decayPerBlock) {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        return ($.maxLineageDepth, $.lineageCreditPerBlock);
+        return ($.maxCrossTxDepth, $.crossTxDepthDecayPerBlock);
     }
 
-    function decayDepth(uint48 depth, uint48 savedBlock) public view returns (uint48) {
-        uint256 elapsed = block.number > savedBlock ? block.number - savedBlock : 0;
-        uint256 credit = elapsed * uint256(_getHCULimitStorage().lineageCreditPerBlock);
-        return credit >= depth ? 0 : uint48(depth - credit);
+    /**
+     * @notice Returns the depth that `handle` carries into later transactions, loading it from
+     *         `holder`'s permission if this transaction has not seen it yet. Returns 0 when disabled.
+     */
+    function loadDepth(bytes32 handle, address holder) external returns (uint48) {
+        // Disabled: nothing is loaded, whoever calls.
+        if (_getHCULimitStorage().maxCrossTxDepth == 0) return 0;
+        if (msg.sender != aclAdd && msg.sender != confidentialBridgeAdd) revert CallerMustBeACLOrBridge();
+        return uint48(_handleDepths(handle, holder) >> 128);
     }
 
-    function getDepthForPersistence(bytes32 handle, address account) public view returns (uint48) {
-        if (handle == bytes32(0)) return 0;
-        uint256 cached;
-        assembly {
-            cached := tload(handle)
-        }
-        if (_getHCULimitStorage().maxLineageDepth == 0) return uint48(cached);
-        if (cached & DEPTH_KNOWN != 0) return uint48((cached & ~DEPTH_KNOWN) >> 128);
-        (bool allowed, uint48 depth, uint48 savedBlock) = ACL(aclAdd).getPermissionDepth(handle, account);
-        if (!allowed) revert UnknownHandleDepth(handle);
-        return decayDepth(depth, savedBlock);
-    }
-
-    /// @notice Loads an authorized source before it forwards transient permission.
-    function importDepth(bytes32 handle, address account) external {
-        if (msg.sender != aclAdd && msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeACLOrExecutor();
-        if (_getHCULimitStorage().maxLineageDepth == 0) return;
-        if (handle == bytes32(0)) revert InvalidZeroHandle();
-        uint256 cached;
-        assembly {
-            cached := tload(handle)
-        }
-        // A legitimate zero-depth input must remain distinguishable from a cache miss.
-        if (cached & DEPTH_KNOWN != 0) return;
-        uint256 packed = DEPTH_KNOWN | (uint256(getDepthForPersistence(handle, account)) << 128);
-        assembly {
-            tstore(handle, packed)
-        }
-    }
-
-    /// @notice Only verified inputs are zero-depth roots; computation outputs use their HCU check.
-    function registerInputDepth(bytes32 handle) external {
-        if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
-        if (_getHCULimitStorage().maxLineageDepth == 0) return;
-        if (handle == bytes32(0)) revert InvalidZeroHandle();
-        uint256 cached;
-        assembly {
-            cached := tload(handle)
-        }
-        if (cached & DEPTH_KNOWN == 0) {
-            uint256 known = DEPTH_KNOWN;
+    /**
+     * @notice Sets the depths that bridged handles carry from their source chain.
+     * @dev Decays from the block the message was received, so a retried compose eventually passes.
+     */
+    function setBridgedDepths(bytes32[] calldata handles, uint48[] calldata depths, uint48 receivedBlock) external {
+        // Disabled: nothing is stored, whoever calls.
+        if (_getHCULimitStorage().maxCrossTxDepth == 0) return;
+        if (msg.sender != confidentialBridgeAdd) revert CallerMustBeConfidentialBridge();
+        for (uint256 i = 0; i < handles.length; i++) {
+            bytes32 handle = handles[i];
+            uint256 word = DEPTH_KNOWN | (_decayed(depths[i], receivedBlock) << 128);
             assembly {
-                tstore(handle, known)
+                tstore(handle, word)
             }
         }
     }
 
-    /// @notice Bridges carry source depth, then recover only over destination blocks since receipt.
-    function registerBridgeDepth(bytes32 handle, uint48 depth, uint48 receivedBlock) external {
-        if (_getHCULimitStorage().maxLineageDepth == 0) return;
-        if (msg.sender != confidentialBridgeAdd) revert CallerMustBeConfidentialBridge();
-        if (handle == bytes32(0)) revert InvalidZeroHandle();
-        uint256 packed = DEPTH_KNOWN | (uint256(decayDepth(depth, receivedBlock)) << 128);
-        uint256 cached;
-        assembly {
-            cached := tload(handle)
-        }
-        packed = DEPTH_KNOWN | _maxDepthPair(cached & ~DEPTH_KNOWN, packed & ~DEPTH_KNOWN);
-        assembly {
-            tstore(handle, packed)
-        }
+    /// @dev An operation adds its HCU to both depths.
+    function _opDepths(uint256 opHCU) private pure returns (uint256) {
+        return opHCU | (opHCU << 128);
     }
 
-    function _depthIncrement(uint256 opHCU) private pure returns (uint256) {
-        return opHCU | (opHCU << 128);
+    /// @dev Returns `depth` minus the decay accrued since `sinceBlock`, floored at 0.
+    function _decayed(uint48 depth, uint48 sinceBlock) private view returns (uint256) {
+        uint256 decay = (block.number - sinceBlock) * _getHCULimitStorage().crossTxDepthDecayPerBlock;
+        return decay >= depth ? 0 : depth - decay;
+    }
+
+    /**
+     * @dev Returns both depths of `handle`. A handle first seen in this transaction has no depth within it;
+     *      its carried depth comes from `holder`'s permission, except for verified inputs, which start new chains.
+     */
+    function _handleDepths(bytes32 handle, address holder) private returns (uint256 depths) {
+        // Handle slot zero is reserved for _getHCUForTransaction.
+        if (handle == bytes32(0)) revert InvalidZeroHandle();
+        assembly {
+            depths := tload(handle)
+        }
+        if (depths & DEPTH_KNOWN != 0) return depths & ~DEPTH_KNOWN;
+        // Byte 21 is 0xff only for computed handles; verified inputs carry their index there.
+        if (uint8(handle[21]) != 0xff || _getHCULimitStorage().maxCrossTxDepth == 0) return 0;
+        (bool allowed, uint48 storedDepth, uint48 storedBlock) = ACL(aclAdd).getStoredDepth(handle, holder);
+        if (!allowed) revert UnknownHandleDepth(handle);
+        depths = _decayed(storedDepth, storedBlock) << 128;
+        uint256 word = depths | DEPTH_KNOWN;
+        assembly {
+            tstore(handle, word)
+        }
     }
 
     /**
@@ -1809,7 +1802,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     ) internal virtual {
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
-        uint256 totalHCU = _depthIncrement(opHCU) + _getDepthPair(op1);
+        uint256 totalHCU = _opDepths(opHCU) + _handleDepths(op1, caller);
         if (uint128(totalHCU) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
@@ -1829,7 +1822,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     ) internal virtual {
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
-        uint256 totalHCU = _depthIncrement(opHCU) + _maxDepthPair(_getDepthPair(op1), _getDepthPair(op2));
+        uint256 totalHCU = _opDepths(opHCU) + _maxDepths(_handleDepths(op1, caller), _handleDepths(op2, caller));
         if (uint128(totalHCU) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
@@ -1850,8 +1843,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     ) internal virtual {
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
-        uint256 totalHCU = _depthIncrement(opHCU) +
-            _maxDepthPair(_getDepthPair(op1), _maxDepthPair(_getDepthPair(op2), _getDepthPair(op3)));
+        uint256 totalHCU = _opDepths(opHCU) +
+            _maxDepths(_handleDepths(op1, caller), _maxDepths(_handleDepths(op2, caller), _handleDepths(op3, caller)));
 
         if (uint128(totalHCU) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
@@ -1909,16 +1902,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @dev This function uses inline assembly to load the HCU from a specific storage location.
      */
     function _getHCUForHandle(bytes32 handle) internal view virtual returns (uint256 handleHCU) {
-        return uint128(_getDepthPair(handle));
-    }
-
-    function _getDepthPair(bytes32 handle) private view returns (uint256 handleHCU) {
         // Handle slot zero is reserved for _getHCUForTransaction.
         if (handle == bytes32(0)) revert InvalidZeroHandle();
         assembly {
             handleHCU := tload(handle)
         }
-        return handleHCU & ~DEPTH_KNOWN;
+        return uint128(handleHCU);
     }
 
     /**
@@ -1941,9 +1930,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     function _setHCUForHandle(bytes32 handle, uint256 handleHCU) internal virtual {
         // Handle slot zero is reserved for _setHCUForTransaction.
         if (handle == bytes32(0)) revert InvalidZeroHandle();
-        handleHCU = _maxDepthPair(_getDepthPair(handle), handleHCU);
-        uint48 limit = _getHCULimitStorage().maxLineageDepth;
-        if (limit != 0 && handleHCU >> 128 > limit) revert HCULineageDepthLimitExceeded();
+        uint48 maxDepth = _getHCULimitStorage().maxCrossTxDepth;
+        if (maxDepth != 0 && handleHCU >> 128 > maxDepth) revert HCUCrossTxDepthLimitExceeded();
         handleHCU |= DEPTH_KNOWN;
         assembly {
             tstore(handle, handleHCU)
@@ -2003,11 +1991,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      */
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}
 
-    /// @dev Each component needs its own maximum: the deepest local branch may have less inherited depth.
-    function _maxDepthPair(uint256 a, uint256 b) private pure returns (uint256) {
-        uint256 local = uint128(a) >= uint128(b) ? uint128(a) : uint128(b);
-        uint256 lineage = a >> 128 >= b >> 128 ? a >> 128 : b >> 128;
-        return local | (lineage << 128);
+    /// @dev Takes the maximum of each depth separately: the deepest branch in this transaction may carry less.
+    function _maxDepths(uint256 a, uint256 b) private pure returns (uint256) {
+        uint256 txDepth = uint128(a) >= uint128(b) ? uint128(a) : uint128(b);
+        uint256 carried = a >> 128 >= b >> 128 ? a >> 128 : b >> 128;
+        return txDepth | (carried << 128);
     }
 
     /**
