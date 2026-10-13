@@ -22,7 +22,7 @@ contract DepthUser {
         ACL(aclAdd).allow(value, address(this));
     }
 
-    function add(bytes32 lhs, bytes32 rhs) external {
+    function add(bytes32 lhs, bytes32 rhs) public {
         value = FHEVMExecutor(fhevmExecutorAdd).fheAdd(lhs, rhs, 0x00);
         ACL(aclAdd).allow(value, address(this));
     }
@@ -33,6 +33,27 @@ contract DepthUser {
         values[1] = second;
         value = FHEVMExecutor(fhevmExecutorAdd).fheSum(values, FheType.Uint64);
         ACL(aclAdd).allow(value, address(this));
+    }
+
+    function isIn(bytes32 member, bytes32 candidate) external {
+        bytes32[] memory values = new bytes32[](1);
+        values[0] = candidate;
+        value = FHEVMExecutor(fhevmExecutorAdd).fheIsIn(member, values, FheType.Uint64);
+        ACL(aclAdd).allow(value, address(this));
+    }
+
+    function select(bytes32 ifTrue, bytes32 ifFalse) external {
+        bytes32 condition = FHEVMExecutor(fhevmExecutorAdd).trivialEncrypt(1, FheType.Bool);
+        value = FHEVMExecutor(fhevmExecutorAdd).fheIfThenElse(condition, ifTrue, ifFalse);
+        ACL(aclAdd).allow(value, address(this));
+    }
+
+    /// @dev Builds two additions within this transaction, then adds `stored` to the result.
+    function addToNewChain(bytes32 stored) external {
+        bytes32 chain = FHEVMExecutor(fhevmExecutorAdd).trivialEncrypt(0, FheType.Uint64);
+        chain = FHEVMExecutor(fhevmExecutorAdd).fheAdd(chain, bytes32(uint256(1)), 0x01);
+        chain = FHEVMExecutor(fhevmExecutorAdd).fheAdd(chain, bytes32(uint256(1)), 0x01);
+        add(stored, chain);
     }
 
     function forward(DepthUser recipient) external {
@@ -49,7 +70,6 @@ contract DepthUser {
 /// forge-config: default.isolate = true
 contract CrossTxDepthTest is HostContractsDeployerTestUtils {
     address internal constant owner = address(456);
-    bytes32 internal constant ACL_STORAGE_ROOT = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
 
     ACL internal acl;
     HCULimit internal hcu;
@@ -111,6 +131,29 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         bob.start();
         bob.sum(bob.value(), deep);
         assertGt(_storedDepth(bob), deepDepth);
+
+        bob.start();
+        bob.isIn(deep, bob.value());
+        assertGt(_storedDepth(bob), deepDepth);
+
+        bob.start();
+        bob.select(bob.value(), deep);
+        assertGt(_storedDepth(bob), deepDepth);
+    }
+
+    function test_TransactionDepthComesFromDeepestInputWithinTransaction() public {
+        (uint48 start, uint48 step) = _startAndMeasure(alice);
+        for (uint256 i = 0; i < 10; i++) {
+            alice.addOne(alice.value());
+        }
+        alice.share(address(bob));
+        vm.prank(owner);
+        hcu.setMaxHCUDepthPerTx(start + 2 * step);
+
+        // The stored handle carries more depth, but the new chain is deeper within this transaction.
+        bytes32 stored = alice.value();
+        vm.expectRevert(HCULimit.HCUTransactionDepthLimitExceeded.selector);
+        bob.addToNewChain(stored);
     }
 
     function test_TransientForwardCarriesDepth() public {
@@ -155,27 +198,16 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         assertGt(_storedDepth(alice), 4 * step);
     }
 
-    function test_PermissionWithoutStoredDepthStartsNewChain() public {
-        (, uint48 step) = _startAndMeasure(alice);
-        // A permission granted while the limit was off holds only the bool byte.
-        bytes32 handle = keccak256("old permission") & ~bytes32(uint256(type(uint88).max));
-        handle |= bytes32(uint256(uint8(FheType.Uint64)) << 8);
-        vm.store(aclAdd, _permissionSlot(handle, address(alice)), bytes32(uint256(1)));
-        assertTrue(acl.isAllowed(handle, address(alice)));
-        (uint48 depth, uint48 storedBlock) = acl.getStoredDepth(handle, address(alice));
-        assertEq(depth, 0);
-        assertEq(storedBlock, 0);
-
-        alice.addOne(handle);
-        assertEq(_storedDepth(alice), step);
-    }
-
-    function test_DisabledLimitStoresNoDepth() public {
+    function test_PermissionGrantedWhileDisabledStartsNewChain() public {
         alice.start();
         for (uint256 i = 0; i < 5; i++) {
             alice.addOne(alice.value());
         }
         assertEq(_storedDepth(alice), 0);
+
+        (, uint48 step) = _startAndMeasure(bob);
+        alice.addOne(alice.value());
+        assertEq(_storedDepth(alice), step);
     }
 
     function test_LoadDepthRejectsOtherCallers() public {
@@ -208,9 +240,5 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
 
     function _storedDepth(DepthUser user) internal view returns (uint48 depth) {
         (depth, ) = acl.getStoredDepth(user.value(), address(user));
-    }
-
-    function _permissionSlot(bytes32 handle, address account) internal pure returns (bytes32) {
-        return keccak256(abi.encode(account, keccak256(abi.encode(handle, ACL_STORAGE_ROOT))));
     }
 }

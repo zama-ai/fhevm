@@ -907,8 +907,9 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         bytes32 result = FHEVMExecutor(fhevmExecutorAdd).fheAdd(dstHandle, bytes32(uint256(1)), 0x01);
         acl.allow(result, address(dstApp));
         vm.stopPrank();
+        // One scalar Uint64 addition (133,000 HCU) on a chain that starts at 0.
         (uint48 depth, ) = acl.getStoredDepth(result, address(dstApp));
-        assertGt(depth, 0);
+        assertEq(depth, 133_000);
     }
 
     function test_LzCompose_RevertsWhenOnReceiveReverts() public {
