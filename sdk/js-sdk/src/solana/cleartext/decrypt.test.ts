@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { address, getAddressEncoder, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaRpc } from '../encryptedStore.js';
-import type { SolanaMerkleProofReader } from './merkleProofs.js';
+import type { SolanaLeafReader } from './leafRecord.js';
 import { bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '../../core/base/bytes.js';
 import { buildHandle, toFhevmHandle } from '../../core/handle/FhevmHandle.js';
 import { createKmsPublicDecryptEip712 } from '../../core/kms/createKmsPublicDecryptEip712.js';
@@ -35,7 +35,7 @@ const bytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder()
 const now = BigInt(Math.floor(Date.now() / 1000));
 const rpc = {} as SolanaRpc;
 // The Connector's judgment is stubbed in these tests, so the leaf record is never read.
-const readMerkleProofs: SolanaMerkleProofReader = () => Promise.reject(new Error('the leaf record is not read here'));
+const readLeaves: SolanaLeafReader = () => Promise.reject(new Error('the leaf record is not read here'));
 const chain = { fhevm: { programs: { host: { address: bytesToHex(bytes(host)) } } } } as unknown as FhevmSolanaChain;
 
 const refusal = (failure: authorization.ConnectorFailure): authorization.ConnectorVerdict => ({
@@ -64,7 +64,7 @@ describe('cleartextConnectorRejection', () => {
 // A public decryption goes through the production retry loop: a code it retries is judged again,
 // one it does not ends the request.
 describe('cleartextPublicDecryptCertifier', () => {
-  const certify = cleartextPublicDecryptCertifier(rpc, chain, readMerkleProofs);
+  const certify = cleartextPublicDecryptCertifier(rpc, chain, readLeaves);
   const parameters = {
     entries: [
       {
@@ -205,7 +205,7 @@ describe('cleartextUserDecryptExecution', () => {
     options?: RelayerUserDecryptOptions,
     { attempts, start = now - 10n }: { attempts?: number; start?: bigint } = {},
   ) =>
-    cleartextUserDecryptExecution(rpc, chain, readMerkleProofs).execute({
+    cleartextUserDecryptExecution(rpc, chain, readLeaves).execute({
       session: sessionStarting(start),
       entries,
       attempts,

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   address,
   getAddressDecoder,
-  getAddressEncoder,
   getBase58Decoder,
   getU32Encoder,
   getU64Encoder,
@@ -15,15 +14,13 @@ import {
   getFheExecuteInstructionDataEncoder,
   getMakeStoreHandlePublicInstructionDataEncoder,
 } from '@fhevm/solana-zama-host';
-import { createRetainedMmr, storeLeafCommitment, type SolanaStoreHistoryEvent } from './mmr.js';
 import { EVENT_IX_TAG, EVENT_VERSION } from '../internal/hostConstants.js';
-import { createSolanaLeafRecord } from './leafRecord.js';
+import { createSolanaLeafRecord, type SolanaStoreHistoryEvent } from './leafRecord.js';
 
 const host = address('11111111111111111111111111111112');
 const store = address('SysvarC1ock11111111111111111111111111111111');
 const other = address('SysvarRent111111111111111111111111111111111');
 const app = address('SysvarEpochSchedu1e111111111111111111111111');
-const storeBytes = new Uint8Array(getAddressEncoder().encode(store));
 /** `sha256("account:EncryptedStore")[..8]`. */
 const ENCRYPTED_STORE_DISCRIMINATOR = [161, 143, 137, 73, 233, 30, 46, 118];
 
@@ -50,7 +47,7 @@ type Write = {
 /** A top-level `make_store_handle_public` of the handle filled with `handle`, appending leaf `at`. */
 const makePublic = (at: bigint, handle: number): Write => ({
   at,
-  events: [{ kind: 'markedPublic', handle: bytes32(handle) }],
+  events: [{ handle: bytes32(handle) }],
   accountKeys: [other, host, store],
   loadedWritable: [],
   instructions: [
@@ -105,10 +102,8 @@ const execute = (at: bigint, handle: number, allowed: readonly number[]): Write 
   return {
     at,
     events: [
-      ...allowed.map(
-        (key): SolanaStoreHistoryEvent => ({ kind: 'allowed', handle: bytes32(handle), key: bytes32(key) }),
-      ),
-      { kind: 'markedPublic', handle: bytes32(handle) },
+      ...allowed.map((key): SolanaStoreHistoryEvent => ({ handle: bytes32(handle), key: bytes32(key) })),
+      { handle: bytes32(handle) },
     ],
     accountKeys: [keyOf(0x70), other, app, host],
     loadedWritable: [store],
@@ -153,33 +148,28 @@ const touch = (): Write => ({
   inner: [],
 });
 
-/** The store's leaf count, peaks and proofs, from its leaves in the order the host appended them. */
-const history = (writes: readonly Write[]) => {
-  const tree = createRetainedMmr();
+/** The store's leaves in the order the host appended them, from what each write declares. */
+const history = (writes: readonly Write[]): readonly SolanaStoreHistoryEvent[] =>
   writes
     .filter((write) => write.failed !== true)
     .sort((left, right) => Number(left.at - right.at))
-    .flatMap((write) => write.events)
-    .forEach((event, index) => {
-      tree.append(storeLeafCommitment(storeBytes, BigInt(index), event));
-    });
-  const leafCount = tree.leafCount();
-  return { tree, leafCount: BigInt(leafCount), peaks: tree.peaks(leafCount) };
-};
+    .flatMap((write) => write.events);
 
-/** The borsh bytes of the store account with `leafCount` leaves under `peaks`. */
-const storeAccount = (leafCount: bigint, peaks: readonly Uint8Array[]): Uint8Array =>
-  new Uint8Array([
+/** The borsh bytes of the store account with `leafCount` leaves, under one placeholder peak per mountain. */
+const storeAccount = (leafCount: number): Uint8Array => {
+  const peaks = leafCount.toString(2).split('1').length - 1;
+  return new Uint8Array([
     ...ENCRYPTED_STORE_DISCRIMINATOR,
     ...bytes32(0x11), // program
     ...bytes32(0x22), // authority
     ...bytes32(0x33), // scope
     ...u32(0), // slots
-    ...u64(leafCount),
-    ...u32(peaks.length),
-    ...peaks.flatMap((peak) => [...peak]),
+    ...u64(BigInt(leafCount)),
+    ...u32(peaks),
+    ...Array.from({ length: peaks }, () => [...bytes32(0xee)]).flat(),
     0xfe, // bump
   ]);
+};
 
 /** Signatures per `getSignaturesForAddress` page, so a listing of more than two writes pages. */
 const PAGE = 2;
@@ -199,8 +189,7 @@ function ledger(initial: readonly Write[]) {
     shape: 'store' | 'missing' | 'foreign' | 'notStore';
     /** The account as of this many writes, as a read that lags the listing sees it. */
     asOf: number | undefined;
-    tamper: boolean;
-  } = { shape: 'store', asOf: undefined, tamper: false };
+  } = { shape: 'store', asOf: undefined };
   const signatureOf = (index: number): string => `sig${index}`;
   const indexOf = (signature: string): number => Number(signature.slice('sig'.length));
 
@@ -224,11 +213,8 @@ function ledger(initial: readonly Write[]) {
 
   const accountInfo = () => {
     if (account.shape === 'missing') return null;
-    const { leafCount, peaks } = history(writes.slice(0, account.asOf));
     const data =
-      account.shape === 'notStore'
-        ? new Uint8Array(64)
-        : storeAccount(leafCount, account.tamper ? peaks.map(() => bytes32(0xee)) : peaks);
+      account.shape === 'notStore' ? new Uint8Array(64) : storeAccount(history(writes.slice(0, account.asOf)).length);
     return {
       data: [Buffer.from(data).toString('base64'), 'base64'],
       executable: false,
@@ -307,15 +293,11 @@ function ledger(initial: readonly Write[]) {
       unavailable.delete(index);
     },
     /** The answer a record over every write gives for leaf `leafIndex`. */
-    found: (leafIndex: number) => {
-      const { tree, leafCount } = history(writes);
-      return {
-        status: 'found',
-        leafIndex: BigInt(leafIndex),
-        leafCount,
-        siblings: tree.proof(leafIndex, tree.leafCount()).siblings,
-      };
-    },
+    found: (leafIndex: number) => ({
+      status: 'found',
+      leafIndex: BigInt(leafIndex),
+      leafCount: BigInt(history(writes).length),
+    }),
   };
 }
 
@@ -323,7 +305,7 @@ const publicLeaf = (handle: number) => ({ encryptedStore: store, handle: bytes32
 const allowedLeaf = (handle: number, key: number) => ({ ...publicLeaf(handle), key: keyOf(key) });
 
 describe('createSolanaLeafRecord', () => {
-  it('proves each leaf where its write placed it, whatever order the RPC lists the writes in', async () => {
+  it('finds each leaf where its write placed it, whatever order the RPC lists the writes in', async () => {
     const chain = ledger([makePublic(1n, 3), makePublic(0n, 2), makePublic(2n, 4)]);
     expect(await chain.read([publicLeaf(2), publicLeaf(3), publicLeaf(4), publicLeaf(9)])).toEqual([
       chain.found(0),
@@ -376,9 +358,16 @@ describe('createSolanaLeafRecord', () => {
     expect(chain.fetched).not.toContain('sig1');
   });
 
-  it('throws when two writes claim one leaf', async () => {
-    const chain = ledger([makePublic(0n, 2), makePublic(0n, 3)]);
-    await expect(chain.read([publicLeaf(2)])).rejects.toThrow(/claim leaf 0/);
+  it('throws when two writes claim one leaf, then rebuilds the store from its first transaction', async () => {
+    const chain = ledger([makePublic(0n, 2), makePublic(1n, 3), makePublic(1n, 4)]);
+    chain.account.asOf = 1;
+    expect(await chain.read([publicLeaf(2)])).toEqual([{ ...chain.found(0), leafCount: 1n }]);
+    chain.account.asOf = undefined;
+    await expect(chain.read([publicLeaf(2)])).rejects.toThrow(/claim leaf 1/);
+    chain.account.asOf = 2;
+    const before = chain.fetched.length;
+    expect(await chain.read([publicLeaf(3)])).toEqual([{ status: 'found', leafIndex: 1n, leafCount: 2n }]);
+    expect(chain.fetched.slice(before)).toEqual(['sig1', 'sig0']);
   });
 
   it('stays at its leaf count while a write is unlisted or unserved, then catches up', async () => {
@@ -411,7 +400,7 @@ describe('createSolanaLeafRecord', () => {
     const chain = ledger([makePublic(0n, 2), makePublic(1n, 3), touch()]);
     chain.account.asOf = 1;
     chain.hide(1);
-    expect(await chain.read([publicLeaf(2)])).toEqual([{ ...chain.found(0), leafCount: 1n, siblings: [] }]);
+    expect(await chain.read([publicLeaf(2)])).toEqual([{ ...chain.found(0), leafCount: 1n }]);
     chain.account.asOf = undefined;
     chain.release(1);
     expect(await chain.read([publicLeaf(3)])).toEqual([chain.found(1)]);
@@ -435,16 +424,6 @@ describe('createSolanaLeafRecord', () => {
     expect(await chain.read([publicLeaf(3)])).toEqual([chain.found(1)]);
     open();
     expect(await waiting).toEqual([{ status: 'notFound', leafCount: 1n }, { status: 'unknownAccount' }]);
-  });
-
-  it('throws on peaks that are not the account’s, then rebuilds the store from its first transaction', async () => {
-    const chain = ledger([makePublic(0n, 2), makePublic(1n, 3)]);
-    await chain.read([publicLeaf(2)]);
-    chain.account.tamper = true;
-    await expect(chain.read([publicLeaf(2)])).rejects.toThrow(/do not match its peaks at leaf count 2/);
-    chain.account.tamper = false;
-    expect(await chain.read([publicLeaf(3)])).toEqual([chain.found(1)]);
-    expect(chain.fetched).toEqual(['sig1', 'sig0', 'sig1', 'sig0']);
   });
 
   it('knows no store at an address the host does not hold one at', async () => {

@@ -1,10 +1,10 @@
 // The KMS Connector's authorization of a Solana user or public decryption
 // (kms-connector/crates/kms-worker/src/core/solana/pipeline.rs and public_decrypt.rs), over the same
-// host accounts, read in the same order and judged by the same rules, and the leaf proofs of one
-// leaf record, asked and verified as the Connector asks and verifies a coprocessor's.
+// host accounts, read in the same order and judged by the same rules. Where the Connector verifies a
+// coprocessor's leaf proof, the client asks its own leaf record whether the leaf is there.
 //
 // solana/test-fixtures/authorization/decrypt_cases_v1.json holds the Connector's verdicts on a set
-// of cases; authorization.test.ts holds this module to them.
+// of cases; authorization.test.ts holds this module to every case whose failure it can produce.
 import {
   getAddressDecoder,
   getAddressEncoder,
@@ -16,7 +16,7 @@ import { findDelegationRecordPda, findEncryptedStorePda, findInvalidationPda } f
 import { getSysvarClockDecoder, SYSVAR_CLOCK_ADDRESS } from '@solana/sysvars';
 import type { SolanaPermitFields } from '../permit/types.js';
 import type { SolanaUserDecryptHandleEntry } from '../userDecrypt/index.js';
-import type { SolanaMerkleProofOutcome, SolanaMerkleProofReader, SolanaLeafQuery } from './merkleProofs.js';
+import type { SolanaLeafOutcome, SolanaLeafQuery, SolanaLeafReader } from './leafRecord.js';
 import { bytesToHex, concatBytes } from '../../core/base/bytes.js';
 import { verifySolanaPermitSignature } from '../permit/envelope.js';
 import {
@@ -31,7 +31,6 @@ import {
   SOLANA_WILDCARD_APP,
   type SolanaDelegationApplication,
 } from '../actions/userDecryptionDelegation.js';
-import { mmrMountainHeight, verifyHistoricalAccessProof, verifyPublicDecryptProof } from './mmr.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -47,7 +46,7 @@ const UNPROCESSABLE = 'unprocessable';
 
 /**
  * The code the Connector answers each failure with (`failure.rs`), which the decryption relayer
- * forwards. A failed account or Merkle proof read is not listed: the cleartext client throws on one
+ * forwards. A failed account or leaf record read is not listed: the cleartext client throws on one
  * instead of judging.
  */
 export const CONNECTOR_FAILURE_CODE = {
@@ -66,7 +65,6 @@ export const CONNECTOR_FAILURE_CODE = {
   'HandleBinding::NoLeaf': ACL_DENIED,
   'HandleBinding::ProofRecordBehind': ACL_DENIED,
   'HandleBinding::AccountUnknownToProofRecord': ACL_DENIED,
-  'HandleBinding::ProofDoesNotVerify': ACL_DENIED,
   'HandleBinding::LeafIndexOutOfRange': ACL_DENIED,
   'Delegation::NoLiveDelegation': ACL_DENIED,
   'Delegation::InvalidHostRecord': UNPROCESSABLE,
@@ -212,15 +210,15 @@ function cursor<T>(answers: readonly T[], source: string): () => T {
 
 /**
  * `verify_proofs` over one leaf record: every leaf asked in one read, then judged in order, so the
- * first entry whose leaf is not proven is the one refused.
+ * first entry whose leaf is not there is the one refused.
  */
-async function proveLeaves(
-  readMerkleProofs: SolanaMerkleProofReader,
+async function checkLeaves(
+  readLeaves: SolanaLeafReader,
   leaves: ReadonlyArray<{ readonly store: SolanaEncryptedStore; readonly query: SolanaLeafQuery }>,
 ): Promise<void> {
-  const outcomes = await readMerkleProofs(leaves.map(({ query }) => query));
+  const outcomes = await readLeaves(leaves.map(({ query }) => query));
   if (outcomes.length !== leaves.length) {
-    throw new Error(`the leaf record answered ${outcomes.length} proofs for ${leaves.length} queries`);
+    throw new Error(`the leaf record answered ${outcomes.length} outcomes for ${leaves.length} queries`);
   }
   const next = cursor(outcomes, 'the leaf record');
   leaves.forEach(({ store, query }, index) => {
@@ -229,15 +227,15 @@ async function proveLeaves(
 }
 
 /**
- * `check_leaf`: whether the record's answer proves the queried leaf against the observed store. A
- * proof is verified before the record's age is considered, since one built at a larger leaf count
- * still verifies whenever the leaf's mountain has not merged since. Without a proof, a record at
- * least as long as the store holds no such leaf, and a shorter one may catch up.
+ * `check_leaf`: whether the record holds the queried leaf among the leaves the observed store has
+ * sealed. Without the leaf, a record at least as long as the store holds no such leaf, and a shorter
+ * one may catch up. A found leaf is not refused for the record's age: the Connector may refuse one
+ * attempt whose proof a lagging record built before the leaf's mountain grew, and its retry clears it.
  */
 function checkLeaf(
   store: SolanaEncryptedStore,
-  { encryptedStore, handle, key }: SolanaLeafQuery,
-  outcome: SolanaMerkleProofOutcome,
+  { encryptedStore }: SolanaLeafQuery,
+  outcome: SolanaLeafOutcome,
   index: number,
 ): void {
   const live = store.leafCount;
@@ -264,25 +262,10 @@ function checkLeaf(
     case 'found':
       break;
   }
-  const { leafIndex, siblings } = outcome;
-  if (leafIndex >= live) {
-    return refuse(
-      'HandleBinding::LeafIndexOutOfRange',
-      `leaf index ${leafIndex} is not below the observed leaf count ${live}`,
-      index,
-    );
-  }
-  // `MmrProof::for_leaf_count`: as many siblings as reach the leaf's peak at the observed count.
-  const proof = { leafIndex, siblings: siblings.slice(0, mmrMountainHeight(leafIndex, live)) };
-  const storeBytes = encodeAddress(encryptedStore);
-  const verifies =
-    key === undefined
-      ? verifyPublicDecryptProof(storeBytes, store.peaks, live, handle, proof)
-      : verifyHistoricalAccessProof(storeBytes, store.peaks, live, handle, encodeAddress(key), proof);
-  if (!verifies) {
+  if (outcome.leafIndex >= live) {
     refuse(
-      'HandleBinding::ProofDoesNotVerify',
-      `the leaf proof does not verify against the observed peaks (record ${outcome.leafCount} leaves, chain ${live})`,
+      'HandleBinding::LeafIndexOutOfRange',
+      `leaf index ${outcome.leafIndex} is not below the observed leaf count ${live}`,
       index,
     );
   }
@@ -310,18 +293,18 @@ function outsideSignedScopes(fields: SolanaPermitFields, store: SolanaEncryptedS
 
 /**
  * `check_public_decrypt`: every handle's store, read in one snapshot and judged before any leaf, and
- * then each handle's public leaf proven against its store.
+ * then each handle's public leaf found in its store's record.
  */
 export async function judgeSolanaPublicDecryption({
   programAddress,
   handles,
   readAccounts,
-  readMerkleProofs,
+  readLeaves,
 }: {
   readonly programAddress: Address;
   readonly handles: ReadonlyArray<{ readonly handle: Uint8Array; readonly encryptedStore: Address }>;
   readonly readAccounts: SolanaHostAccountsReader;
-  readonly readMerkleProofs: SolanaMerkleProofReader;
+  readonly readLeaves: SolanaLeafReader;
 }): Promise<ConnectorVerdict> {
   try {
     const { accounts } = await readAccounts(handles.map(({ encryptedStore }) => encryptedStore));
@@ -333,7 +316,7 @@ export async function judgeSolanaPublicDecryption({
         query: { encryptedStore, handle },
       });
     }
-    await proveLeaves(readMerkleProofs, leaves);
+    await checkLeaves(readLeaves, leaves);
     return { authorized: true };
   } catch (error) {
     return verdictOf(error);
@@ -352,7 +335,7 @@ export async function judgeSolanaUserDecryption({
   signature,
   entries,
   readAccounts,
-  readMerkleProofs,
+  readLeaves,
 }: {
   readonly programAddress: Address;
   readonly now: bigint;
@@ -360,7 +343,7 @@ export async function judgeSolanaUserDecryption({
   readonly signature: Uint8Array;
   readonly entries: readonly SolanaUserDecryptHandleEntry[];
   readonly readAccounts: SolanaHostAccountsReader;
-  readonly readMerkleProofs: SolanaMerkleProofReader;
+  readonly readLeaves: SolanaLeafReader;
 }): Promise<ConnectorVerdict> {
   try {
     try {
@@ -470,7 +453,7 @@ export async function judgeSolanaUserDecryption({
       // delegated one.
       resolved.push({ store, query: { encryptedStore: storeKey, handle, key: owner } });
     }
-    await proveLeaves(readMerkleProofs, resolved);
+    await checkLeaves(readLeaves, resolved);
     return { authorized: true };
   } catch (error) {
     return verdictOf(error);
