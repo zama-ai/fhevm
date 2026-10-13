@@ -37,8 +37,7 @@
 //!
 //! The three checks below are the enforcement of "verification is reconstruction". Each
 //! is a shape that would let a caller decide what was signed; each must stay a
-//! compile error. They are the mirror image of the signature pins in the test suite —
-//! those assert what the API *is*, these assert what it is not.
+//! compile error.
 //!
 //! Assembling validated fields without decoding them:
 //!

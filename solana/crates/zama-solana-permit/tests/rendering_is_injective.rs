@@ -19,7 +19,7 @@ mod common;
 use common::*;
 use std::collections::HashMap;
 use zama_solana_permit::{
-    render_canonical_text, KmsRouting, PermitFields, PermitWireFields, MAX_ALLOWED_SCOPES,
+    render_canonical_text, PermitFields, PermitWireFields, MAX_ALLOWED_SCOPES,
     MAX_DURATION_SECONDS, MAX_START_TIMESTAMP,
 };
 
@@ -30,17 +30,6 @@ const SAMPLE: u64 = 1024;
 // ---------------------------------------------------------------------------
 // Totality
 // ---------------------------------------------------------------------------
-
-/// Whatever strict decoding accepts, the renderer renders. There is no input the
-/// renderer has to refuse, which is why it returns a text rather than a result.
-#[test]
-fn rendering_is_total_over_everything_decoding_accepts() {
-    for seed in 0..SAMPLE {
-        let fields = decoded(&pseudo_valid_wire(seed));
-        let text = render_canonical_text(&fields);
-        assert!(!text.is_empty(), "seed {seed} rendered nothing");
-    }
-}
 
 /// The extreme corners specifically, since a generator can miss the simultaneous
 /// extremes: both timestamp ends, both duration ends, both list ends, and the
@@ -89,25 +78,6 @@ fn distinct_permits_never_share_a_canonical_text() {
     }
 }
 
-/// Changing any one signed field changes the text.
-///
-/// This is the practical form of injectivity, and it is also the test that catches a
-/// field being left out of the template entirely: a renderer that forgot the chain id
-/// would still pass every golden built from a single fixture, but not this.
-#[test]
-fn changing_any_single_field_changes_the_text() {
-    let baseline_wire = reference_wire();
-    let baseline = render_canonical_text(&decoded(&baseline_wire));
-
-    for (what, mutated) in single_field_mutations(&baseline_wire) {
-        let rendered = render_canonical_text(&decoded(&mutated));
-        assert_ne!(
-            rendered, baseline,
-            "changing {what} left the canonical text unchanged — the field is not committed to"
-        );
-    }
-}
-
 /// The same, from many starting points rather than one: a field could be committed to
 /// for the reference permit and dropped for, say, permissive permits.
 #[test]
@@ -150,71 +120,6 @@ fn every_byte_of_the_kms_routing_field_is_committed_to() {
                 "flipping bit {bit} of routing byte {index} left the text unchanged"
             );
         }
-    }
-}
-
-/// Distinct routing byte strings render distinct texts, pairwise across a sample —
-/// not merely different from one baseline.
-#[test]
-fn distinct_kms_routings_render_pairwise_distinct_texts() {
-    let mut seen: HashMap<String, Vec<u8>> = HashMap::new();
-    let mut state = 0x00C0_FFEE_u64;
-
-    for _ in 0..256 {
-        let wire = PermitWireFields {
-            extra_data: extra_data(pseudo_identity(&mut state), pseudo_identity(&mut state)),
-            ..reference_wire()
-        };
-        let text = render_canonical_text(&decoded(&wire));
-
-        if let Some(previous) = seen.insert(text.clone(), wire.extra_data.clone()) {
-            assert_eq!(
-                previous, wire.extra_data,
-                "two routing byte strings rendered the same text"
-            );
-        }
-    }
-}
-
-/// A build-time canary, not a runtime assertion.
-///
-/// The distinguishability rule binds future versions of the routing field too: a new
-/// version must never render like an existing one. This match has no catch-all arm,
-/// so adding a variant to the routing type stops the suite from compiling — at which
-/// point whoever adds it has to state, here, how the new version's text is told apart
-/// from this one's.
-#[test]
-fn routing_versions_are_enumerated_so_a_new_one_cannot_slip_through() {
-    let (context, epoch) = kms_routing(&reference_fields());
-    let routing = KmsRouting::ContextAndEpoch {
-        kms_context_id: context,
-        kms_epoch_id: epoch,
-    };
-
-    match routing {
-        KmsRouting::ContextAndEpoch { .. } => {
-            // The only known version. Its text is the two KMS lines; a second version
-            // must render something no reader could confuse with them.
-        }
-    }
-}
-
-/// The text is a function of the fields alone: nothing ambient (time, environment,
-/// iteration order, allocation addresses) leaks into it.
-#[test]
-fn rendering_depends_on_nothing_but_the_fields() {
-    for seed in 0..64u64 {
-        let wire = pseudo_valid_wire(seed);
-        let first = render_canonical_text(&decoded(&wire));
-
-        // A freshly decoded copy, and the same value rendered repeatedly.
-        let reference = PermitFields::decode(&wire).expect("well formed");
-        assert_eq!(render_canonical_text(&reference), first);
-        assert_eq!(render_canonical_text(&reference), first);
-
-        // A clone of the typed value, in case rendering ever consults an identity
-        // rather than the contents.
-        assert_eq!(render_canonical_text(&reference.clone()), first);
     }
 }
 

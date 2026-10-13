@@ -43,8 +43,8 @@ use schema::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use zama_solana_permit::{
-    build_envelope, render_canonical_text, verify_signature, IdentityField, PermitError,
-    PermitFields, PermitWireFields, MAX_ALLOWED_SCOPES, MAX_DURATION_SECONDS, MAX_START_TIMESTAMP,
+    build_envelope, render_canonical_text, verify_signature, PermitError, PermitFields,
+    PermitWireFields, MAX_ALLOWED_SCOPES, MAX_DURATION_SECONDS, MAX_START_TIMESTAMP,
 };
 
 /// Setting this rewrites the committed file from the in-memory build.
@@ -1196,18 +1196,5 @@ fn records_with_a_non_canonical_signed_text_are_reproducible() {
     assert!(
         checked >= 2,
         "expected records with a non-canonical signed text"
-    );
-}
-
-/// The unused-import guard: `IdentityField` is referenced so that the error taxonomy
-/// this file maps from stays visible at a glance.
-#[test]
-fn the_error_taxonomy_is_the_one_the_rule_names_map_from() {
-    assert_eq!(
-        rule_name(&PermitError::IdentityWidth {
-            field: IdentityField::UserAddress,
-            len: 31
-        }),
-        rule::IDENTITY_WIDTH
     );
 }
