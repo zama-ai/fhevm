@@ -574,7 +574,6 @@ interface IProtocolConfig {
     error KmsTxSenderAlreadyRegistered(address txSender);
     error LatestActiveKmsContextCannotBeDestroyed(uint256 kmsContextId);
     error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
-    error NonIncreasingEpochId(uint256 epochId, uint256 currentEpochId);
     error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContextId);
     error ZeroChainId();
     error ZeroGwStartBlock();
@@ -585,8 +584,6 @@ interface IProtocolConfig {
     event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address indexed txSender, bool isPreviousTxSender, bool isNewTxSender);
     event KmsContextDestroyed(uint256 indexed kmsContextId);
     event KmsEpochDestroyed(uint256 indexed epochId);
-    event MirrorKmsContextAndEpoch(uint256 indexed contextId, uint256 indexed epochId, KmsNodeParams[] kmsNodeParams, KmsThresholds thresholds, string softwareVersion, PcrValues[] pcrValues);
-    event MirrorKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
     event NewKmsContext(uint256 indexed contextId, uint256 indexed previousContextId, KmsNodeParams[] kmsNodeParams, KmsThresholds thresholds, string softwareVersion, PcrValues[] pcrValues);
     event NewKmsEpoch(uint256 indexed kmsContextId, uint256 indexed epochId, uint256 previousContextId, uint256 previousEpochId, uint256 materialBlockNumber);
 
@@ -620,8 +617,6 @@ interface IProtocolConfig {
     function isLiveKmsContext(uint256 kmsContextId) external view returns (bool);
     function isValidEpochForContext(uint256 kmsContextId, uint256 epochId) external view returns (bool);
     function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
-    function mirrorKmsContextAndEpoch(uint256 contextId, uint256 epochId, KmsNodeParams[] memory kmsNodeParams, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
-    function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
     function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external;
 }
 ```
@@ -1341,143 +1336,6 @@ interface IProtocolConfig {
   },
   {
     "type": "function",
-    "name": "mirrorKmsContextAndEpoch",
-    "inputs": [
-      {
-        "name": "contextId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "epochId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "kmsNodeParams",
-        "type": "tuple[]",
-        "internalType": "struct KmsNodeParams[]",
-        "components": [
-          {
-            "name": "txSenderAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "signerAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "ipAddress",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "storageUrl",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "partyId",
-            "type": "int32",
-            "internalType": "int32"
-          },
-          {
-            "name": "mpcIdentity",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "caCert",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "storagePrefix",
-            "type": "string",
-            "internalType": "string"
-          }
-        ]
-      },
-      {
-        "name": "thresholds",
-        "type": "tuple",
-        "internalType": "struct KmsThresholds",
-        "components": [
-          {
-            "name": "publicDecryption",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "userDecryption",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kmsGen",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "mpc",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "softwareVersion",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "pcrValues",
-        "type": "tuple[]",
-        "internalType": "struct PcrValues[]",
-        "components": [
-          {
-            "name": "pcr0",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "pcr1",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "pcr2",
-            "type": "bytes",
-            "internalType": "bytes"
-          }
-        ]
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "mirrorKmsEpoch",
-    "inputs": [
-      {
-        "name": "contextId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "epochId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "proposeCoprocessorUpgrade",
     "inputs": [
       {
@@ -1735,149 +1593,6 @@ interface IProtocolConfig {
     "type": "event",
     "name": "KmsEpochDestroyed",
     "inputs": [
-      {
-        "name": "epochId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "MirrorKmsContextAndEpoch",
-    "inputs": [
-      {
-        "name": "contextId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "epochId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "kmsNodeParams",
-        "type": "tuple[]",
-        "indexed": false,
-        "internalType": "struct KmsNodeParams[]",
-        "components": [
-          {
-            "name": "txSenderAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "signerAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "ipAddress",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "storageUrl",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "partyId",
-            "type": "int32",
-            "internalType": "int32"
-          },
-          {
-            "name": "mpcIdentity",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "caCert",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "storagePrefix",
-            "type": "string",
-            "internalType": "string"
-          }
-        ]
-      },
-      {
-        "name": "thresholds",
-        "type": "tuple",
-        "indexed": false,
-        "internalType": "struct KmsThresholds",
-        "components": [
-          {
-            "name": "publicDecryption",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "userDecryption",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "kmsGen",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "mpc",
-            "type": "uint256",
-            "internalType": "uint256"
-          }
-        ]
-      },
-      {
-        "name": "softwareVersion",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      },
-      {
-        "name": "pcrValues",
-        "type": "tuple[]",
-        "indexed": false,
-        "internalType": "struct PcrValues[]",
-        "components": [
-          {
-            "name": "pcr0",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "pcr1",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "pcr2",
-            "type": "bytes",
-            "internalType": "bytes"
-          }
-        ]
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "MirrorKmsEpoch",
-    "inputs": [
-      {
-        "name": "contextId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
       {
         "name": "epochId",
         "type": "uint256",
@@ -2337,22 +2052,6 @@ interface IProtocolConfig {
     "inputs": [
       {
         "name": "epochId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NonIncreasingEpochId",
-    "inputs": [
-      {
-        "name": "epochId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "currentEpochId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -6494,101 +6193,6 @@ error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NonIncreasingEpochId(uint256,uint256)` and selector `0xe8121f51`.
-```solidity
-error NonIncreasingEpochId(uint256 epochId, uint256 currentEpochId);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NonIncreasingEpochId {
-        #[allow(missing_docs)]
-        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub currentEpochId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::Uint<256>,
-            alloy::sol_types::sol_data::Uint<256>,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NonIncreasingEpochId> for UnderlyingRustTuple<'_> {
-            fn from(value: NonIncreasingEpochId) -> Self {
-                (value.epochId, value.currentEpochId)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NonIncreasingEpochId {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    epochId: tuple.0,
-                    currentEpochId: tuple.1,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NonIncreasingEpochId {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NonIncreasingEpochId(uint256,uint256)";
-            const SELECTOR: [u8; 4] = [232u8, 18u8, 31u8, 81u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.epochId),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.currentEpochId),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NonIncreasingKmsContextId(uint256,uint256)` and selector `0xefd55f67`.
 ```solidity
 error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContextId);
@@ -7593,282 +7197,6 @@ event KmsEpochDestroyed(uint256 indexed epochId);
         impl From<&KmsEpochDestroyed> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(this: &KmsEpochDestroyed) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `MirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])` and selector `0x2ac68f78f4ccde76b64906026d01ff3c42403eb7eef86fe788474a23267d64cf`.
-```solidity
-event MirrorKmsContextAndEpoch(uint256 indexed contextId, uint256 indexed epochId, KmsNodeParams[] kmsNodeParams, KmsThresholds thresholds, string softwareVersion, PcrValues[] pcrValues);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct MirrorKmsContextAndEpoch {
-        #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub kmsNodeParams: alloy::sol_types::private::Vec<
-            <KmsNodeParams as alloy::sol_types::SolType>::RustType,
-        >,
-        #[allow(missing_docs)]
-        pub thresholds: <KmsThresholds as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub softwareVersion: alloy::sol_types::private::String,
-        #[allow(missing_docs)]
-        pub pcrValues: alloy::sol_types::private::Vec<
-            <PcrValues as alloy::sol_types::SolType>::RustType,
-        >,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for MirrorKmsContextAndEpoch {
-            type DataTuple<'a> = (
-                alloy::sol_types::sol_data::Array<KmsNodeParams>,
-                KmsThresholds,
-                alloy::sol_types::sol_data::String,
-                alloy::sol_types::sol_data::Array<PcrValues>,
-            );
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (
-                alloy_sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
-            );
-            const SIGNATURE: &'static str = "MirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                42u8, 198u8, 143u8, 120u8, 244u8, 204u8, 222u8, 118u8, 182u8, 73u8, 6u8,
-                2u8, 109u8, 1u8, 255u8, 60u8, 66u8, 64u8, 62u8, 183u8, 238u8, 248u8,
-                111u8, 231u8, 136u8, 71u8, 74u8, 35u8, 38u8, 125u8, 100u8, 207u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self {
-                    contextId: topics.1,
-                    epochId: topics.2,
-                    kmsNodeParams: data.0,
-                    thresholds: data.1,
-                    softwareVersion: data.2,
-                    pcrValues: data.3,
-                }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Array<
-                        KmsNodeParams,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeParams),
-                    <KmsThresholds as alloy_sol_types::SolType>::tokenize(
-                        &self.thresholds,
-                    ),
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        &self.softwareVersion,
-                    ),
-                    <alloy::sol_types::sol_data::Array<
-                        PcrValues,
-                    > as alloy_sol_types::SolType>::tokenize(&self.pcrValues),
-                )
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (
-                    Self::SIGNATURE_HASH.into(),
-                    self.contextId.clone(),
-                    self.epochId.clone(),
-                )
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                out[1usize] = <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.contextId);
-                out[2usize] = <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.epochId);
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for MirrorKmsContextAndEpoch {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&MirrorKmsContextAndEpoch> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(
-                this: &MirrorKmsContextAndEpoch,
-            ) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `MirrorKmsEpoch(uint256,uint256)` and selector `0x0a1c24c2ba5e6e1b1a8585795e5b781e372aee1db686247dac7574c10fd735a6`.
-```solidity
-event MirrorKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct MirrorKmsEpoch {
-        #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for MirrorKmsEpoch {
-            type DataTuple<'a> = ();
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (
-                alloy_sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
-            );
-            const SIGNATURE: &'static str = "MirrorKmsEpoch(uint256,uint256)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                10u8, 28u8, 36u8, 194u8, 186u8, 94u8, 110u8, 27u8, 26u8, 133u8, 133u8,
-                121u8, 94u8, 91u8, 120u8, 30u8, 55u8, 42u8, 238u8, 29u8, 182u8, 134u8,
-                36u8, 125u8, 172u8, 117u8, 116u8, 193u8, 15u8, 215u8, 53u8, 166u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self {
-                    contextId: topics.1,
-                    epochId: topics.2,
-                }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                ()
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (
-                    Self::SIGNATURE_HASH.into(),
-                    self.contextId.clone(),
-                    self.epochId.clone(),
-                )
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                out[1usize] = <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.contextId);
-                out[2usize] = <alloy::sol_types::sol_data::Uint<
-                    256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.epochId);
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for MirrorKmsEpoch {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&MirrorKmsEpoch> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(this: &MirrorKmsEpoch) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -12989,387 +12317,6 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `mirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])` and selector `0xbc4d07c2`.
-```solidity
-function mirrorKmsContextAndEpoch(uint256 contextId, uint256 epochId, KmsNodeParams[] memory kmsNodeParams, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct mirrorKmsContextAndEpochCall {
-        #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub kmsNodeParams: alloy::sol_types::private::Vec<
-            <KmsNodeParams as alloy::sol_types::SolType>::RustType,
-        >,
-        #[allow(missing_docs)]
-        pub thresholds: <KmsThresholds as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub softwareVersion: alloy::sol_types::private::String,
-        #[allow(missing_docs)]
-        pub pcrValues: alloy::sol_types::private::Vec<
-            <PcrValues as alloy::sol_types::SolType>::RustType,
-        >,
-    }
-    ///Container type for the return parameters of the [`mirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])`](mirrorKmsContextAndEpochCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct mirrorKmsContextAndEpochReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Array<KmsNodeParams>,
-                KmsThresholds,
-                alloy::sol_types::sol_data::String,
-                alloy::sol_types::sol_data::Array<PcrValues>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-                alloy::sol_types::private::primitives::aliases::U256,
-                alloy::sol_types::private::Vec<
-                    <KmsNodeParams as alloy::sol_types::SolType>::RustType,
-                >,
-                <KmsThresholds as alloy::sol_types::SolType>::RustType,
-                alloy::sol_types::private::String,
-                alloy::sol_types::private::Vec<
-                    <PcrValues as alloy::sol_types::SolType>::RustType,
-                >,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<mirrorKmsContextAndEpochCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: mirrorKmsContextAndEpochCall) -> Self {
-                    (
-                        value.contextId,
-                        value.epochId,
-                        value.kmsNodeParams,
-                        value.thresholds,
-                        value.softwareVersion,
-                        value.pcrValues,
-                    )
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for mirrorKmsContextAndEpochCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        contextId: tuple.0,
-                        epochId: tuple.1,
-                        kmsNodeParams: tuple.2,
-                        thresholds: tuple.3,
-                        softwareVersion: tuple.4,
-                        pcrValues: tuple.5,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<mirrorKmsContextAndEpochReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: mirrorKmsContextAndEpochReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for mirrorKmsContextAndEpochReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl mirrorKmsContextAndEpochReturn {
-            fn _tokenize(
-                &self,
-            ) -> <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for mirrorKmsContextAndEpochCall {
-            type Parameters<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Array<KmsNodeParams>,
-                KmsThresholds,
-                alloy::sol_types::sol_data::String,
-                alloy::sol_types::sol_data::Array<PcrValues>,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = mirrorKmsContextAndEpochReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "mirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])";
-            const SELECTOR: [u8; 4] = [188u8, 77u8, 7u8, 194u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.epochId),
-                    <alloy::sol_types::sol_data::Array<
-                        KmsNodeParams,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeParams),
-                    <KmsThresholds as alloy_sol_types::SolType>::tokenize(
-                        &self.thresholds,
-                    ),
-                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        &self.softwareVersion,
-                    ),
-                    <alloy::sol_types::sol_data::Array<
-                        PcrValues,
-                    > as alloy_sol_types::SolType>::tokenize(&self.pcrValues),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                mirrorKmsContextAndEpochReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `mirrorKmsEpoch(uint256,uint256)` and selector `0x8e97cb60`.
-```solidity
-function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct mirrorKmsEpochCall {
-        #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    ///Container type for the return parameters of the [`mirrorKmsEpoch(uint256,uint256)`](mirrorKmsEpochCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct mirrorKmsEpochReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<mirrorKmsEpochCall> for UnderlyingRustTuple<'_> {
-                fn from(value: mirrorKmsEpochCall) -> Self {
-                    (value.contextId, value.epochId)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for mirrorKmsEpochCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        contextId: tuple.0,
-                        epochId: tuple.1,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            #[allow(dead_code)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<mirrorKmsEpochReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: mirrorKmsEpochReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for mirrorKmsEpochReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl mirrorKmsEpochReturn {
-            fn _tokenize(
-                &self,
-            ) -> <mirrorKmsEpochCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for mirrorKmsEpochCall {
-            type Parameters<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Uint<256>,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = mirrorKmsEpochReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "mirrorKmsEpoch(uint256,uint256)";
-            const SELECTOR: [u8; 4] = [142u8, 151u8, 203u8, 96u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.epochId),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                mirrorKmsEpochReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `proposeCoprocessorUpgrade(uint256,string,(uint64,uint64,uint64)[],uint64)` and selector `0xccbf8199`.
 ```solidity
 function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVersion, ChainUpgradeWindow[] memory chainUpgradeWindows, uint64 gwStartBlock) external;
@@ -13632,10 +12579,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         isValidKmsContext(isValidKmsContextCall),
         #[allow(missing_docs)]
-        mirrorKmsContextAndEpoch(mirrorKmsContextAndEpochCall),
-        #[allow(missing_docs)]
-        mirrorKmsEpoch(mirrorKmsEpochCall),
-        #[allow(missing_docs)]
         proposeCoprocessorUpgrade(proposeCoprocessorUpgradeCall),
     }
     impl IProtocolConfigCalls {
@@ -13661,13 +12604,11 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [91u8, 255u8, 118u8, 217u8],
             [101u8, 179u8, 148u8, 175u8],
             [126u8, 170u8, 200u8, 242u8],
-            [142u8, 151u8, 203u8, 96u8],
             [148u8, 71u8, 207u8, 212u8],
             [151u8, 108u8, 152u8, 181u8],
             [151u8, 111u8, 62u8, 185u8],
             [157u8, 27u8, 27u8, 225u8],
             [180u8, 114u8, 43u8, 196u8],
-            [188u8, 77u8, 7u8, 194u8],
             [191u8, 155u8, 22u8, 200u8],
             [192u8, 174u8, 100u8, 247u8],
             [194u8, 88u8, 10u8, 45u8],
@@ -13697,13 +12638,11 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             ::core::stringify!(getKmsSignersForContext),
             ::core::stringify!(getCurrentKmsContextAndEpoch),
             ::core::stringify!(getKmsSigners),
-            ::core::stringify!(mirrorKmsEpoch),
             ::core::stringify!(isKmsSignerForContext),
             ::core::stringify!(defineNewKmsContextAndEpoch),
             ::core::stringify!(getCurrentKmsContextId),
             ::core::stringify!(getCurrentKmsContextIdCounter),
             ::core::stringify!(getKmsGenThreshold),
-            ::core::stringify!(mirrorKmsContextAndEpoch),
             ::core::stringify!(isValidKmsContext),
             ::core::stringify!(destroyKmsContext),
             ::core::stringify!(destroyKmsEpoch),
@@ -13733,13 +12672,11 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             <getKmsSignersForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCurrentKmsContextAndEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsSignersCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <mirrorKmsEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isKmsSignerForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <defineNewKmsContextAndEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCurrentKmsContextIdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCurrentKmsContextIdCounterCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsGenThresholdCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isValidKmsContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <destroyKmsContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <destroyKmsEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -13777,7 +12714,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     impl alloy_sol_types::SolInterface for IProtocolConfigCalls {
         const NAME: &'static str = "IProtocolConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 33usize;
+        const COUNT: usize = 31usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -13870,12 +12807,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::isValidKmsContext(_) => {
                     <isValidKmsContextCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::mirrorKmsContextAndEpoch(_) => {
-                    <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::mirrorKmsEpoch(_) => {
-                    <mirrorKmsEpochCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::proposeCoprocessorUpgrade(_) => {
                     <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::SELECTOR
@@ -14071,17 +13002,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     getKmsSigners
                 },
                 {
-                    fn mirrorKmsEpoch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <mirrorKmsEpochCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::mirrorKmsEpoch)
-                    }
-                    mirrorKmsEpoch
-                },
-                {
                     fn isKmsSignerForContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -14135,17 +13055,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             .map(IProtocolConfigCalls::getKmsGenThreshold)
                     }
                     getKmsGenThreshold
-                },
-                {
-                    fn mirrorKmsContextAndEpoch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::mirrorKmsContextAndEpoch)
-                    }
-                    mirrorKmsContextAndEpoch
                 },
                 {
                     fn isValidKmsContext(
@@ -14462,17 +13371,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     getKmsSigners
                 },
                 {
-                    fn mirrorKmsEpoch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <mirrorKmsEpochCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::mirrorKmsEpoch)
-                    }
-                    mirrorKmsEpoch
-                },
-                {
                     fn isKmsSignerForContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -14526,17 +13424,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             .map(IProtocolConfigCalls::getKmsGenThreshold)
                     }
                     getKmsGenThreshold
-                },
-                {
-                    fn mirrorKmsContextAndEpoch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::mirrorKmsContextAndEpoch)
-                    }
-                    mirrorKmsContextAndEpoch
                 },
                 {
                     fn isValidKmsContext(
@@ -14823,16 +13710,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         inner,
                     )
                 }
-                Self::mirrorKmsContextAndEpoch(inner) => {
-                    <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::mirrorKmsEpoch(inner) => {
-                    <mirrorKmsEpochCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::proposeCoprocessorUpgrade(inner) => {
                     <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -15023,18 +13900,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         out,
                     )
                 }
-                Self::mirrorKmsContextAndEpoch(inner) => {
-                    <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::mirrorKmsEpoch(inner) => {
-                    <mirrorKmsEpochCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::proposeCoprocessorUpgrade(inner) => {
                     <proposeCoprocessorUpgradeCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -15102,8 +13967,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         LatestActiveKmsEpochCannotBeDestroyed(LatestActiveKmsEpochCannotBeDestroyed),
         #[allow(missing_docs)]
-        NonIncreasingEpochId(NonIncreasingEpochId),
-        #[allow(missing_docs)]
         NonIncreasingKmsContextId(NonIncreasingKmsContextId),
         #[allow(missing_docs)]
         ZeroChainId(ZeroChainId),
@@ -15141,7 +14004,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [202u8, 168u8, 20u8, 163u8],
             [206u8, 148u8, 64u8, 223u8],
             [209u8, 140u8, 79u8, 240u8],
-            [232u8, 18u8, 31u8, 81u8],
             [239u8, 213u8, 95u8, 103u8],
             [240u8, 231u8, 129u8, 193u8],
             [241u8, 115u8, 91u8, 70u8],
@@ -15173,7 +14035,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             ::core::stringify!(InvalidHighThreshold),
             ::core::stringify!(EmptyEpochActivationAttestation),
             ::core::stringify!(KmsTxSenderAlreadyRegistered),
-            ::core::stringify!(NonIncreasingEpochId),
             ::core::stringify!(NonIncreasingKmsContextId),
             ::core::stringify!(LatestActiveKmsEpochCannotBeDestroyed),
             ::core::stringify!(EpochActivationSignerDoesNotMatchTxSender),
@@ -15205,7 +14066,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             <InvalidHighThreshold as alloy_sol_types::SolError>::SIGNATURE,
             <EmptyEpochActivationAttestation as alloy_sol_types::SolError>::SIGNATURE,
             <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SIGNATURE,
-            <NonIncreasingEpochId as alloy_sol_types::SolError>::SIGNATURE,
             <NonIncreasingKmsContextId as alloy_sol_types::SolError>::SIGNATURE,
             <LatestActiveKmsEpochCannotBeDestroyed as alloy_sol_types::SolError>::SIGNATURE,
             <EpochActivationSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::SIGNATURE,
@@ -15237,7 +14097,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     impl alloy_sol_types::SolInterface for IProtocolConfigErrors {
         const NAME: &'static str = "IProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 29usize;
+        const COUNT: usize = 28usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -15315,9 +14175,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::LatestActiveKmsEpochCannotBeDestroyed(_) => {
                     <LatestActiveKmsEpochCannotBeDestroyed as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NonIncreasingEpochId(_) => {
-                    <NonIncreasingEpochId as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NonIncreasingKmsContextId(_) => {
                     <NonIncreasingKmsContextId as alloy_sol_types::SolError>::SELECTOR
@@ -15603,17 +14460,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             .map(IProtocolConfigErrors::KmsTxSenderAlreadyRegistered)
                     }
                     KmsTxSenderAlreadyRegistered
-                },
-                {
-                    fn NonIncreasingEpochId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <NonIncreasingEpochId as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::NonIncreasingEpochId)
-                    }
-                    NonIncreasingEpochId
                 },
                 {
                     fn NonIncreasingKmsContextId(
@@ -15954,17 +14800,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     KmsTxSenderAlreadyRegistered
                 },
                 {
-                    fn NonIncreasingEpochId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <NonIncreasingEpochId as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::NonIncreasingEpochId)
-                    }
-                    NonIncreasingEpochId
-                },
-                {
                     fn NonIncreasingKmsContextId(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -16160,11 +14995,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         inner,
                     )
                 }
-                Self::NonIncreasingEpochId(inner) => {
-                    <NonIncreasingEpochId as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::NonIncreasingKmsContextId(inner) => {
                     <NonIncreasingKmsContextId as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -16333,12 +15163,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         out,
                     )
                 }
-                Self::NonIncreasingEpochId(inner) => {
-                    <NonIncreasingEpochId as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::NonIncreasingKmsContextId(inner) => {
                     <NonIncreasingKmsContextId as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -16378,10 +15202,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         KmsEpochDestroyed(KmsEpochDestroyed),
         #[allow(missing_docs)]
-        MirrorKmsContextAndEpoch(MirrorKmsContextAndEpoch),
-        #[allow(missing_docs)]
-        MirrorKmsEpoch(MirrorKmsEpoch),
-        #[allow(missing_docs)]
         NewKmsContext(NewKmsContext),
         #[allow(missing_docs)]
         NewKmsEpoch(NewKmsEpoch),
@@ -16400,11 +15220,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 56u8, 102u8, 76u8, 26u8, 81u8, 243u8, 205u8, 87u8, 249u8,
             ],
             [
-                10u8, 28u8, 36u8, 194u8, 186u8, 94u8, 110u8, 27u8, 26u8, 133u8, 133u8,
-                121u8, 94u8, 91u8, 120u8, 30u8, 55u8, 42u8, 238u8, 29u8, 182u8, 134u8,
-                36u8, 125u8, 172u8, 117u8, 116u8, 193u8, 15u8, 215u8, 53u8, 166u8,
-            ],
-            [
                 21u8, 170u8, 175u8, 71u8, 94u8, 244u8, 7u8, 84u8, 63u8, 81u8, 100u8,
                 245u8, 125u8, 207u8, 87u8, 247u8, 249u8, 56u8, 22u8, 245u8, 91u8, 174u8,
                 119u8, 202u8, 9u8, 239u8, 196u8, 69u8, 186u8, 64u8, 238u8, 247u8,
@@ -16418,11 +15233,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 32u8, 77u8, 107u8, 128u8, 18u8, 17u8, 84u8, 205u8, 135u8, 217u8, 156u8,
                 245u8, 76u8, 99u8, 154u8, 61u8, 208u8, 165u8, 59u8, 48u8, 132u8, 39u8,
                 112u8, 152u8, 222u8, 151u8, 46u8, 189u8, 211u8, 76u8, 107u8, 233u8,
-            ],
-            [
-                42u8, 198u8, 143u8, 120u8, 244u8, 204u8, 222u8, 118u8, 182u8, 73u8, 6u8,
-                2u8, 109u8, 1u8, 255u8, 60u8, 66u8, 64u8, 62u8, 183u8, 238u8, 248u8,
-                111u8, 231u8, 136u8, 71u8, 74u8, 35u8, 38u8, 125u8, 100u8, 207u8,
             ],
             [
                 126u8, 218u8, 111u8, 133u8, 226u8, 59u8, 123u8, 145u8, 192u8, 25u8,
@@ -16448,11 +15258,9 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(KmsEpochDestroyed),
-            ::core::stringify!(MirrorKmsEpoch),
             ::core::stringify!(NewKmsEpoch),
             ::core::stringify!(ActivateEpoch),
             ::core::stringify!(NewKmsContext),
-            ::core::stringify!(MirrorKmsContextAndEpoch),
             ::core::stringify!(EpochActivationConfirmation),
             ::core::stringify!(KmsContextCreationConfirmation),
             ::core::stringify!(CoprocessorUpgradeProposed),
@@ -16461,11 +15269,9 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <KmsEpochDestroyed as alloy_sol_types::SolEvent>::SIGNATURE,
-            <MirrorKmsEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
             <NewKmsEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
             <ActivateEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
             <NewKmsContext as alloy_sol_types::SolEvent>::SIGNATURE,
-            <MirrorKmsContextAndEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
             <EpochActivationConfirmation as alloy_sol_types::SolEvent>::SIGNATURE,
             <KmsContextCreationConfirmation as alloy_sol_types::SolEvent>::SIGNATURE,
             <CoprocessorUpgradeProposed as alloy_sol_types::SolEvent>::SIGNATURE,
@@ -16495,7 +15301,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IProtocolConfigEvents {
         const NAME: &'static str = "IProtocolConfigEvents";
-        const COUNT: usize = 10usize;
+        const COUNT: usize = 8usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -16553,22 +15359,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         )
                         .map(Self::KmsEpochDestroyed)
                 }
-                Some(
-                    <MirrorKmsContextAndEpoch as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <MirrorKmsContextAndEpoch as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::MirrorKmsContextAndEpoch)
-                }
-                Some(<MirrorKmsEpoch as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <MirrorKmsEpoch as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::MirrorKmsEpoch)
-                }
                 Some(<NewKmsContext as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <NewKmsContext as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
@@ -16619,12 +15409,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 Self::KmsEpochDestroyed(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::MirrorKmsContextAndEpoch(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::MirrorKmsEpoch(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
                 Self::NewKmsContext(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
@@ -16651,12 +15435,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::KmsEpochDestroyed(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::MirrorKmsContextAndEpoch(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::MirrorKmsEpoch(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::NewKmsContext(inner) => {
@@ -17139,44 +15917,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`mirrorKmsContextAndEpoch`] function.
-        pub fn mirrorKmsContextAndEpoch(
-            &self,
-            contextId: alloy::sol_types::private::primitives::aliases::U256,
-            epochId: alloy::sol_types::private::primitives::aliases::U256,
-            kmsNodeParams: alloy::sol_types::private::Vec<
-                <KmsNodeParams as alloy::sol_types::SolType>::RustType,
-            >,
-            thresholds: <KmsThresholds as alloy::sol_types::SolType>::RustType,
-            softwareVersion: alloy::sol_types::private::String,
-            pcrValues: alloy::sol_types::private::Vec<
-                <PcrValues as alloy::sol_types::SolType>::RustType,
-            >,
-        ) -> alloy_contract::SolCallBuilder<&P, mirrorKmsContextAndEpochCall, N> {
-            self.call_builder(
-                &mirrorKmsContextAndEpochCall {
-                    contextId,
-                    epochId,
-                    kmsNodeParams,
-                    thresholds,
-                    softwareVersion,
-                    pcrValues,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`mirrorKmsEpoch`] function.
-        pub fn mirrorKmsEpoch(
-            &self,
-            contextId: alloy::sol_types::private::primitives::aliases::U256,
-            epochId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, mirrorKmsEpochCall, N> {
-            self.call_builder(
-                &mirrorKmsEpochCall {
-                    contextId,
-                    epochId,
-                },
-            )
-        }
         ///Creates a new call builder for the [`proposeCoprocessorUpgrade`] function.
         pub fn proposeCoprocessorUpgrade(
             &self,
@@ -17246,18 +15986,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, KmsEpochDestroyed, N> {
             self.event_filter::<KmsEpochDestroyed>()
-        }
-        ///Creates a new event filter for the [`MirrorKmsContextAndEpoch`] event.
-        pub fn MirrorKmsContextAndEpoch_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, MirrorKmsContextAndEpoch, N> {
-            self.event_filter::<MirrorKmsContextAndEpoch>()
-        }
-        ///Creates a new event filter for the [`MirrorKmsEpoch`] event.
-        pub fn MirrorKmsEpoch_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, MirrorKmsEpoch, N> {
-            self.event_filter::<MirrorKmsEpoch>()
         }
         ///Creates a new event filter for the [`NewKmsContext`] event.
         pub fn NewKmsContext_filter(

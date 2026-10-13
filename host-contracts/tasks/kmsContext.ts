@@ -15,12 +15,20 @@ import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 const PROTOCOL_CONFIG_ADDRESS_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
 
-// Builds a calldata-only ABI for ProtocolConfig without a deployer key, so the `build*` tasks never
+// Builds a calldata-only ABI for `contractName` without a deployer key, so the `build*` tasks never
 // need a signer.
-export async function getProtocolConfigInterface(hre: HardhatRuntimeEnvironment): Promise<Interface> {
+async function getContractInterface(hre: HardhatRuntimeEnvironment, contractName: string): Promise<Interface> {
   await hre.run('compile:specific', { contract: 'contracts' });
-  const artifact = await hre.artifacts.readArtifact('ProtocolConfig');
+  const artifact = await hre.artifacts.readArtifact(contractName);
   return new hre.ethers.Interface(artifact.abi);
+}
+
+export async function getProtocolConfigInterface(hre: HardhatRuntimeEnvironment): Promise<Interface> {
+  return getContractInterface(hre, 'ProtocolConfig');
+}
+
+export async function getProtocolConfigReplicaInterface(hre: HardhatRuntimeEnvironment): Promise<Interface> {
+  return getContractInterface(hre, 'ProtocolConfigReplica');
 }
 
 // Resolves the ProtocolConfig proxy address from env (or the addresses directory when

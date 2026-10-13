@@ -80,7 +80,7 @@ task('task:deployAllHostContracts')
   )
   .addOptionalParam(
     'protocolConfigSource',
-    "How to initialize ProtocolConfig: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'canonical' mirrors the canonical chain's ProtocolConfig via task:deployProtocolConfigFromCanonical (non-canonical hosts only), configured through the CANONICAL_* snapshot env variables.",
+    "How to deploy the ProtocolConfig proxy: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'canonical' deploys ProtocolConfigReplica seeded from the canonical chain's ProtocolConfig via task:deployProtocolConfigFromCanonical (non-canonical hosts only), configured through the CANONICAL_* snapshot env variables.",
     'fresh',
     types.string,
   )
@@ -593,10 +593,15 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   const parsedEnv = readHostEnv();
   const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
 
+  // A non-canonical host runs ProtocolConfigReplica.
   try {
     await assertContractMatchesVersionPrefix(hre, protocolConfigAddress, 'ProtocolConfig');
   } catch (err) {
-    throw new Error(`Cannot deploy KMSVerifier: ${formatError(err)}`);
+    await assertContractMatchesVersionPrefix(hre, protocolConfigAddress, 'ProtocolConfigReplica').catch(() => {
+      throw new Error(
+        `Cannot deploy KMSVerifier: ${formatError(err)} A non-canonical host may also use "ProtocolConfigReplica v…".`,
+      );
+    });
   }
 
   const protocolConfig = new hre.ethers.Contract(
@@ -740,13 +745,12 @@ task('task:deployProtocolConfig').setAction(async function (_, hre) {
   console.log('ProtocolConfig code set successfully at address:', proxyAddress);
 });
 
-// DAO path for initializing a non-canonical ProtocolConfig replica from the canonical chain
-// (Ethereum). Reads the reviewed snapshot from the CANONICAL_* env variables, so the DAO executes
-// exactly the state its signers reproduced and diffed. Devnet equivalent:
-// task:deployProtocolConfigFromCanonical.
+// DAO path for initializing a ProtocolConfigReplica from the canonical chain (Ethereum). Reads the
+// reviewed snapshot from the CANONICAL_* env variables, so the DAO executes exactly the state its
+// signers reproduced and diffed. Devnet equivalent: task:deployProtocolConfigFromCanonical.
 task(
   'task:prepareDeployProtocolConfigFromCanonical',
-  'Deploys a ProtocolConfig implementation and prints DAO upgrade calldata from a reviewed canonical snapshot artifact',
+  'Deploys a ProtocolConfigReplica implementation and prints DAO upgrade calldata from a reviewed canonical snapshot artifact',
 )
   .addOptionalParam(
     'verifyContract',
@@ -769,17 +773,17 @@ task(
     return preparedUpgrade;
   });
 
-// Initializes the local (non-canonical) ProtocolConfig replica from the canonical chain's KMS
-// context, as read by readCanonicalSnapshotFromEnv.
+// Initializes the local ProtocolConfigReplica from the canonical chain's KMS context, as read by
+// readCanonicalSnapshotFromEnv.
 task(
   'task:deployProtocolConfigFromCanonical',
-  "Upgrades the existing ProtocolConfig proxy from the canonical chain's reviewed snapshot artifact.",
+  "Upgrades the existing proxy to ProtocolConfigReplica from the canonical chain's reviewed snapshot artifact.",
 ).setAction(async function (_, hre) {
   // Read the snapshot before the compile below, so a misconfigured environment fails immediately.
   console.log('Applying the reviewed canonical snapshot from the CANONICAL_* env variables.');
   const snapshot = readCanonicalSnapshotFromEnv();
 
-  // ProtocolConfig embeds aclAdd from addresses/FHEVMHostAddresses.sol at compile time; a stale
+  // ProtocolConfigReplica embeds aclAdd from addresses/FHEVMHostAddresses.sol at compile time; a stale
   // artifact would deploy bytecode authorized against the wrong ACL (same as FromMigration).
   await hre.run('compile:specific', { contract: 'contracts' });
   const parsedEnv = readHostEnv();
@@ -794,7 +798,7 @@ task(
   // On interval-mining networks, upgradeProxy can return before the tx is mined.
   await waitForTaskReady(hre, 'task:assertProtocolConfigReady');
   console.log(
-    `ProtocolConfig code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} context ${snapshot.currentKmsContextId} epoch ${snapshot.currentEpochId} (block ${snapshot.blockNumber}) with ${snapshot.kmsNodes.length} KMS nodes.`,
+    `ProtocolConfigReplica code set successfully at ${secondaryProxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} context ${snapshot.currentKmsContextId} epoch ${snapshot.currentEpochId} (block ${snapshot.blockNumber}) with ${snapshot.kmsNodes.length} KMS nodes.`,
   );
 });
 
@@ -856,13 +860,16 @@ task(
 // KMSGeneration (host-side)
 ////////////////////////////////////////////////////////////////////////////////
 
-task('task:deployKMSGeneration').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
+task('task:deployKMSGeneration').setAction(async function (taskArguments: TaskArguments, hre) {
+  const { ethers, upgrades } = hre;
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('KMSGeneration', deployer);
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.KMS_GENERATION_CONTRACT_ADDRESS;
+  // KMSGeneration only runs on the canonical host, which needs the full ProtocolConfig, not a replica.
+  await assertContractMatchesVersionPrefix(hre, parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS, 'ProtocolConfig');
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: { fn: 'initializeFromEmptyProxy' },
