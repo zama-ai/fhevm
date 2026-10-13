@@ -865,7 +865,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
         // Compose three blocks after receipt, with a limit that admits the bridged depth but not one more addition.
         vm.roll(block.number + 3);
         vm.prank(owner);
-        HCULimit(hcuLimitAdd).setCrossTxDepthLimit((sourceDepth * 3) / 2, 100);
+        HCULimit(hcuLimitAdd).setCrossTxDepthLimit(sourceDepth - 3 * 100, 100);
         vm.prank(address(endpoints[SRC_EID]));
         srcBridge.lzCompose(address(srcBridge), receipt.guid, compose, address(0), "");
         bytes32 destination = dstApp.lastCall().dstHandleList[0];

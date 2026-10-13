@@ -55,12 +55,22 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @dev Handle slot zero is reserved for the transaction HCU accumulator.
     error InvalidZeroHandle();
 
+    /// @notice Returned when a computed handle's depth is neither cached in this transaction nor stored for its holder.
     error UnknownHandleDepth(bytes32 handle);
+
+    /// @notice Returned when a depth hook is called by a contract other than the ACL or the bridge.
     error CallerMustBeACLOrBridge();
+
+    /// @notice Returned when bridged depths are set by a contract other than the bridge.
     error CallerMustBeConfidentialBridge();
+
+    /// @notice Returned when only one of the cross-transaction depth limit and its decay is zero.
     error InvalidCrossTxDepthLimit();
+
+    /// @notice Returned when an operation's depth carried across transactions exceeds the limit.
     error HCUCrossTxDepthLimitExceeded();
 
+    /// @notice Emitted when the cross-transaction depth limit is updated.
     event CrossTxDepthLimitSet(uint48 maxDepth, uint48 decayPerBlock);
 
     /// @notice Emitted when the global block HCU cap is updated.
@@ -1537,16 +1547,16 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         }
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
-        uint256 maxInputDepth = 0;
+        uint256 inputDepths = 0;
         for (uint256 i = 0; i < values.length; i++) {
-            maxInputDepth = _maxDepths(maxInputDepth, _handleDepths(values[i], caller));
+            inputDepths = _maxDepths(inputDepths, _handleDepths(values[i], caller));
         }
 
-        uint256 totalHCU = _opDepths(opHCU) + maxInputDepth;
-        if (uint128(totalHCU) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+        uint256 depths = _opDepths(opHCU) + inputDepths;
+        if (uint128(depths) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
-        _setHCUForHandle(result, totalHCU);
+        _setHCUForHandle(result, depths);
     }
 
     /**
@@ -1603,16 +1613,16 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         }
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
-        uint256 maxInputDepth = _handleDepths(value, caller);
+        uint256 inputDepths = _handleDepths(value, caller);
         for (uint256 i = 0; i < values.length; i++) {
-            maxInputDepth = _maxDepths(maxInputDepth, _handleDepths(values[i], caller));
+            inputDepths = _maxDepths(inputDepths, _handleDepths(values[i], caller));
         }
 
-        uint256 totalHCU = _opDepths(opHCU) + maxInputDepth;
-        if (uint128(totalHCU) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+        uint256 depths = _opDepths(opHCU) + inputDepths;
+        if (uint128(depths) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
-        _setHCUForHandle(result, totalHCU);
+        _setHCUForHandle(result, depths);
     }
 
     /**
@@ -1715,7 +1725,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Sets the cross-transaction depth limit and how much carried depth decays per block.
-     * @dev (0, 0) disables it. Permissions granted while disabled carry no depth.
+     * @dev (0, 0) disables it. Decay must be nonzero when enabled, or a chain that reaches the limit stays
+     *      blocked forever. Permissions granted while disabled carry no depth.
      */
     function setCrossTxDepthLimit(uint48 maxDepth, uint48 decayPerBlock) external onlyACLOwner {
         if ((maxDepth == 0) != (decayPerBlock == 0)) revert InvalidCrossTxDepthLimit();
@@ -1735,7 +1746,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      *         `holder`'s permission if this transaction has not seen it yet. Returns 0 when disabled.
      */
     function loadDepth(bytes32 handle, address holder) external returns (uint48) {
-        // Disabled: nothing is loaded, whoever calls.
+        // Checked before the caller: when disabled this is a no-op for any bridge deployment.
         if (_getHCULimitStorage().maxCrossTxDepth == 0) return 0;
         if (msg.sender != aclAdd && msg.sender != confidentialBridgeAdd) revert CallerMustBeACLOrBridge();
         return uint48(_handleDepths(handle, holder) >> 128);
@@ -1743,10 +1754,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Sets the depths that bridged handles carry from their source chain.
-     * @dev Decays from the block the message was received, so a retried compose eventually passes.
+     * @dev Each depth decays from `receivedBlock`, the block where the message arrived.
      */
     function setBridgedDepths(bytes32[] calldata handles, uint48[] calldata depths, uint48 receivedBlock) external {
-        // Disabled: nothing is stored, whoever calls.
+        // Checked before the caller: when disabled this is a no-op for any bridge deployment.
         if (_getHCULimitStorage().maxCrossTxDepth == 0) return;
         if (msg.sender != confidentialBridgeAdd) revert CallerMustBeConfidentialBridge();
         for (uint256 i = 0; i < handles.length; i++) {
@@ -1802,12 +1813,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     ) internal virtual {
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
-        uint256 totalHCU = _opDepths(opHCU) + _handleDepths(op1, caller);
-        if (uint128(totalHCU) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+        uint256 depths = _opDepths(opHCU) + _handleDepths(op1, caller);
+        if (uint128(depths) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
 
-        _setHCUForHandle(result, totalHCU);
+        _setHCUForHandle(result, depths);
     }
 
     /**
@@ -1822,12 +1833,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     ) internal virtual {
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
-        uint256 totalHCU = _opDepths(opHCU) + _maxDepths(_handleDepths(op1, caller), _handleDepths(op2, caller));
-        if (uint128(totalHCU) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+        uint256 depths = _opDepths(opHCU) + _maxDepths(_handleDepths(op1, caller), _handleDepths(op2, caller));
+        if (uint128(depths) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
 
-        _setHCUForHandle(result, totalHCU);
+        _setHCUForHandle(result, depths);
     }
 
     /**
@@ -1843,14 +1854,14 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     ) internal virtual {
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
-        uint256 totalHCU = _opDepths(opHCU) +
+        uint256 depths = _opDepths(opHCU) +
             _maxDepths(_handleDepths(op1, caller), _maxDepths(_handleDepths(op2, caller), _handleDepths(op3, caller)));
 
-        if (uint128(totalHCU) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+        if (uint128(depths) > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
             revert HCUTransactionDepthLimitExceeded();
         }
 
-        _setHCUForHandle(result, totalHCU);
+        _setHCUForHandle(result, depths);
     }
 
     /**
@@ -1893,21 +1904,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         }
         $.usedBlockHCU = uint48(nextHCU);
         $.lastSeenBlockNumber = currentBlock;
-    }
-
-    /**
-     * @notice Gets the current HCU for the handle.
-     * @param handle The handle for which to get the HCU.
-     * @return handleHCU The current HCU for the handle.
-     * @dev This function uses inline assembly to load the HCU from a specific storage location.
-     */
-    function _getHCUForHandle(bytes32 handle) internal view virtual returns (uint256 handleHCU) {
-        // Handle slot zero is reserved for _getHCUForTransaction.
-        if (handle == bytes32(0)) revert InvalidZeroHandle();
-        assembly {
-            handleHCU := tload(handle)
-        }
-        return uint128(handleHCU);
     }
 
     /**

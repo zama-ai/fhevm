@@ -102,7 +102,10 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         alice.share(address(bob));
         (, bytes32[] memory writes) = vm.accesses(aclAdd);
         assertEq(writes.length, 1);
-        assertEq(uint256(vm.load(aclAdd, writes[0])), 1 | (uint256(start + step) << 8) | (block.number << 56));
+        (bool allowed, uint48 depth, uint48 storedBlock) = acl.getStoredDepth(alice.value(), address(bob));
+        assertTrue(allowed);
+        assertEq(depth, start + step);
+        assertEq(storedBlock, block.number);
 
         vm.record();
         alice.share(address(bob));
@@ -115,7 +118,9 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         (, uint48 step) = _startAndMeasure(alice);
         vm.prank(owner);
         hcu.setMaxHCUDepthPerTx(step);
-        for (uint256 i = 0; i < 4; i++) alice.addOne(alice.value());
+        for (uint256 i = 0; i < 4; i++) {
+            alice.addOne(alice.value());
+        }
         assertGt(_storedDepth(alice), 4 * step);
     }
 
@@ -142,16 +147,36 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
 
     function test_DisabledLimitStoresNoDepth() public {
         alice.start();
-        for (uint256 i = 0; i < 5; i++) alice.addOne(alice.value());
+        for (uint256 i = 0; i < 5; i++) {
+            alice.addOne(alice.value());
+        }
         assertEq(_storedDepth(alice), 0);
     }
 
-    function test_OnlyProtocolContractsSetDepth() public {
+    function test_DepthHooksRejectOtherCallers() public {
         _setLimit(1_000_000, 1);
         vm.expectRevert(HCULimit.CallerMustBeACLOrBridge.selector);
         hcu.loadDepth(keccak256("handle"), address(this));
         vm.expectRevert(HCULimit.CallerMustBeConfidentialBridge.selector);
         hcu.setBridgedDepths(new bytes32[](0), new uint48[](0), uint48(block.number));
+    }
+
+    function test_LimitAndDecayMustBeBothSetOrBothZero() public {
+        vm.startPrank(owner);
+        vm.expectRevert(HCULimit.InvalidCrossTxDepthLimit.selector);
+        hcu.setCrossTxDepthLimit(1_000_000, 0);
+        vm.expectRevert(HCULimit.InvalidCrossTxDepthLimit.selector);
+        hcu.setCrossTxDepthLimit(0, 1);
+        vm.stopPrank();
+    }
+
+    function test_ComputedHandleWithoutPermissionHasUnknownDepth() public {
+        _setLimit(1_000_000, 1);
+        // Byte 21 is 0xff for computed handles; this one was never granted to the holder.
+        bytes32 handle = keccak256("computed") | bytes32(uint256(0xff) << 80);
+        vm.prank(aclAdd);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.UnknownHandleDepth.selector, handle));
+        hcu.loadDepth(handle, address(alice));
     }
 
     /// @dev Enables the limit without bound, starts `user`'s chain and returns its starting depth and the depth one addition adds.
