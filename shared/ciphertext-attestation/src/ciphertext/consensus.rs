@@ -24,7 +24,11 @@ impl CiphertextRef {
 
 impl std::fmt::Display for CiphertextRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "handle {}", self.handle)
+        write!(
+            f,
+            "handle {} (context {})",
+            self.handle, self.coprocessor_context_id
+        )
     }
 }
 
