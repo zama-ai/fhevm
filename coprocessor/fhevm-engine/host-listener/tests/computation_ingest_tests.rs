@@ -181,10 +181,6 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
         HeldBackComputation, SolanaBlockMeta, SolanaHostRecord,
         SolanaMaterialRequest,
     };
-    use zama_host::{
-        records::{FheMulDiv, TrivialEncrypt},
-        EVENT_VERSION,
-    };
     let instance = setup_test_db(ImportMode::None)
         .await
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
@@ -209,20 +205,23 @@ async fn solana_records_reach_the_shared_sql_and_scheduler_path(
         [(
             transaction_id,
             vec![
-                SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
-                    version: EVENT_VERSION,
-                    plaintext: [8; 32],
-                    fhe_type: 5,
-                    result: [1; 32],
-                }),
-                SolanaHostRecord::FheMulDiv(FheMulDiv {
-                    version: EVENT_VERSION,
-                    factor1: [1; 32],
-                    factor2: [2; 32],
-                    divisor: [3; 32],
-                    scalar: false,
-                    result: [4; 32],
-                }),
+                SolanaHostRecord::Computation(Computation::trivial(
+                    [8; 32],
+                    5,
+                    Handle::repeat_byte(1),
+                )),
+                SolanaHostRecord::Computation(
+                    Computation::single(
+                        O::FheMulDiv,
+                        vec![
+                            Operand::Encrypted(Handle::repeat_byte(1)),
+                            Operand::Encrypted(Handle::repeat_byte(2)),
+                            Operand::Clear(vec![3; 32]),
+                        ],
+                        Handle::repeat_byte(4),
+                    )
+                    .unwrap(),
+                ),
                 SolanaHostRecord::MaterialRequest(SolanaMaterialRequest {
                     handle: Handle::repeat_byte(4),
                 }),
@@ -333,10 +332,6 @@ async fn solana_block_priority_preserves_transaction_origins_replay_and_slow_par
         insert_solana_block_records, SolanaBlockMeta, SolanaHostRecord as R,
         SolanaMaterialRequest,
     };
-    use zama_host::{
-        records::{FheBinaryOp, TrivialEncrypt},
-        FheBinaryOpCode, EVENT_VERSION,
-    };
     let instance = setup_test_db(ImportMode::None)
         .await
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
@@ -354,22 +349,24 @@ async fn solana_block_priority_preserves_transaction_origins_replay_and_slow_par
         parent_hash: [9; 32],
     };
     let trivial = |value| {
-        R::TrivialEncrypt(TrivialEncrypt {
-            version: EVENT_VERSION,
-            plaintext: [value; 32],
-            fhe_type: 5,
-            result: [value; 32],
-        })
+        R::Computation(Computation::trivial(
+            [value; 32],
+            5,
+            Handle::repeat_byte(value),
+        ))
     };
     let add = |input, output| {
-        R::FheBinaryOp(FheBinaryOp {
-            version: EVENT_VERSION,
-            op: FheBinaryOpCode::Add,
-            lhs: [input; 32],
-            rhs: [0; 32],
-            scalar: true,
-            result: [output; 32],
-        })
+        R::Computation(
+            Computation::single(
+                O::FheAdd,
+                vec![
+                    Operand::Encrypted(Handle::repeat_byte(input)),
+                    Operand::binary_rhs(Handle::ZERO, true),
+                ],
+                Handle::repeat_byte(output),
+            )
+            .unwrap(),
+        )
     };
     let material = |value| {
         R::MaterialRequest(SolanaMaterialRequest {

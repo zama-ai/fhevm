@@ -734,7 +734,7 @@ if run_check 3; then
   check_alias 'AllowedPersistent / AllowedLocal — renamed to StoredValue / EarlierStep / Transient' all \
     '' -E '\bAllowedPersistent\b|\bAllowedLocal\b'
   # decoded op records <- `Fhe*Event` structs. The one event `fhe_execute` emits keeps the
-  # name; the nine per-op value types must not come back as events.
+  # name; per-step compute data must not come back as events.
   check_alias 'Fhe*Event — the per-op value types are decoded op records' all \
     'FheExecutedEvent' -E '\bFhe[A-Za-z0-9]*Event\b'
   # "lookup table" is banned for the interning dictionary. The Solana Address Lookup Table keeps its

@@ -358,7 +358,7 @@ enum ReconstructionOutcome {
 }
 
 /// Rebuilds the ingestable record set off-chain from a transaction's instructions.
-/// Covers `fhe_execute` (one op record per step, plus a material request for each
+/// Covers `fhe_execute` (one computation per step, plus a material request for each
 /// store write) and `make_store_handle_public`, decoded from the same ordered
 /// instruction list together with each execution's `FheExecutedEvent`.
 fn reconstruct_records_for_insert(
@@ -397,7 +397,12 @@ fn reconstruct_records_for_insert(
                 }),
             );
             execution_index += 1;
-            reconstructed.records.extend(steps.records);
+            reconstructed.records.extend(
+                steps
+                    .computations
+                    .into_iter()
+                    .map(SolanaHostRecord::Computation),
+            );
         }
         for write in operation.store_writes() {
             reconstructed
@@ -582,14 +587,14 @@ mod fhe_execute_acl_tests {
         );
         assert!(reconstructed.records.iter().any(|record| matches!(
             record,
-            crate::solana_adapter::SolanaHostRecord::TrivialEncrypt(op)
-                if op.result == [0xEE; 32]
+            SolanaHostRecord::Computation(computation)
+                if computation.outputs()[0].0 == [0xEE; 32]
         )));
     }
 
     #[test]
     fn store_slot_preimage_depends_on_prior_calls_in_the_reconstruction() {
-        use crate::solana_adapter::SolanaHostRecord;
+        use fhevm_engine_common::types::SupportedFheOperations;
         use zama_host::{
             ExecutionResultRef, FheBinaryOpCode, FheExecuteEffect,
             FheExecuteOperand, SlotWrite,
@@ -655,14 +660,19 @@ mod fhe_execute_acl_tests {
                 .records
                 .iter()
                 .find_map(|record| match record {
-                    SolanaHostRecord::FheBinaryOp(op) => Some(op.result),
+                    SolanaHostRecord::Computation(computation)
+                        if computation.operation()
+                            == SupportedFheOperations::FheAdd =>
+                    {
+                        Some(computation.outputs()[0])
+                    }
                     _ => None,
                 })
                 .unwrap();
             let mut mask = [0; 32];
             mask[31] = boundary;
             assert_eq!(
-                result,
+                result.0,
                 zama_host::computed_eval_handle(
                     FheBinaryOpCode::Add,
                     handle,
@@ -712,7 +722,9 @@ mod fhe_execute_acl_tests {
             .records
             .iter()
             .find_map(|record| match record {
-                SolanaHostRecord::TrivialEncrypt(op) => Some(op.result),
+                SolanaHostRecord::Computation(computation) => {
+                    Some(computation.outputs()[0])
+                }
                 _ => None,
             })
             .unwrap();

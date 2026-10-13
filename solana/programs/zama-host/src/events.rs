@@ -13,7 +13,7 @@
 //!   through, so it delivers a hint rather than the event. Authorization still comes from host-owned account state and never from
 //!   event bytes; what the event CPI buys is that a reader sees the change, not that it may trust it.
 //! - **Not emitted at all.** Everything else, which is most of it: per-step compute shapes and
-//!   operands (they live in `records.rs` as decoded op records), `EncryptedStore` ACL mutations (indexers rebuild MMR
+//!   operands, `EncryptedStore` ACL mutations (indexers rebuild MMR
 //!   leaves through the shared `zama_solana_acl` crate). The listener reconstructs these from
 //!   instruction data over Yellowstone, which is the normal path for anything reconstructible.
 //!   User-decryption delegation has no event either: delegating is a user ability rather than

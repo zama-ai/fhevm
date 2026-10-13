@@ -34,8 +34,6 @@ pub(crate) mod event_cpi;
 pub mod events;
 /// Instruction account contexts and handlers.
 pub mod instructions;
-/// Decoded op records reconstructed off-chain from instruction data; never emitted.
-pub mod records;
 /// Account layouts, PDA helpers, and handle derivation helpers.
 pub mod state;
 
@@ -47,8 +45,6 @@ pub use constants::*;
 pub use errors::*;
 /// Re-export event types for generated clients, listeners, and tests.
 pub use events::*;
-/// Re-export decoded op records for off-chain decoders.
-pub use records::*;
 /// Re-export account layouts and helper functions used by app programs.
 pub use state::*;
 
