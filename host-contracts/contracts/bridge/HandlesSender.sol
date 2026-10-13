@@ -290,8 +290,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
             dstApp,
             payload,
             handleList,
-            new uint48[](nHandles),
-            false
+            new uint48[](nHandles)
         );
         fee = _quote(dstEid, message, finalOptions, false);
     }
@@ -393,14 +392,14 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
 
         _checkAllAllowed(handleList);
 
+        // Each handle carries its depth so the destination keeps counting it (0 when the limit is off here).
         uint48[] memory depths = new uint48[](handleList.length);
         for (uint256 i; i < handleList.length; i++) {
-            depths[i] = HCULimit(hcuLimitAdd).getDepthForPersistence(handleList[i], msg.sender);
+            depths[i] = HCULimit(hcuLimitAdd).loadDepth(handleList[i], msg.sender);
         }
 
         bytes32 srcApp = bytes32(uint256(uint160(msg.sender)));
-        (uint48 lineageLimit, ) = HCULimit(hcuLimitAdd).getLineageDepthLimit();
-        bytes memory message = abi.encode(srcApp, dstApp, payload, handleList, depths, lineageLimit != 0);
+        bytes memory message = abi.encode(srcApp, dstApp, payload, handleList, depths);
         MessagingFee memory fee = _quote(dstEid, message, finalOptions, false);
         receipt = _lzSend(dstEid, message, finalOptions, fee, payable(msg.sender));
     }

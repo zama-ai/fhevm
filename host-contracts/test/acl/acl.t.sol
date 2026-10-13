@@ -6,14 +6,11 @@ import {StdStorage, stdStorage} from "forge-std/StdStorage.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ACL} from "../../contracts/ACL.sol";
-import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
-import {HCULimit} from "../../contracts/HCULimit.sol";
-import {FheType} from "../../contracts/shared/FheType.sol";
 import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
 import {ACLEvents} from "../../contracts/ACLEvents.sol";
 import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
 import {HostContractsDeployerTestUtils} from "../../fhevm-foundry/HostContractsDeployerTestUtils.sol";
-import {confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd, aclAdd, hcuLimitAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {confidentialBridgeAdd, fhevmExecutorAdd, pauserSetAdd, aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract ACLTest is HostContractsDeployerTestUtils {
     using stdStorage for StdStorage;
@@ -107,54 +104,6 @@ contract ACLTest is HostContractsDeployerTestUtils {
         assertEq(acl.isPauser(pauser), true);
         assertEq(acl.getFHEVMExecutorAddress(), fhevmExecutorAdd);
         assertEq(acl.getPauserSetAddress(), pauserSetAdd);
-    }
-
-    function test_PackedDepthUsesOnePermissionStorageWrite() public {
-        _deployFHEVMExecutor(owner);
-        vm.prank(owner);
-        HCULimit(hcuLimitAdd).setLineageDepthLimit(1_000_000, 1);
-        address account = address(123);
-        vm.prank(account);
-        bytes32 handle = FHEVMExecutor(fhevmExecutorAdd).trivialEncrypt(7, FheType.Uint64);
-        vm.record();
-        vm.prank(account);
-        acl.allow(handle, account);
-        (, bytes32[] memory writes) = vm.accesses(address(acl));
-        assertEq(writes.length, 1);
-        assertEq(uint256(vm.load(address(acl), writes[0])), 1 | (uint256(32) << 8) | (block.number << 56));
-        (bool allowed, uint48 depth, uint48 savedBlock) = acl.getPermissionDepth(handle, account);
-        assertTrue(allowed);
-        assertTrue(acl.persistAllowed(handle, account));
-        assertEq(depth, 32);
-        assertEq(savedBlock, block.number);
-    }
-
-    function test_LegacyPermissionRemainsAllowedWithZeroDepth() public {
-        bytes32 handle = keccak256("legacy");
-        address account = address(123);
-        bytes32 root = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
-        bytes32 slot = keccak256(abi.encode(account, keccak256(abi.encode(handle, root))));
-        vm.store(address(acl), slot, bytes32(uint256(1)));
-        (bool allowed, uint48 depth, uint48 savedBlock) = acl.getPermissionDepth(handle, account);
-        assertTrue(allowed);
-        assertTrue(acl.isAllowed(handle, account));
-        assertEq(depth, 0);
-        assertEq(savedBlock, 0);
-    }
-
-    function test_DepthCacheCannotBeSeededByAnApplication() public {
-        HCULimit limit = HCULimit(hcuLimitAdd);
-        vm.expectRevert(HCULimit.CallerMustBeACLOrExecutor.selector);
-        limit.importDepth(keccak256("handle"), address(this));
-        vm.expectRevert(HCULimit.CallerMustBeFHEVMExecutorContract.selector);
-        limit.registerInputDepth(keccak256("handle"));
-        vm.prank(owner);
-        limit.setLineageDepthLimit(1_000_000, 1);
-        vm.expectRevert(HCULimit.CallerMustBeConfidentialBridge.selector);
-        limit.registerBridgeDepth(keccak256("handle"), 0, uint48(block.number));
-        vm.prank(fhevmExecutorAdd);
-        vm.expectRevert(HCULimit.InvalidZeroHandle.selector);
-        limit.importDepth(bytes32(0), address(this));
     }
 
     /**

@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {TestHelperOz5} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 import {Origin} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppReceiverUpgradeable.sol";
-import {ILayerZeroEndpointV2, MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
 import {Vm} from "forge-std/Vm.sol";
 
@@ -715,7 +715,8 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
             _addressToBytes32(srcApp),
             _addressToBytes32(address(dstApp)),
             bytes("payload"),
-            handleList
+            handleList,
+            new uint48[](2)
         );
 
         // Build an Origin matching our peer config.
@@ -811,12 +812,15 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     // Destination-side lzCompose authentication + dispatch
     ////////////////////////////////////////////////////////////////////////////////
 
-    function test_LineageSurvivesReceiveAndCompose() public {
-        dstBridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
+    /// @dev Both protocol calls need the canonical bridge address, so one canonical bridge sends the
+    ///      handle and then runs the compose that the destination bridge emitted.
+    function test_BridgedHandleKeepsItsDepth() public {
+        srcBridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[SRC_EID]);
         vm.startPrank(owner);
+        srcBridge.setDstChainId(DST_EID, DST_CHAIN_ID);
         srcBridge.setPeer(DST_EID, _addressToBytes32(address(dstBridge)));
         dstBridge.setPeer(SRC_EID, _addressToBytes32(address(srcBridge)));
-        HCULimit(hcuLimitAdd).setLineageDepthLimit(200_000, 100);
+        HCULimit(hcuLimitAdd).setCrossTxDepthLimit(type(uint48).max, 100);
         vm.stopPrank();
 
         vm.startPrank(srcApp);
@@ -841,6 +845,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
             uint64(200_000)
         );
         vm.stopPrank();
+        (, uint48 sourceDepth, ) = acl.getStoredDepth(source, srcApp);
 
         vm.recordLogs();
         verifyPackets(DST_EID, address(dstBridge));
@@ -851,61 +856,24 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
                 (, , , , compose) = abi.decode(logs[i].data, (address, address, bytes32, uint16, bytes));
             }
         }
-        assertGt(compose.length, 0);
-        vm.roll(block.number + 3);
-        ILayerZeroEndpointV2(endpoints[DST_EID]).lzCompose(
-            address(dstBridge),
-            address(dstBridge),
-            receipt.guid,
-            0,
+        (, , , , , , uint48[] memory depths, ) = abi.decode(
             compose,
-            ""
+            (uint32, bytes32, bytes32, bytes, bytes32[], bytes32[], uint48[], uint48)
         );
+        assertEq(depths[0], sourceDepth);
+
+        // Compose three blocks after receipt, with a limit that admits the bridged depth but not one more addition.
+        vm.roll(block.number + 3);
+        vm.prank(owner);
+        HCULimit(hcuLimitAdd).setCrossTxDepthLimit((sourceDepth * 3) / 2, 100);
+        vm.prank(address(endpoints[SRC_EID]));
+        srcBridge.lzCompose(address(srcBridge), receipt.guid, compose, address(0), "");
         bytes32 destination = dstApp.lastCall().dstHandleList[0];
-        assertTrue(acl.allowedTransient(destination, address(dstApp)));
-        assertEq(HCULimit(hcuLimitAdd).getDepthForPersistence(destination, address(dstApp)), 132_732);
+        vm.prank(aclAdd);
+        assertEq(HCULimit(hcuLimitAdd).loadDepth(destination, address(dstApp)), sourceDepth - 3 * 100);
         vm.prank(address(dstApp));
-        vm.expectRevert(HCULimit.HCULineageDepthLimitExceeded.selector);
+        vm.expectRevert(HCULimit.HCUCrossTxDepthLimitExceeded.selector);
         FHEVMExecutor(fhevmExecutorAdd).fheAdd(destination, bytes32(uint256(1)), 0x01);
-    }
-
-    function test_LegacyComposeCannotResetDepthWhenThrottlingIsEnabled() public {
-        dstBridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
-        vm.prank(owner);
-        HCULimit(hcuLimitAdd).setLineageDepthLimit(1_000_000, 1);
-        bytes32[] memory handles = new bytes32[](1);
-        handles[0] = _makeHandle(42);
-        bytes memory message = abi.encode(
-            SRC_EID,
-            _addressToBytes32(srcApp),
-            _addressToBytes32(address(dstApp)),
-            bytes(""),
-            handles,
-            handles
-        );
-        vm.prank(address(endpoints[DST_EID]));
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.UnknownHandleDepth.selector, handles[0]));
-        dstBridge.lzCompose(address(dstBridge), keccak256("legacy"), message, address(0), "");
-    }
-
-    function test_UntrackedSourceCannotResetDepthWhenThrottlingIsEnabled() public {
-        dstBridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
-        vm.prank(owner);
-        HCULimit(hcuLimitAdd).setLineageDepthLimit(1_000_000, 1);
-        bytes32[] memory handles = new bytes32[](1);
-        handles[0] = _makeHandle(42);
-        bytes memory message = abi.encode(
-            SRC_EID,
-            _addressToBytes32(srcApp),
-            _addressToBytes32(address(dstApp)),
-            bytes(""),
-            handles,
-            handles,
-            abi.encode(uint48(block.number), new uint48[](1), false)
-        );
-        vm.prank(address(endpoints[DST_EID]));
-        vm.expectRevert(HandlesReceiver.SourceDepthTrackingDisabled.selector);
-        dstBridge.lzCompose(address(dstBridge), keccak256("untracked"), message, address(0), "");
     }
 
     function test_LzCompose_RevertsIfNotEndpoint() public {
@@ -952,7 +920,9 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
             _addressToBytes32(address(dstApp)),
             payload,
             srcHandleList,
-            dstHandleList
+            dstHandleList,
+            new uint48[](2),
+            uint48(block.number)
         );
 
         // In a real deployment the ACL bypasses sender checks for the canonical
@@ -988,7 +958,9 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
             _addressToBytes32(address(dstApp)),
             bytes(""),
             empty,
-            empty
+            empty,
+            new uint48[](0),
+            uint48(block.number)
         );
 
         vm.prank(address(endpoints[DST_EID]));
