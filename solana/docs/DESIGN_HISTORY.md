@@ -881,6 +881,89 @@ and from DD-064:
 > The connector retries a Gateway request up to its `max_decryption_attempts` before marking it
 > failed, and an HTTP caller gets `acl_denied` and resubmits.
 
+**Gateway contracts** (zama-ai/fhevm#4418). The Gateway's `Decryption` contract had two Solana
+entries, `solanaUserDecryptionRequest` and `solanaPublicDecryptionRequest`, which emitted
+`SolanaUserDecryptionRequest` and `SolanaPublicDecryptionRequest`. They refused a request with
+`NotSolanaHostChain`, `KmsRoutingMalformed`, `EncryptedStoresLengthMismatch` or
+`SolanaHandlesMaxLengthExceeded` (above `MAX_SOLANA_DECRYPT_HANDLES`) before taking the fee. All of
+it is deleted, and `Decryption` returns to its EVM text. `zama-solana-request` no longer has the
+`0x05 ‖ borsh{…}` blob codec (`encode_solana_request`, `decode_solana_request`). The replaced
+statements, as written:
+
+DD-012:
+
+> Treat Solana as a **gateway-compatible host chain** and route its decrypt flows through the unified
+> Gateway V2 path (the Unified EIP-712 Decryption Request RFC) rather than a parallel native stack:
+
+> - **User-decrypt** flows through the unified Gateway V2 path, through the Gateway's
+>   `solanaUserDecryptionRequest` entry, which types the handles, validity, transport key and
+>   `extraData` and carries the Solana permit fields in a versioned blob, rather than smuggling
+>   Solana auth through `extraData`.
+
+DD-026:
+
+> - The gateway's `solanaUserDecryptionRequest(ctHandles, requestValidity, publicKey, extraData,
+>   solanaRequest)` types the fields it budgets and charges, and carries the rest in the
+>   `solanaRequest` blob: `0x05 ‖ borsh{user_address, allowed_scopes, verifying_program_id,
+>   signature, entries}`. It emits `SolanaUserDecryptionRequest`. `SolanaUserDecryptRequest::assemble`
+>   (`zama-solana-request`) joins the two parts into the typed request every authorizer reads, so no
+>   fact travels twice. One claim per handle names its owner and Store (DD-048, DD-049)
+
+> typed gateway fields make the Solana identity and auth request self-describing
+
+DD-058:
+
+> gateway's `InputVerification` and `Decryption` contracts each pause on their own, and Solana requests
+> enter the gateway through the same paused calls (`verifyProofRequestSolana` and both decryption
+> requests), so the gateway pause already stops new input proofs and decryptions for Solana.
+
+> The gateway pause stops an honest KMS from signing new certificates.
+
+> Accepted gap: no host flag stops user decryption. During a host pause, user decryption of values
+> already allowed continues, as it does on EVM while only the host ACL is paused; the gateway pause is
+> what stops it.
+
+> The KMS connector reads no pause flag, so user decryption pauses at the gateway alone, as on EVM.
+
+DD-060:
+
+> The Gateway has a Solana entry, `solanaPublicDecryptionRequest(bytes32[] ctHandles,
+> bytes extraData, bytes32[] encryptedStores)`. It takes one Store per handle, in handle order, and
+> emits `SolanaPublicDecryptionRequest(decryptionId, ctHandles, extraData, encryptedStores)`. It is
+> named rather than overloaded, so the EVM `publicDecryptionRequest` keeps its generated binding
+> names. `extraData` holds only KMS routing (v0, v1 or v2) on both chains. Before it takes the fee,
+> the Gateway refuses handles that are not of one registered Solana host chain and a store count that
+> differs from the handle count.
+
+> | Put the stores in an opaque blob, as `solanaRequest` does for user decryption | The user request needs one signed blob for its permit. Public decryption has no signature to bind, so named typed fields are easier to check at every layer. |
+
+> The Solana entry shares the decryption counter and the fee with the EVM entry. It emits only
+> `SolanaPublicDecryptionRequest`.
+
+`FUTURE_DESIGN.md` §5:
+
+> User-decrypt uses `solanaUserDecryptionRequest` with the `solana-srfc38-user-decrypt-v1` payload
+> (DD-026).
+
+`EVM_PARITY.md`, Gateway, coprocessor and KMS:
+
+> The existing Gateway V2 route carries typed Solana user-decrypt requests.
+
+> The shared gateway retains its cleartext bit budget and Solana request handle cap.
+
+`INVARIANTS.md`, pause flags:
+
+> Gateway ingress has its own pause: `Decryption.sol` `whenNotPaused` covers every request entry
+> point, the Solana entries included.
+
+`INVARIANTS.md` #42:
+
+> The relayer and gateway are transport; neither can change who asks, the key the shares are
+> encrypted to, or which applications the permit opens. Pinned by `every_vector_behaves_as_declared`,
+> `every_blob_field_reaches_the_canonical_bytes` (every blob field changes the request bytes),
+> `every_field_lands_in_its_place_and_the_chain_comes_from_the_handles` (assembly puts each Gateway
+> and blob field in its permit role)
+
 ## Replaced parts of live decisions
 
 A live entry in [`DESIGN_DECISIONS.md`](DESIGN_DECISIONS.md) states only its current rule. When a

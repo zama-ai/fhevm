@@ -294,13 +294,13 @@ produced a large, separately-maintained native-v0 admission/store/response subsy
 
 Decision:
 
-Treat Solana as a **gateway-compatible host chain** and route its decrypt flows through the unified
-Gateway V2 path (the Unified EIP-712 Decryption Request RFC) rather than a parallel native stack:
+Treat Solana as a **gateway-compatible host chain**: its decrypt flows reach the same KMS connectors,
+in the same EIP-712 shapes (the Unified EIP-712 Decryption Request RFC), as EVM's, rather than a
+parallel native stack:
 
-- **User-decrypt** flows through the unified Gateway V2 path, through the Gateway's
-  `solanaUserDecryptionRequest` entry, which types the handles, validity, transport key and
-  `extraData` and carries the Solana permit fields in a versioned blob, rather than smuggling
-  Solana auth through `extraData`. `extraData` is only the KMS routing (v0, v1 or v2, DD-060). A chain-aware validator
+- **User-decrypt** goes over HTTP: relayer-http forwards the request to each KMS connector's
+  `POST /v1/user-decrypt`, whose body types the handles, validity, transport key and `extraData`
+  next to the Solana permit fields, rather than smuggling Solana auth through `extraData`. `extraData` is only the KMS routing (v0, v1 or v2, DD-060). A chain-aware validator
   branches on `contracts_chain_id` (see DD-027) so EVM stays strict and Solana is relaxed. The
   bytes32 handle surface still admits both EVM and Solana. (See DD-026 for the typed-vs-extraData
   boundary.)
@@ -655,23 +655,20 @@ Decision:
 
 **User-decrypt path (typed identity and auth fields):**
 
-- The gateway's `solanaUserDecryptionRequest(ctHandles, requestValidity, publicKey, extraData,
-  solanaRequest)` types the fields it budgets and charges, and carries the rest in the
-  `solanaRequest` blob: `0x05 ‖ borsh{user_address, allowed_scopes, verifying_program_id,
-  signature, entries}`. It emits `SolanaUserDecryptionRequest`. `SolanaUserDecryptRequest::assemble`
-  (`zama-solana-request`) joins the two parts into the typed request every authorizer reads, so no
-  fact travels twice. One claim per handle names its owner and Store (DD-048, DD-049), and
-  `extraData` is only the KMS routing (DD-060). The
-  connector fetches leaf proofs itself, so neither client nor relayer can substitute proof data.
-- The js-sdk builds the blob. The gateway relayer does not submit the call: Solana decryption
-  requests go through relayer-http. The KMS connector routes Solana requests that arrive over HTTP,
-  joins the two parts and verifies the permit signature before using them. Its gw-listener does not
-  subscribe to the Gateway's Solana events.
+- The KMS connector's `POST /v1/user-decrypt` body types the handles, the validity window, the
+  transport key (`publicKey`) and `extraData`, next to the Solana permit fields (`userAddress`,
+  `allowedScopes`, `verifyingProgramId`), the signature and one entry per handle.
+  `SolanaUserDecryptRequest::assemble` (`zama-solana-request`) builds from those fields the typed
+  request every authorizer reads. Each entry names its owner and Store (DD-048, DD-049), and
+  `extraData` is only the KMS routing (DD-060). The connector fetches leaf proofs itself, so
+  neither client nor relayer can substitute proof data.
+- The js-sdk builds the body and relayer-http forwards it. The KMS connector verifies the permit
+  signature before using the fields.
 - KMS-cert context: `extract_kms_context_id` (DD-021) handles `extra_data` versions 0, 1 and 2 (the
   public-decrypt cert) — a _different_ extraData from either path above.
 
 A bytes32 identity plus a Solana chain id (DD-052) keeps one input ABI for EVM and non-EVM hosts. For user-decrypt,
-typed gateway fields make the Solana identity and auth request self-describing, and `extraData` stays
+typed request fields make the Solana identity and auth request self-describing, and `extraData` stays
 the KMS routing field it is on EVM.
 
 ## DD-027: Chain-Aware V2 User-Decrypt Validation
@@ -1965,9 +1962,9 @@ the admin behind a Squads vault with a time lock (fhevm-internal#1634), so an ad
 would wait out that time lock too. On EVM, `ACL.pause()` accepts any member of `PauserSet`, while
 `unpause()` is `onlyOwner`. The host ACL pause stops `allow`, `allowForDecryption`,
 `allowTransient` and both delegation calls, and so execution, which needs `allowTransient`. The
-gateway's `InputVerification` and `Decryption` contracts each pause on their own, and Solana requests
-enter the gateway through the same paused calls (`verifyProofRequestSolana` and both decryption
-requests), so the gateway pause already stops new input proofs and decryptions for Solana.
+gateway's `InputVerification` contract pauses on its own, and Solana input proofs enter the gateway
+through its paused `verifyProofRequestSolana`, so the gateway pause already stops new input proofs
+for Solana. Solana decryptions arrive over HTTP, which has no pause.
 
 Decision: `HostConfig.paused` is `PauseFlags`, one flag per area.
 
@@ -1979,8 +1976,7 @@ Decision: `HostConfig.paused` is `PauseFlags`, one flag per area.
 
 `verified_inputs` acts when a signed input is used, not when it is requested. It is the lever
 against compromised coprocessor signers, whose results the gateway pause cannot recall.
-`verify_public_decrypt` never pauses, as EVM's `KMSVerifier` (fhevm-internal#2096). The gateway
-pause stops an honest KMS from signing new certificates. Against a compromised KMS context, the
+`verify_public_decrypt` never pauses, as EVM's `KMSVerifier` (fhevm-internal#2096). Against a compromised KMS context, the
 admin makes a new context current, then `destroy_kms_context` revokes every certificate the old one
 signed, as EVM's owner-only `destroyKmsContext`, which also refuses the active context.
 
@@ -2003,9 +1999,9 @@ flag, as EVM's `invalidateDecryptionSignaturesBefore` runs under the ACL pause.
 `revoke_delegation_for_user_decryption` is gated on `acl_writes`, as EVM's
 `revokeDelegationForUserDecryption` is `whenNotPaused`.
 
-Accepted gap: no host flag stops user decryption. During a host pause, user decryption of values
-already allowed continues, as it does on EVM while only the host ACL is paused; the gateway pause is
-what stops it. While `acl_writes` is paused, a delegator cannot revoke a delegation until the admin
+Accepted gap: nothing pauses Solana user decryption. During a host pause, user decryption of values
+already allowed continues, as it does on EVM while only the host ACL is paused, and HTTP decryption
+has no pause of its own. While `acl_writes` is paused, a delegator cannot revoke a delegation until the admin
 resumes ACL writes.
 
 Rejected alternatives:
@@ -2018,8 +2014,8 @@ Rejected alternatives:
 | Let the admin pause without a record | EVM requires `PauserSet` membership for `pause()` even from the owner. Keeping that rule makes the pauser set the one list of who can pause. |
 
 Consequences: `PauseFlags` is three bytes of `HostConfig` (`HostConfig::SPACE` 311). The host
-listener decodes `HostConfig` with the program's type. The KMS connector reads no pause flag, so user
-decryption pauses at the gateway alone, as on EVM. The pause errors are `ExecutionPaused`,
+listener decodes `HostConfig` with the program's type. The KMS connector reads no pause flag, so no
+pause reaches Solana decryption. The pause errors are `ExecutionPaused`,
 `VerifiedInputsPaused`, `AclWritesPaused`, `NotPauser` and `WalletPauseThroughCpi`.
 
 ## DD-059: The listener catches up from an archive when the stream cannot replay
@@ -2077,14 +2073,13 @@ Recorded in zama-ai/fhevm#4120 and zama-ai/fhevm#4357.
 become part of a signed field whose version space EVM owns, and every layer (relayer, Gateway,
 connector, host verifier, SDK) would parse a Solana-only version.
 
-The Gateway has a Solana entry, `solanaPublicDecryptionRequest(bytes32[] ctHandles,
-bytes extraData, bytes32[] encryptedStores)`. It takes one Store per handle, in handle order, and
-emits `SolanaPublicDecryptionRequest(decryptionId, ctHandles, extraData, encryptedStores)`. It is
-named rather than overloaded, so the EVM `publicDecryptionRequest` keeps its generated binding
-names. `extraData` holds only KMS routing (v0, v1 or v2) on both chains. Before it takes the fee,
-the Gateway refuses handles that are not of one registered Solana host chain and a store count that
-differs from the handle count. The connector keeps them in `handle_encrypted_stores` and proves each handle's public leaf against its
-own Store in one snapshot. The host verifier reads the context from v1 or v2 exactly as EVM
+The Solana body of `POST /v1/public-decrypt` is tagged `scheme: "solana-public-decrypt-v1"` and
+carries `ctHandles`, `extraData` and `encryptedStores`: one Store per handle, in handle order.
+`extraData` holds only KMS routing (v0, v1 or v2) on both chains. relayer-http and the connector
+endpoint both run `zama_solana_request::public_request_chain_id`, which refuses handles that are not
+of one Solana chain and a store count that differs from the handle count. The connector keeps the
+stores in `handle_encrypted_stores` and proves each handle's public leaf against its own Store in
+one snapshot. The host verifier reads the context from v1 or v2 exactly as EVM
 `KMSVerifier` does, and reads no Store (DD-065). The SDK sends v2, `0x02 ‖ contextId ‖ epochId`, with
 the pair read from `HostConfig.current_kms_context_id` and `current_kms_epoch_id`, as the EVM SDK reads
 `ProtocolConfig.getCurrentKmsContextAndEpoch()`. `define_kms_context` sets both; `define_kms_epoch`
@@ -2096,14 +2091,12 @@ Rejected alternatives:
 | Alternative | Why not |
 |---|---|
 | Carry the stores in a version-4 `extraData` | The KMS would still sign Solana account addresses inside a field whose versions EVM defines. The Store is not a KMS routing input. |
-| Put the stores in an opaque blob, as `solanaRequest` does for user decryption | The user request needs one signed blob for its permit. Public decryption has no signature to bind, so named typed fields are easier to check at every layer. |
+| Put the stores in an opaque blob | Public decryption has no signature to bind, so named typed fields are easier to check at every layer. |
 
 Consequences:
 
 The KMS certificate does not commit to the Store; the KMS connectors check each handle's public leaf
-against it. The Solana entry
-shares the decryption counter and the fee with the EVM entry. It emits only
-`SolanaPublicDecryptionRequest`.
+against it. The request ID is the EIP-712 hash of the body, so it covers the stores.
 
 ## DD-061: A delegation is keyed by application and expires on Unix time
 

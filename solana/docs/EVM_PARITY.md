@@ -60,8 +60,8 @@ soon as it is dispatched.
 
 ## Gateway, coprocessor and KMS
 
-The existing Gateway V2 route carries typed Solana user-decrypt requests. The gateway relayer
-does not submit them: Solana decryption requests go through relayer-http. Each connector independently verifies the signed permit, scope,
+Solana decryption requests go through relayer-http, which forwards them to each KMS connector's
+`POST /v1/user-decrypt` or `/v1/public-decrypt`; the Gateway has no Solana decryption entry. Each connector independently verifies the signed permit, scope,
 window, revocation watermark, deployment identity, KMS context and each Store's canonical
 address/owner/shape. Delegation uses a PDA that expires on the host's Unix clock and a fresh
 deciding snapshot. The Store's app `(program, scope)` scopes both the delegation, as EVM's
@@ -82,7 +82,8 @@ HandleMaterialCommitment account. Gateway material registration and copro attest
 separate concerns; supporting an attestation authorization mode does not imply coprocessors
 stop posting ciphertext material to the gateway.
 
-The shared gateway retains its cleartext bit budget and Solana request handle cap. KMS core
+relayer-http and each connector endpoint apply EVM's 2048-bit cleartext budget and the Solana
+request handle cap to a Solana body. KMS core
 performs threshold decryption; each party's connector trusts its configured host RPC, as it
 does for EVM ACL reads. It reads Solana at `finalized` (DD-070), where EVM ACL reads take the
 node's latest block.

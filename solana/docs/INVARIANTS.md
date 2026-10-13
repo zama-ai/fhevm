@@ -448,9 +448,8 @@ setters are never paused, and `revoke_permits` takes no config account, so it ru
 `mollusk_only_the_admin_sets_pausers`, `a_grant_while_paused_is_rejected`, `a_revocation_while_paused_is_rejected`,
 `a_grant_and_a_revocation_run_while_the_other_areas_are_paused`, `mollusk_admin_setters_run_while_every_area_is_paused`,
 `mollusk_the_admin_sets_pausers_and_hands_over_while_every_area_is_paused` and, over random sequences, the H1
-property of #35. The flags do not reach decryption, and the KMS connector does not read `HostConfig`. Gateway ingress
-has its own pause: `Decryption.sol` `whenNotPaused` covers every request entry point, the Solana entries included.
-HTTP decryption has no pause on either chain, as on EVM.
+property of #35. The flags do not reach decryption, and the KMS connector does not read `HostConfig`. A Solana
+decryption arrives only over HTTP, and HTTP decryption has no pause on either chain, as on EVM.
 
 **37. [HOLDS]** The program initializes every HCU knob unlimited. The deployer (`bootstrapZamaHost`) sets EVM's
 per-transaction total and depth limits (`HCU_LIMITS`, pinned to `host-contracts/tasks/taskDeploy.ts`) in the
@@ -512,17 +511,17 @@ Pinned by `mollusk_fhe_execute_trusted_witness_bypasses_and_creates_no_meter`,
 `mollusk_fhe_execute_squatted_meter_with_data_is_rejected`, `mollusk_fhe_execute_wrong_pda_trust_witness_is_rejected`
 and `mollusk_fhe_execute_malformed_trust_witness_is_rejected`.
 
-## G. Decrypt authorization (gateway, relayer, KMS)
+## G. Decrypt authorization (relayer, KMS)
 
 **42. [HOLDS]** Every KMS party's connector independently re-verifies the
 user's ed25519 signature over the permit's eight fields: user address, transport key, allowed scopes, start
 timestamp, duration, verifying program, chain id and KMS routing (`extra_data`). The handles are not signed, as in
 EVM's EIP-712 permit: the permit grants the scopes and window, and each handle is authorized separately against the
-signer's or delegator's allow leaf. The relayer and gateway are transport; neither can change who asks, the key the
+signer's or delegator's allow leaf. The relayer is transport; it cannot change who asks, the key the
 shares are encrypted to, or which applications the permit opens.
-Pinned by `every_vector_behaves_as_declared`, `every_blob_field_reaches_the_canonical_bytes` (every blob field
-changes the request bytes), `every_field_lands_in_its_place_and_the_chain_comes_from_the_handles` (assembly puts each
-Gateway and blob field in its permit role) and `a_field_the_relayer_changed_fails_the_signature` (the connector refuses a permit whose
+Pinned by `every_vector_behaves_as_declared`,
+`every_field_lands_in_its_place_and_the_chain_comes_from_the_handles` (assembly puts each request field in its
+permit role) and `a_field_the_relayer_changed_fails_the_signature` (the connector refuses a permit whose
 key, window or routing the relayer changed).
 
 **43. [ANTI]** A user-decrypt permit has no nonce and is not deduplicated on-chain or in the connector. A signed

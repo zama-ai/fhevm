@@ -41,8 +41,8 @@ privileged receiver logic). It is not a receiver callback and must not be docume
 ## 5. Gateway chain-agnostic address RFC reconciliation and host-listener event surface
 
 The Solana input path uses the gateway `InputVerification.verifyProofRequestSolana` +
-`VerifyProofRequestSolana` bytes32 entrypoint (kept, not renamed to V2 — DD-030). User-decrypt uses
-`solanaUserDecryptionRequest` with the `solana-srfc38-user-decrypt-v1` payload (DD-026).
+`VerifyProofRequestSolana` bytes32 entrypoint (kept, not renamed to V2 — DD-030). Solana decryption
+does not use the gateway: it goes over HTTP to the KMS connectors (DD-012, DD-026).
 
 **Requirement:** keep the port and the chain-agnostic address RFC (zama-ai/tech-spec#419) in sync as the gateway evolves. The Solana
 host-listener reconstructs from finalized Yellowstone instructions and records each block in
