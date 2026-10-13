@@ -58,8 +58,9 @@ export interface BatchAddresses {
 
 /**
  * Derives every batch-scoped address for a batcher and zero-based batch index. Pure: it seeds PDAs
- * and hashes labels, never touching the RPC. Every address falls out of the batch account and the
- * roots' mints — the same derivations the on-chain handlers resolve as `#[account(seeds)]`.
+ * and hashes labels, never touching the RPC. The batch PDA comes from the batcher and the index, and
+ * every other address from the batch account and the roots' mints — the same derivations the
+ * on-chain handlers resolve as `#[account(seeds)]`.
  */
 export async function deriveBatchAddresses(roots: VaultDemoRoots, batchIndex: bigint): Promise<BatchAddresses> {
   const batch = (await findBatchPda({ batcher: roots.batcher, index: batchIndex }))[0];
