@@ -929,17 +929,25 @@ async fn an_unavailable_coprocessor_leaves_the_batch_to_one_that_serves() {
     assert_eq!(results, vec![Ok(())]);
 }
 
-/// Through the production client: a coprocessor refuses with `sender_authentication_failed` a
-/// connector whose signer is in no KMS context it has read. When every coprocessor refuses it, the
-/// request fails for good as `unprocessable`; any other failure leaves it to a later attempt.
+/// Through the production client: a coprocessor refuses with `auth_unknown_signer` a connector
+/// whose signer is in no KMS context it has read. When every coprocessor refuses it as a sender,
+/// with that code or another final `auth_*` one, the request fails for good as `unprocessable`; any
+/// other failure, `auth_expired` included, leaves it to a later attempt.
 #[rstest]
 #[case::every_coprocessor_refuses_the_sender(
     401,
-    "sender_authentication_failed",
+    "auth_unknown_signer",
+    ErrorCode::Unprocessable,
+    false
+)]
+#[case::the_coprocessors_refuse_with_different_codes(
+    401,
+    "auth_body_mismatch",
     ErrorCode::Unprocessable,
     false
 )]
 #[case::another_coprocessor_is_overloaded(503, "overloaded", ErrorCode::UpstreamTransient, true)]
+#[case::another_signature_expired(401, "auth_expired", ErrorCode::UpstreamTransient, true)]
 #[tokio::test]
 async fn a_sender_refusal_is_final_only_from_every_coprocessor(
     #[case] other_status: u16,
@@ -965,7 +973,7 @@ async fn a_sender_refusal_is_final_only_from_every_coprocessor(
         coprocessor
     }
     let (_, account, [entry, _]) = two_allowed_queries();
-    let not_a_sender = refusing("not-a-sender", 401, "sender_authentication_failed").await;
+    let not_a_sender = refusing("not-a-sender", 401, "auth_unknown_signer").await;
     let other = refusing("other", other_status, other_code).await;
     let client = proof_client(
         &[

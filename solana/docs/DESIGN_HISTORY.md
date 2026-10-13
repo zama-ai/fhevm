@@ -1686,3 +1686,23 @@ the accepted window to RFC 038's bounds, moved error bodies to JSON and answered
 > A request waits up to `PROOF_READ_WAIT` (200 ms) for its turn. [...] These refusals are
 > `rate_limited` (429, retryable), and the connector treats them as a failed read and asks the next
 > coprocessor at once.
+
+### DD-067, replaced in part by #4416
+
+Aligning with RFC 038 at commit c35dd15ef put the body digest in the header, so the server
+authenticates the signer before it reads the body and then checks the body against the digest, and
+replaced `sender_authentication_failed` with RFC 038's `auth_*` codes and a query string's
+`malformed` with `non_canonical_path`.
+
+> The signature travels as `Authorization: FhevmSig expires=<unix seconds>, sig=0x<65 bytes>`.
+
+> A server refuses a signature with `expires < now - CLOCK_SKEW` (30 s) as `auth_expired` (401,
+> retryable), and one with `expires > now + MAX_AUTH_VALIDITY + CLOCK_SKEW` (300 + 30 s) as too
+> long-lived. It refuses a request with a query string as `malformed` (400), since the signature
+> does not cover one.
+
+> A missing, malformed, too long-lived or unknown signature, or one for another audience, gets
+> `sender_authentication_failed` (401) before the database is read. A KMS connector that every
+> coprocessor refuses this way fails the request `unprocessable`, final [...].
+
+> A request whose body does not decode is refused before the cache.

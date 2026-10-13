@@ -4,14 +4,13 @@
 use super::delegation::DelegationFailure;
 use super::encrypted_store::EncryptedStoreFailure;
 use super::handle_binding::HandleBindingFailure;
-use super::proof::ProofReadError;
+use super::proof::{ProofReadError, refuses_the_sender};
 use super::public_decrypt::PublicDecryptFailure;
 use super::snapshot::SnapshotError;
 use super::watermark::{WatermarkFailure, WindowFailure};
 use crate::core::event_processor::{RequestCheckError, RequestCheckKind};
 use kms_connector_api::ErrorCode;
 use solana_pubkey::Pubkey;
-use zama_solana_merkle_proofs::ErrorCode as ProofErrorCode;
 use zama_solana_permit::PermitError;
 
 /// An account the Connector read at an address only the host program can write, or a store the
@@ -167,18 +166,15 @@ impl SnapshotError {
 
 impl ProofReadError {
     /// A proof read failure is the coprocessors', except when every coprocessor refused this
-    /// connector as a sender: its signer is in no live KMS context the coprocessors have read, or
-    /// its request signature does not verify. A coprocessor reads the KMS tx-senders of the live
-    /// contexts at the finalized block and refreshes them every 60 s, and a signature the
-    /// connector builds wrongly stays wrong, so neither recovers within relayer-http's retries and
-    /// the refusal is final. For the first cause this is EVM's outcome: a node outside the KMS
-    /// context answers `unprocessable`.
+    /// connector as a sender (an RFC 038 `auth_*` code other than `auth_expired`): its signer is in
+    /// no live KMS context the coprocessors have read, or its request signature does not verify.
+    /// A coprocessor reads the KMS tx-senders of the live contexts at the finalized block and
+    /// refreshes them every 60 s, and a signature the connector builds wrongly stays wrong, so
+    /// neither recovers within relayer-http's retries and the refusal is final. For the first
+    /// cause this is EVM's outcome: a node outside the KMS context answers `unprocessable`.
     pub fn class(&self) -> FailureClass {
         match self {
-            Self::Refused {
-                code: ProofErrorCode::SenderAuthenticationFailed,
-                ..
-            } => REFUSED_AS_SENDER,
+            Self::Refused { code, .. } if refuses_the_sender(*code) => REFUSED_AS_SENDER,
             Self::Unavailable { .. }
             | Self::Refused { .. }
             | Self::ResponseLengthMismatch { .. } => UPSTREAM_TRANSIENT,
@@ -273,6 +269,7 @@ mod tests {
     use super::*;
     use crate::core::event_processor::ProcessingErrorKind;
     use zama_solana_acl::DeadRow;
+    use zama_solana_merkle_proofs::ErrorCode as ProofErrorCode;
 
     const KEY: [u8; 32] = [7; 32];
     const INVALID: InvalidHostRecord = InvalidHostRecord {
@@ -443,11 +440,29 @@ mod tests {
                 RETRY,
             ),
             (
-                AuthorizationFailure::ProofRead(refused(
-                    ProofErrorCode::SenderAuthenticationFailed,
-                )),
+                AuthorizationFailure::ProofRead(refused(ProofErrorCode::AuthMissing)),
                 REFUSED_AS_SENDER,
                 TERMINAL,
+            ),
+            (
+                AuthorizationFailure::ProofRead(refused(ProofErrorCode::AuthMalformed)),
+                REFUSED_AS_SENDER,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::ProofRead(refused(ProofErrorCode::AuthUnknownSigner)),
+                REFUSED_AS_SENDER,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::ProofRead(refused(ProofErrorCode::AuthBodyMismatch)),
+                REFUSED_AS_SENDER,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::ProofRead(refused(ProofErrorCode::AuthExpired)),
+                NETWORK,
+                RETRY,
             ),
             (
                 AuthorizationFailure::ProofRead(refused(ProofErrorCode::Overloaded)),
@@ -568,9 +583,7 @@ mod tests {
                 RETRY,
             ),
             (
-                PublicDecryptFailure::ProofRead(refused(
-                    ProofErrorCode::SenderAuthenticationFailed,
-                )),
+                PublicDecryptFailure::ProofRead(refused(ProofErrorCode::AuthUnknownSigner)),
                 REFUSED_AS_SENDER,
                 TERMINAL,
             ),
