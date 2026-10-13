@@ -11,6 +11,7 @@ use super::watermark::{WatermarkFailure, WindowFailure};
 use crate::core::event_processor::{RequestCheckError, RequestCheckKind};
 use kms_connector_api::ErrorCode;
 use solana_pubkey::Pubkey;
+use zama_solana_merkle_proofs::ErrorCode as ProofErrorCode;
 use zama_solana_permit::PermitError;
 
 /// An account the Connector read at an address only the host program can write, or a store the
@@ -66,7 +67,8 @@ pub enum AuthorizationFailure {
 /// read now is transient, and host state that grants no access is an ACL denial. A host record the
 /// host program could not have written is not the user's permission state, so it is
 /// unprocessable. A proof record its coprocessor knows is wrong is the coprocessors' failure, so it
-/// is transient.
+/// is transient. A request every coprocessor refused this connector as a sender for is
+/// unprocessable.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct FailureClass {
     pub check: RequestCheckKind,
@@ -97,6 +99,11 @@ const ACL_DENIED: FailureClass = class(RequestCheckKind::Acl, ErrorCode::AclDeni
 /// Access that no later attempt can grant: the request itself names the wrong thing.
 const ACL_REFUSED: FailureClass = class(RequestCheckKind::Acl, ErrorCode::AclDenied, false);
 const UNPROCESSABLE: FailureClass = class(RequestCheckKind::Acl, ErrorCode::Unprocessable, false);
+const REFUSED_AS_SENDER: FailureClass = class(
+    RequestCheckKind::KmsContext,
+    ErrorCode::Unprocessable,
+    false,
+);
 
 impl AuthorizationFailure {
     pub fn class(&self) -> FailureClass {
@@ -159,10 +166,22 @@ impl SnapshotError {
 }
 
 impl ProofReadError {
-    /// Every proof read failure is the coprocessors'.
+    /// A proof read failure is the coprocessors', except when every coprocessor refused this
+    /// connector as a sender: its signer is in no live KMS context the coprocessors have read, or
+    /// its request signature does not verify. A coprocessor reads the KMS tx-senders of the live
+    /// contexts at the finalized block and refreshes them every 60 s, and a signature the
+    /// connector builds wrongly stays wrong, so neither recovers within relayer-http's retries and
+    /// the refusal is final. For the first cause this is EVM's outcome: a node outside the KMS
+    /// context answers `unprocessable`.
     pub fn class(&self) -> FailureClass {
         match self {
-            Self::Unavailable { .. } | Self::ResponseLengthMismatch { .. } => UPSTREAM_TRANSIENT,
+            Self::Refused {
+                code: ProofErrorCode::SenderAuthenticationFailed,
+                ..
+            } => REFUSED_AS_SENDER,
+            Self::Unavailable { .. }
+            | Self::Refused { .. }
+            | Self::ResponseLengthMismatch { .. } => UPSTREAM_TRANSIENT,
         }
     }
 }
@@ -273,6 +292,16 @@ mod tests {
     /// ACL family, `unprocessable`.
     const UNPROCESSABLE: (RequestCheckKind, ErrorCode) =
         (RequestCheckKind::Acl, ErrorCode::Unprocessable);
+    /// KMS context family, `unprocessable`.
+    const REFUSED_AS_SENDER: (RequestCheckKind, ErrorCode) =
+        (RequestCheckKind::KmsContext, ErrorCode::Unprocessable);
+
+    fn refused(code: ProofErrorCode) -> ProofReadError {
+        ProofReadError::Refused {
+            code,
+            reason: "refused".into(),
+        }
+    }
 
     use ProcessingErrorKind::{Irrecoverable as TERMINAL, Recoverable as RETRY};
 
@@ -414,6 +443,18 @@ mod tests {
                 RETRY,
             ),
             (
+                AuthorizationFailure::ProofRead(refused(
+                    ProofErrorCode::SenderAuthenticationFailed,
+                )),
+                REFUSED_AS_SENDER,
+                TERMINAL,
+            ),
+            (
+                AuthorizationFailure::ProofRead(refused(ProofErrorCode::Overloaded)),
+                NETWORK,
+                RETRY,
+            ),
+            (
                 AuthorizationFailure::ProofRead(ProofReadError::ResponseLengthMismatch {
                     requested: 1,
                     returned: 0,
@@ -525,6 +566,13 @@ mod tests {
                 PublicDecryptFailure::ProofRead(unavailable()),
                 NETWORK,
                 RETRY,
+            ),
+            (
+                PublicDecryptFailure::ProofRead(refused(
+                    ProofErrorCode::SenderAuthenticationFailed,
+                )),
+                REFUSED_AS_SENDER,
+                TERMINAL,
             ),
             (
                 PublicDecryptFailure::HandleBinding {

@@ -929,6 +929,67 @@ async fn an_unavailable_coprocessor_leaves_the_batch_to_one_that_serves() {
     assert_eq!(results, vec![Ok(())]);
 }
 
+/// Through the production client: a coprocessor refuses with `sender_authentication_failed` a
+/// connector whose signer is in no KMS context it has read. When every coprocessor refuses it, the
+/// request fails for good as `unprocessable`; any other failure leaves it to a later attempt.
+#[rstest]
+#[case::every_coprocessor_refuses_the_sender(
+    401,
+    "sender_authentication_failed",
+    ErrorCode::Unprocessable,
+    false
+)]
+#[case::another_coprocessor_is_overloaded(503, "overloaded", ErrorCode::UpstreamTransient, true)]
+#[tokio::test]
+async fn a_sender_refusal_is_final_only_from_every_coprocessor(
+    #[case] other_status: u16,
+    #[case] other_code: &str,
+    #[case] code: ErrorCode,
+    #[case] recoverable: bool,
+) {
+    use mocktail::{StatusCode, server::MockServer};
+    async fn refusing(name: &'static str, status: u16, code: &str) -> MockServer {
+        let body = serde_json::to_vec(&serde_json::json!({
+            "code": code,
+            "message": "refused",
+            "retryable": false,
+        }))
+        .unwrap();
+        let mut coprocessor = MockServer::new_http(name);
+        coprocessor.mock(move |when, then| {
+            when.post();
+            then.status(StatusCode::from_u16(status).unwrap())
+                .bytes(body.clone());
+        });
+        coprocessor.start().await.unwrap();
+        coprocessor
+    }
+    let (_, account, [entry, _]) = two_allowed_queries();
+    let not_a_sender = refusing("not-a-sender", 401, "sender_authentication_failed").await;
+    let other = refusing("other", other_status, other_code).await;
+    let client = proof_client(
+        &[
+            not_a_sender.base_url().unwrap().clone(),
+            other.base_url().unwrap().clone(),
+        ],
+        proof_http_client(Duration::from_secs(10)).unwrap(),
+    );
+    let key = Wallet::new(1).pubkey();
+
+    let error = verify_proofs(&client, &[entry], |handle, outcome| {
+        check_handle_binding(&account, B256::new(*handle), key, outcome)
+    })
+    .await
+    .unwrap_err();
+
+    let class = error.class();
+    assert_eq!(
+        (class.code, class.recoverable),
+        (code, recoverable),
+        "{error}"
+    );
+}
+
 /// A duplicate handle is legal, as on the EVM path, where the Gateway does not deduplicate: both
 /// occurrences of an authorized handle are authorized.
 #[tokio::test]
