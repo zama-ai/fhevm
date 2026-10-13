@@ -321,11 +321,9 @@ impl<'id> FheExecutionBuilder<'id> {
         self.budget.total()
     }
 
-    /// Validates the accumulated execution and lowers it to an [`FheExecution`].
-    ///
-    /// Mirrors the host preflight checks (non-empty steps, one application per execution) so a
-    /// malformed execution fails locally instead of on-chain; the step cap needs no re-check
-    /// because [`commit_step`](Self::commit_step) is the only way steps grow.
+    /// Lowers the accumulated execution to an [`FheExecution`]; an empty one is rejected. The
+    /// step cap needs no re-check because [`commit_step`](Self::commit_step) is the only way
+    /// steps grow.
     ///
     pub(crate) fn finish(self) -> Result<FheExecution> {
         self.finish_returning(Vec::new())

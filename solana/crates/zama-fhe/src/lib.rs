@@ -1,13 +1,13 @@
 //! App-facing helpers for preparing one `zama-host` `fhe_execute` invocation.
 //!
 //! An [`FheExecution`] is that invocation: an ordered walk of dependent steps, its interned
-//! constant dictionary, and the dynamic account list its `u8` indices address, sealed together and
-//! validated once. It is deliberately not a batch — the steps are not independent items processed
+//! constant dictionary, and the dynamic account list its `u8` indices address, sealed together. It
+//! is deliberately not a batch — the steps are not independent items processed
 //! together, each one reads what the step before it produced.
 //!
 //! This crate targets the role-aware host ABI. App code describes encrypted
-//! operands and persistent outputs by pubkey; [`FheExecutionBuilder`] validates the execution,
-//! assigns host account indices, and records the signer/writable requirements for
+//! operands and persistent outputs by pubkey; [`FheExecutionBuilder`] assigns host account
+//! indices, and records the signer/writable requirements for
 //! every dynamic account. With the `cpi` feature, [`FheExecution::resolve_accounts`]
 //! preflights the dynamic account set and [`FheExecution::invoke`] turns the execution plus
 //! those resolved accounts into the exact `zama-host` CPI. That build, resolve,

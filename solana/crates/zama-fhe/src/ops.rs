@@ -3,13 +3,12 @@
 //! Public API surface: app programs. The op methods mirror the host's op set one-for-one on
 //! purpose — an app author who can call `add` must be able to call `mul`, `shl`, or `is_in` — so
 //! the surface is complete by design and is not trimmed to whatever the demo programs happen to
-//! use. The host-side cost table and the operand validation are what keep it honest.
+//! use. The host-side cost table and the host's operand validation are what keep it honest.
 //!
-//! Every method validates its operands, then appends through
-//! [`FheExecutionBuilder::commit_step`], which enforces the step ceiling; `builder.rs` lists all
-//! three ceilings. Heap admission is [`crate::heap_tally::HeapBudget`]: intern
-//! tables grow through `try_push`. `verified_input` registers attestations on the same budget;
-//! it is not a step.
+//! Every method appends through [`FheExecutionBuilder::commit_step`], which enforces the step
+//! ceiling; `builder.rs` lists all three ceilings. Heap admission is
+//! [`crate::heap_tally::HeapBudget`]: intern tables grow through `try_push`. `verified_input`
+//! registers attestations on the same budget; it is not a step.
 
 use zama_host::{
     is_mul_div_fhe_type, max_reduction_operands, CoprocessorInputAttestation, FheBinaryOpCode,

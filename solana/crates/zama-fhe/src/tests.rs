@@ -259,19 +259,17 @@ fn verified_input_rejects_type_mismatch() {
 #[test]
 fn build_propagates_closure_and_finish_errors() {
     let primary_authority = Pubkey::new_unique();
+    let balance =
+        typed_store_slot::<Uint<64>>(balance_handle(1), test_store_slot(primary_authority, 1))
+            .unwrap();
     let error = match FheExecution::build(execution_authority(primary_authority), |builder| {
-        builder.binary_op(
-            FheBinaryOpCode::Ge,
-            scalar_operand_u64(1),
-            scalar_operand_u64(2),
-            FheType::BOOL,
-        )?;
+        builder.div(balance, Scalar::<Uint<64>>::u64(0))?;
         Ok(())
     }) {
         Ok(_) => panic!("invalid execution unexpectedly built"),
         Err(error) => error,
     };
-    assert_eq!(error, FheExecutionError::ScalarLhsOperand);
+    assert_eq!(error, FheExecutionError::DivisionByZero);
 
     let error = match FheExecution::build(execution_authority(primary_authority), |_builder| Ok(()))
     {
