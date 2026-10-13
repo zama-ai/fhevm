@@ -20,6 +20,7 @@ The rules every agent and reviewer applies to the Solana work: the code `AGENTS.
     - Keep every outcome and cut every line no outcome needs. Every review includes a lean pass that asks, for each added or kept line, which outcome needs it.
     - Every PR states its net handwritten line change, generated code excluded, and what it cut. A PR that grows handwritten code names the outcome that needs the growth.
     - A cut keeps the evidence: a test that fails on a real defect stays (rule 15).
+    - A cut stays inside our own diff against main: it removes or reverts lines this branch added, never lines main owns, as rule 3 bounds.
 6. **Public interfaces are contracts.** Stable numeric error codes with the table published in the SDK. Package manifests (dependencies, peers, exports) are checked, and every package is install-tested from its packed tarball.
 
 ## Security
