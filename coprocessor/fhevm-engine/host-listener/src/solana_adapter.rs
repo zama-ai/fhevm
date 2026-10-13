@@ -6,17 +6,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::database::computation::{Computation, Operand};
+use crate::database::computation::Computation;
 use alloy_primitives::FixedBytes;
-use fhevm_engine_common::types::SupportedFheOperations as O;
 use sqlx::Error as SqlxError;
-use Operand::{Clear as P, Encrypted as H};
-
-use zama_host::records::{
-    FheBinaryOp, FheIsIn, FheMulDiv, FheRand, FheRandBounded, FheSum,
-    FheTernaryOp, FheUnaryOp, TrivialEncrypt,
-};
-use zama_host::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
 
 use crate::cmd::block_history::BlockSummary;
 use crate::database::dependence_chains::dependence_chains;
@@ -34,15 +26,7 @@ pub struct SolanaMaterialRequest {
 
 #[derive(Clone, Debug)]
 pub enum SolanaHostRecord {
-    FheBinaryOp(FheBinaryOp),
-    FheTernaryOp(FheTernaryOp),
-    TrivialEncrypt(TrivialEncrypt),
-    FheRand(FheRand),
-    FheRandBounded(FheRandBounded),
-    FheUnaryOp(FheUnaryOp),
-    FheSum(FheSum),
-    FheIsIn(FheIsIn),
-    FheMulDiv(FheMulDiv),
+    Computation(Computation),
     MaterialRequest(SolanaMaterialRequest),
 }
 
@@ -85,7 +69,7 @@ pub fn normalize_solana_records_for_db(
     records: impl IntoIterator<Item = SolanaHostRecord>,
     transaction_id: TransactionId,
     block: SolanaBlockMeta,
-) -> Result<(Vec<LogTfhe>, Vec<SolanaMaterialRequest>), String> {
+) -> (Vec<LogTfhe>, Vec<SolanaMaterialRequest>) {
     let records: Vec<SolanaHostRecord> = records.into_iter().collect();
     let stored: HashSet<Handle> = records
         .iter()
@@ -96,64 +80,18 @@ pub fn normalize_solana_records_for_db(
         .collect();
     let mut tfhe_logs = Vec::new();
     let mut material_requests = Vec::new();
-    for (record_index, record) in records.into_iter().enumerate() {
-        let computation = match record {
-            SolanaHostRecord::FheBinaryOp(record) => binary_computation(record),
-            SolanaHostRecord::FheTernaryOp(record) => {
-                ternary_computation(record)
-            }
-            SolanaHostRecord::TrivialEncrypt(record) => {
-                trivial_computation(record)
-            }
-            SolanaHostRecord::FheRand(record) => random_computation(record),
-            SolanaHostRecord::FheRandBounded(record) => {
-                bounded_random_computation(record)
-            }
-            SolanaHostRecord::FheUnaryOp(record) => unary_computation(record),
-            SolanaHostRecord::FheSum(record) => Computation::single(
-                O::FheSum,
-                record
-                    .operands
-                    .into_iter()
-                    .map(Operand::encrypted)
-                    .collect(),
-                record.result.into(),
-            ),
-            SolanaHostRecord::FheIsIn(record) => Computation::single(
-                O::FheIsIn,
-                std::iter::once(record.value)
-                    .chain(record.set)
-                    .map(Operand::encrypted)
-                    .collect(),
-                record.result.into(),
-            ),
-            SolanaHostRecord::FheMulDiv(record) => Computation::single(
-                O::FheMulDiv,
-                vec![
-                    H(record.factor1.into()),
-                    Operand::binary_rhs(record.factor2.into(), record.scalar),
-                    P(record.divisor.to_vec()),
-                ],
-                record.result.into(),
-            ),
+    for record in records {
+        match record {
+            SolanaHostRecord::Computation(computation) => tfhe_logs
+                .push(to_log_tfhe(computation, transaction_id, block, &stored)),
             SolanaHostRecord::MaterialRequest(request) => {
-                material_requests.push(request);
-                continue;
+                material_requests.push(request)
             }
-        }.map_err(|reason| format!(
-            "Solana computation at block height {}, transaction ID {transaction_id}, record {record_index}: {reason}",
-            block.block_number,
-        ))?;
-        tfhe_logs.push(to_log_tfhe(
-            computation,
-            transaction_id,
-            block,
-            &stored,
-        ));
+        }
     }
 
     dedup_material_requests(&mut material_requests);
-    Ok((tfhe_logs, material_requests))
+    (tfhe_logs, material_requests)
 }
 
 /// Ingests ordered transaction groups from one sealed block. Dependency grouping sees the whole
@@ -169,8 +107,7 @@ pub async fn insert_solana_block_records(
     let mut material_requests = Vec::new();
     for (transaction_id, records) in transactions {
         let (logs, requests) =
-            normalize_solana_records_for_db(records, transaction_id, block)
-                .map_err(SqlxError::Protocol)?;
+            normalize_solana_records_for_db(records, transaction_id, block);
         tfhe_logs.extend(logs);
         material_requests.extend(
             requests
@@ -322,452 +259,16 @@ fn to_log_tfhe(
     }
 }
 
-fn binary_computation(event: FheBinaryOp) -> Result<Computation, String> {
-    let operation = match event.op {
-        FheBinaryOpCode::Add => O::FheAdd,
-        FheBinaryOpCode::Sub => O::FheSub,
-        FheBinaryOpCode::Mul => O::FheMul,
-        FheBinaryOpCode::Div => O::FheDiv,
-        FheBinaryOpCode::Rem => O::FheRem,
-        FheBinaryOpCode::And => O::FheBitAnd,
-        FheBinaryOpCode::Or => O::FheBitOr,
-        FheBinaryOpCode::Xor => O::FheBitXor,
-        FheBinaryOpCode::Shl => O::FheShl,
-        FheBinaryOpCode::Shr => O::FheShr,
-        FheBinaryOpCode::Rotl => O::FheRotl,
-        FheBinaryOpCode::Rotr => O::FheRotr,
-        FheBinaryOpCode::Eq => O::FheEq,
-        FheBinaryOpCode::Ne => O::FheNe,
-        FheBinaryOpCode::Ge => O::FheGe,
-        FheBinaryOpCode::Gt => O::FheGt,
-        FheBinaryOpCode::Le => O::FheLe,
-        FheBinaryOpCode::Lt => O::FheLt,
-        FheBinaryOpCode::Min => O::FheMin,
-        FheBinaryOpCode::Max => O::FheMax,
-    };
-    Computation::single(
-        operation,
-        vec![
-            H(event.lhs.into()),
-            Operand::binary_rhs(event.rhs.into(), event.scalar),
-        ],
-        event.result.into(),
-    )
-}
-
-fn ternary_computation(event: FheTernaryOp) -> Result<Computation, String> {
-    let operation = match event.op {
-        FheTernaryOpCode::IfThenElse => O::FheIfThenElse,
-    };
-    Computation::single(
-        operation,
-        vec![
-            H(event.control.into()),
-            H(event.if_true.into()),
-            H(event.if_false.into()),
-        ],
-        event.result.into(),
-    )
-}
-
-fn trivial_computation(event: TrivialEncrypt) -> Result<Computation, String> {
-    Ok(Computation::trivial(
-        event.plaintext,
-        event.fhe_type,
-        event.result.into(),
-    ))
-}
-
-fn random_computation(event: FheRand) -> Result<Computation, String> {
-    Computation::single(
-        O::FheRand,
-        vec![P(event.seed.to_vec()), P(vec![event.fhe_type])],
-        event.result.into(),
-    )
-}
-
-fn bounded_random_computation(
-    event: FheRandBounded,
-) -> Result<Computation, String> {
-    Computation::single(
-        O::FheRandBounded,
-        vec![
-            P(event.seed.to_vec()),
-            P(event.upper_bound.to_vec()),
-            P(vec![event.fhe_type]),
-        ],
-        event.result.into(),
-    )
-}
-
-fn unary_computation(event: FheUnaryOp) -> Result<Computation, String> {
-    let mut operands = vec![H(event.operand.into())];
-    let operation = match event.op {
-        FheUnaryOpCode::Neg => O::FheNeg,
-        FheUnaryOpCode::Not => O::FheNot,
-        FheUnaryOpCode::Cast => {
-            operands.push(P(vec![event.result[30]]));
-            O::FheCast
-        }
-    };
-    Computation::single(operation, operands, event.result.into())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::computation::Operand;
+    use fhevm_engine_common::types::SupportedFheOperations as O;
     use time::{Date, Month, PrimitiveDateTime, Time};
-    use zama_host::EVENT_VERSION;
-
-    #[test]
-    fn malformed_collection_fails_normalization() {
-        let transaction_id = TransactionId::from([7; 32]);
-        let result = normalize_solana_records_for_db(
-            [SolanaHostRecord::FheSum(FheSum {
-                version: EVENT_VERSION,
-                fhe_type: 5,
-                operands: vec![[1; 32]; 257],
-                result: [2; 32],
-            })],
-            transaction_id,
-            SolanaBlockMeta {
-                block_number: 1,
-                block_timestamp: PrimitiveDateTime::MIN,
-                block_hash: [1; 32],
-                parent_hash: [0; 32],
-            },
-        );
-        let error = result.unwrap_err();
-        assert!(error.contains(&format!(
-            "block height 1, transaction ID {transaction_id}, record 0",
-        )));
-        assert!(error.contains("FheSum: expected 0..=256 encrypted operands"));
-        assert!(error.contains("received 257 operands"));
-    }
+    use Operand::{Clear as P, Encrypted as H};
 
     fn handle(byte: u8) -> Handle {
         Handle::from([byte; 32])
-    }
-
-    #[test]
-    fn maps_binary_add_to_computation() {
-        let mapped = binary_computation(FheBinaryOp {
-            version: EVENT_VERSION,
-            op: FheBinaryOpCode::Add,
-            lhs: [1; 32],
-            rhs: [2; 32],
-            scalar: false,
-            result: [3; 32],
-        })
-        .unwrap();
-
-        assert_eq!(
-            mapped,
-            Computation::single(
-                O::FheAdd,
-                vec![H(handle(1)), H(handle(2))],
-                handle(3)
-            )
-            .unwrap()
-        );
-    }
-
-    #[test]
-    fn maps_binary_ge_to_computation() {
-        let mapped = binary_computation(FheBinaryOp {
-            version: EVENT_VERSION,
-            op: FheBinaryOpCode::Ge,
-            lhs: [1; 32],
-            rhs: [2; 32],
-            scalar: false,
-            result: [3; 32],
-        })
-        .unwrap();
-
-        assert_eq!(
-            mapped,
-            Computation::single(
-                O::FheGe,
-                vec![H(handle(1)), H(handle(2))],
-                handle(3)
-            )
-            .unwrap()
-        );
-    }
-
-    #[test]
-    fn maps_ternary_if_then_else_to_computation() {
-        let mapped = ternary_computation(FheTernaryOp {
-            version: EVENT_VERSION,
-            op: FheTernaryOpCode::IfThenElse,
-            control: [1; 32],
-            if_true: [2; 32],
-            if_false: [3; 32],
-            result: [4; 32],
-        })
-        .unwrap();
-
-        assert_eq!(
-            mapped,
-            Computation::single(
-                O::FheIfThenElse,
-                vec![H(handle(1)), H(handle(2)), H(handle(3))],
-                handle(4)
-            )
-            .unwrap()
-        );
-    }
-
-    #[test]
-    fn maps_trivial_encrypt_to_computation() {
-        let mut plaintext = [0_u8; 32];
-        plaintext[31] = 7;
-
-        let mapped = trivial_computation(TrivialEncrypt {
-            version: EVENT_VERSION,
-            plaintext,
-            fhe_type: 5,
-            result: [8; 32],
-        })
-        .unwrap();
-
-        assert_eq!(
-            mapped,
-            Computation::single(
-                O::FheTrivialEncrypt,
-                vec![P(plaintext.to_vec()), P(vec![5])],
-                handle(8)
-            )
-            .unwrap()
-        );
-    }
-
-    #[test]
-    fn maps_random_to_computation() {
-        let mapped = random_computation(FheRand {
-            version: EVENT_VERSION,
-            seed: [7; 16],
-            fhe_type: 5,
-            result: [8; 32],
-        })
-        .unwrap();
-
-        assert_eq!(
-            mapped,
-            Computation::single(
-                O::FheRand,
-                vec![P(vec![7; 16]), P(vec![5])],
-                handle(8)
-            )
-            .unwrap()
-        );
-    }
-
-    #[test]
-    fn binary_decoders_agree_on_operation_operand_order_and_scalar_encoding() {
-        use crate::contracts::{
-            TfheContract as C, TfheContract::TfheContractEvents as E,
-        };
-        let caller = alloy_primitives::Address::ZERO;
-        let lhs = handle(1);
-        let rhs = handle(2);
-        let result = handle(3);
-        for scalar in [false, true] {
-            let scalar_byte = FixedBytes::from([u8::from(scalar)]);
-            macro_rules! case {
-                ($op:ident, $event:ident) => {
-                    (
-                        FheBinaryOpCode::$op,
-                        O::$event,
-                        E::$event(C::$event {
-                            caller,
-                            lhs,
-                            rhs,
-                            scalarByte: scalar_byte,
-                            result,
-                        }),
-                    )
-                };
-            }
-            let cases = [
-                case!(Add, FheAdd),
-                case!(Sub, FheSub),
-                case!(Mul, FheMul),
-                case!(Div, FheDiv),
-                case!(Rem, FheRem),
-                case!(And, FheBitAnd),
-                case!(Or, FheBitOr),
-                case!(Xor, FheBitXor),
-                case!(Shl, FheShl),
-                case!(Shr, FheShr),
-                case!(Rotl, FheRotl),
-                case!(Rotr, FheRotr),
-                case!(Eq, FheEq),
-                case!(Ne, FheNe),
-                case!(Ge, FheGe),
-                case!(Gt, FheGt),
-                case!(Le, FheLe),
-                case!(Lt, FheLt),
-                case!(Min, FheMin),
-                case!(Max, FheMax),
-            ];
-            for (op, operation, evm) in cases {
-                let solana = binary_computation(FheBinaryOp {
-                    version: EVENT_VERSION,
-                    op,
-                    lhs: lhs.0,
-                    rhs: rhs.0,
-                    scalar,
-                    result: result.0,
-                })
-                .unwrap();
-                assert_eq!(
-                    solana,
-                    Computation::from_evm(&evm).unwrap().unwrap()
-                );
-                assert_eq!(solana.operation(), operation);
-                assert_eq!(
-                    solana
-                        .operands()
-                        .iter()
-                        .map(Operand::bytes)
-                        .collect::<Vec<_>>(),
-                    vec![lhs.to_vec(), rhs.to_vec()]
-                );
-                assert_eq!(solana.is_scalar(), scalar);
-                assert_eq!(
-                    solana.inputs(),
-                    if scalar { vec![lhs] } else { vec![lhs, rhs] }
-                );
-                assert_eq!(
-                    solana.boundary_mask(|_| false).unwrap()[31],
-                    if scalar { 1 } else { 3 }
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn native_special_operations_preserve_worker_operands() {
-        let result = [8; 32];
-        let version = EVENT_VERSION;
-        let cases = [
-            (
-                SolanaHostRecord::FheUnaryOp(FheUnaryOp {
-                    version,
-                    op: FheUnaryOpCode::Neg,
-                    operand: [1; 32],
-                    result,
-                }),
-                O::FheNeg,
-                vec![H(handle(1))],
-                false,
-            ),
-            (
-                SolanaHostRecord::FheUnaryOp(FheUnaryOp {
-                    version,
-                    op: FheUnaryOpCode::Not,
-                    operand: [1; 32],
-                    result,
-                }),
-                O::FheNot,
-                vec![H(handle(1))],
-                false,
-            ),
-            (
-                SolanaHostRecord::FheUnaryOp(FheUnaryOp {
-                    version,
-                    op: FheUnaryOpCode::Cast,
-                    operand: [1; 32],
-                    result,
-                }),
-                O::FheCast,
-                vec![H(handle(1)), P(vec![8])],
-                true,
-            ),
-            (
-                SolanaHostRecord::FheRandBounded(FheRandBounded {
-                    version,
-                    seed: [1; 16],
-                    upper_bound: [2; 32],
-                    fhe_type: 5,
-                    result,
-                }),
-                O::FheRandBounded,
-                vec![P(vec![1; 16]), P(vec![2; 32]), P(vec![5])],
-                true,
-            ),
-            (
-                SolanaHostRecord::FheSum(FheSum {
-                    version,
-                    fhe_type: 5,
-                    operands: vec![[1; 32], [2; 32]],
-                    result,
-                }),
-                O::FheSum,
-                vec![H(handle(1)), H(handle(2))],
-                false,
-            ),
-            (
-                SolanaHostRecord::FheIsIn(FheIsIn {
-                    version,
-                    fhe_type: 5,
-                    value: [1; 32],
-                    set: vec![[2; 32], [3; 32]],
-                    result,
-                }),
-                O::FheIsIn,
-                vec![H(handle(1)), H(handle(2)), H(handle(3))],
-                false,
-            ),
-            (
-                SolanaHostRecord::FheMulDiv(FheMulDiv {
-                    version,
-                    factor1: [1; 32],
-                    factor2: [2; 32],
-                    divisor: [3; 32],
-                    scalar: false,
-                    result,
-                }),
-                O::FheMulDiv,
-                vec![H(handle(1)), H(handle(2)), P(vec![3; 32])],
-                false,
-            ),
-            (
-                SolanaHostRecord::FheMulDiv(FheMulDiv {
-                    version,
-                    factor1: [1; 32],
-                    factor2: [2; 32],
-                    divisor: [3; 32],
-                    scalar: true,
-                    result,
-                }),
-                O::FheMulDiv,
-                vec![H(handle(1)), P(vec![2; 32]), P(vec![3; 32])],
-                true,
-            ),
-        ];
-        for (record, operation, operands, scalar) in cases {
-            let (logs, requests) = normalize_solana_records_for_db(
-                [record],
-                TransactionId::ZERO,
-                SolanaBlockMeta {
-                    block_number: 1,
-                    block_timestamp: PrimitiveDateTime::MIN,
-                    block_hash: [1; 32],
-                    parent_hash: [0; 32],
-                },
-            )
-            .unwrap();
-            assert!(requests.is_empty());
-            assert_eq!(logs.len(), 1);
-            assert_eq!(
-                logs[0].computation,
-                Computation::single(operation, operands, result.into())
-                    .unwrap()
-            );
-            assert_eq!(logs[0].computation.is_scalar(), scalar);
-        }
     }
 
     #[test]
@@ -803,14 +304,11 @@ mod tests {
             Date::from_calendar_date(2026, Month::May, 9).unwrap(),
             Time::MIDNIGHT,
         );
-        let event = binary_computation(FheBinaryOp {
-            version: EVENT_VERSION,
-            op: FheBinaryOpCode::Sub,
-            lhs: [1; 32],
-            rhs: [2; 32],
-            scalar: true,
-            result: [3; 32],
-        })
+        let event = Computation::single(
+            O::FheSub,
+            vec![H(handle(1)), Operand::binary_rhs(handle(2), true)],
+            handle(3),
+        )
         .unwrap();
 
         let log = to_log_tfhe(
@@ -847,12 +345,11 @@ mod tests {
     }
 
     fn trivial(result: u8) -> SolanaHostRecord {
-        SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
-            version: EVENT_VERSION,
-            plaintext: [result; 32],
-            fhe_type: 5,
-            result: [result; 32],
-        })
+        SolanaHostRecord::Computation(Computation::trivial(
+            [result; 32],
+            5,
+            handle(result),
+        ))
     }
 
     fn stored(handle: u8) -> SolanaHostRecord {
@@ -865,8 +362,7 @@ mod tests {
             [trivial(3), trivial(4), stored(4)],
             TransactionId::from([7_u8; 64]),
             block(),
-        )
-        .unwrap();
+        );
 
         assert!(
             tfhe_logs[0].allowed_outputs.is_empty(),
@@ -885,8 +381,7 @@ mod tests {
             [trivial(3), trivial(3), stored(3)],
             TransactionId::from([7_u8; 64]),
             block(),
-        )
-        .unwrap();
+        );
 
         for log in &tfhe_logs {
             assert_eq!(log.allowed_outputs, HashSet::from([handle(3)]));
@@ -901,8 +396,7 @@ mod tests {
             [trivial(3), stored(9)],
             TransactionId::from([8_u8; 64]),
             block(),
-        )
-        .unwrap();
+        );
 
         assert!(tfhe_logs[0].allowed_outputs.is_empty());
         assert_eq!(material_requests, [material_request([9; 32])]);
@@ -928,8 +422,7 @@ mod tests {
                 block_hash: [1; 32],
                 parent_hash: [0; 32],
             },
-        )
-        .unwrap();
+        );
 
         assert_eq!(material_requests.len(), 2);
         assert!(material_requests
@@ -950,30 +443,31 @@ mod tests {
 
         let (tfhe_logs, material_requests) = normalize_solana_records_for_db(
             [
-                SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
-                    version: EVENT_VERSION,
-                    plaintext: {
+                SolanaHostRecord::Computation(Computation::trivial(
+                    {
                         let mut plaintext = [0_u8; 32];
                         plaintext[31] = 1;
                         plaintext
                     },
-                    fhe_type: 0,
-                    result: [1; 32],
-                }),
-                SolanaHostRecord::FheRand(FheRand {
-                    version: EVENT_VERSION,
-                    seed: [2; 16],
-                    fhe_type: 5,
-                    result: [2; 32],
-                }),
-                SolanaHostRecord::FheTernaryOp(FheTernaryOp {
-                    version: EVENT_VERSION,
-                    op: FheTernaryOpCode::IfThenElse,
-                    control: [1; 32],
-                    if_true: [2; 32],
-                    if_false: [1; 32],
-                    result: [3; 32],
-                }),
+                    0,
+                    handle(1),
+                )),
+                SolanaHostRecord::Computation(
+                    Computation::single(
+                        O::FheRand,
+                        vec![P(vec![2; 16]), P(vec![5])],
+                        handle(2),
+                    )
+                    .unwrap(),
+                ),
+                SolanaHostRecord::Computation(
+                    Computation::single(
+                        O::FheIfThenElse,
+                        vec![H(handle(1)), H(handle(2)), H(handle(1))],
+                        handle(3),
+                    )
+                    .unwrap(),
+                ),
             ],
             tx_id,
             SolanaBlockMeta {
@@ -982,8 +476,7 @@ mod tests {
                 block_hash: [1; 32],
                 parent_hash: [0; 32],
             },
-        )
-        .unwrap();
+        );
 
         assert!(material_requests.is_empty());
         assert_eq!(tfhe_logs.len(), 3);

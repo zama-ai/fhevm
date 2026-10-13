@@ -88,5 +88,4 @@ python3 scripts/authority_table.py --root "$ROOT"
 
 # Event-version constants are runtime u8s stamped on protocol events. The ABI
 # golden manifest (check_solana_abi.py above) pins both programs' versions from
-# their constants.rs; the host-listener's decoded op records use
-# zama_host::EVENT_VERSION directly, so no separate listener constant can drift.
+# their constants.rs.

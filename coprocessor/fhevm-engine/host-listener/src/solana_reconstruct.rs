@@ -1,8 +1,8 @@
 //! Reconstruct zama-host operations from an `fhe_execute` and its `FheExecutedEvent`.
 //!
-//! The execution walk emits one record per step. Records carry the result handles the host
-//! emitted, and each is re-derived through the program's own `computed_*` functions as a
-//! check.
+//! The execution walk emits one computation per step. Computations carry the result handles
+//! the host emitted, and each is re-derived through the program's own `computed_*` functions
+//! as a check.
 
 use std::collections::HashSet;
 
@@ -16,12 +16,12 @@ use zama_host::state::{
 };
 use zama_host::FheExecutedEvent;
 
-use crate::solana_adapter::SolanaHostRecord;
-use zama_host::records::{
-    FheBinaryOp, FheIsIn, FheMulDiv, FheRand, FheRandBounded, FheSum,
-    FheTernaryOp, FheUnaryOp, TrivialEncrypt,
-};
+use crate::database::computation::{Computation, Operand};
+use fhevm_engine_common::types::SupportedFheOperations as O;
+use zama_host::state::{FheBinaryOpCode, FheTernaryOpCode, FheUnaryOpCode};
+#[cfg(test)]
 use zama_host::EVENT_VERSION;
+use Operand::{Clear as P, Encrypted as H};
 
 use anchor_lang::prelude::Pubkey;
 
@@ -79,11 +79,11 @@ pub struct HandleMismatch {
     pub derived: [u8; 32],
 }
 
-/// Reconstructs the per-step op records of one `fhe_execute` from its instruction data
+/// Reconstructs the per-step computations of one `fhe_execute` from its instruction data
 /// and its `FheExecutedEvent`, mirroring the program's `walk_steps`.
 ///
-/// Every record carries the handle the host emitted, and operands resolve to the emitted
-/// handles of earlier steps, so a record names the chain's handles even where this
+/// Every computation carries the handle the host emitted, and operands resolve to the emitted
+/// handles of earlier steps, so a computation names the chain's handles even where this
 /// listener's derivation disagrees. Each result is also re-derived through the program's
 /// own `computed_*` functions from the decoded step and the emitted context; a result
 /// that differs is reported in `mismatches`, never substituted. Random steps use the
@@ -115,15 +115,14 @@ pub fn reconstruct_fhe_execute(
             .map(|entry| entry.seed)
     };
     let dictionary = &execution.dictionary;
-    let mut records: Vec<SolanaHostRecord> =
-        Vec::with_capacity(execution.steps.len());
+    let mut computations = Vec::with_capacity(execution.steps.len());
     let mut mismatches = Vec::new();
 
     for (index, step) in execution.steps.iter().enumerate() {
         let op_index = index as u16;
         let earlier = event.results.get(..index)?;
         let result = *event.results.get(index)?;
-        let (record, derived) = match step {
+        let (computation, derived) = match step {
             FheExecuteStep::Binary {
                 op,
                 lhs,
@@ -146,15 +145,10 @@ pub fn reconstruct_fhe_execute(
                     )?,
                     &ctx,
                 );
-                let record = SolanaHostRecord::FheBinaryOp(FheBinaryOp {
-                    version: EVENT_VERSION,
-                    op: *op,
-                    lhs: lhs_handle,
-                    rhs: rhs_handle,
-                    scalar,
-                    result,
-                });
-                (record, derived)
+                let computation = binary_computation(
+                    *op, lhs_handle, rhs_handle, scalar, result,
+                );
+                (computation, derived)
             }
             FheExecuteStep::Ternary {
                 op,
@@ -176,15 +170,8 @@ pub fn reconstruct_fhe_execute(
                     boundary_mask([Some(c), Some(t), Some(f)], produced_in_tx)?,
                     &ctx,
                 );
-                let record = SolanaHostRecord::FheTernaryOp(FheTernaryOp {
-                    version: EVENT_VERSION,
-                    op: *op,
-                    control: c,
-                    if_true: t,
-                    if_false: f,
-                    result,
-                });
-                (record, derived)
+                let computation = ternary_computation(*op, c, t, f, result);
+                (computation, derived)
             }
             FheExecuteStep::TrivialEncrypt {
                 plaintext,
@@ -193,25 +180,16 @@ pub fn reconstruct_fhe_execute(
             } => {
                 let derived =
                     computed_eval_trivial_handle(*plaintext, *fhe_type, &ctx);
-                let record = SolanaHostRecord::TrivialEncrypt(TrivialEncrypt {
-                    version: EVENT_VERSION,
-                    plaintext: *plaintext,
-                    fhe_type: *fhe_type,
-                    result,
-                });
-                (record, derived)
+                let computation =
+                    Computation::trivial(*plaintext, *fhe_type, result.into());
+                (computation, derived)
             }
             FheExecuteStep::Rand { fhe_type, .. } => {
                 let seed = seed_of(op_index)?;
                 let derived =
                     computed_rand_handle(seed, *fhe_type, program_id, chain_id);
-                let record = SolanaHostRecord::FheRand(FheRand {
-                    version: EVENT_VERSION,
-                    seed,
-                    fhe_type: *fhe_type,
-                    result,
-                });
-                (record, derived)
+                let computation = random_computation(seed, *fhe_type, result);
+                (computation, derived)
             }
             FheExecuteStep::Unary {
                 op,
@@ -227,13 +205,9 @@ pub fn reconstruct_fhe_execute(
                     boundary_mask([Some(operand_handle)], produced_in_tx)?,
                     &ctx,
                 );
-                let record = SolanaHostRecord::FheUnaryOp(FheUnaryOp {
-                    version: EVENT_VERSION,
-                    op: *op,
-                    operand: operand_handle,
-                    result,
-                });
-                (record, derived)
+                let computation =
+                    unary_computation(*op, operand_handle, result);
+                (computation, derived)
             }
             FheExecuteStep::RandBounded {
                 upper_bound,
@@ -248,14 +222,13 @@ pub fn reconstruct_fhe_execute(
                     program_id,
                     chain_id,
                 );
-                let record = SolanaHostRecord::FheRandBounded(FheRandBounded {
-                    version: EVENT_VERSION,
-                    upper_bound: *upper_bound,
+                let computation = bounded_random_computation(
                     seed,
-                    fhe_type: *fhe_type,
+                    *upper_bound,
+                    *fhe_type,
                     result,
-                });
-                (record, derived)
+                );
+                (computation, derived)
             }
             FheExecuteStep::Sum { operands, fhe_type } => {
                 let operand_handles: Vec<[u8; 32]> = operands
@@ -273,13 +246,8 @@ pub fn reconstruct_fhe_execute(
                     )?,
                     &ctx,
                 );
-                let record = SolanaHostRecord::FheSum(FheSum {
-                    version: EVENT_VERSION,
-                    operands: operand_handles,
-                    fhe_type: *fhe_type,
-                    result,
-                });
-                (record, derived)
+                let computation = sum_computation(operand_handles, result);
+                (computation, derived)
             }
             FheExecuteStep::IsIn {
                 value,
@@ -304,14 +272,9 @@ pub fn reconstruct_fhe_execute(
                     )?,
                     &ctx,
                 );
-                let record = SolanaHostRecord::FheIsIn(FheIsIn {
-                    version: EVENT_VERSION,
-                    value: value_handle,
-                    set: set_handles,
-                    fhe_type: *fhe_type,
-                    result,
-                });
-                (record, derived)
+                let computation =
+                    is_in_computation(value_handle, set_handles, result);
+                (computation, derived)
             }
             FheExecuteStep::MulDiv {
                 factor1,
@@ -338,15 +301,14 @@ pub fn reconstruct_fhe_execute(
                     )?,
                     &ctx,
                 );
-                let record = SolanaHostRecord::FheMulDiv(FheMulDiv {
-                    version: EVENT_VERSION,
-                    factor1: factor1_handle,
-                    factor2: factor2_handle,
-                    divisor: *divisor,
+                let computation = mul_div_computation(
+                    factor1_handle,
+                    factor2_handle,
+                    *divisor,
                     scalar,
                     result,
-                });
-                (record, derived)
+                );
+                (computation, derived)
             }
         };
         if derived != result {
@@ -357,10 +319,10 @@ pub fn reconstruct_fhe_execute(
             });
         }
         produced_in_tx.insert(result);
-        records.push(record);
+        computations.push(computation);
     }
     Some(ReconstructedExecution {
-        records,
+        computations,
         mismatches,
     })
 }
@@ -376,8 +338,152 @@ fn boundary_mask(
 }
 
 pub struct ReconstructedExecution {
-    pub records: Vec<SolanaHostRecord>,
+    pub computations: Vec<Computation>,
     pub mismatches: Vec<HandleMismatch>,
+}
+
+fn binary_computation(
+    op: FheBinaryOpCode,
+    lhs: [u8; 32],
+    rhs: [u8; 32],
+    scalar: bool,
+    result: [u8; 32],
+) -> Computation {
+    let operation = match op {
+        FheBinaryOpCode::Add => O::FheAdd,
+        FheBinaryOpCode::Sub => O::FheSub,
+        FheBinaryOpCode::Mul => O::FheMul,
+        FheBinaryOpCode::Div => O::FheDiv,
+        FheBinaryOpCode::Rem => O::FheRem,
+        FheBinaryOpCode::And => O::FheBitAnd,
+        FheBinaryOpCode::Or => O::FheBitOr,
+        FheBinaryOpCode::Xor => O::FheBitXor,
+        FheBinaryOpCode::Shl => O::FheShl,
+        FheBinaryOpCode::Shr => O::FheShr,
+        FheBinaryOpCode::Rotl => O::FheRotl,
+        FheBinaryOpCode::Rotr => O::FheRotr,
+        FheBinaryOpCode::Eq => O::FheEq,
+        FheBinaryOpCode::Ne => O::FheNe,
+        FheBinaryOpCode::Ge => O::FheGe,
+        FheBinaryOpCode::Gt => O::FheGt,
+        FheBinaryOpCode::Le => O::FheLe,
+        FheBinaryOpCode::Lt => O::FheLt,
+        FheBinaryOpCode::Min => O::FheMin,
+        FheBinaryOpCode::Max => O::FheMax,
+    };
+    Computation::single(
+        operation,
+        vec![H(lhs.into()), Operand::binary_rhs(rhs.into(), scalar)],
+        result.into(),
+    )
+    .expect("fixed-width operands")
+}
+
+fn ternary_computation(
+    op: FheTernaryOpCode,
+    control: [u8; 32],
+    if_true: [u8; 32],
+    if_false: [u8; 32],
+    result: [u8; 32],
+) -> Computation {
+    let operation = match op {
+        FheTernaryOpCode::IfThenElse => O::FheIfThenElse,
+    };
+    Computation::single(
+        operation,
+        vec![H(control.into()), H(if_true.into()), H(if_false.into())],
+        result.into(),
+    )
+    .expect("fixed-width operands")
+}
+
+fn random_computation(
+    seed: [u8; 16],
+    fhe_type: u8,
+    result: [u8; 32],
+) -> Computation {
+    Computation::single(
+        O::FheRand,
+        vec![P(seed.to_vec()), P(vec![fhe_type])],
+        result.into(),
+    )
+    .expect("fixed-width operands")
+}
+
+fn bounded_random_computation(
+    seed: [u8; 16],
+    upper_bound: [u8; 32],
+    fhe_type: u8,
+    result: [u8; 32],
+) -> Computation {
+    Computation::single(
+        O::FheRandBounded,
+        vec![P(seed.to_vec()), P(upper_bound.to_vec()), P(vec![fhe_type])],
+        result.into(),
+    )
+    .expect("fixed-width operands")
+}
+
+fn unary_computation(
+    op: FheUnaryOpCode,
+    operand: [u8; 32],
+    result: [u8; 32],
+) -> Computation {
+    let mut operands = vec![H(operand.into())];
+    let operation = match op {
+        FheUnaryOpCode::Neg => O::FheNeg,
+        FheUnaryOpCode::Not => O::FheNot,
+        FheUnaryOpCode::Cast => {
+            operands.push(P(vec![result[30]]));
+            O::FheCast
+        }
+    };
+    Computation::single(operation, operands, result.into())
+        .expect("fixed-width operands")
+}
+
+fn sum_computation(operands: Vec<[u8; 32]>, result: [u8; 32]) -> Computation {
+    Computation::single(
+        O::FheSum,
+        operands.into_iter().map(Operand::encrypted).collect(),
+        result.into(),
+    )
+    .expect("boundary_mask caps operands at 256")
+}
+
+fn is_in_computation(
+    value: [u8; 32],
+    set: Vec<[u8; 32]>,
+    result: [u8; 32],
+) -> Computation {
+    Computation::single(
+        O::FheIsIn,
+        std::iter::once(value)
+            .chain(set)
+            .map(Operand::encrypted)
+            .collect(),
+        result.into(),
+    )
+    .expect("boundary_mask caps operands at 256")
+}
+
+fn mul_div_computation(
+    factor1: [u8; 32],
+    factor2: [u8; 32],
+    divisor: [u8; 32],
+    scalar: bool,
+    result: [u8; 32],
+) -> Computation {
+    Computation::single(
+        O::FheMulDiv,
+        vec![
+            H(factor1.into()),
+            Operand::binary_rhs(factor2.into(), scalar),
+            P(divisor.to_vec()),
+        ],
+        result.into(),
+    )
+    .expect("fixed-width operands")
 }
 
 /// The event a host would emit for `execution`: its results are this listener's own
@@ -420,7 +526,248 @@ pub(crate) fn event_with_derived_results(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zama_host::state::{FheBinaryOpCode, FheUnaryOpCode};
+    use crate::database::tfhe_event_propagate::Handle;
+    use alloy_primitives::FixedBytes;
+
+    fn handle(byte: u8) -> Handle {
+        Handle::from([byte; 32])
+    }
+
+    #[test]
+    fn maps_binary_add_to_computation() {
+        let mapped = binary_computation(
+            FheBinaryOpCode::Add,
+            [1; 32],
+            [2; 32],
+            false,
+            [3; 32],
+        );
+
+        assert_eq!(
+            mapped,
+            Computation::single(
+                O::FheAdd,
+                vec![H(handle(1)), H(handle(2))],
+                handle(3)
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn maps_binary_ge_to_computation() {
+        let mapped = binary_computation(
+            FheBinaryOpCode::Ge,
+            [1; 32],
+            [2; 32],
+            false,
+            [3; 32],
+        );
+
+        assert_eq!(
+            mapped,
+            Computation::single(
+                O::FheGe,
+                vec![H(handle(1)), H(handle(2))],
+                handle(3)
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn maps_ternary_if_then_else_to_computation() {
+        let mapped = ternary_computation(
+            FheTernaryOpCode::IfThenElse,
+            [1; 32],
+            [2; 32],
+            [3; 32],
+            [4; 32],
+        );
+
+        assert_eq!(
+            mapped,
+            Computation::single(
+                O::FheIfThenElse,
+                vec![H(handle(1)), H(handle(2)), H(handle(3))],
+                handle(4)
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn maps_trivial_encrypt_to_computation() {
+        let mut plaintext = [0_u8; 32];
+        plaintext[31] = 7;
+
+        let mapped = Computation::trivial(plaintext, 5, handle(8));
+
+        assert_eq!(
+            mapped,
+            Computation::single(
+                O::FheTrivialEncrypt,
+                vec![P(plaintext.to_vec()), P(vec![5])],
+                handle(8)
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn maps_random_to_computation() {
+        let mapped = random_computation([7; 16], 5, [8; 32]);
+
+        assert_eq!(
+            mapped,
+            Computation::single(
+                O::FheRand,
+                vec![P(vec![7; 16]), P(vec![5])],
+                handle(8)
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn binary_decoders_agree_on_operation_operand_order_and_scalar_encoding() {
+        use crate::contracts::{
+            TfheContract as C, TfheContract::TfheContractEvents as E,
+        };
+        let caller = alloy_primitives::Address::ZERO;
+        let lhs = handle(1);
+        let rhs = handle(2);
+        let result = handle(3);
+        for scalar in [false, true] {
+            let scalar_byte = FixedBytes::from([u8::from(scalar)]);
+            macro_rules! case {
+                ($op:ident, $event:ident) => {
+                    (
+                        FheBinaryOpCode::$op,
+                        O::$event,
+                        E::$event(C::$event {
+                            caller,
+                            lhs,
+                            rhs,
+                            scalarByte: scalar_byte,
+                            result,
+                        }),
+                    )
+                };
+            }
+            let cases = [
+                case!(Add, FheAdd),
+                case!(Sub, FheSub),
+                case!(Mul, FheMul),
+                case!(Div, FheDiv),
+                case!(Rem, FheRem),
+                case!(And, FheBitAnd),
+                case!(Or, FheBitOr),
+                case!(Xor, FheBitXor),
+                case!(Shl, FheShl),
+                case!(Shr, FheShr),
+                case!(Rotl, FheRotl),
+                case!(Rotr, FheRotr),
+                case!(Eq, FheEq),
+                case!(Ne, FheNe),
+                case!(Ge, FheGe),
+                case!(Gt, FheGt),
+                case!(Le, FheLe),
+                case!(Lt, FheLt),
+                case!(Min, FheMin),
+                case!(Max, FheMax),
+            ];
+            for (op, operation, evm) in cases {
+                let solana =
+                    binary_computation(op, lhs.0, rhs.0, scalar, result.0);
+                assert_eq!(
+                    solana,
+                    Computation::from_evm(&evm).unwrap().unwrap()
+                );
+                assert_eq!(solana.operation(), operation);
+                assert_eq!(
+                    solana
+                        .operands()
+                        .iter()
+                        .map(Operand::bytes)
+                        .collect::<Vec<_>>(),
+                    vec![lhs.to_vec(), rhs.to_vec()]
+                );
+                assert_eq!(solana.is_scalar(), scalar);
+                assert_eq!(
+                    solana.inputs(),
+                    if scalar { vec![lhs] } else { vec![lhs, rhs] }
+                );
+                assert_eq!(
+                    solana.boundary_mask(|_| false).unwrap()[31],
+                    if scalar { 1 } else { 3 }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn native_special_operations_preserve_worker_operands() {
+        let result = [8; 32];
+        let cases = [
+            (
+                unary_computation(FheUnaryOpCode::Neg, [1; 32], result),
+                O::FheNeg,
+                vec![H(handle(1))],
+                false,
+            ),
+            (
+                unary_computation(FheUnaryOpCode::Not, [1; 32], result),
+                O::FheNot,
+                vec![H(handle(1))],
+                false,
+            ),
+            (
+                unary_computation(FheUnaryOpCode::Cast, [1; 32], result),
+                O::FheCast,
+                vec![H(handle(1)), P(vec![8])],
+                true,
+            ),
+            (
+                bounded_random_computation([1; 16], [2; 32], 5, result),
+                O::FheRandBounded,
+                vec![P(vec![1; 16]), P(vec![2; 32]), P(vec![5])],
+                true,
+            ),
+            (
+                sum_computation(vec![[1; 32], [2; 32]], result),
+                O::FheSum,
+                vec![H(handle(1)), H(handle(2))],
+                false,
+            ),
+            (
+                is_in_computation([1; 32], vec![[2; 32], [3; 32]], result),
+                O::FheIsIn,
+                vec![H(handle(1)), H(handle(2)), H(handle(3))],
+                false,
+            ),
+            (
+                mul_div_computation([1; 32], [2; 32], [3; 32], false, result),
+                O::FheMulDiv,
+                vec![H(handle(1)), H(handle(2)), P(vec![3; 32])],
+                false,
+            ),
+            (
+                mul_div_computation([1; 32], [2; 32], [3; 32], true, result),
+                O::FheMulDiv,
+                vec![H(handle(1)), P(vec![2; 32]), P(vec![3; 32])],
+                true,
+            ),
+        ];
+        for (computation, operation, operands, scalar) in cases {
+            assert_eq!(
+                computation,
+                Computation::single(operation, operands, result.into())
+                    .unwrap()
+            );
+            assert_eq!(computation.is_scalar(), scalar);
+        }
+    }
 
     fn ctx() -> HandleDerivationContext {
         HandleDerivationContext {
@@ -497,25 +844,30 @@ mod tests {
                 },
             ],
         };
-        let records = walk(&execution, vec![]).records;
-        assert_eq!(records.len(), 2);
-        let step0 = match &records[0] {
-            SolanaHostRecord::TrivialEncrypt(e) => {
-                assert_eq!(e.plaintext, [7u8; 32]);
-                e.result
-            }
-            other => panic!("expected TrivialEncrypt, got {other:?}"),
-        };
-        match &records[1] {
-            SolanaHostRecord::FheBinaryOp(e) => {
-                assert_eq!(e.op, FheBinaryOpCode::Add);
-                assert!(e.scalar);
-                assert_eq!(e.rhs, [2u8; 32]);
-                // The Transient operand resolved to step 0's produced handle.
-                assert_eq!(e.lhs, step0);
-            }
-            other => panic!("expected FheBinaryOp, got {other:?}"),
-        }
+        let step0 = computed_eval_trivial_handle([7u8; 32], 5, &ctx());
+        let step1 = computed_eval_handle(
+            FheBinaryOpCode::Add,
+            step0,
+            [2u8; 32],
+            true,
+            5,
+            [0; 32],
+            &ctx(),
+        );
+        assert_eq!(
+            walk(&execution, vec![]).computations,
+            vec![
+                Computation::trivial([7u8; 32], 5, step0.into()),
+                // The EarlierStep operand resolved to step 0's produced handle.
+                binary_computation(
+                    FheBinaryOpCode::Add,
+                    step0,
+                    [2u8; 32],
+                    true,
+                    step1,
+                ),
+            ]
+        );
     }
 
     #[test]
@@ -554,21 +906,25 @@ mod tests {
             }],
         };
 
-        let records = walk(
+        let computations = walk(
             &execution,
             vec![zama_host::FheExecuteRandomSeed {
                 step_index: 0,
                 seed: [7; 16],
             }],
         )
-        .records;
-        match &records[..] {
-            [SolanaHostRecord::FheRandBounded(event)] => {
-                assert_eq!(event.upper_bound, upper_bound);
-                assert_eq!(event.fhe_type, 5);
-            }
-            other => panic!("expected FheRandBounded, got {other:?}"),
-        }
+        .computations;
+        let result = computed_rand_bounded_handle(
+            upper_bound,
+            [7; 16],
+            5,
+            ctx().program_id,
+            ctx().chain_id,
+        );
+        assert_eq!(
+            computations,
+            vec![bounded_random_computation([7; 16], upper_bound, 5, result)]
+        );
     }
 
     #[test]
@@ -649,98 +1005,69 @@ mod tests {
             ],
         };
         let random_seed = [9; 16];
-        let records = walk(
+        let computations = walk(
             &execution,
             vec![zama_host::FheExecuteRandomSeed {
                 step_index: 6,
                 seed: random_seed,
             }],
         )
-        .records;
-        assert_eq!(records.len(), 7);
-        let h0 = match &records[0] {
-            SolanaHostRecord::TrivialEncrypt(e) => e.result,
-            other => panic!("expected TrivialEncrypt, got {other:?}"),
-        };
-        let h1 = match &records[1] {
-            SolanaHostRecord::TrivialEncrypt(e) => e.result,
-            other => panic!("expected TrivialEncrypt, got {other:?}"),
-        };
+        .computations;
+        let h0 = computed_eval_trivial_handle([9u8; 32], 5, &cx);
+        let h1 = computed_eval_trivial_handle([4u8; 32], 5, &cx);
         // Each op resolves its transient operands to prior steps' handles and
         // derives the result via the program's own `computed_*` functions.
-        match &records[2] {
-            SolanaHostRecord::FheUnaryOp(e) => {
-                assert_eq!(e.op, FheUnaryOpCode::Neg);
-                assert_eq!(e.operand, h0);
-                assert_eq!(
-                    e.result,
+        assert_eq!(
+            computations,
+            vec![
+                Computation::trivial([9u8; 32], 5, h0.into()),
+                Computation::trivial([4u8; 32], 5, h1.into()),
+                unary_computation(
+                    FheUnaryOpCode::Neg,
+                    h0,
                     computed_eval_unary_handle(
                         FheUnaryOpCode::Neg,
                         h0,
                         5,
                         [0; 32],
                         &cx,
-                    )
-                );
-            }
-            other => panic!("expected FheUnaryOp, got {other:?}"),
-        }
-        match &records[3] {
-            SolanaHostRecord::FheSum(e) => {
-                assert_eq!(e.operands, vec![h0, h1]);
-                assert_eq!(
-                    e.result,
-                    computed_eval_sum_handle(&[h0, h1], 5, [0; 32], &cx,)
-                );
-            }
-            other => panic!("expected FheSum, got {other:?}"),
-        }
-        match &records[4] {
-            SolanaHostRecord::FheIsIn(e) => {
-                assert_eq!(e.value, h0);
-                assert_eq!(e.set, vec![h1]);
-                assert_eq!(
-                    e.result,
-                    computed_eval_is_in_handle(h0, &[h1], 5, [0; 32], &cx,)
-                );
-            }
-            other => panic!("expected FheIsIn, got {other:?}"),
-        }
-        match &records[5] {
-            SolanaHostRecord::FheMulDiv(e) => {
-                assert_eq!(e.factor1, h0);
-                assert_eq!(e.factor2, [2u8; 32]);
-                assert!(e.scalar);
-                assert_eq!(e.divisor, [3u8; 32]);
-                assert_eq!(
-                    e.result,
+                    ),
+                ),
+                sum_computation(
+                    vec![h0, h1],
+                    computed_eval_sum_handle(&[h0, h1], 5, [0; 32], &cx),
+                ),
+                is_in_computation(
+                    h0,
+                    vec![h1],
+                    computed_eval_is_in_handle(h0, &[h1], 5, [0; 32], &cx),
+                ),
+                mul_div_computation(
+                    h0,
+                    [2u8; 32],
+                    [3u8; 32],
+                    true,
                     computed_eval_mul_div_handle(
                         h0, [2u8; 32], [3u8; 32], true, 5, [0; 32], &cx,
-                    )
-                );
-            }
-            other => panic!("expected FheMulDiv, got {other:?}"),
-        }
-        match &records[6] {
-            SolanaHostRecord::FheRandBounded(e) => {
-                assert_eq!(e.upper_bound, ub);
-                assert_eq!(e.seed, random_seed);
-                assert_eq!(
-                    e.result,
+                    ),
+                ),
+                bounded_random_computation(
+                    random_seed,
+                    ub,
+                    5,
                     computed_rand_bounded_handle(
                         ub,
                         random_seed,
                         5,
                         cx.program_id,
-                        cx.chain_id
-                    )
-                );
-            }
-            other => panic!("expected FheRandBounded, got {other:?}"),
-        }
+                        cx.chain_id,
+                    ),
+                ),
+            ]
+        );
     }
 
-    /// A wrong emitted handle is reported for its step alone. The record keeps the
+    /// A wrong emitted handle is reported for its step alone. The computation keeps the
     /// emitted handle, and a later step consuming it is re-derived from that handle, so
     /// the mismatch does not cascade.
     #[test]
@@ -798,15 +1125,19 @@ mod tests {
                 derived: honest.results[0],
             }]
         );
-        match &rebuilt.records[..] {
-            [SolanaHostRecord::TrivialEncrypt(first), SolanaHostRecord::FheBinaryOp(second)] =>
-            {
-                assert_eq!(first.result, wrong);
-                assert_eq!(second.lhs, wrong);
-                assert_eq!(second.result, consumer);
-            }
-            other => panic!("unexpected records {other:?}"),
-        }
+        assert_eq!(
+            rebuilt.computations,
+            vec![
+                Computation::trivial([7u8; 32], 5, wrong.into()),
+                binary_computation(
+                    FheBinaryOpCode::Add,
+                    wrong,
+                    [2u8; 32],
+                    true,
+                    consumer,
+                ),
+            ]
+        );
     }
 
     #[test]
@@ -877,7 +1208,6 @@ mod tests {
             ctx().chain_id,
             &mut HashSet::new()
         )
-        .map(|execution| execution.records)
         .is_none());
     }
 }
