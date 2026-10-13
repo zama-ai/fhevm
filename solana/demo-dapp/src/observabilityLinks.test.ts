@@ -9,21 +9,20 @@ import {
 } from './observabilityLinks';
 
 describe('observability links', () => {
-  test('opens Jaeger on Solana user decrypt traces for one ciphertext handle', () => {
-    const handle = `0x${'ab'.repeat(32)}`;
-    const url = new URL(jaegerDecryptUrl(handle));
+  test.each(['user_decrypt', 'public_decrypt'] as const)(
+    'opens Jaeger on the latest %s traces of the connector endpoint',
+    (flow) => {
+      const url = new URL(jaegerDecryptUrl(flow));
 
-    expect(url.origin).toBe('http://127.0.0.1:16686');
-    expect(url.pathname).toBe('/search');
-    expect(url.searchParams.get('service')).toBe('kms-connector-gw-listener');
-    expect(url.searchParams.get('operation')).toBe('handle_gateway_event');
-    expect(JSON.parse(url.searchParams.get('tags')!)).toEqual({
-      event_type: 'user_decryption_request',
-      source: 'onchain',
-      ciphertext_handle: handle,
-    });
-    expect(url.searchParams.get('lookback')).toBe('24h');
-  });
+      expect(url.origin).toBe('http://127.0.0.1:16686');
+      expect(url.pathname).toBe('/search');
+      expect(url.searchParams.get('service')).toBe('kms-connector-endpoint');
+      expect(url.searchParams.get('operation')).toBe(flow);
+      expect(url.searchParams.has('tags')).toBe(false);
+      expect(url.searchParams.get('lookback')).toBe('1h');
+      expect(url.searchParams.get('limit')).toBe('20');
+    },
+  );
 
   test.each([STACK_HEALTH_QUERY, KMS_DECRYPT_P95_QUERY, FHE_BATCH_P95_QUERY])(
     'opens Prometheus with the intended expression',

@@ -48,6 +48,7 @@ sequenceDiagram
         participant Copro as Coprocessor
         participant Relayer
         participant Gateway
+        participant RelayerHttp as relayer-http
         participant KMS as KMS network
     end
 
@@ -69,13 +70,11 @@ sequenceDiagram
 
     Note over Client,KMS: Authorized decryption
     Client->>Client: Create transport key and sign request
-    Client->>Relayer: Signed request and transport public key
-    Relayer->>Gateway: Decryption request
-    Gateway->>KMS: Encrypted result and authorization
-    KMS->>KMS: Decrypt and re-encrypt for transport key
-    KMS-->>Gateway: Signcrypted result
-    Gateway-->>Relayer: Signcrypted result
-    Relayer-->>Client: Signcrypted result
+    Client->>RelayerHttp: Signed request and transport public key
+    RelayerHttp->>KMS: Decryption request to each connector endpoint
+    KMS->>KMS: Check authorization, decrypt and re-encrypt for transport key
+    KMS-->>RelayerHttp: Signcrypted result
+    RelayerHttp-->>Client: Signcrypted result
     Client->>Client: Open signcrypted result
 `,
   },
@@ -189,9 +188,8 @@ sequenceDiagram
         participant SDK
     end
     box Protocol services
-        participant Relayer
-        participant Gateway
-        participant Connector as KMS connector
+        participant Relayer as relayer-http
+        participant Connector as KMS connector endpoint
         participant KMS as KMS node
     end
 
@@ -199,13 +197,11 @@ sequenceDiagram
     SDK->>Wallet: Request decryption signature
     Wallet-->>SDK: Signed user-decryption request
     SDK->>Relayer: Submit request and transport public key
-    Relayer->>Gateway: Submit user-decryption transaction
-    Gateway-->>Connector: Emit user-decryption request
+    Relayer->>Connector: Forward the request to each connector endpoint
     Connector->>Connector: Verify wallet signature and Solana access
     Connector->>KMS: Request partial decryption
     KMS-->>Connector: Signed, signcrypted partial share
-    Connector->>Gateway: Post partial share
-    Gateway-->>Relayer: Emit verified partial share
+    Connector-->>Relayer: Return partial share
     Relayer-->>SDK: Return threshold shares
     SDK->>SDK: Verify, de-signcrypt and reconstruct plaintext
 `,

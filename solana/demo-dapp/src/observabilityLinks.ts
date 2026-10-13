@@ -7,17 +7,20 @@ export const KMS_DECRYPT_P95_QUERY =
 export const FHE_BATCH_P95_QUERY =
   'histogram_quantile(0.95, sum by (le) (rate(coprocessor_fhe_batch_latency_seconds_bucket[5m])))';
 
-export const jaegerDecryptUrl = (handle?: string): string => {
-  const tags = {
-    event_type: 'user_decryption_request',
-    source: 'onchain',
-    ...(handle === undefined ? {} : { ciphertext_handle: handle }),
-  };
+// A decrypt's trace starts at the KMS connector endpoint: relayer-http exports no traces. The
+// service is the endpoint's default `service_name` (kms-connector/crates/endpoint/src/core/config.rs),
+// and each operation is the name of its handler span (`user_decrypt` in
+// kms-connector/crates/endpoint/src/core/http/user_decrypt.rs, `public_decrypt` beside it). No span
+// carries the ciphertext handle, so the search lists the latest traces of one flow.
+const CONNECTOR_ENDPOINT_SERVICE = 'kms-connector-endpoint';
+
+export type DecryptFlow = 'user_decrypt' | 'public_decrypt';
+
+export const jaegerDecryptUrl = (flow: DecryptFlow): string => {
   const query = new URLSearchParams({
-    service: 'kms-connector-gw-listener',
-    operation: 'handle_gateway_event',
-    tags: JSON.stringify(tags),
-    lookback: '24h',
+    service: CONNECTOR_ENDPOINT_SERVICE,
+    operation: flow,
+    lookback: '1h',
     limit: '20',
   });
   return `${JAEGER_URL}?${query.toString()}`;

@@ -17,7 +17,7 @@
 # override group). The six source-built groups are passed as --override so they build from
 # THIS worktree (by default — CI narrows the set via SOLANA_E2E_OVERRIDES/SOLANA_E2E_LOCK_PINS,
 # substituting branch-published images for groups the PR does not touch, see select-overrides.sh):
-#   - gateway-contracts : userDecryptionRequestSolana + verifyProofRequestSolana
+#   - gateway-contracts : verifyProofRequestSolana (Solana input proofs)
 #   - host-contracts    : must track HEAD because the source-built kms-connector's gw-listener
 #                         reads ProtocolConfig.getCurrentKmsContextAndEpoch() at startup (the
 #                         epoch-lifecycle interface, #2615). The pinned baseline predates it, so a
@@ -26,8 +26,9 @@
 #                         Solana EIP-712, plus host-listener/sns/tfhe + db-migration) so the
 #                         DB schema and ALL coprocessor binaries are one consistent version
 #                         (a per-service subset leaves stock services expecting newer columns)
-#   - relayer           : bytes32 host identity, Solana user-decrypt calldata + ed25519 seam
-#   - kms-connector     : Solana user-decrypt vertical (gw-listener + kms-worker)
+#   - relayer           : the relayer (Solana input proofs) and relayer-http, which forwards each
+#                         Solana decryption from the SDK to every connector endpoint
+#   - kms-connector     : Solana decryption (endpoint + kms-worker)
 #   - test-suite        : the hardhat e2e image that fhevm-cli test profiles run in, built only
 #                         when TEST_PROFILE is set (solana-e2e.yml sets it on a profile run). It
 #                         bundles this tree's sdk/js-sdk, so its tfhe and kms_lib WASM match the
