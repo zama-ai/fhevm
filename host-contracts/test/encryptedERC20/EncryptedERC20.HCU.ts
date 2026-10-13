@@ -41,7 +41,10 @@ describe('EncryptedERC20:HCU', function () {
       encryptedTransferAmount.inputProof,
     );
     const t2 = await tx.wait();
-    expect(t2?.status).to.eq(1);
+    if (t2 === null) {
+      throw new Error('EncryptedERC20 transfer transaction has no receipt');
+    }
+    expect(t2.status).to.eq(1);
 
     const { globalTxHCU: HCUTransfer, maxTxHCUDepth: HCUMaxDepthTransfer } = getTxHCUFromTxReceipt(t2);
     console.log('Total HCU in transfer', HCUTransfer);
@@ -82,6 +85,9 @@ describe('EncryptedERC20:HCU', function () {
     );
 
     const t3 = await tx3.wait();
+    if (t3 === null) {
+      throw new Error('EncryptedERC20 transferFrom transaction has no receipt');
+    }
 
     const { globalTxHCU: HCUTransferFrom, maxTxHCUDepth: HCUMaxDepthTransferFrom } = getTxHCUFromTxReceipt(t3);
     console.log('Total HCU in transferFrom', HCUTransferFrom);

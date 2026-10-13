@@ -1,8 +1,8 @@
-import { toBigIntBE } from 'bigint-buffer';
 import { toBufferBE } from 'bigint-buffer';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { Wallet, ethers } from 'ethers';
+import { ethers } from 'ethers';
+import type { Signer } from 'ethers';
 import * as fs from 'fs';
 import hre from 'hardhat';
 import { Keccak } from 'sha3';
@@ -12,6 +12,9 @@ import { getRequiredEnvVar } from '../tasks/utils/loadVariables';
 import { insertSQL } from './coprocessorUtils';
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
 import { checkIsHardhatSigner } from './utils';
+import type { HandleContractPair, UserDecryptResults } from './legacyRelayerSdk/types';
+import { ENCRYPTION_TYPES } from './legacyRelayerSdk/types';
+import { ACL, ACL__factory } from '../types';
 
 const toHexString = (bytes: Uint8Array, with0x = false) =>
   `${with0x ? '0x' : ''}${bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, '0'), '')}`;
@@ -48,15 +51,6 @@ enum Types {
 }
 
 const sum = (arr: number[]) => arr.reduce((acc, val) => acc + val, 0);
-
-function bytesToBigInt(byteArray: Uint8Array): bigint {
-  if (!byteArray || byteArray?.length === 0) {
-    return BigInt(0);
-  }
-  const buffer = Buffer.from(byteArray);
-  const result = toBigIntBE(buffer);
-  return result;
-}
 
 function createUintToUint8ArrayFunction(numBits: number) {
   const numBytes = Math.ceil(numBits / 8);
@@ -111,100 +105,79 @@ function createUintToUint8ArrayFunction(numBits: number) {
   };
 }
 
-export type HandleContractPair = {
-  ctHandle: Uint8Array | string;
-  contractAddress: string;
-};
+export const userDecryptRequestMocked = async (
+  _handles: HandleContractPair[],
+  _privateKey: string,
+  publicKey: string,
+  signature: string,
+  contractAddresses: string[],
+  userAddress: string,
+  startTimestamp: string | number,
+  durationDays: string | number,
+): Promise<UserDecryptResults> => {
+  // Casting handles if string
+  const handles = _handles.map((h) => ({
+    handle: typeof h.handle === 'string' ? toHexString(fromHexString(h.handle), true) : toHexString(h.handle, true),
+    contractAddress: h.contractAddress,
+  }));
 
-export type HandleContractPairRelayer = {
-  ctHandle: string;
-  contractAddress: string;
-};
-
-export const userDecryptRequestMocked =
-  (
-    kmsSigners: string[],
-    gatewayChainId: number,
-    chainId: number,
-    verifyingContractAddress: string,
-    aclContractAddress: string,
-    relayerUrl: string,
-    provider: ethers.JsonRpcProvider | ethers.BrowserProvider,
-  ) =>
-  async (
-    _handles: HandleContractPair[],
-    privateKey: string,
-    publicKey: string,
-    signature: string,
-    contractAddresses: string[],
-    userAddress: string,
-    startTimestamp: string | number,
-    durationDays: string | number,
-  ): Promise<bigint[]> => {
-    // Casting handles if string
-    const handles: HandleContractPairRelayer[] = _handles.map((h) => ({
-      ctHandle:
-        typeof h.ctHandle === 'string' ? toHexString(fromHexString(h.ctHandle), true) : toHexString(h.ctHandle, true),
-      contractAddress: h.contractAddress,
-    }));
-
-    // Signature checking:
-    const domain = {
-      name: 'Decryption',
-      version: '1',
-      chainId: hre.network.config.chainId,
-      verifyingContract: process.env.DECRYPTION_ADDRESS,
-    };
-    const types = {
-      UserDecryptRequestVerification: [
-        { name: 'publicKey', type: 'bytes' },
-        { name: 'contractAddresses', type: 'address[]' },
-        { name: 'startTimestamp', type: 'uint256' },
-        { name: 'durationDays', type: 'uint256' },
-        { name: 'extraData', type: 'bytes' },
-      ],
-    };
-    const value = {
-      publicKey: `0x${publicKey}`,
-      contractAddresses: contractAddresses,
-      startTimestamp: startTimestamp,
-      durationDays: durationDays,
-      extraData: '0x00',
-    };
-    const signerAddress = ethers.verifyTypedData(domain, types, value, `0x${signature}`);
-    const normalizedSignerAddress = ethers.getAddress(signerAddress);
-    const normalizedUserAddress = ethers.getAddress(userAddress);
-
-    if (normalizedSignerAddress !== normalizedUserAddress) {
-      throw new Error('Invalid EIP-712 signature!');
-    }
-
-    // ACL checking
-    const aclFactory = await hre.ethers.getContractFactory('ACL');
-    const acl = aclFactory.attach(aclAdd);
-    const verifications = handles.map(async ({ ctHandle, contractAddress }) => {
-      const userAllowed = await acl.persistAllowed(ctHandle, userAddress);
-      const contractAllowed = await acl.persistAllowed(ctHandle, contractAddress);
-      if (!userAllowed) {
-        throw new Error('User is not authorized to reencrypt this handle!');
-      }
-      if (!contractAllowed) {
-        throw new Error('dApp contract is not authorized to reencrypt this handle!');
-      }
-      if (userAddress === contractAddress) {
-        throw new Error('userAddress should not be equal to contractAddress when requesting reencryption!');
-      }
-    });
-
-    await Promise.all(verifications).catch((e) => {
-      throw e;
-    });
-    await awaitCoprocessor();
-
-    return Promise.all(
-      handles.map(async (handleContractPair) => await BigInt(await getClearText(handleContractPair.ctHandle))),
-    );
+  // Signature checking:
+  const domain = {
+    name: 'Decryption',
+    version: '1',
+    chainId: hre.network.config.chainId,
+    verifyingContract: process.env.DECRYPTION_ADDRESS,
   };
+  const types = {
+    UserDecryptRequestVerification: [
+      { name: 'publicKey', type: 'bytes' },
+      { name: 'contractAddresses', type: 'address[]' },
+      { name: 'startTimestamp', type: 'uint256' },
+      { name: 'durationDays', type: 'uint256' },
+      { name: 'extraData', type: 'bytes' },
+    ],
+  };
+  const value = {
+    publicKey: `0x${publicKey}`,
+    contractAddresses: contractAddresses,
+    startTimestamp: startTimestamp,
+    durationDays: durationDays,
+    extraData: '0x00',
+  };
+  const signerAddress = ethers.verifyTypedData(domain, types, value, `0x${signature}`);
+  const normalizedSignerAddress = ethers.getAddress(signerAddress);
+  const normalizedUserAddress = ethers.getAddress(userAddress);
+
+  if (normalizedSignerAddress !== normalizedUserAddress) {
+    throw new Error('Invalid EIP-712 signature!');
+  }
+
+  // ACL checking
+  const aclFactory: ACL__factory = (await hre.ethers.getContractFactory('ACL')) as ACL__factory;
+  const acl: ACL = aclFactory.attach(aclAdd) as ACL;
+  const verifications = handles.map(async ({ handle, contractAddress }) => {
+    const userAllowed = await acl.persistAllowed(handle, userAddress);
+    const contractAllowed = await acl.persistAllowed(handle, contractAddress);
+    if (!userAllowed) {
+      throw new Error('User is not authorized to reencrypt this handle!');
+    }
+    if (!contractAllowed) {
+      throw new Error('dApp contract is not authorized to reencrypt this handle!');
+    }
+    if (userAddress === contractAddress) {
+      throw new Error('userAddress should not be equal to contractAddress when requesting reencryption!');
+    }
+  });
+
+  await Promise.all(verifications).catch((e) => {
+    throw e;
+  });
+  await awaitCoprocessor();
+
+  return Object.fromEntries(
+    await Promise.all(handles.map(async ({ handle }) => [handle, BigInt(await getClearText(handle))] as const)),
+  );
+};
 
 export const createEncryptedInputMocked = (contractAddress: string, userAddress: string) => {
   if (!isAddress(contractAddress)) {
@@ -315,7 +288,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
         throw new Error('Chain ID is not defined');
       }
 
-      const handles = bits.map((v, i) => {
+      const arrayOfHandlesAsBytes: Array<Uint8Array> = bits.map((v, i) => {
         const dataWithIndex = new Uint8Array(hash.length + 1);
         dataWithIndex.set(hash, 0);
         dataWithIndex.set([i], hash.length);
@@ -337,28 +310,30 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
         return dataInput;
       });
 
-      let inputProof = '0x' + numberToHex(handles.length); // numHandles + numCoprocessorSigners + list_handles + signatureCoprocessorSigners (total len : 1+1+32+NUM_HANDLES*32+65*numSigners)
+      let inputProofHex = '0x' + numberToHex(arrayOfHandlesAsBytes.length); // numHandles + numCoprocessorSigners + list_handles + signatureCoprocessorSigners (total len : 1+1+32+NUM_HANDLES*32+65*numSigners)
       const numSigners = +process.env.NUM_COPROCESSORS!;
-      inputProof += numberToHex(numSigners);
+      inputProofHex += numberToHex(numSigners);
 
-      const listHandlesStr = handles.map((i) => uint8ArrayToHexString(i));
-      listHandlesStr.map((handle) => (inputProof += handle));
-      const listHandles = listHandlesStr.map((i) => BigInt('0x' + i));
+      const listHandlesAsBytesHexNo0x = arrayOfHandlesAsBytes.map((i) => uint8ArrayToHexString(i));
+      listHandlesAsBytesHexNo0x.map((handle) => (inputProofHex += handle));
+      const listHandlesAsBytesHex: Array<`0x${string}`> = listHandlesAsBytesHexNo0x.map(
+        (h) => ('0x' + h) as `0x${string}`,
+      );
       const signaturesCoproc = await computeInputSignaturesCopro(
-        listHandles,
+        listHandlesAsBytesHex,
         userAddress,
         contractAddress,
         extraDataV0,
       );
-      signaturesCoproc.map((sigCopro) => (inputProof += sigCopro.slice(2)));
-      listHandlesStr.map((handle, i) => insertSQL('0x' + handle, values[i]));
+      signaturesCoproc.map((sigCopro) => (inputProofHex += sigCopro.slice(2)));
+      listHandlesAsBytesHexNo0x.map((handle, i) => insertSQL('0x' + handle, values[i]));
 
       // Append the extra data to the input proof
-      inputProof = ethers.concat([inputProof, extraDataV0]);
+      inputProofHex = ethers.concat([inputProofHex, extraDataV0]);
 
       return {
-        handles,
-        inputProof,
+        handles: arrayOfHandlesAsBytes,
+        inputProof: ethers.getBytes(inputProofHex),
       };
     },
   };
@@ -371,7 +346,7 @@ function uint8ArrayToHexString(uint8Array: Uint8Array) {
 }
 
 function numberToHex(num: number) {
-  let hex = num.toString(16);
+  const hex = num.toString(16);
   return hex.length % 2 ? '0' + hex : hex;
 }
 
@@ -389,30 +364,15 @@ const checkEncryptedValue = (value: number | bigint, bits: number) => {
   }
 };
 
-export const ENCRYPTION_TYPES = {
-  2: 0, // ebool takes 2 bits
-  4: 1,
-  8: 2,
-  16: 3,
-  32: 4,
-  64: 5,
-  128: 6,
-  160: 7,
-  256: 8,
-  512: 9,
-  1024: 10,
-  2048: 11,
-};
-
 async function computeInputSignaturesCopro(
-  handlesList: string[],
+  handlesList: Array<`0x${string}`>,
   userAddress: string,
   contractAddress: string,
   extraData: string,
 ): Promise<string[]> {
   const signatures: string[] = [];
   const numSigners = +process.env.NUM_COPROCESSORS!;
-  let signers = await getCoprocessorSigners();
+  const signers = await getCoprocessorSigners();
 
   for (let idx = 0; idx < numSigners; idx++) {
     const coprocSigner = signers[idx];
@@ -423,11 +383,11 @@ async function computeInputSignaturesCopro(
 }
 
 async function coprocSign(
-  handlesList: string[],
+  handlesList: Array<`0x${string}`>,
   userAddress: string,
   contractAddress: string,
   extraData: string,
-  signer: Wallet,
+  signer: Signer,
 ): Promise<string> {
   const inputVerificationAdd = process.env.INPUT_VERIFICATION_ADDRESS;
   const chainId = process.env.CHAIN_ID_GATEWAY;

@@ -3,7 +3,7 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { Regression1 } from '../types/contracts/Regression1';
+import { Regression1 } from '../../types/examples/Regression1';
 
 describe('Service', function () {
   before(async function () {
@@ -27,7 +27,7 @@ describe('Service', function () {
     const testContract = await deployTestFixture();
     this.testServiceContractAddress = await testContract.getAddress();
     this.testService = testContract;
-    this.instances = await createInstances(this.testServiceContractAddress, ethers, this.signers);
+    this.instances = await createInstances(this.signers);
   });
 
   it('should create and update Service', async function () {

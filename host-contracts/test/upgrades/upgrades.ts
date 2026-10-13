@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { ethers, upgrades } from 'hardhat';
 
-import { ACL, ACLUpgradedExample } from '../../types';
+import { ACL, ACLUpgradedExample, FHEVMExecutor, KMSGeneration, KMSVerifier, ProtocolConfig } from '../../types';
 import { getSigners, initSigners } from '../signers';
 import { buildProtocolConfigNodes, buildProtocolConfigThresholds, readHostAddress } from '../tasks/taskHelpers';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
@@ -52,7 +52,7 @@ describe('Upgrades', function () {
     });
     await pc.waitForDeployment();
     expect(await pc.getVersion()).to.equal('ProtocolConfig v0.3.0');
-    const expectThresholds = async (c: any) => {
+    const expectThresholds = async (c: ProtocolConfig) => {
       expect(await c.getPublicDecryptionThreshold()).to.equal(1n);
       expect(await c.getUserDecryptionThreshold()).to.equal(2n);
       expect(await c.getKmsGenThreshold()).to.equal(3n);
@@ -74,7 +74,7 @@ describe('Upgrades', function () {
     });
     await kg.waitForDeployment();
     expect(await kg.getVersion()).to.equal('KMSGeneration v0.3.0');
-    const expectInitialState = async (c: any) => {
+    const expectInitialState = async (c: KMSGeneration) => {
       expect(await c.getActiveKeyId()).to.equal(0n);
       expect(await c.getActiveCrsId()).to.equal(0n);
       expect(await c.getKeyCounter()).to.equal(KEY_COUNTER_BASE);
@@ -93,13 +93,13 @@ describe('Upgrades', function () {
     const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
     const verifyingContractSource = process.env.DECRYPTION_ADDRESS!;
     const chainIDSource = +process.env.CHAIN_ID_GATEWAY!;
-    const kms = await upgrades.upgradeProxy(emptyUUPS, kmsFactory, {
+    const kms: KMSVerifier = (await upgrades.upgradeProxy(emptyUUPS, kmsFactory, {
       call: {
         fn: 'initializeFromEmptyProxy',
         args: [verifyingContractSource, chainIDSource],
       },
       unsafeAllow: ['missing-initializer'],
-    });
+    })) as KMSVerifier;
     await kms.waitForDeployment();
     expect(await kms.getVersion()).to.equal('KMSVerifier v0.5.0');
 
@@ -121,12 +121,12 @@ describe('Upgrades', function () {
     );
     const executorFactoryUpgraded = await ethers.getContractFactory('FHEVMExecutorUpgradedExample', this.signers.fred); // because account[5] is set in `.env to be owner of ACL/Host
     const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
-    const executor = await upgrades.upgradeProxy(emptyUUPS, executorFactory, {
+    const executor: FHEVMExecutor = (await upgrades.upgradeProxy(emptyUUPS, executorFactory, {
       call: { fn: 'initializeFromEmptyProxy' },
-    });
+    })) as FHEVMExecutor;
     await executor.waitForDeployment();
     expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.7.0');
-    const executor2 = await upgrades.upgradeProxy(executor, executorFactoryUpgraded);
+    const executor2: FHEVMExecutor = (await upgrades.upgradeProxy(executor, executorFactoryUpgraded)) as FHEVMExecutor;
     await executor2.waitForDeployment();
     expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.8.0');
   });

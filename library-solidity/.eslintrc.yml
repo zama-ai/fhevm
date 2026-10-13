@@ -5,7 +5,7 @@ extends:
   - "prettier"
 parser: "@typescript-eslint/parser"
 env:
-  - node: true
+  node: true
 parserOptions:
   project:
     - "./tsconfig.json"

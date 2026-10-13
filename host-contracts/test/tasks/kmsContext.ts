@@ -280,7 +280,7 @@ describe('KMS context tasks', function () {
     }
 
     function parseEventArg(
-      receipt: { logs: readonly { topics: string[]; data: string }[] },
+      receipt: { logs: readonly { topics: readonly string[]; data: string }[] },
       name: string,
       arg: string,
     ): bigint | undefined {
@@ -302,7 +302,10 @@ describe('KMS context tasks', function () {
       const receipt = await (
         await (await asOwner()).defineNewKmsContextAndEpoch(newNodes, newThresholds, '', [])
       ).wait();
-      const contextId = parseEventArg(receipt!, 'NewKmsContext', 'contextId');
+      if (receipt === null) {
+        throw new Error('defineNewKmsContextAndEpoch transaction has no receipt');
+      }
+      const contextId = parseEventArg(receipt, 'NewKmsContext', 'contextId');
       if (contextId === undefined) {
         throw new Error('NewKmsContext not emitted');
       }

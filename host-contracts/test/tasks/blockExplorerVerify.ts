@@ -1,15 +1,18 @@
 import { expect } from 'chai';
 
 import { verifyContract } from '../../tasks/blockExplorerVerify';
+import type { RunTaskFunction } from 'hardhat/types';
 
 describe('verifyContract', function () {
   it('forwards the address to the verify:verify subtask on success', async function () {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const calls: Array<{ name: string; args: any }> = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fakeRun = async (name: string, args: any) => {
       calls.push({ name, args });
     };
 
-    await verifyContract(fakeRun as any, '0xdeadbeef');
+    await verifyContract(fakeRun as RunTaskFunction, '0xdeadbeef');
 
     expect(calls).to.have.length(1);
     expect(calls[0].name).to.eq('verify:verify');
@@ -23,7 +26,7 @@ describe('verifyContract', function () {
     };
 
     // Should resolve without throwing.
-    await verifyContract(fakeRun as any, '0x1dD3c231');
+    await verifyContract(fakeRun as RunTaskFunction, '0x1dD3c231');
   });
 
   it('swallows a lowercase "already verified" error (implementation re-verify)', async function () {
@@ -31,7 +34,7 @@ describe('verifyContract', function () {
       throw new Error('Contract source code already verified');
     };
 
-    await verifyContract(fakeRun as any, '0xabc');
+    await verifyContract(fakeRun as RunTaskFunction, '0xabc');
   });
 
   it('rethrows a genuine verification failure', async function () {
@@ -41,7 +44,7 @@ describe('verifyContract', function () {
 
     let threw = false;
     try {
-      await verifyContract(fakeRun as any, '0xabc');
+      await verifyContract(fakeRun as RunTaskFunction, '0xabc');
     } catch (error) {
       threw = true;
       expect(String(error)).to.include('Invalid API Key');

@@ -1,6 +1,6 @@
+import { Interface } from 'ethers'
 import * as fs from 'fs'
 import * as path from 'path'
-import { utils } from 'ethers'
 
 interface WiringItem {
     Endpoint: string
@@ -40,7 +40,7 @@ function requireFlag(name: string): string {
 }
 
 function encodeSetDstChainId(dstEid: string, dstChainId: string): string {
-    const iface = new utils.Interface(SET_DST_CHAIN_ID_ABI)
+    const iface = new Interface(SET_DST_CHAIN_ID_ABI)
     return iface.encodeFunctionData('setDstChainId', [dstEid, dstChainId])
 }
 

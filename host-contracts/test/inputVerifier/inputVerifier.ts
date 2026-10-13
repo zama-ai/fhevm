@@ -8,7 +8,7 @@ import { InputVerifier, InputVerifier__factory, TestInput } from '../../types';
 import { createInstances } from '../instance';
 import { Signers, getSigners, initSigners } from '../signers';
 import { FhevmInstances } from '../types';
-import { userDecryptSingleHandle } from '../utils';
+import { userDecryptSingleEuint } from '../utils';
 
 describe('InputVerifier', function () {
   let signers: Signers;
@@ -47,24 +47,24 @@ describe('InputVerifier', function () {
   }
 
   async function removeLastSigner(params: { threshold: number }) {
-    let signersList = [...(await inputVerifier.getCoprocessorSigners())];
+    const signersList = [...(await inputVerifier.getCoprocessorSigners())];
     signersList.pop();
     const tx = await inputVerifier.connect(deployer).defineNewContext(signersList, params.threshold);
     await tx.wait();
   }
 
   async function testInputSetUint64(value: bigint) {
-    let inputAlice = instances.alice.createEncryptedInput(testInputContractAddress, signers.alice.address);
+    const inputAlice = instances.alice.createEncryptedInput(testInputContractAddress, signers.alice.address);
     inputAlice.add64(value);
-    let encryptedAmount = await inputAlice.encrypt();
+    const encryptedAmount = await inputAlice.encrypt();
 
-    let tx = await testInputContract.setUint64(encryptedAmount.handles[0], encryptedAmount.inputProof);
+    const tx = await testInputContract.setUint64(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
   }
 
   async function getClearUint64(keypair: { privateKey: string; publicKey: string }): Promise<bigint> {
     const encUint64 = await testInputContract.getEuint64();
-    const clearUint64 = await userDecryptSingleHandle(
+    const clearUint64 = await userDecryptSingleEuint(
       encUint64,
       testInputContractAddress,
       instances.alice,
@@ -132,7 +132,7 @@ describe('InputVerifier', function () {
       await deployTestInput();
 
       await testInputSetUint64(18446744073709550042n);
-      let clearUint64 = await getClearUint64(aliceKeys);
+      let clearUint64: bigint = await getClearUint64(aliceKeys);
 
       // in this case, one signature still suffices to pass the decrypt (threshold is still 1)
       expect(clearUint64).to.equal(18446744073709550042n);
@@ -146,7 +146,7 @@ describe('InputVerifier', function () {
 
       // Add 2 new coproc signers (total 4)
       await addSigners({ list: [coprocessorAddressSigner2, coprocessorAddressSigner3], threshold: 1 });
-      let tx = await inputVerifier.connect(deployer).setThreshold(2n);
+      const tx = await inputVerifier.connect(deployer).setThreshold(2n);
       await tx.wait();
 
       // - 1 active coprocessor
@@ -251,7 +251,7 @@ describe('InputVerifier', function () {
 
       await deployTestInput();
 
-      let tx = await inputVerifier
+      const tx = await inputVerifier
         .connect(deployer)
         .defineNewContext([coprocessorAddressSigner0, coprocessorAddressSigner1], 2);
       await tx.wait();

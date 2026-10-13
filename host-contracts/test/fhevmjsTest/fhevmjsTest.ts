@@ -2,7 +2,6 @@ import { expect } from 'chai';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
-import { bigIntToBytes64, bigIntToBytes128, bigIntToBytes256 } from '../utils';
 
 describe('Testing fhevmjs/fhevmjsMocked', function () {
   before(async function () {
@@ -76,7 +75,7 @@ describe('Testing fhevmjs/fhevmjsMocked', function () {
     input.add128(6887n);
     input.add64(6887n);
     input.add64(6887n);
-    let bits = input.getBits();
+    const bits = input.getBits();
     let total = 0;
     for (let i = 0; i < bits.length; ++i) {
       total += bits[i];

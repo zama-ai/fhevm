@@ -2,6 +2,7 @@ import { ethers } from 'hardhat';
 
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
+import type { ContractTransactionResponse, ContractTransactionReceipt } from 'ethers';
 
 describe('EncryptedERC20:Gas', function () {
   before(async function () {
@@ -14,12 +15,22 @@ describe('EncryptedERC20:Gas', function () {
     const contractFactory = await ethers.getContractFactory('EncryptedERC20');
     const contract = await contractFactory.connect(this.signers.alice).deploy('Naraggara', 'NARA');
     const contractAddress = await contract.getAddress();
-    const deployTx = await contract.deploymentTransaction();
-    const receipt = await deployTx.wait(1);
+    const deployTx: ContractTransactionResponse | null = contract.deploymentTransaction();
+    if (deployTx === null) {
+      throw new Error('EncryptedERC20 deployment transaction is missing');
+    }
+    const receipt: ContractTransactionReceipt | null = await deployTx.wait(1);
+    if (receipt === null) {
+      throw new Error('EncryptedERC20 deployment transaction has no receipt');
+    }
     console.log('Gas consumed in EncryptedERC20 deployment:', '\x1b[1m' + receipt.gasUsed.toString() + '\x1b[0m');
 
     const transaction = await contract.mint(1000);
-    const rcptMint = await transaction.wait();
+    const rcptMint: ContractTransactionReceipt | null = await transaction.wait();
+    if (rcptMint === null) {
+      throw new Error('EncryptedERC20 mint transaction has no receipt');
+    }
+
     console.log('Gas consumed in EncryptedERC20 Mint tx:', '\x1b[1m' + rcptMint.gasUsed.toString() + '\x1b[0m');
 
     const input = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
@@ -30,7 +41,10 @@ describe('EncryptedERC20:Gas', function () {
       encryptedTransferAmount.handles[0],
       encryptedTransferAmount.inputProof,
     );
-    const rcptTransfer = await tx.wait();
+    const rcptTransfer: ContractTransactionReceipt | null = await tx.wait();
+    if (rcptTransfer === null) {
+      throw new Error('EncryptedERC20 transfer transaction has no receipt');
+    }
     console.log('Gas consumed in EncryptedERC20 Transfer tx:', '\x1b[1m' + rcptTransfer.gasUsed.toString() + '\x1b[0m');
 
     const inputAlice = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
@@ -41,7 +55,10 @@ describe('EncryptedERC20:Gas', function () {
       encryptedAllowanceAmount.handles[0],
       encryptedAllowanceAmount.inputProof,
     );
-    const rcptApprove = await txbis.wait();
+    const rcptApprove: ContractTransactionReceipt | null = await txbis.wait();
+    if (rcptApprove === null) {
+      throw new Error('EncryptedERC20 approve transaction has no receipt');
+    }
     console.log('Gas consumed in EncryptedERC20 Approve tx:', '\x1b[1m' + rcptApprove.gasUsed.toString() + '\x1b[0m');
 
     const bobErc20 = contract.connect(this.signers.bob);
@@ -54,7 +71,10 @@ describe('EncryptedERC20:Gas', function () {
       encryptedTransferAmount2.handles[0],
       encryptedTransferAmount2.inputProof,
     );
-    const rcptTransferFrom = await tx2.wait();
+    const rcptTransferFrom: ContractTransactionReceipt | null = await tx2.wait();
+    if (rcptTransferFrom === null) {
+      throw new Error('EncryptedERC20 transferFrom transaction has no receipt');
+    }
     console.log(
       'Gas consumed in EncryptedERC20 TransferFrom tx:',
       '\x1b[1m' + rcptTransferFrom.gasUsed.toString() + '\x1b[0m',

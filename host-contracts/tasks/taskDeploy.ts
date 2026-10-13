@@ -25,7 +25,7 @@ export function ensureAddressesDirectoryExists() {
   fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
 }
 
-export function readHostEnv() {
+export function readHostEnv(): dotenv.DotenvParseOutput {
   return dotenv.parse(fs.readFileSync(HOST_ENV_FILE));
 }
 
@@ -37,17 +37,21 @@ function writeHostAddressesSol(content: string, mode: 'w' | 'a') {
   fs.writeFileSync(HOST_ADDRESSES_FILE, content, { encoding: 'utf8', flag: mode });
 }
 
-export function readExistingHostEnv(): Record {
+export function readExistingHostEnv(): dotenv.DotenvParseOutput {
   if (!fs.existsSync(HOST_ENV_FILE)) {
     return {};
   }
   return readHostEnv();
 }
 
-export async function waitForTaskReady(hre: HardhatRuntimeEnvironment, taskName: string, timeoutMs = 60_000): Promise {
+export async function waitForTaskReady(
+  hre: HardhatRuntimeEnvironment,
+  taskName: string,
+  timeoutMs = 60_000,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
 
-  while (true) {
+  for (;;) {
     try {
       await hre.run(taskName);
       return;
@@ -370,7 +374,7 @@ task('task:deployInputVerifier')
     const chainIDSource = +getRequiredEnvVar('CHAIN_ID_GATEWAY');
     const initialThreshold = +getRequiredEnvVar('COPROCESSOR_THRESHOLD');
 
-    let initialSigners: string[] = [];
+    const initialSigners: string[] = [];
     const numSigners = getRequiredCountEnvVar('NUM_COPROCESSORS');
     for (let idx = 0; idx < numSigners; idx++) {
       if (!taskArguments.useAddress) {
@@ -585,7 +589,12 @@ export function buildPcrValues(): { pcr0: string; pcr1: string; pcr2: string }[]
   return JSON.parse(getRequiredEnvVar('KMS_PCR_VALUES'));
 }
 
-export function buildProtocolConfigContextArgs(): [ReturnType, ReturnType, string, ReturnType] {
+export function buildProtocolConfigContextArgs(): [
+  ReturnType<typeof buildKmsNodeParams>,
+  ReturnType<typeof buildKmsThresholds>,
+  string,
+  ReturnType<typeof buildPcrValues>,
+] {
   return [buildKmsNodeParams(), buildKmsThresholds(), getRequiredEnvVar('KMS_SOFTWARE_VERSION'), buildPcrValues()];
 }
 
@@ -671,7 +680,7 @@ task('task:assertNoPendingKeyManagementRequest')
     await assertContractMatchesVersionPrefix(hre, kmsGenAddress, 'KMSGeneration');
 
     const kmsGen = await hre.ethers.getContractAt('KMSGeneration', kmsGenAddress);
-    const readKmsStatusView = async <T>(viewLabel: string, read: () => Promise): Promise => {
+    const readKmsStatusView = async <T>(viewLabel: string, read: () => Promise<T>): Promise<T> => {
       try {
         return await read();
       } catch (err) {
@@ -876,7 +885,7 @@ task('task:deployKMSGeneration').setAction(async function (taskArguments: TaskAr
 
 task('task:setACLAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     ensureAddressesDirectoryExists();
     const content = `ACL_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -906,7 +915,7 @@ address constant aclAdd = ${taskArguments.address};\n`;
 
 task('task:setFHEVMExecutorAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     ensureAddressesDirectoryExists();
     const content = `FHEVM_EXECUTOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -933,7 +942,7 @@ address constant fhevmExecutorAdd = ${taskArguments.address};\n`;
 
 task('task:setKMSVerifierAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     ensureAddressesDirectoryExists();
     const content = `KMS_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -960,7 +969,7 @@ address constant kmsVerifierAdd = ${taskArguments.address};\n`;
 
 task('task:setInputVerifierAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     ensureAddressesDirectoryExists();
     // this script also computes the coprocessor address from its private key
     const content = `INPUT_VERIFIER_CONTRACT_ADDRESS=${taskArguments.address}\n`;
@@ -988,7 +997,7 @@ address constant inputVerifierAdd = ${taskArguments.address};\n`;
 
 task('task:setHCULimitAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     ensureAddressesDirectoryExists();
     const content = `HCU_LIMIT_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -1015,7 +1024,7 @@ address constant hcuLimitAdd = ${taskArguments.address};\n`;
 
 task('task:setPauserSetAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     ensureAddressesDirectoryExists();
     const content = `PAUSER_SET_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -1042,7 +1051,7 @@ address constant pauserSetAdd = ${taskArguments.address};\n`;
 
 task('task:setProtocolConfigAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     ensureAddressesDirectoryExists();
     const content = `PROTOCOL_CONFIG_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
@@ -1069,7 +1078,7 @@ address constant protocolConfigAdd = ${taskArguments.address};\n`;
 
 task('task:setKMSGenerationAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function (taskArguments: TaskArguments) {
     ensureAddressesDirectoryExists();
     const content = `KMS_GENERATION_CONTRACT_ADDRESS=${taskArguments.address}\n`;
     try {
