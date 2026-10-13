@@ -562,12 +562,13 @@ pub fn user_decryption_delegation_address(
     )
 }
 
-fn finish_computed_handle(result: &mut [u8; 32], chain_id_bytes: &[u8; 8], fhe_type: u8) {
-    result[21..32].fill(0);
-    result[21] = COMPUTED_HANDLE_MARKER;
-    result[22..30].copy_from_slice(chain_id_bytes);
-    result[30] = fhe_type;
-    result[31] = HANDLE_VERSION;
+fn computed_handle(preimage: &[&[u8]], chain_id: u64, fhe_type: u8) -> [u8; 32] {
+    let mut handle = keccak_hashv(preimage).to_bytes();
+    handle[21] = COMPUTED_HANDLE_MARKER;
+    handle[22..30].copy_from_slice(&chain_id.to_be_bytes());
+    handle[30] = fhe_type;
+    handle[31] = HANDLE_VERSION;
+    handle
 }
 
 /// Deployment, slot and chain context bound into every content-addressed
@@ -584,6 +585,20 @@ pub struct HandleDerivationContext {
     pub chain_id: u64,
     pub previous_bank_hash: [u8; 32],
     pub unix_timestamp: i64,
+}
+
+impl HandleDerivationContext {
+    /// The preimage tail every derivation ends with: program id, big-endian chain id, previous
+    /// bank hash, big-endian timestamp. Keccak hashes the concatenation of its parts, so this one
+    /// part derives the same digest as the four separate fields.
+    fn preimage_tail(&self) -> [u8; 80] {
+        let mut tail = [0; 80];
+        tail[..32].copy_from_slice(self.program_id.as_ref());
+        tail[32..40].copy_from_slice(&self.chain_id.to_be_bytes());
+        tail[40..72].copy_from_slice(&self.previous_bank_hash);
+        tail[72..].copy_from_slice(&self.unix_timestamp.to_be_bytes());
+        tail
+    }
 }
 
 /// Big-endian 256-bit mask: bit i selects the canonical boundary representation
@@ -611,32 +626,19 @@ pub fn computed_eval_handle(
     operand_boundary_mask: [u8; 32],
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
-    let HandleDerivationContext {
-        program_id,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-    } = *ctx;
-    let op_byte = [op.as_u8()];
-    let scalar_byte = [u8::from(scalar)];
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = keccak_hashv(&[
-        b"FHE_eval",
-        &op_byte,
-        &lhs,
-        &rhs,
-        &scalar_byte,
-        &operand_boundary_mask,
-        program_id.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ])
-    .to_bytes();
-
-    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
-    result
+    computed_handle(
+        &[
+            b"FHE_eval",
+            &[op.as_u8()],
+            &lhs,
+            &rhs,
+            &[u8::from(scalar)],
+            &operand_boundary_mask,
+            &ctx.preimage_tail(),
+        ],
+        ctx.chain_id,
+        fhe_type,
+    )
 }
 
 /// Derives a content-addressed ternary handle (see [`computed_eval_handle`]).
@@ -649,31 +651,19 @@ pub fn computed_eval_ternary_handle(
     operand_boundary_mask: [u8; 32],
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
-    let HandleDerivationContext {
-        program_id,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-    } = *ctx;
-    let op_byte = [op.as_u8()];
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let mut result = keccak_hashv(&[
-        b"FHE_eval_ternary",
-        &op_byte,
-        &control,
-        &if_true,
-        &if_false,
-        &operand_boundary_mask,
-        program_id.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ])
-    .to_bytes();
-
-    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
-    result
+    computed_handle(
+        &[
+            b"FHE_eval_ternary",
+            &[op.as_u8()],
+            &control,
+            &if_true,
+            &if_false,
+            &operand_boundary_mask,
+            &ctx.preimage_tail(),
+        ],
+        ctx.chain_id,
+        fhe_type,
+    )
 }
 
 /// Derives a content-addressed trivial-encrypt handle (see [`computed_eval_handle`]).
@@ -682,28 +672,16 @@ pub fn computed_eval_trivial_handle(
     fhe_type: u8,
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
-    let HandleDerivationContext {
-        program_id,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-    } = *ctx;
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let fhe_type_bytes = [fhe_type];
-    let mut result = keccak_hashv(&[
-        b"FHE_eval_trivial",
-        &plaintext,
-        &fhe_type_bytes,
-        program_id.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ])
-    .to_bytes();
-
-    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
-    result
+    computed_handle(
+        &[
+            b"FHE_eval_trivial",
+            &plaintext,
+            &[fhe_type],
+            &ctx.preimage_tail(),
+        ],
+        ctx.chain_id,
+        fhe_type,
+    )
 }
 
 /// Derives the compulsorily fresh seed for an instruction-local execution random handle.
@@ -718,26 +696,13 @@ pub fn computed_eval_rand_seed(
     op_index: u16,
     ctx: &HandleDerivationContext,
 ) -> [u8; 16] {
-    let HandleDerivationContext {
-        program_id,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-    } = *ctx;
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let op_index_bytes = op_index.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let nonce_bytes = rand_nonce.to_be_bytes();
     let hash = keccak_hashv(&[
         b"FHE_eval_seed",
-        &nonce_bytes,
-        &op_index_bytes,
+        &rand_nonce.to_be_bytes(),
+        &op_index.to_be_bytes(),
         app.program.as_ref(),
         app.scope.as_ref(),
-        program_id.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
+        &ctx.preimage_tail(),
     ])
     .to_bytes();
     let mut seed = [0; 16];
@@ -752,29 +717,14 @@ pub fn computed_eval_sum_handle<'a>(
     operand_boundary_mask: [u8; 32],
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
-    let HandleDerivationContext {
-        program_id,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-    } = *ctx;
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
+    let tail = ctx.preimage_tail();
     let operand_handles = operand_handles.into_iter();
-    let mut preimage: Vec<&[u8]> = Vec::with_capacity(operand_handles.len() + 7);
+    let mut preimage: Vec<&[u8]> = Vec::with_capacity(operand_handles.len() + 4);
     preimage.extend([b"FHE_eval_sum".as_slice(), &fhe_type_bytes]);
-    for h in operand_handles {
-        preimage.push(h.as_ref());
-    }
-    preimage.push(&operand_boundary_mask);
-    preimage.push(program_id.as_ref());
-    preimage.push(&chain_id_bytes);
-    preimage.push(&previous_bank_hash);
-    preimage.push(&timestamp_bytes);
-    let mut result = keccak_hashv(preimage.as_slice()).to_bytes();
-    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
-    result
+    preimage.extend(operand_handles.map(|h| h.as_slice()));
+    preimage.extend([operand_boundary_mask.as_slice(), &tail]);
+    computed_handle(&preimage, ctx.chain_id, fhe_type)
 }
 
 /// Derives a content-addressed is-in handle (see [`computed_eval_handle`]).
@@ -785,29 +735,14 @@ pub fn computed_eval_is_in_handle<'a>(
     operand_boundary_mask: [u8; 32],
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
-    let HandleDerivationContext {
-        program_id,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-    } = *ctx;
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
     let fhe_type_bytes = [fhe_type];
+    let tail = ctx.preimage_tail();
     let set_handles = set_handles.into_iter();
-    let mut preimage: Vec<&[u8]> = Vec::with_capacity(set_handles.len() + 8);
+    let mut preimage: Vec<&[u8]> = Vec::with_capacity(set_handles.len() + 5);
     preimage.extend([b"FHE_eval_is_in".as_slice(), &fhe_type_bytes, &value_handle]);
-    for h in set_handles {
-        preimage.push(h.as_ref());
-    }
-    preimage.push(&operand_boundary_mask);
-    preimage.push(program_id.as_ref());
-    preimage.push(&chain_id_bytes);
-    preimage.push(&previous_bank_hash);
-    preimage.push(&timestamp_bytes);
-    let mut result = keccak_hashv(preimage.as_slice()).to_bytes();
-    finish_computed_handle(&mut result, &chain_id_bytes, 0 /* ebool */);
-    result
+    preimage.extend(set_handles.map(|h| h.as_slice()));
+    preimage.extend([operand_boundary_mask.as_slice(), &tail]);
+    computed_handle(&preimage, ctx.chain_id, 0 /* ebool */)
 }
 
 /// Derives a content-addressed mul-div handle (see [`computed_eval_handle`]).
@@ -820,30 +755,19 @@ pub fn computed_eval_mul_div_handle(
     operand_boundary_mask: [u8; 32],
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
-    let HandleDerivationContext {
-        program_id,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-    } = *ctx;
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
-    let scalar_byte = [u8::from(scalar)];
-    let mut result = keccak_hashv(&[
-        b"FHE_eval_mul_div",
-        &factor1,
-        &factor2,
-        &divisor,
-        &scalar_byte,
-        &operand_boundary_mask,
-        program_id.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ])
-    .to_bytes();
-    finish_computed_handle(&mut result, &chain_id_bytes, output_fhe_type);
-    result
+    computed_handle(
+        &[
+            b"FHE_eval_mul_div",
+            &factor1,
+            &factor2,
+            &divisor,
+            &[u8::from(scalar)],
+            &operand_boundary_mask,
+            &ctx.preimage_tail(),
+        ],
+        ctx.chain_id,
+        output_fhe_type,
+    )
 }
 
 /// Deterministically derives a random-ciphertext handle from the emitted seed.
@@ -853,20 +777,18 @@ pub fn computed_rand_handle(
     program_id: Pubkey,
     chain_id: u64,
 ) -> [u8; 32] {
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let fhe_type_bytes = [fhe_type];
-    let mut result = keccak_hashv(&[
-        COMPUTATION_DOMAIN_SEPARATOR,
-        &[3],
-        &fhe_type_bytes,
-        &seed,
-        program_id.as_ref(),
-        &chain_id_bytes,
-    ])
-    .to_bytes();
-
-    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
-    result
+    computed_handle(
+        &[
+            COMPUTATION_DOMAIN_SEPARATOR,
+            &[3],
+            &[fhe_type],
+            &seed,
+            program_id.as_ref(),
+            &chain_id.to_be_bytes(),
+        ],
+        chain_id,
+        fhe_type,
+    )
 }
 
 /// Deterministically derives a bounded-random ciphertext handle from the emitted seed.
@@ -877,21 +799,19 @@ pub fn computed_rand_bounded_handle(
     program_id: Pubkey,
     chain_id: u64,
 ) -> [u8; 32] {
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let fhe_type_bytes = [fhe_type];
-    let mut result = keccak_hashv(&[
-        COMPUTATION_DOMAIN_SEPARATOR,
-        &[4],
-        &upper_bound,
-        &fhe_type_bytes,
-        &seed,
-        program_id.as_ref(),
-        &chain_id_bytes,
-    ])
-    .to_bytes();
-
-    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
-    result
+    computed_handle(
+        &[
+            COMPUTATION_DOMAIN_SEPARATOR,
+            &[4],
+            &upper_bound,
+            &[fhe_type],
+            &seed,
+            program_id.as_ref(),
+            &chain_id.to_be_bytes(),
+        ],
+        chain_id,
+        fhe_type,
+    )
 }
 
 /// Derives a content-addressed unary handle (see [`computed_eval_handle`]).
@@ -902,31 +822,28 @@ pub fn computed_eval_unary_handle(
     operand_boundary_mask: [u8; 32],
     ctx: &HandleDerivationContext,
 ) -> [u8; 32] {
-    let HandleDerivationContext {
-        program_id,
-        chain_id,
-        previous_bank_hash,
-        unix_timestamp,
-    } = *ctx;
     let op_byte = [op.as_u8()];
-    let type_byte = [fhe_type];
-    let chain_id_bytes = chain_id.to_be_bytes();
-    let timestamp_bytes = unix_timestamp.to_be_bytes();
+    let tail = ctx.preimage_tail();
     // Cast binds its target type into the prehandle (EVM `FHEVMExecutor.cast`); Neg/Not take it from the operand.
-    let mut parts: Vec<&[u8]> = vec![b"FHE_eval_unary", &op_byte, &operand];
-    if matches!(op, FheUnaryOpCode::Cast) {
-        parts.push(&type_byte);
-    }
-    parts.extend_from_slice(&[
-        &operand_boundary_mask,
-        program_id.as_ref(),
-        &chain_id_bytes,
-        &previous_bank_hash,
-        &timestamp_bytes,
-    ]);
-    let mut result = keccak_hashv(&parts).to_bytes();
-    finish_computed_handle(&mut result, &chain_id_bytes, fhe_type);
-    result
+    let preimage: &[&[u8]] = if matches!(op, FheUnaryOpCode::Cast) {
+        &[
+            b"FHE_eval_unary",
+            &op_byte,
+            &operand,
+            &[fhe_type],
+            &operand_boundary_mask,
+            &tail,
+        ]
+    } else {
+        &[
+            b"FHE_eval_unary",
+            &op_byte,
+            &operand,
+            &operand_boundary_mask,
+            &tail,
+        ]
+    };
+    computed_handle(preimage, ctx.chain_id, fhe_type)
 }
 
 /// Returns the latest prior bank hash.

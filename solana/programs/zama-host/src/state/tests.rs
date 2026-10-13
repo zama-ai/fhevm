@@ -521,3 +521,50 @@ fn handle_derivation_binds_the_program_id() {
     assert_ne!(rand(crate::ID), rand(other));
     assert_ne!(rand_bounded(crate::ID), rand_bounded(other));
 }
+
+/// Listeners reconstruct these handles with these same functions, so only these fixed bytes catch a
+/// formula change.
+#[test]
+fn handle_derivations_match_their_golden_vectors() {
+    let ctx = HandleDerivationContext {
+        program_id: Pubkey::new_from_array([1; 32]),
+        chain_id: SOLANA_POC_CHAIN_ID,
+        previous_bank_hash: [2; 32],
+        unix_timestamp: 1_700_000_000,
+    };
+    let app = AppScope {
+        program: Pubkey::new_from_array([3; 32]),
+        scope: Pubkey::new_from_array([4; 32]),
+    };
+    let (a, b, c, mask) = ([5; 32], [6; 32], [7; 32], [8; 32]);
+    let derived: [&[u8]; 11] = [
+        &computed_eval_handle(FheBinaryOpCode::Add, a, b, true, 5, mask, &ctx),
+        &computed_eval_ternary_handle(FheTernaryOpCode::IfThenElse, a, b, c, 5, mask, &ctx),
+        &computed_eval_trivial_handle(a, 5, &ctx),
+        &computed_eval_rand_seed(9, app, 2, &ctx),
+        &computed_eval_sum_handle(&[a, b, c], 5, mask, &ctx),
+        &computed_eval_is_in_handle(a, &[b, c], 5, mask, &ctx),
+        &computed_eval_mul_div_handle(a, b, c, true, 5, mask, &ctx),
+        &computed_rand_handle([9; 16], 5, ctx.program_id, ctx.chain_id),
+        &computed_rand_bounded_handle(a, [9; 16], 5, ctx.program_id, ctx.chain_id),
+        &computed_eval_unary_handle(FheUnaryOpCode::Neg, a, 5, mask, &ctx),
+        &computed_eval_unary_handle(FheUnaryOpCode::Cast, a, 4, mask, &ctx),
+    ];
+    let golden = [
+        "61fe5ae38c016a50a27dd2349b2b78bad6c36ea650ff01000000000030390500", // binary
+        "1aefef38b425d204902c4ac2aca607c398e2e01773ff01000000000030390500", // ternary
+        "8c52b1b226d4ab647557e5f1e9927c93def48b9d10ff01000000000030390500", // trivial
+        "7c7c572d61c08bb5a78ac0b32a2b5f04",                                 // rand_seed
+        "60e76a68f4acc03bf6834db89731d596c1572219bbff01000000000030390500", // sum
+        "02d46e1f9aae5e93210a1b7cb3086bf0839bbdfe3fff01000000000030390000", // is_in
+        "aaa9c2bd6cbd59507cda2e4d39def9ba4b5ae46cc9ff01000000000030390500", // mul_div
+        "ed4536d4be33c26e4ae84f2e974c498abdde14dd3cff01000000000030390500", // rand
+        "5a845d24e6a2e134391f71e0ff10ded067a03efe97ff01000000000030390500", // rand_bounded
+        "ea56545c1eaeaeda6221a0333821e237603cd77189ff01000000000030390500", // unary Neg
+        "ee91f31a6dd21b176e903bdbd530accda3a4c55b2fff01000000000030390400", // unary Cast
+    ];
+    let hex = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    for (index, (bytes, golden)) in derived.iter().zip(golden).enumerate() {
+        assert_eq!(hex(bytes), golden, "derivation {index}");
+    }
+}
