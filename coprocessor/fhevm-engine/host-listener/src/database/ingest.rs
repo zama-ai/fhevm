@@ -584,7 +584,7 @@ pub async fn ingest_block_logs(
                     // those bytes or a later bridge copy win the copy's
                     // ON CONFLICT would then depend on per-node fork
                     // visibility — a fleet consensus hazard. The observation
-                    // above is persisted either way; synthesis for a
+                    // above is durable either way; synthesis for a
                     // not-yet-final block happens when the block finalizes
                     // (see `synthesize_finalized_fallback_grants`).
                     if !block_logs.finalized {
@@ -1433,7 +1433,7 @@ async fn notify_coprocessor_upgrade_proposed(
     );
 
     // One wake-up for the complete proposal; the controller reconciles from
-    // the persistent per-chain rows.
+    // the durable per-chain rows.
     let payload = serde_json::json!({
         "proposal_id":    &proposal_id_hex,
         "chain_id":       listener_chain_id_i64,

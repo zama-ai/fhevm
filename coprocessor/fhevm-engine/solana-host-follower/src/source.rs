@@ -323,7 +323,7 @@ pub(crate) fn build_subscribe_request(
     }
 }
 
-fn decode_hash(name: &str, value: &str) -> Result<[u8; 32]> {
+pub(crate) fn decode_hash(name: &str, value: &str) -> Result<[u8; 32]> {
     let bytes = bs58::decode(value)
         .into_vec()
         .with_context(|| format!("invalid {name}"))?;
