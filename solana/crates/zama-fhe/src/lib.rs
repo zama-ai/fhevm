@@ -94,14 +94,6 @@ pub enum FheExecutionError {
     /// The execution's interned constant dictionary outgrew the host's `u8` wire indices.
     #[msg("More dictionary entries than fit in the host's u8 indices")]
     TooManyDictionaryEntries,
-    /// An interned dictionary entry is not referenced by any step (host parity:
-    /// `FheExecuteDictionaryEntryUnreferenced`).
-    #[msg("A dictionary entry is not referenced by any step")]
-    UnreferencedDictionaryEntry,
-    /// A step referenced a dictionary index past the end of the interned dictionary (host
-    /// parity: `FheExecuteDictionaryIndexOutOfBounds`).
-    #[msg("A step references a dictionary index out of bounds")]
-    DictionaryIndexOutOfBounds,
     /// A transient operand referenced an operation that has not been produced.
     #[msg("A transient operand references an operation not yet produced")]
     InvalidTransientReference,
@@ -155,24 +147,9 @@ pub enum FheExecutionError {
     /// A bounded random upper bound is zero, not a power of two, or too wide for euint64.
     #[msg("The random upper bound is invalid")]
     InvalidRandomUpperBound,
-    /// The declared binary output type is not valid for the selected operator.
-    #[msg("The binary output type is not valid for the operator")]
-    UnsupportedBinaryOutputType,
-    /// Binary operand handle types do not match the selected operator.
-    #[msg("The binary operand types do not match the operator")]
-    BinaryOperandTypeMismatch,
-    /// Ternary operand handle types do not match the selected operator.
-    #[msg("The ternary operand types do not match the operator")]
-    TernaryOperandTypeMismatch,
-    /// An allowed key is the zero key or repeats another (host parity: `InvalidAllowKey`).
-    #[msg("An allowed key is zero or repeated")]
-    InvalidAllowKey,
     /// The fixed encrypted store authority is the default pubkey, so it can never sign.
     #[msg("The execution authority is the default pubkey")]
     InvalidExecutionAuthority,
-    /// A lowered host account index does not match the execution account list.
-    #[msg("A host account index does not match the execution account list")]
-    InvalidRemainingAccountReference,
     /// A verified-input operand referenced an attestation not registered with the builder.
     #[msg("A verified input references an unregistered attestation")]
     MissingVerifiedInput,
@@ -182,9 +159,6 @@ pub enum FheExecutionError {
     /// `mul_div` was given a zero divisor; the host rejects it (EVM DivisionByZero parity).
     #[msg("mul_div divisor is zero")]
     MulDivDivisorZero,
-    /// `div`/`rem` require a plaintext scalar divisor (EVM `IsNotScalar`).
-    #[msg("div and rem require a scalar divisor")]
-    DivisorMustBeScalar,
     /// `div`/`rem` divisor is zero (EVM `DivisionByZero`).
     #[msg("Division by zero")]
     DivisionByZero,

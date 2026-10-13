@@ -46,7 +46,7 @@ use crate::execution::FheExecution;
 use crate::heap_tally::{HeapBudget, TalliedVec};
 use crate::lower::{lower_effect, lower_operand, StepTables};
 use crate::operand::{BuilderIdentity, Operand, OperandKind};
-use crate::validate::{validate_authority, validate_lowered_execution};
+use crate::validate::validate_authority;
 use crate::{FheExecutionError, Result};
 
 /// Pubkey-oriented builder for `FheExecuteArgs`.
@@ -375,25 +375,13 @@ impl<'id> FheExecutionBuilder<'id> {
         if packet_bytes > crate::cost::CPI_INSTRUCTION_DATA_LIMIT {
             return Err(FheExecutionError::ExceedsCpiInstructionDataLimit);
         }
-        // Packet and invoke tables are everything still uncharged. Finish's used-entry
-        // bitmaps live on the stack: wire indexes are `u8`.
+        // Packet and invoke tables are everything still uncharged.
         if !self
             .budget
             .fits_with(return_allocation + packet_bytes + invoke_heap_bytes)
         {
             return Err(FheExecutionError::ExceedsBuildHeapBudget);
         }
-        let mut used_accounts = [false; 256];
-        let mut used_dictionary = [false; 256];
-        used_accounts[usize::from(args.execution_store_index)] = true;
-        validate_lowered_execution(
-            &args.steps,
-            &args.effects,
-            &self.remaining_accounts,
-            &args.dictionary,
-            &mut used_accounts[..self.remaining_accounts.len()],
-            &mut used_dictionary[..args.dictionary.len()],
-        )?;
         let build_heap_bytes = self.budget.total() + return_allocation;
         let cost = crate::cost::FheExecutionCost {
             steps: args.steps.len(),

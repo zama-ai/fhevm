@@ -229,7 +229,6 @@ pub(crate) fn lower_effect(
     result: zama_host::ExecutionResultRef,
     output: crate::StoreOutput,
 ) -> Result<FheExecuteEffect> {
-    crate::validate::validate_allow_keys(&output.allows)?;
     if output.grants.len() > zama_host::MAX_TRANSIENT_GRANTS {
         return Err(FheExecutionError::TooManyResultGrants);
     }
