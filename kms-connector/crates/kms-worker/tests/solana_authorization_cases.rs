@@ -13,7 +13,7 @@ mod solana_support;
 use alloy::primitives::{B256, U256};
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use connector_utils::types::solana_request::{
-    SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1,
+    MAX_REQUEST_HANDLES, SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1,
 };
 use kms_worker::core::solana::{
     delegation::DelegationFailure,
@@ -908,11 +908,12 @@ async fn the_committed_cases_are_the_connectors_verdicts() {
 
     let file = json!({
         "schema": "zama-solana-decrypt-authorization-cases/v1",
-        "description": "The KMS Connector's verdicts on user and public decryptions, each over one host state and one leaf record. `leaf_read` is the Merkle proof batch the Connector asked for, with the record's answers, with the fields of POST /v1/solana/merkle-proofs; null when it asked for none. Bytes are hex, 64-bit numbers decimal strings, addresses base58, account data base64. A missing account is absent. Every read of a case's accounts reports `slot`. The SDK's cleartext client must reach the same verdicts, except where a case ends in a `rust_only` failure.",
+        "description": "The KMS Connector's verdicts on user and public decryptions, each over one host state and one leaf record. `leaf_read` is the Merkle proof batch the Connector asked for, with the record's answers, with the fields of POST /v1/solana/merkle-proofs; null when it asked for none. Bytes are hex, 64-bit numbers decimal strings, addresses base58, account data base64. A missing account is absent. Every read of a case's accounts reports `slot`. `max_request_handles` is the handle cap relayer-http and the Connector refuse a larger request at, before authorization. The SDK's cleartext client must reach the same verdicts, except where a case ends in a `rust_only` failure.",
         "generator": "ZAMA_UPDATE_AUTHORIZATION_CASES=1 cargo test -p kms-worker --test solana_authorization_cases",
         "host_program": PROGRAM_ID.to_string(),
         "slot": SLOT.to_string(),
         "transport_key": hex(&TRANSPORT_KEY),
+        "max_request_handles": MAX_REQUEST_HANDLES.to_string(),
         "rust_only": RUST_ONLY.iter().map(|(failure, reason)| json!({ "failure": failure, "reason": reason })).collect::<Vec<_>>(),
         "user_decrypt_cases": rendered,
         "public_decrypt_cases": rendered_public,

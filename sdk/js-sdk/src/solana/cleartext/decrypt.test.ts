@@ -23,6 +23,7 @@ import {
 } from '../permit/index.js';
 import { SolanaDecryptionRunError } from '../decryption/retry.js';
 import {
+  MAX_REQUEST_HANDLES,
   cleartextPublicDecryptCertifier,
   cleartextConnectorRejection,
   cleartextUserDecryptExecution,
@@ -133,6 +134,17 @@ describe('cleartextPublicDecryptCertifier', () => {
         1,
       ),
     ).not.toThrow();
+  });
+
+  it("refuses a request over the handle cap as the relayer's admission does, before the Connector", async () => {
+    vi.spyOn(authorization, 'judgeSolanaPublicDecryption');
+    const overCap = {
+      ...parameters,
+      entries: Array.from({ length: MAX_REQUEST_HANDLES + 1 }, () => parameters.entries[0]!),
+    };
+    const error = await certify(overCap).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ rejection: { code: 'malformed' }, attempts: 1 });
+    expect(authorization.judgeSolanaPublicDecryption).not.toHaveBeenCalled();
   });
 
   it('fails at once on a code the retry loop gives up on', async () => {
@@ -272,6 +284,19 @@ describe('cleartextUserDecryptExecution', () => {
   it("refuses handles on another host chain as the relayer's admission does, before the Connector", async () => {
     hostOnChain(hostChainId + 1n);
     expect(await firstRejection()).toMatchObject({ code: 'malformed' });
+    expect(authorization.judgeSolanaUserDecryption).not.toHaveBeenCalled();
+  });
+
+  it("refuses a request over the handle cap as the relayer's admission does, before the Connector", async () => {
+    const error = await cleartextUserDecryptExecution(rpc, chain, readLeaves)
+      .execute({
+        session: sessionStarting(now - 10n),
+        entries: Array.from({ length: MAX_REQUEST_HANDLES + 1 }, () => entries[0]!),
+        attempts: 1,
+        options: undefined,
+      })
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ rejection: { code: 'malformed' }, attempts: 1 });
     expect(authorization.judgeSolanaUserDecryption).not.toHaveBeenCalled();
   });
 

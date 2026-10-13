@@ -88,7 +88,7 @@ export function solanaUserDecryptRequestInputs(
  * @param run.clock - Used for the backoff between attempts.
  * @param run.attempts - Submission budget; the retry loop's default applies when absent.
  * @param run.verification - The signers of the permit's `KmsContext` and the gateway domain from `HostConfig`.
- * @throws SolanaUserDecryptRequestError - When the request is refused before the network.
+ * @throws As {@link buildSolanaUserDecryptRequest}, before the network.
  * @throws SolanaDecryptionRunError - When no attempt was answered.
  * @throws If the answer does not verify as this request's.
  */

@@ -234,9 +234,7 @@ describe('the entry list', () => {
 describe('the bit budget', () => {
   // Nine 256-bit handles are 2,304 bits, one handle past the KMS's 2,048.
   it('refuses a request over the budget before the network', () => {
-    const entries = Array.from({ length: 9 }, (_, index) =>
-      entryFor(handleOf(EUINT256_TYPE_ID, PERMIT_CHAIN_ID, index)),
-    );
+    const entries = Array.from({ length: 9 }, () => entryFor(handleOf(EUINT256_TYPE_ID)));
     expect(() => buildSolanaUserDecryptRequest({ signedPermit: signedPermit(), entries })).toThrow(
       'Cannot decrypt more than 2048 encrypted bits in a single request',
     );

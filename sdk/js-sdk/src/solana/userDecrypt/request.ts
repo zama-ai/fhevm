@@ -78,7 +78,7 @@ export interface SolanaUserDecryptRequestJson {
  * Why a request could not be assembled.
  *
  * Every member is a rejection this layer can reach without reading host state, and each names the
- * entry it came from: a request of thirty-three handles that is refused without saying which one is
+ * entry it came from: a request of many handles that is refused without saying which one is
  * malformed sends the caller looking through all of them.
  */
 export type SolanaUserDecryptRequestFailure =
@@ -126,7 +126,9 @@ function describeRequestFailure(failure: SolanaUserDecryptRequestFailure): strin
  *
  * @param admission.chainId - The one host chain the permit was signed for.
  * @param admission.entries - The handles, in the order they will be requested.
- * @throws SolanaUserDecryptRequestError - On the first rule the request breaks.
+ * @throws SolanaUserDecryptRequestError - On no handles, a foreign host chain or a malformed identity
+ * field.
+ * @throws If a handle does not parse, or the request is over the KMS bit budget.
  */
 export function admitSolanaUserDecryptRequest(admission: {
   readonly chainId: bigint;
@@ -141,7 +143,6 @@ export function admitSolanaUserDecryptRequest(admission: {
   const handles = entries.map((entry) => toFhevmHandle(entry.handle));
   assertKmsDecryptionBitLimit(handles);
 
-  // The chain id each handle embeds must be the one chain the permit was signed for.
   for (const [index, handle] of handles.entries()) {
     if (handle.chainId !== chainId) {
       throw new SolanaUserDecryptRequestError({ reason: 'foreign-host-chain', index, chainId: handle.chainId });
@@ -168,7 +169,7 @@ export function admitSolanaUserDecryptRequest(admission: {
  *
  * @param request.signedPermit - The permit and its one signature.
  * @param request.entries - The entries, in the order they will be requested.
- * @throws SolanaUserDecryptRequestError - On the first entry or budget rule the request breaks.
+ * @throws As {@link admitSolanaUserDecryptRequest}.
  */
 export function buildSolanaUserDecryptRequest(request: {
   readonly signedPermit: SolanaSignedPermit;

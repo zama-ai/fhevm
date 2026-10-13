@@ -1,7 +1,8 @@
 {
-  "description": "The KMS Connector's verdicts on user and public decryptions, each over one host state and one leaf record. `leaf_read` is the Merkle proof batch the Connector asked for, with the record's answers, with the fields of POST /v1/solana/merkle-proofs; null when it asked for none. Bytes are hex, 64-bit numbers decimal strings, addresses base58, account data base64. A missing account is absent. Every read of a case's accounts reports `slot`. The SDK's cleartext client must reach the same verdicts, except where a case ends in a `rust_only` failure.",
+  "description": "The KMS Connector's verdicts on user and public decryptions, each over one host state and one leaf record. `leaf_read` is the Merkle proof batch the Connector asked for, with the record's answers, with the fields of POST /v1/solana/merkle-proofs; null when it asked for none. Bytes are hex, 64-bit numbers decimal strings, addresses base58, account data base64. A missing account is absent. Every read of a case's accounts reports `slot`. `max_request_handles` is the handle cap relayer-http and the Connector refuse a larger request at, before authorization. The SDK's cleartext client must reach the same verdicts, except where a case ends in a `rust_only` failure.",
   "generator": "ZAMA_UPDATE_AUTHORIZATION_CASES=1 cargo test -p kms-worker --test solana_authorization_cases",
   "host_program": "US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx",
+  "max_request_handles": "32",
   "public_decrypt_cases": [
     {
       "accounts": [
