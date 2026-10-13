@@ -317,9 +317,9 @@ contract ConfidentialMultiChainRandomGeneratorTest is TestHelperOz5, HostContrac
         dstBridge.lzCompose(composeFrom, guid, composeMsg, address(0), "");
 
         // Recover exactly what the destination app committed from the delivered compose message.
-        (, , , bytes memory payload, bytes32[] memory srcList, bytes32[] memory dstList) = abi.decode(
+        (, , , bytes memory payload, bytes32[] memory srcList, bytes32[] memory dstList, , ) = abi.decode(
             composeMsg,
-            (uint32, bytes32, bytes32, bytes, bytes32[], bytes32[])
+            (uint32, bytes32, bytes32, bytes, bytes32[], bytes32[], uint48[], uint48)
         );
         assertEq(srcList.length, count);
         assertEq(dstList.length, count);
@@ -449,7 +449,9 @@ contract ConfidentialMultiChainRandomGeneratorTest is TestHelperOz5, HostContrac
             _addressToBytes32(address(appDst)),
             payload,
             srcList,
-            dstList
+            dstList,
+            new uint48[](2),
+            uint48(block.number)
         );
 
         bytes32 guid = keccak256("compose-guid");

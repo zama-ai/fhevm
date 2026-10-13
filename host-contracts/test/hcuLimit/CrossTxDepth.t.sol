@@ -22,6 +22,19 @@ contract DepthUser {
         ACL(aclAdd).allow(value, address(this));
     }
 
+    function add(bytes32 lhs, bytes32 rhs) external {
+        value = FHEVMExecutor(fhevmExecutorAdd).fheAdd(lhs, rhs, 0x00);
+        ACL(aclAdd).allow(value, address(this));
+    }
+
+    function sum(bytes32 first, bytes32 second) external {
+        bytes32[] memory values = new bytes32[](2);
+        values[0] = first;
+        values[1] = second;
+        value = FHEVMExecutor(fhevmExecutorAdd).fheSum(values, FheType.Uint64);
+        ACL(aclAdd).allow(value, address(this));
+    }
+
     function forward(DepthUser recipient) external {
         ACL(aclAdd).allowTransient(value, address(recipient));
         recipient.addOne(value);
@@ -80,6 +93,24 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         vm.roll(block.number + 1);
         alice.addOne(alice.value());
         assertEq(_storedDepth(alice), start + 2 * step);
+    }
+
+    function test_DeepestInputSetsCarriedDepth() public {
+        _startAndMeasure(alice);
+        for (uint256 i = 0; i < 20; i++) {
+            alice.addOne(alice.value());
+        }
+        bytes32 deep = alice.value();
+        uint48 deepDepth = _storedDepth(alice);
+        alice.share(address(bob));
+
+        bob.start();
+        bob.add(bob.value(), deep);
+        assertGt(_storedDepth(bob), deepDepth);
+
+        bob.start();
+        bob.sum(bob.value(), deep);
+        assertGt(_storedDepth(bob), deepDepth);
     }
 
     function test_TransientForwardCarriesDepth() public {
