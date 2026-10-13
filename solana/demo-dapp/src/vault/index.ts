@@ -47,10 +47,8 @@ export { DEMO_VAULT_PROGRAM_ADDRESS } from './internal/generated/demoVault/progr
 
 export {
   deriveBatchAddresses,
-  deriveSettleAccounts,
   type VaultDemoRoots,
   type BatchAddresses,
-  type SolanaVaultSettleAccounts,
 } from './derive.js';
 export {
   dispatchableAt,

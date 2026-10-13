@@ -8,8 +8,6 @@ import {
 import {
   findBatchPda,
   findBatchAuthorityPda,
-  findBatchJoinUnderlyingPda,
-  findBatchPayoutUnderlyingPda,
 } from './internal/generated/confidentialBatcher/pdas/index.js';
 import {
   findPendingBurnPda,
@@ -52,10 +50,6 @@ export interface BatchAddresses {
   readonly batchJoinTokenAccount: Address;
   /** The batch authority's confidential token account on the payout mint. */
   readonly batchPayoutTokenAccount: Address;
-  /** Plain SPL account receiving the redeemed batch total (join underlying). */
-  readonly batchJoinUnderlying: Address;
-  /** Plain SPL account receiving the vault phase's output (payout underlying). */
-  readonly batchPayoutUnderlying: Address;
   /** The batch's burned-amount encrypted store on the join mint, which settle passes to redeem. */
   readonly batchBurnedAmountStore: Address;
   /** The batch payout token account's confidential balance encrypted store. */
@@ -64,24 +58,19 @@ export interface BatchAddresses {
 
 /**
  * Derives every batch-scoped address for a batcher and zero-based batch index. Pure: it seeds PDAs
- * and hashes labels, never touching the RPC. The join-side underlying accounts, the payout-side
- * confidential accounts, and both plain SPL underlyings all fall out of the batch account and the
- * roots' mints — the same derivations the on-chain `settle` handler resolves as `#[account(seeds)]`.
+ * and hashes labels, never touching the RPC. Every address falls out of the batch account and the
+ * roots' mints — the same derivations the on-chain handlers resolve as `#[account(seeds)]`.
  */
 export async function deriveBatchAddresses(roots: VaultDemoRoots, batchIndex: bigint): Promise<BatchAddresses> {
   const batch = (await findBatchPda({ batcher: roots.batcher, index: batchIndex }))[0];
   const [batchAuthority] = await findBatchAuthorityPda({ batch });
   const batchJoinTokenAccount = (await findTokenAccountPda({ mint: roots.joinConfidentialMint, owner: batchAuthority }))[0];
   const batchPayoutTokenAccount = (await findTokenAccountPda({ mint: roots.payoutConfidentialMint, owner: batchAuthority }))[0];
-  const [batchJoinUnderlying] = await findBatchJoinUnderlyingPda({ batch });
-  const [batchPayoutUnderlying] = await findBatchPayoutUnderlyingPda({ batch });
   return {
     batch,
     batchAuthority,
     batchJoinTokenAccount,
     batchPayoutTokenAccount,
-    batchJoinUnderlying,
-    batchPayoutUnderlying,
     // Burned amount: the join mint's `burned_amount` value of the batch's join token account.
     // Payout balance: the payout mint's `balance` value of the batch's payout token account.
     batchBurnedAmountStore: await tokenStoreAddress(roots.joinConfidentialMint, batchJoinTokenAccount),
@@ -91,9 +80,8 @@ export async function deriveBatchAddresses(roots: VaultDemoRoots, batchIndex: bi
 
 /**
  * The accounts of one `settle` that its generated builder cannot resolve on its own, derived from
- * the roots and a batch's addresses.
- * The payer and transaction transient store are resolved when the transaction is assembled. `pendingBurn`
- * is derived from the join mint and batch join token account, so it is known when the batch opens.
+ * the roots and a batch's addresses. `settleBatch` adds the payer, the transient store, the
+ * instructions sysvar, the certificate's `kmsContext` and the HCU accounts.
  */
 export interface SolanaVaultSettleAccounts {
   readonly batcher: Address;
@@ -161,9 +149,6 @@ export async function deriveSettleAccounts(
     payoutMintVaultAuthority,
     payoutTotalSupplyAuthority,
     batchPayoutBalanceStore: batch.batchPayoutBalanceStore,
-    // Total supply: domain = payout mint, encrypted store authority = its total-supply
-    // authority, encrypted value label =
-    // `total_supply`.
     payoutTotalSupplyStore: await tokenStoreAddress(roots.payoutConfidentialMint, payoutTotalSupplyAuthority),
     joinTotalSupplyAuthority,
     joinTotalSupplyStore: await tokenStoreAddress(roots.joinConfidentialMint, joinTotalSupplyAuthority),

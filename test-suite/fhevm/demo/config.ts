@@ -3,9 +3,9 @@
 //
 // It carries ROOTS ONLY (program ids, the two batchers, the vault, the four mints, host/kms context,
 // persona pubkeys, endpoints, chain id). Everything a caller needs to reach a vault-module action —
-// including settle's full 34-account set — is DERIVED
-// from these roots by the SDK's `deriveBatchAddresses`/`deriveSettleAccounts` and its on-chain reads
-// (`getCurrentBatch`, the generated `EncryptedValue` decoder). An address dump would be a confession
+// including settle's full account set — is DERIVED from these roots by the vault module and its
+// generated builders, and by its on-chain reads (`getCurrentBatch`, the generated `EncryptedValue`
+// decoder). An address dump would be a confession
 // that the SDK cannot serve a real integrator, so nothing derivable belongs here.
 //
 // `depositRoots`/`redeemRoots` project the config onto the SDK's normative `VaultDemoRoots` for each

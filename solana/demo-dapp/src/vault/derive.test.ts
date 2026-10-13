@@ -35,14 +35,12 @@ describe('deriveBatchAddresses', () => {
     const a1 = await deriveBatchAddresses(r, 1n);
     expect(a0).toEqual(a0Again);
     expect(a0.batch).not.toBe(a1.batch);
-    // Every field is a distinct 44-ish char base58 address; none is empty.
     for (const value of Object.values(a0)) expect(typeof value).toBe('string');
   });
 });
 
 describe('deriveSettleAccounts', () => {
-  // Golden derivations for the fixed `roots()` fixture; claim.test.ts pins its batch-side payout
-  // accounts against the same values.
+  // Golden derivations for the fixed `roots()` fixture.
   it('matches the golden settle accounts for the fixed roots fixture', async () => {
     const batch = await deriveBatchAddresses(roots(), 0n);
     expect(batch.batch).toBe('6qzexx3j3oQraXoc1Ji8SdrKBLZaorG8HxtPZtprtoUN');

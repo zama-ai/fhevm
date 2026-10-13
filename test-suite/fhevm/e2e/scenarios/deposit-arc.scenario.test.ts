@@ -362,10 +362,9 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       expect(batchAfterSettle.addresses.batch).toBe(batch);
       expect(batchAfterSettle.state.totalJoined).toBe(wrapBaseUnits);
       expect(batchAfterSettle.state.payoutReceived > 0n).toBe(true);
-      const settleAccounts = await vault.deriveSettleAccounts(roots, batchAfterSettle.addresses);
       const verifiedTotal = await publicDecryptClient.decryptPublicValue({
         handle: burnedHandleHex,
-        encryptedStore: addressBytes(settleAccounts.batchBurnedAmountStore),
+        encryptedStore: addressBytes(batchAfterSettle.addresses.batchBurnedAmountStore),
         options: { timeout: DECRYPT_ROUNDTRIP_TIMEOUT_MS },
       });
       expect(verifiedTotal.type).toBe("uint64");
