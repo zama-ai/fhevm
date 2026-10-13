@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
-import {fhevmExecutorAdd, aclAdd, confidentialBridgeAdd} from "../addresses/FHEVMHostAddresses.sol";
+import {fhevmExecutorAdd, aclAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "./ACL.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 
@@ -55,14 +55,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @dev Handle slot zero is reserved for the transaction HCU accumulator.
     error InvalidZeroHandle();
 
-    /// @notice Returned when a computed handle's depth is neither cached in this transaction nor stored for its holder.
-    error UnknownHandleDepth(bytes32 handle);
-
-    /// @notice Returned when a depth hook is called by a contract other than the ACL or the bridge.
-    error CallerMustBeACLOrBridge();
-
-    /// @notice Returned when bridged depths are set by a contract other than the bridge.
-    error CallerMustBeConfidentialBridge();
+    /// @notice Returned when the caller is not the ACL contract.
+    error CallerMustBeACLContract();
 
     /// @notice Returned when only one of the cross-transaction depth limit and its decay is zero.
     error InvalidCrossTxDepthLimit();
@@ -1746,27 +1740,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      *         `holder`'s permission if this transaction has not seen it yet. Returns 0 when disabled.
      */
     function loadDepth(bytes32 handle, address holder) external returns (uint48) {
-        // Checked before the caller: when disabled this is a no-op for any bridge deployment.
+        if (msg.sender != aclAdd) revert CallerMustBeACLContract();
         if (_getHCULimitStorage().maxCrossTxDepth == 0) return 0;
-        if (msg.sender != aclAdd && msg.sender != confidentialBridgeAdd) revert CallerMustBeACLOrBridge();
         return uint48(_handleDepths(handle, holder) >> 128);
-    }
-
-    /**
-     * @notice Sets the depths that bridged handles carry from their source chain.
-     * @dev Each depth decays from `receivedBlock`, the block where the message arrived.
-     */
-    function setBridgedDepths(bytes32[] calldata handles, uint48[] calldata depths, uint48 receivedBlock) external {
-        // Checked before the caller: when disabled this is a no-op for any bridge deployment.
-        if (_getHCULimitStorage().maxCrossTxDepth == 0) return;
-        if (msg.sender != confidentialBridgeAdd) revert CallerMustBeConfidentialBridge();
-        for (uint256 i = 0; i < handles.length; i++) {
-            bytes32 handle = handles[i];
-            uint256 word = DEPTH_KNOWN | (_decayed(depths[i], receivedBlock) << 128);
-            assembly {
-                tstore(handle, word)
-            }
-        }
     }
 
     /// @dev An operation adds its HCU to both depths.
@@ -1782,7 +1758,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @dev Returns both depths of `handle`. A handle first seen in this transaction has no depth within it;
-     *      its carried depth comes from `holder`'s permission, except for verified inputs, which start new chains.
+     *      its carried depth is the one stored with `holder`'s permission, or 0 without one: verified inputs,
+     *      bridged handles and permissions granted while disabled start new chains.
      */
     function _handleDepths(bytes32 handle, address holder) private returns (uint256 depths) {
         // Handle slot zero is reserved for _getHCUForTransaction.
@@ -1791,10 +1768,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             depths := tload(handle)
         }
         if (depths & DEPTH_KNOWN != 0) return depths & ~DEPTH_KNOWN;
-        // Byte 21 is 0xff only for computed handles; verified inputs carry their index there.
-        if (uint8(handle[21]) != 0xff || _getHCULimitStorage().maxCrossTxDepth == 0) return 0;
-        (bool allowed, uint48 storedDepth, uint48 storedBlock) = ACL(aclAdd).getStoredDepth(handle, holder);
-        if (!allowed) revert UnknownHandleDepth(handle);
+        if (_getHCULimitStorage().maxCrossTxDepth == 0) return 0;
+        (uint48 storedDepth, uint48 storedBlock) = ACL(aclAdd).getStoredDepth(handle, holder);
         depths = _decayed(storedDepth, storedBlock) << 128;
         uint256 word = depths | DEPTH_KNOWN;
         assembly {

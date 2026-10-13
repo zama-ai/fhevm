@@ -5,8 +5,7 @@ import {OAppReceiverUpgradeable, Origin} from "@layerzerolabs/oapp-evm-upgradeab
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 
 import {ACL} from "../ACL.sol";
-import {HCULimit} from "../HCULimit.sol";
-import {aclAdd, hcuLimitAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {ACLOwnable} from "../shared/ACLOwnable.sol";
 import {HANDLE_VERSION} from "../shared/Constants.sol";
 import {FheType} from "../shared/FheType.sol";
@@ -47,15 +46,6 @@ import {IDstApp} from "./interfaces/IDstApp.sol";
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer, ACLOwnable, BridgeEvents {
-    /// @dev Decoded message fields; a struct keeps decoding within the stack limit without via-ir.
-    struct BridgeMessage {
-        bytes32 srcApp;
-        bytes32 dstApp;
-        bytes payload;
-        bytes32[] srcHandles;
-        uint48[] depths;
-    }
-
     /// @notice Returned when `lzCompose` is invoked by an unauthorized caller.
     error NotLzEndpoint(address caller);
 
@@ -215,36 +205,22 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
         // also fit in 20 bytes for the local IDstApp dispatch — non-EVM destinations
         // never reach this lzCompose path because they run their own (non-Solidity)
         // bridge implementation.
-        BridgeMessage memory decoded;
-        uint32 srcEid;
-        bytes32[] memory dstHandleList;
-        uint48 receivedBlock;
         (
-            srcEid,
-            decoded.srcApp,
-            decoded.dstApp,
-            decoded.payload,
-            decoded.srcHandles,
-            dstHandleList,
-            decoded.depths,
-            receivedBlock
-        ) = abi.decode(message, (uint32, bytes32, bytes32, bytes, bytes32[], bytes32[], uint48[], uint48));
+            uint32 srcEid,
+            bytes32 srcApp,
+            bytes32 dstApp,
+            bytes memory payload,
+            bytes32[] memory srcHandleList,
+            bytes32[] memory dstHandleList
+        ) = abi.decode(message, (uint32, bytes32, bytes32, bytes, bytes32[], bytes32[]));
 
-        HCULimit(hcuLimitAdd).setBridgedDepths(dstHandleList, decoded.depths, receivedBlock);
-        address dstAppEvm = address(uint160(uint256(decoded.dstApp)));
+        address dstAppEvm = address(uint160(uint256(dstApp)));
         uint256 nHandles = dstHandleList.length;
         for (uint256 i = 0; i < nHandles; i++) {
             ACL_CONTRACT.allowTransient(dstHandleList[i], dstAppEvm);
         }
 
-        IDstApp(dstAppEvm).onConfidentialBridgeReceived(
-            srcEid,
-            decoded.srcApp,
-            decoded.payload,
-            decoded.srcHandles,
-            dstHandleList,
-            guid
-        );
+        IDstApp(dstAppEvm).onConfidentialBridgeReceived(srcEid, srcApp, payload, srcHandleList, dstHandleList, guid);
     }
 
     /**
@@ -267,31 +243,20 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
      */
     function _handleInbound(uint32 srcEid, bytes32 guid, bytes calldata message) internal virtual {
         // Wire format mirrors HandlesSender._dispatch: srcApp+dstApp as bytes32.
-        BridgeMessage memory decoded;
-        (decoded.srcApp, decoded.dstApp, decoded.payload, decoded.srcHandles, decoded.depths) = abi.decode(
+        (bytes32 srcApp, bytes32 dstApp, bytes memory payload, bytes32[] memory srcHandleList) = abi.decode(
             message,
-            (bytes32, bytes32, bytes, bytes32[], uint48[])
+            (bytes32, bytes32, bytes, bytes32[])
         );
 
-        bytes32[] memory dstHandleList = _deriveAndEmit(decoded.dstApp, decoded.srcHandles, guid);
+        bytes32[] memory dstHandleList = _deriveAndEmit(dstApp, srcHandleList, guid);
 
         // Dispatch a compose message back to self. The HandlesReceiver is also the
         // compose target, configured via LayerZero options on the source side.
-        // Carried depths decay from this block, so a compose retried later can pass.
         endpoint.sendCompose(
             address(this),
             guid,
             0,
-            abi.encode(
-                srcEid,
-                decoded.srcApp,
-                decoded.dstApp,
-                decoded.payload,
-                decoded.srcHandles,
-                dstHandleList,
-                decoded.depths,
-                uint48(block.number)
-            )
+            abi.encode(srcEid, srcApp, dstApp, payload, srcHandleList, dstHandleList)
         );
     }
 

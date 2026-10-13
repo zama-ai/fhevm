@@ -187,7 +187,7 @@ contract HandlesReceiverGasProfiler is GasProfilerScript {
         s = keccak256(abi.encode(sender, s));
     }
 
-    /// @dev Bridge wire format: abi.encode(srcApp, dstApp, payload, srcHandleList, depths).
+    /// @dev Bridge wire format: abi.encode(srcApp, dstApp, payload, srcHandleList).
     ///      `dstApp` is never called during `lzReceive` (only in `lzCompose`), so any
     ///      address works for gas purposes.
     function _encodeReceiveMessage(
@@ -201,7 +201,7 @@ contract HandlesReceiverGasProfiler is GasProfilerScript {
             handleList[k] = h;
         }
         bytes memory payload = new bytes(payloadLen);
-        return abi.encode(sender, sender, payload, handleList, new uint48[](nHandles));
+        return abi.encode(sender, sender, payload, handleList);
     }
 
     ////////////////////////////////////////////////////////////////////////////////
