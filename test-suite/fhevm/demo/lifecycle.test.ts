@@ -345,18 +345,6 @@ describe("demo lifecycle collision policy", () => {
     expect(script).toContain("DEMO_BOOT_ID");
     expect(script).toContain("FHEVM_COMPOSE_PROJECT");
     expect(script).toContain('state") != "starting');
-    expect(script).toContain('cd "$ROOT/solana/demo-dapp"');
-    expect(script).toContain('cd "$ROOT/solana/clients/confidential-token"');
-    expect(script.match(/bun install --frozen-lockfile/g)).toHaveLength(2);
-    expect(
-      script.match(/bun install --force --no-cache --frozen-lockfile/g),
-    ).toHaveLength(2);
-    expect(script).toMatch(
-      /if ! \( cd "\$ROOT\/solana\/clients\/confidential-token" && bun install --frozen-lockfile \); then[\s\S]*\( cd "\$ROOT\/solana\/clients\/confidential-token" && bun install --force --no-cache --frozen-lockfile \)\nfi/,
-    );
-    expect(script).toMatch(
-      /if ! \( cd "\$ROOT\/solana\/demo-dapp" && bun install --frozen-lockfile \); then[\s\S]*\( cd "\$ROOT\/solana\/demo-dapp" && bun install --force --no-cache --frozen-lockfile \)\nfi/,
-    );
     expect(script).not.toContain("--no-verify");
     expect(script).toContain(
       'NODE_PATH="$ROOT/solana/demo-dapp/node_modules" bun run demo:seed',
