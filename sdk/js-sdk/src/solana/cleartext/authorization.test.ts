@@ -155,10 +155,10 @@ function requestOf({ permit, signature, entries }: UserCase) {
   };
 }
 
-/** Whether the cleartext client can produce a case's verdict: not one the Connector keeps to itself. */
 const rustOnly = new Set(fixture.rust_only.map(({ failure }) => failure));
-const judged = <C extends { readonly verdict: Verdict }>(cases: readonly C[]): readonly C[] =>
-  cases.filter(({ verdict }) => verdict.authorized || !rustOnly.has(verdict.failure));
+/** The client's verdict on a case: the Connector's, except that it authorizes where only the Connector refuses. */
+const clientVerdict = (verdict: Verdict): Verdict =>
+  verdict.authorized || !rustOnly.has(verdict.failure) ? verdict : { authorized: true };
 
 const userCase = (name: string): UserCase => {
   const found = fixture.user_decrypt_cases.find((testCase) => testCase.name === name);
@@ -176,7 +176,7 @@ function expectVerdict(verdict: ConnectorVerdict, expected: Verdict): void {
 }
 
 describe('the cleartext client judges a user decryption as the KMS Connector does', () => {
-  for (const testCase of judged(fixture.user_decrypt_cases)) {
+  for (const testCase of fixture.user_decrypt_cases) {
     it(testCase.name, async () => {
       const record = leafRecord(testCase.leaf_read);
       const verdict = await judgeSolanaUserDecryption({
@@ -186,7 +186,7 @@ describe('the cleartext client judges a user decryption as the KMS Connector doe
         readAccounts: accountsReader(testCase.accounts),
         readLeaves: record.readLeaves,
       });
-      expectVerdict(verdict, testCase.verdict);
+      expectVerdict(verdict, clientVerdict(testCase.verdict));
       expect(record.asked()).toBe(testCase.leaf_read === null ? 0 : 1);
       if (!verdict.authorized) {
         expect(CONNECTOR_FAILURE_CODE[verdict.failure]).toBe(testCase.verdict.code);
@@ -196,7 +196,7 @@ describe('the cleartext client judges a user decryption as the KMS Connector doe
 
   it('knows exactly the failures the cases produce, and none the Connector keeps to itself', () => {
     const produced = new Set(
-      judged(fixture.user_decrypt_cases).flatMap((c) => (c.verdict.authorized ? [] : [c.verdict.failure])),
+      fixture.user_decrypt_cases.map((c) => clientVerdict(c.verdict)).flatMap((v) => (v.authorized ? [] : [v.failure])),
     );
     expect(new Set(Object.keys(CONNECTOR_FAILURE_CODE))).toEqual(produced);
   });
@@ -222,7 +222,7 @@ describe('the cleartext client judges a user decryption as the KMS Connector doe
 });
 
 describe('the cleartext client judges a public decryption as the KMS Connector does', () => {
-  for (const testCase of judged(fixture.public_decrypt_cases)) {
+  for (const testCase of fixture.public_decrypt_cases) {
     it(testCase.name, async () => {
       const record = leafRecord(testCase.leaf_read);
       const verdict = await judgeSolanaPublicDecryption({
@@ -234,7 +234,7 @@ describe('the cleartext client judges a public decryption as the KMS Connector d
         readAccounts: accountsReader(testCase.accounts),
         readLeaves: record.readLeaves,
       });
-      expectVerdict(verdict, testCase.verdict);
+      expectVerdict(verdict, clientVerdict(testCase.verdict));
       expect(record.asked()).toBe(testCase.leaf_read === null ? 0 : 1);
       if (!verdict.authorized) {
         expect(CONNECTOR_FAILURE_CODE[verdict.failure]).toBe(testCase.verdict.code);

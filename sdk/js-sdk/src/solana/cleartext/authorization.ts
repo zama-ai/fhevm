@@ -229,7 +229,8 @@ async function checkLeaves(
 /**
  * `check_leaf`: whether the record holds the queried leaf among the leaves the observed store has
  * sealed. Without the leaf, a record at least as long as the store holds no such leaf, and a shorter
- * one may catch up.
+ * one may catch up. A found leaf is not refused for the record's age: the Connector may refuse one
+ * attempt whose proof a lagging record built before the leaf's mountain grew, and its retry clears it.
  */
 function checkLeaf(
   store: SolanaEncryptedStore,
@@ -292,7 +293,7 @@ function outsideSignedScopes(fields: SolanaPermitFields, store: SolanaEncryptedS
 
 /**
  * `check_public_decrypt`: every handle's store, read in one snapshot and judged before any leaf, and
- * then each handle's public leaf proven against its store.
+ * then each handle's public leaf found in its store's record.
  */
 export async function judgeSolanaPublicDecryption({
   programAddress,

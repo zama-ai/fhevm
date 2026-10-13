@@ -53,8 +53,7 @@ const FINALIZED = { commitment: 'finalized' } as const;
 
 /**
  * Answers a user decryption with the plaintexts the host recorded for its handles, once the request
- * passes the Connector's authorization, through the production retry loop. The leaves come from
- * `readLeaves`.
+ * passes the Connector's authorization, through the production retry loop.
  */
 export function cleartextUserDecryptExecution(
   rpc: SolanaRpc,

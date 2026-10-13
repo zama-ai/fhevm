@@ -1,8 +1,7 @@
 // The cleartext stack's leaf record: the leaves of every `EncryptedStore` the host writes, rebuilt
 // from the validator's finalized transactions the way the coprocessors' host listener records them
 // (`solana_grpc_listener.rs`, reconstruct), kept in memory and read directly by the cleartext
-// decrypt clients. It answers whether a leaf is among a store's leaves and builds no proof: the
-// client that would check one is the one that built the record.
+// decrypt clients.
 import {
   AccountRole,
   getAddressEncoder,
@@ -33,7 +32,7 @@ export type SolanaLeafQuery = {
   readonly key?: Address;
 };
 
-/** What the record says about one query, among the `leafCount` leaves it has sealed. */
+/** What the record says about one query. */
 export type SolanaLeafOutcome =
   | { readonly status: 'found'; readonly leafIndex: bigint; readonly leafCount: bigint }
   /** The record knows the store and has no such leaf in the `leafCount` leaves it has sealed. */
@@ -44,12 +43,8 @@ export type SolanaLeafOutcome =
 /** One read of the leaf record: an outcome per query, in query order. */
 export type SolanaLeafReader = (queries: readonly SolanaLeafQuery[]) => Promise<readonly SolanaLeafOutcome[]>;
 
-/** One leaf-appending operation in a store's history. Mirrors `zama_solana_acl::history::StoreHistoryEvent`. */
-export type SolanaStoreHistoryEvent =
-  /** One `allow` of `key` on `handle`, sealed by the write that installed `handle`. */
-  | { readonly kind: 'allowed'; readonly handle: Uint8Array; readonly key: Uint8Array }
-  /** `handle` was made publicly decryptable. */
-  | { readonly kind: 'markedPublic'; readonly handle: Uint8Array };
+/** One leaf a write appends: an allow of `key` on `handle`, or `handle` made public without one. */
+export type SolanaStoreHistoryEvent = { readonly handle: Uint8Array; readonly key?: Uint8Array };
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -157,7 +152,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
     if (sealed + run.length < covered) return;
 
     run.forEach((event, offset) => {
-      const found = leafKey(event.handle, event.kind === 'allowed' ? event.key : undefined);
+      const found = leafKey(event.handle, event.key);
       if (!record.firstLeaf.has(found)) record.firstLeaf.set(found, sealed + offset);
     });
     record.leafCount = sealed + run.length;
@@ -213,17 +208,14 @@ function placeWrites(
         const allowed = [...effect.allowIndexes].map((index): SolanaStoreHistoryEvent => {
           const key = execution.dictionary[index];
           if (key === undefined) throw new Error(`an fhe_execute in ${signature} allows a key outside its dictionary`);
-          return { kind: 'allowed', handle, key: new Uint8Array(key) };
+          return { handle, key: new Uint8Array(key) };
         });
-        place(effect.previousLeafCount, [
-          ...allowed,
-          ...(effect.makePublic ? [{ kind: 'markedPublic', handle } as const] : []),
-        ]);
+        place(effect.previousLeafCount, [...allowed, ...(effect.makePublic ? [{ handle }] : [])]);
       }
     } else if (startsWith(instruction.data, MAKE_STORE_HANDLE_PUBLIC_DISCRIMINATOR)) {
       const { accounts, data } = parseMakeStoreHandlePublicInstruction(instruction);
       if (accounts.encryptedStore.address !== encryptedStore) return;
-      place(data.previousLeafCount, [{ kind: 'markedPublic', handle: new Uint8Array(data.handle) }]);
+      place(data.previousLeafCount, [{ handle: new Uint8Array(data.handle) }]);
     }
   });
 }

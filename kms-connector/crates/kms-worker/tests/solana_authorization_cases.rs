@@ -6,7 +6,7 @@
 //! `ZAMA_UPDATE_AUTHORIZATION_CASES=1` rewrites it.
 //!
 //! Every failure variant is produced by a user-decrypt case or listed in [`RUST_ONLY`] with the
-//! reason the cleartext client cannot produce it; the SDK test skips the cases a listed one ends.
+//! reason the cleartext client cannot produce it.
 
 mod solana_support;
 
@@ -74,7 +74,8 @@ const NODE: &str = "The cleartext client throws when an account read fails, lags
 const LEAF_RECORD: &str = "The cleartext client throws when a leaf record read fails or answers the \
                            wrong number of outcomes, instead of judging the request.";
 const OWN_RECORD: &str = "The cleartext client asks its own leaf record whether a leaf is there and \
-                          checks no proof, so it never answers inconsistent and no proof fails.";
+                          checks no proof, so it never answers inconsistent and no proof fails; it \
+                          authorizes where the Connector finds a proof that does not verify.";
 
 /// The failures no cleartext case can produce, with the reason. The SDK test skips the cases that
 /// end in one.
@@ -907,7 +908,7 @@ async fn the_committed_cases_are_the_connectors_verdicts() {
 
     let file = json!({
         "schema": "zama-solana-decrypt-authorization-cases/v1",
-        "description": "The KMS Connector's verdicts on user and public decryptions, each over one host state and one leaf record. `leaf_read` is the Merkle proof batch the Connector asked for, with the record's answers, with the fields of POST /v1/solana/merkle-proofs; null when it asked for none. Bytes are hex, 64-bit numbers decimal strings, addresses base58, account data base64. A missing account is absent. Every read of a case's accounts reports `slot`. The SDK's cleartext client must reach the same verdicts.",
+        "description": "The KMS Connector's verdicts on user and public decryptions, each over one host state and one leaf record. `leaf_read` is the Merkle proof batch the Connector asked for, with the record's answers, with the fields of POST /v1/solana/merkle-proofs; null when it asked for none. Bytes are hex, 64-bit numbers decimal strings, addresses base58, account data base64. A missing account is absent. Every read of a case's accounts reports `slot`. The SDK's cleartext client must reach the same verdicts, except where a case ends in a `rust_only` failure.",
         "generator": "ZAMA_UPDATE_AUTHORIZATION_CASES=1 cargo test -p kms-worker --test solana_authorization_cases",
         "host_program": PROGRAM_ID.to_string(),
         "slot": SLOT.to_string(),

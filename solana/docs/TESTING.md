@@ -311,9 +311,8 @@ returns `@fhevm/sdk/solana` with the three client factories replaced by those of
   `solana_authorization_cases` runs the Connector on a set of user and public decryptions and
   writes each one's accounts, Merkle proof batch with the record's answers, verdict and code to
   `solana/test-fixtures/authorization/decrypt_cases_v1.json`, and the SDK test requires the client
-  to match, except on the cases whose failure the fixture lists as `rust_only`: the client asks its
-  own record whether a leaf is there and checks no proof, so a proof that does not verify is the
-  Connector's alone. The relayer's admission is copied from relayer-http's user-decrypt handler and nothing
+  to match, except on the cases whose failure the fixture lists as `rust_only`. The relayer's
+  admission is copied from relayer-http's user-decrypt handler and nothing
   generated pins it, so a change there needs a matching change here.
 - **Public decrypt.** The store and the handle's public leaf are judged by the Connector's rules,
   through the same retry loop and codes as a user decryption. The certificate is signed with the

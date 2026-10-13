@@ -47,7 +47,7 @@ type Write = {
 /** A top-level `make_store_handle_public` of the handle filled with `handle`, appending leaf `at`. */
 const makePublic = (at: bigint, handle: number): Write => ({
   at,
-  events: [{ kind: 'markedPublic', handle: bytes32(handle) }],
+  events: [{ handle: bytes32(handle) }],
   accountKeys: [other, host, store],
   loadedWritable: [],
   instructions: [
@@ -102,10 +102,8 @@ const execute = (at: bigint, handle: number, allowed: readonly number[]): Write 
   return {
     at,
     events: [
-      ...allowed.map(
-        (key): SolanaStoreHistoryEvent => ({ kind: 'allowed', handle: bytes32(handle), key: bytes32(key) }),
-      ),
-      { kind: 'markedPublic', handle: bytes32(handle) },
+      ...allowed.map((key): SolanaStoreHistoryEvent => ({ handle: bytes32(handle), key: bytes32(key) })),
+      { handle: bytes32(handle) },
     ],
     accountKeys: [keyOf(0x70), other, app, host],
     loadedWritable: [store],
@@ -159,10 +157,7 @@ const history = (writes: readonly Write[]): readonly SolanaStoreHistoryEvent[] =
 
 /** The borsh bytes of the store account with `leafCount` leaves, under one placeholder peak per mountain. */
 const storeAccount = (leafCount: number): Uint8Array => {
-  const peaks = leafCount
-    .toString(2)
-    .split('')
-    .filter((bit) => bit === '1').length;
+  const peaks = leafCount.toString(2).split('1').length - 1;
   return new Uint8Array([
     ...ENCRYPTED_STORE_DISCRIMINATOR,
     ...bytes32(0x11), // program
@@ -363,9 +358,16 @@ describe('createSolanaLeafRecord', () => {
     expect(chain.fetched).not.toContain('sig1');
   });
 
-  it('throws when two writes claim one leaf', async () => {
-    const chain = ledger([makePublic(0n, 2), makePublic(0n, 3)]);
-    await expect(chain.read([publicLeaf(2)])).rejects.toThrow(/claim leaf 0/);
+  it('throws when two writes claim one leaf, then rebuilds the store from its first transaction', async () => {
+    const chain = ledger([makePublic(0n, 2), makePublic(1n, 3), makePublic(1n, 4)]);
+    chain.account.asOf = 1;
+    expect(await chain.read([publicLeaf(2)])).toEqual([{ ...chain.found(0), leafCount: 1n }]);
+    chain.account.asOf = undefined;
+    await expect(chain.read([publicLeaf(2)])).rejects.toThrow(/claim leaf 1/);
+    chain.account.asOf = 2;
+    const before = chain.fetched.length;
+    expect(await chain.read([publicLeaf(3)])).toEqual([{ status: 'found', leafIndex: 1n, leafCount: 2n }]);
+    expect(chain.fetched.slice(before)).toEqual(['sig1', 'sig0']);
   });
 
   it('stays at its leaf count while a write is unlisted or unserved, then catches up', async () => {
