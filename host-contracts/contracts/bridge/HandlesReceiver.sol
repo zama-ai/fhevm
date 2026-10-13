@@ -52,7 +52,7 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
         bytes32 srcApp;
         bytes32 dstApp;
         bytes payload;
-        bytes32[] handles;
+        bytes32[] srcHandles;
         uint48[] depths;
     }
 
@@ -215,23 +215,36 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
         // also fit in 20 bytes for the local IDstApp dispatch — non-EVM destinations
         // never reach this lzCompose path because they run their own (non-Solidity)
         // bridge implementation.
-        BridgeMessage memory m;
+        BridgeMessage memory decoded;
         uint32 srcEid;
         bytes32[] memory dstHandleList;
         uint48 receivedBlock;
-        (srcEid, m.srcApp, m.dstApp, m.payload, m.handles, dstHandleList, m.depths, receivedBlock) = abi.decode(
-            message,
-            (uint32, bytes32, bytes32, bytes, bytes32[], bytes32[], uint48[], uint48)
-        );
+        (
+            srcEid,
+            decoded.srcApp,
+            decoded.dstApp,
+            decoded.payload,
+            decoded.srcHandles,
+            dstHandleList,
+            decoded.depths,
+            receivedBlock
+        ) = abi.decode(message, (uint32, bytes32, bytes32, bytes, bytes32[], bytes32[], uint48[], uint48));
 
-        HCULimit(hcuLimitAdd).setBridgedDepths(dstHandleList, m.depths, receivedBlock);
-        address dstAppEvm = address(uint160(uint256(m.dstApp)));
+        HCULimit(hcuLimitAdd).setBridgedDepths(dstHandleList, decoded.depths, receivedBlock);
+        address dstAppEvm = address(uint160(uint256(decoded.dstApp)));
         uint256 nHandles = dstHandleList.length;
         for (uint256 i = 0; i < nHandles; i++) {
             ACL_CONTRACT.allowTransient(dstHandleList[i], dstAppEvm);
         }
 
-        IDstApp(dstAppEvm).onConfidentialBridgeReceived(srcEid, m.srcApp, m.payload, m.handles, dstHandleList, guid);
+        IDstApp(dstAppEvm).onConfidentialBridgeReceived(
+            srcEid,
+            decoded.srcApp,
+            decoded.payload,
+            decoded.srcHandles,
+            dstHandleList,
+            guid
+        );
     }
 
     /**
@@ -254,13 +267,13 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
      */
     function _handleInbound(uint32 srcEid, bytes32 guid, bytes calldata message) internal virtual {
         // Wire format mirrors HandlesSender._dispatch: srcApp+dstApp as bytes32.
-        BridgeMessage memory inbound;
-        (inbound.srcApp, inbound.dstApp, inbound.payload, inbound.handles, inbound.depths) = abi.decode(
+        BridgeMessage memory decoded;
+        (decoded.srcApp, decoded.dstApp, decoded.payload, decoded.srcHandles, decoded.depths) = abi.decode(
             message,
             (bytes32, bytes32, bytes, bytes32[], uint48[])
         );
 
-        bytes32[] memory dstHandleList = _deriveAndEmit(inbound.dstApp, inbound.handles, guid);
+        bytes32[] memory dstHandleList = _deriveAndEmit(decoded.dstApp, decoded.srcHandles, guid);
 
         // Dispatch a compose message back to self. The HandlesReceiver is also the
         // compose target, configured via LayerZero options on the source side.
@@ -271,12 +284,12 @@ abstract contract HandlesReceiver is OAppReceiverUpgradeable, ILayerZeroComposer
             0,
             abi.encode(
                 srcEid,
-                inbound.srcApp,
-                inbound.dstApp,
-                inbound.payload,
-                inbound.handles,
+                decoded.srcApp,
+                decoded.dstApp,
+                decoded.payload,
+                decoded.srcHandles,
                 dstHandleList,
-                inbound.depths,
+                decoded.depths,
                 uint48(block.number)
             )
         );

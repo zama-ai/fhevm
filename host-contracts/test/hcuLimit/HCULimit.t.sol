@@ -19,10 +19,6 @@ contract MockHCULimit is HCULimit {
         return _getHCUForTransaction();
     }
 
-    function getHCUForHandle(bytes32 handle) external view returns (uint256) {
-        return _getHCUForHandle(handle);
-    }
-
     function setHCUForTransaction(uint256 handleHCU) external {
         _setHCUForTransaction(handleHCU);
     }
@@ -109,23 +105,9 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
 
-    function test_getHCUForHandleRevertsForZeroHandle() public {
-        vm.expectRevert(HCULimit.InvalidZeroHandle.selector);
-        hcuLimit.getHCUForHandle(bytes32(0));
-    }
-
     function test_setHCUForHandleRevertsForZeroHandle() public {
         vm.expectRevert(HCULimit.InvalidZeroHandle.selector);
         hcuLimit.setHCUForHandle(bytes32(0), 1);
-    }
-
-    function test_setAndGetHCUForHandleWorksForNonZeroHandle() public {
-        bytes32 handle = bytes32(uint256(1));
-        uint256 handleHCU = 123;
-
-        hcuLimit.setHCUForHandle(handle, handleHCU);
-
-        assertEq(hcuLimit.getHCUForHandle(handle), handleHCU);
     }
 
     function test_checkHCUForFheAddWorksAsExpectedForSupportedTypes(uint8 resultType, bytes1 scalarByte) public {

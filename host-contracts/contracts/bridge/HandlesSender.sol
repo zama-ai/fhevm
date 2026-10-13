@@ -285,6 +285,7 @@ abstract contract HandlesSender is OAppSenderUpgradeable, ACLOwnable, BridgeEven
         if (_getHandlesSenderStorage().dstChainIdForEid[dstEid] == 0) revert UnknownDstEid(dstEid);
 
         bytes memory finalOptions = _buildOptions(dstEid, uint64(nHandles), uint64(payload.length), lzComposeGas);
+        // Depth values do not change the encoded size, so zeros quote the same fee.
         bytes memory message = abi.encode(
             bytes32(uint256(uint160(srcApp))),
             dstApp,

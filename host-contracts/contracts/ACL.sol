@@ -311,7 +311,8 @@ contract ACL is
                 revert SenderNotAllowed(msg.sender);
             }
 
-            // The recipient may compute on the handle in this transaction without holding a stored permission.
+            // Caches the sender's depth: the recipient computes on the handle in this transaction
+            // without a stored permission of its own to read the depth from.
             HCULimit(hcuLimitAdd).loadDepth(handle, msg.sender);
         }
 
@@ -612,7 +613,8 @@ contract ACL is
         return (uint8(word) != 0, uint48(word >> 8), uint48(word >> 56));
     }
 
-    /// @dev Storage slot of `persistedAllowedPairs[handle][account]`.
+    /// @dev Storage slot of `persistedAllowedPairs[handle][account]`, following Solidity's mapping layout:
+    ///      keccak256(abi.encode(account, slot of persistedAllowedPairs[handle])).
     function _permissionSlot(bytes32 handle, address account) private view returns (bytes32 slot) {
         mapping(address => bool) storage pairs = _getACLStorage().persistedAllowedPairs[handle];
         assembly ("memory-safe") {
