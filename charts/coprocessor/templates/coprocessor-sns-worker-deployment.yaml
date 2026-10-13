@@ -39,12 +39,12 @@
 {{- include "coprocessor.env.extra" (dict "root" .root "lists" (list .c.env)) }}
 {{- end -}}
 
-{{- if .Values.snsWorker.enabled }}
-{{- $ctx := dict "root" . "c" .Values.snsWorker }}
+{{- with include "coprocessor.workload" (dict "root" . "key" "snsWorker") | fromYaml }}
+{{- $ctx := dict "root" $ "c" .c }}
 {{- include "coprocessor.deployment" (merge (dict
-  "name" (include "snsWorkerName" .)
-  "appLabel" "coprocessor-sns-worker"
-  "container" "coprocessor-sns-worker"
+  "name" .name
+  "appLabel" .appLabel
+  "container" .appLabel
   "command" "sns_worker"
   "args" (include "coprocessor.snsWorker.args" $ctx)
   "extraArgs" (list $ctx.c.extraArgs)

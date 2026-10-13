@@ -11,12 +11,12 @@
 {{- include "coprocessor.env.extra" (dict "root" .root "lists" (list .c.env)) }}
 {{- end -}}
 
-{{- if .Values.zkProofWorker.enabled }}
-{{- $ctx := dict "root" . "c" .Values.zkProofWorker }}
+{{- with include "coprocessor.workload" (dict "root" . "key" "zkProofWorker") | fromYaml }}
+{{- $ctx := dict "root" $ "c" .c }}
 {{- include "coprocessor.deployment" (merge (dict
-  "name" (include "zkProofWorkerName" .)
-  "appLabel" "coprocessor-zkproof-worker"
-  "container" "coprocessor-zkproof-worker"
+  "name" .name
+  "appLabel" .appLabel
+  "container" .appLabel
   "command" "zkproof_worker"
   "args" (include "coprocessor.zkProofWorker.args" $ctx)
   "extraArgs" (list $ctx.c.extraArgs)

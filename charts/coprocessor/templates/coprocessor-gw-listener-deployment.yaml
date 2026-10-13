@@ -25,12 +25,12 @@
 {{- include "coprocessor.env.extra" (dict "root" .root "lists" (list .c.env)) }}
 {{- end -}}
 
-{{- if .Values.gwListener.enabled }}
-{{- $ctx := dict "root" . "c" .Values.gwListener }}
+{{- with include "coprocessor.workload" (dict "root" . "key" "gwListener") | fromYaml }}
+{{- $ctx := dict "root" $ "c" .c }}
 {{- include "coprocessor.deployment" (merge (dict
-  "name" (include "gwListenerName" .)
-  "appLabel" "coprocessor-gw-listener"
-  "container" "coprocessor-gw-listener"
+  "name" .name
+  "appLabel" .appLabel
+  "container" .appLabel
   "command" "gw_listener"
   "args" (include "coprocessor.gwListener.args" $ctx)
   "extraArgs" (list $ctx.c.extraArgs)
