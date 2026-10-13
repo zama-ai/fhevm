@@ -5,11 +5,12 @@
 //
 // Before answering a user decryption, the client runs the real stack's checks in its order: the
 // decryption relayer's stateless admission (the handles' chain, the validity window against wall
-// time), then the KMS Connector's authorization over the same host state (./authorization.ts). A
-// public decryption is judged by the Connector's rules for one. What the client does not reproduce is
-// the KMS itself: no signcryption, no response signatures, and so no check of the FHE parameter or
-// the KMS epoch. A refusal reaches the production retry loop with the code the real stack answers it
-// with, so the caller sees what it would see there.
+// time, the handle cap), then the KMS Connector's authorization over the same host state
+// (./authorization.ts). A public decryption passes the relayer's handle cap, then is judged by the
+// Connector's rules for one. What the client does not reproduce is the KMS itself: no
+// signcryption, no response signatures, and so no check of the FHE parameter or the KMS epoch. A
+// refusal reaches the production retry loop with the code the real stack answers it with, so the
+// caller sees what it would see there.
 import { getAddressDecoder, parseBase64RpcAccount, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaRpc } from '../encryptedStore.js';
@@ -52,6 +53,21 @@ import { fetchCleartextStoreValue } from './storeValues.js';
 const FINALIZED = { commitment: 'finalized' } as const;
 
 /**
+ * `MAX_REQUEST_HANDLES` of `zama-solana-request`, which relayer-http checks before any Connector call.
+ * `authorization.test.ts` holds it to the value the Connector's fixture generator writes.
+ */
+export const MAX_REQUEST_HANDLES = 32;
+
+/** relayer-http's final refusal of a request over the handle cap, as it words it for `field`. */
+function overHandleCap(field: string, count: number): SolanaDecryptionRejection | undefined {
+  if (count <= MAX_REQUEST_HANDLES) return undefined;
+  return {
+    code: 'malformed',
+    message: `${field}: solana request names ${count} handles, expected at most ${MAX_REQUEST_HANDLES}`,
+  };
+}
+
+/**
  * Answers a user decryption with the plaintexts the host recorded for its handles, once the request
  * passes the Connector's authorization, through the production retry loop.
  */
@@ -71,10 +87,13 @@ export function cleartextUserDecryptExecution(
     });
     // Admission as on the relayer path: a request that can never be submitted is refused here.
     buildSolanaUserDecryptRequest({ signedPermit: session.signedPermit, entries });
+    const overCap = overHandleCap('payload', entries.length);
     const response = await retrySolanaDecryption({
       // The deadline ends an attempt stalled on a read, as it ends a stalled relayer request.
       submit: () =>
         deadline.bound(async (signal): Promise<SolanaDecryptionOutcome<readonly SolanaUserDecryptPlaintext[]>> => {
+          // relayer-http refuses an over-cap request before it reads anything.
+          if (overCap !== undefined) return { ok: false, rejection: overCap };
           const readAccounts = hostAccountsReader(rpc, signal);
           // Each attempt is judged against the host as it is then, as the Connector rechecks the KMS
           // context on every attempt.
@@ -215,9 +234,11 @@ export function cleartextPublicDecryptCertifier(
       const handle = toFhevmHandle(entry.handle);
       return { handle, handleBytes: hexToBytes(handle.bytes32Hex), encryptedStore: entry.encryptedStore };
     });
+    const overCap = overHandleCap('ctHandles', entries.length);
     await retrySolanaDecryption({
       submit: () =>
         deadline.bound(async (attemptSignal): Promise<SolanaDecryptionOutcome<undefined>> => {
+          if (overCap !== undefined) return { ok: false, rejection: overCap };
           const rejection = cleartextConnectorRejection(
             await judgeSolanaPublicDecryption({
               programAddress,

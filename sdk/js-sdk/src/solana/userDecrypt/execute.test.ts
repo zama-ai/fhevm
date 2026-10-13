@@ -6,9 +6,8 @@
 // `HostConfig`, handed in beside the signer set of the permit's `KmsContext`. So the link this
 // client computes can only disagree with the KMS if the permit does, or if `HostConfig`'s domain is
 // not the gateway's. The execute wiring around it: every attempt submits the same bytes under the
-// permit's one signature, a request that can never be submitted is refused before the network, an
-// answer feeds verification (which refuses garbage shares), and an unanswered run surfaces the retry
-// loop's error untouched.
+// permit's one signature, an answer feeds verification (which refuses garbage shares), and an
+// unanswered run surfaces the retry loop's error untouched.
 
 import type { SolanaSigncryptedShare, SolanaUserDecryptHandleEntry, SolanaUserDecryptRequestJson } from './index.js';
 import type { SolanaPermitFields, SolanaSignedPermit } from '../permit/index.js';
@@ -25,13 +24,7 @@ import { setFhevmRuntimeConfig } from '../internal/config.js';
 import { getSolanaRuntime } from '../internal/runtime.js';
 import { SolanaDecryptionRunError } from '../decryption/retry.js';
 import { bytesToHex } from '../../core/base/bytes.js';
-import {
-  MAX_SOLANA_DECRYPT_HANDLES,
-  SolanaUserDecryptRequestError,
-  executeSolanaUserDecrypt,
-  generateSolanaTransportKeyPair,
-  solanaUserDecryptRequestInputs,
-} from './index.js';
+import { executeSolanaUserDecrypt, generateSolanaTransportKeyPair, solanaUserDecryptRequestInputs } from './index.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -141,24 +134,6 @@ describe('executing one user decryption', () => {
     expect(rest.length).toBeGreaterThan(0);
     for (const request of rest) expect(request).toBe(first);
     expect(first?.signature).toBe(bytesToHex(permit.signedPermit.signature));
-  });
-
-  // The stateless limits are properties of the request itself; refusing here costs no submission.
-  it('refuses a request over the handle cap without submitting', async () => {
-    const submit = vi.fn();
-    const overCap = Array.from({ length: MAX_SOLANA_DECRYPT_HANDLES + 1 }, () => ENTRIES[0]!);
-
-    await expect(
-      executeSolanaUserDecrypt({
-        runtime: getSolanaRuntime(),
-        session: session(),
-        entries: overCap,
-        submit,
-        clock,
-        verification,
-      }),
-    ).rejects.toThrow(SolanaUserDecryptRequestError);
-    expect(submit).not.toHaveBeenCalled();
   });
 
   it('feeds an answer into verification, which refuses shares that prove nothing', async () => {

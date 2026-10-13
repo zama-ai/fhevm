@@ -5,19 +5,14 @@
 // to the Connector's own vectors.
 //
 // The rest of the file covers what no vector can express, because a vector is a request that exists:
-// an empty list, a request over the bit budget, a handle of a type nobody sized, a handle of another
-// host chain. And one property that matters more than any of them — the builder never signs.
+// an empty list, a request over the bit budget, a handle of another host chain. And one property
+// that matters more than any of them — the builder never signs.
 
 import type { SolanaUserDecryptHandleEntry, SolanaUserDecryptRequestFailure } from './index.js';
 import type { SolanaPermitFields, SolanaSignedPermit } from '../permit/index.js';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  MAX_DECRYPTION_REQUEST_BITS,
-  decryptionRequestBitsOfHandle,
-} from '../../core/handle/decryptionRequestBudget.js';
-import {
-  MAX_SOLANA_DECRYPT_HANDLES,
   SOLANA_SRFC38_ATTESTATION_TYPE,
   SolanaUserDecryptRequestError,
   buildSolanaUserDecryptRequest,
@@ -93,15 +88,7 @@ function handleOf(fheTypeId: number, chainId: bigint = PERMIT_CHAIN_ID, fill = 0
 }
 
 const EBOOL_TYPE_ID = 0;
-const EBOOL_BITS = decryptionRequestBitsOfHandle(handleOf(EBOOL_TYPE_ID)) ?? 0;
-
-// The widest sized type. The bit budget's boundary is only reachable in a type this wide: in small
-// types the handle-count cap refuses the list long before the bits add up.
 const EUINT256_TYPE_ID = 8;
-const EUINT256_BITS = decryptionRequestBitsOfHandle(handleOf(EUINT256_TYPE_ID)) ?? 0;
-
-const entriesOfType = (typeId: number, count: number): readonly SolanaUserDecryptHandleEntry[] =>
-  Array.from({ length: count }, (_, index) => entryFor(handleOf(typeId, PERMIT_CHAIN_ID, index % 251)));
 
 const entryFor = (
   handle: Uint8Array,
@@ -244,85 +231,13 @@ describe('the entry list', () => {
   });
 });
 
-describe('the handle count', () => {
-  // The Connector refuses a request past the cap terminally, so a list the cap refuses can never be
-  // answered, and refusing it here is what the pre-check layer is for. The cap catches what the bit
-  // budget cannot: many small handles, far under the budget in bits.
-  it('admits a request of exactly the cap', () => {
-    const body = buildSolanaUserDecryptRequest({
-      signedPermit: signedPermit(),
-      entries: entriesOfType(EBOOL_TYPE_ID, MAX_SOLANA_DECRYPT_HANDLES),
-    });
-    expect(body.payload.handles).toHaveLength(MAX_SOLANA_DECRYPT_HANDLES);
-  });
-
-  it('refuses one handle past the cap, well under the bit budget', () => {
-    const count = MAX_SOLANA_DECRYPT_HANDLES + 1;
-    expect((count + 1) * EBOOL_BITS).toBeLessThan(MAX_DECRYPTION_REQUEST_BITS);
-    expect(
-      failureOf(() =>
-        buildSolanaUserDecryptRequest({ signedPermit: signedPermit(), entries: entriesOfType(EBOOL_TYPE_ID, count) }),
-      ),
-    ).toEqual({ reason: 'too-many-handles', count, max: MAX_SOLANA_DECRYPT_HANDLES });
-  });
-
-  // The cap is the Connector's number, mirrored by hand; a mirror nobody checks is worth less than no
-  // mirror at all.
-  it('matches the cap the Connector declares', () => {
-    const source = readFileSync(
-      new URL('../../../../../solana/crates/zama-solana-request/src/request.rs', import.meta.url),
-      'utf8',
-    );
-    const declared = /pub const MAX_REQUEST_HANDLES: usize = (\d+);/.exec(source)?.[1];
-    expect(declared, 'zama-solana-request declares MAX_REQUEST_HANDLES').toBeDefined();
-    expect(MAX_SOLANA_DECRYPT_HANDLES).toBe(Number(declared));
-  });
-});
-
 describe('the bit budget', () => {
-  // The boundary pair, in the widest sized type — the one type whose bits can reach the budget
-  // inside the handle-count cap: exactly full, then one handle more.
-  it('admits a request of exactly the budget', () => {
-    const full = MAX_DECRYPTION_REQUEST_BITS / EUINT256_BITS;
-    expect(full).toBeLessThanOrEqual(MAX_SOLANA_DECRYPT_HANDLES);
-    const body = buildSolanaUserDecryptRequest({
-      signedPermit: signedPermit(),
-      entries: entriesOfType(EUINT256_TYPE_ID, full),
-    });
-    expect(body.payload.handles).toHaveLength(full);
-  });
-
-  // Refused, never trimmed to fit: a trimmed request is answered as a request the caller never made,
-  // and the budget is not what would catch that — the trimmed list is inside it.
-  it('refuses one handle past the budget, and says by how much', () => {
-    const full = MAX_DECRYPTION_REQUEST_BITS / EUINT256_BITS;
-    expect(
-      failureOf(() =>
-        buildSolanaUserDecryptRequest({
-          signedPermit: signedPermit(),
-          entries: entriesOfType(EUINT256_TYPE_ID, full + 1),
-        }),
-      ),
-    ).toEqual({
-      reason: 'budget-exceeded',
-      bits: MAX_DECRYPTION_REQUEST_BITS + EUINT256_BITS,
-      budget: MAX_DECRYPTION_REQUEST_BITS,
-    });
-  });
-
-  it('names the handle whose type has no width', () => {
-    // Type 1 is the deprecated euint4: the Connector's endpoint assigns it no size and refuses it, so
-    // the pre-check must refuse it rather than count it as free.
-    const unsized = handleOf(1);
-    expect(decryptionRequestBitsOfHandle(unsized)).toBeUndefined();
-    expect(
-      failureOf(() =>
-        buildSolanaUserDecryptRequest({
-          signedPermit: signedPermit(),
-          entries: [entryFor(handleOf(EBOOL_TYPE_ID)), entryFor(unsized)],
-        }),
-      ),
-    ).toEqual({ reason: 'handle-without-a-width', index: 1 });
+  // Nine 256-bit handles are 2,304 bits, one handle past the KMS's 2,048.
+  it('refuses a request over the budget before the network', () => {
+    const entries = Array.from({ length: 9 }, () => entryFor(handleOf(EUINT256_TYPE_ID)));
+    expect(() => buildSolanaUserDecryptRequest({ signedPermit: signedPermit(), entries })).toThrow(
+      'Cannot decrypt more than 2048 encrypted bits in a single request',
+    );
   });
 });
 

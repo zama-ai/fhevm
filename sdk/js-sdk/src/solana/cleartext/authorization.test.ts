@@ -11,6 +11,7 @@ import {
   type ConnectorVerdict,
   type SolanaHostAccountsReader,
 } from './authorization.js';
+import { MAX_REQUEST_HANDLES } from './decrypt.js';
 
 // The Connector's verdicts, rendered by kms-connector/crates/kms-worker/tests/solana_authorization_cases.rs.
 type Accounts = readonly { readonly address: string; readonly owner: string; readonly data_base64: string }[];
@@ -51,6 +52,7 @@ type Fixture = {
   readonly host_program: string;
   readonly slot: string;
   readonly transport_key: string;
+  readonly max_request_handles: string;
   readonly rust_only: readonly { readonly failure: string }[];
   readonly user_decrypt_cases: readonly UserCase[];
   readonly public_decrypt_cases: readonly PublicCase[];
@@ -219,6 +221,10 @@ describe('the cleartext client judges a user decryption as the KMS Connector doe
     expect(verdict).toMatchObject({ failure: 'Delegation::NoLiveDelegation', entry: 0 });
     expect(readAccounts.mock.calls.map(([, minContextSlot]) => minContextSlot)).toEqual([undefined, SLOT]);
   });
+});
+
+it('caps a request at the handle count relayer-http and the Connector enforce', () => {
+  expect(MAX_REQUEST_HANDLES).toBe(Number(fixture.max_request_handles));
 });
 
 describe('the cleartext client judges a public decryption as the KMS Connector does', () => {
