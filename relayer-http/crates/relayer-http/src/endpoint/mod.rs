@@ -251,7 +251,7 @@ mod tests {
             (
                 "/v4/public-decrypt",
                 wire([solana, evm]),
-                "ciphertextHandles[0]",
+                "ciphertextHandles[1]",
             ),
             // Another attestation type: the EVM body, whose payload has no `allowedScopes`.
             ("/v4/user-decrypt", user, "unknown field"),
