@@ -1,229 +1,39 @@
-{{- if .Values.gwListener.enabled -}}
-{{- $disabled := default (list) .Values.gwListener.disabledArgs -}}
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app: coprocessor-gw-listener
-    app.kubernetes.io/name: {{ include "gwListenerName" . }}
-  name: {{ include "gwListenerName" . }}
-spec:
-  replicas: {{ .Values.gwListener.replicas }}
-  selector:
-    matchLabels:
-      app: coprocessor-gw-listener
-      {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
-  {{- if .Values.gwListener.updateStrategy }}
-  strategy:
-    {{- toYaml .Values.gwListener.updateStrategy | nindent 4 }}
-  {{- end }}
-  template:
-    metadata:
-      labels:
-        app: coprocessor-gw-listener
-        app.kubernetes.io/name: {{ include "gwListenerName" . }}
-        {{- include "coprocessor.extraSelectorLabels" . | nindent 8 }}
-        {{- with .Values.commonConfig.stackVersion }}
-        app.kubernetes.io/version: {{ . | quote }}
-        {{- end }}
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
-        {{- with .Values.gwListener.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
-      {{- with .Values.podAnnotations }}
-      annotations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-    spec:
-      imagePullSecrets:
-        - name: registry-credentials
-      restartPolicy: Always
-      {{- with .Values.gwListener.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.gwListener.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.gwListener.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- if .Values.gwListener.serviceAccountName }}
-      serviceAccountName: {{ .Values.gwListener.serviceAccountName }}
-      {{- end }}
-      containers:
-        - name: coprocessor-gw-listener
-          image: {{ .Values.gwListener.image.name }}:{{ .Values.gwListener.image.tag }}
-          command: ["gw_listener"]
-          {{- if .Values.commonConfig.stackVersionProbe.enabled }}
-          startupProbe:
-            exec:
-              command: ["gw_listener", "--stack-version"]
-            periodSeconds: {{ .Values.commonConfig.stackVersionProbe.periodSeconds | default 10 }}
-            failureThreshold: {{ .Values.commonConfig.stackVersionProbe.failureThreshold | default 30 }}
-          {{- end }}
-          args:
-            {{- if not (has "database-url" $disabled) }}
-            - --database-url=$(DATABASE_URL)
-            {{- end }}
-            {{- if not (has "gw-url" $disabled) }}
-            - --gw-url=$(GATEWAY_URL)
-            {{- end }}
-            {{- if not (has "input-verification-address" $disabled) }}
-            - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
-            {{- end }}
-            {{- if and (or .Values.commonConfig.gatewayContractAddresses.ciphertextCommits.value .Values.commonConfig.gatewayContractAddresses.ciphertextCommits.valueFrom) (not (has "ciphertext-commits-address" $disabled)) }}
-            - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
-            {{- end }}
-            {{- if and (or .Values.commonConfig.gatewayContractAddresses.gatewayConfig.value .Values.commonConfig.gatewayContractAddresses.gatewayConfig.valueFrom) (not (has "gateway-config-address" $disabled)) }}
-            - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
-            {{- end }}
-            {{- if not (has "health-check-port" $disabled) }}
-            - --health-check-port={{ .Values.gwListener.ports.healthcheck }}
-            {{- end }}
-            {{- if not (has "metrics-addr" $disabled) }}
-            - --metrics-addr=0.0.0.0:{{ .Values.gwListener.ports.metrics }}
-            {{- end }}
-            {{- with .Values.gwListener.extraArgs }}
-            {{- toYaml . | nindent 12 }}
-            {{- end }}
-          env:
-            {{- with .Values.commonConfig.databaseUser }}
-            - name: DATABASE_USER
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.databaseEndpoint }}
-            - name: DATABASE_ENDPOINT
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
-            {{- with .Values.commonConfig.databasePassword }}
-            - name: DATABASE_PASSWORD
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.databaseUrl }}
-            - name: DATABASE_URL
-              value: {{ . | quote }}
-            {{- end }}
-            {{- if eq (include "coprocessorDatabaseAuthMode" .) "iam" }}
-            - name: DATABASE_IAM_AUTH_ENABLED
-              value: "true"
-            {{- with .Values.commonConfig.databaseIamRegion }}
-            - name: DATABASE_IAM_REGION
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" .) "true" }}
-            {{- include "coprocessor.databaseSslRootCertEnv" . | nindent 12 }}
-            {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.gatewayUrl }}
-            - name: GATEWAY_URL
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.gatewayContractAddresses.inputVerification }}
-            - name: INPUT_VERIFICATION_ADDRESS
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.gatewayContractAddresses.ciphertextCommits }}
-            - name: CIPHERTEXT_COMMITS_ADDRESS
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.gatewayContractAddresses.gatewayConfig }}
-            - name: GATEWAY_CONFIG_ADDRESS
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- with .Values.gwListener.config.chainId }}
-            - name: CHAIN_ID
-              value: {{ . | quote }}
-            {{- end }}
-          {{- if default .Values.commonConfig.tracing.enabled .Values.gwListener.tracing.enabled }}
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
-            - name: OTEL_SERVICE_NAME
-              {{- if .Values.gwListener.tracing.service }}
-              value: {{ .Values.gwListener.tracing.service | quote }}
-              {{- else }}
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-              {{- end }}
-          {{- end }}
-          {{- with .Values.commonConfig.env }}
-            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
-          {{- end }}
-          {{- with .Values.gwListener.env }}
-            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
-          {{- end }}
-          ports:
-            {{- range $portName, $portValue := .Values.gwListener.ports }}
-            - name: {{ $portName }}
-              containerPort: {{ $portValue }}
-              protocol: TCP
-            {{- end }}
-          resources:
-            requests:
-              cpu: {{ .Values.gwListener.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.gwListener.resources.requests.memory | default "256Mi" }}
-            limits:
-              cpu: {{ .Values.gwListener.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.gwListener.resources.limits.memory | default "512Mi" }}
-          {{- if and .Values.gwListener.probes .Values.gwListener.probes.liveness.enabled }}
-          livenessProbe:
-            {{- toYaml (omit .Values.gwListener.probes.liveness "enabled") | nindent 12 }}
-          {{- end }}
-          {{- if and .Values.gwListener.probes .Values.gwListener.probes.readiness.enabled }}
-          readinessProbe:
-            {{- toYaml (omit .Values.gwListener.probes.readiness "enabled") | nindent 12 }}
-          {{- end }}
-          {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
-          {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 10 }}
-          {{- end }}
-      {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
-      {{- include "coprocessor.databaseSslRootCertVolume" . | nindent 6 }}
-      {{- end }}
+{{- define "coprocessor.gwListener.args" -}}
+{{- $gwAddrs := include "coprocessor.gatewayContractAddresses" .root | fromYaml -}}
+- --database-url=$(DATABASE_URL)
+- --gw-url=$(GATEWAY_URL)
+- --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
+{{- if or $gwAddrs.ciphertextCommits.value $gwAddrs.ciphertextCommits.valueFrom }}
+- --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
+{{- end }}
+{{- if or $gwAddrs.gatewayConfig.value $gwAddrs.gatewayConfig.valueFrom }}
+- --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
+{{- end }}
+- --health-check-port={{ .c.ports.healthcheck }}
+- --metrics-addr=0.0.0.0:{{ .c.ports.metrics }}
 {{- end -}}
+
+{{- define "coprocessor.gwListener.env" -}}
+{{- include "coprocessor.env.database" .root }}
+{{- include "coprocessor.envVar" (dict "root" .root "name" "GATEWAY_URL" "spec" .root.Values.commonConfig.gatewayUrl) }}
+{{- include "coprocessor.env.gateway" (dict "root" .root "fields" (list "inputVerification" "ciphertextCommits" "gatewayConfig")) }}
+{{- with (.c.config | default dict).chainId }}
+- name: CHAIN_ID
+  value: {{ . | quote }}
+{{- end }}
+{{- include "coprocessor.env.tracing" . }}
+{{- include "coprocessor.env.extra" (dict "root" .root "lists" (list .c.env)) }}
+{{- end -}}
+
+{{- with include "coprocessor.workload" (dict "root" . "key" "gwListener") | fromYaml }}
+{{- $ctx := dict "root" $ "c" .c }}
+{{- include "coprocessor.deployment" (merge (dict
+  "name" .name
+  "appLabel" .appLabel
+  "container" .appLabel
+  "command" "gw_listener"
+  "args" (include "coprocessor.gwListener.args" $ctx)
+  "extraArgs" (list $ctx.c.extraArgs)
+  "env" (include "coprocessor.gwListener.env" $ctx)
+  "extraSelectorLabels" true) $ctx) }}
+{{- end }}

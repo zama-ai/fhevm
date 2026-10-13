@@ -52,7 +52,7 @@ rpc_from_secret() { [[ -n "${RPC_SECRET_NAME:-}" ]]; }
 set_poller_flag() {
   local file="$1" flag="$2" value="$3"
   FLAG="${flag}" VALUE="${value}" yq -i '
-    .hostListenerPollerShared.extraArgs |=
+    .hostListener.modes.poller.extraArgs |=
       map(select(test("^" + strenv(FLAG) + "=") | not)) + [strenv(FLAG) + "=" + strenv(VALUE)]
   ' "${file}"
 }
@@ -152,10 +152,7 @@ fi
 # --- coprocessor + poller ---
 for f in "${root}/coprocessor/values-coprocessor-e2e.yaml" \
          "${root}/coprocessor/values-coprocessor-poller-e2e.yaml"; do
-  HOST_HTTP="${HOST_HTTP}" HOST_WS="${HOST_WS}" GATEWAY_WS="${GATEWAY_WS}" \
-  HOST_CHAIN_ID="${HOST_CHAIN_ID}" yq -i '
-    .commonConfig.hostChainHttpUrl = strenv(HOST_HTTP) |
-    .commonConfig.hostChainWsUrl = strenv(HOST_WS) |
+  HOST_HTTP="${HOST_HTTP}" HOST_WS="${HOST_WS}" HOST_CHAIN_ID="${HOST_CHAIN_ID}" yq -i '
     (.chains[] | select(.name == "host") | .chainId) = strenv(HOST_CHAIN_ID) |
     (.chains[] | select(.name == "host") | .httpUrl) = strenv(HOST_HTTP) |
     (.chains[] | select(.name == "host") | .wsUrl) = strenv(HOST_WS)
@@ -180,8 +177,6 @@ GATEWAY_WS="${GATEWAY_WS}" yq -i '.txSender.config.gatewayUrl.value = strenv(GAT
 if rpc_from_secret; then
   for f in "${root}/coprocessor/values-coprocessor-e2e.yaml" "${root}/coprocessor/values-coprocessor-poller-e2e.yaml"; do
     set_chain_urls_secret "${f}" host ethereum-rpc-url ethereum-rpc-ws-url
-    # Only the (disabled) built-in hostListener reads these; keep the real URL out of the values file.
-    yq -i '.commonConfig.hostChainHttpUrl = "unused-on-testnets" | .commonConfig.hostChainWsUrl = "unused-on-testnets"' "${f}"
   done
 fi
 
@@ -345,17 +340,12 @@ if [[ "${DEPLOY_POLYGON:-false}" == "true" ]]; then
     ' "${f}"
   done
   ppoller="${root}/coprocessor/values-coprocessor-poller-polygon-e2e.yaml"
-  POLYGON_HTTP="${POLYGON_HTTP}" POLYGON_WS="${POLYGON_WS}" yq -i '
-    .commonConfig.hostChainHttpUrl = strenv(POLYGON_HTTP) |
-    .commonConfig.hostChainWsUrl = strenv(POLYGON_WS)
-  ' "${ppoller}"
   if rpc_from_secret; then
     for f in "${root}/coprocessor/values-coprocessor-polygon-e2e.yaml" \
              "${root}/coprocessor/values-coprocessor-polygon-consumer-e2e.yaml" "${ppoller}"; do
       yq -e '.chains[] | select(.name == "host")' "${f}" >/dev/null 2>&1 && set_chain_urls_secret "${f}" host ethereum-rpc-url ethereum-rpc-ws-url
       set_chain_urls_secret "${f}" polygon polygon-rpc-url polygon-rpc-ws-url
     done
-    yq -i '.commonConfig.hostChainHttpUrl = "unused-on-testnets" | .commonConfig.hostChainWsUrl = "unused-on-testnets"' "${ppoller}"
   fi
   set_poller_flag "${ppoller}" "--seed-start-block" "${POLLER_SEED_START_BLOCK}"
   set_poller_flag "${ppoller}" "--finality-lag" "${POLYGON_FINALITY_LAG}"

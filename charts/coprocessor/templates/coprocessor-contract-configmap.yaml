@@ -1,0 +1,14 @@
+{{- if eq (include "coprocessor.contractConfigMapEnabled" .) "true" -}}
+{{- $merged := include "coprocessor.contractAddresses" . | fromYaml -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "coprocessor.contractConfigMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ include "coprocessor.contractConfigMapName" . }}
+data:
+  {{- range $k, $v := $merged }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+{{- end -}}
