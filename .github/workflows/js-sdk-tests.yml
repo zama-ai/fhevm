@@ -18,6 +18,8 @@ on:
       - "gateway-contracts/contracts/Decryption.sol"
       - "gateway-contracts/contracts/shared/FheType.sol"
       - "gateway-contracts/contracts/libraries/FHETypeBitSizes.sol"
+      # The Solana handle-cap parity test reads the Connector's cap here.
+      - "solana/crates/zama-solana-request/src/request.rs"
   push:
     branches:
       - devex/js-sdk

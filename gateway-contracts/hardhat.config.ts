@@ -190,9 +190,7 @@ const config: HardhatUserConfig = {
       // https://hardhat.org/hardhat-network/#solidity-optimizer-support
       optimizer: {
         enabled: true,
-        // 200, not 800: with the Solana entries, Decryption.sol exceeds the 24576-byte EIP-170
-        // limit at 800 (a test in Decryption.ts pins the size). Mirror this in foundry.toml.
-        runs: 200,
+        runs: 800,
       },
       evmVersion: 'cancun',
       viaIR: false,

@@ -1,17 +1,16 @@
-//! Building the typed request from the two carriers it travels in.
+//! Building the typed request from the fields of a Solana user-decryption body.
 //!
-//! The Gateway's `solanaUserDecryptionRequest` types the fields it budgets and charges
-//! ([`SolanaUserDecryptFields`]) and carries everything else as one opaque blob
-//! ([`SolanaRequestBlob`]). The HTTP paths carry the same fields in the same roles. Every
-//! consumer joins the two here, so no fact is carried twice and no copy can disagree with another.
+//! [`SolanaUserDecryptFields`] holds the handles, the transport key, the validity window and the
+//! extra data; [`SolanaRequestBlob`] holds the rest of the permit, the signature and one claim per
+//! handle. The split is the one the retired Gateway entry carried. Every consumer joins the two
+//! here, so the form rules have one definition.
 
 use crate::request::{HandleEntry, SolanaUserDecryptRequest, MAX_REQUEST_HANDLES};
-use borsh::{BorshDeserialize, BorshSerialize};
 use zama_solana_acl::host_chain::{handle_chain_id, is_solana_host_chain_id};
 use zama_solana_permit::{PermitError, PermitFields, PermitWireFields, Signature, SIGNATURE_LEN};
 
-/// The request fields the Gateway entry types itself: the handles it budgets, the transport key
-/// and validity window it records, and the extra data it routes on.
+/// The handles, the transport key, the validity window, and the extra data the KMS context is
+/// routed on.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct SolanaUserDecryptFields {
     /// Ciphertext handles, in request order.
@@ -26,10 +25,9 @@ pub struct SolanaUserDecryptFields {
     pub extra_data: Vec<u8>,
 }
 
-/// What the opaque blob carries: the signed permit fields the Gateway does not type, the
-/// signature, and one claim per handle, in handle order. Its borsh encoding is the blob's
-/// canonical body ([`crate::codec`]), so the field order below is the layout.
-#[derive(Clone, PartialEq, Eq, Debug, BorshSerialize, BorshDeserialize)]
+/// The rest of the request: the remaining signed permit fields, the signature, and one claim per
+/// handle, in handle order.
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SolanaRequestBlob {
     /// The requester's Ed25519 public key.
     pub user_address: [u8; 32],
@@ -44,7 +42,7 @@ pub struct SolanaRequestBlob {
 }
 
 /// The unsigned claims for one handle. See [`HandleEntry`].
-#[derive(Clone, Copy, PartialEq, Eq, Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SolanaEntryClaims {
     pub owner_address: [u8; 32],
     pub encrypted_store: [u8; 32],
@@ -80,7 +78,7 @@ pub enum SolanaRequestError {
 }
 
 impl SolanaUserDecryptRequest {
-    /// Joins the Gateway fields and the blob, and types the permit.
+    /// Joins the two parts and types the permit.
     ///
     /// The permit's chain id is not carried by either part: every handle embeds its chain, so it
     /// is derived here and the handles must agree. A signer who signed another chain id then fails
