@@ -14,7 +14,7 @@ Appends commonConfig.stackVersion (lowercased, dots as dashes) to a resource
 name so blue and green releases each own their copy. The base name is
 truncated instead of the suffix to keep names distinct within 63 characters.
 Returns the name unchanged when stackVersion is empty.
-Usage: include "coprocessor.versionedName" (dict "root" $ "name" "eth-sc-addresses")
+Usage: include "coprocessor.versionedName" (dict "root" $ "name" "contract-addresses")
 */}}
 {{- define "coprocessor.versionedName" -}}
 {{- $suffix := .root.Values.commonConfig.stackVersion | default "" | toString | lower | replace "." "-" | trimAll "-" -}}
@@ -26,20 +26,20 @@ Usage: include "coprocessor.versionedName" (dict "root" $ "name" "eth-sc-address
 {{- end -}}
 {{- end -}}
 
+{{/*
+Contract ConfigMap name. Defaults to <release>-contract-addresses so every
+release owns its copy, even when several releases share a namespace.
+*/}}
 {{- define "coprocessor.contractConfigMapName" -}}
-{{- include "coprocessor.versionedName" (dict "root" . "name" .Values.contractConfigMap.name) -}}
+{{- $base := (.Values.contractConfigMap).name | default (printf "%s-contract-addresses" .Release.Name) -}}
+{{- include "coprocessor.versionedName" (dict "root" . "name" $base) -}}
 {{- end -}}
 
-{{- define "coprocessor.hostContractConfigMapName" -}}
-{{- include "coprocessor.versionedName" (dict "root" . "name" .Values.hostContractConfigMap.name) -}}
+{{/* Returns "true" when the contract ConfigMap renders: commonConfig.network set and contractConfigMap.enabled. */}}
+{{- define "coprocessor.contractConfigMapEnabled" -}}
+{{- if and .Values.commonConfig.network (.Values.contractConfigMap).enabled -}}
+true
 {{- end -}}
-
-{{- define "coprocessor.gatewayContractConfigMapName" -}}
-{{- include "coprocessor.versionedName" (dict "root" . "name" .Values.gatewayContractConfigMap.name) -}}
-{{- end -}}
-
-{{- define "coprocessor.polygonContractConfigMapName" -}}
-{{- include "coprocessor.versionedName" (dict "root" . "name" .Values.polygonContractConfigMap.name) -}}
 {{- end -}}
 
 {{/*
@@ -64,7 +64,7 @@ contractConfigMap.addresses. Returns YAML; parse with fromYaml.
 Effective host chains list, returned as YAML under a "chains" key:
   (include "coprocessor.chains" . | fromYaml).chains
 
-When contractConfigMap is enabled and commonConfig.network is set, one entry is generated per
+When the contract ConfigMap renders (see coprocessor.contractConfigMapEnabled), one entry is generated per
 "<prefix>.chain_id" key whose "<prefix>.acl.address" is non-empty (so the
 gateway and undeployed chains are skipped). Each entry gets:
   name     <- "<prefix>.name", or the prefix itself
@@ -75,10 +75,9 @@ gateway and undeployed chains are skipped). Each entry gets:
 entries matching no generated chain are appended unchanged.
 */}}
 {{- define "coprocessor.chains" -}}
-{{- $cm := .Values.contractConfigMap | default dict -}}
 {{- $valuesChains := .Values.chains | default list -}}
 {{- $generated := list -}}
-{{- if and $cm.enabled .Values.commonConfig.network -}}
+{{- if eq (include "coprocessor.contractConfigMapEnabled" .) "true" -}}
 {{- $addresses := include "coprocessor.contractAddresses" . | fromYaml -}}
 {{- $cmName := include "coprocessor.contractConfigMapName" . -}}
 {{- $fields := dict "aclContractAddressValueFrom" "acl" "fhevmExecutorContractAddressValueFrom" "fhevm_executor" "kmsGenerationContractAddressValueFrom" "kms_generation" "protocolConfigContractAddressValueFrom" "protocol_config" -}}
@@ -117,8 +116,39 @@ entries matching no generated chain are appended unchanged.
 {{- end -}}
 
 {{/*
+Effective commonConfig.gatewayContractAddresses, returned as YAML; parse with
+fromYaml. For each of inputVerification, ciphertextCommits, gatewayConfig and
+multichainAcl: the values entry when it sets value or valueFrom, otherwise a
+configMapKeyRef to "gateway.<snake_case>.address" in the contract ConfigMap
+when the preset has that key, otherwise an empty map.
+*/}}
+{{- define "coprocessor.gatewayContractAddresses" -}}
+{{- $explicit := .Values.commonConfig.gatewayContractAddresses | default dict -}}
+{{- $addresses := dict -}}
+{{- $cmName := "" -}}
+{{- if eq (include "coprocessor.contractConfigMapEnabled" .) "true" -}}
+{{- $addresses = include "coprocessor.contractAddresses" . | fromYaml -}}
+{{- $cmName = include "coprocessor.contractConfigMapName" . -}}
+{{- end -}}
+{{- $fields := dict "inputVerification" "input_verification" "ciphertextCommits" "ciphertext_commits" "gatewayConfig" "gateway_config" "multichainAcl" "multichain_acl" -}}
+{{- $result := dict -}}
+{{- range $field, $contract := $fields -}}
+  {{- $entry := get $explicit $field | default dict -}}
+  {{- $addrKey := printf "gateway.%s.address" $contract -}}
+  {{- if or $entry.value $entry.valueFrom -}}
+    {{- $_ := set $result $field $entry -}}
+  {{- else if get $addresses $addrKey -}}
+    {{- $_ := set $result $field (dict "valueFrom" (dict "configMapKeyRef" (dict "name" $cmName "key" $addrKey))) -}}
+  {{- else -}}
+    {{- $_ := set $result $field dict -}}
+  {{- end -}}
+{{- end -}}
+{{- toYaml $result -}}
+{{- end -}}
+
+{{/*
 Renders a valueFrom block (or env list) through tpl so values can reference
-chart helpers, e.g. name: '{{ include "coprocessor.hostContractConfigMapName" . }}'.
+chart helpers, e.g. name: '{{ include "coprocessor.contractConfigMapName" . }}'.
 Usage: include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom)
 */}}
 {{- define "coprocessor.valueFrom" -}}

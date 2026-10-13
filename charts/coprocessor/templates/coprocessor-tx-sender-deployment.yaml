@@ -1,4 +1,5 @@
 {{- if .Values.txSender.enabled -}}
+{{- $gwAddrs := include "coprocessor.gatewayContractAddresses" . | fromYaml -}}
 {{- $disabled := default (list) .Values.txSender.disabledArgs -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -174,7 +175,7 @@ spec:
                 {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- with .Values.commonConfig.gatewayContractAddresses.inputVerification }}
+            {{- with $gwAddrs.inputVerification }}
             - name: INPUT_VERIFICATION_ADDRESS
               {{- if .value }}
               value: {{ .value | quote }}
@@ -183,7 +184,7 @@ spec:
                 {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- with .Values.commonConfig.gatewayContractAddresses.ciphertextCommits }}
+            {{- with $gwAddrs.ciphertextCommits }}
             - name: CIPHERTEXT_COMMITS_ADDRESS
               {{- if .value }}
               value: {{ .value | quote }}
@@ -192,7 +193,7 @@ spec:
                 {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- with .Values.commonConfig.gatewayContractAddresses.multichainAcl }}
+            {{- with $gwAddrs.multichainAcl }}
             - name: MULTICHAIN_ACL_ADDRESS
               {{- if .value }}
               value: {{ .value | quote }}

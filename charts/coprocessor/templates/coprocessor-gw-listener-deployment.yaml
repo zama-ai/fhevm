@@ -1,4 +1,5 @@
 {{- if .Values.gwListener.enabled -}}
+{{- $gwAddrs := include "coprocessor.gatewayContractAddresses" . | fromYaml -}}
 {{- $disabled := default (list) .Values.gwListener.disabledArgs -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -76,10 +77,10 @@ spec:
             {{- if not (has "input-verification-address" $disabled) }}
             - --input-verification-address=$(INPUT_VERIFICATION_ADDRESS)
             {{- end }}
-            {{- if and (or .Values.commonConfig.gatewayContractAddresses.ciphertextCommits.value .Values.commonConfig.gatewayContractAddresses.ciphertextCommits.valueFrom) (not (has "ciphertext-commits-address" $disabled)) }}
+            {{- if and (or $gwAddrs.ciphertextCommits.value $gwAddrs.ciphertextCommits.valueFrom) (not (has "ciphertext-commits-address" $disabled)) }}
             - --ciphertext-commits-address=$(CIPHERTEXT_COMMITS_ADDRESS)
             {{- end }}
-            {{- if and (or .Values.commonConfig.gatewayContractAddresses.gatewayConfig.value .Values.commonConfig.gatewayContractAddresses.gatewayConfig.valueFrom) (not (has "gateway-config-address" $disabled)) }}
+            {{- if and (or $gwAddrs.gatewayConfig.value $gwAddrs.gatewayConfig.valueFrom) (not (has "gateway-config-address" $disabled)) }}
             - --gateway-config-address=$(GATEWAY_CONFIG_ADDRESS)
             {{- end }}
             {{- if not (has "health-check-port" $disabled) }}
@@ -150,7 +151,7 @@ spec:
                 {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- with .Values.commonConfig.gatewayContractAddresses.inputVerification }}
+            {{- with $gwAddrs.inputVerification }}
             - name: INPUT_VERIFICATION_ADDRESS
               {{- if .value }}
               value: {{ .value | quote }}
@@ -159,7 +160,7 @@ spec:
                 {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- with .Values.commonConfig.gatewayContractAddresses.ciphertextCommits }}
+            {{- with $gwAddrs.ciphertextCommits }}
             - name: CIPHERTEXT_COMMITS_ADDRESS
               {{- if .value }}
               value: {{ .value | quote }}
@@ -168,7 +169,7 @@ spec:
                 {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- with .Values.commonConfig.gatewayContractAddresses.gatewayConfig }}
+            {{- with $gwAddrs.gatewayConfig }}
             - name: GATEWAY_CONFIG_ADDRESS
               {{- if .value }}
               value: {{ .value | quote }}

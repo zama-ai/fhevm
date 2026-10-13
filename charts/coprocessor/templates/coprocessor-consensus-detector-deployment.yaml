@@ -1,4 +1,5 @@
 {{- if .Values.consensusDetector.enabled -}}
+{{- $gwAddrs := include "coprocessor.gatewayContractAddresses" . | fromYaml -}}
 {{- $component := .Values.consensusDetector -}}
 {{- $disabled := default (list) $component.disabledArgs -}}
 {{- $bucket := $component.config.s3BucketName -}}
@@ -21,9 +22,9 @@
 {{- if and (not (has "gw-url" $disabled)) (not (or $gatewayUrl.value $gatewayUrl.valueFrom)) -}}
 {{- fail "commonConfig.gatewayUrl must set value or valueFrom when consensusDetector is enabled" -}}
 {{- end -}}
-{{- $gatewayConfig := .Values.commonConfig.gatewayContractAddresses.gatewayConfig | default dict -}}
+{{- $gatewayConfig := $gwAddrs.gatewayConfig | default dict -}}
 {{- if and (not (has "gateway-config-address" $disabled)) (not (or $gatewayConfig.value $gatewayConfig.valueFrom)) -}}
-{{- fail "commonConfig.gatewayContractAddresses.gatewayConfig must set value or valueFrom when consensusDetector is enabled" -}}
+{{- fail "commonConfig.gatewayContractAddresses.gatewayConfig must set value or valueFrom (or commonConfig.network must provide gateway.gateway_config.address) when consensusDetector is enabled" -}}
 {{- end -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -228,7 +229,7 @@ spec:
                 {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
-            {{- with .Values.commonConfig.gatewayContractAddresses.gatewayConfig }}
+            {{- with $gwAddrs.gatewayConfig }}
             - name: GATEWAY_CONFIG_ADDRESS
               {{- if .value }}
               value: {{ .value | quote }}
