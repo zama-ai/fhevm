@@ -78,6 +78,8 @@ jobs:
       DEMO_PRINT_LAUNCH_URL: "0"
       # Empty except on a dispatched profile run; PR runs keep the demo lane.
       TEST_PROFILE: ${{ inputs.test-profile || '' }}
+      # bun 1.3.14 streaming tarball extraction races on large tarballs (oven-sh/bun#34861); remove when bun >= 1.4.0.
+      BUN_FEATURE_FLAG_DISABLE_STREAMING_INSTALL: "1"
       # Every producer/consumer derives the demo config path from the fhevm layout under
       # FHEVM_STATE_DIR (default <repo>/.fhevm), regardless of the step's working directory.
     steps:
