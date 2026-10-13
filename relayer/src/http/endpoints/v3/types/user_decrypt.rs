@@ -5,17 +5,14 @@
 //! it stands. [`UserDecryptV3RequestJson`] is that envelope: serde's internally tagged
 //! enum is the discriminant, so an unknown tag never reaches an arm.
 //!
-//! The two schemes differ in what the envelope carries and where its signature is checked.
-//! The EVM one carries the unified EIP-712 User-Decryption Request as `attestedPayload`; the
+//! The one scheme carries the unified EIP-712 User-Decryption Request as `attestedPayload`; the
 //! relayer never re-hashes it, because the gateway contract verifies the EIP-712 signature on
-//! chain (#1288). The Solana one carries a wallet-signed permit plus per-handle entries; no
-//! contract can check that signature, so the relayer verifies it against the locally rebuilt
-//! envelope before submitting, and each KMS party's connector verifies it again.
+//! chain (#1288).
 
 use crate::http::endpoints::common::types::{HandleEntryJson, RequestValiditySecondsJson};
 use crate::http::utils::redact::redact_len;
 use derivative::Derivative;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use utoipa::ToSchema;
 use validator::{Validate, ValidationErrors};
 
@@ -29,26 +26,20 @@ use validator::{Validate, ValidationErrors};
 pub enum UserDecryptV3RequestJson {
     #[serde(rename = "eip712-unified-user-decrypt-v1")]
     Eip712Unified(AttestedUserDecryptRequestJson),
-    #[serde(rename = "solana-srfc38-user-decrypt-v1")]
-    SolanaSrfc38(SolanaUserDecryptRequestJson),
 }
 
 impl Validate for UserDecryptV3RequestJson {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
             Self::Eip712Unified(inner) => inner.validate(),
-            Self::SolanaSrfc38(inner) => inner.validate(),
         }
     }
 }
 
-/// The EVM arm of the v3 user-decrypt envelope, selected by
+/// The arm of the v3 user-decrypt envelope selected by
 /// `attestationType == "eip712-unified-user-decrypt-v1"`. Its EIP-712 signature is verified on
 /// chain by the gateway, so the relayer forwards `signature` and `extraData` verbatim without
 /// re-hashing anything.
-///
-/// Solana requests do not use this shape: they arrive as [`SolanaUserDecryptRequestJson`],
-/// which carries no EVM placeholders and is verified by the relayer before submission.
 #[derive(Deserialize, Clone, ToSchema, Validate, Derivative)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -119,86 +110,4 @@ pub struct Eip712UnifiedUserDecryptPayloadJson {
     #[schema(schema_with = crate::http::extra_data_decryption_schema)]
     #[validate(custom(function = "crate::http::validate_extra_data_field_decryption"))]
     pub extra_data: String,
-}
-
-/// v3 Solana user-decrypt envelope (`solana-srfc38-user-decrypt-v1`). A Solana-native shape
-/// with no EVM placeholders: the ed25519 `signature` is the wallet's over the permit fields, and
-/// the relayer forwards everything opaquely into the gateway's `solanaUserDecryptionRequest` as
-/// `solanaRequest`. The relayer verifies the signature before it submits, and each
-/// KMS party's connector verifies it again — that second check is the authorizing one.
-#[derive(Deserialize, Clone, ToSchema, Validate, Derivative)]
-#[derivative(Debug)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SolanaUserDecryptRequestJson {
-    /// The Solana permit fields the `signature` covers, plus the per-handle entries it
-    /// deliberately does not: an entry names what to decrypt, and the connector checks it
-    /// against host state and the coprocessors' leaf record.
-    #[validate(nested)]
-    pub attested_payload: SolanaSrfc38UserDecryptPayloadJson,
-
-    /// The ed25519 signature over the reconstructed sRFC-38 permit envelope. `0x`-hex.
-    /// Rejected here if it does not verify, so an unsignable request costs no gateway
-    /// transaction; the authorizing check remains each connector's own.
-    #[validate(custom(function = "crate::http::validate_0x_hex"))]
-    #[derivative(Debug(format_with = "redact_len"))]
-    #[schema(example = "0xaabbccdd")]
-    pub signature: String,
-}
-
-/// The Solana-native user-decryption payload: the signed permit fields (§3.1) plus the per-handle
-/// entries. No `chainId` (the permit's is the one the handles embed), no `nonce`, no EVM
-/// per-handle addresses.
-#[derive(Deserialize, Serialize, Clone, ToSchema, Validate, Derivative)]
-#[derivative(Debug)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SolanaSrfc38UserDecryptPayloadJson {
-    /// The requester's 32-byte ed25519 pubkey: the wallet that signs this permit (`0x` + 64
-    /// hex). Not necessarily the owner address of any entry — on a delegated entry the owner
-    /// address is the delegator, and this key is the delegate acting on their behalf.
-    #[validate(custom(function = "crate::http::validate_0x_hex"))]
-    pub user_address: String,
-
-    /// The transport (re-encryption) public key: the tfhe safe-serialized ML-KEM-512 container
-    /// (`0x` + hex). The exact length is enforced downstream by the permit decode.
-    #[validate(custom(function = "crate::http::validate_0x_hex"))]
-    pub transport_key: String,
-
-    /// The signed scopes: each 64 bytes, the application program id followed by the scope
-    /// (`0x` + 128 hex), ascending. May be empty (permissive mode).
-    pub allowed_scopes: Vec<String>,
-
-    /// Validity window (`startTimestamp` + `durationSeconds`), in seconds.
-    #[validate(nested)]
-    pub request_validity: RequestValiditySecondsJson,
-
-    /// The 32-byte Solana program id the permit was signed for (`0x` + 64 hex).
-    #[validate(custom(function = "crate::http::validate_0x_hex"))]
-    pub verifying_program_id: String,
-
-    /// The signed KMS routing bytes (version `0x02` ‖ contextId ‖ epochId), `0x`-hex.
-    #[validate(custom(function = "crate::http::validate_0x_hex"))]
-    pub extra_data: String,
-
-    /// One entry per ciphertext handle. Non-empty; the on-chain cap is applied at the gateway.
-    #[validate(length(min = 1, message = "Must not be empty"))]
-    pub handles: Vec<SolanaHandleJson>,
-}
-
-/// One Solana handle entry: the handle, the account whose permission authorizes it, and its
-/// state account. None of these fields are signed — a substituted value can fail the
-/// request but never widen access — and none is a proof: the connector fetches the allow leaf
-/// from the coprocessors and verifies it against the state it reads.
-#[derive(Deserialize, Serialize, Clone, ToSchema, Derivative)]
-#[derivative(Debug)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct SolanaHandleJson {
-    /// The 32-byte ciphertext handle (`0x` + 64 hex).
-    pub handle: String,
-    /// The 32-byte account whose permission authorizes the entry, i.e. whose allow leaf on the
-    /// handle is checked — the requester itself for a direct entry, the delegator for a
-    /// delegated one (`0x` + 64 hex).
-    pub owner_address: String,
-    /// The 32-byte address of the `EncryptedStore` account whose history grants access
-    /// (`0x` + 64 hex).
-    pub encrypted_store: String,
 }

@@ -1,16 +1,12 @@
 use crate::{
-    config::settings::{HostAclCheckConfig, HostChainConfig, RetrySettings},
+    config::settings::{HostChainConfig, RetrySettings},
     core::{
         event::{HandleContractPair, HandleEntry},
         job_id::JobId,
     },
     host::{
-        error_redact::{redact_alloy_error, redact_error},
+        error_redact::redact_alloy_error,
         handle_chain_id::{extract_chain_id_from_handle, extract_chain_id_from_u256},
-        solana_user_decrypt_precheck::{
-            encrypted_store_read_addresses, entry_applications, judge_planned_entries,
-            plan_row_reads, scope_refusals, EntryRefusal, RawAccount, RequestEntry,
-        },
     },
 };
 use alloy::{
@@ -26,8 +22,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, warn};
-use zama_solana_acl::host_chain::{chain_type_byte, is_evm_host_chain_id, is_solana_host_chain_id};
-use zama_solana_request::SolanaUserDecryptRequest;
+use zama_solana_acl::host_chain::is_evm_host_chain_id;
 
 type Provider = FillProvider<
     alloy::providers::fillers::JoinFill<
@@ -83,76 +78,22 @@ struct HostChainAcl {
     acl: HostAcl,
 }
 
-/// One configured Solana host chain: where to read, and whose accounts count.
-struct SolanaHostChain {
-    rpc_url: Url,
-    /// The zama-host program id — the `acl_address` of the chain's config entry.
-    program_id: [u8; 32],
-    http: reqwest::Client,
-}
-
 /// Checks handle permissions against host chain ACL contracts via multicall.
 pub struct HostAclChecker {
     chains: HashMap<u64, HostChainAcl>,
-    /// RFC-021 Solana host chains (type byte `0x01`), keyed by chain id; each carries the
-    /// zama-host program as a base58 `acl_address`. What is pre-checked for them is
-    /// [`super::solana_user_decrypt_precheck`]'s module doc.
-    solana_chains: HashMap<u64, SolanaHostChain>,
     retry_config: RetrySettings,
 }
 
 impl HostAclChecker {
-    pub fn new(
-        host_chains: &[HostChainConfig],
-        host_acl_check: &HostAclCheckConfig,
-    ) -> anyhow::Result<Self> {
+    pub fn new(host_chains: &[HostChainConfig], retry: RetrySettings) -> anyhow::Result<Self> {
         let mut chains = HashMap::new();
-        let mut solana_chains = HashMap::new();
-        // One deadline per attempt, so the retry loop below is actually reachable: without it a
-        // node that accepts the connection and never answers parks this task — and its readiness
-        // permit — forever.
-        let solana_http = reqwest::Client::builder()
-            .timeout(Duration::from_millis(host_acl_check.request_timeout_ms))
-            .build()
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to build the Solana host-chain HTTP client: {e}")
-            })?;
 
         for hc in host_chains {
-            // The type byte on the chain id is the sole discriminator. Settings validation
-            // enforces the matching address encoding; keep this constructor fail-closed
-            // for direct callers too.
-            if is_solana_host_chain_id(hc.chain_id) {
-                let program_id =
-                    crate::http::utils::solana_address::decode_solana_address(&hc.acl_address)
-                        .map_err(|e| {
-                            anyhow::anyhow!(
-                                "Invalid Solana ACL address for chain {}: {}: {e}",
-                                hc.chain_id,
-                                hc.acl_address
-                            )
-                        })?;
-                let rpc_url = Url::parse(&hc.url).map_err(|e| {
-                    anyhow::anyhow!("Invalid host chain URL for chain {}: {}", hc.chain_id, e)
-                })?;
-                solana_chains.insert(
-                    hc.chain_id,
-                    SolanaHostChain {
-                        rpc_url,
-                        program_id,
-                        http: solana_http.clone(),
-                    },
-                );
+            // A Solana host chain serves input proofs only. It has no ACL contract, so a handle
+            // of it fails these checks as `UnsupportedChain`.
+            if !is_evm_host_chain_id(hc.chain_id) {
                 continue;
             }
-            if !is_evm_host_chain_id(hc.chain_id) {
-                return Err(anyhow::anyhow!(
-                    "unsupported chain type byte 0x{:02x} for chain {} (expected 0x00 EVM or 0x01 Solana)",
-                    chain_type_byte(hc.chain_id),
-                    hc.chain_id
-                ));
-            }
-
             let url = Url::parse(&hc.url).map_err(|e| {
                 anyhow::anyhow!("Invalid host chain URL for chain {}: {}", hc.chain_id, e)
             })?;
@@ -174,8 +115,7 @@ impl HostAclChecker {
 
         Ok(Self {
             chains,
-            solana_chains,
-            retry_config: host_acl_check.retry.clone(),
+            retry_config: retry,
         })
     }
 
@@ -195,11 +135,6 @@ impl HostAclChecker {
         let mut all_failures = Vec::new();
 
         for (chain_id, chain_handles) in &grouped {
-            // RFC-021 Solana host: ACL enforced authoritatively by the KMS (solana_acl)
-            // and on-chain secp256k1 cert checks; no EVM eth_call pre-check applies.
-            if self.solana_chains.contains_key(chain_id) {
-                continue;
-            }
             let chain_acl = self
                 .chains
                 .get(chain_id)
@@ -276,11 +211,6 @@ impl HostAclChecker {
         let mut all_failures = Vec::new();
 
         for (chain_id, chain_pairs) in &grouped {
-            // RFC-021 Solana host: ACL enforced authoritatively by the KMS (solana_acl)
-            // and on-chain secp256k1 cert checks; no EVM eth_call pre-check applies.
-            if self.solana_chains.contains_key(chain_id) {
-                continue;
-            }
             let chain_acl = self
                 .chains
                 .get(chain_id)
@@ -381,11 +311,6 @@ impl HostAclChecker {
         let mut all_failures = Vec::new();
 
         for (chain_id, chain_pairs) in &grouped {
-            // RFC-021 Solana host: ACL enforced authoritatively by the KMS (solana_acl)
-            // and on-chain secp256k1 cert checks; no EVM eth_call pre-check applies.
-            if self.solana_chains.contains_key(chain_id) {
-                continue;
-            }
             let chain_acl = self
                 .chains
                 .get(chain_id)
@@ -472,11 +397,6 @@ impl HostAclChecker {
         let mut all_failures = Vec::new();
 
         for (chain_id, chain_entries) in &grouped {
-            // RFC-021 Solana host: ACL enforced authoritatively by the KMS (solana_acl)
-            // and on-chain secp256k1 cert checks; no EVM eth_call pre-check applies.
-            if self.solana_chains.contains_key(chain_id) {
-                continue;
-            }
             let chain_acl = self
                 .chains
                 .get(chain_id)
@@ -559,203 +479,7 @@ impl HostAclChecker {
         }
     }
 
-    /// Advisory, negative-only pre-check of a Solana user-decrypt request
-    /// ([`super::solana_user_decrypt_precheck`] holds the rule). Two `getMultipleAccounts` reads at
-    /// `finalized`: the encrypted stores, to learn each entry's application, then the delegation
-    /// rows with the Clock at or after the first read's slot. The chain read is the permit's
-    /// `chain_id`, which every handle embeds and the signature covers.
-    pub async fn check_solana_user_decrypt(
-        &self,
-        job_id: &JobId,
-        request: &SolanaUserDecryptRequest,
-    ) -> Result<(), HostAclError> {
-        let chain_id = request.permit().chain_id();
-        let Some(chain) = self.solana_chains.get(&chain_id) else {
-            return Err(HostAclError::UnsupportedChain { chain_id });
-        };
-        let user_address = *request.permit().user_address().as_bytes();
-        let scopes = request.permit().allowed_scopes();
-
-        let entries: Vec<RequestEntry> = request
-            .entries()
-            .iter()
-            .map(|entry| RequestEntry {
-                handle_hex: format!("0x{}", hex::encode(entry.handle)),
-                owner: entry.owner_address,
-                encrypted_store: entry.encrypted_store,
-            })
-            .collect();
-        // A permissive permit admits every application, and a direct entry has no row to read.
-        if scopes.is_permissive() && entries.iter().all(|entry| entry.owner == user_address) {
-            return Ok(());
-        }
-
-        // Round 1: the encrypted stores the entries name, to learn each entry's application. Its
-        // slot is the floor the row read must be served at or after — otherwise a load-balanced
-        // RPC can answer round 2 from a replica behind round 1, and a grant finalized between the
-        // two reads as absent.
-        let encrypted_store_addresses = encrypted_store_read_addresses(&entries);
-        let (discovery_slot, encrypted_stores) = match self
-            .solana_accounts_with_retry(job_id, chain, chain_id, &encrypted_store_addresses, None)
-            .await?
-        {
-            SolanaRead::Observed { slot, accounts } => (slot, accounts),
-            // Unreachable: a read that required no slot cannot be behind one. Passing keeps
-            // that impossibility from becoming a refusal.
-            SolanaRead::NodeBehindRequiredSlot => return Ok(()),
-        };
-        let applications = match entry_applications(chain.program_id, &entries, encrypted_stores) {
-            Ok(applications) => applications,
-            Err(defect) => {
-                warn!(
-                    int_job_id = %job_id,
-                    chain_id,
-                    ?defect,
-                    "Solana user-decrypt pre-check cannot judge its own reads; passing"
-                );
-                return Ok(());
-            }
-        };
-
-        // A store's application is its seeds, so a scope refusal needs no second read.
-        let refusals = scope_refusals(scopes, &entries, &applications);
-        if !refusals.is_empty() {
-            return Err(not_allowed(refusals));
-        }
-
-        // Delegated entries whose encrypted store this check cannot judge drop out of the plan
-        // (indeterminate).
-        let plan = plan_row_reads(chain.program_id, user_address, entries, applications);
-        if plan.entries.is_empty() {
-            return Ok(());
-        }
-
-        // Round 2: the rows and the Clock, whose time liveness is decided at — required to be
-        // at or after the previous read's slot, and checked again on arrival: this reader refuses
-        // only on an observation that is not older than the one the plan was built from. A
-        // refusal is read again on the retry policy before it stands, since a client that waited
-        // for less than `finalized` can ask before its grant is finalized.
-        let mut floor = discovery_slot;
-        let mut attempt = 1;
-        loop {
-            let (slot, row_accounts) = match self
-                .solana_accounts_with_retry(job_id, chain, chain_id, &plan.addresses, Some(floor))
-                .await?
-            {
-                SolanaRead::Observed { slot, accounts } => (slot, accounts),
-                SolanaRead::NodeBehindRequiredSlot => return Ok(()),
-            };
-            if slot < floor {
-                warn!(
-                    int_job_id = %job_id,
-                    chain_id,
-                    required_slot = floor,
-                    row_slot = slot,
-                    "Solana user-decrypt pre-check read the rows behind its required slot; passing"
-                );
-                return Ok(());
-            }
-
-            let refusals = match judge_planned_entries(
-                chain.program_id,
-                user_address,
-                &plan.entries,
-                &row_accounts,
-            ) {
-                Ok(refusals) => refusals,
-                Err(defect) => {
-                    warn!(
-                        int_job_id = %job_id,
-                        chain_id,
-                        ?defect,
-                        "Solana user-decrypt pre-check cannot judge its own reads; passing"
-                    );
-                    return Ok(());
-                }
-            };
-            if refusals.is_empty() {
-                return Ok(());
-            }
-            if attempt >= self.retry_config.max_attempts {
-                return Err(not_allowed(refusals));
-            }
-            warn!(
-                int_job_id = %job_id,
-                chain_id,
-                attempt,
-                refused = refusals.len(),
-                "Solana user-decrypt pre-check found no live delegation; reading the rows again"
-            );
-            tokio::time::sleep(Duration::from_millis(self.retry_config.retry_interval_ms)).await;
-            floor = slot;
-            attempt += 1;
-        }
-    }
-
-    /// One `getMultipleAccounts` read at `finalized`, retried on the EVM pre-check's policy.
-    /// Returns the response's own slot beside the accounts: one read, one observation point.
-    ///
-    /// `min_context_slot` refuses to be served by a node behind that slot, which is what keeps
-    /// the two reads of one check from being two views of the chain in the wrong order. A node
-    /// that never catches up within the retry budget yields
-    /// [`SolanaRead::NodeBehindRequiredSlot`] — reachable only when a slot was required.
-    async fn solana_accounts_with_retry(
-        &self,
-        job_id: &JobId,
-        chain: &SolanaHostChain,
-        chain_id: u64,
-        addresses: &[[u8; 32]],
-        min_context_slot: Option<u64>,
-    ) -> Result<SolanaRead, HostAclError> {
-        let max_attempts = self.retry_config.max_attempts;
-        let retry_interval = Duration::from_millis(self.retry_config.retry_interval_ms);
-        let mut last_error = String::new();
-        let mut behind = false;
-
-        for attempt in 0..max_attempts {
-            match solana_get_multiple_accounts(chain, addresses, min_context_slot).await {
-                Ok((slot, accounts)) => return Ok(SolanaRead::Observed { slot, accounts }),
-                Err(failure) => {
-                    behind = matches!(failure, SolanaReadFailure::MinContextSlotNotReached);
-                    last_error = failure.to_string();
-                    if attempt + 1 < max_attempts {
-                        warn!(
-                            int_job_id = %job_id,
-                            chain_id,
-                            attempt = attempt + 1,
-                            max_attempts,
-                            error = %last_error,
-                            "Solana user-decrypt pre-check read failed, retrying"
-                        );
-                        tokio::time::sleep(retry_interval).await;
-                    }
-                }
-            }
-        }
-        // A node still short of the required slot is not an unreadable RPC: the state exists and
-        // this reader simply has no single observation to judge it on, which is the module's
-        // definition of an ambiguity — so it passes to the connector rather than refusing.
-        if behind {
-            warn!(
-                int_job_id = %job_id,
-                chain_id,
-                error = %last_error,
-                "Solana user-decrypt pre-check RPC stayed behind the first read's slot; passing"
-            );
-            return Ok(SolanaRead::NodeBehindRequiredSlot);
-        }
-        error!(
-            int_job_id = %job_id,
-            chain_id,
-            error = %last_error,
-            "Solana user-decrypt pre-check read failed after retries"
-        );
-        Err(HostAclError::CallFailed {
-            chain_id,
-            message: last_error,
-        })
-    }
-
+    /// Execute a multicall against a host chain ACL contract with retry on RPC errors.
     async fn multicall_with_retry(
         &self,
         job_id: &JobId,
@@ -831,171 +555,6 @@ fn group_handle_entries_by_chain(handles: &[HandleEntry]) -> HashMap<u64, Vec<Ha
     grouped
 }
 
-/// The Solana pre-check's refusals as the error the EVM pre-check reports.
-fn not_allowed(refusals: Vec<EntryRefusal>) -> HostAclError {
-    let failures: Vec<AclFailure> = refusals
-        .into_iter()
-        .map(|refusal| AclFailure {
-            handle: refusal.handle_hex,
-            check: refusal.reason,
-        })
-        .collect();
-    HostAclError::NotAllowed {
-        count: failures.len(),
-        failures,
-    }
-}
-
-/// What one retried read produced.
-enum SolanaRead {
-    /// One observation: the response's slot and one entry per requested address.
-    Observed {
-        slot: u64,
-        accounts: Vec<Option<RawAccount>>,
-    },
-    /// The RPC never reached the slot the read required, retries included. Only a read that
-    /// asked for a slot can end here.
-    NodeBehindRequiredSlot,
-}
-
-/// Why one `getMultipleAccounts` produced no observation.
-enum SolanaReadFailure {
-    /// The node had not reached the requested `minContextSlot` (JSON-RPC -32016). Not an
-    /// unreadable RPC: the node is behind, and reading again is the repair.
-    MinContextSlotNotReached,
-    /// Anything else — transport, a non-JSON body, a malformed entry.
-    Unreadable(String),
-}
-
-impl std::fmt::Display for SolanaReadFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MinContextSlotNotReached => {
-                f.write_str("rpc has not reached the required context slot")
-            }
-            Self::Unreadable(message) => f.write_str(message),
-        }
-    }
-}
-
-/// Every malformed-response path below reports a plain message; only the -32016 arm is told
-/// apart, and it constructs its variant directly.
-impl From<String> for SolanaReadFailure {
-    fn from(message: String) -> Self {
-        Self::Unreadable(message)
-    }
-}
-
-/// The JSON-RPC error code a node returns when it is behind the requested `minContextSlot`.
-const MIN_CONTEXT_SLOT_NOT_REACHED_CODE: i64 = -32016;
-
-/// The `params` of one `getMultipleAccounts`, with the required slot in place when one is asked
-/// for. Pure so that the floor's presence in the request is pinned by a test rather than by a
-/// live RPC: a `minContextSlot` that never reaches the wire fails open and silently.
-fn get_multiple_accounts_params(
-    addresses: &[[u8; 32]],
-    min_context_slot: Option<u64>,
-) -> serde_json::Value {
-    let mut config = serde_json::json!({ "encoding": "base64", "commitment": "finalized" });
-    if let Some(slot) = min_context_slot {
-        config["minContextSlot"] = serde_json::json!(slot);
-    }
-    serde_json::json!([
-        addresses
-            .iter()
-            .map(|address| solana_pubkey::Pubkey::new_from_array(*address).to_string())
-            .collect::<Vec<_>>(),
-        config
-    ])
-}
-
-/// Classifies a JSON-RPC `error` object: the one code that means "this node is behind", and
-/// everything else as unreadable.
-fn read_failure_from_rpc_error(error: &serde_json::Value) -> SolanaReadFailure {
-    match error.get("code").and_then(serde_json::Value::as_i64) {
-        Some(MIN_CONTEXT_SLOT_NOT_REACHED_CODE) => SolanaReadFailure::MinContextSlotNotReached,
-        _ => SolanaReadFailure::Unreadable(format!("rpc error: {error}")),
-    }
-}
-
-/// One JSON-RPC `getMultipleAccounts` at `finalized`, base64-encoded. Returns the response's
-/// slot and one entry per requested address (`None` where no account exists).
-///
-/// `min_context_slot`, when given, requires the serving node to be at least that far along:
-/// the second read of a check cannot then be served by a replica behind the first read.
-async fn solana_get_multiple_accounts(
-    chain: &SolanaHostChain,
-    addresses: &[[u8; 32]],
-    min_context_slot: Option<u64>,
-) -> Result<(u64, Vec<Option<RawAccount>>), SolanaReadFailure> {
-    use base64::Engine as _;
-
-    let params = get_multiple_accounts_params(addresses, min_context_slot);
-    let body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getMultipleAccounts",
-        "params": params,
-    });
-
-    let response = chain
-        .http
-        .post(chain.rpc_url.clone())
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("transport: {}", redact_error(&e)))?;
-    let payload: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("non-JSON response: {}", redact_error(&e)))?;
-    if let Some(error) = payload.get("error") {
-        return Err(read_failure_from_rpc_error(error));
-    }
-
-    let result = payload
-        .get("result")
-        .ok_or_else(|| "response carries no result".to_string())?;
-    let slot = result
-        .pointer("/context/slot")
-        .and_then(serde_json::Value::as_u64)
-        .ok_or_else(|| "response carries no context slot".to_string())?;
-    let values = result
-        .get("value")
-        .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| "response carries no account list".to_string())?;
-    if values.len() != addresses.len() {
-        return Err(SolanaReadFailure::Unreadable(format!(
-            "response carries {} accounts for {} addresses",
-            values.len(),
-            addresses.len()
-        )));
-    }
-
-    let mut accounts = Vec::with_capacity(values.len());
-    for value in values {
-        if value.is_null() {
-            accounts.push(None);
-            continue;
-        }
-        let owner_base58 = value
-            .get("owner")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| "account entry carries no owner".to_string())?;
-        let owner = crate::http::utils::solana_address::decode_solana_address(owner_base58)
-            .map_err(|_| format!("account owner is not a Solana address: {owner_base58}"))?;
-        let data_base64 = value
-            .pointer("/data/0")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| "account entry carries no data".to_string())?;
-        let data = base64::engine::general_purpose::STANDARD
-            .decode(data_base64)
-            .map_err(|e| format!("account data is not base64: {e}"))?;
-        accounts.push(Some(RawAccount { owner, data }));
-    }
-    Ok((slot, accounts))
-}
-
 /// Decode ABI-encoded bool from multicall result bytes.
 fn decode_bool(data: &[u8]) -> Result<bool, &'static str> {
     if data.len() < 32 {
@@ -1053,391 +612,33 @@ mod tests {
         assert!(grouped.is_empty());
     }
 
-    /// The checker's settings, with only the knobs a test cares about spelled out.
-    fn host_acl_check_config(max_attempts: u32, request_timeout_ms: u64) -> HostAclCheckConfig {
-        HostAclCheckConfig {
-            retry: RetrySettings {
-                max_attempts,
-                retry_interval_ms: 1,
-            },
-            request_timeout_ms,
-        }
-    }
-
+    /// A Solana host chain is configured for input proofs: its base58 `acl_address` must not stop
+    /// the checker from starting, and a handle of that chain is refused, not passed.
     #[tokio::test]
-    async fn solana_host_starts_and_skips_evm_precheck() {
-        use crate::config::settings::HostChainConfig;
-
-        // RFC-021 Solana host: type byte 0x01 + base58 acl_address (zama-host program).
+    async fn a_solana_host_starts_and_its_handles_are_refused() {
         let solana_chain_id = zama_solana_acl::host_chain::solana_host_chain_id(12345);
         let host_chains = vec![HostChainConfig {
             chain_id: solana_chain_id,
             url: "http://127.0.0.1:8899".to_string(),
             acl_address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
         }];
+        let checker = HostAclChecker::new(
+            &host_chains,
+            RetrySettings {
+                max_attempts: 1,
+                retry_interval_ms: 1,
+            },
+        )
+        .expect("a Solana host chain must not stop the checker from starting");
 
-        // new() must not panic on the base58 acl_address (the prior bug).
-        let checker = HostAclChecker::new(&host_chains, &host_acl_check_config(1, 10_000))
-            .expect("base58 Solana acl_address must not fail HostAclChecker::new");
-
-        assert!(checker.solana_chains.contains_key(&solana_chain_id));
-        assert!(
-            checker.chains.is_empty(),
-            "Solana host must not create an EVM ACL eth_call client"
-        );
-
-        // A Solana handle (chain id in bytes 22..30): the EVM pre-check is deferred to the
-        // KMS solana_acl + on-chain secp path, so this returns Ok without any chain RPC.
         let mut handle = [0u8; 32];
         handle[22..30].copy_from_slice(&solana_chain_id.to_be_bytes());
-        let job_id = JobId::from([0u8; 32]);
-        assert!(checker
-            .check_public_decrypt(&job_id, &[handle])
-            .await
-            .is_ok());
-    }
-
-    #[test]
-    fn chain_id_discriminator_rejects_mismatched_acl_address_formats() {
-        use crate::config::settings::HostChainConfig;
-
-        let evm_address = "0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836";
-        let solana_address = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
-
-        for (chain_id, acl_address) in [
-            (
-                zama_solana_acl::host_chain::solana_host_chain_id(12345),
-                evm_address,
-            ),
-            (12345, solana_address),
-        ] {
-            let result = HostAclChecker::new(
-                &[HostChainConfig {
-                    chain_id,
-                    url: "http://127.0.0.1:8899".to_string(),
-                    acl_address: acl_address.to_string(),
-                }],
-                &host_acl_check_config(1, 10_000),
-            );
-            assert!(result.is_err(), "chain/address mismatch must be rejected");
-        }
-    }
-
-    /// A node that completes the TCP handshake and then answers nothing — the shape that used
-    /// to park the caller forever, holding a readiness permit with it.
-    #[tokio::test]
-    async fn a_stalled_rpc_ends_the_attempt_rather_than_parking_it() {
-        use crate::config::settings::HostChainConfig;
-
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind the stall server");
-        let addr = listener.local_addr().expect("stall server addr");
-        std::thread::spawn(move || {
-            // Accepted connections are kept alive and never written to: dropping one would
-            // close it, which reqwest reports as a transport error rather than a stall.
-            let mut accepted = Vec::new();
-            while let Ok((stream, _)) = listener.accept() {
-                accepted.push(stream);
-            }
-        });
-
-        let checker = HostAclChecker::new(
-            &[HostChainConfig {
-                chain_id: zama_solana_acl::host_chain::solana_host_chain_id(12345),
-                url: format!("http://{addr}"),
-                acl_address: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA".to_string(),
-            }],
-            // Two attempts against a 150 ms deadline: the retry loop is only reachable at all
-            // because each attempt ends.
-            &host_acl_check_config(2, 150),
-        )
-        .expect("checker builds");
-        let chain = checker
-            .solana_chains
-            .values()
-            .next()
-            .expect("the Solana chain is configured");
-
-        let started = std::time::Instant::now();
-        let Err(failure) = solana_get_multiple_accounts(chain, &[[7u8; 32]], None).await else {
-            panic!("a stalled RPC cannot produce an observation");
-        };
-        // Fails as an unreadable RPC (refusal-worthy), not as a node that is merely behind.
-        assert!(matches!(failure, SolanaReadFailure::Unreadable(_)));
-        assert!(
-            started.elapsed() < Duration::from_secs(5),
-            "the attempt should end on its own deadline, took {:?}",
-            started.elapsed()
-        );
-    }
-
-    #[test]
-    fn row_read_requires_the_first_read_slot() {
-        let addresses = [[7u8; 32]];
-        let discovery = get_multiple_accounts_params(&addresses, None);
-        assert!(
-            discovery[1].get("minContextSlot").is_none(),
-            "the first read has no floor to require: {discovery}"
-        );
-
-        let rows = get_multiple_accounts_params(&addresses, Some(500));
-        assert_eq!(
-            rows[1].get("minContextSlot").and_then(|s| s.as_u64()),
-            Some(500),
-            "the row read must carry the first read's slot: {rows}"
-        );
-        // The floor rides beside the commitment, not in place of it.
-        assert_eq!(
-            rows[1].get("commitment").and_then(|c| c.as_str()),
-            Some("finalized")
-        );
-    }
-
-    #[test]
-    fn a_node_behind_the_required_slot_is_told_apart_from_an_unreadable_rpc() {
-        let behind = serde_json::json!({
-            "code": MIN_CONTEXT_SLOT_NOT_REACHED_CODE,
-            "message": "Minimum context slot has not been reached",
-        });
-        assert!(matches!(
-            read_failure_from_rpc_error(&behind),
-            SolanaReadFailure::MinContextSlotNotReached
-        ));
-
-        // Any other RPC error stays a refusal-worthy read failure.
-        let other = serde_json::json!({ "code": -32602, "message": "Invalid params" });
-        assert!(matches!(
-            read_failure_from_rpc_error(&other),
-            SolanaReadFailure::Unreadable(_)
-        ));
-    }
-
-    /// A node that answers each `getMultipleAccounts` with the next `(slot, accounts)` of
-    /// `answers`, and counts the reads.
-    async fn scripted_rpc(
-        answers: Vec<(u64, Vec<Option<RawAccount>>)>,
-    ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<Option<u64>>>>) {
-        use base64::Engine as _;
-        use std::sync::{Arc, Mutex};
-
-        let answers = Arc::new(Mutex::new(std::collections::VecDeque::from(answers)));
-        let required_slots = Arc::new(Mutex::new(Vec::new()));
-        let recorded = required_slots.clone();
-        let app = axum::Router::new().route(
-            "/",
-            axum::routing::post(move |axum::Json(request): axum::Json<serde_json::Value>| {
-                let answers = answers.clone();
-                let recorded = recorded.clone();
-                async move {
-                    recorded
-                        .lock()
-                        .expect("required slots lock")
-                        .push(request["params"][1]["minContextSlot"].as_u64());
-                    let (slot, accounts) = answers
-                        .lock()
-                        .expect("answers lock")
-                        .pop_front()
-                        .expect("one scripted answer per read");
-                    let value: Vec<Option<serde_json::Value>> = accounts
-                        .iter()
-                        .map(|account| {
-                            account.as_ref().map(|account| {
-                                serde_json::json!({
-                                    "owner": solana_pubkey::Pubkey::new_from_array(account.owner)
-                                        .to_string(),
-                                    "data": [
-                                        base64::engine::general_purpose::STANDARD
-                                            .encode(&account.data),
-                                        "base64"
-                                    ],
-                                })
-                            })
-                        })
-                        .collect();
-                    axum::Json(serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "result": { "context": { "slot": slot }, "value": value },
-                    }))
-                }
-            }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind the scripted RPC");
-        let addr = listener.local_addr().expect("scripted RPC addr");
-        tokio::spawn(async move { axum::serve(listener, app).await });
-        (format!("http://{addr}"), required_slots)
-    }
-
-    /// Runs the user-decrypt pre-check on a one-entry request of `owner`, signed by `DELEGATE` for
-    /// `allowed_scopes`, against `answers`, with `max_attempts`. Read `n` answers at slot
-    /// `100 + n`; the store read is answered with a store of `(APP_PROGRAM, SCOPE)`. Returns the
-    /// outcome and the `minContextSlot` of each read.
-    async fn check_one_entry(
-        max_attempts: u32,
-        owner: [u8; 32],
-        allowed_scopes: Vec<zama_solana_permit::ApplicationScope>,
-        rows: Vec<Vec<Option<RawAccount>>>,
-    ) -> (Result<(), HostAclError>, Vec<Option<u64>>) {
-        use super::super::solana_user_decrypt_precheck::tests::{
-            encrypted_store_for, APP_PROGRAM, DELEGATE, PROGRAM_ID, SCOPE,
-        };
-        use crate::config::settings::HostChainConfig;
-        use zama_solana_permit::{
-            KMS_ROUTING_EXTRA_DATA_LEN, KMS_ROUTING_VERSION_BYTE, TRANSPORT_KEY_LEN,
-        };
-        use zama_solana_request::{SolanaEntryClaims, SolanaRequestBlob, SolanaUserDecryptFields};
-
-        let (store, store_address) = encrypted_store_for(APP_PROGRAM, SCOPE);
-        let answers = std::iter::once(vec![Some(store)])
-            .chain(rows)
-            .enumerate()
-            .map(|(read, accounts)| (100 + read as u64, accounts))
-            .collect();
-        let (url, required_slots) = scripted_rpc(answers).await;
-        let chain_id = zama_solana_acl::host_chain::solana_host_chain_id(12345);
-        let checker = HostAclChecker::new(
-            &[HostChainConfig {
-                chain_id,
-                url,
-                acl_address: solana_pubkey::Pubkey::new_from_array(PROGRAM_ID).to_string(),
-            }],
-            &host_acl_check_config(max_attempts, 10_000),
-        )
-        .expect("checker builds");
-
-        let mut handle = [1; 32];
-        handle[22..30].copy_from_slice(&chain_id.to_be_bytes());
-        let mut extra_data = vec![7; KMS_ROUTING_EXTRA_DATA_LEN];
-        extra_data[0] = KMS_ROUTING_VERSION_BYTE;
-        let request = SolanaUserDecryptRequest::assemble(
-            SolanaUserDecryptFields {
-                handles: vec![handle],
-                transport_key: vec![2; TRANSPORT_KEY_LEN],
-                start_timestamp: 4,
-                duration_seconds: 5,
-                extra_data,
-            },
-            SolanaRequestBlob {
-                user_address: DELEGATE,
-                allowed_scopes: allowed_scopes
-                    .iter()
-                    .map(|scope| *scope.as_bytes())
-                    .collect(),
-                verifying_program_id: PROGRAM_ID,
-                signature: [9; 64],
-                entries: vec![SolanaEntryClaims {
-                    owner_address: owner,
-                    encrypted_store: store_address,
-                }],
-            },
-        )
-        .expect("the request assembles");
-        let outcome = checker
-            .check_solana_user_decrypt(&JobId::from([0u8; 32]), &request)
+        let result = checker
+            .check_public_decrypt(&JobId::from([0u8; 32]), &[handle])
             .await;
-        let required_slots = required_slots.lock().expect("required slots lock").clone();
-        (outcome, required_slots)
-    }
-
-    /// A client that waited for less than `finalized` can ask before its grant is finalized: the
-    /// rows are read again on the retry policy, and the request passes once the grant shows. Each
-    /// row read requires the slot of the read before it.
-    #[tokio::test]
-    async fn a_grant_that_finalizes_after_the_first_row_read_passes() {
-        use super::super::solana_user_decrypt_precheck::tests::{
-            clock, live_exact, row, DELEGATOR, NOW,
-        };
-
-        let (outcome, required_slots) = check_one_entry(
-            3,
-            DELEGATOR,
-            vec![],
-            vec![
-                vec![None, None, Some(clock(NOW))],
-                vec![Some(row(&live_exact())), None, Some(clock(NOW))],
-            ],
-        )
-        .await;
-        assert!(outcome.is_ok(), "{outcome:?}");
-        assert_eq!(
-            required_slots,
-            [None, Some(100), Some(101)],
-            "the store read, then two row reads, each at or after the previous read's slot"
-        );
-    }
-
-    /// Rows still dead on the last attempt the retry policy allows refuse the entry.
-    #[tokio::test]
-    async fn rows_still_dead_on_the_last_attempt_refuse() {
-        use super::super::solana_user_decrypt_precheck::tests::{clock, DELEGATOR, NOW};
-
-        let dead = || vec![None, None, Some(clock(NOW))];
-        let (outcome, required_slots) =
-            check_one_entry(2, DELEGATOR, vec![], vec![dead(), dead()]).await;
         assert!(
-            matches!(outcome, Err(HostAclError::NotAllowed { count: 1, .. })),
-            "{outcome:?}"
+            matches!(result, Err(HostAclError::UnsupportedChain { chain_id }) if chain_id == solana_chain_id),
+            "{result:?}"
         );
-        assert_eq!(required_slots.len(), 3, "the store read and two row reads");
-    }
-
-    /// A direct entry whose store's application the permit's scopes leave out is refused after
-    /// the store read, as the connector refuses it after the gateway fee (`ScopeNotAllowed`).
-    #[tokio::test]
-    async fn a_direct_entry_outside_the_permit_scopes_is_refused_before_the_fee() {
-        use super::super::solana_user_decrypt_precheck::tests::{
-            scope_entry, APP_PROGRAM, DELEGATE,
-        };
-
-        let (outcome, required_slots) = check_one_entry(
-            3,
-            DELEGATE,
-            vec![scope_entry(APP_PROGRAM, [0x99; 32])],
-            vec![],
-        )
-        .await;
-        assert!(
-            matches!(outcome, Err(HostAclError::NotAllowed { count: 1, .. })),
-            "{outcome:?}"
-        );
-        assert_eq!(required_slots, [None], "the store read alone decides");
-    }
-
-    /// The same direct entry passes once its application is among the signed scopes, without a
-    /// row read.
-    #[tokio::test]
-    async fn a_direct_entry_inside_the_permit_scopes_passes_on_the_store_read() {
-        use super::super::solana_user_decrypt_precheck::tests::{
-            scope_entry, APP_PROGRAM, DELEGATE, SCOPE,
-        };
-
-        let (outcome, required_slots) =
-            check_one_entry(3, DELEGATE, vec![scope_entry(APP_PROGRAM, SCOPE)], vec![]).await;
-        assert!(outcome.is_ok(), "{outcome:?}");
-        assert_eq!(required_slots, [None]);
-    }
-
-    /// A delegated entry outside the scopes is refused on the scope, with no row read, as the
-    /// connector judges the scope before the delegation.
-    #[tokio::test]
-    async fn a_delegated_entry_outside_the_permit_scopes_is_refused_without_a_row_read() {
-        use super::super::solana_user_decrypt_precheck::tests::{
-            clock, live_exact, row, scope_entry, APP_PROGRAM, DELEGATOR, NOW,
-        };
-
-        // A live row is on offer, so only the scope can refuse the entry.
-        let (outcome, required_slots) = check_one_entry(
-            3,
-            DELEGATOR,
-            vec![scope_entry(APP_PROGRAM, [0x99; 32])],
-            vec![vec![Some(row(&live_exact())), None, Some(clock(NOW))]],
-        )
-        .await;
-        assert!(
-            matches!(outcome, Err(HostAclError::NotAllowed { count: 1, .. })),
-            "{outcome:?}"
-        );
-        assert_eq!(required_slots, [None]);
     }
 }

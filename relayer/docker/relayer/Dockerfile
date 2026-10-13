@@ -23,15 +23,12 @@ RUN --mount=type=bind,source=relayer/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=relayer/test-support,target=test-support \
     # Out-of-tree crates the relayer depends on; bound at absolute paths so Cargo
     # can resolve the `../` path dependencies declared in relayer/Cargo.toml.
-    # The solana crates depend on each other only by `../` path, and are deliberately
-    # standalone (no workspace inheritance), so the solana workspace root is not needed
-    # here — see the note at the top of each of their manifests.
+    # The solana crate is deliberately standalone (no workspace inheritance), so the solana
+    # workspace root is not needed here — see the note at the top of its manifest.
     --mount=type=bind,source=gateway-contracts/rust_bindings,target=/gateway-contracts/rust_bindings \
     --mount=type=bind,source=host-contracts/rust_bindings,target=/host-contracts/rust_bindings \
     --mount=type=bind,source=shared/user-decryption-signature,target=/shared/user-decryption-signature \
-    --mount=type=bind,source=solana/crates/zama-solana-permit,target=/solana/crates/zama-solana-permit \
     --mount=type=bind,source=solana/crates/zama-solana-acl,target=/solana/crates/zama-solana-acl \
-    --mount=type=bind,source=solana/crates/zama-solana-request,target=/solana/crates/zama-solana-request \
     --mount=type=bind,source=shared/ciphertext-attestation,target=/shared/ciphertext-attestation \
 #    --mount=type=bind,source=.git/HEAD,target=.git/HEAD \
 #    --mount=type=bind,source=.git/index,target=.git/index \

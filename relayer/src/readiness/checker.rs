@@ -2,7 +2,7 @@ use crate::{
     config::settings::GatewayConfig,
     core::{
         errors::EventProcessingError,
-        event::{assemble_submitted_solana_request, HandleContractPair, UserDecryptRequest},
+        event::{HandleContractPair, UserDecryptRequest},
         job_id::JobId,
     },
     gateway::ciphertext_checker::CiphertextChecker,
@@ -12,7 +12,6 @@ use alloy::primitives::{Bytes, FixedBytes};
 use ciphertext_attestation::ConsensusRound;
 use std::{fmt, time::Duration};
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
 
 /// Steps for readiness checker operations
 #[derive(Debug, Clone, Copy)]
@@ -164,40 +163,6 @@ impl ReadinessChecker {
                 self.host_acl
                     .check_unified_user_decrypt(job_id, handles, *user_address)
                     .await
-            }
-            // RFC-021 Solana: the advisory pre-check of `host::solana_user_decrypt_precheck`,
-            // whose module doc says what it refuses; the KMS connector stays authoritative.
-            UserDecryptRequest::SolanaSrfc38V1 {
-                ct_handles,
-                request_validity,
-                public_key,
-                extra_data,
-                solana_request,
-            } => {
-                match assemble_submitted_solana_request(
-                    ct_handles,
-                    request_validity,
-                    public_key,
-                    extra_data,
-                    solana_request,
-                ) {
-                    Ok(request) => {
-                        self.host_acl
-                            .check_solana_user_decrypt(job_id, &request)
-                            .await
-                    }
-                    // Admission built these parts and verified the permit over them; failing to
-                    // join them again is this relayer's own defect, and an advisory check does
-                    // not refuse users on its own defects.
-                    Err(error) => {
-                        warn!(
-                            int_job_id = %job_id,
-                            %error,
-                            "Solana user-decrypt pre-check could not rebuild the request; passing"
-                        );
-                        Ok(())
-                    }
-                }
             }
         };
         result.map_err(|e| match &e {

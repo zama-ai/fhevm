@@ -32,8 +32,7 @@ pub mod validation_messages {
     pub const INVALID_EXTRA_DATA_FORMAT: &str =
         "Must be 0x00, or a versioned format: 0x01 + 32-byte contextId (0x07-tagged first byte), or 0x02 + 32-byte contextId (0x07-tagged) + 32-byte epochId (0x08-tagged)";
     pub const TIMESTAMP_MUST_NOT_BE_IN_FUTURE: &str = "Timestamp must not be in the future";
-    pub const HANDLE_MUST_BE_ON_AN_EVM_HOST_CHAIN: &str =
-        "Must be a handle on an EVM host chain; Solana handles use solana-srfc38-user-decrypt-v1";
+    pub const HANDLE_MUST_BE_ON_AN_EVM_HOST_CHAIN: &str = "Must be a handle on an EVM host chain";
 }
 
 pub fn de_string_or_number<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
@@ -85,16 +84,6 @@ pub fn validate_host_address(address: &str) -> Result<(), ValidationError> {
     }
     // Surface the EVM error shape, which is the common case for malformed input.
     validate_blockchain_address(address)
-}
-
-/// Validates a list of host-chain account identities (each EVM 0x-hex or RFC-021 Solana base58).
-/// An empty list is permitted (RFC-021 Solana user-decryption carries none; the per-mode
-/// requirement — EVM needs >=1 — is enforced downstream).
-pub fn validate_host_addresses(addresses: &Vec<String>) -> Result<(), ValidationError> {
-    for address in addresses {
-        validate_host_address(address)?;
-    }
-    Ok(())
 }
 
 pub fn validate_no_0x_hex(hex_str: &str) -> Result<(), ValidationError> {
@@ -298,9 +287,8 @@ pub fn validate_handle_contract_pairs(
                 .with_message(validation_messages::LENGTH_MUST_BE_64_CHARACTERS.into()));
         }
 
-        // Validate contract address: EVM 0x-hex or RFC-021 Solana base58 (the chain id decides
-        // interpretation downstream).
-        validate_host_address(&pair.contract_address)?;
+        // Validate contract address
+        validate_blockchain_address(&pair.contract_address)?;
     }
     Ok(())
 }
@@ -353,7 +341,7 @@ pub fn validate_handle_entries(entries: &Vec<HandleEntryJson>) -> Result<(), Val
                 .with_message(validation_messages::LENGTH_MUST_BE_64_CHARACTERS.into())
         })?;
         // The EIP-712 arm is EVM-only: its signature is checked against an EVM host, which a
-        // Solana chain does not have. A Solana handle belongs in the Solana envelope.
+        // Solana chain does not have.
         if is_solana_host_chain_id(extract_chain_id_from_handle(&handle)) {
             return Err(ValidationError::new("validation_error")
                 .with_message(validation_messages::HANDLE_MUST_BE_ON_AN_EVM_HOST_CHAIN.into()));

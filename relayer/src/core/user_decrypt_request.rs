@@ -133,36 +133,6 @@ impl ContentHasher for UserDecryptRequest {
                 hasher.update(b"user_address:");
                 hasher.update(user_address.as_slice());
             }
-            UserDecryptRequest::SolanaSrfc38V1 {
-                ct_handles,
-                request_validity,
-                public_key,
-                extra_data,
-                solana_request,
-            } => {
-                // Distinct variant tag so Solana hashes never collide with EVM unified hashes.
-                // The blob carries only what the gateway fields do not, so both are hashed: the
-                // handles in particular are unsigned, and one signed permit serves many handles.
-                hasher.update(b"variant:solana_srfc38_v1:");
-
-                hasher.update(b"handles:");
-                for h in ct_handles {
-                    hasher.update(h.to_be_bytes::<32>());
-                }
-
-                hasher.update(b"request_validity:");
-                hasher.update(request_validity.start_timestamp.to_be_bytes::<32>());
-                hasher.update(request_validity.duration_seconds.to_be_bytes::<32>());
-
-                hasher.update(b"public_key:");
-                hasher.update(public_key);
-
-                hasher.update(b"extra_data:");
-                hasher.update(extra_data);
-
-                hasher.update(b"solana_request:");
-                hasher.update(solana_request);
-            }
         }
 
         hasher.finalize().into()
@@ -175,7 +145,6 @@ mod tests {
     use crate::core::event::{
         HandleContractPair, HandleEntry, RequestValidity, RequestValiditySeconds,
     };
-    use crate::core::job_id::JobId;
     use alloy::primitives::{Address, Bytes, U256};
 
     fn sample_legacy_direct() -> UserDecryptRequest {
@@ -233,19 +202,6 @@ mod tests {
             signature: Bytes::from(vec![0xde, 0xad, 0xbe, 0xef]),
             public_key: Bytes::from(vec![0xab, 0xcd]),
             extra_data: Bytes::from(vec![0x00]),
-        }
-    }
-
-    fn sample_solana_unified(solana_request: Bytes) -> UserDecryptRequest {
-        UserDecryptRequest::SolanaSrfc38V1 {
-            ct_handles: vec![U256::from(123)],
-            request_validity: RequestValiditySeconds {
-                start_timestamp: U256::from(1000),
-                duration_seconds: U256::from(604_800),
-            },
-            public_key: Bytes::from(vec![0xab, 0xcd]),
-            extra_data: Bytes::from(vec![0x02]),
-            solana_request,
         }
     }
 
@@ -340,33 +296,5 @@ mod tests {
         assert_ne!(direct, delegated);
         assert_ne!(direct, unified);
         assert_ne!(delegated, unified);
-    }
-
-    #[test]
-    fn solana_request_content_hash_separates_distinct_payloads() {
-        // Two different canonical host payloads must not collide, and the Solana variant tag
-        // keeps them distinct from any EVM hash.
-        let first = sample_solana_unified(Bytes::from(vec![0xaa, 0x01]));
-        let second = sample_solana_unified(Bytes::from(vec![0xbb, 0x02]));
-        let first_hash = first.content_hash();
-        let second_hash = second.content_hash();
-
-        assert_ne!(first_hash, second_hash);
-        assert_ne!(JobId::from(first_hash), JobId::from(second_hash));
-    }
-
-    #[test]
-    fn solana_request_content_hash_separates_handles_under_one_permit() {
-        // A session reuses one signed permit, so a later request for a new handle of the same
-        // store carries the same blob. It must still be a different job.
-        let blob = Bytes::from(vec![0xaa, 0x01]);
-        let first = sample_solana_unified(blob.clone());
-        let mut second = sample_solana_unified(blob);
-        let UserDecryptRequest::SolanaSrfc38V1 { ct_handles, .. } = &mut second else {
-            unreachable!()
-        };
-        ct_handles[0] = U256::from(124);
-
-        assert_ne!(first.content_hash(), second.content_hash());
     }
 }

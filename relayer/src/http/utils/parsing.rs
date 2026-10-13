@@ -53,33 +53,11 @@ where
     RequestType: TryFrom<JsonType>,
     <RequestType as TryFrom<JsonType>>::Error: std::fmt::Display,
 {
-    parse_and_validate_cross::<JsonType, RequestType>(body, |_, _| {})
-}
-
-/// Like [`parse_and_validate`], but also runs a cross-field validation step that
-/// can inspect the whole payload (e.g. branch on chain id) and append field-keyed
-/// errors. Cross-field errors are merged with the derived field-level validation
-/// errors so they surface as the same `validation_failed` 400 with per-field detail.
-pub fn parse_and_validate_cross<JsonType, RequestType>(
-    body: &[u8],
-    cross_field: impl Fn(&JsonType, &mut validator::ValidationErrors),
-) -> Result<RequestType, ParseError>
-where
-    JsonType: DeserializeOwned + validator::Validate,
-    RequestType: TryFrom<JsonType>,
-    <RequestType as TryFrom<JsonType>>::Error: std::fmt::Display,
-{
     // 1. Parse JSON with custom error handling
     let payload: JsonType = deserialize_json(body)?;
 
-    // 2. Validate the parsed payload (derived field-level + cross-field), merging
-    //    both error sets so they report together.
-    let mut errors = match payload.validate() {
-        Ok(()) => validator::ValidationErrors::new(),
-        Err(errors) => errors,
-    };
-    cross_field(&payload, &mut errors);
-    if !errors.is_empty() {
+    // 2. Validate the parsed payload
+    if let Err(errors) = payload.validate() {
         return Err(ParseError::ValidationFailed(errors));
     }
 

@@ -1,4 +1,4 @@
-//! v3 endpoints: unified user-decryption (EIP-712 and Solana sRFC-38).
+//! v3 endpoints: unified EIP-712 user-decryption.
 //!
 //! The v3 surface is intentionally minimal — only `/v3/user-decrypt` POST +
 //! GET. The HTTP request body is a typed-attestation envelope discriminated

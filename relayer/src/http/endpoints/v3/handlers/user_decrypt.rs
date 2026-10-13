@@ -1,16 +1,15 @@
 //! v3 `/v3/user-decrypt` handler (typed-attestation envelope).
 //!
 //! POST validates the envelope discriminated by `attestationType`, converts it
-//! to `UserDecryptRequest` (`Eip712UnifiedV1` or `SolanaSrfc38V1`), runs the
-//! same dedup/queue pipeline as v2, and dispatches a
+//! to `UserDecryptRequest::Eip712UnifiedV1`, runs the same dedup/queue pipeline
+//! as v2, and dispatches a
 //! `RelayerEventData::UserDecrypt(UserDecryptEventData::ReqRcvdFromUser)`
-//! event. The orchestrator then builds the matching gateway entry
-//! (`userDecryptionRequest` or `solanaUserDecryptionRequest`). GET is
-//! delegated verbatim to the v2 handler since the response schema is unchanged.
+//! event. The orchestrator then builds the unified `userDecryptionRequest`
+//! gateway entry. GET is delegated verbatim to the v2 handler since the
+//! response schema is unchanged.
 
 use crate::core::event::{
-    ApiVersion, RelayerEvent, RelayerEventData, SolanaAdmissionError, UserDecryptEventData,
-    UserDecryptRequest,
+    ApiVersion, RelayerEvent, RelayerEventData, UserDecryptEventData, UserDecryptRequest,
 };
 use crate::core::job_id::JobId;
 use crate::host::{HostChainIdChecker, SigPreCheckError, UserDecryptSignaturePreChecker};
@@ -24,7 +23,6 @@ use crate::http::retry_after::{
     DecryptQueueInfo, ReadinessQueueInfo, RetryAfterState, TxQueueInfo,
 };
 use crate::http::utils::BounceChecker;
-use crate::http::utils::FieldJsonErrorType;
 use crate::http::{parse_and_validate, AppResponse, ParseError};
 use crate::logging::UserDecryptStep;
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
@@ -178,65 +176,15 @@ impl UserDecryptHandler {
                     .into_response();
                 }
             };
-        let user_decrypt_request = match envelope {
-            UserDecryptV3RequestJson::Eip712Unified(json) => {
-                match UserDecryptRequest::try_from(json) {
-                    Ok(request) => request,
-                    Err(error) => {
-                        return RelayerV2ResponseFailed::from_parse_error(
-                            &ParseError::ConversionFailed(error.to_string()),
-                            &request_id.to_string(),
-                        )
-                        .into_response();
-                    }
-                }
-            }
-            // Admission is where a Solana request is checked in full, so its refusals are the
-            // requester's; only an encoding failure is this relayer's own.
-            UserDecryptV3RequestJson::SolanaSrfc38(json) => {
-                match UserDecryptRequest::try_from(json) {
-                    Ok(request) => request,
-                    // The Solana signature is verified here, not in the pre-check stage below, so
-                    // its refusal is recorded here under the same metric as an EIP-712 one.
-                    Err(SolanaAdmissionError::Signature(error)) => {
-                        info!(
-                            reason = %error,
-                            request_id = %request_id,
-                            "v3 user-decrypt Solana signature rejected at admission"
-                        );
-                        observe_signature_precheck(SignaturePreCheckOutcome::Rejected);
-                        return RelayerV2ResponseFailed::invalid_signature(
-                            &error.to_string(),
-                            &request_id.to_string(),
-                        )
-                        .into_response();
-                    }
-                    Err(SolanaAdmissionError::Field(error)) => {
-                        return RelayerV2ResponseFailed::from_parse_error(
-                            &ParseError::FieldSpecificJson {
-                                field_name: error.field,
-                                issue: error.issue,
-                                error_type: FieldJsonErrorType::InvalidType,
-                            },
-                            &request_id.to_string(),
-                        )
-                        .into_response();
-                    }
-                    Err(SolanaAdmissionError::Encode(error)) => {
-                        error!(%error, "Failed to encode an admitted Solana request");
-                        return RelayerV2ResponseFailed::internal_server_error(
-                            &request_id.to_string(),
-                        )
-                        .into_response();
-                    }
-                    Err(SolanaAdmissionError::Form(error)) => {
-                        return RelayerV2ResponseFailed::request_error(
-                            &error.to_string(),
-                            &request_id.to_string(),
-                        )
-                        .into_response();
-                    }
-                }
+        let UserDecryptV3RequestJson::Eip712Unified(json) = envelope;
+        let user_decrypt_request = match UserDecryptRequest::try_from(json) {
+            Ok(request) => request,
+            Err(error) => {
+                return RelayerV2ResponseFailed::from_parse_error(
+                    &ParseError::ConversionFailed(error.to_string()),
+                    &request_id.to_string(),
+                )
+                .into_response();
             }
         };
 
@@ -273,24 +221,6 @@ impl UserDecryptHandler {
                 observe_signature_precheck(SignaturePreCheckOutcome::Rejected);
                 return RelayerV2ResponseFailed::invalid_signature(
                     &reason,
-                    &request_id.to_string(),
-                )
-                .into_response();
-            }
-            Err(SigPreCheckError::Deployment(error)) => {
-                info!(
-                    field = %error.field,
-                    issue = %error.issue,
-                    request_id = %request_id,
-                    "v3 user-decrypt pre-check rejected a permit for another deployment"
-                );
-                observe_signature_precheck(SignaturePreCheckOutcome::Rejected);
-                return RelayerV2ResponseFailed::from_parse_error(
-                    &ParseError::FieldSpecificJson {
-                        field_name: error.field,
-                        issue: error.issue,
-                        error_type: FieldJsonErrorType::InvalidType,
-                    },
                     &request_id.to_string(),
                 )
                 .into_response();
@@ -494,7 +424,7 @@ impl UserDecryptHandler {
 }
 
 // OpenAPI documented endpoints as standalone functions.
-/// Submit a v3 user-decryption request (EIP-712 or Solana sRFC-38).
+/// Submit a v3 (unified EIP-712) user-decryption request.
 #[utoipa::path(
     post,
     path = "/v3/user-decrypt",

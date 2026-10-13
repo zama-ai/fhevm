@@ -650,7 +650,7 @@ checksum = "3cd5dbd32cae5d1bc3afaf455064ebd9bcce70b57de220468908717c225225dd"
 dependencies = [
  "alloy-json-rpc",
  "auto_impl",
- "base64 0.22.1",
+ "base64",
  "derive_more",
  "futures",
  "futures-utils-wasm",
@@ -1665,12 +1665,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
-name = "base64"
-version = "0.23.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
-
-[[package]]
 name = "base64-simd"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2549,30 +2543,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ed25519"
-version = "2.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "115531babc129696a58c64a4fef0a8bf9e9698629fb97e9e40767d235cfbcd53"
-dependencies = [
- "pkcs8",
- "signature",
-]
-
-[[package]]
-name = "ed25519-dalek"
-version = "2.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70e796c081cee67dc755e1a36a0a172b897fab85fc3f6bc48307991f64e4eca9"
-dependencies = [
- "curve25519-dalek",
- "ed25519",
- "serde",
- "sha2 0.10.9",
- "subtle",
- "zeroize",
-]
-
-[[package]]
 name = "educe"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2772,8 +2742,6 @@ dependencies = [
  "aws-config",
  "aws-sdk-kms",
  "axum",
- "base64 0.23.1",
- "borsh",
  "built",
  "chrono",
  "ciphertext-attestation",
@@ -2781,7 +2749,6 @@ dependencies = [
  "config",
  "dashmap",
  "derivative",
- "ed25519-dalek",
  "ethereum_rpc_mock",
  "fhevm_gateway_bindings",
  "fhevm_host_bindings",
@@ -2816,8 +2783,6 @@ dependencies = [
  "uuid",
  "validator",
  "zama-solana-acl",
- "zama-solana-permit",
- "zama-solana-request",
 ]
 
 [[package]]
@@ -3445,7 +3410,7 @@ version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96547c2556ec9d12fb1578c4eaf448b04993e7fb79cbaad930a656880a6bdfa0"
 dependencies = [
- "base64 0.22.1",
+ "base64",
  "bytes",
  "futures-channel",
  "futures-util",
@@ -4987,7 +4952,7 @@ version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "219c5811de6525e5416c7d5d53bb656d3afdbc6c5af816e0802bcfa42dbdc1c3"
 dependencies = [
- "base64 0.22.1",
+ "base64",
  "bytes",
  "encoding_rs",
  "futures-core",
@@ -5553,7 +5518,7 @@ version = "3.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee78f1fbe43ac4a0e47aadb3dbd357b69eb0d3793e948624cd03dd2750ab1c0a"
 dependencies = [
- "base64 0.22.1",
+ "base64",
  "bs58",
  "chrono",
  "hex",
@@ -5785,7 +5750,7 @@ version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2e859df029d160cb88608f5d7df7fb4753fd20fdfb4de5644f3d8b8440841721"
 dependencies = [
- "base64 0.22.1",
+ "base64",
  "bytes",
  "futures",
  "http 1.5.0",
@@ -5934,7 +5899,7 @@ version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee6798b1838b6a0f69c007c133b8df5866302197e404e8b6ee8ed3e3a5e68dc6"
 dependencies = [
- "base64 0.22.1",
+ "base64",
  "bytes",
  "chrono",
  "crc",
@@ -6009,7 +5974,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa003f0038df784eb8fecbbac13affe3da23b45194bd57dba231c8f48199c526"
 dependencies = [
  "atoi",
- "base64 0.22.1",
+ "base64",
  "bitflags 2.13.1",
  "byteorder",
  "bytes",
@@ -6053,7 +6018,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db58fcd5a53cf07c184b154801ff91347e4c30d17a3562a635ff028ad5deda46"
 dependencies = [
  "atoi",
- "base64 0.22.1",
+ "base64",
  "bitflags 2.13.1",
  "byteorder",
  "chrono",
@@ -7351,7 +7316,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08db1edfb05d9b3c1542e521aea074442088292f00b5f28e435c714a98f85031"
 dependencies = [
  "assert-json-diff",
- "base64 0.22.1",
+ "base64",
  "deadpool",
  "futures",
  "http 1.5.0",
@@ -7457,25 +7422,6 @@ dependencies = [
  "solana-address",
  "solana-keccak-hasher",
  "solana-sha256-hasher",
-]
-
-[[package]]
-name = "zama-solana-permit"
-version = "0.1.0"
-dependencies = [
- "bs58",
- "ed25519-dalek",
- "sha3 0.10.9",
-]
-
-[[package]]
-name = "zama-solana-request"
-version = "0.1.0"
-dependencies = [
- "borsh",
- "thiserror 2.0.20",
- "zama-solana-acl",
- "zama-solana-permit",
 ]
 
 [[package]]

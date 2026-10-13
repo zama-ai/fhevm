@@ -72,7 +72,6 @@ mod tests {
                 ],
             ],
             extra_data: Bytes::from("test"),
-            encrypted_stores: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).unwrap();

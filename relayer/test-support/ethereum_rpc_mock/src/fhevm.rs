@@ -828,31 +828,6 @@ impl FhevmMockWrapper {
         );
     }
 
-    /// Register a Solana public decryption that succeeds. It matches only the Solana
-    /// `solanaPublicDecryptionRequest` entry and emits only the Solana
-    /// request event, as the Gateway does.
-    pub fn on_solana_public_decrypt_success(
-        &self,
-        handles: Vec<B256>,
-        encrypted_stores: Vec<B256>,
-        values: Vec<u64>,
-        target: mock_server::SubscriptionTarget,
-    ) {
-        self.register_decrypt_pattern(
-            "Solana public decryption success",
-            self.decryption_contract,
-            Decryption::solanaPublicDecryptionRequestCall::SELECTOR,
-            target,
-            UsageLimit::Once,
-            |id, contract| {
-                let request_log =
-                    build_solana_public_decrypt_request(contract, id, handles, encrypted_stores);
-                let response_log = build_public_decrypt_response(contract, id, values, true);
-                (request_log, response_log)
-            },
-        );
-    }
-
     /// Register public decryption that reverts
     pub fn on_public_decrypt_revert(&self, reason: &str) {
         self.json_rpc_server.on_transaction(
@@ -1274,29 +1249,6 @@ fn build_public_decrypt_request(contract: Address, decryption_id: U256, handles:
         &request,
         vec![
             Decryption::PublicDecryptionRequest_0::SIGNATURE_HASH,
-            B256::from(decryption_id),
-        ],
-    )
-}
-
-fn build_solana_public_decrypt_request(
-    contract: Address,
-    decryption_id: U256,
-    handles: Vec<B256>,
-    encrypted_stores: Vec<B256>,
-) -> Log {
-    let request = Decryption::SolanaPublicDecryptionRequest {
-        decryptionId: decryption_id,
-        ctHandles: handles,
-        extraData: Bytes::from(vec![0x00]),
-        encryptedStores: encrypted_stores,
-    };
-
-    build_event_log(
-        contract,
-        &request,
-        vec![
-            Decryption::SolanaPublicDecryptionRequest::SIGNATURE_HASH,
             B256::from(decryption_id),
         ],
     )

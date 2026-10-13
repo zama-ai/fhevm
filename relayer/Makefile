@@ -403,7 +403,7 @@ health: ## Check relayer health endpoints (requires running relayer)
 GROUPS := user-decrypt delegated-user-decrypt public-decrypt input-proof \
           admin-endpoint health keyurl keyurl-poller restart \
           schema-isolation threshold-resolver listener-redundancy \
-          dispatcher-lock sweep epoch-fencing dispatch-gate two-instance common solana
+          dispatcher-lock sweep epoch-fencing dispatch-gate two-instance common
 
 BINS_user-decrypt           := user_decrypt_v2_test user_decrypt_v3_test
 BINS_delegated-user-decrypt := delegated_user_decrypt_v2_test
@@ -424,7 +424,6 @@ BINS_epoch-fencing          := epoch_fencing_test
 BINS_dispatch-gate          := dispatch_gate_test
 BINS_two-instance           := two_instance_test
 BINS_common                 := common_test
-BINS_solana                 := solana_envelope_fixture
 
 group_bins = $(foreach g,$(1),$(BINS_$(g)))
 

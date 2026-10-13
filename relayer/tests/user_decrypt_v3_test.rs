@@ -8,8 +8,8 @@
 mod common;
 
 use crate::common::utils::{
-    assert_retry_after_header_present, sign_v3_user_decrypt_envelope, signature_precheck_total,
-    user_decrypt_test_signer, TestSetup,
+    assert_retry_after_header_present, sign_v3_user_decrypt_envelope, user_decrypt_test_signer,
+    TestSetup,
 };
 use crate::common::validation_helper::{
     expect_v2_malformed_json, expect_v2_missing_field, expect_v2_validation_error, test_endpoint,
@@ -19,7 +19,6 @@ use alloy::primitives::{Address, B256};
 use ethereum_rpc_mock::fhevm::UserDecryptKind;
 use ethereum_rpc_mock::Response;
 use fhevm_relayer::config::settings::HostChainConfig;
-use fhevm_relayer::host::handle_chain_id::extract_chain_id_from_handle;
 use fhevm_relayer::http::endpoints::v2::types::error::ApiResponseStatus;
 use fhevm_relayer::http::endpoints::v2::types::user_decrypt::{
     UserDecryptPostResponseJson, UserDecryptStatusResponseJson,
@@ -132,107 +131,20 @@ mod helpers {
         envelope
     }
 
-    /// Build a valid `solana-srfc38-user-decrypt-v1` envelope, signed for real.
-    ///
-    /// The relayer verifies the ed25519 signature before it submits anything, so a random blob
-    /// is not an envelope this endpoint accepts: the wallet key and the signature over the
-    /// reconstructed permit envelope are both genuine. The handle is on [`SOLANA_CHAIN_ID`], and
-    /// the permit is signed for that chain, which is the one the relayer derives from the
-    /// handles; the permit fields are shaped to pass the strict typed pre-check
-    /// (`PermitFields::decode`): a 32-byte identity, an 869-byte transport key, a validity
-    /// window covering now, and a 65-byte `0x02` KMS-routing `extraData`.
-    pub fn create_srfc38_envelope() -> serde_json::Value {
-        let mut handle: [u8; 32] = rand::random();
-        handle[22..30].copy_from_slice(&SOLANA_CHAIN_ID.to_be_bytes());
-        create_srfc38_envelope_for(format!("0x{}", hex::encode(handle)))
-    }
-
     pub const SOLANA_CHAIN_ID: u64 = solana_host_chain_id(1);
 
-    /// The zama-host program every fixture permit names.
-    pub const SOLANA_PROGRAM_ID: [u8; 32] = [0x02; 32];
-
-    /// A relayer serving [`SOLANA_CHAIN_ID`] beside its EVM host, with the program the fixture
-    /// permits name.
+    /// A relayer serving [`SOLANA_CHAIN_ID`] beside its EVM host, as it does for input proofs.
     pub async fn setup_with_a_solana_host() -> TestSetup {
-        setup_with_a_solana_program(SOLANA_PROGRAM_ID).await
-    }
-
-    /// A relayer serving [`SOLANA_CHAIN_ID`] beside its EVM host, with `program_id` as its
-    /// zama-host program.
-    pub async fn setup_with_a_solana_program(program_id: [u8; 32]) -> TestSetup {
         TestSetup::new_with_settings(|settings| {
             let url = settings.host_chains[0].url.clone();
             settings.host_chains.push(HostChainConfig {
                 chain_id: SOLANA_CHAIN_ID,
                 url,
-                acl_address: solana_pubkey::Pubkey::new_from_array(program_id).to_string(),
+                acl_address: solana_pubkey::Pubkey::new_from_array([0x02; 32]).to_string(),
             });
         })
         .await
         .expect("Failed to create test setup")
-    }
-
-    /// [`create_srfc38_envelope`] for one given handle, signed for the chain it embeds.
-    pub fn create_srfc38_envelope_for(handle: String) -> serde_json::Value {
-        use ed25519_dalek::{Signer, SigningKey};
-        use zama_solana_permit::{build_envelope, PermitFields, PermitWireFields};
-
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        let wallet = SigningKey::from_bytes(&[0x42; 32]);
-        let user_address = wallet.verifying_key().to_bytes();
-        let transport_key = vec![0u8; 869];
-        let allowed_scope = [[0x05u8; 32], [0x06u8; 32]].concat();
-        let verifying_program_id = SOLANA_PROGRAM_ID;
-        let handle_bytes: [u8; 32] = hex::decode(handle.trim_start_matches("0x"))
-            .expect("hex handle")
-            .try_into()
-            .unwrap();
-        let chain_id = extract_chain_id_from_handle(&handle_bytes);
-        let mut extra_data = vec![0x02u8];
-        extra_data.extend_from_slice(&[0u8; 64]);
-        let start_timestamp = now - 1;
-        let duration_seconds = 604_800u64;
-
-        let permit = PermitFields::decode(&PermitWireFields {
-            user_address: user_address.to_vec(),
-            transport_key: transport_key.clone(),
-            allowed_scopes: vec![allowed_scope.clone()],
-            start_timestamp,
-            duration_seconds,
-            verifying_program_id: verifying_program_id.to_vec(),
-            chain_id,
-            extra_data: extra_data.clone(),
-        })
-        .expect("the fixture permit passes the typed pre-check");
-        let signature = wallet.sign(&build_envelope(&permit)).to_bytes();
-
-        json!({
-            "attestationType": "solana-srfc38-user-decrypt-v1",
-            "attestedPayload": {
-                "userAddress": format!("0x{}", hex::encode(user_address)),
-                "transportKey": format!("0x{}", hex::encode(&transport_key)),
-                "allowedScopes": [format!("0x{}", hex::encode(&allowed_scope))],
-                "requestValidity": {
-                    "startTimestamp": start_timestamp.to_string(),
-                    "durationSeconds": duration_seconds.to_string(),
-                },
-                "verifyingProgramId": format!("0x{}", hex::encode(verifying_program_id)),
-                // 65-byte KMS routing: version 0x02 ‖ contextId(32) ‖ epochId(32).
-                "extraData": format!("0x{}", hex::encode(&extra_data)),
-                "handles": [{
-                    "handle": handle,
-                    // The owner address of a direct entry is the requester itself.
-                    "ownerAddress": format!("0x{}", hex::encode(user_address)),
-                    "encryptedStore": random_0x_hex(32),
-                }],
-            },
-            "signature": format!("0x{}", hex::encode(signature)),
-        })
     }
 }
 
@@ -261,169 +173,6 @@ async fn v3_accepts_direct_handle() {
         "expected 202, got {}: {:?}",
         response.status(),
         response.text().await
-    );
-
-    setup.shutdown().await;
-}
-
-/// v3 accepts a Solana sRFC-38 request end to end: parsed, dispatched to the Solana envelope by
-/// attestation type, assembled, its signature verified, and enqueued (202).
-#[tokio::test]
-async fn v3_accepts_solana_srfc38_request() {
-    let setup = helpers::setup_with_a_solana_host().await;
-    let payload = helpers::create_srfc38_envelope();
-    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
-    let accepted_before = signature_precheck_total(&metrics_endpoint, "accepted").await;
-
-    let response = reqwest::Client::new()
-        .post(helpers::v3_user_decrypt_post_url(&setup))
-        .header("Content-Type", "application/json")
-        .timeout(std::time::Duration::from_secs(10))
-        .json(&payload)
-        .send()
-        .await
-        .expect("POST failed");
-
-    assert_eq!(
-        response.status(),
-        reqwest::StatusCode::ACCEPTED,
-        "expected 202, got {}: {:?}",
-        response.status(),
-        response.text().await
-    );
-    let accepted_after = signature_precheck_total(&metrics_endpoint, "accepted").await;
-    assert_eq!(accepted_after - accepted_before, 1.0);
-
-    setup.shutdown().await;
-}
-
-/// A Solana request whose signature does not verify is the requester's error, refused before
-/// anything is submitted, and counted as a rejected pre-check.
-#[tokio::test]
-async fn v3_rejects_solana_srfc38_request_with_a_bad_signature() {
-    let setup = helpers::setup_with_a_solana_host().await;
-    let mut payload = helpers::create_srfc38_envelope();
-    payload["attestedPayload"]["requestValidity"]["durationSeconds"] = json!("604801");
-    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
-    let accepted_before = signature_precheck_total(&metrics_endpoint, "accepted").await;
-    let rejected_before = signature_precheck_total(&metrics_endpoint, "rejected").await;
-
-    let response = reqwest::Client::new()
-        .post(helpers::v3_user_decrypt_post_url(&setup))
-        .json(&payload)
-        .send()
-        .await
-        .expect("POST failed");
-
-    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
-    let body: serde_json::Value = response.json().await.expect("JSON body");
-    assert_eq!(body["error"]["label"].as_str(), Some("validation_failed"));
-    assert_eq!(
-        body["error"]["details"][0]["field"].as_str(),
-        Some("signature")
-    );
-    let accepted_after = signature_precheck_total(&metrics_endpoint, "accepted").await;
-    let rejected_after = signature_precheck_total(&metrics_endpoint, "rejected").await;
-    assert_eq!(rejected_after - rejected_before, 1.0);
-    assert_eq!(accepted_after - accepted_before, 0.0);
-
-    setup.shutdown().await;
-}
-
-/// A genuinely signed Solana permit for another zama-host program on the served chain is refused
-/// on `verifyingProgramId` before any gateway transaction, and counted as a rejected pre-check.
-#[tokio::test]
-async fn v3_rejects_solana_srfc38_request_for_another_program() {
-    let setup = helpers::setup_with_a_solana_program([0x07; 32]).await;
-    let payload = helpers::create_srfc38_envelope();
-    let metrics_endpoint = setup.settings.metrics.endpoint.clone();
-    let rejected_before = signature_precheck_total(&metrics_endpoint, "rejected").await;
-
-    let response = reqwest::Client::new()
-        .post(helpers::v3_user_decrypt_post_url(&setup))
-        .json(&payload)
-        .send()
-        .await
-        .expect("POST failed");
-
-    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
-    let body: serde_json::Value = response.json().await.expect("JSON body");
-    assert_eq!(body["error"]["label"].as_str(), Some("validation_failed"));
-    assert_eq!(
-        body["error"]["details"][0]["field"].as_str(),
-        Some("attestedPayload.verifyingProgramId")
-    );
-    let rejected_after = signature_precheck_total(&metrics_endpoint, "rejected").await;
-    assert_eq!(rejected_after - rejected_before, 1.0);
-
-    setup.shutdown().await;
-}
-
-/// A Solana request naming a handle of an EVM host is malformed, however it is signed.
-#[tokio::test]
-async fn v3_rejects_solana_srfc38_request_on_an_evm_host() {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
-    let payload = helpers::create_srfc38_envelope_for(helpers::random_handle());
-
-    let response = reqwest::Client::new()
-        .post(helpers::v3_user_decrypt_post_url(&setup))
-        .json(&payload)
-        .send()
-        .await
-        .expect("POST failed");
-
-    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
-    let body: serde_json::Value = response.json().await.expect("JSON body");
-    assert_eq!(body["error"]["label"].as_str(), Some("request_error"));
-
-    setup.shutdown().await;
-}
-
-/// v3 refuses a Solana request for a chain this relayer does not serve before anything else,
-/// although the request is consistently signed for that chain.
-#[tokio::test]
-async fn v3_rejects_solana_srfc38_request_for_an_unserved_chain() {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
-    let mut handle = [0x11u8; 32];
-    handle[22..30].copy_from_slice(&solana_host_chain_id(999_999).to_be_bytes());
-    let payload = helpers::create_srfc38_envelope_for(format!("0x{}", hex::encode(handle)));
-
-    let response = reqwest::Client::new()
-        .post(helpers::v3_user_decrypt_post_url(&setup))
-        .json(&payload)
-        .send()
-        .await
-        .expect("POST failed");
-
-    assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
-    let body: serde_json::Value = response.json().await.expect("JSON body");
-    assert_eq!(
-        body["error"]["label"].as_str(),
-        Some("host_chain_id_not_supported")
-    );
-
-    setup.shutdown().await;
-}
-
-/// v3 refuses a Solana sRFC-38 payload carrying a stray field: the strict `deny_unknown_fields`
-/// envelope rejects the retired `chainId` / ed25519 `nonce` shapes at the HTTP boundary.
-#[tokio::test]
-async fn v3_rejects_solana_srfc38_with_stray_field() {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
-    let mut payload = helpers::create_srfc38_envelope();
-    payload["attestedPayload"]["nonce"] = json!("0x00");
-
-    let response = reqwest::Client::new()
-        .post(helpers::v3_user_decrypt_post_url(&setup))
-        .json(&payload)
-        .send()
-        .await
-        .expect("POST failed");
-
-    assert!(
-        response.status().is_client_error(),
-        "expected a 4xx rejection for a stray field, got {}",
-        response.status()
     );
 
     setup.shutdown().await;
@@ -677,50 +426,6 @@ async fn v3_rejects_handle_entry_missing_contract_address() {
                 .remove("contractAddress");
         },
         expect_v2_missing_field("contractAddress"),
-    )
-    .await;
-
-    setup.shutdown().await;
-}
-
-#[tokio::test]
-async fn v3_rejects_solana_handle_entry_missing_encrypted_store() {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
-    let url = helpers::v3_user_decrypt_post_url(&setup);
-
-    test_endpoint(
-        &url,
-        helpers::create_srfc38_envelope(),
-        |p: &mut serde_json::Value| {
-            p["attestedPayload"]["handles"][0]
-                .as_object_mut()
-                .unwrap()
-                .remove("encryptedStore");
-        },
-        expect_v2_missing_field("encryptedStore"),
-    )
-    .await;
-
-    setup.shutdown().await;
-}
-
-/// A Solana field of the wrong width is a validation error on that field, not free text.
-#[tokio::test]
-async fn v3_rejects_solana_handle_entry_with_a_short_encrypted_store() {
-    let setup = TestSetup::new().await.expect("Failed to create test setup");
-    let url = helpers::v3_user_decrypt_post_url(&setup);
-
-    test_endpoint(
-        &url,
-        helpers::create_srfc38_envelope(),
-        |p: &mut serde_json::Value| {
-            p["attestedPayload"]["handles"][0]["encryptedStore"] =
-                json!(format!("0x{}", "ab".repeat(31)));
-        },
-        expect_v2_validation_error(
-            "attestedPayload.handles[0].encryptedStore",
-            "is 31 bytes, expected 32",
-        ),
     )
     .await;
 
