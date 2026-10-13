@@ -6,11 +6,10 @@ use tracing::{info, warn};
 
 use crate::{
     s3_migration::{
-        count_failed_old_format_handles, count_pending_old_format_handles, current_s3_ct128_key,
-        current_s3_ct64_key, download_existing_object, fetch_ct128_bytes_from_db,
-        fetch_ct64_bytes_from_db, legacy_s3_ciphertext_key, object_body_matches_expected,
-        object_has_current_attestation, prepare_migration_material, CiphertextKind,
-        CopySourceCandidate, MigrationMaterial, MigrationRow, S3MigrationConfig,
+        current_s3_ct128_key, current_s3_ct64_key, download_existing_object,
+        fetch_ct128_bytes_from_db, fetch_ct64_bytes_from_db, legacy_s3_ciphertext_key,
+        object_body_matches_expected, object_has_current_attestation, prepare_migration_material,
+        CiphertextKind, CopySourceCandidate, MigrationMaterial, MigrationRow, S3MigrationConfig,
     },
     ExecutionError, CLEAN_OLD_S3_FORMAT_VERSION, S3_FORMAT_VERSION_V1,
 };
@@ -40,8 +39,8 @@ impl S3MigrationDryRunHandlePlan {
 }
 
 #[derive(Debug, Default, Clone)]
-struct S3MigrationDryRunReport {
-    handles_scanned: u64,
+pub(crate) struct S3MigrationDryRunReport {
+    pub(crate) handles_scanned: u64,
     handles_planned: u64,
     handles_changed_or_migrated: u64,
     handles_failed: u64,
@@ -121,7 +120,7 @@ pub(crate) async fn run_startup_migration_dry_run(
     config: &S3MigrationConfig,
     pool: &PgPool,
     client: &Client,
-) -> Result<(), ExecutionError> {
+) -> Result<S3MigrationDryRunReport, ExecutionError> {
     migrate_s3_format_0_to_1_dry_run(config, pool, client).await
 }
 
@@ -129,13 +128,23 @@ async fn migrate_s3_format_0_to_1_dry_run(
     config: &S3MigrationConfig,
     pool: &PgPool,
     client: &Client,
-) -> Result<(), ExecutionError> {
-    let total = count_pending_old_format_handles(pool).await?;
-    let already_failed = count_failed_old_format_handles(pool).await?;
+) -> Result<S3MigrationDryRunReport, ExecutionError> {
+    let counts = sqlx::query!(
+        r#"
+        SELECT COUNT(*) FILTER (WHERE s3_migration_failure_count = 0) AS "pending!",
+               COUNT(*) FILTER (WHERE s3_migration_failure_count > 0) AS "failed!"
+          FROM ciphertext_digest
+         WHERE (s3_format_version = $1 OR s3_format_version IS NULL)
+           AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)
+        "#,
+        CLEAN_OLD_S3_FORMAT_VERSION,
+    )
+    .fetch_one(pool)
+    .await?;
 
     info!(
-        handles_to_process = total,
-        handles_with_recorded_failures = already_failed,
+        handles_to_process = counts.pending,
+        handles_with_recorded_failures = counts.failed,
         from_s3_format_version = CLEAN_OLD_S3_FORMAT_VERSION,
         to_s3_format_version = S3_FORMAT_VERSION_V1,
         "Detected ciphertext handles for S3 format migration dry-run"
@@ -190,7 +199,7 @@ async fn migrate_s3_format_0_to_1_dry_run(
         "Finished S3 format migration dry-run"
     );
 
-    Ok(())
+    Ok(report)
 }
 
 async fn fetch_old_format_handle_dry_run_page(
@@ -207,7 +216,7 @@ async fn fetch_old_format_handle_dry_run_page(
                 SELECT handle as "handle!",
                        s3_migration_failure_count as "s3_migration_failure_count!"
                  FROM ciphertext_digest
-                 WHERE s3_format_version = $1
+                 WHERE (s3_format_version = $1 OR s3_format_version IS NULL)
                    AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)
                    AND (s3_migration_failure_count, handle) > ($2, $3)
                  ORDER BY s3_migration_failure_count, handle
@@ -228,7 +237,7 @@ async fn fetch_old_format_handle_dry_run_page(
                 SELECT handle as "handle!",
                        s3_migration_failure_count as "s3_migration_failure_count!"
                  FROM ciphertext_digest
-                 WHERE s3_format_version = $1
+                 WHERE (s3_format_version = $1 OR s3_format_version IS NULL)
                    AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)
                  ORDER BY s3_migration_failure_count, handle
                  LIMIT $2
@@ -327,7 +336,7 @@ async fn fetch_migration_material(
                ciphertext128_format as "ciphertext128_format!"
          FROM ciphertext_digest
          WHERE handle = $1
-           AND s3_format_version = $2
+           AND (s3_format_version = $2 OR s3_format_version IS NULL)
            AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)
         "#,
         handle,

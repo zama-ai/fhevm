@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE ciphertext_digest\n           SET s3_format_version = $1\n         WHERE s3_format_version IS NULL\n           AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int2"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d147e6badb6d0fb4fb0797246135509e3bdf7f74b31cd57c2be679a3579c42df"
+}

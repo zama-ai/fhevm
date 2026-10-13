@@ -19,7 +19,7 @@ use crate::metrics::{
 };
 use crate::{
     Ciphertext128Format, ExecutionError, S3Config, CLEAN_OLD_S3_FORMAT_VERSION,
-    S3_FORMAT_VERSION_V1,
+    S3_FORMAT_VERSION_LEGACY, S3_FORMAT_VERSION_V1,
 };
 
 pub const DEFAULT_S3_MIGRATION_MAX_RETRIES: i32 = 100;
@@ -128,6 +128,27 @@ const CLEAR_PANIC_WINDOW: Duration = Duration::from_mins(3);
 const MAX_PANIC_PER_WINDOW: u64 = 10;
 const NOT_READY_DELAY: Duration = Duration::from_secs(30);
 const MAX_NOT_READY: u64 = 10;
+
+pub(crate) async fn backfill_s3_format_version(pool: &PgPool) -> Result<u64, ExecutionError> {
+    // Devnet retained NULL versions on legacy digest rows after the DB backfill.
+    // The cause is uncertain: a downgrade or workers left running during the DB
+    // migration may have left or created rows outside the one-off backfill.
+    let result = sqlx::query!(
+        r#"
+        UPDATE ciphertext_digest
+           SET s3_format_version = $1
+         WHERE s3_format_version IS NULL
+           AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL)
+        "#,
+        S3_FORMAT_VERSION_LEGACY,
+    )
+    .execute(pool)
+    .await?;
+
+    let backfilled_handles = result.rows_affected();
+    info!(backfilled_handles, "S3 format migration startup backfill");
+    Ok(backfilled_handles)
+}
 
 pub(crate) async fn run_startup_migrations(
     config: &S3MigrationConfig,

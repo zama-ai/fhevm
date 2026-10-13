@@ -57,7 +57,7 @@ use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
     executor::SwitchNSquashService,
     metrics::spawn_gauge_update_routine,
-    s3_migration::{run_startup_migrations, S3MigrationConfig},
+    s3_migration::{backfill_s3_format_version, run_startup_migrations, S3MigrationConfig},
     s3_migration_dry_run::run_startup_migration_dry_run,
 };
 
@@ -847,6 +847,18 @@ pub async fn run_all(
 
     let not_ready_error = Err(ExecutionError::BucketNotFound(conf.s3.bucket_ct128.clone()).into());
     let mut concurrent_migration = None;
+    if matches!(
+        migration_config.mode,
+        S3MigrationMode::Before | S3MigrationMode::BeforeAndQuit | S3MigrationMode::Concurrent
+    ) {
+        // Await the backfill before spawning either migration or upload tasks.
+        // New SNS digests must keep their NULL version until upload completes.
+        let db_pool = migration_pool_mngr
+            .as_ref()
+            .expect("enabled S3 migration has a dedicated DB pool")
+            .pool();
+        backfill_s3_format_version(&db_pool).await?;
+    }
     match migration_config.mode {
         S3MigrationMode::No => {
             info!("S3 migration is disabled");
