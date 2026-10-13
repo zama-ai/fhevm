@@ -7,8 +7,8 @@ change. It describes a minimal first version.
 
 The Zama relayer over HTTP. It replaces the gateway-chain decryption path: request handlers receive the SDK's
 decryption requests and the `kms_aggregator` module fans them out to the KMS connector endpoints and aggregates the
-t-of-n answers. Both routes serve EVM and Solana host chains: `attestationType` selects the user body, the chain of
-the handles the public body (`endpoint/docs.md`).
+t-of-n answers. Both routes serve EVM and Solana host chains: `attestationType` selects the user body, and the chain
+of the handles selects the public body (`endpoint/docs.md`).
 
 **Minimal first version**: the handlers and the fan-out/aggregation only.
 - No ACL check and no ciphertext-commit (readiness) check in the relayer: the connector's worker performs them and their

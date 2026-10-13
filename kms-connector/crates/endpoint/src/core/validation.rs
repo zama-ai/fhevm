@@ -150,7 +150,7 @@ pub fn attestation_type(body: &Value) -> Result<AttestationType, ValidationError
 }
 
 /// Whether a public-decryption body is the Solana one: its first handle names a Solana chain. A
-/// body without a readable first handle is the EVM one, whose parse reports why.
+/// body without a readable first handle is the EVM one, whose parse refuses it.
 pub fn is_solana_public_decryption(body: &Value) -> bool {
     body.get("ctHandles")
         .and_then(|handles| handles.get(0))

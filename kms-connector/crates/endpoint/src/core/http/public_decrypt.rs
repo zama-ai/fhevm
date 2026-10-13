@@ -148,15 +148,20 @@ mod tests {
 
     /// The first handle's chain picks the body. A body mixing EVM and Solana handles is malformed,
     /// whichever comes first and whichever body carries them.
-    #[test]
-    fn the_handles_chain_picks_the_body_and_a_mix_is_malformed() {
+    /// A config serving chain 1 and a Solana chain, and one `euint64` handle on each.
+    fn chains() -> (Config, B256, B256) {
         let solana_chain = solana_host_chain_id(12345);
         let config = Config {
             supported_chain_ids: vec![1, solana_chain],
             ..config()
         };
         let euint64 = FheTypes::Uint64 as u8;
-        let (evm, solana) = (handle(1, euint64), handle(solana_chain, euint64));
+        (config, handle(1, euint64), handle(solana_chain, euint64))
+    }
+
+    #[test]
+    fn the_handles_chain_picks_the_body_and_a_mix_is_malformed() {
+        let (config, evm, solana) = chains();
         let evm_body = |handles| {
             serde_json::to_value(PublicDecryptionRequest {
                 ctHandles: handles,
@@ -197,19 +202,14 @@ mod tests {
     /// malformed before anything is stored.
     #[test]
     fn stores_that_do_not_match_the_handles_chain_are_malformed() {
-        let solana_chain = solana_host_chain_id(12345);
-        let config = Config {
-            supported_chain_ids: vec![1, solana_chain],
-            ..config()
-        };
-        let euint64 = FheTypes::Uint64 as u8;
+        let (config, evm, solana) = chains();
         let evm_with_stores = serde_json::json!({
-            "ctHandles": [handle(1, euint64)],
+            "ctHandles": [evm],
             "extraData": "0x",
             "encryptedStores": [B256::repeat_byte(0x03)],
         });
         let solana_without_stores = serde_json::json!({
-            "ctHandles": [handle(solana_chain, euint64)],
+            "ctHandles": [solana],
             "extraData": "0x",
         });
         for (body, expected) in [

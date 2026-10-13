@@ -227,8 +227,8 @@ pub fn result(variant: u8) -> AlloyBytes {
 /// The request's derived id and echoed `extraData`, by route and, as the connector does, by the
 /// body's `attestationType` on user decrypt and its handles' chain on public decrypt.
 fn request_facts(route: &str, body: &[u8]) -> (B256, AlloyBytes) {
-    let json: serde_json::Value = serde_json::from_slice(body).expect("mock: JSON body");
     if route == USER_DECRYPTION_ROUTE {
+        let json: serde_json::Value = serde_json::from_slice(body).expect("mock: JSON body");
         let solana: &str = AttestationType::SolanaSrfc38UserDecryptV1.into();
         if json["attestationType"] == solana {
             let request: SolanaUserDecryptionRequest =
@@ -244,11 +244,11 @@ fn request_facts(route: &str, body: &[u8]) -> (B256, AlloyBytes) {
         let raw: Box<RawValue> = serde_json::from_slice(body).expect("mock: JSON body");
         if is_solana(&raw) {
             let request: SolanaPublicDecryptionRequest =
-                serde_json::from_value(json).expect("mock: Solana public body");
+                serde_json::from_str(raw.get()).expect("mock: Solana public body");
             (request.id(), request.extraData)
         } else {
             let request: PublicDecryptionRequest =
-                serde_json::from_value(json).expect("mock: public body");
+                serde_json::from_str(raw.get()).expect("mock: public body");
             (request.id(), request.extraData)
         }
     }

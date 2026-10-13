@@ -45,7 +45,7 @@ pub async fn handle(app: State<App>, request: Request) -> Response {
 }
 
 /// Whether the body is the Solana DTO: its first `ctHandles` entry names a Solana chain. The EVM body names its
-/// handles `ciphertextHandles`, so any other body is the EVM one, whose parse reports why.
+/// handles `ciphertextHandles`, so any other body is the EVM one, whose parse refuses it.
 pub fn is_solana(body: &RawValue) -> bool {
     field(body, "ctHandles")
         .and_then(|handles| handles.get(0)?.as_str()?.parse::<B256>().ok())

@@ -288,9 +288,6 @@ mod tests {
             ..request.clone()
         };
         assert_ne!(storeless.id(), evm.id());
-        let mut json = serde_json::to_value(&request).unwrap();
-        json.as_object_mut().unwrap().remove("encryptedStores");
-        assert!(serde_json::from_value::<SolanaPublicDecryptionRequest>(json).is_err());
     }
 
     #[test]
