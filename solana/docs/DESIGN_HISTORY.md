@@ -27,6 +27,7 @@ later decision replaced only part of a live entry, the replaced wording is under
 | DD-038 One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events                            | removed; fhevm-internal#2079 |
 | DD-039 HCU Block Cap Meters The Signed `compute_subject`, Not A Separate Authority                         | DD-047                       |
 | Committed Cost Snapshots Gate CI On Exact Costs                                                            | the cost report              |
+| Solana decryption through the Gateway                                                                      | HTTP (relayer-http)          |
 
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds
 
@@ -781,6 +782,23 @@ The test kit's `cost_snapshot` module described the gate:
 `runtime-tests/cost-snapshots/fhe_execute_boundary.json` also held a `ceilings` block of Solana
 runtime limits and zama-host policy caps, asserted verbatim. `docs/TESTING.md` now lists the Solana
 limits with the upstream symbol that defines each.
+
+## Solana decryption through the Gateway, replaced by HTTP (relayer-http)
+
+**Status:** replaced by HTTP decryption through relayer-http. A Solana decryption reaches the KMS
+connector only as `POST /v1/user-decrypt` or `POST /v1/public-decrypt`.
+
+**KMS connector** (zama-ai/fhevm#4405). The gw-listener no longer subscribes to the Gateway's
+`SolanaUserDecryptionRequest` and `SolanaPublicDecryptionRequest` events, and the connector stores
+a Solana decryption only from its HTTP endpoint. The replaced wording, from DD-026:
+
+> The KMS connector routes Solana requests by their event, joins the two parts and verifies the
+> permit signature before using them.
+
+and from DD-064:
+
+> The connector retries a Gateway request up to its `max_decryption_attempts` before marking it
+> failed, and an HTTP caller gets `acl_denied` and resubmits.
 
 ## Replaced parts of live decisions
 

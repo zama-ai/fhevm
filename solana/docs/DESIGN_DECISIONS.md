@@ -664,7 +664,8 @@ Decision:
   `extraData` is only the KMS routing (DD-060). The
   connector fetches leaf proofs itself, so neither client nor relayer can substitute proof data.
 - The js-sdk builds the blob and the relayer submits the call. The KMS connector routes Solana
-  requests by their event, joins the two parts and verifies the permit signature before using them.
+  requests that arrive over HTTP, joins the two parts and verifies the permit signature before using
+  them. Its gw-listener does not subscribe to the Gateway's Solana events.
 - KMS-cert context: `extract_kms_context_id` (DD-021) handles `extra_data` versions 0, 1 and 2 (the
   public-decrypt cert) — a _different_ extraData from either path above.
 
@@ -2347,9 +2348,9 @@ fails from then until the indexer catches up. The newest leaf sits in the smalle
 goes stale first, and anyone can append to a Store with a zero-value transfer. The connector asks
 the next coprocessor as soon as an answer leaves a proof unverified (DD-067), so this costs one
 more request while one indexer runs; while every coprocessor's indexer is stopped, a Store someone
-keeps appending to cannot be decrypted until one catches up. The connector retries a Gateway
-request up to its `max_decryption_attempts` before marking it failed, and an HTTP caller gets
-`acl_denied` and resubmits. A grant made after the stop has no proof until the indexer catches up.
+keeps appending to cannot be decrypted until one catches up. A Solana request arrives over HTTP, so
+its caller gets `acl_denied` and resubmits. A grant made after the stop has no proof until the
+indexer catches up.
 `ci/preview-env/solana-host/test_charts.py` pins the two Deployments.
 
 ## DD-065: A public decryption is accepted on-chain by its certificate alone
