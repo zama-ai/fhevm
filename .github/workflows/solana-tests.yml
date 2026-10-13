@@ -72,10 +72,10 @@ jobs:
               - .github/workflows/solana-tests.yml
               - .github/workflows/solana-e2e.yml
               - solana/**
+              - coprocessor/fhevm-engine/fhevm-engine-common/**
               - coprocessor/fhevm-engine/host-listener/**
               - coprocessor/fhevm-engine/solana-host-follower/**
               - coprocessor/fhevm-engine/solana-merkle-proof-service/**
-              - coprocessor/fhevm-engine/tfhe-worker/**
               - kms-connector/crates/**
               - sdk/js-sdk/src/solana/**
               - test-suite/fhevm/**
@@ -138,6 +138,9 @@ jobs:
       - name: Check the consumers' path filters against the solana/ paths they read
         run: solana/scripts/check-path-filters.sh
 
+      - name: Test solana-e2e's override selection
+        run: bash solana/scripts/e2e/select-overrides.test.sh
+
   # Pure grep/sed, no toolchain, half a minute: its own job so it runs for every tree it sweeps,
   # not only the ones that trigger the SBF builds. See fhevm-internal#1859 §7.
   dead-surface:
@@ -157,7 +160,7 @@ jobs:
 
       # DEAD_SURFACE_ONLY_CHECK narrows the script to a single check; the self-test sets it per
       # assertion. Cleared here so no repository variable, no earlier step writing GITHUB_ENV, and no
-      # copy of this job in another workflow can leave the gate running one check out of eight. The
+      # copy of this job in another workflow can leave the gate running one check out of seven. The
       # script also rejects values it does not recognize, but an inherited "6" is a value it does.
       - name: Check for dead surface and rejected vocabulary
         env:
