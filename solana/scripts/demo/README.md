@@ -86,17 +86,18 @@ operator, dApp, KMS, and relayer readiness, plus the Docker state/health of ever
 container captured for the scenario. `logs` resolves every Docker alias from those exact owned
 container IDs; the optional `fhevm-` name prefix may be omitted.
 
-Observability is component-scoped. The connector trace covers Gateway event intake, connector
-checks, KMS request/polling as an external RPC, and response forwarding. It does not trace KMS Core
-internals, the relayer, or the native Solana listener as one distributed trace. The connector
-decryption histogram measures event creation through successful response persistence; report its
-p95 only with a meaningful sample count, and do not label it end-to-end browser latency.
+Observability is component-scoped. A decryption's trace starts at the KMS connector endpoint, which
+relayer-http calls over HTTP. It covers the endpoint's request intake, connector checks, KMS
+request/polling as an external RPC, and the response. It does not trace KMS Core internals,
+relayer-http (which exports no traces), or the native Solana listener as one distributed trace. The
+connector decryption histogram measures request creation through successful response persistence;
+report its p95 only with a meaningful sample count, and do not label it end-to-end browser latency.
 
-For a user decryption, open **Trace in Jaeger** next to the ciphertext handle in the dApp's
-**Developer evidence** panel. The prepared search selects `kms-connector-gw-listener`, the
-`handle_gateway_event` operation, and the exact `ciphertext_handle`. This trace proves the
-connector and KMS request path for that encrypted value; the dApp records the separate
-wallet-to-cleartext duration.
+To see a decryption's trace, open **Latest user decrypt traces** or **Latest public decrypt traces**
+in the dApp's **Developer evidence** panel. The prepared search selects the `kms-connector-endpoint`
+service and its `user_decrypt` or `public_decrypt` operation over the last hour. No span carries the
+ciphertext handle, so the newest trace is the demo's latest decryption only while nothing else
+decrypts on the stack. The dApp records the separate wallet-to-cleartext duration.
 
 Prometheus exposes `kms_connector_worker_decryption_latency_seconds`. Keep the
 `event_type="user_decryption_request"` filter and show the sample count beside any percentile. A

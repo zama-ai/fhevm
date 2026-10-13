@@ -30,7 +30,6 @@
 .developer-evidence > summary:focus-visible,
 .evidence-toolbar button:focus-visible,
 .evidence-value button:focus-visible,
-.evidence-link:focus-visible,
 .evidence-observability a:focus-visible,
 .evidence-transactions a:focus-visible {
   outline: 2px solid #a78bfa;
@@ -88,7 +87,6 @@
   gap: 8px;
 }
 
-.evidence-link,
 .evidence-observability a {
   width: fit-content;
   padding: 5px 7px;
@@ -154,7 +152,6 @@
 }
 
 .evidence-toolbar button:hover:not(:disabled),
-.evidence-link:hover,
 .evidence-observability a:hover,
 .evidence-value button:hover,
 .evidence-transactions a:hover {
@@ -176,11 +173,6 @@
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-.decryption-identifiers {
-  display: grid;
-  gap: 5px;
 }
 
 .evidence-decryptions li > small {
