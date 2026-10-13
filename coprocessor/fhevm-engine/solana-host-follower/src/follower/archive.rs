@@ -413,9 +413,7 @@ mod tests {
     }
 
     fn is_fatal(error: &anyhow::Error) -> bool {
-        error
-            .downcast_ref::<IngestFailure>()
-            .is_some_and(IngestFailure::is_fatal)
+        error.downcast_ref::<IngestFailure>().is_some()
     }
 
     /// One produced slot: its parent and its transactions, rendered for either transport.

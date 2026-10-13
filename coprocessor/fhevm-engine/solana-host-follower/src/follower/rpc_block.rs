@@ -10,7 +10,6 @@
 //! the host's instructions as it arrives ([`prepare_rpc_transaction`]). JSON spells legacy, v0
 //! and v1 messages alike, so no SDK message type has to know the version.
 
-use crate::source::decode_hash;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use solana_sdk::{pubkey::Pubkey, signature::Signature};
 use solana_transaction_status_client_types::{
@@ -24,7 +23,7 @@ use zama_solana_transaction::{
 };
 
 use super::{host_instructions, PreparedTransaction};
-use crate::source::SealedBlock;
+use crate::source::{decode_hash, SealedBlock};
 
 /// A block's header and the transactions of it the follower must fetch.
 #[derive(Debug)]

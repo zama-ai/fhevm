@@ -258,7 +258,7 @@ pub async fn run(
             }
             Err(err) => err,
         };
-        // A retryable failure leaves its `IngestFailure` before it gets here, so one found here is fatal.
+        // Only a fatal failure keeps its `IngestFailure` this far.
         match err.downcast::<IngestFailure>() {
             Ok(fatal) => {
                 let err = fatal.into_error();

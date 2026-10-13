@@ -162,6 +162,8 @@ slot, signature, execution, step and both handles, and increments
 `coprocessor_solana_host_listener_handle_check_failures_total`. The mismatch is
 a listener bug: either the derivation or the step decoding is wrong (DD-056 in
 `solana/docs/DESIGN_DECISIONS.md`).
+The same replay restores the computation rows of a transaction that arrived
+for a slot already applied, after the stop DD-062 describes.
 
 Repair by replaying the affected slots with the fixed listener. Slots older
 than the provider's replay window come from the archive RPC, so `S` below must
