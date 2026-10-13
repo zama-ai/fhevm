@@ -148,9 +148,9 @@ impl DbEventPicker {
                 WHERE user_decryption_requests.decryption_id = req.decryption_id
                 RETURNING req.decryption_id, ct_handles, user_address, public_key, extra_data,
                 signature, handle_owner_addresses, handle_contract_addresses, allowed_contracts,
-                start_timestamp, duration_seconds, attestation_type, handle_encrypted_stores,
-                allowed_scopes, verifying_program_id, source, tx_hash, already_sent, error_counter,
-                created_at, otlp_context
+                start_timestamp, duration_seconds,
+                handle_encrypted_stores, allowed_scopes, verifying_program_id,
+                source, tx_hash, already_sent, error_counter, created_at, otlp_context
             ",
         )
         .bind(self.events_batch_size as i16)

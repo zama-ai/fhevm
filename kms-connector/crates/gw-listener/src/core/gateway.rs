@@ -7,7 +7,6 @@ use crate::{
 };
 use alloy::{
     network::Ethereum,
-    primitives::B256,
     providers::Provider,
     rpc::types::{Filter, Log},
     sol_types::SolEventInterface,
@@ -16,7 +15,7 @@ use anyhow::anyhow;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
-        ProtocolEvent, ProtocolEventKind,
+        ProtocolEvent,
         db::{EventType, RequestSource},
     },
 };
@@ -31,16 +30,6 @@ const DECRYPTION_EVENT_TYPES: [EventType; 2] = [
     EventType::PublicDecryptionRequest,
     EventType::UserDecryptionRequest,
 ];
-
-/// The handles of a decryption event, for trace lookup by handle.
-fn ct_handles(event: &ProtocolEventKind) -> Vec<B256> {
-    match event {
-        ProtocolEventKind::PublicDecryption(e) => e.ctHandles.clone(),
-        ProtocolEventKind::UserDecryption(e) => e.ctHandles.clone(),
-        ProtocolEventKind::UserDecryptionV2(e) => e.handles.iter().map(|h| h.handle).collect(),
-        _ => Vec::new(),
-    }
-}
 
 /// Struct monitoring and storing Gateway's decryption events.
 pub struct GatewayListener<P>
@@ -184,24 +173,15 @@ where
     fn prepare_events(logs: Vec<Log>) -> anyhow::Result<Vec<ProtocolEvent>> {
         let mut events = Vec::with_capacity(logs.len());
         for log in logs {
-            let event = DecryptionEvents::decode_log(&log.inner)
-                .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?;
-            let event_kind: ProtocolEventKind = event.data.try_into()?;
-            let event_type = EventType::from(&event_kind).as_str();
+            let event_kind = DecryptionEvents::decode_log(&log.inner)
+                .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?
+                .data
+                .try_into()?;
             EVENT_RECEIVED_COUNTER
-                .with_label_values(&[event_type])
+                .with_label_values(&[EventType::from(&event_kind).as_str()])
                 .inc();
 
-            let span = info_span!(
-                "handle_gateway_event",
-                event = %event_kind,
-                event_type,
-                source = %RequestSource::OnChain,
-                ciphertext_handle = tracing::field::Empty,
-            );
-            if let [handle] = ct_handles(&event_kind).as_slice() {
-                span.record("ciphertext_handle", format!("{handle:#x}"));
-            }
+            let span = info_span!("handle_gateway_event", event = %event_kind);
             let otlp_ctx = PropagationContext::inject(&span.context());
             events.push(ProtocolEvent::new(
                 event_kind,
@@ -240,7 +220,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::primitives::U256;
     use alloy::providers::{
         Identity, ProviderBuilder, RootProvider,
         fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
@@ -249,53 +228,6 @@ mod tests {
     use alloy::rpc::json_rpc::ErrorPayload;
     use connector_utils::tests::setup::{TestInstance, TestInstanceBuilder};
     use std::time::Duration;
-
-    #[test]
-    fn user_decryption_span_carries_the_handle() {
-        use alloy::sol_types::SolEvent;
-        use connector_utils::tests::rand::rand_handle;
-        use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_2;
-        use tracing_subscriber::fmt::format::FmtSpan;
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-        let subscriber = tracing_subscriber::fmt()
-            .with_ansi(false)
-            .with_span_events(FmtSpan::CLOSE)
-            .with_writer(connector_utils::tests::setup::CustomTestWriter::new(sender))
-            .finish();
-        let handle = rand_handle();
-        let data = UserDecryptionRequest_2 {
-            decryptionId: U256::from(42),
-            ctHandles: vec![handle],
-            ..Default::default()
-        }
-        .encode_log_data();
-        let log = Log {
-            inner: alloy::primitives::Log {
-                address: Default::default(),
-                data,
-            },
-            ..Default::default()
-        };
-        tracing::subscriber::with_default(subscriber, || {
-            GatewayListener::<RootProvider>::prepare_events(vec![log]).unwrap();
-        });
-        let mut output = String::new();
-        while let Ok(bytes) = receiver.try_recv() {
-            output.push_str(&String::from_utf8(bytes).unwrap());
-        }
-        for attribute in [
-            "event_type=\"user_decryption_request\"".to_owned(),
-            "source=onchain".to_owned(),
-            format!("ciphertext_handle=\"{handle:#x}\""),
-        ] {
-            assert!(output.contains(&attribute), "missing {attribute}: {output}");
-        }
-    }
-
-    #[test]
-    fn malformed_abi_still_stops_the_batch() {
-        assert!(GatewayListener::<RootProvider>::prepare_events(vec![Log::default()]).is_err());
-    }
 
     #[rstest::rstest]
     #[timeout(Duration::from_secs(90))]

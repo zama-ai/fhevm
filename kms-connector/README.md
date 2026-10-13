@@ -85,10 +85,9 @@ The Solana permit chain ID is derived from the handles; the HTTP payload has no 
 A Solana row names its requester in `user_address` and each handle's owner in
 `handle_owner_addresses`, as an EVM row does, with 32-byte keys instead of 20-byte addresses.
 It adds `handle_encrypted_stores`, `allowed_scopes` and `verifying_program_id`, which have no
-EVM counterpart. The generated `attestation_type` column (`legacy`, `eip712` or `solana`)
-follows from those columns, and a CHECK makes a row that mixes the EVM and Solana shapes
-unwritable. `from_user_decryption_row` is the only reader; it rebuilds the signed permit, so
-the worker authorizes exactly what the user signed.
+EVM counterpart. A non-NULL `verifying_program_id` marks a Solana row, and a CHECK makes a
+row that mixes the EVM and Solana shapes unwritable. `from_user_decryption_row` is the only
+reader; it rebuilds the signed permit, so the worker authorizes exactly what the user signed.
 
 ## Solana decryption and the shared worker lifecycle
 

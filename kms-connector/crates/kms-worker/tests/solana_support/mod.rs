@@ -79,8 +79,6 @@ pub const SCOPE: Pubkey = pubkey(3);
 /// The label of the default encrypted store.
 pub const LABEL: [u8; 32] = *b"balance_________________________";
 
-/// FHE type byte of a boolean handle — the narrowest type, two bits.
-pub const FHE_TYPE_BOOL: u8 = 0;
 /// FHE type byte of a 64-bit handle.
 pub const FHE_TYPE_UINT64: u8 = 5;
 /// Handle format version byte.
@@ -239,16 +237,6 @@ impl PermitBuilder {
     /// Replaces the signed host program.
     pub fn verifying_program(mut self, program: Pubkey) -> Self {
         self.wire.verifying_program_id = program.to_bytes().to_vec();
-        self
-    }
-
-    /// Replaces the signed KMS routing pair.
-    pub fn kms_pair(mut self, context: [u8; 32], epoch: [u8; 32]) -> Self {
-        self.wire.extra_data = KmsRouting::ContextAndEpoch {
-            kms_context_id: Identity::new(context),
-            kms_epoch_id: Identity::new(epoch),
-        }
-        .to_extra_data();
         self
     }
 

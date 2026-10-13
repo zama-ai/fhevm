@@ -1,7 +1,7 @@
 use crate::core::event_processor::{
     KmsClient, KmsPollTarget, ProcessingError, RequestCheckError,
     context::ContextManager,
-    decryption::{DecryptionProcessor, UserDecryptionRecipient},
+    decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
     protocol_config::ProtocolConfigProcessor,
 };
@@ -286,7 +286,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                         req.decryptionId,
                         &req.ctHandles,
                         &req.extraData,
-                        Some(UserDecryptionRecipient::new(
+                        Some(UserDecryptionExtraData::new(
                             req.userAddress,
                             req.publicKey.clone(),
                         )),
@@ -301,7 +301,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                         req.decryptionId,
                         &handles,
                         &payload.extraData,
-                        Some(UserDecryptionRecipient::new(
+                        Some(UserDecryptionExtraData::new(
                             payload.userAddress,
                             payload.publicKey.clone(),
                         )),
@@ -314,7 +314,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                         req.decryption_id,
                         &req.ct_handles(),
                         &req.extra_data().into(),
-                        Some(UserDecryptionRecipient::new_solana(req.request.permit())),
+                        Some(UserDecryptionExtraData::new_solana(req.request.permit())),
                     )
                     .await
             }
