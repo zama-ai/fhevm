@@ -20,9 +20,7 @@ use connector_utils::{
         db::RequestSource,
         extra_data::{ExtraData, parse_extra_data},
         handle::extract_chain_id_from_handle,
-        solana_request::{
-            SolanaRequestBlob, SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
-        },
+        solana_request::{SolanaUserDecryptFields, SolanaUserDecryptionRequestV1},
     },
 };
 use kms_connector_api::ErrorCode;
@@ -64,7 +62,6 @@ struct Scenario {
     victim: Wallet,
     encrypted_store: EncryptedStoreFixture,
     fields: SolanaUserDecryptFields,
-    blob: SolanaRequestBlob,
     host: HttpHost,
     chain_id: u64,
 }
@@ -80,19 +77,18 @@ impl Scenario {
         let chain_id = extract_chain_id_from_handle(&B256::from(live)).unwrap();
         let encrypted_store = EncryptedStoreFixture::allowing(live, victim.pubkey());
         let now = Utc::now().timestamp() as u64;
-        let (fields, blob) = RequestBuilder::new(&victim)
+        let fields = RequestBuilder::new(&victim)
             .permit(
                 PermitBuilder::new(victim.pubkey())
                     .chain_id(chain_id)
                     .window(now - 60, 3_600),
             )
             .direct(&encrypted_store, live)
-            .parts();
+            .fields();
         let query = encrypted_store.allowed_query(live, victim.pubkey());
 
         let mut scenario = Self {
             fields,
-            blob,
             host: HttpHost::start().await,
             victim,
             encrypted_store,
@@ -121,9 +117,9 @@ impl Scenario {
         ]);
     }
 
-    /// The typed request the endpoint stores for `fields` and the signed blob.
+    /// The typed request the endpoint stores for `fields`.
     fn request_with(&self, fields: SolanaUserDecryptFields) -> SolanaUserDecryptionRequestV1 {
-        SolanaUserDecryptionRequestV1::new(U256::ONE, fields, self.blob.clone()).unwrap()
+        SolanaUserDecryptionRequestV1::new(U256::ONE, fields).unwrap()
     }
 
     fn request(&self) -> SolanaUserDecryptionRequestV1 {
@@ -282,11 +278,11 @@ async fn a_handle_of_another_chain_fails_the_signature() {
     let world = World::at_slot(100)
         .with_encrypted_store(&encrypted_store)
         .with_watermark(wallet.pubkey(), 0);
-    let (mut fields, blob) = RequestBuilder::new(&wallet)
+    let mut fields = RequestBuilder::new(&wallet)
         .direct(&encrypted_store, live)
-        .parts();
-    fields.handles[0][22..30].copy_from_slice(&(CHAIN_ID + 1).to_be_bytes());
-    let request = SolanaUserDecryptionRequestV1::new(U256::ONE, fields, blob).unwrap();
+        .fields();
+    fields.entries[0].handle[22..30].copy_from_slice(&(CHAIN_ID + 1).to_be_bytes());
+    let request = SolanaUserDecryptionRequestV1::new(U256::ONE, fields).unwrap();
 
     let failure = authorize_request(
         &ScriptedReader::constant(world.clone()),

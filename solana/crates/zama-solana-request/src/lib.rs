@@ -15,8 +15,5 @@ pub mod assemble;
 /// The typed request.
 pub mod request;
 
-pub use assemble::{
-    public_request_chain_id, SolanaEntryClaims, SolanaRequestBlob, SolanaRequestError,
-    SolanaUserDecryptFields,
-};
+pub use assemble::{public_request_chain_id, SolanaRequestError, SolanaUserDecryptFields};
 pub use request::{HandleEntry, SolanaUserDecryptRequest, MAX_REQUEST_HANDLES};

@@ -20,7 +20,7 @@ use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use ciborium::cbor;
 use connector_utils::config::KmsWallet;
 use connector_utils::types::solana_request::{
-    SolanaEntryClaims, SolanaRequestBlob, SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
+    SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
 };
 use kms_worker::core::ProofServer;
 use kms_worker::core::solana::{
@@ -319,43 +319,31 @@ impl<'a> RequestBuilder<'a> {
         self
     }
 
-    /// The request in its two carriers, signed: the typed fields and the blob.
-    pub fn parts(&self) -> (SolanaUserDecryptFields, SolanaRequestBlob) {
+    /// The request's fields, signed.
+    pub fn fields(&self) -> SolanaUserDecryptFields {
         let signature = self.wallet.sign(&self.permit.typed());
         let permit = self.permit.wire();
         let fixed = |bytes: Vec<u8>| bytes.try_into().expect("fixture permit is well formed");
-        let fields = SolanaUserDecryptFields {
-            handles: self.entries.iter().map(|e| e.handle).collect(),
-            transport_key: permit.transport_key,
-            start_timestamp: permit.start_timestamp,
-            duration_seconds: permit.duration_seconds,
-            extra_data: permit.extra_data,
-        };
-        let blob = SolanaRequestBlob {
+        SolanaUserDecryptFields {
             user_address: fixed(permit.user_address),
+            transport_key: permit.transport_key,
             allowed_scopes: permit
                 .allowed_scopes
                 .into_iter()
                 .map(|scope| scope.try_into().expect("fixture scope is well formed"))
                 .collect(),
+            start_timestamp: permit.start_timestamp,
+            duration_seconds: permit.duration_seconds,
             verifying_program_id: fixed(permit.verifying_program_id),
+            extra_data: permit.extra_data,
             signature: *signature.as_bytes(),
-            entries: self
-                .entries
-                .iter()
-                .map(|e| SolanaEntryClaims {
-                    owner_address: e.owner_address,
-                    encrypted_store: e.encrypted_store,
-                })
-                .collect(),
-        };
-        (fields, blob)
+            entries: self.entries.clone(),
+        }
     }
 
     /// The request in validated form.
     pub fn typed(&self) -> SolanaUserDecryptionRequestV1 {
-        let (fields, blob) = self.parts();
-        SolanaUserDecryptionRequestV1::new(U256::from(1), fields, blob)
+        SolanaUserDecryptionRequestV1::new(U256::from(1), self.fields())
             .expect("fixture request is well formed")
     }
 }

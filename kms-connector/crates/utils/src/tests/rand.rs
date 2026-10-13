@@ -1,12 +1,11 @@
-use crate::types::solana_request::{
-    SolanaEntryClaims, SolanaRequestBlob, SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
-};
+use crate::types::solana_request::{SolanaUserDecryptFields, SolanaUserDecryptionRequestV1};
 use alloy::primitives::{Address, FixedBytes, U256};
 use fhevm_host_bindings::protocol_config::ProtocolConfig::{
     KmsNodeParams, KmsThresholds, PcrValues,
 };
 use rand::Rng;
 use zama_solana_acl::host_chain::{EVM_CHAIN_TYPE, solana_host_chain_id};
+use zama_solana_request::HandleEntry;
 
 pub fn rand_u256() -> U256 {
     U256::from_le_bytes(rand::rng().random::<[u8; 32]>())
@@ -68,37 +67,26 @@ pub fn rand_pcr_values() -> PcrValues {
     }
 }
 
-/// The two carriers of a well-formed Solana request naming `handle`, with a placeholder
-/// signature.
-pub fn solana_user_decryption_parts(
-    handle: FixedBytes<32>,
-) -> (SolanaUserDecryptFields, SolanaRequestBlob) {
-    let fields = SolanaUserDecryptFields {
-        handles: vec![handle.0],
-        transport_key: vec![2; zama_solana_permit::TRANSPORT_KEY_LEN],
-        start_timestamp: sqlx::types::chrono::Utc::now().timestamp() as u64 - 60,
-        duration_seconds: 3600,
-        extra_data: [vec![2], vec![1; 64]].concat(),
-    };
-    let blob = SolanaRequestBlob {
-        user_address: [1; 32],
-        allowed_scopes: vec![],
-        verifying_program_id: [7; 32],
-        signature: [0; 64],
-        entries: vec![SolanaEntryClaims {
-            owner_address: [1; 32],
-            encrypted_store: [3; 32],
-        }],
-    };
-    (fields, blob)
-}
-
 /// A well-formed Solana user decryption request. Its signature is a placeholder, so it only
 /// passes the checks that precede signature verification.
 pub fn solana_user_decryption_request(
     decryption_id: U256,
     handle: FixedBytes<32>,
 ) -> SolanaUserDecryptionRequestV1 {
-    let (fields, blob) = solana_user_decryption_parts(handle);
-    SolanaUserDecryptionRequestV1::new(decryption_id, fields, blob).unwrap()
+    let fields = SolanaUserDecryptFields {
+        user_address: [1; 32],
+        transport_key: vec![2; zama_solana_permit::TRANSPORT_KEY_LEN],
+        allowed_scopes: vec![],
+        start_timestamp: sqlx::types::chrono::Utc::now().timestamp() as u64 - 60,
+        duration_seconds: 3600,
+        verifying_program_id: [7; 32],
+        extra_data: [vec![2], vec![1; 64]].concat(),
+        signature: [0; 64],
+        entries: vec![HandleEntry {
+            handle: handle.0,
+            owner_address: [1; 32],
+            encrypted_store: [3; 32],
+        }],
+    };
+    SolanaUserDecryptionRequestV1::new(decryption_id, fields).unwrap()
 }
