@@ -12,7 +12,6 @@
 #      in the Solana workstream sources. Every allowed survival is an explicit, reasoned exception.
 #   4. Retrofit sentinels without a justification at the site (§8 taxonomy): a constant stuffed
 #      into an EVM-shaped field is allowed only with a written reason.
-#   5. Reused-value retrofits whose written justification must stay in place (§8 taxonomy).
 #   6. Exported symbols with no audience: a `pub fn` / `export function` with no production caller
 #      outside its own file must either name its audience in a `Public API surface:` line or go.
 #      One that nothing references at all — not a test, not its own module — is simply dead.
@@ -53,12 +52,12 @@ SELF_TEST=0
 run_check() { [ -z "${DEAD_SURFACE_ONLY_CHECK:-}" ] || [ "${DEAD_SURFACE_ONLY_CHECK}" = "$1" ]; }
 
 # An unrecognised value ran zero checks and printed "clean" with status 0 — a green, entirely vacuous
-# run, and the only tell was the absence of the eight headers, which nothing asserted. A typo, a
+# run, and the only tell was the absence of the check headers, which nothing asserted. A typo, a
 # leftover repo variable, or an earlier job writing GITHUB_ENV would have silenced the whole gate.
 case "${DEAD_SURFACE_ONLY_CHECK:-}" in
-  '' | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8) ;;
+  '' | 1 | 2 | 3 | 4 | 6 | 7 | 8) ;;
   *)
-    echo "dead-surface-check: DEAD_SURFACE_ONLY_CHECK must be empty or 1-8, got '${DEAD_SURFACE_ONLY_CHECK}'" >&2
+    echo "dead-surface-check: DEAD_SURFACE_ONLY_CHECK must be empty or one of 1-4, 6-8, got '${DEAD_SURFACE_ONLY_CHECK}'" >&2
     exit 2
     ;;
 esac
@@ -166,7 +165,7 @@ for root in "${ALL_ROOTS[@]}" "${CORE_ROOTS[@]}" "${FHE_ROOTS[@]}" "${KMS_EXTRA_
   [ -e "$root" ] || { echo "dead-surface-check: swept root does not exist: $root" >&2; exit 2; }
 done
 
-# The scan surfaces of checks 4 and 5, declared here rather than inside the checks that read them
+# The scan surface of check 4, declared here rather than inside the checks that read them
 # first. Check 7 audits every one of these paths against the CI trigger filter, so a list that only
 # exists while its own check runs makes check 7 depend on which other checks ran — under
 # `DEAD_SURFACE_ONLY_CHECK=7` the arrays were unbound and check 7 audited nothing.
@@ -186,33 +185,9 @@ SENTINEL_ROOTS=(
   coprocessor/fhevm-engine/solana-host-follower/src
   coprocessor/fhevm-engine/solana-merkle-proof-service/src
 )
-# Files expected to still carry at least one retrofit sentinel. This is a STALENESS guard, not the
-# scan surface: check 4 finds retrofits anywhere in the owned trees, and this list fails loudly when
-# a file that used to carry one no longer does, so the list cannot rot into fake coverage.
-# Empty since the relayer's input-proof request typed its identities as an enum: its one entry,
-# `relayer/src/core/event.rs`, zero-filled the EVM addresses of a Solana request. The check stays for
-# the next one.
-SENTINEL_FILES=()
-# The two staleness arms below read a list that lives in code, so the self-test cannot violate them
-# by planting a file. It adds an entry through the environment instead, and one hook drives both: a
-# path that is not there at all, and a path that is there with no retrofit left on it.
-[ -n "${DEAD_SURFACE_EXTRA_SENTINEL_FILE:-}" ] && \
-  SENTINEL_FILES+=("${DEAD_SURFACE_EXTRA_SENTINEL_FILE}")
-
-# Check 5's pinned justification prose, as `file|phrase`. The v0 `actions/userDecrypt.ts` entry
-# died with the file; its successor reuse — the permit's verifying program doubling as the host
-# program id the evidence source derives accounts under — is justified where it happens.
-# Empty since RFC 035: the one entry (the permit's verifying program reused as the host program id
-# of the SDK's RPC evidence source) went with that source. The check stays for the next one.
-RETROFIT_JUSTIFICATIONS=()
-# The self-test cannot violate check 5 by planting a file — it would have to delete prose from a real
-# one — so it adds an entry through the environment instead. Same code path, both arms.
-[ -n "${DEAD_SURFACE_EXTRA_RETROFIT:-}" ] && \
-  RETROFIT_JUSTIFICATIONS+=("${DEAD_SURFACE_EXTRA_RETROFIT}")
-
 # Same assertion the swept roots get above, for the same reason: these four listener files are named
 # individually and read behind `2>/dev/null || true`, so a rename or a typo in any of them would
-# silently narrow checks 4 and 5 instead of failing.
+# silently narrow check 4 instead of failing.
 for root in "${SENTINEL_ROOTS[@]}"; do
   [ -e "$root" ] || { echo "dead-surface-check: sentinel root does not exist: $root" >&2; exit 2; }
 done
@@ -233,7 +208,6 @@ HAND_DERIVATION_ROOTS=(
   coprocessor/fhevm-engine/host-listener
   coprocessor/fhevm-engine/solana-host-follower
   coprocessor/fhevm-engine/solana-merkle-proof-service
-  coprocessor/fhevm-engine/tfhe-worker
 )
 # Today's hand-written copies, as `path|count|tracking task, or why the copy is permanent`.
 # Counts are production lines deriving a PDA, spelling a seed or building an Anchor discriminator.
@@ -243,7 +217,7 @@ HAND_DERIVATIONS_ALLOWED=(
   "solana/deploy/src/wipe.ts|1|permanent: admin-sweep is preview-only and deliberately absent from the public zama-host IDL; bytes pinned by host_admin_mollusk.rs"
   "solana/deploy/src/bootstrap.ts|2|fhevm-internal#2108 task 2 (programData: the one solana/deploy helper)"
 )
-# The self-test drives the allow-list arms through the environment, as checks 4 and 5 do.
+# The self-test drives the allow-list arms through the environment.
 [ -n "${DEAD_SURFACE_EXTRA_HAND_DERIVATION:-}" ] && \
   HAND_DERIVATIONS_ALLOWED+=("${DEAD_SURFACE_EXTRA_HAND_DERIVATION}")
 for root in "${SEED_SOURCES[@]}" "${HAND_DERIVATION_ROOTS[@]}"; do
@@ -278,7 +252,7 @@ SELFTEST_FIXTURES=(
   solana/demo-dapp/src/deadSurfaceHashSelftest.ts
   solana/demo-dapp/src/deadSurfaceBytesSelftest.ts
   relayer/src/core/dead_surface_selftest.rs
-  coprocessor/fhevm-engine/tfhe-worker/dead_surface_selftest.rs
+  coprocessor/fhevm-engine/host-listener/dead_surface_selftest.rs
 )
 # A fixture left behind by an interrupted `--self-test` is indistinguishable from a real violation,
 # so every later run reports a bogus finding — observed once as a phantom `app_account` hit printed
@@ -577,18 +551,17 @@ if run_check 3; then
   # `PersistentEvalTarget`, a crate description advertising "FHE eval requests". The pattern stops
   # before a `u` so that "evaluate" and "evaluation" stay out of it, and it is case-sensitive so the
   # CamelCase forms are distinguishable at all. Exempt: the frozen tag, the helpers named after it,
-  # the test whose subject is the derivation of that tag, and the shell builtin `eval`.
-  # `eval "$...` is the shell builtin, which main's consensus scripts under test-suite use.
+  # and the test whose subject is the derivation of that tag.
   check_alias 'eval — say execution; evaluate is the verb' all \
-    'FHE_eval|computed_eval_|eval_handle_derivation|use `eval|eval "\$' --case-sensitive \
+    'FHE_eval|computed_eval_|eval_handle_derivation' --case-sensitive \
     -E '(^|[^A-Za-z0-9])eval([^u]|$)|Eval[A-Z]'
   # Bare `born`, not just `born[-_ ]public`: the narrow pattern could not match the spellings that
   # actually survived — `*born* public` (asterisks between the two words), "are born with", "born in
   # `initialize_mint`". Prose is where retired vocabulary hides, because a rename sweep looks for
   # identifiers. The English word has no legitimate use in these trees now that all five sites say
-  # "created" instead, so the whole family is banned and `birthday` stays exempted.
+  # "created" instead, so the whole family is banned.
   check_alias 'born / birth — renamed to created-public / create' all \
-    'birthday' -iE '\bborn\b|\bbirth\b|_birth\b|birth_'
+    '' -iE '\bborn\b|\bbirth\b|_birth\b|birth_'
   # `value_key` as an identifier was renamed to encrypted-value-ID vocabulary. The signed/wire
   # spellings stay: the sha256 tag string "...value-key-v1" (preimage bytes), the v3 JSON key
   # `aclValueKey`, and the connector's matching `acl_value_key` field.
@@ -602,11 +575,11 @@ if run_check 3; then
   # keyed (RFC 035 — the connector reads the encrypted value account and fetches the proof itself).
   check_alias 'value_key identifier — renamed to encrypted_value_id' kms \
     '' -iE 'value_key'
-  # Deliberate records of the retirement (INVARIANTS #47, DD-035) say the
-  # trusted service is gone; the EVM input-proof service is another thing. The Merkle proof
-  # service is its own name: an untrusted source of proofs the connector verifies on chain.
+  # Deliberate records of the retirement (INVARIANTS #47, DD-035) say the trusted service is gone.
+  # The Merkle proof service is its own name: an untrusted source of proofs the connector verifies on
+  # chain.
   check_alias 'proof service — say Merkle proof service, whose proofs the connector verifies' kms \
-    'is gone|proof-service client|external input proof service|merkle[ _-]proof[ _-]service' \
+    'is gone|merkle[ _-]proof[ _-]service' \
     -iE 'proof[ _-]service'
   # Reject the retired ACL collection and mutation API, not ordinary English or unrelated
   # variables called "subject" (for example a polling condition or TLS certificate field).
@@ -656,14 +629,13 @@ if run_check 3; then
   # The SDK's `namespace` became `label`. Swept in CORE only: `namespace` means a Kubernetes
   # namespace in the workflows and a TypeScript namespace in the test-suite tooling.
   check_alias 'SDK namespace — renamed to label' core '' -E '\bnamespace\b|\bnamespaceKey\b'
-  # execution <- batch, frame, plan. "frame" survives only in its Solana runtime sense (the
-  # CPI/instruction stack frame), and as the proper name of the retired `execute_frame`
-  # RFC-024 prototype where the sentence says so. A sequence of steps is never a frame.
+  # execution <- batch, frame, plan. "frame" survives only in its Solana runtime sense (the stack
+  # and heap frames). A sequence of steps is never a frame.
   # The last group is the demo dapp's architecture walkthrough, where a "frame" is a presentation
   # panel — the film sense of the word, with its own CSS classes. Surfaced only once `.tsx` joined the
   # sweep. It is the same kind of unrelated meaning as the stack frame above, not a sequence of steps.
   check_alias 'frame — one fhe_execute invocation is an execution' all \
-    'stack frame|instruction frame|enclosing frame|execution frame|cpi frame|frame it belongs to|older `execute_frame`|framework|heap frame|heap-frame|HeapFrame|ArchitectureFrame|architecture-frame|frame-(heading|label|statement|separator)|frameNumber|\bframed\b|frames\.(map|length)|frame\.(diagram|title)' \
+    'stack frame|framework|HeapFrame|ArchitectureFrame|architecture-frame|frame-(heading|label|statement|separator)|frameNumber|\bframed\b|frames\.(map|length)|frame\.(diagram|title)' \
     -E '\bframes?\b|execute_frame|_frame\b|frame_|Frame[A-Z]'
   # One fhe_execute invocation is an `execution`, never a batch: its steps are dependent, each reading
   # what the one before it produced, which is the opposite of what a batch means. Swept in FHE scope
@@ -684,14 +656,12 @@ if run_check 3; then
   check_alias 'pool — the interning structure is the dictionary' core \
     'pool is big enough' \
     -iE '\bpools?\b'
-  # persistent <- durable. The proof store's durability vocabulary (a durably ingested checkpoint) is
-  # a different axis from value persistence. Database commits and lifecycle markers use that
-  # durability sense too; Solana's durable nonce is a protocol term.
-  # The consensus tooling from main uses the word in the same written-to-disk sense for its canary
-  # journal and, in the test-suite README, for drift findings a scenario cannot remove. Main's
-  # host-listener poller and ingest, test-suite README and test command use it the same way.
+  # persistent <- durable. The proof store's durability vocabulary is a different axis from value
+  # persistence. Database commits and lifecycle markers use that durability sense too, as do main's
+  # host-listener poller and ingest, and, in the test-suite README, drift findings a scenario cannot
+  # remove.
   check_alias 'durable — a persistent value is persistent' all \
-    'durable ingest|durable checkpoint|durable tip|durable history_start|durable nonce|durably ingest|observation durably|durably, keyed|durable state|durable, waits|marker durable|halves are already durable|journaled durably|durable canary|durable raw-byte journal|remove durable findings|durable cursor|durable-journal recovery|durable verifier outcomes|durable observations|durable either way|durable per-chain rows' \
+    'observation durably|durably, keyed|durable state|durable, waits|marker durable|halves are already durable|remove durable findings|durable cursor|durable-journal recovery|durable verifier outcomes|durable observations|durable either way|durable per-chain rows' \
     -iE '\bdurable\b|\bdurably\b'
   # update <- supersede, rotation. The noun and the participle are swept too: the verb forms were
   # the only ones matched, and "supersession" went on naming the thing in about thirty places —
@@ -769,10 +739,8 @@ if run_check 4; then
   SENTINEL='Address::ZERO|FixedBytes::ZERO|\[0u8; ?(20|32)\]|0x0{40}|new Uint8Array\((20|32)\)|Pubkey::default\(\)'
   EVM_SHAPED_FIELD='\bcaller\b|contract_address|contractAddress|user_address|userAddress|owner_address|ownerAddress|allowed_contracts|allowedContracts|handle_contract_pairs|contract_addresses|delegator_address|delegate_address|transaction_hash|txHash|block_number'
   JUSTIFICATION='placeholder|not persisted|unused on the Solana|oblivious|ignores the EVM|reuses the EVM|discard|EVM-shaped|EVM-only|no Solana meaning|off-gateway|inert'
-  # bash 3.2 (the macOS default) has no associative arrays, so covered files accumulate in a string.
-  sentinel_seen=""
   retrofit_hits=$( (grep -rnE --include='*.rs' --include='*.ts' "${EXCLUDES[@]}" "$SENTINEL" \
-    "${SENTINEL_ROOTS[@]}" ${SENTINEL_FILES[@]+"${SENTINEL_FILES[@]}"} 2>/dev/null || true) \
+    "${SENTINEL_ROOTS[@]}" 2>/dev/null || true) \
     | (grep -E "$EVM_SHAPED_FIELD" || true) \
     | (grep -vE '(^|/)tests?/|\.test\.tsx?:|tests\.rs:' || true) )
   while IFS= read -r hit; do
@@ -790,7 +758,6 @@ if run_check 4; then
     # `#[cfg(test)]` is indented is now swept whole, which is the safe direction for a guard.
     test_line=$( (grep -n -m1 -E '^#\[cfg\(test\)\]|^[[:space:]]*describe\(' "$file" || true) | cut -d: -f1)
     if [ -n "$test_line" ] && [ "$line" -ge "$test_line" ]; then continue; fi
-    sentinel_seen="${sentinel_seen} ${file}"
     start=$((line > 12 ? line - 12 : 1))
     # Comment markers stripped and the window joined into one line: justifications are prose and
     # wrap, so a phrase straddles two comment lines with a `///` in between (the same trap the
@@ -803,29 +770,6 @@ if run_check 4; then
       fail=1
     fi
   done <<< "$retrofit_hits"
-  for file in ${SENTINEL_FILES[@]+"${SENTINEL_FILES[@]}"}; do
-    [ -f "$file" ] || { echo "MISSING SENTINEL FILE: ${file} (update SENTINEL_FILES)"; fail=1; continue; }
-    if ! grep -qF " ${file}" <<< "$sentinel_seen"; then
-      echo "STALE SENTINEL ENTRY: ${file} has no production retrofit left (drop it from SENTINEL_FILES)"
-      fail=1
-    fi
-  done
-fi
-
-if run_check 5; then
-  echo "== 5. reused-value retrofits whose justification must stay written =="
-  # The other §8 shape: a field with no Solana meaning filled with a *reused* real value rather than
-  # a zero. There is no constant to grep for, so the check pins the explanation — delete the prose
-  # and this fails, because the prose is the only way a reader learns the field is inert.
-  for entry in ${RETROFIT_JUSTIFICATIONS[@]+"${RETROFIT_JUSTIFICATIONS[@]}"}; do
-    file=${entry%%|*}
-    phrase=${entry#*|}
-    [ -f "$file" ] || { echo "MISSING RETROFIT FILE: ${file} (update RETROFIT_JUSTIFICATIONS)"; fail=1; continue; }
-    if ! grep -qF "$phrase" "$file"; then
-      echo "MISSING RETROFIT JUSTIFICATION: ${file} no longer says \"${phrase}\""
-      fail=1
-    fi
-  done
 fi
 
 if run_check 6; then
@@ -1016,12 +960,11 @@ if run_check 7; then
     return 1
   }
 
-  # SENTINEL_ROOTS, SENTINEL_FILES, the retrofit-justification files, check 8's seed sources and its
-  # allow-listed files are included: checks 4, 5 and 8 read them, so a path of theirs outside the trigger filter is the same hole as an untriggered sweep
-  # root. Both `relayer/` files were exactly that until the filter above learned them.
-  for root in "${ALL_ROOTS[@]}" "${FHE_ROOTS[@]}" "${SENTINEL_ROOTS[@]}" ${SENTINEL_FILES[@]+"${SENTINEL_FILES[@]}"} \
-    "${RETROFIT_JUSTIFICATIONS[@]%%|*}" "${KMS_EXTRA_ROOTS[@]}" "${SEED_SOURCES[@]}" \
-    "${HAND_DERIVATION_ROOTS[@]}" "${HAND_DERIVATIONS_ALLOWED[@]%%|*}" ${DEAD_SURFACE_EXTRA_ROOT:-}; do
+  # SENTINEL_ROOTS, check 8's seed sources and its allow-listed files are included: checks 4 and 8
+  # read them, so a path of theirs outside the trigger filter is the same hole as an untriggered
+  # sweep root.
+  for root in "${ALL_ROOTS[@]}" "${FHE_ROOTS[@]}" "${SENTINEL_ROOTS[@]}" "${KMS_EXTRA_ROOTS[@]}" \
+    "${SEED_SOURCES[@]}" "${HAND_DERIVATION_ROOTS[@]}" "${HAND_DERIVATIONS_ALLOWED[@]%%|*}" ${DEAD_SURFACE_EXTRA_ROOT:-}; do
     if ! root_is_triggered "$root"; then
       echo "UNTRIGGERED ROOT: ${root} is swept by this script but no path in ${TRIGGER_WORKFLOW}'s dead-surface filter matches it — a change there would not run this check"
       fail=1
@@ -1242,18 +1185,6 @@ FIXTURES
   printf 'pub fn f() { let contract_address = [0u8; 20]; let _ = contract_address; }\n' > "$fixture"
   expect_fires "retrofit sentinel sweep" "UNJUSTIFIED RETROFIT SENTINEL" "" 4 bash "$SELF"
   rm -f "$fixture"
-  # Check 4's other two arms, the ones that keep SENTINEL_FILES from rotting into fake coverage.
-  # Neither had a fixture, and both are the kind that go quiet without anyone noticing: the list is
-  # short, and a clean run looks the same whether the files still carry a retrofit or the list stopped
-  # naming files that exist.
-  expect_fires "sentinel staleness sweep (missing file)" \
-    "MISSING SENTINEL FILE: solana/does-not-exist.rs" "" 4 \
-    env "DEAD_SURFACE_EXTRA_SENTINEL_FILE=solana/does-not-exist.rs" bash "$SELF"
-  printf 'pub fn dead_surface_selftest_carries_no_retrofit() {}\n' > "$fixture"
-  expect_fires "sentinel staleness sweep (stale entry)" \
-    "STALE SENTINEL ENTRY: ${fixture}" "" 4 \
-    env "DEAD_SURFACE_EXTRA_SENTINEL_FILE=${fixture}" bash "$SELF"
-  rm -f "$fixture"
   # Check 6: an exported function nobody calls. Every expected text below names the arm as well as the
   # symbol. Check 6 has two arms that report differently — nothing references it at all, versus only
   # tests do — and a bare symbol name is printed by both, so these assertions passed whichever arm
@@ -1339,18 +1270,6 @@ FIXTURES
   expect_fires "dead-error-variant sweep (unparsed enum before a readable one)" \
     "UNPARSED ERROR ENUM: ${fixture}" "" 1 bash "$SELF"
   rm -f "$fixture"
-  # Check 5: the justification prose for a reused-value retrofit. The check pins phrases in real
-  # files, so a fixture cannot violate it by planting a file — it would have to delete prose from
-  # one. `DEAD_SURFACE_EXTRA_RETROFIT` adds an entry instead, which is the same code path: both
-  # arms are exercised, the missing-file arm and the missing-phrase arm.
-  expect_fires "retrofit-justification sweep (missing file)" \
-    "MISSING RETROFIT FILE: solana/does-not-exist.ts" "" 5 \
-    env "DEAD_SURFACE_EXTRA_RETROFIT=solana/does-not-exist.ts|any phrase" bash "$SELF"
-  printf 'nothing here explains anything\n' > "$fixture"
-  expect_fires "retrofit-justification sweep (missing phrase)" \
-    "MISSING RETROFIT JUSTIFICATION: ${fixture} no longer says" "" 5 \
-    env "DEAD_SURFACE_EXTRA_RETROFIT=${fixture}|a phrase this fixture does not contain" bash "$SELF"
-  rm -f "$fixture"
   # Check 6b: an export whose only references come from tests, in a file that never says who its
   # audience is. Needs two fixtures — without a caller this is 6a (zero references anywhere), and
   # the two arms report differently, which is what the expected text distinguishes.
@@ -1388,7 +1307,7 @@ TypeScript quoted seed|${ts_fixture}|export const s = 'host-config';
 Rust call|${fixture}|pub fn f(p: &Pubkey) -> Pubkey { Pubkey::find_program_address(&[], p).0 }
 Rust seed literal|${fixture}|pub const S: &[u8] = b"rand-nonce";
 Relayer outside host|relayer/src/core/dead_surface_selftest.rs|pub const S: &[u8] = b"rand-nonce";
-Engine crate outside src|coprocessor/fhevm-engine/tfhe-worker/dead_surface_selftest.rs|pub const S: &[u8] = b"rand-nonce";
+Engine crate outside src|coprocessor/fhevm-engine/host-listener/dead_surface_selftest.rs|pub const S: &[u8] = b"rand-nonce";
 FIXTURES
   hash_fixture="solana/demo-dapp/src/deadSurfaceHashSelftest.ts"
   bytes_fixture="solana/demo-dapp/src/deadSurfaceBytesSelftest.ts"

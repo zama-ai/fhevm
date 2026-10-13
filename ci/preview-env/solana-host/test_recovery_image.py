@@ -50,3 +50,7 @@ class RecoveryImage(unittest.TestCase):
 
     def test_explicit_override_wins(self):
         self.check_image([], 'repo/solana-programs:override', 'repo/solana-programs:override')
+
+
+if __name__ == '__main__':
+    unittest.main()

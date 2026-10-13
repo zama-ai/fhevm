@@ -78,7 +78,6 @@ jobs:
               - coprocessor/fhevm-engine/host-listener/**
               - coprocessor/fhevm-engine/solana-host-follower/**
               - coprocessor/fhevm-engine/solana-merkle-proof-service/**
-              - coprocessor/fhevm-engine/tfhe-worker/**
               - kms-connector/crates/**
               - sdk/js-sdk/src/solana/**
               - test-suite/fhevm/**
@@ -140,6 +139,9 @@ jobs:
 
       - name: Check the consumers' path filters against the solana/ paths they read
         run: solana/scripts/check-path-filters.sh
+
+      - name: Test solana-e2e's override selection
+        run: bash solana/scripts/e2e/select-overrides.test.sh
 
   # Pure grep/sed, no toolchain, half a minute: its own job so it runs for every tree it sweeps,
   # not only the ones that trigger the SBF builds. See fhevm-internal#1859 §7.
