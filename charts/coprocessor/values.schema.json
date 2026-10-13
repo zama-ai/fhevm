@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "coprocessor chart values",
-  "description": "Chart 0.14 schema. Legacy keys (hostListenerShared, hostListenerPollerShared, hostListenerCatchupOnlyShared, hostListenerConsumerShared, image.name, *ContractConfigMap, commonConfig.hostChain*/…ContractAddress, top-level podLabels/podAnnotations) are rejected: see the chart values.yaml for their replacements.",
+  "description": "Legacy keys (hostListenerShared, hostListenerPollerShared, hostListenerCatchupOnlyShared, hostListenerConsumerShared, image.name, *ContractConfigMap, commonConfig.hostChain*/…ContractAddress, top-level podLabels/podAnnotations) are rejected: see the chart values.yaml for their replacements.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
