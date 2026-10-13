@@ -165,10 +165,10 @@ for root in "${ALL_ROOTS[@]}" "${CORE_ROOTS[@]}" "${FHE_ROOTS[@]}" "${KMS_EXTRA_
   [ -e "$root" ] || { echo "dead-surface-check: swept root does not exist: $root" >&2; exit 2; }
 done
 
-# The scan surface of check 4, declared here rather than inside the checks that read them
-# first. Check 7 audits every one of these paths against the CI trigger filter, so a list that only
-# exists while its own check runs makes check 7 depend on which other checks ran — under
-# `DEAD_SURFACE_ONLY_CHECK=7` the arrays were unbound and check 7 audited nothing.
+# The scan surface of check 4, declared here rather than inside the check that reads it first.
+# Check 7 audits every one of these paths against the CI trigger filter, so a list that only exists
+# while its own check runs makes check 7 depend on which other checks ran — under
+# `DEAD_SURFACE_ONLY_CHECK=7` the list was unbound and check 7 audited nothing.
 #
 # The listener's `src/` is mostly the EVM ingest path, which zero-fills EVM fields for reasons that
 # have nothing to do with Solana (a synthesized `TrivialEncrypt` log, for one). Only the Solana
@@ -185,7 +185,7 @@ SENTINEL_ROOTS=(
   coprocessor/fhevm-engine/solana-host-follower/src
   coprocessor/fhevm-engine/solana-merkle-proof-service/src
 )
-# Same assertion the swept roots get above, for the same reason: these four listener files are named
+# Same assertion the swept roots get above, for the same reason: these three listener files are named
 # individually and read behind `2>/dev/null || true`, so a rename or a typo in any of them would
 # silently narrow check 4 instead of failing.
 for root in "${SENTINEL_ROOTS[@]}"; do
@@ -205,6 +205,7 @@ SEED_SOURCES=(
 HAND_DERIVATION_ROOTS=(
   relayer/src
   kms-connector/crates
+  coprocessor/fhevm-engine/fhevm-engine-common
   coprocessor/fhevm-engine/host-listener
   coprocessor/fhevm-engine/solana-host-follower
   coprocessor/fhevm-engine/solana-merkle-proof-service
