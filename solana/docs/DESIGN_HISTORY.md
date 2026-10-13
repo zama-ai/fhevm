@@ -819,6 +819,8 @@ DD-060:
 
 DD-070:
 
+> Every off-chain component reads the Solana host chain.
+
 > the relayer pre-checks delegations
 
 > - the relayer's user-decrypt pre-check (`relayer/src/host/acl_checker.rs`);
@@ -858,6 +860,14 @@ DD-070:
 `TESTING.md`, the roots that can see a Solana change:
 
 > `relayer` (the delegation pre-check reads records through `zama-solana-acl`)
+
+`TESTING.md`, the user-decrypt mirror:
+
+> `zama-solana-permit` (used by the connector and the relayer)
+
+`README.md`, repository layout:
+
+> relayer/ HTTP relayer: v3 typed Solana requests, chain-aware validation, fee handling.
 
 **KMS connector** (zama-ai/fhevm#4405). The gw-listener no longer subscribes to the Gateway's
 `SolanaUserDecryptionRequest` and `SolanaPublicDecryptionRequest` events, and the connector stores

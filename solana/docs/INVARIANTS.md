@@ -692,9 +692,10 @@ the maximum coprocessor threshold with every witness` (`joinBatch.test.ts`) and
 **50. [OPERATIONAL]** The gateway relayer's ACL preflight covers EVM host
 chains only. A Solana host chain stays in the relayer's `host_chains` for input
 proofs, and both the ACL preflight and the EIP-712 signature pre-check skip it
-(`relayer/src/host/acl_checker.rs`, `relayer/src/host/signature_prechecker.rs`):
-the relayer reads no Solana account, and its preflight refuses a Solana handle
-as `UnsupportedChain`. Solana decryption requests go through relayer-http, and
+(`relayer/src/host/acl_checker.rs`, `relayer/src/host/signature_prechecker.rs`),
+so the relayer reads no Solana account. The ACL preflight refuses a Solana
+handle as `UnsupportedChain`; the v3 signature pre-check has no provider for its
+chain and answers 500 (`HostCallFailed`). Solana decryption requests go through relayer-http, and
 the KMS connectors decide every authorization (#42, #45). Pinned by
 `a_solana_host_starts_and_its_handles_are_refused` and
 `a_solana_host_gets_no_evm_provider`.

@@ -2725,7 +2725,7 @@ Status: adopted
 
 Context:
 
-Every off-chain component reads the Solana host chain. The host listener and the Merkle indexer
+Most off-chain components read the Solana host chain. The host listener and the Merkle indexer
 follow its blocks, the KMS connector reads Stores and delegation rows before it releases plaintext,
 and clients (the SDK, the demo dapp, `solana/deploy`, the test
 suite) send transactions and read accounts. A reader's commitment level is the point at which it

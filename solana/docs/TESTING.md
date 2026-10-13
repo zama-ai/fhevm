@@ -444,7 +444,7 @@ and a record that is behind is a retry.
   seed to one raw literal in the program, in `constants.rs`.
   The user-decrypt side of the mirror is pinned by committed vectors that both sides assert
   against. The permit's canonical text and offchain-message envelope come from `zama-solana-permit`
-  (used by the connector and the relayer) and the SDK's TypeScript, pinned by
+  (used by the connector and relayer-http) and the SDK's TypeScript, pinned by
   `solana/test-fixtures/permit/permit_v1.json`. The decryption request bodies are the
   `kms-connector-api` Solana DTOs, which the decryption relayer forwards unchanged; the SDK's
   `decryption/connectorVectors.test.ts` holds both bodies to the Connector's vectors in

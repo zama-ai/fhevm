@@ -149,8 +149,8 @@ coprocessor/fhevm-engine/solana-merkle-proof-service
                                          (indexer.rs, store.rs) and the proof server (server.rs).
 gateway-contracts/                       Gateway (EVM) contracts, incl. the typed Solana
                                          decryption entrypoint.
-relayer/                                 HTTP relayer: v3 typed Solana requests, chain-aware
-                                         validation, fee handling.
+relayer/                                 Gateway relayer: Solana input proofs
+                                         (verifyProofRequestSolana), fee handling.
 kms-connector/                           Per-party decrypt authorization (imports zama_solana_acl).
 sdk/js-sdk/src/solana                    Client SDK: encrypt, user/public decrypt, proofs.
 test-suite/fhevm/src/solana              The typed Solana side-stack: validator + program deploy,
