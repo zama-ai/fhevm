@@ -2677,6 +2677,50 @@ fn mollusk_set_max_hcu_depth_per_tx_persists_nonzero() {
 }
 
 #[test]
+fn mollusk_set_max_hcu_per_tx_rejects_a_total_below_the_depth_limit() {
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+    check_host_context(
+        &context,
+        &set_max_hcu_depth_per_tx_ix(admin, host_config, 5_000_000),
+        &[Check::success()],
+    );
+
+    check_host_context(
+        &context,
+        &set_max_hcu_per_tx_ix(admin, host_config, 4_000_000),
+        &[custom_error(
+            host::errors::ZamaHostError::HcuLimitOrderingInvalid,
+        )],
+    );
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.max_hcu_per_tx, u64::MAX);
+}
+
+#[test]
+fn mollusk_set_max_hcu_depth_per_tx_rejects_a_depth_above_the_total_limit() {
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+    check_host_context(
+        &context,
+        &set_max_hcu_per_tx_ix(admin, host_config, 5_000_000),
+        &[Check::success()],
+    );
+
+    check_host_context(
+        &context,
+        &set_max_hcu_depth_per_tx_ix(admin, host_config, 6_000_000),
+        &[custom_error(
+            host::errors::ZamaHostError::HcuLimitOrderingInvalid,
+        )],
+    );
+    let config = read_host_config(&context, host_config).expect("config");
+    assert_eq!(config.max_hcu_depth_per_tx, u64::MAX);
+}
+
+#[test]
 fn mollusk_set_deny_scope_creates_record_and_emits_event() {
     let admin = Pubkey::new_unique();
     let app = unique_app();

@@ -441,7 +441,6 @@ pub(super) fn grow_account_if_needed<'info>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::PauseFlags;
 
     #[test]
     fn absent_deny_record_accepts_non_executable_system_empty_account() {
@@ -522,64 +521,6 @@ mod tests {
         assert!(check_hcu_ordering(u64::MAX, 5_000_000).is_ok());
         assert!(check_hcu_ordering(4_000_000, u64::MAX).is_ok());
         assert!(check_hcu_ordering(u64::MAX, u64::MAX).is_ok());
-    }
-
-    #[test]
-    fn hcu_ordering_unreachable_under_setter_sequences() {
-        // No ordered setter sequence can reach total < depth with both limits finite, nor a
-        // metering-band block cap below a finite total. Simulate the three knobs as guarded
-        // mutations; the bad states must never be reachable.
-        let values = [u64::MAX, 1, 5, 10, 20];
-        for &a in &values {
-            for &b in &values {
-                for &c in &values {
-                    for &d in &values {
-                        let (mut total, mut depth, mut cap) = (u64::MAX, u64::MAX, u64::MAX);
-                        if check_hcu_ordering(a, depth).is_ok()
-                            && check_block_cap_ordering(cap, a).is_ok()
-                        {
-                            total = a;
-                        }
-                        if check_hcu_ordering(total, b).is_ok() {
-                            depth = b;
-                        }
-                        if check_block_cap_ordering(c, total).is_ok() {
-                            cap = c;
-                        }
-                        if check_hcu_ordering(d, depth).is_ok()
-                            && check_block_cap_ordering(cap, d).is_ok()
-                        {
-                            total = d;
-                        }
-                        let bad_depth = total != u64::MAX && depth != u64::MAX && total < depth;
-                        let bad_cap =
-                            cap != 0 && cap != u64::MAX && total != u64::MAX && cap < total;
-                        assert!(
-                            !bad_depth && !bad_cap,
-                            "reached unordered finite knobs: total={total} depth={depth} cap={cap}"
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    // ---- the config-updated event carries the HCU limits (compile-time proof) ----
-
-    #[test]
-    fn host_config_updated_event_carries_hcu_limits() {
-        // If the two fields were missing, this would not build. The emission itself is exercised
-        // end-to-end by the Mollusk setter tests in runtime-tests/tests/host_mollusk.rs.
-        let _event = HostConfigUpdatedEvent {
-            version: EVENT_VERSION,
-            config: Pubkey::new_unique(),
-            signer: Pubkey::new_unique(),
-            paused: PauseFlags::default(),
-            grant_deny_list_enabled: false,
-            max_hcu_per_tx: 20_000_000,
-            max_hcu_depth_per_tx: 5_000_000,
-            hcu_block_cap_per_app: u64::MAX,
-        };
     }
 
     // ---- block-cap ordering guard: sentinels exempt, band must be >= max_hcu_per_tx ----

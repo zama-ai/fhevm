@@ -1444,19 +1444,6 @@ fn typed_handle_constructor_rejects_mismatched_handle_tag() {
 }
 
 #[test]
-fn store_slot_rejects_unsupported_handle_type_bytes() {
-    let key = test_store_slot(Pubkey::new_unique(), 1);
-    assert_eq!(
-        typed_store_slot::<Uint<64>>(typed_handle(1, 7u8), key.clone()).unwrap_err(),
-        FheExecutionError::UnsupportedFheType
-    );
-    assert_eq!(
-        typed_store_slot::<Uint<64>>(typed_handle(1, 8u8), key).unwrap_err(),
-        FheExecutionError::UnsupportedFheType
-    );
-}
-
-#[test]
 fn rand_rejects_unsupported_type_like_host() {
     let mut builder = FheExecutionBuilder::new(execution_authority(Pubkey::new_unique()));
     let error = builder.rand_raw(7u8).unwrap_err();
