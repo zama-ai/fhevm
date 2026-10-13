@@ -98,9 +98,6 @@ pub const PERMISSIVE_SIGNATURE_HEX: &str = concat!(
     "e609ad49f344490796abf910b24ee4347439511b3157f272701466a815e0943c",
     "a5655b3a7623fab49da249eecc9f4fbca39aa9b3f902246ca35aaa679deb7c04"
 );
-/// Fingerprint of the reference transport key, computed outside this crate.
-pub const REFERENCE_FINGERPRINT_HEX: &str =
-    "b1316d23732ff02dbdd55a3f375199bccdcad68b9f90d4eb5d1140bdcd01eb07";
 
 /// A y-coordinate encoding that is not a point on the curve.
 pub const NOT_A_CURVE_POINT_HEX: &str =

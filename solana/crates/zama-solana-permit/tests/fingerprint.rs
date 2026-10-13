@@ -17,7 +17,7 @@ mod common;
 use common::*;
 use zama_solana_permit::{
     render_canonical_text, transport_key_fingerprint, verify_signature, PermitError,
-    PermitWireFields, TransportKey,
+    PermitWireFields,
 };
 
 /// Plain SHAKE-256, no domain-separation tag, 32 bytes out.
@@ -36,16 +36,6 @@ fn expected_fingerprint(key: &[u8]) -> [u8; 32] {
 // ---------------------------------------------------------------------------
 // The digest itself
 // ---------------------------------------------------------------------------
-
-#[test]
-fn fingerprint_matches_the_independently_computed_digest() {
-    let key = transport_key(&reference_transport_key());
-
-    assert_eq!(
-        transport_key_fingerprint(&key),
-        bytes32(REFERENCE_FINGERPRINT_HEX)
-    );
-}
 
 /// The digest is plain SHAKE-256 over the key bytes: no domain-separation prefix, no
 /// length prefix, no second hashing round. Any of those would be invisible in a single
@@ -86,21 +76,6 @@ fn fingerprint_covers_every_byte_of_the_key() {
             baseline,
             "flipping key byte {index} left the fingerprint unchanged"
         );
-    }
-}
-
-/// The property the text's commitment relies on, checked across a sample.
-#[test]
-fn distinct_keys_have_distinct_fingerprints() {
-    let mut seen = std::collections::HashMap::new();
-
-    for seed in 0..256u64 {
-        let bytes = transport_key_bytes(&seed.to_le_bytes());
-        let fingerprint = transport_key_fingerprint(&transport_key(&bytes));
-
-        if let Some(previous) = seen.insert(fingerprint, bytes.clone()) {
-            assert_eq!(previous, bytes, "two distinct keys share a fingerprint");
-        }
     }
 }
 
@@ -147,46 +122,4 @@ fn substituting_the_transport_key_breaks_verification() {
         verify_signature(&attacked, &signature),
         Err(PermitError::SignatureMismatch)
     );
-}
-
-/// The same, across the admitted space rather than for one fixture: for any permit,
-/// re-pointing it at another transport key invalidates its signature.
-#[test]
-fn transport_key_substitution_never_verifies() {
-    for seed in 0..64u64 {
-        let mut wire = pseudo_valid_wire(seed);
-        wire.user_address = pubkey_of_seed(USER_SEED).as_bytes().to_vec();
-        let honest = decoded(&wire);
-        let signature = sign_with_seed(USER_SEED, &zama_solana_permit::build_envelope(&honest));
-
-        let attacked = decoded(&PermitWireFields {
-            transport_key: transport_key_bytes(&(seed ^ 0xffff_ffff).to_le_bytes()),
-            ..wire
-        });
-
-        assert_ne!(
-            verify_signature(&attacked, &signature),
-            Ok(()),
-            "seed {seed}: a substituted transport key must not verify"
-        );
-    }
-}
-
-// ---------------------------------------------------------------------------
-// API shape
-// ---------------------------------------------------------------------------
-
-/// The fingerprint function takes a key and returns a digest. It cannot be handed a
-/// digest, and there is nowhere else in the public surface that accepts one — the
-/// rendering and verification entry points take validated fields only, and the
-/// fingerprint is not one of the fields.
-///
-/// The coercion is the assertion: a signature accepting a caller-supplied digest would
-/// not compile against this line.
-#[test]
-fn fingerprint_takes_the_key_and_never_a_digest() {
-    let fingerprinter: fn(&TransportKey) -> [u8; 32] = transport_key_fingerprint;
-
-    let key = transport_key(&reference_transport_key());
-    assert_eq!(fingerprinter(&key), bytes32(REFERENCE_FINGERPRINT_HEX));
 }

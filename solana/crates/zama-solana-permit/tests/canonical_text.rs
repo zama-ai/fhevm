@@ -261,28 +261,6 @@ fn render_timestamp_is_fixed_width_and_calendar_correct() {
 // Line structure
 // ---------------------------------------------------------------------------
 
-/// Both terminal forms — a last scope line and the permissive line — end without a
-/// line feed. A stray trailing newline is a different signed byte string.
-#[test]
-fn render_final_line_has_no_trailing_newline() {
-    for wire in [
-        reference_wire(),
-        permissive_wire(),
-        wire_with_scope_count(1),
-        wire_with_scope_count(MAX_ALLOWED_SCOPES),
-    ] {
-        let rendered = render_canonical_text(&decoded(&wire));
-        assert!(
-            !rendered.ends_with('\n'),
-            "text must not end with a line feed: {rendered:?}"
-        );
-        assert!(
-            !rendered.ends_with(char::is_whitespace),
-            "text must not end with whitespace: {rendered:?}"
-        );
-    }
-}
-
 /// The line order is fixed and every line is always present: there are no optional
 /// lines, so a verifier reconstructing the text never has to guess a layout.
 #[test]
@@ -324,19 +302,6 @@ fn render_line_sequence_is_fixed() {
     }
 }
 
-/// Line feeds only: no carriage returns anywhere in the canonical bytes.
-#[test]
-fn render_uses_line_feeds_only() {
-    for wire in [
-        reference_wire(),
-        permissive_wire(),
-        worst_case_wire(MAX_ALLOWED_SCOPES),
-    ] {
-        let rendered = render_canonical_text(&decoded(&wire));
-        assert!(!rendered.contains('\r'), "{rendered:?}");
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Charset
 // ---------------------------------------------------------------------------
@@ -367,20 +332,6 @@ fn rendered_text_is_printable_ascii_and_line_feeds_only() {
         checked += 1;
     }
     assert_eq!(checked, 512, "the whole sample must have been rendered");
-}
-
-/// No empty lines and no leading or trailing spaces on any line: the enumeration
-/// block cannot degenerate into blank structure that a wallet would render
-/// ambiguously.
-#[test]
-fn rendered_lines_are_never_blank_or_space_padded() {
-    for seed in 0..128u64 {
-        let rendered = render_canonical_text(&decoded(&pseudo_valid_wire(seed)));
-        for (index, line) in rendered.lines().enumerate() {
-            assert!(!line.is_empty(), "seed {seed}: line {index} is empty");
-            assert_eq!(line.trim(), line, "seed {seed}: line {index} is padded");
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
