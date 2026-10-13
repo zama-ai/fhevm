@@ -12,13 +12,12 @@ publish = false
 [workspace.dependencies]
 # Relayer <-> KMS connector v1 interface (DTOs, ErrorCode, routes). Never enable its `endpoint` feature (actix).
 kms-connector-api = { path = "../kms-connector/crates/api", default-features = false }
-# Solana user-decrypt permit (Ed25519 verification), host chain ids and request form, shared with the connector.
+# Solana host chain ids, request form and permit constants, shared with the connector.
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 zama-solana-permit = { path = "../solana/crates/zama-solana-permit" }
 zama-solana-request = { path = "../solana/crates/zama-solana-request" }
 alloy = { version = "=2.2.0", default-features = false, features = ["std", "serde", "sol-types"] }
 async-trait = "=0.1.89"
-bs58 = { version = "=0.5.1", default-features = false, features = ["alloc"] }
 bytes = "=1.11.1"
 config = { version = "=0.15.19", default-features = false, features = ["yaml"] }
 humantime-serde = "=1.1.1"
@@ -34,7 +33,6 @@ url = { version = "=2.5.8", default-features = false, features = ["serde", "std"
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 uuid = { version = "=1.26.0", default-features = false, features = ["std", "v7"] }
 # tests
-ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["alloc"] }
 futures-util = { version = "=0.3.34", default-features = false }
 tower = { version = "=0.5.3", default-features = false, features = ["util"] }
 wiremock = "=0.6.5"

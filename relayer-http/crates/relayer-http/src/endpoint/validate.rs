@@ -2,6 +2,7 @@
 //! these requests anyway; failing here saves n calls) and the `extraData` format. Nothing here touches a chain.
 
 use alloy::primitives::B256;
+use zama_solana_acl::host_chain::is_solana_host_chain_id;
 
 /// The connector's budget for one decryption request, in plaintext bits.
 const MAX_DECRYPTION_BITS: u32 = 2048;
@@ -50,15 +51,15 @@ pub fn decode_handle(handle: &B256) -> Result<(u64, u32), &'static str> {
     Ok((u64::from_be_bytes([c0, c1, c2, c3, c4, c5, c6, c7]), bits))
 }
 
-/// Non-empty, decryptable types, one chain id that `served` accepts, at most 2048 bits in total.
+/// Non-empty, decryptable types, one chain id that this relayer serves, at most 2048 bits in total. Returns the
+/// chain id.
 pub fn handles<'a>(
     field: &str,
     handles: impl Iterator<Item = &'a B256>,
-    served: impl Fn(u64) -> bool,
-) -> Result<(), Invalid> {
-    let (mut chain, mut bits, mut count) = (None, 0u32, 0usize);
+    chain_ids: &[u64],
+) -> Result<u64, Invalid> {
+    let (mut chain, mut bits) = (None, 0u32);
     for (i, handle) in handles.enumerate() {
-        count += 1;
         let (chain_id, size) =
             decode_handle(handle).map_err(|issue| Invalid::new(format!("{field}[{i}]"), issue))?;
         if *chain.get_or_insert(chain_id) != chain_id {
@@ -67,7 +68,7 @@ pub fn handles<'a>(
                 "all handles must be on the same chain",
             ));
         }
-        if !served(chain_id) {
+        if !chain_ids.contains(&chain_id) {
             return Err(Invalid::new(
                 format!("{field}[{i}]"),
                 format!("chain id {chain_id} is not supported"),
@@ -75,13 +76,31 @@ pub fn handles<'a>(
         }
         bits = bits.saturating_add(size);
     }
-    if count == 0 {
+    let Some(chain) = chain else {
         return Err(Invalid::new(field, "must not be empty"));
-    }
+    };
     if bits > MAX_DECRYPTION_BITS {
         return Err(Invalid::new(
             field,
             format!("total size {bits} bits exceeds {MAX_DECRYPTION_BITS}"),
+        ));
+    }
+    Ok(chain)
+}
+
+/// [`handles`] of an EVM body, whose chain must not be a Solana host chain: the connector refuses it.
+pub fn evm_handles<'a>(
+    field: &str,
+    handles: impl Iterator<Item = &'a B256>,
+    chain_ids: &[u64],
+) -> Result<(), Invalid> {
+    let chain_id = self::handles(field, handles, chain_ids)?;
+    if is_solana_host_chain_id(chain_id) {
+        return Err(Invalid::new(
+            field,
+            format!(
+                "chain id {chain_id} is a Solana host chain, whose requests use the Solana body"
+            ),
         ));
     }
     Ok(())
@@ -122,40 +141,10 @@ pub fn extra_data(field: &str, bytes: &[u8]) -> Result<(), Invalid> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::collections::BTreeMap;
-    use std::time::Duration;
-
     use super::*;
-    use crate::config::{HttpConfig, SolanaChainConfig};
 
     /// A Solana chain id: type byte 0x01 and a cluster tag.
     pub(crate) const SOLANA: u64 = 0x0145_39cf_79f6_6704;
-    /// The zama-host program configured for `SOLANA`.
-    pub(crate) const PROGRAM: [u8; 32] = [0x4c; 32];
-    /// `SOLANA`'s public-decrypt threshold, 2t + 1 at n = 13.
-    pub(crate) const SOLANA_PUBLIC_THRESHOLD: usize = 9;
-
-    /// EVM chains 1 and 137, and `SOLANA` on `PROGRAM`.
-    pub(crate) fn http() -> HttpConfig {
-        HttpConfig {
-            endpoint: "127.0.0.1:0".parse().unwrap(),
-            max_body_bytes: 4096,
-            body_read_timeout: Duration::from_secs(2),
-            supported_chain_ids: vec![1, 137],
-            solana_chains: BTreeMap::from([(
-                SOLANA,
-                SolanaChainConfig {
-                    program_id: PROGRAM,
-                    public_decrypt_threshold: SOLANA_PUBLIC_THRESHOLD,
-                },
-            )]),
-        }
-    }
-
-    /// Accepts the chains in `ids`.
-    pub(crate) fn served(ids: &[u64]) -> impl Fn(u64) -> bool + '_ {
-        move |id| ids.contains(&id)
-    }
 
     /// A handle carrying `chain_id` and `fhe_type`, the rest zero.
     pub(crate) fn handle(chain_id: u64, fhe_type: u8) -> B256 {
@@ -189,35 +178,31 @@ pub(crate) mod tests {
     #[test]
     fn handles_rules() {
         let ok = [handle(1, 4), handle(1, 0)];
-        assert_eq!(handles("h", ok.iter(), served(&[1, 137])), Ok(()));
+        assert_eq!(handles("h", ok.iter(), &[1, 137]), Ok(1));
         assert_eq!(
-            handles("h", [].iter(), served(&[1])),
+            handles("h", [].iter(), &[1]),
             Err(Invalid::new("h", "must not be empty"))
         );
         assert_eq!(
-            handles("h", [handle(1, 4), handle(1, 9)].iter(), served(&[1])),
+            handles("h", [handle(1, 4), handle(1, 9)].iter(), &[1]),
             Err(Invalid::new("h[1]", "FHE type cannot be decrypted"))
         );
         assert_eq!(
-            handles(
-                "h",
-                [handle(1, 4), handle(137, 4)].iter(),
-                served(&[1, 137])
-            ),
+            handles("h", [handle(1, 4), handle(137, 4)].iter(), &[1, 137]),
             Err(Invalid::new(
                 "h[1]",
                 "all handles must be on the same chain"
             ))
         );
         assert_eq!(
-            handles("h", [handle(31337, 4)].iter(), served(&[1, 137])),
+            handles("h", [handle(31337, 4)].iter(), &[1, 137]),
             Err(Invalid::new("h[0]", "chain id 31337 is not supported"))
         );
         let eight = vec![handle(1, 8); 8];
-        assert_eq!(handles("h", eight.iter(), served(&[1])), Ok(()));
+        assert_eq!(handles("h", eight.iter(), &[1]), Ok(1));
         let nine = vec![handle(1, 8); 9];
         assert_eq!(
-            handles("h", nine.iter(), served(&[1])),
+            handles("h", nine.iter(), &[1]),
             Err(Invalid::new("h", "total size 2304 bits exceeds 2048"))
         );
     }
@@ -242,5 +227,19 @@ pub(crate) mod tests {
             Err(Invalid::new("version", "must be \"2.0\""))
         );
         assert_eq!(Invalid::new("a.b[0]", "bad").to_string(), "a.b[0]: bad");
+    }
+
+    #[test]
+    fn an_evm_body_on_a_solana_chain_is_refused() {
+        assert_eq!(
+            evm_handles("h", [handle(1, 4)].iter(), &[1, SOLANA]),
+            Ok(())
+        );
+        assert_eq!(
+            evm_handles("h", [handle(SOLANA, 4)].iter(), &[1, SOLANA])
+                .unwrap_err()
+                .issue,
+            format!("chain id {SOLANA} is a Solana host chain, whose requests use the Solana body")
+        );
     }
 }

@@ -1,12 +1,10 @@
 //! Process configuration: one YAML file, `APP_<SECTION>__<FIELD>` environment overrides.
 
-use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::time::Duration;
 
 use config::{Config, Environment, File};
-use serde::{Deserialize, Deserializer};
-use zama_solana_acl::host_chain::is_solana_host_chain_id;
+use serde::Deserialize;
 
 use crate::kms_aggregator::config::MAX_TIMEOUT;
 use crate::kms_aggregator::{ConfigError, KmsAggregatorConfig};
@@ -38,37 +36,8 @@ pub struct HttpConfig {
     /// (10 s + 5 s by default). Unit required (`10s`, `500ms`); within `1ms..=60s`.
     #[serde(with = "humantime_serde", default = "default_body_read_timeout")]
     pub body_read_timeout: Duration,
-    /// EVM host chain ids a ciphertext handle may carry (bytes 22..30 of the handle).
-    #[serde(default)]
+    /// Host chain ids a ciphertext handle may carry (bytes 22..30 of the handle).
     pub supported_chain_ids: Vec<u64>,
-    /// The Solana host chains served, keyed by chain id.
-    #[serde(default)]
-    pub solana_chains: BTreeMap<u64, SolanaChainConfig>,
-}
-
-/// A supported Solana host chain. Both values come from the deployment's Solana environment.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SolanaChainConfig {
-    /// The zama-host program id, base58. A user-decrypt permit must name it.
-    #[serde(deserialize_with = "program_id_from_base58")]
-    pub program_id: [u8; 32],
-    /// Identical public-decrypt answers needed. zama-host verifies a certificate against
-    /// `kms_context.thresholds.public_decryption` (2t + 1), more than EVM's t + 1.
-    pub public_decrypt_threshold: usize,
-}
-
-/// A base58 Solana address of exactly 32 bytes.
-fn program_id_from_base58<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<[u8; 32], D::Error> {
-    let text = String::deserialize(deserializer)?;
-    let bytes = bs58::decode(&text)
-        .into_vec()
-        .map_err(|e| serde::de::Error::custom(format!("program_id: {e}")))?;
-    bytes.try_into().map_err(|b: Vec<u8>| {
-        serde::de::Error::custom(format!("program_id is {} bytes, expected 32", b.len()))
-    })
 }
 
 /// 1 MiB, the connector endpoint's and proxy's limit: a bigger body could never be forwarded. The largest valid
@@ -94,9 +63,9 @@ impl HttpConfig {
                 "http.body_read_timeout must be within 1ms..={MAX_TIMEOUT:?}"
             )));
         }
-        if self.supported_chain_ids.is_empty() && self.solana_chains.is_empty() {
+        if self.supported_chain_ids.is_empty() {
             return Err(ConfigError(
-                "http.supported_chain_ids and http.solana_chains must not both be empty".to_owned(),
+                "http.supported_chain_ids must not be empty".to_owned(),
             ));
         }
         let mut seen = std::collections::HashSet::new();
@@ -104,33 +73,6 @@ impl HttpConfig {
             return Err(ConfigError(format!(
                 "http.supported_chain_ids contains {dup} twice"
             )));
-        }
-        if let Some(id) = self
-            .supported_chain_ids
-            .iter()
-            .find(|id| is_solana_host_chain_id(**id))
-        {
-            return Err(ConfigError(format!(
-                "http.supported_chain_ids contains the Solana chain {id}: list it under http.solana_chains"
-            )));
-        }
-        Ok(())
-    }
-
-    /// Every entry is a Solana chain, with a public-decrypt threshold within `1..=nodes`.
-    pub fn validate_solana_chains(&self, nodes: usize) -> Result<(), ConfigError> {
-        for (id, chain) in &self.solana_chains {
-            if !is_solana_host_chain_id(*id) {
-                return Err(ConfigError(format!(
-                    "http.solana_chains.{id} is not a Solana chain id"
-                )));
-            }
-            let threshold = chain.public_decrypt_threshold;
-            if threshold == 0 || threshold > nodes {
-                return Err(ConfigError(format!(
-                    "http.solana_chains.{id}.public_decrypt_threshold ({threshold}) must be within 1..={nodes}"
-                )));
-            }
         }
         Ok(())
     }
@@ -179,9 +121,6 @@ impl RelayerConfig {
             .map_err(|e| ConfigError(format!("{path}: {e}")))?;
         config.http.validate()?;
         config.kms_aggregator.validate()?;
-        config
-            .http
-            .validate_solana_chains(config.kms_aggregator.endpoints.len())?;
         Ok(config)
     }
 }
@@ -192,7 +131,6 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::endpoint::validate::tests::{PROGRAM, SOLANA};
 
     const EXAMPLE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../config/config.yaml");
 
@@ -327,122 +265,12 @@ mod tests {
             max_body_bytes: 4096,
             body_read_timeout: Duration::from_secs(10),
             supported_chain_ids: vec![1, 137],
-            solana_chains: BTreeMap::new(),
         };
         http.validate().unwrap();
         http.supported_chain_ids = vec![1, 1];
         assert!(http.validate().unwrap_err().0.contains("twice"));
         http.supported_chain_ids = vec![];
-        assert!(
-            http.validate()
-                .unwrap_err()
-                .0
-                .contains("must not both be empty")
-        );
-    }
-
-    /// An `http` section serving chain 1 and the Solana chain `SOLANA` on `PROGRAM`.
-    fn solana_http() -> HttpConfig {
-        HttpConfig {
-            supported_chain_ids: vec![1],
-            ..crate::endpoint::validate::tests::http()
-        }
-    }
-
-    #[test]
-    fn solana_chain_keys_load_as_chain_ids() {
-        let yaml = format!(
-            "endpoint: \"0.0.0.0:8080\"\nsolana_chains:\n  \"{SOLANA}\":\n    program_id: \"{}\"\n    public_decrypt_threshold: 9\n",
-            bs58::encode(PROGRAM).into_string()
-        );
-        let http: HttpConfig = Config::builder()
-            .add_source(File::from_str(&yaml, config::FileFormat::Yaml))
-            .build()
-            .and_then(Config::try_deserialize)
-            .unwrap();
-        assert_eq!(http.solana_chains[&SOLANA].program_id, PROGRAM);
-        assert_eq!(http.solana_chains[&SOLANA].public_decrypt_threshold, 9);
-        http.validate().unwrap();
-    }
-
-    #[test]
-    fn program_id_is_32_bytes_of_base58() {
-        let parse = |program: &str| {
-            serde_json::from_str::<SolanaChainConfig>(&format!(
-                r#"{{"program_id": "{program}", "public_decrypt_threshold": 9}}"#
-            ))
-        };
-        assert_eq!(
-            parse(&bs58::encode(PROGRAM).into_string())
-                .unwrap()
-                .program_id,
-            PROGRAM
-        );
-        assert!(
-            parse("0OIl")
-                .unwrap_err()
-                .to_string()
-                .contains("program_id")
-        );
-        assert!(
-            parse("11111111")
-                .unwrap_err()
-                .to_string()
-                .contains("program_id is 8 bytes, expected 32")
-        );
-    }
-
-    #[test]
-    fn solana_chains_rules() {
-        let mut http = solana_http();
-        http.validate().unwrap();
-        http.validate_solana_chains(13).unwrap();
-
-        http.supported_chain_ids = vec![1, SOLANA];
-        assert!(
-            http.validate()
-                .unwrap_err()
-                .0
-                .contains(&format!("contains the Solana chain {SOLANA}"))
-        );
-
-        // A Solana-only relayer is valid; one serving no chain is not.
-        http.supported_chain_ids = vec![];
-        http.validate().unwrap();
-        http.solana_chains.clear();
-        assert!(
-            http.validate()
-                .unwrap_err()
-                .0
-                .contains("must not both be empty")
-        );
-
-        let mut http = solana_http();
-        let chain = http.solana_chains[&SOLANA].clone();
-        http.solana_chains.insert(1, chain);
-        assert!(
-            http.validate_solana_chains(13)
-                .unwrap_err()
-                .0
-                .contains("http.solana_chains.1 is not a Solana chain id")
-        );
-
-        for threshold in [0, 14] {
-            let mut http = solana_http();
-            http.solana_chains
-                .get_mut(&SOLANA)
-                .unwrap()
-                .public_decrypt_threshold = threshold;
-            assert!(
-                http.validate_solana_chains(13)
-                    .unwrap_err()
-                    .0
-                    .contains(&format!(
-                        "public_decrypt_threshold ({threshold}) must be within 1..=13"
-                    )),
-                "{threshold}"
-            );
-        }
+        assert!(http.validate().unwrap_err().0.contains("must not be empty"));
     }
 
     #[test]

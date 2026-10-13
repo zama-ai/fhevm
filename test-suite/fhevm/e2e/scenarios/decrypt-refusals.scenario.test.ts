@@ -9,9 +9,10 @@
 //                        the answer they stored instead of decrypting again.
 //   [store substitution] the handle named in another store -> 403 acl_denied, from the Connectors.
 //   [owner substitution] the entry names another owner -> 403 acl_denied, from the Connectors.
-//   [changed field]      a field changed after signing -> 403 user_signature_rejected, from relayer-http.
-//   [other program]      a permit signed for another zama-host -> 403 user_signature_rejected, from
-//                        relayer-http.
+//   [changed field]      a field changed after signing -> 403 user_signature_rejected, from the
+//                        Connectors.
+//   [other program]      a permit signed for another zama-host -> 403 user_signature_rejected, from the
+//                        Connectors.
 //   [expired]            a permit whose window closed -> 400 malformed, from relayer-http.
 //   [revoked]            a permit opened before its signer's `revoke_permits` -> 403
 //                        user_signature_rejected, from the Connectors.
@@ -163,7 +164,7 @@ describe.skipIf(!env.capabilities.protocolServices)('solana decrypt refusals thr
           requestValidity: { ...body.payload.requestValidity, durationSeconds: body.payload.requestValidity.durationSeconds + 1 },
         },
       };
-      await expectRefusal(await submit(changed), { status: 403, code: 'user_signature_rejected', refusedBy: 'relayer-http' });
+      await expectRefusal(await submit(changed), { status: 403, code: 'user_signature_rejected', refusedBy: 'connectors' });
 
       // [other program] A genuine signature over a permit naming another zama-host program.
       const otherProgram = await signSolanaPermit(
@@ -173,7 +174,7 @@ describe.skipIf(!env.capabilities.protocolServices)('solana decrypt refusals thr
       await expectRefusal(await submit(buildSolanaUserDecryptRequest({ signedPermit: otherProgram, entries: [entry] })), {
         status: 403,
         code: 'user_signature_rejected',
-        refusedBy: 'relayer-http',
+        refusedBy: 'connectors',
       });
 
       // [expired] A genuine signature over a one-minute window that closed an hour ago. relayer-http
