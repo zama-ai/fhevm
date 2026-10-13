@@ -523,7 +523,7 @@ async function fillContextSwitch(
     status.newSigners = newSigners;
     // The previous committee is the active context during an in-flight switch. A signer in both
     // committees counts toward both sides, as in the contract.
-    const previousSigners = new Set<string>((await pc.getKmsSignersForContext(status.activeContextId)).map(checksum));
+    const previousSigners = new Set(committee.signers);
 
     // Count creation confirmations from events.
     const creationConfirmations = await pc.queryFilter(

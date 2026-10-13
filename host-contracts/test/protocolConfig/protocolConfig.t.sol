@@ -457,7 +457,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(1), _defaultThresholds());
 
-        /// @dev nodeConfigHashForContext is the first field of the canonical namespace.
+        // nodeConfigHashForContext is the first field of the canonical namespace.
         bytes32 location = keccak256(abi.encode(uint256(keccak256("fhevm.storage.ProtocolConfigCanonical")) - 1)) &
             ~bytes32(uint256(0xff));
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
