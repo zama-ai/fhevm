@@ -1,4 +1,4 @@
-{{- if .Values.contractConfigMap.enabled -}}
+{{- if eq (include "coprocessor.contractConfigMapEnabled" .) "true" -}}
 {{- $merged := include "coprocessor.contractAddresses" . | fromYaml -}}
 apiVersion: v1
 kind: ConfigMap

@@ -19,10 +19,30 @@
 # -----------------------------------------------------------------------------
 # Shared configuration across all coprocessor components
 commonConfig:
-  # Selects a bundled preset from configs/<network>.yaml.
-  # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
-  # An unrecognized value fails the render. Also drives the generated chains[]
-  # entries (see the Chains section).
+  # Single switch for contract configuration. Selects the bundled
+  # configs/<network>.yaml preset; allowed values: "" (off), "devnet",
+  # "testnet", "mainnet". An unrecognized value fails the render.
+  # When set (and contractConfigMap.enabled is true), the chart:
+  #   - renders the <release>-contract-addresses ConfigMap (see contractConfigMap);
+  #   - generates chains[] entries for every host chain in the preset;
+  #   - fills empty gatewayContractAddresses fields from the preset.
+  # Values set explicitly always win over the preset. Per-release settings
+  # (RPC URLs, which listeners run, images, resources) still come from values.
+  #
+  # Minimal gateway release:
+  #   commonConfig:
+  #     network: testnet
+  #     gatewayUrl: {valueFrom: {secretKeyRef: {name: conduit-credentials, key: conduit-rpc-ws-url}}}
+  #   gwListener: {enabled: true}
+  #   txSender: {enabled: true}
+  #
+  # Minimal host listener release:
+  #   commonConfig:
+  #     network: testnet
+  #   chains:
+  #     - name: sepolia                 # must match <prefix>.name in the preset
+  #       wsUrlValueFrom: {secretKeyRef: {name: rpc-credentials, key: ethereum-rpc-ws-url}}
+  #       hostListener: {enabled: true, useLegacyName: true}
   network: ""
   # Keep production Blue on legacy material during a compressed-key migration.
   # Fresh and GPU deployments must disable this safeguard explicitly.
@@ -102,7 +122,7 @@ commonConfig:
   # `app.kubernetes.io/version` pod label so blue/green tooling can select pods
   # by stack version. Should mirror the STACK_VERSION compiled into the images.
   # Also appended to the contract-address ConfigMap names (see
-  # hostContractConfigMap below) so blue and green releases do not share them.
+  # contractConfigMap below) so blue and green releases do not share them.
   stackVersion: ""
   # Extra Deployment/Service matchLabels. Leave empty for a single release
   # (selector stays immutable). Set when installing a second fleet in the same
@@ -119,7 +139,9 @@ commonConfig:
   # Gateway chain configuration. Consumed by gwListener, txSender and
   # consensusDetector. Each field accepts either a literal `value` or a
   # `valueFrom` block (secretKeyRef or configMapKeyRef). Leave unset to inject
-  # nothing.
+  # nothing. When commonConfig.network is set, empty gatewayContractAddresses
+  # fields default to the preset's gateway.<contract>.address in the contract
+  # ConfigMap (multichainAcl included; disable its arg on v0.12+ as before).
   gatewayUrl: {}              # required by consensusDetector
   gatewayContractAddresses:
     inputVerification: {}     # required by gwListener, txSender
@@ -148,115 +170,39 @@ podLabels: {}
 # -----------------------------------------------------------------------------
 # Contract ConfigMap
 # -----------------------------------------------------------------------------
-# Optional ConfigMap rendering chain contract addresses. Downstream
-# components (dbMigration, hostListener, hostListenerPoller,
-# hostListenerCatchupOnly) reference its keys via configMapKeyRef.
+# Rendered whenever commonConfig.network is set, from the bundled
+# configs/<commonConfig.network>.yaml preset (keys prefixed by chain, e.g.
+# ethereum.acl.address, gateway.input_verification.address).
 #
-# When commonConfig.stackVersion is set, it is appended to the rendered name of
-# this and the gateway/polygon ConfigMaps (lowercased, dots replaced by dashes),
-# e.g. stackVersion v0.13.7 renders contracts-addresses-v0-13-7. valueFrom blocks
-# and env lists are rendered through tpl, so reference the computed name with:
+# The chart wires it into every component by default:
+#   - chains[] entries are generated for each host chain in the preset (see the
+#     Chains section);
+#   - commonConfig.gatewayContractAddresses fields left empty are filled with a
+#     configMapKeyRef to the matching gateway.<contract>.address key.
+# Anything set explicitly in values wins over the preset.
+#
+# The default name is <release>-contract-addresses, so each release owns its
+# copy even when several releases share a namespace. commonConfig.stackVersion,
+# when set, is appended (e.g. coproc-workers-contract-addresses-v0-13-7).
+# valueFrom blocks and env lists are rendered through tpl, so reference the
+# computed name with:
 #   configMapKeyRef:
 #     name: '{{ include "coprocessor.contractConfigMapName" . }}'
-# (coprocessor.gatewayContractConfigMapName / coprocessor.polygonContractConfigMapName
-# for the other two).
 contractConfigMap:
-  enabled: false
+  # Set to false to skip the ConfigMap and every preset-derived default even
+  # when commonConfig.network is set.
+  enabled: true
 
-  # Base resource name; see the stackVersion suffix note above.
-  name: contract-addresses
+  # Base resource name override. Empty means <release>-contract-addresses.
+  name: ""
 
   # Operator overrides, deep-merged on top of the configs/<commonConfig.network>.yaml
-  # preset. Keys are used as-is and prefixed by chain. Operator entries win on key collision with
-  # the preset, and also feed the generated chains[] entries.
+  # preset. Keys are used as-is and prefixed by chain. Operator entries win on
+  # key collision with the preset, and also feed the generated defaults.
   # Example:
   #   addresses:
   #     ethereum.acl.address: "0xabc..."    # override preset
   #     polygon.acl.address: "0xdef..."     # enables the polygon chain entry
-  addresses: {}
-
-# -----------------------------------------------------------------------------
-# Host Contract ConfigMap
-# -----------------------------------------------------------------------------
-# Optional ConfigMap rendering host chain contract addresses. Downstream
-# components (dbMigration, hostListener, hostListenerPoller,
-# hostListenerCatchupOnly) reference its keys via configMapKeyRef.
-#
-# When commonConfig.stackVersion is set, it is appended to the rendered name of
-# this and the gateway/polygon ConfigMaps (lowercased, dots replaced by dashes),
-# e.g. stackVersion v0.13.7 renders eth-sc-addresses-v0-13-7. valueFrom blocks
-# and env lists are rendered through tpl, so reference the computed name with:
-#   configMapKeyRef:
-#     name: '{{ include "coprocessor.hostContractConfigMapName" . }}'
-# (coprocessor.gatewayContractConfigMapName / coprocessor.polygonContractConfigMapName
-# for the other two).
-hostContractConfigMap:
-  enabled: false
-
-  # Base resource name; see the stackVersion suffix note above.
-  name: eth-sc-addresses
-
-  # Selects a bundled preset from configs/ethereum-<network>.yaml.
-  # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
-  # An unrecognized value fails the render.
-  network: ""
-
-  # Operator overrides, deep-merged on top of the preset. Keys are used
-  # as-is. Operator entries win on key collision with the preset.
-  # Example:
-  #   addresses:
-  #     acl.address: "0xabc..."             # override preset
-  #     custom_thing.address: "0xdef..."    # add bespoke key
-  addresses: {}
-
-# -----------------------------------------------------------------------------
-# Gateway Contract ConfigMap
-# -----------------------------------------------------------------------------
-# Optional ConfigMap rendering gateway chain contract addresses. Downstream
-# components (gwListener, txSender) reference its keys via configMapKeyRef.
-gatewayContractConfigMap:
-  enabled: false
-
-  # Base resource name; suffixed with commonConfig.stackVersion when set.
-  # Reference it via '{{ include "coprocessor.gatewayContractConfigMapName" . }}'.
-  name: gw-sc-addresses
-
-  # Selects a bundled preset from configs/gateway-<network>.yaml.
-  # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
-  # An unrecognized value fails the render.
-  network: ""
-
-  # Operator overrides, deep-merged on top of the preset. Keys are used
-  # as-is. Operator entries win on key collision with the preset.
-  # Example:
-  #   addresses:
-  #     kms_generation.address: "0xabc..."  # override preset
-  #     custom_thing.address: "0xdef..."    # add bespoke key
-  addresses: {}
-
-# -----------------------------------------------------------------------------
-# Polygon Contract ConfigMap
-# -----------------------------------------------------------------------------
-# Optional ConfigMap rendering Polygon host chain contract addresses. Downstream
-# components reference its keys via configMapKeyRef.
-polygonContractConfigMap:
-  enabled: false
-
-  # Base resource name; suffixed with commonConfig.stackVersion when set.
-  # Reference it via '{{ include "coprocessor.polygonContractConfigMapName" . }}'.
-  name: polygon-sc-addresses
-
-  # Selects a bundled preset from configs/polygon-<network>.yaml.
-  # Allowed values: "" (no preset), "devnet", "testnet", "mainnet".
-  # An unrecognized value fails the render.
-  network: ""
-
-  # Operator overrides, deep-merged on top of the preset. Keys are used
-  # as-is. Operator entries win on key collision with the preset.
-  # Example:
-  #   addresses:
-  #     acl.address: "0xabc..."             # override preset
-  #     custom_thing.address: "0xdef..."    # add bespoke key
   addresses: {}
 
 # -----------------------------------------------------------------------------
@@ -804,8 +750,8 @@ hostListenerConsumerShared:
 # shared settings used by every enabled chain for that listener type. Chain
 # entries do not deep-merge or override arbitrary top-level fields.
 #
-# Generated chains: when contractConfigMap.enabled is true and
-# commonConfig.network is set, one entry is generated per host chain found
+# Generated chains: when commonConfig.network is set (and
+# contractConfigMap.enabled is true), one entry is generated per host chain found
 # in configs/<network>.yaml (a "<prefix>.chain_id" key with a non-empty
 # "<prefix>.acl.address"). It provides name ("<prefix>.name", or the prefix),
 # chainId and the four *ContractAddressValueFrom refs pointing at the contract
@@ -850,17 +796,17 @@ hostListenerConsumerShared:
 #     aclContractAddress: "0x..."
 #     # aclContractAddressValueFrom:  # valueFrom blocks are rendered through tpl
 #     #   configMapKeyRef:
-#     #     name: '{{ include "coprocessor.hostContractConfigMapName" . }}'
+#     #     name: '{{ include "coprocessor.contractConfigMapName" . }}'
 #     #     key: acl.address
 #     fhevmExecutorContractAddress: "0x..."
 #     # fhevmExecutorContractAddressValueFrom:
 #     #   configMapKeyRef:
-#     #     name: '{{ include "coprocessor.hostContractConfigMapName" . }}'
+#     #     name: '{{ include "coprocessor.contractConfigMapName" . }}'
 #     #     key: fhevm_executor.address
 #     # kmsGenerationContractAddress: "0x..."  # optional; omit when KMSGeneration is not deployed on the host chain
 #     # kmsGenerationContractAddressValueFrom:
 #     #   configMapKeyRef:
-#     #     name: '{{ include "coprocessor.hostContractConfigMapName" . }}'
+#     #     name: '{{ include "coprocessor.contractConfigMapName" . }}'
 #     #     key: kms_generation.address
 #     hostListener:
 #       enabled: true
