@@ -3,8 +3,7 @@
 // A handle is decryptable only after the SNS worker materializes its ciphertexts into the
 // coprocessor database (`ciphertext_digest.ciphertext` and `.ciphertext128` both non-NULL).
 // Every consumer of a freshly rotated handle — public decrypt, user decrypt, burn certificates —
-// has to wait for that commit first. This helper replaces the identical psql polling loops that
-// lived in `full-vertical.sh`, `adversarial-l4.sh`, and `two-holder-transfer.ts`.
+// has to wait for that commit first.
 
 import { coprocessorDbPsql } from "../layout";
 import { run } from "../utils/process";

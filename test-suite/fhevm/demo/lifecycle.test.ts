@@ -435,10 +435,8 @@ describe("demo lifecycle collision policy", () => {
       path.join(import.meta.dir, "../../../solana/scripts/e2e/clean-e2e.sh"),
       "utf8",
     );
-    // Every `@fhevm/sdk` subpath a runtime canary imports must exist in the SDK's exports map.
-    // The guard this replaces counted canaries instead of validating them, so it stayed green
-    // while the workflow imported `@fhevm/sdk/solana/vault` — a subpath deleted when the vault
-    // module moved into the demo dapp, which fails the e2e job only after the whole stack is up.
+    // Every `@fhevm/sdk` subpath a runtime canary imports must exist in the SDK's exports map: a
+    // missing one fails the e2e job only after the whole stack is up.
     const exportedSubpaths = Object.keys(sdkPackage.exports);
     // Matches every spelling a canary can use — dynamic `import(...)` with or without a space,
     // `require(...)`, a static `import '...'`, and `from '...'` — so rewording a canary cannot

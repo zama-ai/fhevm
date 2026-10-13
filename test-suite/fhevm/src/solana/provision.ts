@@ -333,10 +333,8 @@ export type BalanceStore = {
  * - the handle's embedded chain id matches the on-chain `HostConfig.chain_id`, read through
  *   `readHostChainId` — which itself checks the account discriminator, the pinned layout offset,
  *   and the Solana type byte.
- * The retired Rust probe additionally re-read all three accounts in one `getMultipleAccounts` to
- * guard against the token account's balance pointer moving between reads; here every address is
- * derived client-side rather than followed from a pointer, so there is no indirection to race —
- * the reads are simply all taken at `finalized`.
+ * Every address is derived client-side rather than followed from a pointer, so there is no
+ * indirection to race between the reads; all of them are taken at `finalized`.
  */
 export const readTokenBalanceStore = async (
   context: SolanaProvisioningContext,

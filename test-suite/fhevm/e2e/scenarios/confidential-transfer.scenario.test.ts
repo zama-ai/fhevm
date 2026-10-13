@@ -1,23 +1,9 @@
-// Scenario: confidential-transfer arc — the "portable now" token-flow phase ported from
-// `solana/scripts/e2e/full-vertical.sh` (the `==> [sdk-transfer]` phase).
-//
-// It drives the product arc entirely through `@fhevm/sdk` Solana actions:
+// Scenario: confidential-transfer arc, driven entirely through `@fhevm/sdk` Solana actions:
 //   encrypt input -> submitInputProof -> confidentialTransfer -> userDecrypt (current handle).
-// The SDK-driven arc + its assertions live in `runSolanaTwoHolderTransfer`; this scenario supplies
-// the environment (via loadEnv), the readiness preconditions (via until), and the actor funding
-// (via personas), then runs the arc and lets its assertions stand.
-//
-// Assertion map — bash `[sdk-transfer]` phase  ->  this scenario (all in runSolanaTwoHolderTransfer):
-//   bash: "Alice 1000 -> confidentialTransfer(400) -> Alice 600, Bob 400"
-//     - Alice initial balance == 1000  (userDecrypt of Alice's current handle)
-//     - Bob   initial balance == 0      (userDecrypt of Bob's current handle)
-//     - transfer rotates BOTH current balance handles (else "did not rotate both …" throws)
-//     - Alice final balance   == 600    (userDecrypt of Alice's rotated handle)
-//     - Bob   final balance   == 400    (userDecrypt of Bob's rotated handle)
-// Every assertion is a live SDK current user-decrypt of a real on-chain balance — nothing is
-// hard-coded, so the phase cannot pass on a trivial value. Provisioning (confidential mint, wrap,
-// balance-state reads) is fully typed too (`src/solana/provision.ts` over the demo dapp's vault
-// module) — no Rust live-client, no ambient Solana CLI identity.
+// The arc and its assertions live in `runSolanaTwoHolderTransfer`; this scenario supplies the
+// environment (via loadEnv), the readiness preconditions (via until), and the actor funding (via
+// personas), then runs the arc and lets its assertions stand. Alice sends Bob 400 of her 1000; the
+// transfer must rotate both balance handles, and each balance is read by a live SDK user-decrypt.
 
 import { describe, test } from "bun:test";
 

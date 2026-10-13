@@ -4,16 +4,14 @@
 // capability flags. It never encodes/decodes protocol bytes — scenarios reach the protocol solely
 // through `@fhevm/sdk` Solana actions.
 //
-// Source for NOW: the local clean-e2e stack. Every value below is exactly what the current e2e
-// runtime provides, traced to where it lands:
+// Source "local" (the default): the local clean-e2e stack. Every value below is what that runtime
+// provides, traced to where it lands:
 //   - urls/ids: the clean-e2e bring-up (validator RPC/WS, relayer, the
 //     RFC-021 host chain id, ACL program, KMS context ids), as named by
 //     `src/solana/endpoints.ts` (LOCAL_SOLANA_ENDPOINTS) and `src/layout.ts` (SOLANA_ACL_PROGRAM).
 //   - coprocessor DB and Merkle record containers: `test-suite/fhevm/src/layout.ts`
 //     (COPROCESSOR_DB_CONTAINER, SOLANA_MERKLE_DB_CONTAINER).
 //   - deployer keypair: `~/.config/solana/id.json`, the wallet the side-stack setup deploys with.
-//   - gateway addresses (optional, for future phases): generated at `fhevm-cli up` time into
-//     `.fhevm/runtime/addresses/gateway/.env.gateway`.
 // Env vars override any field so a run can point at a non-default local stack.
 //
 // Source "devnet": the same programs deployed on Solana devnet behind a preview-env namespace.
@@ -29,10 +27,9 @@
 // No relayer, gateway, coprocessor or KMS serves it (`protocolServices: false`), so the fields
 // naming those services are unused there.
 //
-// A second source (the confidential-vault demo-config JSON, #1760) plugs in here: it reads the
-// runtime artifact and calls `resolveEnv(overrides, "demo-config")` with a `Partial<TestEnvOverrides>`
-// mapped from the file (see `demo/loadDemoEnv.ts`). The mapping lives with the demo package, not
-// here, so this module keeps its zero-protocol-knowledge stance — it only learns a new source label.
+// Source "demo-config": the confidential-vault demo's runtime config. `demo/loadDemoEnv.ts` maps
+// that file to a `Partial<TestEnvOverrides>` and calls `resolveEnv(overrides, "demo-config")`, so
+// the mapping lives with the demo package and this module keeps no protocol knowledge.
 
 import os from "node:os";
 import path from "node:path";

@@ -1,5 +1,4 @@
-// validator — the host-native Solana test validator the e2e side-stack runs on, absorbed from
-// `setup-solana-side.sh` "[1/4] fresh validator (Yellowstone geyser) + program deploy".
+// validator — the host-native Solana test validator the e2e side-stack runs on.
 //
 // Host = native solana-test-validator (agave 4.3.0, pinned in solana-e2e.yml) running Alpenglow
 // consensus, with the Yellowstone geyser plugin (gRPC :10000) loaded via --geyser-plugin-config.

@@ -85,10 +85,7 @@ export const programDataAddressFor = async (programAddress: Address): Promise<Ad
 export type BootstrapZamaHostParams = {
   readonly payer: TransactionSigner;
   readonly gateway: GatewayBootstrapInputs;
-  /**
-   * Input-attestation n-of-m. The PoC coprocessor emits a single attestation signature, so 1
-   * keeps the live flow green while the full registered set is stored (EVM `InputVerifier` parity).
-   */
+  /** Coprocessor signatures an input attestation needs (EVM `InputVerifier` threshold). */
   readonly coprocessorThreshold?: number;
   /** KMS corruption threshold t. */
   readonly kmsCorruptionThreshold: number;

@@ -101,9 +101,8 @@ TS_ROOTS=(
   test-suite/fhevm
 )
 
-# Shell and workflow files the workstream owns. `fhe_eval` survived in a solana-tests.yml comment
-# and `supersede` in the since-retired full-vertical.sh precisely because the sweep never looked
-# here.
+# Shell and workflow files the workstream owns: a retired name survives in their comments as
+# easily as in code.
 SCRIPT_ROOTS=(
   solana/scripts
   solana/docs
