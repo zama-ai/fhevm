@@ -44,7 +44,7 @@ import {
   type ConnectorVerdict,
   type SolanaHostAccountsReader,
 } from './authorization.js';
-import type { SolanaMerkleProofReader } from './merkleProofs.js';
+import type { SolanaLeafReader } from './leafRecord.js';
 import { fetchCleartextStoreValue } from './storeValues.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -53,13 +53,13 @@ const FINALIZED = { commitment: 'finalized' } as const;
 
 /**
  * Answers a user decryption with the plaintexts the host recorded for its handles, once the request
- * passes the Connector's authorization, through the production retry loop. The leaf proofs come
- * from `readMerkleProofs`.
+ * passes the Connector's authorization, through the production retry loop. The leaves come from
+ * `readLeaves`.
  */
 export function cleartextUserDecryptExecution(
   rpc: SolanaRpc,
   chain: FhevmSolanaChain,
-  readMerkleProofs: SolanaMerkleProofReader,
+  readLeaves: SolanaLeafReader,
 ): SolanaUserDecryptExecution {
   const programAddress = solanaHostProgram(chain);
   const execute: SolanaUserDecryptExecution['execute'] = async ({ session, entries, attempts, options }) => {
@@ -106,7 +106,7 @@ export function cleartextUserDecryptExecution(
             signature,
             entries,
             readAccounts,
-            readMerkleProofs,
+            readLeaves,
           });
           const rejection = cleartextConnectorRejection(verdict);
           if (rejection !== undefined) return { ok: false, rejection };
@@ -202,7 +202,7 @@ export function cleartextConnectorRejection(verdict: ConnectorVerdict): SolanaDe
 export function cleartextPublicDecryptCertifier(
   rpc: SolanaRpc,
   chain: FhevmSolanaChain,
-  readMerkleProofs: SolanaMerkleProofReader,
+  readLeaves: SolanaLeafReader,
 ): SolanaPublicDecryptCertifier {
   const programAddress = solanaHostProgram(chain);
   return async (parameters) => {
@@ -227,7 +227,7 @@ export function cleartextPublicDecryptCertifier(
                 encryptedStore: getAddressDecoder().decode(encryptedStore),
               })),
               readAccounts: hostAccountsReader(rpc, attemptSignal),
-              readMerkleProofs,
+              readLeaves,
             }),
           );
           return rejection === undefined ? { ok: true, response: undefined } : { ok: false, rejection };

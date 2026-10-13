@@ -3,7 +3,7 @@
 // the same actions, stand in for the relayer, coprocessors and KMS, and the trust a decrypt binds to
 // is the cleartext parties'. Everything else a scenario does is the same on both targets.
 import type * as SolanaSdk from '@fhevm/sdk/solana';
-import type { SolanaMerkleProofReader } from '@fhevm/sdk/solana/cleartext';
+import type { SolanaLeafReader } from '@fhevm/sdk/solana/cleartext';
 
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 
@@ -20,22 +20,22 @@ export const targetsCleartext = (): boolean => solanaE2eSource() === 'cleartext'
 
 // The cleartext stack's leaf record, kept for the test process as coprocessors keep theirs, so a
 // decrypt reads only the store writes since the last one.
-let cleartextLeafRecord: SolanaMerkleProofReader | undefined;
+let cleartextLeafRecord: SolanaLeafReader | undefined;
 
 /** `@fhevm/sdk/solana`, with the cleartext client factories on a cleartext target. */
 export const loadSolanaSdk = async (): Promise<typeof SolanaSdk> => {
   const solana = await import('@fhevm/sdk/solana');
   if (!targetsCleartext()) return solana;
   const cleartext = await import('@fhevm/sdk/solana/cleartext');
-  const readMerkleProofs = ({ rpc }: { readonly rpc: SolanaSdk.SolanaRpc }) =>
+  const readLeaves = ({ rpc }: { readonly rpc: SolanaSdk.SolanaRpc }) =>
     (cleartextLeafRecord ??= cleartext.createSolanaLeafRecord(rpc, ZAMA_HOST_PROGRAM_ADDRESS));
   return {
     ...solana,
     createFhevmEncryptClient: cleartext.createFhevmCleartextEncryptClient,
     createFhevmDecryptClient: (parameters) =>
-      cleartext.createFhevmCleartextDecryptClient({ ...parameters, readMerkleProofs: readMerkleProofs(parameters) }),
+      cleartext.createFhevmCleartextDecryptClient({ ...parameters, readLeaves: readLeaves(parameters) }),
     createFhevmPublicDecryptClient: (parameters) =>
-      cleartext.createFhevmCleartextPublicDecryptClient({ ...parameters, readMerkleProofs: readMerkleProofs(parameters) }),
+      cleartext.createFhevmCleartextPublicDecryptClient({ ...parameters, readLeaves: readLeaves(parameters) }),
   };
 };
 

@@ -1,7 +1,8 @@
 // The cleartext stack's leaf record: the leaves of every `EncryptedStore` the host writes, rebuilt
 // from the validator's finalized transactions the way the coprocessors' host listener records them
 // (`solana_grpc_listener.rs`, reconstruct), kept in memory and read directly by the cleartext
-// decrypt clients.
+// decrypt clients. It answers whether a leaf is among a store's leaves and builds no proof: the
+// client that would check one is the one that built the record.
 import {
   AccountRole,
   getAddressEncoder,
@@ -13,10 +14,8 @@ import {
   type Signature,
 } from '@solana/kit';
 import type { SolanaRpc } from '../encryptedStore.js';
-import type { SolanaMerkleProofOutcome, SolanaMerkleProofReader } from './merkleProofs.js';
-import { bytesToHex, unsafeBytesEquals } from '../../core/base/bytes.js';
+import { bytesToHex } from '../../core/base/bytes.js';
 import { decodeSolanaEncryptedStore, isSolanaEncryptedStoreData } from '../encryptedStore.js';
-import { createRetainedMmr, storeLeafCommitment, type RetainedMmr, type SolanaStoreHistoryEvent } from './mmr.js';
 import {
   FHE_EXECUTE_DISCRIMINATOR,
   FHE_EXECUTED_EVENT_DISCRIMINATOR,
@@ -26,6 +25,31 @@ import {
   parseMakeStoreHandlePublicInstruction,
 } from '@fhevm/solana-zama-host';
 import { EVENT_IX_TAG, EVENT_VERSION } from '../internal/hostConstants.js';
+
+/** A leaf the record is asked for: `key` allowed on `handle`, or `handle` made public without one. */
+export type SolanaLeafQuery = {
+  readonly encryptedStore: Address;
+  readonly handle: Uint8Array;
+  readonly key?: Address;
+};
+
+/** What the record says about one query, among the `leafCount` leaves it has sealed. */
+export type SolanaLeafOutcome =
+  | { readonly status: 'found'; readonly leafIndex: bigint; readonly leafCount: bigint }
+  /** The record knows the store and has no such leaf in the `leafCount` leaves it has sealed. */
+  | { readonly status: 'notFound'; readonly leafCount: bigint }
+  /** The record has never seen the store. */
+  | { readonly status: 'unknownAccount' };
+
+/** One read of the leaf record: an outcome per query, in query order. */
+export type SolanaLeafReader = (queries: readonly SolanaLeafQuery[]) => Promise<readonly SolanaLeafOutcome[]>;
+
+/** One leaf-appending operation in a store's history. Mirrors `zama_solana_acl::history::StoreHistoryEvent`. */
+export type SolanaStoreHistoryEvent =
+  /** One `allow` of `key` on `handle`, sealed by the write that installed `handle`. */
+  | { readonly kind: 'allowed'; readonly handle: Uint8Array; readonly key: Uint8Array }
+  /** `handle` was made publicly decryptable. */
+  | { readonly kind: 'markedPublic'; readonly handle: Uint8Array };
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -38,7 +62,7 @@ type HostInstruction = {
 /** One store's sealed leaves, as far as `newest`, the newest of its transactions read so far. */
 type StoreRecord = {
   newest: Signature | undefined;
-  readonly tree: RetainedMmr;
+  leafCount: number;
   /** The first leaf of each `(handle, key)` or public `handle`, as the listener answers. */
   readonly firstLeaf: Map<string, number>;
 };
@@ -70,16 +94,13 @@ const leafKey = (handle: Uint8Array, key?: Uint8Array): string =>
  *   Connector reads its shorter leaf count as a record behind the chain.
  * - The next catch-up lists from the newest transaction of those slots, so a transaction after the
  *   account read is listed again, even when the listing showed a newer one first.
- * - Once the record holds as many leaves as the store's account, its peaks at that count must be the
- *   account's.
- * - Peaks that differ, two writes that claim one leaf, a write the parser cannot read or a failed RPC
- *   call make the read throw and drop the store's record. The next read rebuilds it from the store's
- *   first transaction.
+ * - Two writes that claim one leaf, a write the parser cannot read or a failed RPC call make the read
+ *   throw and drop the store's record. The next read rebuilds it from the store's first transaction.
  *
  * Catch-ups of one store run in turn; different stores catch up independently. A read answers from
  * the leaf count its own catch-up checked.
  */
-export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address): SolanaMerkleProofReader {
+export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address): SolanaLeafReader {
   const records = new Map<Address, StoreRecord>();
   const catchUps = new Map<Address, Promise<CaughtUp | undefined>>();
 
@@ -93,29 +114,15 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
     if (!isSolanaEncryptedStoreData(account.data)) return undefined;
     const live = decodeSolanaEncryptedStore(account.data, encryptedStore);
 
-    const record = records.get(encryptedStore) ?? {
-      newest: undefined,
-      tree: createRetainedMmr(),
-      firstLeaf: new Map(),
-    };
+    const record = records.get(encryptedStore) ?? { newest: undefined, leafCount: 0, firstLeaf: new Map() };
     records.set(encryptedStore, record);
-    const covered = Number(live.leafCount);
     try {
-      await extend(record, encryptedStore, covered, context.slot);
-      if (record.tree.leafCount() >= covered) {
-        const peaks = record.tree.peaks(covered);
-        if (
-          peaks.length !== live.peaks.length ||
-          peaks.some((peak, index) => !unsafeBytesEquals(peak, live.peaks[index]))
-        ) {
-          throw new Error(`the leaves rebuilt for ${encryptedStore} do not match its peaks at leaf count ${covered}`);
-        }
-      }
+      await extend(record, encryptedStore, Number(live.leafCount), context.slot);
     } catch (error) {
       records.delete(encryptedStore);
       throw error;
     }
-    return { record, leafCount: record.tree.leafCount() };
+    return { record, leafCount: record.leafCount };
   };
 
   /**
@@ -126,7 +133,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
   const extend = async (record: StoreRecord, encryptedStore: Address, covered: number, slot: bigint): Promise<void> => {
     const { newest, successful } = await storeSignatures(rpc, encryptedStore, record.newest, slot);
     if (newest === undefined) return;
-    const sealed = record.tree.leafCount();
+    const sealed = record.leafCount;
     // Each write carries the leaf count it appended at, so its leaves land at their position
     // whatever order the RPC lists transactions in.
     const appended: Array<SolanaStoreHistoryEvent | undefined> = [];
@@ -149,13 +156,11 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
     if (!run.every((event): event is SolanaStoreHistoryEvent => event !== undefined)) return;
     if (sealed + run.length < covered) return;
 
-    const storeBytes = new Uint8Array(getAddressEncoder().encode(encryptedStore));
     run.forEach((event, offset) => {
-      const index = sealed + offset;
-      record.tree.append(storeLeafCommitment(storeBytes, BigInt(index), event));
       const found = leafKey(event.handle, event.kind === 'allowed' ? event.key : undefined);
-      if (!record.firstLeaf.has(found)) record.firstLeaf.set(found, index);
+      if (!record.firstLeaf.has(found)) record.firstLeaf.set(found, sealed + offset);
     });
+    record.leafCount = sealed + run.length;
     record.newest = newest;
   };
 
@@ -171,7 +176,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
     const caught = new Map(
       await Promise.all(stores.map(async (store) => [store, await catchUpInTurn(store)] as const)),
     );
-    return queries.map(({ encryptedStore, handle, key }): SolanaMerkleProofOutcome => {
+    return queries.map(({ encryptedStore, handle, key }): SolanaLeafOutcome => {
       const store = caught.get(encryptedStore);
       if (store === undefined) return { status: 'unknownAccount' };
       const { record, leafCount } = store;
@@ -181,12 +186,7 @@ export function createSolanaLeafRecord(rpc: SolanaRpc, programAddress: Address):
       if (leafIndex === undefined || leafIndex >= leafCount) {
         return { status: 'notFound', leafCount: BigInt(leafCount) };
       }
-      return {
-        status: 'found',
-        leafIndex: BigInt(leafIndex),
-        leafCount: BigInt(leafCount),
-        siblings: record.tree.proof(leafIndex, leafCount).siblings,
-      };
+      return { status: 'found', leafIndex: BigInt(leafIndex), leafCount: BigInt(leafCount) };
     });
   };
 }

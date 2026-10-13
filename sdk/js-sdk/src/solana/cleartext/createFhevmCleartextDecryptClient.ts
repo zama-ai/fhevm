@@ -2,7 +2,7 @@ import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
 import type { FhevmSolanaDecryptClient } from '../clients/createFhevmDecryptClient.js';
 import type { FhevmSolanaPublicDecryptClient } from '../clients/createFhevmPublicDecryptClient.js';
-import type { SolanaMerkleProofReader } from './merkleProofs.js';
+import type { SolanaLeafReader } from './leafRecord.js';
 import { withPermitDecrypt } from '../clients/createFhevmDecryptClient.js';
 import { solanaHostProgram } from '../clients/createFhevmBaseClient.js';
 import { createSolanaPublicDecryptClient } from '../clients/createFhevmPublicDecryptClient.js';
@@ -17,7 +17,7 @@ import { createSolanaHostKmsReads, type SolanaHostKmsReads } from '../actions/ho
  * Pass one record from `createSolanaLeafRecord` to every client of a host, so each client reads
  * only the store writes the record has not seen yet. A client without one keeps its own.
  */
-type CleartextLeafRecordParameters = { readonly readMerkleProofs?: SolanaMerkleProofReader };
+type CleartextLeafRecordParameters = { readonly readLeaves?: SolanaLeafReader };
 
 /**
  * Creates a public decrypt client for a cleartext host: certificates are signed by the cleartext
@@ -42,32 +42,32 @@ export function createFhevmCleartextPublicDecryptClient<C extends FhevmSolanaCha
 export function createFhevmCleartextDecryptClient<C extends FhevmSolanaChain>(
   parameters: SolanaClientParameters<C> & CleartextLeafRecordParameters,
 ): FhevmSolanaDecryptClient<C> {
-  const readMerkleProofs = leafRecordOf(parameters);
+  const readLeaves = leafRecordOf(parameters);
   const host = createSolanaHostKmsReads(parameters, getCleartextSolanaRuntime());
   return withPermitDecrypt(
-    publicDecryptClient(parameters, host, readMerkleProofs),
+    publicDecryptClient(parameters, host, readLeaves),
     host,
-    cleartextUserDecryptExecution(parameters.rpc, parameters.chain, readMerkleProofs),
+    cleartextUserDecryptExecution(parameters.rpc, parameters.chain, readLeaves),
   );
 }
 
 function leafRecordOf({
   rpc,
   chain,
-  readMerkleProofs,
-}: SolanaClientParameters & CleartextLeafRecordParameters): SolanaMerkleProofReader {
-  return readMerkleProofs ?? createSolanaLeafRecord(rpc, solanaHostProgram(chain));
+  readLeaves,
+}: SolanaClientParameters & CleartextLeafRecordParameters): SolanaLeafReader {
+  return readLeaves ?? createSolanaLeafRecord(rpc, solanaHostProgram(chain));
 }
 
 function publicDecryptClient<C extends FhevmSolanaChain>(
   parameters: SolanaClientParameters<C>,
   host: SolanaHostKmsReads,
-  readMerkleProofs: SolanaMerkleProofReader,
+  readLeaves: SolanaLeafReader,
 ): FhevmSolanaPublicDecryptClient<C> {
   return createSolanaPublicDecryptClient(
     parameters,
     getCleartextSolanaRuntime(),
     host,
-    cleartextPublicDecryptCertifier(parameters.rpc, parameters.chain, readMerkleProofs),
+    cleartextPublicDecryptCertifier(parameters.rpc, parameters.chain, readLeaves),
   );
 }

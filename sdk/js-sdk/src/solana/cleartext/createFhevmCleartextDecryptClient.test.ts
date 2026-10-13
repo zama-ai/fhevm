@@ -52,7 +52,7 @@ describe('createFhevmCleartextDecryptClient', () => {
     const client = createFhevmCleartextDecryptClient({
       chain,
       rpc: createSolanaRpc('http://127.0.0.1:1'),
-      readMerkleProofs: () => Promise.reject(new Error('the leaf record is not read here')),
+      readLeaves: () => Promise.reject(new Error('the leaf record is not read here')),
     });
 
     const session = await client.signPermit({

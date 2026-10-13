@@ -5,8 +5,8 @@
 //! Connector asked for with the record's answers, and the verdict.
 //! `ZAMA_UPDATE_AUTHORIZATION_CASES=1` rewrites it.
 //!
-//! Every failure variant is either produced by a user-decrypt case or listed in [`RUST_ONLY`] with
-//! the reason the cleartext client cannot produce it.
+//! Every failure variant is produced by a user-decrypt case or listed in [`RUST_ONLY`] with the
+//! reason the cleartext client cannot produce it; the SDK test skips the cases a listed one ends.
 
 mod solana_support;
 
@@ -71,13 +71,14 @@ const FAILURES: [&str; 26] = [
 
 const NODE: &str = "The cleartext client throws when an account read fails, lags or answers the \
                     wrong number of accounts, instead of judging the request.";
-const LEAF_RECORD: &str = "The cleartext client throws when a Merkle proof read fails or answers the \
-                           wrong number of proofs, instead of judging the request.";
-const OWN_RECORD: &str = "The cleartext client builds its proofs from its own leaf record, which \
-                          has no store check, so it never answers inconsistent.";
+const LEAF_RECORD: &str = "The cleartext client throws when a leaf record read fails or answers the \
+                           wrong number of outcomes, instead of judging the request.";
+const OWN_RECORD: &str = "The cleartext client asks its own leaf record whether a leaf is there and \
+                          checks no proof, so it never answers inconsistent and no proof fails.";
 
-/// The failures no cleartext case can produce, with the reason.
-const RUST_ONLY: [(&str, &str); 7] = [
+/// The failures no cleartext case can produce, with the reason. The SDK test skips the cases that
+/// end in one.
+const RUST_ONLY: [(&str, &str); 8] = [
     ("Snapshot::Unavailable", NODE),
     ("Snapshot::ResponseLengthMismatch", NODE),
     ("Snapshot::MalformedClock", NODE),
@@ -85,6 +86,7 @@ const RUST_ONLY: [(&str, &str); 7] = [
     ("ProofRead::Unavailable", LEAF_RECORD),
     ("ProofRead::ResponseLengthMismatch", LEAF_RECORD),
     ("HandleBinding::ProofRecordInconsistent", OWN_RECORD),
+    ("HandleBinding::ProofDoesNotVerify", OWN_RECORD),
 ];
 
 fn snapshot_name(source: &SnapshotError) -> &'static str {
@@ -886,8 +888,8 @@ async fn the_committed_cases_are_the_connectors_verdicts() {
     for name in FAILURES {
         let rust_only = RUST_ONLY.iter().any(|(listed, _)| *listed == name);
         assert!(
-            produced.contains(&name) != rust_only,
-            "{name} must be produced by a case or listed as Rust-only, not both or neither"
+            produced.contains(&name) || rust_only,
+            "{name} must be produced by a case or listed as Rust-only"
         );
     }
 
