@@ -7,10 +7,16 @@ use tokio_util::sync::CancellationToken;
 use tracing::error;
 mod utils;
 
-fn handle_sigint(token: CancellationToken) {
+/// SIGTERM (Kubernetes scale-in, rollout) and SIGINT stop the worker; tasks
+/// not yet processed stay pending for the other workers.
+fn handle_shutdown_signals(token: CancellationToken) {
+    let mut sigint = unix::signal(unix::SignalKind::interrupt()).unwrap();
+    let mut sigterm = unix::signal(unix::SignalKind::terminate()).unwrap();
     tokio::spawn(async move {
-        let mut signal = unix::signal(unix::SignalKind::interrupt()).unwrap();
-        signal.recv().await;
+        tokio::select! {
+            _ = sigint.recv() => {}
+            _ = sigterm.recv() => {}
+        }
         token.cancel();
     });
 }
@@ -104,8 +110,7 @@ async fn main() {
             }
         };
 
-    // Handle SIGINIT signals
-    handle_sigint(parent.clone());
+    handle_shutdown_signals(parent.clone());
 
     sns_worker::run_all(config, parent, None)
         .await

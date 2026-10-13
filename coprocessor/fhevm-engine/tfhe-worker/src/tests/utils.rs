@@ -59,6 +59,13 @@ impl TestInstance {
         }
     }
 
+    /// Stops the worker the way SIGTERM does, keeping the database.
+    pub fn stop_worker(&self) {
+        if let Some(chan) = &self.app_close_channel {
+            let _ = chan.send_replace(true);
+        }
+    }
+
     pub fn health_check_url(&self) -> String {
         format!("http://127.0.0.1:{}", self.health_check_port)
     }
@@ -70,6 +77,22 @@ pub fn default_dependence_cache_size() -> u16 {
 
 pub async fn setup_test_app() -> Result<TestInstance, Box<dyn std::error::Error>> {
     setup_test_instance(true).await
+}
+
+/// Like [`setup_test_app`], with worker arguments adjusted by `customize`.
+pub async fn setup_test_app_with(
+    customize: impl FnOnce(&mut Args),
+) -> Result<TestInstance, Box<dyn std::error::Error>> {
+    let db = cloned_test_db(ImportMode::WithKeysNoSns).await?;
+    let db_url = db.db_url().to_string();
+    let (app_close_channel, rx) = tokio::sync::watch::channel(false);
+    let health_check_port = start_coprocessor_with(rx, &db_url, customize).await;
+    Ok(TestInstance {
+        _db: TestDb::Cloned { _db: db },
+        app_close_channel: Some(app_close_channel),
+        db_url,
+        health_check_port,
+    })
 }
 
 /// A prepared database with no worker running against it.
@@ -157,8 +180,16 @@ async fn maybe_start_worker(
 }
 
 async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
+    start_coprocessor_with(rx, db_url, |_| {}).await
+}
+
+async fn start_coprocessor_with(
+    rx: Receiver<bool>,
+    db_url: &str,
+    customize: impl FnOnce(&mut Args),
+) -> u16 {
     let health_check_port = test_harness::localstack::pick_free_port();
-    let args: Args = Args {
+    let mut args: Args = Args {
         max_batch_ttl_secs: 300,
         run_bg_worker: true,
         worker_polling_interval_ms: 1000,
@@ -208,6 +239,7 @@ async fn start_coprocessor(rx: Receiver<bool>, db_url: &str) -> u16 {
         },
         stack_version: false,
     };
+    customize(&mut args);
 
     std::thread::spawn(move || {
         crate::start_runtime(args, Some(rx));
