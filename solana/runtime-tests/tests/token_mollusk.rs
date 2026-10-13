@@ -301,6 +301,20 @@ struct TokenFixture {
     state_keys: RefCell<HashMap<Pubkey, [u8; 32]>>,
 }
 
+fn confidential_mint_account(authority: Pubkey, underlying_mint: Pubkey) -> Account {
+    Account {
+        lamports: 1_000_000_000,
+        data: serialized_account(token::ConfidentialMint {
+            authority,
+            underlying_mint,
+            decimals: 6,
+        }),
+        owner: token::id(),
+        executable: false,
+        rent_epoch: 0,
+    }
+}
+
 impl TokenFixture {
     fn new() -> Self {
         Self::with_keys(
@@ -342,20 +356,6 @@ impl TokenFixture {
         token::token_app(self.mint)
     }
 
-    fn confidential_mint_account(&self) -> Account {
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(token::ConfidentialMint {
-                authority: self.owner,
-                underlying_mint: self.underlying_mint,
-                decimals: 6,
-            }),
-            owner: token::id(),
-            executable: false,
-            rent_epoch: 0,
-        }
-    }
-
     fn confidential_token_account(&self, owner: Pubkey, _balance_store: Pubkey) -> Account {
         Account {
             lamports: 1_000_000_000,
@@ -387,7 +387,10 @@ impl TokenFixture {
         HashMap::from([
             (self.owner, system_account(5_000_000_000)),
             (self.bob_owner, system_account(5_000_000_000)),
-            (self.mint, self.confidential_mint_account()),
+            (
+                self.mint,
+                confidential_mint_account(self.owner, self.underlying_mint),
+            ),
             (
                 self.host_config,
                 host_config_account(self.owner, secp_evm_address(&coprocessor_signing_key())),
@@ -2474,7 +2477,10 @@ fn mollusk_confidential_transfer_rejects_another_confidential_mint() {
     let fixture = TokenFixture::new();
     let other = TokenFixture::new();
     let mut accounts = fixture.base_accounts();
-    accounts.insert(other.mint, other.confidential_mint_account());
+    accounts.insert(
+        other.mint,
+        confidential_mint_account(other.owner, other.underlying_mint),
+    );
     let mut other_store = |token_account: Pubkey, handle: [u8; 32]| {
         let (address, store) =
             new_test_state(other.app(), token_account, token::balance_key(), handle);
@@ -2831,20 +2837,6 @@ impl BurnRedeemFixture {
         token::token_app(self.mint)
     }
 
-    fn confidential_mint_account(&self) -> Account {
-        Account {
-            lamports: 1_000_000_000,
-            data: serialized_account(token::ConfidentialMint {
-                authority: self.owner,
-                underlying_mint: self.underlying_mint,
-                decimals: 6,
-            }),
-            owner: token::id(),
-            executable: false,
-            rent_epoch: 0,
-        }
-    }
-
     fn accounts(&self, vault_balance: u64) -> HashMap<Pubkey, Account> {
         let (_, balance_store) = new_test_state(
             self.app(),
@@ -2860,7 +2852,10 @@ impl BurnRedeemFixture {
         );
         HashMap::from([
             (self.owner, system_account(50_000_000_000)),
-            (self.mint, self.confidential_mint_account()),
+            (
+                self.mint,
+                confidential_mint_account(self.owner, self.underlying_mint),
+            ),
             (self.total_supply_authority, system_account(0)),
             (self.vault_authority, system_account(0)),
             (
