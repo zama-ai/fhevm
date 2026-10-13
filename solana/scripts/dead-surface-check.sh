@@ -89,9 +89,8 @@ RUST_ROOTS=(
   relayer/src/host
 )
 
-# TypeScript the Solana workstream owns. The demo dapp holds the vault module (moved out of the
-# SDK) and test-suite/fhevm holds the seeder and the scenarios; both were unswept while the vault
-# lived under sdk/js-sdk/src/solana. Installed graphs and build outputs are excluded — a vendored
+# TypeScript the Solana workstream owns: the demo dapp holds the vault module and test-suite/fhevm
+# holds the seeder and the scenarios. Installed graphs and build outputs are excluded — a vendored
 # dependency's vocabulary is not ours to police.
 TS_ROOTS=(
   solana/deploy/src
@@ -131,9 +130,9 @@ CORE_ROOTS=(
 # GLOSSARY), but the confidential batcher's `Batch` account really is a batch — a settlement round
 # of independent deposits — and the listener batches RPC calls and DB writes. Sweeping the word
 # across everything would flag those legitimate uses forever, so it is swept exactly where "batch"
-# can only mean the retired name for one execution: the host, the SDK, the token program, and the
-# live client. The batcher's own program, its mollusk test, the vault dapp and the vault docs speak
-# the settlement sense and are outside this list on purpose.
+# can only mean the retired name for one execution: the host, the SDK and the token program. The
+# batcher's own program, its mollusk test, the vault dapp and the vault docs speak the settlement
+# sense and are outside this list on purpose.
 FHE_ROOTS=(
   solana/crates
   solana/programs/zama-host

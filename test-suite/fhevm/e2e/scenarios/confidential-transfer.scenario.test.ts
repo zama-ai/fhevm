@@ -29,8 +29,8 @@ describe("solana confidential-transfer scenario", () => {
       // exists (local). This genuinely exercises the faucet capability + persona funding.
       if (env.capabilities.faucet) await personas.fund(personas.deployer);
 
-      // Run the SDK-driven arc against the injected environment. Its internal assertions (mapped
-      // above) throw on any mismatch; reaching the end means the phase is green.
+      // Run the SDK-driven arc against the injected environment. Its internal assertions throw on
+      // any mismatch.
       await runSolanaTwoHolderTransfer(
         createRealTwoHolderDependencies({
           rpcUrl: env.rpcUrl,

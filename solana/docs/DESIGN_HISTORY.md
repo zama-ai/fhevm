@@ -973,19 +973,21 @@ side-stack modules in `src/solana/` and the scenarios in `e2e/scenarios/`.
 The live Solana e2e ran as shell scripts under `solana/scripts/e2e/` driving a Rust client,
 `solana/scripts/e2e/live-client`:
 
-| Replaced                                                                                       | Now                                                                     |
-| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `setup-solana-side.sh` "[1/4] fresh validator (Yellowstone geyser) + program deploy"           | `src/solana/validator.ts`, `src/solana/deploy.ts`                       |
-| `setup-solana-side.sh` "[1/5] gathering live gateway addresses" (dotenv `source`, `cast call`) | `src/solana/addresses.ts`, the same reads in-process                    |
-| the live client's `BOOTSTRAP=1` mode                                                           | the typed zama-host bootstrap, `solana/deploy/src/bootstrap.ts`         |
-| psql polling loops for the SNS commit in `full-vertical.sh` and `adversarial-l4.sh`            | `src/solana/sns.ts`                                                     |
-| `full-vertical.sh`'s `==> [sdk-transfer]` phase                                                | `e2e/scenarios/confidential-transfer.scenario.test.ts`                  |
-| the live client's balance probe, three accounts in one `getMultipleAccounts`                   | `readTokenBalanceStore` in `src/solana/provision.ts`, derived addresses |
+| Replaced                                                                                                                   | Now                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `setup-solana-side.sh` "[2/5] fresh validator (Yellowstone geyser) + program deploy"                                       | `src/solana/validator.ts`, `src/solana/deploy.ts`                       |
+| `setup-solana-side.sh` "[1/5] gathering live gateway addresses + ProtocolConfig signer set" (dotenv `source`, `cast call`) | `src/solana/addresses.ts`, the same reads in-process                    |
+| `setup-solana-side.sh` "[3/5] bootstrap zama-host", the live client's `BOOTSTRAP=1` mode                                   | the typed zama-host bootstrap, `solana/deploy/src/bootstrap.ts`         |
+| `setup-solana-side.sh` "[4/5] register Solana host chain (coprocessor DB + gateway)" and "[5/5] run Solana host-listener"  | `src/solana/deploy.ts`                                                  |
+| psql polling loops for the SNS commit in `full-vertical.sh` and `adversarial-l4.sh`                                        | `src/solana/sns.ts`                                                     |
+| `full-vertical.sh`'s `==> [sdk-transfer]` phase                                                                            | `e2e/scenarios/confidential-transfer.scenario.test.ts`                  |
+| the live client's balance probe, three accounts in one `getMultipleAccounts`                                               | `readTokenBalanceStore` in `src/solana/provision.ts`, derived addresses |
 
 The probe read all three accounts in one call because it followed the token account's balance
 pointer, which could move between reads. `readTokenBalanceStore` derives every address instead.
-The CI check was named `solana-e2e/full-vertical-reconstruct`, then
-`solana-e2e/scenarios-reconstruct`, and had a 90-minute timeout.
+Before #3477 the CI check was `solana-e2e/full-vertical`, with a `-reconstruct` matrix leg, and a
+90-minute timeout. It was later named `solana-e2e/scenarios-reconstruct`, then
+`solana-e2e/scenarios`.
 
 ## Replaced parts of live decisions
 

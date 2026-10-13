@@ -331,9 +331,9 @@ const registerSolanaHostChain = async (parameters: {
 /**
  * Builds and runs one Solana host-listener per coprocessor against the validator and that
  * coprocessor's DB, as each preview coprocessor runs its own. Always rebuilt from this
- * worktree's source: the listener decodes with zama-host's own types (`zama_host::decode`), so a
- * binary built against another event layout stops in `host_operations` at the first `fhe_execute`
- * it cannot pair with its `FheExecutedEvent`.
+ * worktree's source: the listener decodes with zama-host's own types (`zama_host::decode`) and
+ * accepts only its own `EVENT_VERSION`, so a binary built for another version stops in
+ * `host_operations` at the first `fhe_execute` whose `FheExecutedEvent` it cannot accept.
  *
  * gRPC transport: the listener takes every output, public ones included, from each execution's
  * `FheExecutedEvent`, and re-derives the handles only as a check.
