@@ -322,7 +322,7 @@ only the wildcard row can be granted for them (DD-047). Either row authorizes th
 `expires_at` is after that Clock's `unix_timestamp`, as EVM's `expirationDate > block.timestamp`; a revocation writes 0.
 A dead row cannot veto a live one; a row the host program could not have written fails the entry closed, whatever
 the other row says. The connector then requires the delegator's allow leaf
-(`kms-worker/src/core/solana/delegation.rs`). The relayer refuses dead rows advisorily before the gateway fee (#50).
+(`kms-worker/src/core/solana/delegation.rs`).
 Delegation emits no event; readers read the record (DD-044). A wallet must call `delegate_for_user_decryption`,
 `revoke_delegation_for_user_decryption`, `revoke_permits` and `pause` (#36) as top-level instructions
 (`WalletDelegationThroughCpi`, `WalletRevokeThroughCpi`, `WalletPauseThroughCpi`). A wallet's signature reaches every
@@ -689,18 +689,16 @@ transaction may request. Pinned by
 the maximum coprocessor threshold with every witness` (`joinBatch.test.ts`) and
 `mollusk_settle_at_the_largest_kms_certificate_fits_the_compute_budget`.
 
-**50. [OPERATIONAL]** The relayer's ACL preflight covers EVM host chains and,
-advisorily, Solana user-decrypt entries (`relayer/src/host/solana_user_decrypt_precheck.rs`).
-Before the gateway fee it refuses an entry whose encrypted store's application
-lies outside the permit's allowed scopes, as EVM's `Decryption.sol` refuses a
-contract outside the signed contract addresses, and a delegated entry whose
-delegation rows are dead at the host Clock of the read (absent, revoked,
-expired); every ambiguity of data passes. Allow leaves and the permit
-watermark are not pre-checked — the connector fetches the leaf, and there is
-no cheaper reading of it — so a request refused on them is rejected by the
-KMS connectors after the gateway fee is paid. This does not affect
-authorization (#42, #45); for now we accept that a rejected request can still
-cost a fee, and that this leaves room for spam.
+**50. [OPERATIONAL]** The gateway relayer's ACL preflight covers EVM host
+chains only. A Solana host chain stays in the relayer's `host_chains` for input
+proofs, and both the ACL preflight and the EIP-712 signature pre-check skip it
+(`relayer/src/host/acl_checker.rs`, `relayer/src/host/signature_prechecker.rs`),
+so the relayer reads no Solana account. The ACL preflight refuses a Solana
+handle as `UnsupportedChain`; the v3 signature pre-check has no provider for its
+chain and answers 500 (`HostCallFailed`). Solana decryption requests go through relayer-http, and
+the KMS connectors decide every authorization (#42, #45). Pinned by
+`a_solana_host_starts_and_its_handles_are_refused` and
+`a_solana_host_gets_no_evm_provider`.
 
 **54. [HOLDS]** `FheExecution::build` enforces three typed resource ceilings:
 

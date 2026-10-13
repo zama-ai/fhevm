@@ -37,15 +37,6 @@ mod constants {
     pub const CRON_INTERVAL_SECS: u64 = 1;
     pub const INITIAL_POLL_DELAY_MS: u64 = 500;
 
-    /// The selector the v2 path actually submits: the legacy overload
-    /// `userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)`,
-    /// which `ComputeCalldata` encodes for `LegacyDirect`.
-    ///
-    /// Naming it by the `_N` alias alone is not enough. alloy numbers overloads by position, so
-    /// adding one renumbers the rest, and nothing here stops compiling: `SELECTOR` is a constant on every call type. The mock would then queue its
-    /// responses against a function the relayer never calls, the request would never reach a
-    /// terminal state, and the failure would surface as a poll timeout naming nothing.
-    /// `assert_user_decrypt_selector_is_the_legacy_overload` below is what makes it say so.
     pub const USER_DECRYPT_SELECTOR: [u8; 4] =
         fhevm_relayer::gateway::arbitrum::bindings::Decryption::userDecryptionRequest_1Call::SELECTOR;
 
@@ -217,20 +208,6 @@ mod helpers {
             );
         }
     }
-}
-
-/// Every test in this file that queues a mock response keys it on
-/// [`constants::USER_DECRYPT_SELECTOR`]. If that constant ever names a different overload, the
-/// mock stops matching what the relayer submits and each of those tests fails as a poll
-/// timeout, which says nothing about the cause. Pinned to the value `selectors.txt` records for
-/// the legacy signature so the renumbering says so directly.
-#[test]
-fn assert_user_decrypt_selector_is_the_legacy_overload() {
-    assert_eq!(
-        constants::USER_DECRYPT_SELECTOR,
-        [0xf1, 0xb5, 0x7a, 0xdb],
-        "USER_DECRYPT_SELECTOR no longer names the legacy userDecryptionRequest overload"
-    );
 }
 
 #[tokio::test]

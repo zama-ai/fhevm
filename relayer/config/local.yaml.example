@@ -120,9 +120,6 @@ gateway:
       retry:
         max_attempts: 3
         retry_interval_ms: 1000
-      # Deadline for one Solana host-chain read attempt (the EVM path is dialed through alloy
-      # and is not covered by it). Optional; defaults to 10000.
-      request_timeout_ms: 10000
     gw_ciphertext_check:
       # Off-chain Coprocessor attestation consensus (RFC 023). The alternative is the on-chain
       # Gateway check, via source: gateway_chain, which takes only `retry`:

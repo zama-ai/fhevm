@@ -304,18 +304,6 @@ pub struct ReadinessCheckConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct HostAclCheckConfig {
     pub retry: RetrySettings,
-    /// Deadline for one Solana host-chain read attempt. The EVM path is dialed through alloy
-    /// and is not covered by this. Defaulted so an existing deployment's config keeps parsing:
-    /// a read that hangs forever holds its readiness permit forever, so no deployment should be
-    /// left without a deadline just because its file predates this field.
-    #[serde(default = "default_host_acl_request_timeout_ms")]
-    pub request_timeout_ms: u64,
-}
-
-/// Ten seconds: a batched `getMultipleAccounts` at `finalized` answers in well under a second,
-/// so this bounds a stalled read without cutting a merely slow one short.
-fn default_host_acl_request_timeout_ms() -> u64 {
-    10_000
 }
 
 /// `gateway.readiness_checker.gw_ciphertext_check` settings, tagged by `source`. Required with no
@@ -791,11 +779,10 @@ impl ContractConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct HostChainConfig {
-    /// Host chain id. RFC-021 Solana host ids start at `2^56` and exceed the
-    /// IEEE-754 mantissa, which serde_yaml's untagged buffering (used by
-    /// `deserialize_vec_from_map_or_seq` for `host_chains`) cannot represent as a
-    /// bare number; accept a quoted string too so the Solana host id can be
-    /// configured while EVM ids stay plain numbers.
+    /// Host chain id. RFC-021 Solana host ids start at `2^56` and exceed the IEEE-754 mantissa,
+    /// so a bare YAML number can reach this field through a lossy f64. A quoted string is
+    /// accepted too, so the Solana host id can be configured exactly while EVM ids stay plain
+    /// numbers.
     #[serde(deserialize_with = "deserialize_u64_from_str_or_num")]
     pub chain_id: u64,
     pub url: String,

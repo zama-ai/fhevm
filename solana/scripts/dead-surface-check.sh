@@ -84,9 +84,8 @@ RUST_ROOTS=(
   coprocessor/fhevm-engine/host-listener/src
   coprocessor/fhevm-engine/solana-host-follower/src
   coprocessor/fhevm-engine/solana-merkle-proof-service/src
-  # The relayer's Solana adapter (the ACL pre-check and the delegation pre-check) speaks this
-  # vocabulary natively; the rest of the relayer is EVM prose whose "durable" and "superseded"
-  # are its own words, not retired ACL names.
+  # The relayer's ACL and signature pre-checks, which skip a Solana host chain; the rest of the
+  # relayer is EVM prose whose "durable" and "superseded" are its own words, not retired ACL names.
   relayer/src/host
 )
 

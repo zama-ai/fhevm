@@ -123,7 +123,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                     ..
                 } => {
                     info!(
-                        kind = %decrypt_request.request_kind(),
+                        kind = %decrypt_request.attestation_kind(),
                         "Processing user decrypt request {}",
                         event.job_id
                     );
@@ -147,7 +147,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                         info!(
                             step = %UserDecryptStep::ReadinessCheckPassed,
                             int_job_id = %event.job_id,
-                            kind = %decrypt_request.request_kind(),
+                            kind = %decrypt_request.attestation_kind(),
                             "Readiness check passed, sending user decrypt request to gateway"
                         );
 
@@ -1026,13 +1026,10 @@ impl TxLifecycleHooks for GatewayHandler {
         job_id: &JobId,
         receipt: &TxResult,
     ) -> Result<ReceiptRecordOutcome, EventProcessingError> {
-        // The user-decrypt request emits one of the overloaded `UserDecryptionRequest` events
-        // depending on the entry point, each with a distinct signature hash: legacy
-        // `UserDecryptionRequest_0` (v2 direct and v2 delegated), RFC016 unified
-        // `UserDecryptionRequest_1` (v3 EVM), and `SolanaUserDecryptionRequest`. Try each in turn
-        // to recover the decryptionId; without the Solana fallback the gw_reference_id is never
-        // stored and the UserDecryptionResponse can never be matched back, so the request hangs
-        // until timeout.
+        // Both gateway overloads emit a `UserDecryptionRequest` event but the
+        // legacy and unified variants have different signature hashes. Try
+        // the legacy one first (covers v2 direct and v2 delegated); fall back
+        // to the unified one for v3 calls.
         let gw_reference_id = match TransactionHelper::extract_gateway_id_from_receipt::<
             Decryption::UserDecryptionRequest_0,
         >(
@@ -1042,25 +1039,13 @@ impl TxLifecycleHooks for GatewayHandler {
         ) {
             Ok(id) => id,
             Err(EventProcessingError::ValidationFailed { .. }) => {
-                match TransactionHelper::extract_gateway_id_from_receipt::<
+                TransactionHelper::extract_gateway_id_from_receipt::<
                     Decryption::UserDecryptionRequest_1,
                 >(
                     receipt,
                     Decryption::UserDecryptionRequest_1::SIGNATURE_HASH,
                     |event| event.decryptionId,
-                ) {
-                    Ok(id) => id,
-                    Err(EventProcessingError::ValidationFailed { .. }) => {
-                        TransactionHelper::extract_gateway_id_from_receipt::<
-                            Decryption::SolanaUserDecryptionRequest,
-                        >(
-                            receipt,
-                            Decryption::SolanaUserDecryptionRequest::SIGNATURE_HASH,
-                            |event| event.decryptionId,
-                        )?
-                    }
-                    Err(e) => return Err(e),
-                }
+                )?
             }
             Err(e) => return Err(e),
         };

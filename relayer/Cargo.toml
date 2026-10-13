@@ -64,12 +64,7 @@ fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-
 fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
 # Shared utils for signature verification in user-decrypt requests.
 user-decryption-signature = { path = "../shared/user-decryption-signature" }
-# Canonical Solana permit: strict typed decode (r1–r2 pre-check) reused verbatim so the
-# relayer is never softer or harder than the kms-connector on the same permit vectors.
-zama-solana-permit = { path = "../solana/crates/zama-solana-permit" }
-zama-solana-request = { path = "../solana/crates/zama-solana-request" }
-# Solana ACL: the encrypted value account and delegation record decoders the advisory
-# user-decrypt pre-check reads host state through — the connector's own crate, so one decoder.
+# RFC-021 host chain ids: which type byte marks a Solana host chain.
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 # Off-chain Coprocessor attestation consensus, backing the ciphertext readiness check.
 ciphertext-attestation = { path = "../shared/ciphertext-attestation", features = ["client"] }
@@ -90,7 +85,6 @@ indexmap = "2.13.0"
 ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock", optional = true }
 serde_yaml = "0.9"
 solana-pubkey = { version = "4.3.0", features = ["curve25519"] }
-base64 = "0.23.1"
 
 [build-dependencies]
 built = { version = "0.8", features = [
@@ -106,8 +100,6 @@ built = { version = "0.8", features = [
 # `signer-local` (PrivateKeySigner) is needed to forge EOA signatures in pre-check tests;
 # the mock provider used there is already available via the `json-rpc` feature above.
 alloy = { version = "2.2.0", features = ["signer-local"] }
-borsh = "1"
-ed25519-dalek = "2"
 tempfile = "3.25.0"
 rand = "0.10.0"
 rstest = "0.26.1"

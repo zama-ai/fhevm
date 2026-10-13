@@ -165,52 +165,8 @@ impl From<UnifiedFlatRow> for UserDecryptRequest {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum SolanaStoredRow {
-    SolanaSrfc38V1 {
-        ct_handles: Vec<U256>,
-        request_validity: RequestValiditySeconds,
-        public_key: Bytes,
-        extra_data: Bytes,
-        solana_request: Bytes,
-    },
-}
-
-impl From<SolanaStoredRow> for UserDecryptRequest {
-    fn from(row: SolanaStoredRow) -> Self {
-        let SolanaStoredRow::SolanaSrfc38V1 {
-            ct_handles,
-            request_validity,
-            public_key,
-            extra_data,
-            solana_request,
-        } = row;
-        Self::SolanaSrfc38V1 {
-            ct_handles,
-            request_validity,
-            public_key,
-            extra_data,
-            solana_request,
-        }
-    }
-}
-
 fn to_stored_value(request: &UserDecryptRequest) -> Result<Value, serde_json::Error> {
     match request {
-        UserDecryptRequest::SolanaSrfc38V1 {
-            ct_handles,
-            request_validity,
-            public_key,
-            extra_data,
-            solana_request,
-        } => serde_json::to_value(SolanaStoredRow::SolanaSrfc38V1 {
-            ct_handles: ct_handles.clone(),
-            request_validity: request_validity.clone(),
-            public_key: public_key.clone(),
-            extra_data: extra_data.clone(),
-            solana_request: solana_request.clone(),
-        }),
         UserDecryptRequest::LegacyDirect {
             ct_handle_contract_pairs,
             request_validity,
@@ -272,7 +228,7 @@ fn to_stored_value(request: &UserDecryptRequest) -> Result<Value, serde_json::Er
     }
 }
 
-/// `req_type` selects the shape; unified Solana rows retain their `kind` tag. Every
+/// `req_type` selects the shape; the payload carries no discriminator. Every
 /// read of `user_decrypt_req.req` goes through here - a caller that parses one
 /// itself can disagree with this one.
 pub fn from_stored_value(
@@ -287,11 +243,7 @@ pub fn from_stored_value(
             serde_json::from_value::<LegacyDelegatedFlatRow>(value).map(UserDecryptRequest::from)
         }
         UserDecryptReqType::Unified => {
-            if value.get("kind").and_then(Value::as_str) == Some("solana_srfc38_v1") {
-                serde_json::from_value::<SolanaStoredRow>(value).map(UserDecryptRequest::from)
-            } else {
-                serde_json::from_value::<UnifiedFlatRow>(value).map(UserDecryptRequest::from)
-            }
+            serde_json::from_value::<UnifiedFlatRow>(value).map(UserDecryptRequest::from)
         }
     }
 }
@@ -450,30 +402,6 @@ mod tests {
                 "{req_type:?} round-trip changed the shape"
             );
         }
-    }
-
-    #[test]
-    fn solana_stored_request_survives_restart() {
-        let stored = json!({
-            "kind": "solana_srfc38_v1",
-            "ct_handles": ["0x1", "0x2"],
-            "request_validity": { "startTimestamp": "0x64", "durationSeconds": "0xe10" },
-            "public_key": "0xbeef",
-            "extra_data": "0x02",
-            "solana_request": "0x01abcd"
-        });
-        let parsed = from_stored_value(UserDecryptReqType::Unified, stored.clone()).unwrap();
-        assert!(
-            matches!(&parsed, UserDecryptRequest::SolanaSrfc38V1 { ct_handles, .. } if ct_handles.len() == 2)
-        );
-        assert_eq!(
-            UserDecryptReqData::Unified(parsed).to_value().unwrap(),
-            stored
-        );
-        assert!(from_stored_value(UserDecryptReqType::UserDecrypt, stored.clone()).is_err());
-        let mut malformed = stored;
-        malformed.as_object_mut().unwrap().remove("solana_request");
-        assert!(from_stored_value(UserDecryptReqType::Unified, malformed).is_err());
     }
 
     #[test]

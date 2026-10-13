@@ -663,9 +663,10 @@ Decision:
   fact travels twice. One claim per handle names its owner and Store (DD-048, DD-049), and
   `extraData` is only the KMS routing (DD-060). The
   connector fetches leaf proofs itself, so neither client nor relayer can substitute proof data.
-- The js-sdk builds the blob and the relayer submits the call. The KMS connector routes Solana
-  requests that arrive over HTTP, joins the two parts and verifies the permit signature before using
-  them. Its gw-listener does not subscribe to the Gateway's Solana events.
+- The js-sdk builds the blob. The gateway relayer does not submit the call: Solana decryption
+  requests go through relayer-http. The KMS connector routes Solana requests that arrive over HTTP,
+  joins the two parts and verifies the permit signature before using them. Its gw-listener does not
+  subscribe to the Gateway's Solana events.
 - KMS-cert context: `extract_kms_context_id` (DD-021) handles `extra_data` versions 0, 1 and 2 (the
   public-decrypt cert) — a _different_ extraData from either path above.
 
@@ -1567,8 +1568,8 @@ Consequences:
 - `fhe_execute` wire: `allow_indexes` per Store effect and no subject lists; the deny record an
   execution passes is its application's.
 - The connector pipeline is one explicit sequence with one observation point
-  (`kms-worker/src/core/solana/pipeline.rs`); the relayer pre-checks scopes and dead delegation
-  rows advisorily and nothing else (INVARIANTS #50).
+  (`kms-worker/src/core/solana/pipeline.rs`); the gateway relayer reads no Solana account
+  (INVARIANTS #50).
 - Delegation records are consumed (INVARIANTS #27 closed).
 - A handle with no allows and no public leaf is undecryptable by everyone, including its author;
   that is the author's choice, not a stranding.
@@ -1803,7 +1804,7 @@ Why not the alternatives:
 | One id on every cluster (Token-program style) | Adopted between localnet and preview-env. Across Zamas it means one Zama per cluster, and zama-devnet and zama-testnet both target Solana devnet, so they keep distinct ids (DD-051); fhevm-internal#2055 tracks whether that stays. |
 | Zama identity in HostConfig, one program id | Rejected in DD-051: tenants under one program share handle space and PDA seeds. |
 
-Off-chain code never needs the id at build time. The connector, relayer and SDK derive PDAs from
+Off-chain code never needs the id at build time. The connector and the SDK derive PDAs from
 configured ids, and the listener hashes handles with the `--program-id` it follows (#4043). Adding a
 Zama is a new JSON file, its entry in `SOLANA_ENVIRONMENTS` (`deploy/src/environment.ts`, a static
 import because the deployer ships as one bundle) and deployer keypairs. No Rust change. A wrong id
@@ -2082,9 +2083,7 @@ emits `SolanaPublicDecryptionRequest(decryptionId, ctHandles, extraData, encrypt
 named rather than overloaded, so the EVM `publicDecryptionRequest` keeps its generated binding
 names. `extraData` holds only KMS routing (v0, v1 or v2) on both chains. Before it takes the fee,
 the Gateway refuses handles that are not of one registered Solana host chain and a store count that
-differs from the handle count. The relayer requires `encryptedStores` for Solana handles and
-refuses it for EVM handles; the stores are part of the request's content hash. The
-connector keeps them in `handle_encrypted_stores` and proves each handle's public leaf against its
+differs from the handle count. The connector keeps them in `handle_encrypted_stores` and proves each handle's public leaf against its
 own Store in one snapshot. The host verifier reads the context from v1 or v2 exactly as EVM
 `KMSVerifier` does, and reads no Store (DD-065). The SDK sends v2, `0x02 ‖ contextId ‖ epochId`, with
 the pair read from `HostConfig.current_kms_context_id` and `current_kms_epoch_id`, as the EVM SDK reads
@@ -2103,8 +2102,8 @@ Consequences:
 
 The KMS certificate does not commit to the Store; the KMS connectors check each handle's public leaf
 against it. The Solana entry
-shares the decryption counter and the fee with the EVM entry. It emits one event, so the relayer
-looks for the Solana request event when the EVM one is absent from the receipt.
+shares the decryption counter and the fee with the EVM entry. It emits only
+`SolanaPublicDecryptionRequest`.
 
 ## DD-061: A delegation is keyed by application and expires on Unix time
 
@@ -2726,9 +2725,9 @@ Status: adopted
 
 Context:
 
-Every off-chain component reads the Solana host chain. The host listener and the Merkle indexer
+Most off-chain components read the Solana host chain. The host listener and the Merkle indexer
 follow its blocks, the KMS connector reads Stores and delegation rows before it releases plaintext,
-the relayer pre-checks delegations, and clients (the SDK, the demo dapp, `solana/deploy`, the test
+and clients (the SDK, the demo dapp, `solana/deploy`, the test
 suite) send transactions and read accounts. A reader's commitment level is the point at which it
 treats a block as settled: at `confirmed` a supermajority has voted for the block, at `finalized`
 it can no longer be rolled back.
@@ -2751,7 +2750,6 @@ assumes Alpenglow on every cluster it runs on. This covers:
   checkpoint read (`block_checkpoint`) and the `solana_host_follower_finalized_slot` metric;
 - the Merkle indexer's store check (DD-068);
 - the KMS connector's account snapshot (`kms-worker/src/core/solana/snapshot.rs`);
-- the relayer's user-decrypt pre-check (`relayer/src/host/acl_checker.rs`);
 - the SDK, the demo dapp, `solana/deploy`, the test suite and the preview scripts: account reads,
   blockhashes, simulation and confirmation waits.
 
@@ -2777,28 +2775,20 @@ share the KMS released on a rolled-back fork. On Alpenglow it would save about 4
 Consequences:
 
 A client that waits for less than `finalized`, such as a third-party wallet, can ask for a
-decryption before its grant is finalized. Neither service turns that into a terminal refusal:
-
-- the KMS connector records every outcome of such a read as recoverable. An absent Store, a missing
-  leaf (`NoLeaf`), a record behind the chain (`ProofRecordBehind`), a leaf beyond the observed count
-  (`LeafIndexOutOfRange`), a proof that no longer verifies (`ProofDoesNotVerify`) and a delegation
-  that is not live are ACL denials that a later attempt may clear. Pinned by
-  `every_solana_authorization_failure_is_recorded_as_written`,
-  `every_solana_public_decrypt_failure_is_recorded_as_written` and
-  `a_missing_delegation_rejects_its_entry`;
-- the relayer pre-check reads a refused delegation again on its retry policy (`max_attempts`,
-  `retry_interval_ms`) before the refusal stands. Pinned by
-  `a_grant_that_finalizes_after_the_first_row_read_passes` and
-  `rows_still_dead_on_the_last_attempt_refuse`. The example policy, three reads one second apart,
-  covers Alpenglow's finality, not TowerBFT's 12.8 s. A refusal that stands costs at least
-  `(max_attempts - 1) × retry_interval_ms` of waiting: two seconds with that policy.
+decryption before its grant is finalized. The KMS connector does not turn that into a terminal
+refusal. It records every outcome of such a read as recoverable. An absent Store, a missing leaf
+(`NoLeaf`), a record behind the chain (`ProofRecordBehind`), a leaf beyond the observed count
+(`LeafIndexOutOfRange`), a proof that no longer verifies (`ProofDoesNotVerify`) and a delegation
+that is not live are ACL denials that a later attempt may clear. Pinned by
+`every_solana_authorization_failure_is_recorded_as_written`,
+`every_solana_public_decrypt_failure_is_recorded_as_written` and
+`a_missing_delegation_rejects_its_entry`.
 
 On a cluster with several validators a slot can have more than one bank. How Yellowstone v16
 delivers one bank per slot at `finalized`, and what the follower guarantees from it, is in DD-062.
 
-Pinned by `request_subscribes_to_host_transactions_and_block_meta` (the subscription),
-`finalized_rpc_preserves_order_null_accounts_and_context_slot` (the KMS snapshot) and
-`row_read_requires_the_first_read_slot` (the relayer pre-check's row read).
+Pinned by `request_subscribes_to_host_transactions_and_block_meta` (the subscription) and
+`finalized_rpc_preserves_order_null_accounts_and_context_slot` (the KMS snapshot).
 
 ## DD-071: The listener records each Solana block as a finalized host block, numbered by height
 

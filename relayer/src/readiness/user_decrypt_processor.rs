@@ -121,24 +121,6 @@ impl UserDecryptReadinessProcessor {
                     .collect(),
                 extra_data.clone(),
             ),
-            // Solana handles carry no EVM contract address. This readiness call only proves
-            // ciphertext material exists per handle, so the pair's address is inert — a zero
-            // placeholder keeps the shared `(bytes32,address)[]` projection without inventing an
-            // EVM meaning for a Solana handle.
-            UserDecryptRequest::SolanaSrfc38V1 {
-                ct_handles,
-                extra_data,
-                ..
-            } => (
-                ct_handles
-                    .iter()
-                    .map(|ct_handle| HandleContractPair {
-                        ct_handle: *ct_handle,
-                        contract_address: alloy::primitives::Address::ZERO,
-                    })
-                    .collect(),
-                extra_data.clone(),
-            ),
         };
         let result = checker
             .check_user_decryption_readiness(&task.job_id, &pairs, extra_data)

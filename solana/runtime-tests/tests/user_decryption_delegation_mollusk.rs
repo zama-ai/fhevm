@@ -1547,11 +1547,11 @@ fn the_shared_clock_decoder_reads_the_runtimes_clock() {
     );
 }
 
-/// The relayer's advisory pre-check derives the same addresses from raw seeds
-/// (`relayer/src/host/solana_user_decrypt_precheck.rs`), where these literals are asserted against
-/// the same inputs — a seed-order drift on either side breaks both suites on the same bytes.
+/// The KMS connector (`kms-worker/src/core/solana/mod.rs`) and the SDK
+/// (`userDecryptionDelegation.test.ts`) assert the same wildcard row address for the same inputs, so
+/// a seed-order drift on either side breaks both suites on the same bytes.
 #[test]
-fn relayer_fixture_wildcard_row_and_encrypted_store_addresses() {
+fn wildcard_row_and_encrypted_store_addresses() {
     let delegator = Pubkey::new_from_array([0x11; 32]);
     let delegate = Pubkey::new_from_array([0x22; 32]);
     let (wildcard_row, _) =
