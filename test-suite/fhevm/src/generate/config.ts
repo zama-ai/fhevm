@@ -8,7 +8,9 @@ import {
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
 import { kmsCertificateThreshold } from "../../../../solana/deploy/src/thresholds";
+import { kmsPartyIds, relayerHttpNodeName } from "../kms-party";
 import { hostChainRuntimes, isEvmHost, OBJECT_STORE_INTERNAL_URL, RELAYER_HTTP_PORT } from "../layout";
+import { kmsConnectorProxyUrl } from "./env";
 import { solanaProgramId, solanaValidatorUrl } from "./solana";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
@@ -145,7 +147,11 @@ export const renderRelayerConfig = (
 /**
  * Renders relayer-http's config from its checked-in example: EVM chains in supported_chain_ids,
  * each Solana chain in solana_chains with the zama-host id and the certificate threshold its KMS
- * context was defined with, and one endpoint per kms-connector proxy.
+ * context was defined with, and one endpoint per kms-connector proxy, named after its party. Every
+ * party's proxy is listed, spares included, so a node swap needs no new config or restart: a party
+ * outside the active context only adds a refused call, which the kms-context-switch leg checks ends
+ * before the aggregation's deadline. A production deployment lists its current nodes and updates the list on a
+ * node change.
  */
 export const renderRelayerHttpConfig = (
   state: Pick<State, "discovery">,
@@ -154,10 +160,13 @@ export const renderRelayerHttpConfig = (
   envs: Record<string, Record<string, string>>,
 ) => {
   const config = YAML.parse(baseText) as {
+    log: Record<string, unknown>;
     http: Record<string, unknown>;
     kms_aggregator: { public_decrypt: { threshold: number }; user_decrypt: { threshold: number }; endpoints: unknown[] };
   };
   const solanaThreshold = kmsCertificateThreshold(plan.kms.threshold, plan.kms.committeeSize);
+  // JSON lines, as in the preview: the e2e reads a request's lines back by its request id.
+  config.log.format = "json";
   config.http.endpoint = `0.0.0.0:${RELAYER_HTTP_PORT}`;
   config.http.supported_chain_ids = plan.hostChains.filter(isEvmHost).map((chain) => Number(chain.chainId));
   config.http.solana_chains = Object.fromEntries(
@@ -170,9 +179,9 @@ export const renderRelayerHttpConfig = (
   );
   config.kms_aggregator.public_decrypt.threshold = Number(envs["gateway-sc"].PUBLIC_DECRYPTION_THRESHOLD);
   config.kms_aggregator.user_decrypt.threshold = Number(envs["gateway-sc"].USER_DECRYPTION_THRESHOLD);
-  config.kms_aggregator.endpoints = envs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS.split(",").map((url, index) => ({
-    name: `kms_${index}`,
-    url,
+  config.kms_aggregator.endpoints = kmsPartyIds(plan.kms.parties).map((party) => ({
+    name: relayerHttpNodeName(party),
+    url: kmsConnectorProxyUrl(envs, party),
     auth: { type: "api_key", value_env: "KMS_CONNECTOR_API_KEY" },
   }));
   return YAML.stringify(config);

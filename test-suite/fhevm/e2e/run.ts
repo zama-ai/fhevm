@@ -16,7 +16,7 @@ process.env.SOLANA_RECOVERY_RUN_ID = runId;
 const cleartextStack = env.source === 'cleartext' ? await (await import('../src/solana/cleartext-stack')).startCleartextStack() : undefined;
 let status = 1;
 try {
-  status = await Bun.spawn(['bun', 'test', ...(process.argv.length > 2 ? process.argv.slice(2) : ['e2e/scenarios'])], { stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' }).exited;
+  status = await Bun.spawn(['bun', 'test', '--preload', './e2e/harness/decryption-trace.ts', ...(process.argv.length > 2 ? process.argv.slice(2) : ['e2e/scenarios'])], { stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' }).exited;
   // The cleartext target runs no coprocessor, so it has no Merkle record to check.
   if (status === 0 && env.capabilities.protocolServices) await assertMerkleRecordMatchesChain(env);
 } finally {

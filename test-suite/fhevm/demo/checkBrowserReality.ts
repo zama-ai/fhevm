@@ -102,6 +102,24 @@ const main = async (): Promise<void> => {
       },
     },
     {
+      // Proves the dev server's decryption proxy reaches relayer-http: an empty body is refused by
+      // relayer-http's own validation, with the request id it sets on every answer. It is not a
+      // burner-wallet decrypt; that runs in a real browser.
+      name: "dApp same-origin decryption relayer proxy",
+      run: async () => {
+        const response = await fetch(`${DAPP_URL}/api/decryption-relayer/v4/user-decrypt`, {
+          method: "POST",
+          headers: { origin: ORIGIN, "content-type": "application/json" },
+          body: "{}",
+        });
+        const body = (await response.json()) as { code?: unknown };
+        if (response.status !== 400 || body.code !== "malformed") {
+          throw new Error(`proxied empty user-decrypt returned ${response.status} ${String(body.code)}, expected 400 malformed`);
+        }
+        if (!response.headers.get("x-request-id")) throw new Error("proxied user-decrypt answer carried no x-request-id");
+      },
+    },
+    {
       name: "operator preflight",
       run: () =>
         preflightAllowsOrigin("operator", `${OPERATOR_URL}/demo-faucet/mint-usdc`, {
