@@ -369,16 +369,12 @@ pub fn read_account<T: AccountDeserialize>(context: &Ctx, address: Pubkey) -> T 
     T::try_deserialize(&mut account.data.as_slice()).expect("account should deserialize")
 }
 
-/// The `zama-host` account at `address`, or `None` when the host owns no account there.
+/// The `zama-host` account at `address`, or `None` when the host owns no account there. A
+/// host-owned account that does not deserialize as `T` panics.
 pub fn read_host_account<T: AccountDeserialize>(context: &Ctx, address: Pubkey) -> Option<T> {
     let store = context.account_store.borrow();
     let account = store.get(&address).filter(|a| a.owner == host::id())?;
-    T::try_deserialize(&mut account.data.as_slice()).ok()
-}
-
-/// The HCU block meter at `address`, or `None` before the first metered execution creates it.
-pub fn read_hcu_block_meter(context: &Ctx, address: Pubkey) -> Option<host::HcuBlockMeter> {
-    read_host_account(context, address)
+    Some(T::try_deserialize(&mut account.data.as_slice()).expect("host account deserializes"))
 }
 
 /// Reads the canonical `EncryptedStore` at `address` from the context store.

@@ -55,7 +55,7 @@ use zama_solana_test_kit::{
     cost_report, deny_scope_record_account, encrypted_store_account, ensure_system_accounts,
     event_authority, handle_for_chain, hcu_trusted_app_record_account, host_config_account,
     host_error, kms_context_account, new_encrypted_store, paused_host_config,
-    program_owned_account, read_account, read_hcu_block_meter, read_spl_amount, read_store_handle,
+    program_owned_account, read_account, read_host_account, read_spl_amount, read_store_handle,
     readonly, serialized_account, spl_mint_account, spl_token_account, system_account, Ctx,
     HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
 };
@@ -4068,7 +4068,11 @@ fn mollusk_every_flow_runs_under_a_binding_block_cap_when_trusted() {
         ..HostLevers::default()
     });
     for app in fixture.apps() {
-        assert!(read_hcu_block_meter(&context, host::hcu_block_meter_address(app).0).is_none());
+        assert!(read_host_account::<host::HcuBlockMeter>(
+            &context,
+            host::hcu_block_meter_address(app).0
+        )
+        .is_none());
     }
 }
 
@@ -4080,8 +4084,11 @@ fn mollusk_every_flow_runs_under_a_binding_block_cap_when_metered() {
         ..HostLevers::default()
     });
     for app in fixture.apps() {
-        let meter = read_hcu_block_meter(&context, host::hcu_block_meter_address(app).0)
-            .expect("the execution created the meter");
+        let meter = read_host_account::<host::HcuBlockMeter>(
+            &context,
+            host::hcu_block_meter_address(app).0,
+        )
+        .expect("the execution created the meter");
         assert_eq!((meter.program, meter.scope), (app.program, app.scope));
         assert!(meter.used_hcu > 0);
     }

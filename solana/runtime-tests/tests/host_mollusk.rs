@@ -23,8 +23,9 @@ use solana_sdk::{
 use std::collections::HashMap;
 use zama_host::encode::ExecutionDictionary;
 use zama_host::{
-    self as host, AppScope, EncryptedStore, FheBinaryOpCode, FheExecuteArgs, FheExecuteEffect,
-    FheExecuteOperand, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode, HostConfig,
+    self as host, AppScope, DenyScopeRecord, EncryptedStore, FheBinaryOpCode, FheExecuteArgs,
+    FheExecuteEffect, FheExecuteOperand, FheExecuteStep, FheTernaryOpCode, FheUnaryOpCode,
+    HcuBlockMeter, HcuTrustedAppRecord, HostConfig, KmsContext,
 };
 use zama_solana_acl::StoreHistoryEvent;
 use zama_solana_test_kit::{
@@ -34,17 +35,17 @@ use zama_solana_test_kit::{
     hcu_trusted_app_record_account, host_error, host_svm as mollusk,
     host_svm_without_previous_bank_hash as mollusk_without_previous_bank_hash, label,
     new_encrypted_store, new_encrypted_store_with_slot, paused_host_config, program_owned_account,
-    rand_nonce_account, read_encrypted_store, read_hcu_block_meter, read_host_account, readonly,
-    readonly_signer, serialized_account, signing, system_account, system_program_account, u256_be,
-    writable, HostConfigParams, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
+    rand_nonce_account, read_encrypted_store, read_host_account, readonly, readonly_signer,
+    serialized_account, signing, system_account, system_program_account, u256_be, writable,
+    HostConfigParams, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID, INPUT_VERIFICATION_CONTRACT,
 };
 
 mod host_fixtures;
 use host_fixtures::{
     check_host_context, check_host_instruction, fhe_execute_ix, fhe_execute_ix_with_extras,
     fixture_scope, host_admin_ix, host_config_account, host_config_account_with_flags,
-    mollusk_execute_context, public_store_outputs_execution, read_host_config,
-    sole_store_authority, store_authority, FheExecuteExtras, StoreAuthority,
+    mollusk_execute_context, public_store_outputs_execution, sole_store_authority, store_authority,
+    FheExecuteExtras, StoreAuthority,
 };
 
 // Harness
@@ -1694,7 +1695,7 @@ fn mollusk_admin_setters_run_while_every_area_is_paused() {
     for setter in &setters {
         check_host_context(&context, setter, &[Check::success()]);
     }
-    let config = read_host_config(&context, host_config).expect("config");
+    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
     assert_eq!(config.paused, host::PauseFlags::ALL);
     assert_eq!(config.current_kms_context_id, next_context);
     assert_eq!(config.current_kms_epoch_id, canonical_test_epoch_id(3));
@@ -2292,27 +2293,6 @@ fn host_config_account_with_block_cap(admin: Pubkey, cap: u64) -> (Pubkey, Accou
     })
 }
 
-fn read_hcu_trusted_app_record(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> Option<host::HcuTrustedAppRecord> {
-    read_host_account(context, address)
-}
-
-fn read_kms_context(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> Option<host::KmsContext> {
-    read_host_account(context, address)
-}
-
-fn read_deny_scope_record(
-    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> Option<host::DenyScopeRecord> {
-    read_host_account(context, address)
-}
-
 // ---- admin-setter / trust-registry instruction builders ----
 
 fn set_max_hcu_per_tx_ix(admin: Pubkey, host_config: Pubkey, value: u64) -> Instruction {
@@ -2527,7 +2507,7 @@ fn mollusk_set_max_hcu_per_tx_rejects_above_block_cap_band() {
             host::errors::ZamaHostError::HcuBlockCapBelowMaxPerTx,
         )],
     );
-    let config = read_host_config(&context, host_config).expect("config");
+    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
     assert_eq!(config.max_hcu_per_tx, u64::MAX);
     assert_eq!(config.hcu_block_cap_per_app, 500_000);
 
@@ -2538,7 +2518,7 @@ fn mollusk_set_max_hcu_per_tx_rejects_above_block_cap_band() {
         &[Check::success()],
     );
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .max_hcu_per_tx,
         500_000
@@ -2559,7 +2539,7 @@ fn mollusk_set_max_hcu_per_tx_unrestricted_block_cap_accepts_any_total() {
         &[Check::success()],
     );
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .max_hcu_per_tx,
         20_000_000
@@ -2589,7 +2569,7 @@ fn mollusk_set_max_hcu_setters_reject_zero() {
             host::errors::ZamaHostError::HcuLimitZeroReserved,
         )],
     );
-    let config = read_host_config(&context, host_config).expect("config");
+    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
     assert_eq!(config.max_hcu_per_tx, u64::MAX);
     assert_eq!(config.max_hcu_depth_per_tx, u64::MAX);
 }
@@ -2606,7 +2586,7 @@ fn mollusk_set_max_hcu_depth_per_tx_persists_nonzero() {
         &[Check::success()],
     );
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .max_hcu_depth_per_tx,
         20_000_000
@@ -2627,11 +2607,11 @@ fn mollusk_set_max_hcu_per_tx_rejects_a_total_below_the_depth_limit() {
     check_host_context(
         &context,
         &set_max_hcu_per_tx_ix(admin, host_config, 4_000_000),
-        &[custom_error(
+        &[host_error(
             host::errors::ZamaHostError::HcuLimitOrderingInvalid,
         )],
     );
-    let config = read_host_config(&context, host_config).expect("config");
+    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
     assert_eq!(config.max_hcu_per_tx, u64::MAX);
 }
 
@@ -2649,11 +2629,11 @@ fn mollusk_set_max_hcu_depth_per_tx_rejects_a_depth_above_the_total_limit() {
     check_host_context(
         &context,
         &set_max_hcu_depth_per_tx_ix(admin, host_config, 6_000_000),
-        &[custom_error(
+        &[host_error(
             host::errors::ZamaHostError::HcuLimitOrderingInvalid,
         )],
     );
-    let config = read_host_config(&context, host_config).expect("config");
+    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
     assert_eq!(config.max_hcu_depth_per_tx, u64::MAX);
 }
 
@@ -2673,7 +2653,7 @@ fn mollusk_set_deny_scope_creates_record_and_emits_event() {
         &set_deny_scope_ix(admin, admin, host_config, app, true),
         &[Check::success()],
     );
-    let record = read_deny_scope_record(&context, deny_record).expect("deny record");
+    let record = read_host_account::<DenyScopeRecord>(&context, deny_record).expect("deny record");
     assert_eq!(record.program, app.program);
     assert_eq!(record.scope, app.scope);
     assert!(record.denied);
@@ -2690,7 +2670,7 @@ fn mollusk_set_deny_scope_creates_record_and_emits_event() {
         &[Check::success()],
     );
     assert!(
-        !read_deny_scope_record(&context, deny_record)
+        !read_host_account::<DenyScopeRecord>(&context, deny_record)
             .expect("deny record")
             .denied
     );
@@ -2719,7 +2699,7 @@ fn mollusk_set_deny_scope_rejects_wrong_record_pda() {
             anchor_lang::error::ErrorCode::ConstraintSeeds,
         )],
     );
-    assert!(read_deny_scope_record(&context, deny_record).is_none());
+    assert!(read_host_account::<DenyScopeRecord>(&context, deny_record).is_none());
 }
 
 #[test]
@@ -2740,7 +2720,7 @@ fn mollusk_set_deny_scope_creates_its_record_at_an_address_prefunded_below_rent(
         &[Check::success()],
     );
     assert!(
-        read_deny_scope_record(&context, deny_record)
+        read_host_account::<DenyScopeRecord>(&context, deny_record)
             .expect("deny record")
             .denied
     );
@@ -2763,7 +2743,7 @@ fn mollusk_set_deny_scope_admitting_an_absent_application_writes_an_admitted_rec
         &[Check::success()],
     );
     assert!(emitted_events::<host::DenyScopeUpdatedEvent>(&result).is_empty());
-    let record = read_deny_scope_record(&context, deny_record).expect("deny record");
+    let record = read_host_account::<DenyScopeRecord>(&context, deny_record).expect("deny record");
     assert_eq!(
         (record.program, record.scope, record.denied),
         (app.app().program, app.app().scope, false)
@@ -2792,7 +2772,7 @@ fn mollusk_set_deny_scope_admitting_an_absent_application_writes_an_admitted_rec
     );
     assert!(sole_emitted_event::<host::DenyScopeUpdatedEvent>(&result).denied);
     assert!(
-        read_deny_scope_record(&context, deny_record)
+        read_host_account::<DenyScopeRecord>(&context, deny_record)
             .expect("deny record")
             .denied
     );
@@ -2857,7 +2837,7 @@ fn mollusk_set_hcu_block_cap_metering_band_persists_and_emits_event() {
         &set_hcu_block_cap_per_app_ix(admin, host_config, 500_000),
         &[Check::success()],
     );
-    let config = read_host_config(&context, host_config).expect("config");
+    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
     assert_eq!(config.hcu_block_cap_per_app, 500_000);
     let event = sole_emitted_event::<host::HostConfigUpdatedEvent>(&result);
     assert_eq!(event.signer, admin);
@@ -2878,7 +2858,7 @@ fn mollusk_set_hcu_block_cap_at_max_per_tx_boundary_is_accepted() {
         &[Check::success()],
     );
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .hcu_block_cap_per_app,
         20_000_000
@@ -2901,7 +2881,7 @@ fn mollusk_set_hcu_block_cap_below_max_per_tx_is_rejected() {
         )],
     );
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .hcu_block_cap_per_app,
         u64::MAX
@@ -2922,7 +2902,7 @@ fn mollusk_set_hcu_block_cap_with_max_per_tx_unlimited_accepts_any_band_value() 
         &[Check::success()],
     );
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .hcu_block_cap_per_app,
         1
@@ -2943,7 +2923,7 @@ fn mollusk_set_hcu_block_cap_ban_and_unrestricted_sentinels_bypass_ordering() {
         &[Check::success()],
     );
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .hcu_block_cap_per_app,
         0
@@ -2955,7 +2935,7 @@ fn mollusk_set_hcu_block_cap_ban_and_unrestricted_sentinels_bypass_ordering() {
         &[Check::success()],
     );
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .hcu_block_cap_per_app,
         u64::MAX
@@ -3002,7 +2982,7 @@ fn mollusk_set_hcu_block_cap_rejects_wrong_admin() {
         )],
     );
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .hcu_block_cap_per_app,
         u64::MAX
@@ -3027,7 +3007,7 @@ fn mollusk_set_hcu_block_cap_rejects_remaining_accounts() {
         )],
     );
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .hcu_block_cap_per_app,
         u64::MAX
@@ -3049,8 +3029,9 @@ fn mollusk_set_hcu_app_trusted_creates_trusted_record() {
         &set_hcu_app_trusted_ix(admin, admin, host_config, app, true),
         &[Check::success()],
     );
-    let record = read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0)
-        .expect("record");
+    let record =
+        read_host_account::<HcuTrustedAppRecord>(&context, host::hcu_trusted_app_address(app).0)
+            .expect("record");
     assert_eq!(record.program, app.program);
     assert_eq!(record.scope, app.scope);
     assert!(record.trusted);
@@ -3079,8 +3060,9 @@ fn mollusk_set_hcu_app_trusted_writes_untrusted_false_record() {
         &set_hcu_app_trusted_ix(admin, admin, host_config, app, false),
         &[Check::success()],
     );
-    let record = read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0)
-        .expect("record");
+    let record =
+        read_host_account::<HcuTrustedAppRecord>(&context, host::hcu_trusted_app_address(app).0)
+            .expect("record");
     assert!(!record.trusted);
 }
 
@@ -3103,7 +3085,7 @@ fn mollusk_set_hcu_app_trusted_is_idempotent() {
         &[Check::success()],
     );
     assert!(
-        read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0)
+        read_host_account::<HcuTrustedAppRecord>(&context, host::hcu_trusted_app_address(app).0)
             .expect("record")
             .trusted
     );
@@ -3128,7 +3110,11 @@ fn mollusk_set_hcu_app_trusted_rejects_wrong_record_pda() {
             ),
         )],
     );
-    assert!(read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0).is_none());
+    assert!(read_host_account::<HcuTrustedAppRecord>(
+        &context,
+        host::hcu_trusted_app_address(app).0
+    )
+    .is_none());
 }
 
 #[test]
@@ -3149,7 +3135,7 @@ fn mollusk_set_hcu_app_trusted_creates_its_record_at_an_address_prefunded_below_
         &[Check::success()],
     );
     assert!(
-        read_hcu_trusted_app_record(&context, record)
+        read_host_account::<HcuTrustedAppRecord>(&context, record)
             .expect("record")
             .trusted
     );
@@ -3173,7 +3159,7 @@ fn mollusk_set_hcu_app_trusted_untrusting_an_absent_application_writes_a_metered
         &[Check::success()],
     );
     assert!(emitted_events::<host::HcuAppTrustUpdatedEvent>(&result).is_empty());
-    let created = read_hcu_trusted_app_record(&context, record).expect("record");
+    let created = read_host_account::<HcuTrustedAppRecord>(&context, record).expect("record");
     assert_eq!(
         (created.program, created.scope, created.trusted),
         (app.program, app.scope, false)
@@ -3197,7 +3183,7 @@ fn mollusk_set_hcu_app_trusted_untrusting_an_absent_application_writes_a_metered
     );
     assert!(sole_emitted_event::<host::HcuAppTrustUpdatedEvent>(&result).trusted);
     assert!(
-        read_hcu_trusted_app_record(&context, record)
+        read_host_account::<HcuTrustedAppRecord>(&context, record)
             .expect("record")
             .trusted
     );
@@ -3225,7 +3211,11 @@ fn mollusk_set_hcu_app_trusted_rejects_wrong_admin() {
             host::errors::ZamaHostError::HostConfigAdminMismatch,
         )],
     );
-    assert!(read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0).is_none());
+    assert!(read_host_account::<HcuTrustedAppRecord>(
+        &context,
+        host::hcu_trusted_app_address(app).0
+    )
+    .is_none());
 }
 
 #[test]
@@ -3246,7 +3236,11 @@ fn mollusk_set_hcu_app_trusted_rejects_remaining_accounts() {
             host::errors::ZamaHostError::UnexpectedRemainingAccounts,
         )],
     );
-    assert!(read_hcu_trusted_app_record(&context, host::hcu_trusted_app_address(app).0).is_none());
+    assert!(read_host_account::<HcuTrustedAppRecord>(
+        &context,
+        host::hcu_trusted_app_address(app).0
+    )
+    .is_none());
 }
 
 // ---- coprocessor signer set + threshold (EVM InputVerifier parity) ----
@@ -3266,7 +3260,7 @@ fn mollusk_set_coprocessor_signers_rotates_the_set_and_threshold() {
         &[Check::success()],
     );
 
-    let config = read_host_config(&context, host_config).expect("config");
+    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
     assert_eq!(config.active_coprocessor_signers(), signers.as_slice());
     assert_eq!(config.coprocessor_threshold, 2);
 }
@@ -3339,7 +3333,7 @@ fn mollusk_define_kms_context_at_realistic_signer_count() {
         &[Check::success()],
     );
 
-    let stored = read_kms_context(&context, kms_context).expect("kms context");
+    let stored = read_host_account::<KmsContext>(&context, kms_context).expect("kms context");
     assert_eq!(stored.signers, signers);
     assert_eq!(stored.thresholds.public_decryption, 7);
 
@@ -3468,7 +3462,7 @@ fn mollusk_define_kms_context_requires_an_increasing_id() {
             &[expected],
         );
     }
-    let config = read_host_config(&context, host_config).expect("config");
+    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
     assert_eq!(config.current_kms_context_id, tagged(0x0100));
 }
 
@@ -3508,7 +3502,7 @@ fn mollusk_define_kms_context_requires_an_increasing_epoch() {
             &[expected],
         );
     }
-    let config = read_host_config(&context, host_config).expect("config");
+    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
     assert_eq!(config.current_kms_context_id, canonical_test_context_id(2));
     assert_eq!(config.current_kms_epoch_id, canonical_test_epoch_id(6));
 }
@@ -3560,7 +3554,7 @@ fn mollusk_define_kms_epoch_advances_only_the_active_context() {
     assert_eq!(event.version, host::EVENT_VERSION);
     assert_eq!(event.kms_context_id, active);
     assert_eq!(event.kms_epoch_id, canonical_test_epoch_id(3));
-    let config = read_host_config(&context, host_config).expect("config");
+    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
     assert_eq!(config.current_kms_context_id, active);
     assert_eq!(config.current_kms_epoch_id, canonical_test_epoch_id(3));
 }
@@ -4042,7 +4036,7 @@ fn mollusk_fhe_execute_unrestricted_cap_none_none_succeeds() {
         &[Check::success()],
     );
     read_encrypted_store(&fixture.context, fixture.output_value);
-    assert!(read_hcu_block_meter(&fixture.context, fixture.meter_pda()).is_none());
+    assert!(read_host_account::<HcuBlockMeter>(&fixture.context, fixture.meter_pda()).is_none());
 }
 
 #[test]
@@ -4086,7 +4080,7 @@ fn mollusk_fhe_execute_unrestricted_cap_ignores_supplied_accounts() {
         &[Check::success()],
     );
     assert_eq!(
-        read_hcu_block_meter(&fixture.context, meter_pda)
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda)
             .expect("meter")
             .used_hcu,
         999
@@ -4124,7 +4118,7 @@ fn mollusk_fhe_execute_ban_cap_zero_untrusted_with_meter_is_rejected_unchanged()
         )],
     );
     assert_eq!(
-        read_hcu_block_meter(&fixture.context, meter_pda)
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda)
             .expect("meter")
             .used_hcu,
         0
@@ -4178,7 +4172,7 @@ fn mollusk_fhe_execute_trusted_witness_bypasses_and_creates_no_meter() {
         &[Check::success()],
     );
     read_encrypted_store(&fixture.context, fixture.output_value);
-    assert!(read_hcu_block_meter(&fixture.context, fixture.meter_pda()).is_none());
+    assert!(read_host_account::<HcuBlockMeter>(&fixture.context, fixture.meter_pda()).is_none());
 }
 
 #[test]
@@ -4305,7 +4299,8 @@ fn mollusk_fhe_execute_prefunded_empty_meter_is_created_not_griefed() {
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[Check::success()],
     );
-    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
+    let meter =
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda).expect("meter created");
     assert_eq!(meter.program, fixture.block_cap_app().program);
     assert_eq!(meter.scope, fixture.block_cap_app().scope);
     assert_eq!(meter.used_hcu, FIXTURE_BATCH_HCU);
@@ -4340,7 +4335,8 @@ fn mollusk_fhe_execute_overfunded_empty_meter_is_created_preserving_surplus() {
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[Check::success()],
     );
-    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
+    let meter =
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda).expect("meter created");
     assert_eq!(meter.used_hcu, FIXTURE_BATCH_HCU);
     let lamports = fixture
         .context
@@ -4483,7 +4479,7 @@ fn mollusk_fhe_execute_over_cap_trips_in_admission_without_output_or_mutation() 
         )],
     );
     assert_eq!(
-        read_hcu_block_meter(&fixture.context, meter_pda)
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda)
             .expect("meter")
             .used_hcu,
         0
@@ -4505,7 +4501,7 @@ fn mollusk_fhe_execute_charge_accumulates_onto_prior_slot_usage() {
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[Check::success()],
     );
-    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter");
+    let meter = read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda).expect("meter");
     assert_eq!(meter.used_hcu, 50_000 + FIXTURE_BATCH_HCU);
     assert_eq!(meter.last_seen_slot, slot);
     read_encrypted_store(&fixture.context, fixture.output_value);
@@ -4528,7 +4524,7 @@ fn mollusk_fhe_execute_over_cap_with_prior_usage_is_rejected_unchanged() {
         )],
     );
     assert_eq!(
-        read_hcu_block_meter(&fixture.context, meter_pda)
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda)
             .expect("meter")
             .used_hcu,
         100_000
@@ -4553,7 +4549,7 @@ fn mollusk_fhe_execute_lazy_reset_zeroes_prior_slot_usage() {
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[Check::success()],
     );
-    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter");
+    let meter = read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda).expect("meter");
     assert_eq!(meter.used_hcu, FIXTURE_BATCH_HCU);
     assert_eq!(meter.last_seen_slot, slot);
 }
@@ -4570,7 +4566,8 @@ fn mollusk_fhe_execute_clean_first_call_lazy_creates_meter_at_batch_cost() {
         &fixture.block_cap_instruction(Some(meter_pda), None),
         &[Check::success()],
     );
-    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
+    let meter =
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda).expect("meter created");
     assert_eq!(meter.program, fixture.block_cap_app().program);
     assert_eq!(meter.scope, fixture.block_cap_app().scope);
     assert_eq!(meter.used_hcu, FIXTURE_BATCH_HCU);
@@ -4600,13 +4597,13 @@ fn mollusk_fhe_execute_per_app_meters_are_isolated_under_uniform_cap() {
         &[Check::success()],
     );
     assert_eq!(
-        read_hcu_block_meter(&fixture.context, other_meter_pda)
+        read_host_account::<HcuBlockMeter>(&fixture.context, other_meter_pda)
             .expect("other meter")
             .used_hcu,
         500_000
     );
     assert_eq!(
-        read_hcu_block_meter(&fixture.context, meter_pda)
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda)
             .expect("meter")
             .used_hcu,
         FIXTURE_BATCH_HCU
@@ -4636,7 +4633,7 @@ fn mollusk_fhe_execute_same_application_accumulates_across_payers_and_authoritie
     ix1.accounts[7].pubkey = host::transient_store_address(payer1).0;
     check_host_context(&fixture.context, &ix1, &[Check::success()]);
     assert_eq!(
-        read_hcu_block_meter(&fixture.context, meter_pda)
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda)
             .expect("meter created")
             .used_hcu,
         FIXTURE_BATCH_HCU
@@ -4664,7 +4661,7 @@ fn mollusk_fhe_execute_same_application_accumulates_across_payers_and_authoritie
     // The tripped execution accumulated onto the SAME meter (no fresh budget) and, breaching in the
     // read-only admission pass, left it unchanged and created no output.
     assert_eq!(
-        read_hcu_block_meter(&fixture.context, meter_pda)
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda)
             .expect("meter")
             .used_hcu,
         FIXTURE_BATCH_HCU
@@ -4721,7 +4718,8 @@ fn mollusk_fhe_execute_transient_only_batch_is_metered_via_the_values_it_reads()
     // No persistent output was produced...
     fixture.assert_no_output(&result);
     // ...yet the execution accrued onto the application's meter.
-    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
+    let meter =
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda).expect("meter created");
     assert_eq!(meter.program, fixture.block_cap_app().program);
     assert_eq!(meter.scope, fixture.block_cap_app().scope);
     assert_eq!(meter.used_hcu, TRANSIENT_BATCH_HCU);
@@ -4737,7 +4735,7 @@ fn mollusk_fhe_execute_finite_cap_charges_input_free_arithmetic_to_the_producing
         &[Check::success()],
     );
     assert_eq!(
-        read_hcu_block_meter(&fixture.context, meter_pda)
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda)
             .unwrap()
             .used_hcu,
         32
@@ -4761,7 +4759,8 @@ fn mollusk_fhe_execute_finite_cap_allows_input_free_persistent_output_bootstrap(
     // The execution WAS metered onto the application (a single euint64 TrivialEncrypt, 32 HCU
     // in HCULimit.sol `checkHCUForTrivialEncrypt`).
     const TRIVIAL_ENCRYPT_EUINT64_HCU: u64 = 32;
-    let meter = read_hcu_block_meter(&fixture.context, meter_pda).expect("meter created");
+    let meter =
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda).expect("meter created");
     assert_eq!(meter.program, fixture.block_cap_app().program);
     assert_eq!(meter.used_hcu, TRIVIAL_ENCRYPT_EUINT64_HCU);
 }
@@ -4797,7 +4796,7 @@ fn mollusk_fhe_execute_meter_accumulation_overflow_fails_closed() {
         )],
     );
     assert_eq!(
-        read_hcu_block_meter(&fixture.context, meter_pda)
+        read_host_account::<HcuBlockMeter>(&fixture.context, meter_pda)
             .expect("meter")
             .used_hcu,
         u64::MAX - 1_000

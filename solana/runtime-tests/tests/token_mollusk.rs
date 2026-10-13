@@ -48,7 +48,7 @@ use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, canonical_test_context_id,
     cost_report, decode_anchor_event, deny_scope_record_account, encrypted_store_account,
     event_authority, handle_for_chain, host_error, new_encrypted_store, paused_host_config,
-    read_account, read_encrypted_store, read_hcu_block_meter, read_spl_amount, read_store_handle,
+    read_account, read_encrypted_store, read_host_account, read_spl_amount, read_store_handle,
     serialized_account, spl_mint_account, spl_token_account, system_account, u256_be, Ctx,
     HostConfigParams, BALANCE_FHE_TYPE, DECRYPTION_CONTRACT, GATEWAY_CHAIN_ID,
 };
@@ -5051,14 +5051,15 @@ fn mollusk_confidential_transfer_metering_band_charges_meter_through_cpi() {
     );
     // The meter was lazy-created through the CPI, keyed on the mint's application, and charged
     // exactly the transfer execution's HCU at the current slot.
-    let meter = read_hcu_block_meter(&context, meter_pda).expect("meter created through CPI");
+    let meter = read_host_account::<host::HcuBlockMeter>(&context, meter_pda)
+        .expect("meter created through CPI");
     assert_eq!(meter.program, token::id());
     assert_eq!(meter.scope, fixture.mint);
     assert_eq!(meter.used_hcu, TRANSFER_BATCH_HCU);
     assert_eq!(meter.last_seen_slot, context.mollusk.sysvars.clock.slot);
     // Regression guard on the metering granularity: nothing accrues under the sender token
     // account's key — a sybil minting fresh token accounts gets no fresh budget.
-    assert!(read_hcu_block_meter(
+    assert!(read_host_account::<host::HcuBlockMeter>(
         &context,
         host::hcu_block_meter_address(host::AppScope {
             program: token::id(),

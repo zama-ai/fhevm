@@ -15,17 +15,17 @@ use solana_sdk::{
     pubkey::Pubkey,
     signature::{Keypair, Signer},
 };
-use zama_host::{self as host, errors::ZamaHostError};
+use zama_host::{self as host, errors::ZamaHostError, HostConfig};
 use zama_solana_test_kit::{
     account_is_system_owned_and_empty, anchor_framework_error_check, anchor_ix, event_authority,
-    funded_system_account, host_error, paused_host_config, program_data_account, system_account,
-    writable, Ctx,
+    funded_system_account, host_error, paused_host_config, program_data_account, read_host_account,
+    system_account, writable, Ctx,
 };
 
 mod host_fixtures;
 use host_fixtures::{
     host_admin_ix, host_config_account, host_program_account, mollusk_execute_context,
-    read_host_config, vault_and_host_svm,
+    vault_and_host_svm,
 };
 
 fn program_owned_account() -> Account {
@@ -118,7 +118,7 @@ impl InitializeHostConfig {
     }
 
     fn config(&self) -> host::HostConfig {
-        read_host_config(&self.context, self.host_config).expect("config")
+        read_host_account::<HostConfig>(&self.context, self.host_config).expect("config")
     }
 }
 
@@ -193,7 +193,7 @@ fn mollusk_initialize_host_config_rejects_invalid_coprocessor_sets() {
         let init = InitializeHostConfig::new();
         init.run(&init.ix(init_args(signers, threshold)), host_error(error));
         assert!(
-            read_host_config(&init.context, init.host_config).is_none(),
+            read_host_account::<HostConfig>(&init.context, init.host_config).is_none(),
             "{name}: config was created"
         );
     }
@@ -308,7 +308,7 @@ fn pause_ix(pauser: Pubkey, host_config: Pubkey, areas: host::PauseFlags) -> Ins
 }
 
 fn paused(context: &Ctx, host_config: Pubkey) -> host::PauseFlags {
-    read_host_config(context, host_config)
+    read_host_account::<HostConfig>(context, host_config)
         .expect("config")
         .paused
 }
@@ -561,7 +561,7 @@ fn mollusk_the_admin_sets_pausers_and_hands_over_while_every_area_is_paused() {
     ] {
         context.process_and_validate_instruction(&setter, &[Check::success()]);
     }
-    let config = read_host_config(&context, host_config).expect("config");
+    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
     assert_eq!(config.admin, new_admin);
     assert_eq!(config.paused, host::PauseFlags::ALL);
 }
@@ -688,7 +688,7 @@ fn mollusk_set_grant_deny_list_enabled_persists() {
         &[Check::success()],
     );
     assert!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .grant_deny_list_enabled
     );
@@ -710,7 +710,7 @@ fn mollusk_set_admin_transfers_to_cosigning_keypair() {
 
     context.process_and_validate_instruction(&ix, &[Check::success()]);
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .admin,
         new_admin
@@ -731,7 +731,7 @@ fn mollusk_set_admin_rejects_keypair_that_does_not_cosign() {
         &[host_error(ZamaHostError::HostConfigAdminMismatch)],
     );
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .admin,
         admin
@@ -753,7 +753,7 @@ fn mollusk_set_admin_transfers_to_pda_without_cosign() {
         &[Check::success()],
     );
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .admin,
         new_admin
@@ -773,7 +773,7 @@ fn mollusk_set_admin_rejects_unallocated_off_curve_key() {
         &[host_error(ZamaHostError::HostConfigAdminMismatch)],
     );
     assert_eq!(
-        read_host_config(&context, host_config)
+        read_host_account::<HostConfig>(&context, host_config)
             .expect("config")
             .admin,
         admin
@@ -798,7 +798,7 @@ fn mollusk_set_eip712_domain_persists_zeros() {
         ),
         &[Check::success()],
     );
-    let config = read_host_config(&context, host_config).expect("config");
+    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
     assert_eq!(config.gateway_chain_id, 0);
     assert_eq!(config.input_verification_contract, [0u8; 20]);
     assert_eq!(config.decryption_contract, [0u8; 20]);
@@ -966,7 +966,7 @@ fn mollusk_close_owned_accounts_rejects_signer_who_is_not_upgrade_authority() {
         &close_owned_accounts_ix(admin, &[host_config]),
         &[host_error(ZamaHostError::HostConfigAdminMismatch)],
     );
-    assert!(read_host_config(&context, host_config).is_some());
+    assert!(read_host_account::<HostConfig>(&context, host_config).is_some());
 }
 
 #[test]
@@ -987,7 +987,7 @@ fn mollusk_close_owned_accounts_rejects_finalized_program() {
         &close_owned_accounts_ix(admin, &[host_config]),
         &[host_error(ZamaHostError::HostConfigAdminMismatch)],
     );
-    assert!(read_host_config(&context, host_config).is_some());
+    assert!(read_host_account::<HostConfig>(&context, host_config).is_some());
 }
 
 #[test]
