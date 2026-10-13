@@ -323,13 +323,13 @@ pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let public_key: Vec<u8> = row.try_get("public_key")?;
     let extra_data: Vec<u8> = row.try_get("extra_data")?;
 
-    // `signature IS NULL` is the sole variant discriminator for `user_decryption_requests` rows.
+    // `signature IS NULL` marks a legacy row. Of the signed rows, only a Solana row names the host
+    // program its permit is for.
     let signature: Option<Vec<u8>> = match row.try_get::<Option<Vec<u8>>, _>("signature") {
         Ok(v) => v,
         Err(sqlx::Error::ColumnNotFound(_)) => None,
         Err(e) => return Err(anyhow::Error::from(e)),
     };
-    // Of the signed rows, only a Solana row names the host program its permit is for.
     let verifying_program_id: Option<[u8; 32]> = row.try_get("verifying_program_id")?;
 
     let kind = match signature {

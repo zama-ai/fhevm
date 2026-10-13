@@ -44,16 +44,16 @@ mod tests {
     use alloy::primitives::U256;
 
     #[test]
-    fn a_solana_recipient_is_the_base58_permit_signer() {
+    fn a_solana_user_address_is_the_base58_permit_signer() {
         // The fixture permit is signed by `[1; 32]`.
         let request = connector_utils::tests::rand::solana_user_decryption_request(
             U256::from(1),
             connector_utils::tests::rand::rand_solana_handle(),
         );
-        let recipient = UserDecryptionExtraData::new_solana(request.request.permit());
+        let extra_data = UserDecryptionExtraData::new_solana(request.request.permit());
 
         assert_eq!(
-            recipient.user_address,
+            extra_data.user_address,
             Pubkey::new_from_array([1; 32]).to_string()
         );
     }
