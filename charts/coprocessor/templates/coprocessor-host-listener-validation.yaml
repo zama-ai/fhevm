@@ -1,8 +1,6 @@
 {{/*
-Validation-only template for host listener migrations.
-This file intentionally renders no Kubernetes resources; it exists to fail fast
-when deprecated top-level listener keys are still used, or when multiple chains
-claim the same unsuffixed legacy resource name.
+Validation-only template: renders no Kubernetes resources, fails when multiple
+chains claim the same unsuffixed legacy host listener name. Legacy values keys
+are rejected by values.schema.json.
 */}}
-{{- include "coprocessor.failIfDeprecatedTopLevelListenerKeysPresent" . }}
 {{- include "coprocessor.failIfMultipleLegacyNameClaims" . }}

@@ -19,8 +19,8 @@
 #     oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/coprocessor \
 #     -n <namespace> -f this-file \
 #     --set-string "commonConfig.databaseEndpoint.value=postgres-coprocessor-<i>:5432" \
-#     --set-string "hostListenerPollerShared.serviceAccountName=coprocessor-<i>" \
-#     --set-string "hostListenerPollerShared.image.tag=<coprocessor_host_listener tag>"
+#     --set-string "defaults.serviceAccountName=coprocessor-<i>" \
+#     --set-string "defaults.image.tag=<coprocessor_host_listener tag>"
 #
 # The main coprocessor-<i> release already ran dbMigration and seeded host_chains,
 # so dbMigration is disabled here (a second migration Job would also fail seeding
@@ -34,62 +34,51 @@ commonConfig:
   databaseEndpoint: {value: "postgres-coprocessor:5432"}
   databaseUrl: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e"
   databaseAuthMode: password
-  # The poller reads the host chain over HTTP RPC (not WebSocket).
-  hostChainWsUrl: "ws://anvil-host-anvil-node:8545"
-  hostChainHttpUrl: "http://anvil-host-anvil-node:8545"
-  aclContractAddress:
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
-  fhevmExecutorContractAddress:
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
-  kmsGenerationContractAddress:
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
-  protocolConfigContractAddress:
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
   # Anvil host chain id. apply-chain-env.sh overwrites this for blockchain-dev.
   canonicalProtocolConfigChainId: "12345"
 
-# Migration + real-time listener already handled by the coprocessor-<i> release.
-dbMigration:
-  enabled: false
-hostListenerShared:
-  enabled: false
-
-hostListenerPollerShared:
-  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
-  replicas: 1
+defaults:
+  image:
+    registry: hub.zama.org/ghcr/zama-ai/fhevm
+    tag: latest
   # IRSA SA (coprocessor-<i>, from coprocessor-infra-<i>) - REQUIRED: the poller
   # downloads key material from S3, so it needs the bucket-scoped IAM role.
   # Overridden per party via --set in the workflow.
   serviceAccountName: coprocessor
-  # --dependence-cross-block matches the production poller (resolves FHE-op
-  # dependencies spanning blocks). --finality-lag kept small: single-node anvil
-  # never reorgs, so events don't need to be held back (prod uses 15 on a live
-  # chain). --seed-start-block is back on current main (after being removed in
-  # the v0.11->v0.13 era) and now REQUIRED when no poller state exists yet:
-  # without it the poller exits "no poller state for this chain and no
-  # --seed-start-block". 0 = genesis, correct for a fresh per-PR anvil with a
-  # short history; only this first startup uses it (existing state always wins).
-  extraArgs:
-    - --log-level=INFO
-    - --dependence-cross-block
-    - --finality-lag=1
-    - --seed-start-block=0
-  # No FHE compute, so the generic zws-pool — but Default-parameter key/CRS
-  # downloads need more than 2Gi (measured OOM on GPU preview). 8Gi matches
-  # the coprocessor Postgres limit that holds the same blobs.
-  resources:
-    requests: {cpu: "500m", memory: 1Gi}
-    limits: {cpu: "1", memory: 8Gi}
-  nodeSelector:
-    karpenter.sh/nodepool: zws-pool
-  tolerations:
-    - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
+
+# Migration already handled by the coprocessor-<i> release.
+dbMigration:
+  enabled: false
+
+# The poller reads the host chain over HTTP RPC (chains[].httpUrl).
+hostListener:
+  modes:
+    poller:
+      # --dependence-cross-block matches the production poller (resolves FHE-op
+      # dependencies spanning blocks). --finality-lag kept small: single-node anvil
+      # never reorgs, so events don't need to be held back (prod uses 15 on a live
+      # chain). --seed-start-block is back on current main (after being removed in
+      # the v0.11->v0.13 era) and now REQUIRED when no poller state exists yet:
+      # without it the poller exits "no poller state for this chain and no
+      # --seed-start-block". 0 = genesis, correct for a fresh per-PR anvil with a
+      # short history; only this first startup uses it (existing state always wins).
+      extraArgs:
+        - --log-level=INFO
+        - --dependence-cross-block
+        - --finality-lag=1
+        - --seed-start-block=0
+      # No FHE compute, so the generic zws-pool — but Default-parameter key/CRS
+      # downloads need more than 2Gi (measured OOM on GPU preview). 8Gi matches
+      # the coprocessor Postgres limit that holds the same blobs.
+      resources:
+        requests: {cpu: "500m", memory: 1Gi}
+        limits: {cpu: "1", memory: 8Gi}
+      nodeSelector:
+        karpenter.sh/nodepool: zws-pool
+      tolerations:
+        - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
 
 # Every other role is owned by the coprocessor-<i> release; keep them off here.
-hostListenerCatchupOnlyShared:
-  enabled: false
-hostListenerConsumerShared:
-  enabled: false
 gwListener: {enabled: false}
 tfheWorker: {enabled: false}
 zkProofWorker: {enabled: false}
@@ -106,7 +95,5 @@ chains:
     kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
     protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
     # Only the poller role in this release.
-    hostListener: {enabled: false, useLegacyName: true}
-    hostListenerPoller: {enabled: true, useLegacyName: true}
-    hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
-    hostListenerConsumer: {enabled: false, useLegacyName: true}
+    hostListener:
+      poller: {enabled: true, useLegacyName: true}

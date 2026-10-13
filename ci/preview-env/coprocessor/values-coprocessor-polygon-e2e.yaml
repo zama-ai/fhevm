@@ -39,10 +39,11 @@ chains:
     fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
     kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
     protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
-    hostListener: {enabled: false, useLegacyName: true}
-    hostListenerPoller: {enabled: false, useLegacyName: true}
-    hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
-    hostListenerConsumer: {enabled: true, useLegacyName: true}
+    hostListener:
+      listener: {enabled: false, useLegacyName: true}
+      poller: {enabled: false, useLegacyName: true}
+      catchupOnly: {enabled: false, useLegacyName: true}
+      consumer: {enabled: true, useLegacyName: true}
   # --- Polygon host chain (80002): SEED-ONLY (all roles disabled) ---
   # Present solely so coprocessor-<i>'s dbMigration seeds its host_chains row. The
   # Polygon consumer and poller run in their own releases (coprocessor-polygon-<i>
@@ -57,7 +58,8 @@ chains:
     # contract for seeding consistency.
     kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
     protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: polygon-sc-addresses, key: protocol_config.address}}
-    hostListener: {enabled: false, useLegacyName: false}
-    hostListenerPoller: {enabled: false, useLegacyName: false}
-    hostListenerCatchupOnly: {enabled: false, useLegacyName: false}
-    hostListenerConsumer: {enabled: false, useLegacyName: false}
+    hostListener:
+      listener: {enabled: false, useLegacyName: false}
+      poller: {enabled: false, useLegacyName: false}
+      catchupOnly: {enabled: false, useLegacyName: false}
+      consumer: {enabled: false, useLegacyName: false}

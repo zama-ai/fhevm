@@ -1,0 +1,181 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "coprocessor chart values",
+  "description": "Chart 0.14 schema. Legacy keys (hostListenerShared, hostListenerPollerShared, hostListenerCatchupOnlyShared, hostListenerConsumerShared, image.name, *ContractConfigMap, commonConfig.hostChain*/…ContractAddress) are rejected: see the chart values.yaml for their replacements.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {"type": "object"},
+    "nameOverride": {"type": ["string", "null"]},
+    "fullnameOverride": {"type": ["string", "null"]},
+    "podAnnotations": {"$ref": "#/definitions/mapOrNull"},
+    "podLabels": {"$ref": "#/definitions/mapOrNull"},
+    "commonConfig": {"$ref": "#/definitions/commonConfig"},
+    "defaults": {"$ref": "#/definitions/workload"},
+    "contractConfigMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "name": {"type": ["string", "null"]},
+        "addresses": {"$ref": "#/definitions/mapOrNull"}
+      }
+    },
+    "dbMigration": {"$ref": "#/definitions/workload"},
+    "hostListener": {"$ref": "#/definitions/hostListener"},
+    "chains": {
+      "type": ["array", "null"],
+      "items": {"$ref": "#/definitions/chain"}
+    },
+    "gwListener": {"$ref": "#/definitions/workload"},
+    "tfheWorker": {"$ref": "#/definitions/workload"},
+    "zkProofWorker": {"$ref": "#/definitions/workload"},
+    "snsWorker": {"$ref": "#/definitions/workload"},
+    "consensusDetector": {"$ref": "#/definitions/workload"},
+    "txSender": {"$ref": "#/definitions/workload"},
+    "upgradeController": {"$ref": "#/definitions/workload"}
+  },
+  "definitions": {
+    "mapOrNull": {"type": ["object", "null"]},
+    "valueSpec": {
+      "description": "Literal `value` or a `valueFrom` block (secretKeyRef / configMapKeyRef).",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {},
+        "valueFrom": {"type": ["object", "null"]}
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "registry": {"type": ["string", "null"]},
+        "repository": {"type": ["string", "null"]},
+        "tag": {"type": ["string", "null"]}
+      }
+    },
+    "workload": {
+      "description": "Component block, overlaid on defaults. Component-specific keys (config, wallet, hpa, ...) are allowed.",
+      "type": "object",
+      "properties": {
+        "image": {"$ref": "#/definitions/image"},
+        "imagePullSecrets": {"type": ["array", "null"]},
+        "replicas": {"type": ["integer", "null"], "minimum": 0},
+        "serviceAccountName": {"type": ["string", "null"]},
+        "serviceName": {"type": ["string", "null"]},
+        "env": {"type": ["array", "null"]},
+        "disabledArgs": {"type": ["array", "null"], "items": {"type": "string"}},
+        "extraArgs": {"type": ["array", "null"], "items": {"type": "string"}},
+        "ports": {"$ref": "#/definitions/mapOrNull"},
+        "resources": {"$ref": "#/definitions/mapOrNull"},
+        "probes": {"$ref": "#/definitions/mapOrNull"},
+        "tracing": {"$ref": "#/definitions/mapOrNull"},
+        "serviceMonitor": {"$ref": "#/definitions/mapOrNull"},
+        "podLabels": {"$ref": "#/definitions/mapOrNull"},
+        "nodeSelector": {"$ref": "#/definitions/mapOrNull"},
+        "affinity": {"$ref": "#/definitions/mapOrNull"},
+        "tolerations": {"type": ["array", "null"]},
+        "updateStrategy": {"$ref": "#/definitions/mapOrNull"},
+        "args": {
+          "not": {},
+          "description": "Removed: use serviceName (host listener) or extraArgs."
+        }
+      }
+    },
+    "hostListener": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "common": {"$ref": "#/definitions/workload"},
+        "modes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "listener": {"$ref": "#/definitions/workload"},
+            "poller": {"$ref": "#/definitions/workload"},
+            "catchupOnly": {"$ref": "#/definitions/workload"},
+            "consumer": {"$ref": "#/definitions/workload"}
+          }
+        }
+      }
+    },
+    "chainMode": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "useLegacyName": {"type": "boolean"},
+        "serviceName": {"type": ["string", "null"]},
+        "env": {"type": ["array", "null"]},
+        "extraArgs": {"type": ["array", "null"], "items": {"type": "string"}},
+        "disabledArgs": {"type": ["array", "null"], "items": {"type": "string"}}
+      }
+    },
+    "chain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string"},
+        "chainId": {"type": ["string", "null"]},
+        "wsUrl": {"type": ["string", "null"]},
+        "wsUrlValueFrom": {"$ref": "#/definitions/mapOrNull"},
+        "httpUrl": {"type": ["string", "null"]},
+        "httpUrlValueFrom": {"$ref": "#/definitions/mapOrNull"},
+        "aclContractAddress": {"type": ["string", "null"]},
+        "aclContractAddressValueFrom": {"$ref": "#/definitions/mapOrNull"},
+        "fhevmExecutorContractAddress": {"type": ["string", "null"]},
+        "fhevmExecutorContractAddressValueFrom": {"$ref": "#/definitions/mapOrNull"},
+        "kmsGenerationContractAddress": {"type": ["string", "null"]},
+        "kmsGenerationContractAddressValueFrom": {"$ref": "#/definitions/mapOrNull"},
+        "protocolConfigContractAddress": {"type": ["string", "null"]},
+        "protocolConfigContractAddressValueFrom": {"$ref": "#/definitions/mapOrNull"},
+        "hostListener": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "listener": {"$ref": "#/definitions/chainMode"},
+            "poller": {"$ref": "#/definitions/chainMode"},
+            "catchupOnly": {"$ref": "#/definitions/chainMode"},
+            "consumer": {"$ref": "#/definitions/chainMode"}
+          }
+        }
+      }
+    },
+    "commonConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "network": {"type": ["string", "null"], "enum": ["", "devnet", "testnet", "mainnet", null]},
+        "forceLegacyServerKey": {"type": "boolean"},
+        "databaseUser": {"$ref": "#/definitions/valueSpec"},
+        "databasePassword": {"$ref": "#/definitions/valueSpec"},
+        "databaseEndpoint": {"$ref": "#/definitions/valueSpec"},
+        "databaseUrl": {"type": ["string", "null"]},
+        "databaseAuthMode": {"type": "string", "enum": ["password", "iam"]},
+        "databaseIamRegion": {"$ref": "#/definitions/valueSpec"},
+        "databaseSslRootCert": {"$ref": "#/definitions/mapOrNull"},
+        "databaseSslRootCertPath": {"$ref": "#/definitions/valueSpec"},
+        "tenantApiKey": {"$ref": "#/definitions/valueSpec"},
+        "canonicalProtocolConfigChainId": {"type": ["string", "null"]},
+        "stackVersion": {"type": ["string", "null"]},
+        "extraSelectorLabels": {"$ref": "#/definitions/mapOrNull"},
+        "stackVersionProbe": {"$ref": "#/definitions/mapOrNull"},
+        "gatewayUrl": {"$ref": "#/definitions/valueSpec"},
+        "gatewayContractAddresses": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "inputVerification": {"$ref": "#/definitions/valueSpec"},
+            "ciphertextCommits": {"$ref": "#/definitions/valueSpec"},
+            "gatewayConfig": {"$ref": "#/definitions/valueSpec"},
+            "multichainAcl": {"$ref": "#/definitions/valueSpec"}
+          }
+        },
+        "tracing": {"$ref": "#/definitions/mapOrNull"},
+        "env": {"type": ["array", "null"]}
+      }
+    }
+  }
+}
