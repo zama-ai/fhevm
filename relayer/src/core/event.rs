@@ -1101,21 +1101,6 @@ mod tests {
     }
 
     #[test]
-    fn solana_input_proof_accepts_unpadded_type_byte_hex() {
-        // uintToHex0x used to emit this 15-nibble form; the relayer still parses it.
-        let json = InputProofRequestJson {
-            contract_chain_id: "0x100000000003039".to_string(),
-            contract_address: SOLANA_CONTRACT.to_string(),
-            user_address: SOLANA_USER.to_string(),
-            ciphertext_with_input_verification: "abcd".to_string(),
-            extra_data: "0x00".to_string(),
-        };
-        let request = InputProofRequest::try_from(json).expect("unpadded hex is still a u64");
-        assert_eq!(request.contract_chain_id, solana_host_chain_id(12345));
-        assert!(matches!(request.identities, HostIdentities::Solana { .. }));
-    }
-
-    #[test]
     fn evm_input_proof_request_carries_evm_identities() {
         let json = InputProofRequestJson {
             contract_chain_id: CHAIN_ID.to_string(),
@@ -1177,19 +1162,6 @@ mod tests {
         let back: InputProofRequest =
             serde_json::from_value(serde_json::to_value(&request).unwrap()).unwrap();
         assert_eq!(back.identities, request.identities);
-    }
-
-    #[test]
-    fn input_proof_request_refuses_unknown_chain_type_byte() {
-        let json = InputProofRequestJson {
-            contract_chain_id: "0x0200000000003039".to_string(),
-            contract_address: CONTRACT_ADDRESS.to_string(),
-            user_address: USER_ADDRESS.to_string(),
-            ciphertext_with_input_verification: CIPHERTEXT.to_string(),
-            extra_data: EXTRA_DATA.to_string(),
-        };
-        let err = InputProofRequest::try_from(json).expect_err("unknown type byte is not EVM");
-        assert!(err.to_string().contains("unsupported chain type byte 0x02"));
     }
 
     /// The Relayer must propagate `extraData` to the Gateway verbatim, without

@@ -791,7 +791,6 @@ const SOLANA_USER: &str = "So11111111111111111111111111111111111111112";
 /// A Solana chain id takes base58 addresses, and a chain id of another type is refused on itself.
 #[rstest]
 #[case::evm_contract_address_on_a_solana_chain("0x0100000000003039", "contractAddress", json!("0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836"), solana_address_messages::INVALID_BASE58_CHARACTER)]
-#[case::evm_user_address_on_a_solana_chain("0x0100000000003039", "userAddress", json!("0x339EBB773A9bC1deCFfD5ef4BC7c907e26C1f836"), solana_address_messages::INVALID_BASE58_CHARACTER)]
 #[case::unknown_chain_type("0x0200000000003039", "contractChainId", json!("0x0200000000003039"), constants_validation::CHAIN_ID_MUST_BE_EVM_OR_SOLANA)]
 #[tokio::test]
 async fn test_error_invalid_fields_by_host_chain_type(

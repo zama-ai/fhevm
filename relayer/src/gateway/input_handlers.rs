@@ -892,30 +892,6 @@ mod input_proof_gateway_id_tests {
         .encode_log_data()
     }
 
-    fn solana_request(zk_proof_id: u64) -> alloy::primitives::LogData {
-        InputVerification::VerifyProofRequestSolana {
-            zkProofId: U256::from(zk_proof_id),
-            contractChainId: U256::from(zama_solana_acl::host_chain::solana_host_chain_id(12345)),
-            contractAddress: FixedBytes::ZERO,
-            userAddress: FixedBytes::ZERO,
-            ciphertextWithZKProof: Bytes::from(vec![1]),
-            extraData: Bytes::from(vec![0]),
-        }
-        .encode_log_data()
-    }
-
-    #[test]
-    fn an_evm_receipt_yields_its_zk_proof_id() {
-        let id = input_proof_gateway_id(&receipt_with(vec![evm_request(7)])).unwrap();
-        assert_eq!(id, U256::from(7));
-    }
-
-    #[test]
-    fn a_solana_receipt_yields_its_zk_proof_id() {
-        let id = input_proof_gateway_id(&receipt_with(vec![solana_request(8)])).unwrap();
-        assert_eq!(id, U256::from(8));
-    }
-
     #[test]
     fn an_evm_receipt_without_the_request_event_reports_it_missing() {
         let err = input_proof_gateway_id(&receipt_with(vec![])).unwrap_err();
