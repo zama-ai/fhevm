@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use anchor_lang::prelude::system_program;
-use anchor_lang::AccountDeserialize;
+use anchor_lang::InstructionData;
 use mollusk_svm::MolluskContext;
 use solana_sdk::{
     account::Account,
@@ -13,7 +13,7 @@ use solana_sdk::{
 use std::collections::HashMap;
 use zama_host::encode::ExecutionDictionary;
 use zama_host::{
-    self as host, AppScope, FheExecuteArgs, FheExecuteEffect, FheExecuteStep, HostConfig, SlotWrite,
+    self as host, AppScope, FheExecuteArgs, FheExecuteEffect, FheExecuteStep, SlotWrite,
 };
 use zama_solana_test_kit::{
     anchor_ix, empty_system_account, encrypted_store_account, event_authority,
@@ -143,19 +143,6 @@ pub fn mollusk_execute_context(
         accounts.insert(pubkey, account);
     }
     host_svm().with_context(accounts)
-}
-
-pub fn read_host_config(
-    context: &MolluskContext<HashMap<Pubkey, Account>>,
-    address: Pubkey,
-) -> Option<HostConfig> {
-    let store = context.account_store.borrow();
-    let account = store.get(&address)?;
-    if account.owner != host::id() {
-        return None;
-    }
-    let mut data = account.data.as_slice();
-    HostConfig::try_deserialize(&mut data).ok()
 }
 
 /// The optional accounts of an `fhe_execute`: the application's deny record (appended last to
@@ -370,4 +357,22 @@ pub fn check_host_context(
     } else {
         context.process_and_validate_instruction(instruction, checks)
     }
+}
+
+/// A `HostAdmin`-context instruction; the payload names the setter at the call site.
+pub fn host_admin_ix(
+    admin: Pubkey,
+    host_config: Pubkey,
+    data: impl InstructionData,
+) -> Instruction {
+    anchor_ix(
+        host::id(),
+        host::accounts::HostAdmin {
+            admin,
+            host_config,
+            event_authority: event_authority(host::id()),
+            program: host::id(),
+        },
+        data,
+    )
 }

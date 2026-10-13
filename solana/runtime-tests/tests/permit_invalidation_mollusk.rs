@@ -51,9 +51,7 @@ use fixture_schema::{
     PERMIT_INVALIDATION_ACCOUNT_SCHEMA,
 };
 
-// ---------------------------------------------------------------------------
 // Harness
-// ---------------------------------------------------------------------------
 
 /// A runtime whose clock reads `unix_timestamp`.
 ///
@@ -127,9 +125,7 @@ fn accounts_with_absent_watermark(user: Pubkey) -> (Pubkey, Vec<(Pubkey, Account
 
 const REVOCATION_TIME: i64 = 1_767_229_380; // 2026-01-01T01:03:00Z
 
-// ---------------------------------------------------------------------------
 // Creating the watermark
-// ---------------------------------------------------------------------------
 
 /// Before the first revocation the user has no account at all — a reader treats that
 /// absence as a watermark of zero, which is why there is no initialization step to
@@ -220,9 +216,7 @@ fn revocation_does_not_depend_on_host_configuration() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Monotonicity
-// ---------------------------------------------------------------------------
 
 /// A later revocation raises the watermark.
 #[test]
@@ -334,9 +328,7 @@ fn the_watermark_ends_at_the_maximum_over_a_sequence() {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Who may move which watermark
-// ---------------------------------------------------------------------------
 
 /// One user cannot move another user's watermark.
 ///
@@ -438,9 +430,7 @@ fn a_wallet_revoke_forwarded_through_another_program_is_rejected() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Account shape
-// ---------------------------------------------------------------------------
 
 /// A watermark account at a non-canonical address is rejected. Without this check the
 /// program would happily write a watermark into any account it was handed, and the
@@ -577,9 +567,7 @@ fn revocation_rejects_unexpected_remaining_accounts() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // The clock
-// ---------------------------------------------------------------------------
 
 /// A clock reading before the unix epoch is refused instead of being coerced.
 ///
@@ -624,9 +612,7 @@ fn revocation_at_the_epoch_records_zero() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Byte layout, against the committed fixture
-// ---------------------------------------------------------------------------
 
 /// Setting this rewrites the committed fixture from the account the program writes.
 const UPDATE_ENV: &str = "ZAMA_UPDATE_PERMIT_INVALIDATION_FIXTURE";

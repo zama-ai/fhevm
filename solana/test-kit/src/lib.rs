@@ -42,9 +42,7 @@ use zama_host as host;
 /// The stateful Mollusk context every suite drives: an account store keyed by address.
 pub type Ctx = MolluskContext<HashMap<Pubkey, Account>>;
 
-// ---------------------------------------------------------------------------
 // Fixture constants shared by every suite
-// ---------------------------------------------------------------------------
 
 /// The gateway chain the fixtures' host config points at.
 pub const GATEWAY_CHAIN_ID: u64 = 31337;
@@ -57,9 +55,7 @@ pub const BALANCE_FHE_TYPE: u8 = zama_fhe::FheType::UINT64.byte();
 /// Decimals of every fixture SPL mint.
 pub const DECIMALS: u8 = 6;
 
-// ---------------------------------------------------------------------------
 // Mollusk environment
-// ---------------------------------------------------------------------------
 
 /// Boots a Mollusk with `program` registered, resolving SBF artifacts from
 /// `solana/target/deploy` (build them with `bash scripts/check-zama-host-idl.sh` first; a stale
@@ -106,9 +102,7 @@ pub fn host_svm_without_previous_bank_hash() -> Mollusk {
     mollusk
 }
 
-// ---------------------------------------------------------------------------
 // Anchor instruction and account plumbing
-// ---------------------------------------------------------------------------
 
 /// Builds an `Instruction` from an Anchor accounts struct and an Anchor args struct.
 pub fn anchor_ix<A, D>(program_id: Pubkey, accounts: A, args: D) -> Instruction
@@ -137,6 +131,11 @@ pub fn anchor_error_check(error_code: u32) -> Check<'static> {
     Check::err(ProgramError::Custom(
         anchor_lang::error::ERROR_CODE_OFFSET + error_code,
     ))
+}
+
+/// `Check::err` for a `zama-host` error.
+pub fn host_error(error: host::errors::ZamaHostError) -> Check<'static> {
+    anchor_error_check(error as u32)
 }
 
 /// `Check::err` for an `anchor_lang::error::ErrorCode` (framework-level, no offset).
@@ -202,9 +201,7 @@ pub fn handle_for_chain(seed: u8, fhe_type: u8) -> [u8; 32] {
     handle
 }
 
-// ---------------------------------------------------------------------------
 // Plain accounts
-// ---------------------------------------------------------------------------
 
 /// A data-less system-owned account holding `lamports`.
 pub fn system_account(lamports: u64) -> Account {
@@ -359,9 +356,7 @@ pub fn token_2022_immutable_owner_account(
     }
 }
 
-// ---------------------------------------------------------------------------
 // Context store access
-// ---------------------------------------------------------------------------
 
 /// Reads and deserializes an Anchor account from the context store.
 pub fn read_account<T: AccountDeserialize>(context: &Ctx, address: Pubkey) -> T {
@@ -372,6 +367,14 @@ pub fn read_account<T: AccountDeserialize>(context: &Ctx, address: Pubkey) -> T 
         .expect("missing account in context store")
         .clone();
     T::try_deserialize(&mut account.data.as_slice()).expect("account should deserialize")
+}
+
+/// The `zama-host` account at `address`, or `None` when the host owns no account there. A
+/// host-owned account that does not deserialize as `T` panics.
+pub fn read_host_account<T: AccountDeserialize>(context: &Ctx, address: Pubkey) -> Option<T> {
+    let store = context.account_store.borrow();
+    let account = store.get(&address).filter(|a| a.owner == host::id())?;
+    Some(T::try_deserialize(&mut account.data.as_slice()).expect("host account deserializes"))
 }
 
 /// Reads the canonical `EncryptedStore` at `address` from the context store.
@@ -431,9 +434,7 @@ pub fn account_is_system_owned_and_empty(context: &Ctx, address: Pubkey) -> bool
     }
 }
 
-// ---------------------------------------------------------------------------
 // zama-host fixture accounts
-// ---------------------------------------------------------------------------
 
 /// Parameters for a fixture `HostConfig`. Defaults describe the common single-signer,
 /// unrestricted-HCU config; suites override only what a test varies.
@@ -702,9 +703,7 @@ pub fn encrypted_store_account(state: &host::EncryptedStore) -> Account {
     }
 }
 
-// ---------------------------------------------------------------------------
 // fhe_execute wire decoding
-// ---------------------------------------------------------------------------
 
 /// Decodes `FheExecuteArgs` out of raw `fhe_execute` instruction data, `None` for any other
 /// instruction.

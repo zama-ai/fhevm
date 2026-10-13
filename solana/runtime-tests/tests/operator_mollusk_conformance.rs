@@ -20,8 +20,8 @@ use zama_host::{
 };
 use zama_solana_test_kit::cleartext::{self, Value};
 use zama_solana_test_kit::{
-    anchor_error_check, anchor_ix, empty_system_account, event_authority, funded_system_account,
-    handle_for_chain, host_config_account, new_encrypted_store, rand_nonce_account,
+    anchor_ix, empty_system_account, event_authority, funded_system_account, handle_for_chain,
+    host_config_account, host_error, new_encrypted_store, rand_nonce_account,
     system_program_account, HostConfigParams,
 };
 
@@ -457,7 +457,7 @@ impl ExecutionFlow {
             self.payer,
             &instruction,
             &self.accounts,
-            &[custom_error(error)],
+            &[host_error(error)],
         );
     }
 
@@ -525,10 +525,6 @@ fn mollusk() -> Mollusk {
         solana_sdk::hash::Hash::new_from_array(PREVIOUS_BANK_HASH),
     )]);
     mollusk
-}
-
-fn custom_error(error: host::errors::ZamaHostError) -> Check<'static> {
-    anchor_error_check(error as u32)
 }
 
 fn operand_handle(operand: &FheExecuteOperand) -> [u8; 32] {

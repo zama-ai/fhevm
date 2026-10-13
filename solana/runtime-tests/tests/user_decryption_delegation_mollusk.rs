@@ -37,16 +37,14 @@ use zama_host::{self as host, AppScope, UserDecryptionDelegation};
 use zama_solana_test_kit::{
     anchor_framework_error_check, cost_report, empty_system_account,
     funded_system_account as funded_wallet, host_config_account as host_config_account_from,
-    paused_host_config, program_owned_account, serialized_account as serialized,
+    host_error, paused_host_config, program_owned_account, serialized_account as serialized,
     system_program_account, HostConfigParams,
 };
 
 mod host_fixtures;
 use host_fixtures::host_program_account;
 
-// ---------------------------------------------------------------------------
 // Harness
-// ---------------------------------------------------------------------------
 
 /// The slot every test runs at. Existing records are written at [`EARLIER_SLOT`], so the
 /// once-per-slot guard does not interfere with tests that are not about it.
@@ -70,10 +68,6 @@ where
     D: InstructionData,
 {
     zama_solana_test_kit::anchor_ix(host::id(), accounts, args)
-}
-
-fn custom_error(error: host::errors::ZamaHostError) -> Check<'static> {
-    zama_solana_test_kit::anchor_error_check(error as u32)
 }
 
 /// A host config whose ACL-writes area, the one delegation belongs to, is paused or not.
@@ -226,9 +220,7 @@ fn decode_record(data: &[u8]) -> UserDecryptionDelegation {
         .expect("the resulting account decodes as a delegation record")
 }
 
-// ---------------------------------------------------------------------------
 // Grant
-// ---------------------------------------------------------------------------
 
 /// The first grant creates the record at the canonical PDA and writes every field the
 /// Connector will later read. The payer is not the delegator: rent and consent are separate
@@ -463,7 +455,7 @@ fn a_half_wildcard_grant_is_rejected() {
                 EXPIRES_AT,
             ),
             &accounts,
-            &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
+            &[host_error(host::errors::ZamaHostError::InvalidDelegation)],
         );
     }
 }
@@ -494,7 +486,7 @@ fn a_grant_whose_scope_its_program_does_not_own_is_rejected() {
                 EXPIRES_AT,
             ),
             &accounts,
-            &[custom_error(
+            &[host_error(
                 host::errors::ZamaHostError::DelegationScopeNotProgramAccount,
             )],
         );
@@ -520,7 +512,7 @@ fn a_grant_to_the_default_pubkey_is_rejected() {
             EXPIRES_AT,
         ),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
+        &[host_error(host::errors::ZamaHostError::InvalidDelegation)],
     );
 }
 
@@ -547,7 +539,7 @@ fn a_grant_over_the_default_program_is_rejected() {
             EXPIRES_AT,
         ),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
+        &[host_error(host::errors::ZamaHostError::InvalidDelegation)],
     );
 }
 
@@ -572,7 +564,7 @@ fn a_grant_to_the_wildcard_sentinel_is_rejected() {
             EXPIRES_AT,
         ),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
+        &[host_error(host::errors::ZamaHostError::InvalidDelegation)],
     );
 }
 
@@ -598,7 +590,7 @@ fn a_grant_to_a_program_derived_address_is_rejected() {
             EXPIRES_AT,
         ),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
+        &[host_error(host::errors::ZamaHostError::InvalidDelegation)],
     );
 }
 
@@ -633,7 +625,7 @@ fn a_grant_between_overlapping_parties_is_rejected() {
                 EXPIRES_AT,
             ),
             &accounts,
-            &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
+            &[host_error(host::errors::ZamaHostError::InvalidDelegation)],
         );
     }
 }
@@ -654,7 +646,7 @@ fn a_grant_must_expire_after_now() {
             NOW,
         ),
         &grant_accounts(&actors, empty_system_account(), false),
-        &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
+        &[host_error(host::errors::ZamaHostError::InvalidDelegation)],
     );
 
     let result = mollusk().process_and_validate_instruction(
@@ -689,7 +681,7 @@ fn a_grant_while_paused_is_rejected() {
             EXPIRES_AT,
         ),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::AclWritesPaused)],
+        &[host_error(host::errors::ZamaHostError::AclWritesPaused)],
     );
 }
 
@@ -716,7 +708,7 @@ fn a_grant_with_remaining_accounts_is_rejected() {
     mollusk().process_and_validate_instruction(
         &instruction,
         &accounts,
-        &[custom_error(
+        &[host_error(
             host::errors::ZamaHostError::UnexpectedRemainingAccounts,
         )],
     );
@@ -806,9 +798,7 @@ fn a_grant_with_a_substituted_host_config_is_rejected() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Re-grant
-// ---------------------------------------------------------------------------
 
 /// A re-grant rewrites the expiration, counts one more, and stamps the current slot.
 #[test]
@@ -856,7 +846,7 @@ fn a_regrant_in_the_records_own_update_slot_is_rejected() {
             EXPIRES_AT + 100,
         ),
         &accounts,
-        &[custom_error(
+        &[host_error(
             host::errors::ZamaHostError::DelegationUpdatedInCurrentSlot,
         )],
     );
@@ -880,7 +870,7 @@ fn a_regrant_with_the_same_expiration_is_rejected() {
             EXPIRES_AT,
         ),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
+        &[host_error(host::errors::ZamaHostError::InvalidDelegation)],
     );
 }
 
@@ -932,7 +922,7 @@ fn a_counter_at_the_maximum_cannot_be_regranted() {
             EXPIRES_AT + 100,
         ),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
+        &[host_error(host::errors::ZamaHostError::InvalidDelegation)],
     );
 }
 
@@ -961,9 +951,7 @@ fn an_existing_record_of_the_wrong_size_is_rejected() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // Revoke
-// ---------------------------------------------------------------------------
 
 /// Revocation zeroes the expiry, counts one more and stamps the slot. A revoked record then
 /// reads like one never granted, as on EVM.
@@ -1001,7 +989,7 @@ fn a_stranger_cannot_revoke_a_delegation_they_did_not_grant() {
     mollusk().process_and_validate_instruction(
         &revoke_ix(stranger, actors.record_key),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::InvalidDelegation)],
+        &[host_error(host::errors::ZamaHostError::InvalidDelegation)],
     );
 }
 
@@ -1017,7 +1005,7 @@ fn a_second_revocation_is_rejected() {
     mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, actors.record_key),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::NotDelegatedYet)],
+        &[host_error(host::errors::ZamaHostError::NotDelegatedYet)],
     );
 }
 
@@ -1047,7 +1035,7 @@ fn a_revocation_in_the_records_own_update_slot_is_rejected() {
     mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, actors.record_key),
         &accounts,
-        &[custom_error(
+        &[host_error(
             host::errors::ZamaHostError::DelegationUpdatedInCurrentSlot,
         )],
     );
@@ -1107,7 +1095,7 @@ fn a_revocation_while_paused_is_rejected() {
     mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, actors.record_key),
         &accounts,
-        &[custom_error(host::errors::ZamaHostError::AclWritesPaused)],
+        &[host_error(host::errors::ZamaHostError::AclWritesPaused)],
     );
 }
 
@@ -1166,7 +1154,7 @@ fn a_revocation_with_remaining_accounts_is_rejected() {
     mollusk().process_and_validate_instruction(
         &instruction,
         &accounts,
-        &[custom_error(
+        &[host_error(
             host::errors::ZamaHostError::UnexpectedRemainingAccounts,
         )],
     );
@@ -1226,9 +1214,7 @@ fn substituted_program_accounts_are_refused_by_their_discriminators() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // A program-controlled delegator
-// ---------------------------------------------------------------------------
 
 /// A runtime holding both the wrapper and the host, at [`CURRENT_SLOT`] and [`NOW`].
 fn mollusk_with_vault() -> Mollusk {
@@ -1398,7 +1384,7 @@ fn a_wallet_grant_forwarded_through_another_program_is_rejected() {
     mollusk_with_vault().process_and_validate_instruction(
         &forwarded,
         &accounts,
-        &[custom_error(
+        &[host_error(
             host::errors::ZamaHostError::WalletDelegationThroughCpi,
         )],
     );
@@ -1426,7 +1412,7 @@ fn a_wallet_revoke_forwarded_through_another_program_is_rejected() {
     mollusk_with_vault().process_and_validate_instruction(
         &forwarded,
         &accounts,
-        &[custom_error(
+        &[host_error(
             host::errors::ZamaHostError::WalletRevokeThroughCpi,
         )],
     );
@@ -1453,9 +1439,7 @@ fn an_executor_cannot_use_another_executors_vault() {
     );
 }
 
-// ---------------------------------------------------------------------------
 // SDK cross-pins
-// ---------------------------------------------------------------------------
 // The TS SDK derives these addresses and builds these instruction bytes without this crate. The
 // literals below are the same ones asserted in
 // `sdk/js-sdk/src/solana/actions/userDecryptionDelegation.test.ts` and
@@ -1586,9 +1570,7 @@ fn sdk_fixture_permit_invalidation_address_and_revoke_permits_bytes() {
     assert_eq!(fixture_hex(&revoke_permits), "3319597d7d5ac882");
 }
 
-// ---------------------------------------------------------------------------
 // Cost profile
-// ---------------------------------------------------------------------------
 
 /// A first grant by a wallet delegator: the curve check, the record PDA derivation and its
 /// creation. Fixed keys, because the PDA bump search is part of the measured cost.
