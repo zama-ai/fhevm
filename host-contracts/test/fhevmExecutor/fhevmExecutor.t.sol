@@ -3172,9 +3172,11 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         for (uint256 t; t < types.length; ++t) {
             bytes32 lhs = _generateMockHandle(types[t]);
             _approveHandleInACL(lhs, address(this));
-            uint256 maximum = _maxScalar(types[t]);
             for (uint256 op; op < selectors.length; ++op) {
                 if (!_isTypeSupported(types[t], supported[op])) continue;
+                uint256 maximum = _maxScalar(types[t]);
+                // Shift and rotate amounts are additionally bounded to uint8.
+                if (op >= 8 && op <= 11 && maximum > type(uint8).max) maximum = type(uint8).max;
                 (bool success, bytes memory data) = address(fhevmExecutor).call(
                     abi.encodeWithSelector(selectors[op], lhs, bytes32(maximum), bytes1(0x01))
                 );
@@ -3268,5 +3270,88 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRotl(lhs, bytes32(uint256(255)), 0x01);
         fhevmExecutor.fheRotr(lhs, bytes32(uint256(255)), 0x01);
         assertEq(uint8(fhevmExecutor.fheRandBounded(256, FheType.Uint8)[30]), uint8(FheType.Uint8));
+    }
+
+    function _shiftSelectors() internal pure returns (bytes4[4] memory) {
+        return [
+            FHEVMExecutor.fheShl.selector,
+            FHEVMExecutor.fheShr.selector,
+            FHEVMExecutor.fheRotl.selector,
+            FHEVMExecutor.fheRotr.selector
+        ];
+    }
+
+    function _shiftTestTypes() internal pure returns (FheType[6] memory) {
+        return [FheType.Uint8, FheType.Uint16, FheType.Uint32, FheType.Uint64, FheType.Uint128, FheType.Uint256];
+    }
+
+    function test_ScalarShiftAmountsUpToUint8MaxAreAccepted() public {
+        bytes4[4] memory selectors = _shiftSelectors();
+        FheType[6] memory types = _shiftTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 lhs = _generateMockHandle(types[t]);
+            _approveHandleInACL(lhs, address(this));
+            uint256 bitWidth = 8 << t;
+            uint256[4] memory amounts = [0, bitWidth - 1, bitWidth, type(uint8).max];
+            for (uint256 op; op < selectors.length; ++op) {
+                for (uint256 a; a < amounts.length; ++a) {
+                    if (amounts[a] > type(uint8).max) continue;
+                    (bool success, ) = address(fhevmExecutor).call(
+                        abi.encodeWithSelector(selectors[op], lhs, bytes32(amounts[a]), bytes1(0x01))
+                    );
+                    assertTrue(success, "shift amount up to 255 must be accepted");
+                }
+            }
+        }
+    }
+
+    function test_ScalarShiftAmountsAboveUint8MaxRevert() public {
+        bytes4[4] memory selectors = _shiftSelectors();
+        FheType[6] memory types = _shiftTestTypes();
+        for (uint256 t; t < types.length; ++t) {
+            bytes32 lhs = _generateMockHandle(types[t]);
+            _approveHandleInACL(lhs, address(this));
+            uint256[5] memory amounts = [
+                uint256(type(uint8).max) + 1,
+                uint256(1) << 64,
+                (uint256(1) << 64) + 1,
+                type(uint128).max,
+                type(uint256).max
+            ];
+            for (uint256 op; op < selectors.length; ++op) {
+                for (uint256 a; a < amounts.length; ++a) {
+                    (bool success, bytes memory data) = address(fhevmExecutor).call(
+                        abi.encodeWithSelector(selectors[op], lhs, bytes32(amounts[a]), bytes1(0x01))
+                    );
+                    assertFalse(success, "shift amount above 255 must revert");
+                    assertEq(data, abi.encodeWithSelector(FHEVMExecutor.ScalarOutOfRange.selector));
+                }
+            }
+        }
+    }
+
+    function testFuzz_ScalarShiftAmountAboveUint8MaxReverts(uint8 typeIndex, uint8 opIndex, uint256 amount) public {
+        FheType fheType = _shiftTestTypes()[bound(typeIndex, 0, 5)];
+        bytes4 selector = _shiftSelectors()[bound(opIndex, 0, 3)];
+        amount = bound(amount, uint256(type(uint8).max) + 1, type(uint256).max);
+        bytes32 lhs = _generateMockHandle(fheType);
+        _approveHandleInACL(lhs, address(this));
+        (bool success, bytes memory data) = address(fhevmExecutor).call(
+            abi.encodeWithSelector(selector, lhs, bytes32(amount), bytes1(0x01))
+        );
+        assertFalse(success);
+        assertEq(data, abi.encodeWithSelector(FHEVMExecutor.ScalarOutOfRange.selector));
+    }
+
+    function test_EncryptedShiftAmountIsNotBoundedByScalarCheck() public {
+        bytes32 lhs = _generateMockHandle(FheType.Uint256);
+        bytes32 rhs = _generateMockHandle(FheType.Uint256);
+        assertGt(uint256(rhs), type(uint8).max);
+        _approveHandleInACL(lhs, address(this));
+        _approveHandleInACL(rhs, address(this));
+        fhevmExecutor.fheShl(lhs, rhs, 0x00);
+        fhevmExecutor.fheShr(lhs, rhs, 0x00);
+        fhevmExecutor.fheRotl(lhs, rhs, 0x00);
+        fhevmExecutor.fheRotr(lhs, rhs, 0x00);
     }
 }

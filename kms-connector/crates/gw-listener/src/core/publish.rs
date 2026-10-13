@@ -419,7 +419,7 @@ pub async fn publish_context_and_epoch(
     context_id: U256,
     epoch_id: U256,
 ) -> anyhow::Result<()> {
-    info!("Publishing KMS context #{context_id} (epoch #{epoch_id}) in DB...");
+    info!("Publishing KMS context #{context_id:#066x} (epoch #{epoch_id:#066x}) in DB...");
     let now = Utc::now();
     let mut tx = db_pool.begin().await?;
     let context_result = sqlx::query!(
@@ -441,8 +441,8 @@ pub async fn publish_context_and_epoch(
     .await?;
     tx.commit().await?;
 
-    log_cache_insert_outcome(&context_result, &format!("KMS context #{context_id}"));
-    log_cache_insert_outcome(&epoch_result, &format!("KMS epoch #{epoch_id}"));
+    log_cache_insert_outcome(&context_result, &format!("KMS context #{context_id:#066x}"));
+    log_cache_insert_outcome(&epoch_result, &format!("KMS epoch #{epoch_id:#066x}"));
     Ok(())
 }
 

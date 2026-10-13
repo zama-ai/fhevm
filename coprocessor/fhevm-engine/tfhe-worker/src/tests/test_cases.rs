@@ -27,7 +27,7 @@ pub struct UnaryOperatorTestCase {
 }
 
 fn supported_bits() -> &'static [i32] {
-    &[1, 4, 8, 16, 32, 64, 128, 160, 256, 512, 1024, 2048]
+    &[1, 8, 16, 32, 64, 128, 160, 256]
 }
 
 fn supported_bits_to_bit_type_in_db(inp: i32) -> i32 {
@@ -118,7 +118,15 @@ pub fn generate_binary_test_cases() -> Vec<BinaryOperatorTestCase> {
             if op.op_type() != FheOperationType::Binary {
                 continue;
             }
-            if bits > 256 && !op.supports_ebytes_inputs() {
+            if bits >= 256 && !op.supports_ebytes_inputs() {
+                continue;
+            }
+            if bits == 160
+                && !matches!(
+                    op,
+                    SupportedFheOperations::FheEq | SupportedFheOperations::FheNe
+                )
+            {
                 continue;
             }
             if bits == 1 {
@@ -178,7 +186,7 @@ pub fn generate_unary_test_cases() -> Vec<UnaryOperatorTestCase> {
         let shift_by = bits - 3;
         let max_bits_value = (BigInt::from(1) << bits) - 1;
         for op in SupportedFheOperations::iter() {
-            if bits == 1 && !op.supports_bool_inputs() {
+            if bits == 1 && !op.supports_bool_inputs() || bits == 160 {
                 continue;
             }
             if is_ebytes_type(supported_bits_to_bit_type_in_db(bits) as i16)

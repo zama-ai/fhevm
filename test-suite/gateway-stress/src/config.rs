@@ -1,7 +1,11 @@
 use alloy::primitives::{Address, FixedBytes, U256};
 use config::{Config as ConfigBuilder, File, FileFormat};
 use serde::Deserialize;
-use std::{path::Path, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
+use url::Url;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
@@ -21,6 +25,8 @@ pub struct Config {
     pub blockchain: Option<BlockchainConfig>,
     #[serde(default)]
     pub database: Option<DatabaseConfig>,
+    #[serde(default)]
+    pub http: Option<HttpConfig>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -47,6 +53,26 @@ pub struct DatabaseConfig {
     pub insertion_chunk_size: usize,
 }
 
+/// Configuration of the KMS Connectors' HTTP decryption testing.
+#[derive(Clone, Debug, Deserialize)]
+pub struct HttpConfig {
+    /// One base URL per KMS party (ex: `https://kms-connector-proxy:8443`).
+    pub urls: Vec<Url>,
+    /// Pre-shared API key sent as `Authorization: Bearer ...`. Optional when the endpoints are
+    /// targeted directly, without the proxies.
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// Path of an additional PEM root certificate to trust (the proxies' self-signed test cert).
+    #[serde(default)]
+    pub tls_ca_cert: Option<PathBuf>,
+    /// Skip TLS certificate verification. Test only.
+    #[serde(default)]
+    pub danger_accept_invalid_certs: bool,
+    /// Client-side timeout of each decryption request.
+    #[serde(with = "humantime_serde", default = "default_http_request_timeout")]
+    pub request_timeout: Duration,
+}
+
 impl Config {
     pub fn from_env_and_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let builder = ConfigBuilder::builder()
@@ -61,6 +87,10 @@ impl Config {
 // avoid colliding with ids that could legitimately be used in the testing environment.
 fn default_id_counter_start() -> U256 {
     (U256::MAX / U256::from(4)) * U256::from(3)
+}
+
+fn default_http_request_timeout() -> Duration {
+    Duration::from_secs(120)
 }
 
 fn default_pool_size() -> u32 {

@@ -375,6 +375,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
+        _checkScalarShiftAmount(rhs, scalarByte);
         result = _binaryOp(Operators.fheShl, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheShl(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheShl(msg.sender, lhs, rhs, scalarByte, result);
@@ -395,6 +396,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
+        _checkScalarShiftAmount(rhs, scalarByte);
         result = _binaryOp(Operators.fheShr, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheShr(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheShr(msg.sender, lhs, rhs, scalarByte, result);
@@ -415,6 +417,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
+        _checkScalarShiftAmount(rhs, scalarByte);
         result = _binaryOp(Operators.fheRotl, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheRotl(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheRotl(msg.sender, lhs, rhs, scalarByte, result);
@@ -435,6 +438,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
+        _checkScalarShiftAmount(rhs, scalarByte);
         result = _binaryOp(Operators.fheRotr, lhs, rhs, scalarByte, lhsType);
         HCU_LIMIT.checkHCUForFheRotr(lhsType, scalarByte, lhs, rhs, result, msg.sender);
         emit FheRotr(msg.sender, lhs, rhs, scalarByte, result);
@@ -972,6 +976,13 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
         else revert UnsupportedType();
 
         if (scalar > maxValue) revert ScalarOutOfRange();
+    }
+
+    /**
+     * @dev Bounds scalar shift and rotate amounts to uint8, the range the library can produce.
+     */
+    function _checkScalarShiftAmount(bytes32 rhs, bytes1 scalarByte) internal pure virtual {
+        if (scalarByte == 0x01 && uint256(rhs) > type(uint8).max) revert ScalarOutOfRange();
     }
 
     /// @dev Records a handle this executor derived in the current transaction

@@ -38,7 +38,10 @@ pub struct DbContextManager<P> {
 }
 
 impl<P: Provider> ContextManager for DbContextManager<P> {
-    #[tracing::instrument(skip_all, fields(context_id = ?extra_data.context_id, epoch_id = ?extra_data.epoch_id))]
+    #[tracing::instrument(skip_all, fields(
+        context_id = extra_data.context_id.map(|id| format!("{id:#066x}")),
+        epoch_id = extra_data.epoch_id.map(|id| format!("{id:#066x}")),
+    ))]
     async fn validate_context(&self, extra_data: &ExtraData) -> Result<(), RequestCheckError> {
         let Some(context_id) = extra_data.context_id else {
             // Accepting request with no context for backwards compatibility with the relayer-sdk.
@@ -53,9 +56,9 @@ impl<P: Provider> ContextManager for DbContextManager<P> {
                 RequestCheckKind::KmsContext,
                 ErrorCode::KmsContextDestroyed,
                 anyhow!(
-                    "Context #{context_id}{} has been destroyed",
+                    "Context #{context_id:#066x}{} has been destroyed",
                     epoch_id
-                        .map(|id| format!(" or epoch #{id}"))
+                        .map(|id| format!(" or epoch #{id:#066x}"))
                         .unwrap_or_default()
                 ),
             )),
@@ -139,14 +142,14 @@ impl<P: Provider> DbContextManager<P> {
             .await
             .map_err(|e| {
                 RequestCheckError::network(anyhow!(
-                    "isValidKmsContext(#{context_id}) call failed: {e}"
+                    "isValidKmsContext(#{context_id:#066x}) call failed: {e}"
                 ))
             })?;
         if !context_valid {
             return Err(RequestCheckError::recoverable(
                 RequestCheckKind::KmsContext,
                 ErrorCode::KmsContextInvalid,
-                anyhow!("Context #{context_id} is not valid on-chain (yet?)"),
+                anyhow!("Context #{context_id:#066x} is not valid on-chain (yet?)"),
             ));
         }
 
@@ -163,14 +166,16 @@ impl<P: Provider> DbContextManager<P> {
             .await
             .map_err(|e| {
                 RequestCheckError::network(anyhow!(
-                    "isValidEpochForContext(#{context_id}, #{epoch_id}) call failed: {e}"
+                    "isValidEpochForContext(#{context_id:#066x}, #{epoch_id:#066x}) call failed: {e}"
                 ))
             })?;
         if !epoch_valid {
             return Err(RequestCheckError::recoverable(
                 RequestCheckKind::KmsContext,
                 ErrorCode::KmsContextInvalid,
-                anyhow!("Epoch #{epoch_id} of context #{context_id} is not active on-chain (yet?)"),
+                anyhow!(
+                    "Epoch #{epoch_id:#066x} of context #{context_id:#066x} is not active on-chain (yet?)"
+                ),
             ));
         }
 

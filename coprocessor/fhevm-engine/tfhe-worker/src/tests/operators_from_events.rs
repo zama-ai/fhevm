@@ -18,7 +18,6 @@ use crate::tests::utils::{
 
 const LOCAL_SUPPORTED_TYPES: &[i32] = &[
     0, // bool
-    1, // 4 bit
     2, // 8 bit
     3, // 16 bit
     4, // 32 bit
@@ -26,18 +25,14 @@ const LOCAL_SUPPORTED_TYPES: &[i32] = &[
 ];
 
 const FULL_SUPPORTED_TYPES: &[i32] = &[
-    0,  // bool
-    1,  // 4 bit
-    2,  // 8 bit
-    3,  // 16 bit
-    4,  // 32 bit
-    5,  // 64 bit
-    6,  // 128 bit
-    7,  // 160 bit
-    8,  // 256 bit
-    9,  // 512 bit
-    10, // 1024 bit
-    11, // 2048 bit
+    0, // bool
+    2, // 8 bit
+    3, // 16 bit
+    4, // 32 bit
+    5, // 64 bit
+    6, // 128 bit
+    7, // 160 bit
+    8, // 256 bit
 ];
 
 const UINT64_ONLY: &[i32] = &[
@@ -349,10 +344,10 @@ async fn run_binary_operands_events(
 
 /// Types with cases to run. Anything above 256 bits is left out because the setup
 /// below cannot encrypt values that large.
-const BINARY_SPLIT_TYPES: &[i32] = &[0, 1, 2, 3, 4, 5, 6, 7, 8];
+const BINARY_SPLIT_TYPES: &[i32] = &[0, 2, 3, 4, 5, 6, 7, 8];
 
-/// The same, minus bool, which has no multiply, divide or remainder.
-const BINARY_SPLIT_TYPES_EXPENSIVE: &[i32] = &[1, 2, 3, 4, 5, 6, 7, 8];
+/// Types with multiply, divide and remainder.
+const BINARY_SPLIT_TYPES_EXPENSIVE: &[i32] = &[2, 3, 4, 5, 6];
 
 /// Multiply, divide and remainder take far longer than the rest and get slower fast
 /// as types get wider, so they run as separate tests.
@@ -391,7 +386,6 @@ macro_rules! binary_operands_test {
 }
 
 binary_operands_test!(binary_ops_cheap_bool, 0, is_cheap_binary_op);
-binary_operands_test!(binary_ops_cheap_u4, 1, is_cheap_binary_op);
 binary_operands_test!(binary_ops_cheap_u8, 2, is_cheap_binary_op);
 binary_operands_test!(binary_ops_cheap_u16, 3, is_cheap_binary_op);
 binary_operands_test!(binary_ops_cheap_u32, 4, is_cheap_binary_op);
@@ -400,15 +394,12 @@ binary_operands_test!(binary_ops_cheap_u128, 6, is_cheap_binary_op);
 binary_operands_test!(binary_ops_cheap_u160, 7, is_cheap_binary_op);
 binary_operands_test!(binary_ops_cheap_u256, 8, is_cheap_binary_op);
 
-binary_operands_test!(binary_ops_muldivrem_u4, 1, is_expensive_binary_op);
 binary_operands_test!(binary_ops_muldivrem_u8, 2, is_expensive_binary_op);
 binary_operands_test!(binary_ops_muldivrem_u16, 3, is_expensive_binary_op);
 binary_operands_test!(binary_ops_muldivrem_u32, 4, is_expensive_binary_op);
 binary_operands_test!(binary_ops_muldivrem_u64, 5, is_expensive_binary_op);
 
 binary_operands_test!(binary_ops_muldivrem_u128, 6, is_expensive_binary_op);
-binary_operands_test!(binary_ops_muldivrem_u160, 7, is_expensive_binary_op);
-binary_operands_test!(binary_ops_muldivrem_u256, 8, is_expensive_binary_op);
 
 /// Checks the split tests still cover every case the original single test did, so a
 /// forgotten type cannot quietly reduce what we test. Needs no database.
@@ -823,6 +814,9 @@ async fn run_cast_events(types_from: &[i32]) -> Result<(), Box<dyn std::error::E
     let mut cases = vec![];
     for type_from in types_from {
         for type_to in supported_types() {
+            if !matches!(*type_to, 2..=6 | 8) {
+                continue;
+            }
             let input_handle = next_handle_with_type(*type_from);
             let output_handle = next_handle_with_type(*type_to);
             let transaction_id = next_handle();
@@ -924,24 +918,25 @@ macro_rules! cast_events_test {
 }
 
 cast_events_test!(cast_from_bool, 0);
-cast_events_test!(cast_from_u4, 1);
 cast_events_test!(cast_from_u8, 2);
 cast_events_test!(cast_from_u16, 3);
 cast_events_test!(cast_from_u32, 4);
 cast_events_test!(cast_from_u64, 5);
 cast_events_test!(cast_from_u128, 6);
-cast_events_test!(cast_from_u160, 7);
 cast_events_test!(cast_from_u256, 8);
-cast_events_test!(cast_from_u512, 9);
-cast_events_test!(cast_from_u1024, 10);
-cast_events_test!(cast_from_u2048, 11);
 
 /// Checks no supported type is missing a cast test.
 #[test]
 fn cast_split_covers_every_source_type() {
-    const GENERATED_SOURCES: &[i32] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+    const GENERATED_SOURCES: &[i32] = &[0, 2, 3, 4, 5, 6, 8];
+    // 160-bit has no cast.
+    let sources: Vec<i32> = FULL_SUPPORTED_TYPES
+        .iter()
+        .copied()
+        .filter(|t| *t != 7)
+        .collect();
     assert_eq!(
-        GENERATED_SOURCES, FULL_SUPPORTED_TYPES,
+        GENERATED_SOURCES, sources,
         "a supported type has no cast_from_* test; add one"
     );
 }

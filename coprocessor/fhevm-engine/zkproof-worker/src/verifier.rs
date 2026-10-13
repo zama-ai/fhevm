@@ -1020,8 +1020,8 @@ pub(crate) async fn insert_ciphertexts(
             r#"
             INSERT INTO ciphertexts (
                 handle, ciphertext, ciphertext_version, ciphertext_type,
-                input_blob_hash, input_blob_index, is_input, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, TRUE, NOW())
+                input_blob_hash, input_blob_index, is_input, created_at, consensus_version
+            ) VALUES ($1, $2, $3, $4, $5, $6, TRUE, NOW(), $7)
             ON CONFLICT (handle, ciphertext_version) DO NOTHING;
             "#,
             &ct.handle,
@@ -1030,6 +1030,8 @@ pub(crate) async fn insert_ciphertexts(
             ct.ct_type,
             &blob_hash,
             i as i32,
+            i16::try_from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION)
+                .expect("CONSENSUS_PROTOCOL_VERSION fits in i16"),
         )
         .execute(db_txn.as_mut())
         .await?;
