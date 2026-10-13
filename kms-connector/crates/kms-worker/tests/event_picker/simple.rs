@@ -7,8 +7,7 @@ use connector_utils::{
         setup::TestInstanceBuilder,
     },
     types::{
-        ProtocolEventKind,
-        db::{RequestSource, insert_solana_public_decryption},
+        ProtocolEventKind, db::insert_solana_public_decryption,
         solana_request::SolanaPublicDecryptionRequest,
     },
 };
@@ -73,10 +72,8 @@ async fn test_pick_solana_public_decryption_with_its_stores() -> anyhow::Result<
     insert_solana_public_decryption(
         test_instance.db(),
         &request,
-        None,
         sqlx::types::chrono::Utc::now(),
         &PropagationContext::default(),
-        RequestSource::OnChain,
     )
     .await?;
 

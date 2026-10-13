@@ -639,9 +639,9 @@ where
     }
 }
 
-/// Refuses a Solana chain id on the EVM request path at once (DD-013): Solana requests arrive as
-/// Solana Gateway events, so one here can never be authorized and must not be retried as a chain
-/// the ACL map lacks.
+/// Refuses a Solana chain id on the EVM request path at once (DD-013): Solana requests arrive over
+/// HTTP in their own Solana shape, so one here can never be authorized and must not be retried as
+/// a chain the ACL map lacks.
 fn refuse_solana_host_chain(chain_id: u64) -> Result<(), RequestCheckError> {
     if is_solana_host_chain_id(chain_id) {
         return Err(RequestCheckError::irrecoverable(

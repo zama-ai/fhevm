@@ -13,7 +13,7 @@ use anyhow::anyhow;
 use zama_solana_request::HandleEntry;
 // Handle-only overloaded decryption events
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, PublicDecryptionRequest_1 as PublicDecryptionRequest,
+    PublicDecryptionRequest_1 as PublicDecryptionRequest,
     UserDecryptionRequest_2 as UserDecryptionRequest,
     UserDecryptionRequest_3 as UserDecryptionRequestV2,
 };
@@ -270,23 +270,16 @@ impl EventType {
 
     /// Returns every topic0 hash that maps to this `EventType` in the Gateway ABI.
     ///
-    /// `UserDecryptionRequest` covers three subscribed shapes — the bytes32[] handles-only
-    /// shape, the RFC016 EVM unified shape, and `SolanaUserDecryptionRequest` — and
-    /// `PublicDecryptionRequest` two, the handles-only shape and `SolanaPublicDecryptionRequest`,
-    /// which names each handle's encrypted store. Every one of those topic0 hashes must be listed in
-    /// the `eth_getLogs` filter; otherwise the gw-listener never ingests that shape and its
-    /// requests silently never complete. All other event types map one-to-one to a single
+    /// `UserDecryptionRequest` covers two subscribed shapes, the bytes32[] handles-only shape and
+    /// the RFC016 EVM unified shape. Both topic0 hashes must be listed in the `eth_getLogs`
+    /// filter; otherwise the gw-listener never ingests that shape and its requests silently never
+    /// complete. All other event types map one-to-one to a single
     /// topic0. The subscribed set is pinned by `gw-listener/tests/event_topic_pins.rs`.
     pub fn signature_hashes(&self) -> Vec<B256> {
         match self {
-            EventType::PublicDecryptionRequest => vec![
-                PublicDecryptionRequest::SIGNATURE_HASH,
-                Decryption::SolanaPublicDecryptionRequest::SIGNATURE_HASH,
-            ],
             EventType::UserDecryptionRequest => vec![
                 UserDecryptionRequest::SIGNATURE_HASH,
                 UserDecryptionRequestV2::SIGNATURE_HASH,
-                Decryption::SolanaUserDecryptionRequest::SIGNATURE_HASH,
             ],
             _ => vec![self.signature_hash()],
         }
@@ -374,24 +367,22 @@ pub async fn invalidate_kms_epoch<'e>(
     Ok(())
 }
 
-/// Stores a Solana public decryption from either ingress path. Only an HTTP retry resets a failed
-/// HTTP request, as `endpoint` does for EVM requests.
+/// Stores a Solana public decryption received over HTTP. A retry resets a failed HTTP request, as
+/// `endpoint` does for EVM requests.
 pub async fn insert_solana_public_decryption<'e>(
     executor: impl PgExecutor<'e>,
     request: &SolanaPublicDecryptionRequest,
-    tx_hash: Option<B256>,
     created_at: DateTime<Utc>,
     otlp_context: &PropagationContext,
-    source: RequestSource,
 ) -> anyhow::Result<PgQueryResult> {
     let column =
         |values: Vec<B256>| -> Vec<Vec<u8>> { values.iter().map(|v| v.to_vec()).collect() };
     Ok(sqlx::query!(
         "INSERT INTO public_decryption_requests AS existing (
-            decryption_id, ct_handles, handle_encrypted_stores, extra_data, tx_hash, created_at,
+            decryption_id, ct_handles, handle_encrypted_stores, extra_data, created_at,
             otlp_context, source
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, 'http')
         ON CONFLICT (decryption_id) DO UPDATE SET
             status = 'pending',
             created_at = EXCLUDED.created_at,
@@ -401,24 +392,20 @@ pub async fn insert_solana_public_decryption<'e>(
         &column(request.ct_handles()),
         &column(request.encrypted_stores()),
         request.extra_data(),
-        tx_hash.map(|h| h.to_vec()),
         created_at,
         bc2wrap::serialize(otlp_context)?,
-        source as RequestSource,
     )
     .execute(executor)
     .await?)
 }
 
-/// Stores a Solana user decryption from either ingress path. Only an HTTP retry resets a failed
-/// HTTP request, as `endpoint` does for EVM requests.
+/// Stores a Solana user decryption received over HTTP. A retry resets a failed HTTP request, as
+/// `endpoint` does for EVM requests.
 pub async fn insert_solana_user_decryption<'e>(
     executor: impl PgExecutor<'e>,
     request: &SolanaUserDecryptionRequestV1,
-    tx_hash: Option<B256>,
     created_at: DateTime<Utc>,
     otlp_context: &PropagationContext,
-    source: RequestSource,
 ) -> anyhow::Result<PgQueryResult> {
     let permit = request.request.permit();
     let column = |field: fn(&HandleEntry) -> [u8; 32]| -> Vec<Vec<u8>> {
@@ -439,9 +426,9 @@ pub async fn insert_solana_user_decryption<'e>(
         "INSERT INTO user_decryption_requests AS existing (
             decryption_id, ct_handles, public_key, extra_data, signature, start_timestamp,
             duration_seconds, user_address, handle_owner_addresses, handle_encrypted_stores,
-            allowed_scopes, verifying_program_id, tx_hash, created_at, otlp_context, source
+            allowed_scopes, verifying_program_id, created_at, otlp_context, source
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'http')
         ON CONFLICT (decryption_id) DO UPDATE SET
             status = 'pending',
             created_at = EXCLUDED.created_at,
@@ -459,10 +446,8 @@ pub async fn insert_solana_user_decryption<'e>(
         &column(|e| e.encrypted_store),
         &scopes,
         permit.verifying_program_id().as_bytes().as_slice(),
-        tx_hash.map(|h| h.to_vec()),
         created_at,
         bc2wrap::serialize(otlp_context)?,
-        source as RequestSource,
     )
     .execute(executor)
     .await?)

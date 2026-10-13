@@ -114,6 +114,8 @@ impl EventProcessor for Processor {
     }
 }
 
+/// Inserts a pending request. A Solana request always comes over HTTP, so `source` applies to EVM
+/// requests only.
 async fn insert(db: &PgPool, id: u64, solana: bool, source: RequestSource) -> anyhow::Result<()> {
     if solana {
         let request = connector_utils::tests::rand::solana_user_decryption_request(
@@ -123,10 +125,8 @@ async fn insert(db: &PgPool, id: u64, solana: bool, source: RequestSource) -> an
         connector_utils::types::db::insert_solana_user_decryption(
             db,
             &request,
-            None,
             sqlx::types::chrono::Utc::now(),
             &connector_utils::monitoring::otlp::PropagationContext::default(),
-            source,
         )
         .await?;
     } else {
@@ -167,10 +167,13 @@ async fn wait_status(db: &PgPool, id: u64, expected: &str) -> anyhow::Result<()>
 }
 
 #[rstest]
+#[case::evm_on_chain(false, RequestSource::OnChain)]
+#[case::evm_http(false, RequestSource::Http)]
+#[case::solana_http(true, RequestSource::Http)]
 #[tokio::test]
 async fn errors_preserve_the_shared_worker_lifecycle(
-    #[values(false, true)] solana: bool,
-    #[values(RequestSource::OnChain, RequestSource::Http)] source: RequestSource,
+    #[case] solana: bool,
+    #[case] source: RequestSource,
     #[values(Failure::Terminal, Failure::Transient, Failure::Stale)] failure: Failure,
 ) -> anyhow::Result<()> {
     let instance = DbInstance::setup_external().await?;

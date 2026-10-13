@@ -1,4 +1,4 @@
-//! A Solana user decryption as the worker runs it: the Gateway event, the listener's conversion,
+//! A Solana user decryption as the worker runs it: the typed request the HTTP endpoint stores,
 //! and the worker's checks against a host behind real HTTP.
 
 // Only the Gateway registry mock is used here.
@@ -14,19 +14,17 @@ use alloy::{
 use common::{TEST_COPRO_REGISTRY_REFRESH, mock_copro_registry_load};
 use connector_utils::{
     monitoring::otlp::PropagationContext,
-    tests::{
-        rand::solana_user_decryption_event_for,
-        setup::{S3_SOLANA_CT_HANDLE, S3Instance},
-    },
+    tests::setup::{S3_SOLANA_CT_HANDLE, S3Instance},
     types::{
         KmsResponseKind, ProtocolEvent, ProtocolEventKind,
         db::RequestSource,
         extra_data::{ExtraData, parse_extra_data},
         handle::extract_chain_id_from_handle,
-        solana_request::SolanaUserDecryptionRequestV1,
+        solana_request::{
+            SolanaRequestBlob, SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
+        },
     },
 };
-use fhevm_gateway_bindings::decryption::Decryption::SolanaUserDecryptionRequest;
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
     Empty, SigningSchemeType, TypedSignature, UserDecryptionRequest, UserDecryptionResponse,
@@ -60,12 +58,13 @@ use zama_solana_permit::{Identity, KmsRouting, TRANSPORT_KEY_LEN};
 /// A Gateway registry with no ciphertext bucket, for requests that never fetch a ciphertext.
 const NO_BUCKET: &str = "http://unused-bucket-url";
 
-/// A victim's request as the Gateway emits it, and a host whose state authorizes it: one handle
+/// A victim's request as the relayer submits it, and a host whose state authorizes it: one handle
 /// the victim was allowed on directly.
 struct Scenario {
     victim: Wallet,
     encrypted_store: EncryptedStoreFixture,
-    event: SolanaUserDecryptionRequest,
+    fields: SolanaUserDecryptFields,
+    blob: SolanaRequestBlob,
     host: HttpHost,
     chain_id: u64,
 }
@@ -81,7 +80,7 @@ impl Scenario {
         let chain_id = extract_chain_id_from_handle(&B256::from(live)).unwrap();
         let encrypted_store = EncryptedStoreFixture::allowing(live, victim.pubkey());
         let now = Utc::now().timestamp() as u64;
-        let (gateway, blob) = RequestBuilder::new(&victim)
+        let (fields, blob) = RequestBuilder::new(&victim)
             .permit(
                 PermitBuilder::new(victim.pubkey())
                     .chain_id(chain_id)
@@ -92,7 +91,8 @@ impl Scenario {
         let query = encrypted_store.allowed_query(live, victim.pubkey());
 
         let mut scenario = Self {
-            event: solana_user_decryption_event_for(U256::ONE, &gateway, &blob),
+            fields,
+            blob,
             host: HttpHost::start().await,
             victim,
             encrypted_store,
@@ -119,6 +119,15 @@ impl Scenario {
                 Some(self.encrypted_store.account()),
             ),
         ]);
+    }
+
+    /// The typed request the endpoint stores for `fields` and the signed blob.
+    fn request_with(&self, fields: SolanaUserDecryptFields) -> SolanaUserDecryptionRequestV1 {
+        SolanaUserDecryptionRequestV1::new(U256::ONE, fields, self.blob.clone()).unwrap()
+    }
+
+    fn request(&self) -> SolanaUserDecryptionRequestV1 {
+        self.request_with(self.fields.clone())
     }
 
     fn verifier(&self) -> SolanaDecryptionVerifier {
@@ -222,31 +231,30 @@ impl ContextManager for DestroyedContext {
     }
 }
 
-/// The relayer sets the event's key, window and routing, and those are the values stored, so
+/// The relayer sets the request's key, window and routing, and those are the values stored, so
 /// changing one yields a permit the user never signed.
 #[rstest]
-#[case::transport_key(|event: &mut SolanaUserDecryptionRequest| {
-    event.publicKey = vec![0x5a; TRANSPORT_KEY_LEN].into();
+#[case::transport_key(|fields: &mut SolanaUserDecryptFields| {
+    fields.transport_key = vec![0x5a; TRANSPORT_KEY_LEN];
 })]
-#[case::window(|event: &mut SolanaUserDecryptionRequest| {
-    event.requestValidity.startTimestamp -= U256::from(60);
+#[case::window(|fields: &mut SolanaUserDecryptFields| {
+    fields.start_timestamp -= 60;
 })]
-#[case::kms_routing(|event: &mut SolanaUserDecryptionRequest| {
-    event.extraData = KmsRouting::ContextAndEpoch {
+#[case::kms_routing(|fields: &mut SolanaUserDecryptFields| {
+    fields.extra_data = KmsRouting::ContextAndEpoch {
         kms_context_id: Identity::new([0x13; 32]),
         kms_epoch_id: Identity::new([0x14; 32]),
     }
-    .to_extra_data()
-    .into();
+    .to_extra_data();
 })]
 #[tokio::test]
 async fn a_field_the_relayer_changed_fails_the_signature(
-    #[case] relayer: fn(&mut SolanaUserDecryptionRequest),
+    #[case] relayer: fn(&mut SolanaUserDecryptFields),
 ) {
     let scenario = Scenario::new().await;
-    let mut event = scenario.event.clone();
-    relayer(&mut event);
-    let request = SolanaUserDecryptionRequestV1::try_from(event).unwrap();
+    let mut fields = scenario.fields.clone();
+    relayer(&mut fields);
+    let request = scenario.request_with(fields);
 
     let error = scenario
         .verifier()
@@ -298,7 +306,7 @@ async fn a_handle_of_another_chain_fails_the_signature() {
 #[tokio::test]
 async fn a_poll_rechecks_the_host() {
     let mut scenario = Scenario::new().await;
-    let request = SolanaUserDecryptionRequestV1::try_from(scenario.event.clone()).unwrap();
+    let request = scenario.request();
     scenario
         .verifier()
         .check_user_decryption(&request)
@@ -328,7 +336,7 @@ async fn a_poll_rechecks_the_host() {
 #[tokio::test]
 async fn a_solana_request_checks_its_signed_kms_context() {
     let scenario = Scenario::new().await;
-    let request = SolanaUserDecryptionRequestV1::try_from(scenario.event.clone()).unwrap();
+    let request = scenario.request();
     let asked = Arc::default();
 
     let error = scenario
@@ -382,7 +390,7 @@ async fn an_authorized_request_reaches_the_kms_as_its_signer(#[case] already_sen
     let scenario = Scenario::naming(B256::from_hex(S3_SOLANA_CT_HANDLE).unwrap().0).await;
     let identity = SolanaIdentity {
         client_address: scenario.victim.pubkey().to_string(),
-        transport_key: scenario.event.publicKey.to_vec(),
+        transport_key: scenario.fields.transport_key.clone(),
     };
     let mut kms = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");
     kms.mock(|when, then| {
@@ -406,7 +414,7 @@ async fn an_authorized_request_reaches_the_kms_as_its_signer(#[case] already_sen
         kms_core_endpoints: vec![kms.base_url().unwrap().to_string()],
         ..config()
     };
-    let request = SolanaUserDecryptionRequestV1::try_from(scenario.event.clone()).unwrap();
+    let request = scenario.request();
     let mut event = protocol_event(request);
     event.already_sent = already_sent;
 

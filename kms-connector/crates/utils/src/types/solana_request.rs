@@ -1,10 +1,9 @@
 //! Solana decryption requests in their typed form. A user decryption is an sRFC-38 permit, its
 //! ed25519 signature, and the handles it is used for; a public decryption is handles, each with
-//! the encrypted store its public-decrypt leaf is proven against. Built by the Gateway listener,
-//! the HTTP endpoint and the row reader, authorized by the worker.
+//! the encrypted store its public-decrypt leaf is proven against. Built by the HTTP endpoint and
+//! the row reader, authorized by the worker.
 
 use alloy::primitives::{B256, U256};
-use fhevm_gateway_bindings::decryption::Decryption;
 use solana_pubkey::Pubkey;
 use zama_solana_request::{SolanaUserDecryptRequest, public_request_chain_id};
 
@@ -43,24 +42,6 @@ impl SolanaUserDecryptionRequestV1 {
 
     pub fn extra_data(&self) -> Vec<u8> {
         self.request.permit().extra_data().to_extra_data()
-    }
-}
-
-/// The Gateway types the handles, transport key, window and extra data it budgets and charges;
-/// the blob carries the rest.
-impl TryFrom<Decryption::SolanaUserDecryptionRequest> for SolanaUserDecryptionRequestV1 {
-    type Error = anyhow::Error;
-
-    fn try_from(event: Decryption::SolanaUserDecryptionRequest) -> anyhow::Result<Self> {
-        let blob = zama_solana_request::decode_solana_request(&event.solanaRequest)?;
-        let fields = SolanaUserDecryptFields {
-            handles: event.ctHandles.iter().map(|h| h.0).collect(),
-            transport_key: event.publicKey.to_vec(),
-            start_timestamp: event.requestValidity.startTimestamp.try_into()?,
-            duration_seconds: event.requestValidity.durationSeconds.try_into()?,
-            extra_data: event.extraData.to_vec(),
-        };
-        Ok(Self::new(event.decryptionId, fields, blob)?)
     }
 }
 
@@ -135,52 +116,19 @@ impl SolanaPublicDecryptionRequest {
     }
 }
 
-impl TryFrom<Decryption::SolanaPublicDecryptionRequest> for SolanaPublicDecryptionRequest {
-    type Error = SolanaRequestError;
-
-    fn try_from(event: Decryption::SolanaPublicDecryptionRequest) -> Result<Self, Self::Error> {
-        Self::new(
-            event.decryptionId,
-            &event.ctHandles,
-            &event.encryptedStores,
-            event.extraData.to_vec(),
-        )
-    }
-}
-
 #[cfg(all(test, feature = "tests"))]
 mod tests {
     use super::*;
-    use crate::tests::rand::{rand_solana_handle, solana_user_decryption_event};
+    use crate::tests::rand::{rand_solana_handle, solana_user_decryption_parts};
 
     #[test]
-    fn an_event_types_its_request_from_the_event_fields_and_the_blob() {
-        let event = solana_user_decryption_event(U256::from(1), rand_solana_handle());
-        let stored = SolanaUserDecryptionRequestV1::try_from(event.clone()).unwrap();
-        let permit = stored.request.permit();
-        assert_eq!(stored.ct_handles(), event.ctHandles);
-        assert_eq!(
-            U256::from(permit.start_timestamp()),
-            event.requestValidity.startTimestamp
-        );
-        assert_eq!(
-            &permit.transport_key().as_bytes()[..],
-            event.publicKey.as_ref()
-        );
-        assert_eq!(stored.extra_data(), event.extraData.to_vec());
-    }
-
-    #[test]
-    fn a_public_event_pairs_each_handle_with_its_store() {
-        let event = Decryption::SolanaPublicDecryptionRequest {
-            decryptionId: U256::from(1),
-            ctHandles: vec![rand_solana_handle(), rand_solana_handle()],
-            extraData: vec![0x00].into(),
-            encryptedStores: vec![B256::repeat_byte(3), B256::repeat_byte(4)],
-        };
-        let request = SolanaPublicDecryptionRequest::try_from(event.clone()).unwrap();
-        assert_eq!(request.ct_handles(), event.ctHandles);
-        assert_eq!(request.encrypted_stores(), event.encryptedStores);
+    fn a_public_request_pairs_each_handle_with_its_store() {
+        let handles = [rand_solana_handle(), rand_solana_handle()];
+        let stores = [B256::repeat_byte(3), B256::repeat_byte(4)];
+        let request =
+            SolanaPublicDecryptionRequest::new(U256::ONE, &handles, &stores, vec![0x00]).unwrap();
+        assert_eq!(request.ct_handles(), handles);
+        assert_eq!(request.encrypted_stores(), stores);
         assert_eq!(
             request.handles()[1].encrypted_store,
             Pubkey::new_from_array([4; 32])
@@ -202,13 +150,12 @@ mod tests {
     }
 
     #[test]
-    fn rejects_an_event_whose_blob_names_another_entry_count() {
-        let mut event = solana_user_decryption_event(U256::from(1), rand_solana_handle());
-        event.ctHandles.push(event.ctHandles[0]);
-        let error = SolanaUserDecryptionRequestV1::try_from(event).unwrap_err();
+    fn rejects_a_blob_that_names_another_entry_count() {
+        let (mut fields, blob) = solana_user_decryption_parts(rand_solana_handle());
+        fields.handles.push(fields.handles[0]);
         assert_eq!(
-            error.downcast_ref::<SolanaRequestError>(),
-            Some(&SolanaRequestError::EntryCount {
+            SolanaUserDecryptionRequestV1::new(U256::ONE, fields, blob),
+            Err(SolanaRequestError::EntryCount {
                 handles: 2,
                 entries: 1
             })
