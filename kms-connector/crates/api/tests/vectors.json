@@ -97,12 +97,11 @@
   ],
   "solanaPublicDecryption": [
     {
-      "name": "two handles and their stores, one-byte extraData",
+      "name": "two handles on a Solana chain and their stores, one-byte extraData",
       "request": {
-        "scheme": "solana-public-decrypt-v1",
         "ctHandles": [
-          "0x1111111111111111111111111111111111111111111111111111111111111111",
-          "0x2222222222222222222222222222222222222222222222222222222222222222"
+          "0x11111111111111111111111111111111111111111111014539cf79f667041111",
+          "0x22222222222222222222222222222222222222222222014539cf79f667042222"
         ],
         "extraData": "0x00",
         "encryptedStores": [
@@ -110,17 +109,16 @@
           "0x4444444444444444444444444444444444444444444444444444444444444444"
         ]
       },
-      "decryptionId": "0x3dea87e595c0204899d9301fc39a0206a0702f0cd4ecefce914b4cc7b62cbc25"
+      "decryptionId": "0xb7fee23617ad676567902e16fe23d4ac3f94b14cad33a40c59accc5c4be48a35"
     },
     {
       "name": "empty request",
       "request": {
-        "scheme": "solana-public-decrypt-v1",
         "ctHandles": [],
         "extraData": "0x",
         "encryptedStores": []
       },
-      "decryptionId": "0xeee27c04d4073d8704e97af15250ca722a8c32d527ea720d273980adfcfdc3b4"
+      "decryptionId": "0x11625a39e166ee1490c8086efd0975f99f3d635efc159e157e0c81fb3be90057"
     }
   ],
   "solanaUserDecryption": [

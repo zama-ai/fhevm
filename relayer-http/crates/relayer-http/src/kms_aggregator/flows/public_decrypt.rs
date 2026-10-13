@@ -135,13 +135,11 @@ mod tests {
             ]
         );
         let solana = mock::solana_public_request();
-        assert_eq!(
-            PublicDecrypt::decryption_id(&solana),
-            mock::vector("solanaPublicDecryption").1
-        );
+        let (body, id) = mock::vector("solanaPublicDecryption");
+        assert_eq!(PublicDecrypt::decryption_id(&solana), id);
         assert_eq!(
             PublicDecrypt::handles(&solana),
-            PublicDecrypt::handles(&request())
+            serde_json::from_value::<Vec<B256>>(body["ctHandles"].clone()).unwrap()
         );
     }
 

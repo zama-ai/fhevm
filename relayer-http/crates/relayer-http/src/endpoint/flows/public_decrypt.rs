@@ -1,15 +1,14 @@
 //! `POST /v4/public-decrypt`: the current relayer's body, validated, converted to the connector DTO and
-//! aggregated. A body tagged `scheme: "solana-public-decrypt-v1"` is the connector's Solana DTO, parsed, checked
-//! and forwarded equal field by field.
+//! aggregated. A body whose first `ctHandles` entry names a Solana chain is the connector's Solana DTO, parsed,
+//! checked and forwarded equal field by field.
 
 use alloy::primitives::{B256, Bytes};
 use axum::extract::{Request, State};
 use axum::response::{IntoResponse, Response};
-use kms_connector_api::{
-    PublicDecryptionRequest, PublicDecryptionScheme, SolanaPublicDecryptionRequest,
-};
+use kms_connector_api::{PublicDecryptionRequest, SolanaPublicDecryptionRequest};
 use serde::Deserialize;
 use serde_json::value::RawValue;
+use zama_solana_acl::host_chain::{handle_chain_id, is_solana_host_chain_id};
 use zama_solana_request::{SolanaRequestError, public_request_chain_id};
 
 use super::{Reply, field, invalid, parse, read_json, rejected};
@@ -45,19 +44,12 @@ pub async fn handle(app: State<App>, request: Request) -> Response {
         .unwrap_or_else(IntoResponse::into_response)
 }
 
-/// The Solana body's `scheme`, or `None` for the EVM body, which has none.
-pub fn scheme(body: &RawValue) -> Result<Option<PublicDecryptionScheme>, Invalid> {
-    let Some(scheme) = field(body, "scheme") else {
-        return Ok(None);
-    };
-    scheme
-        .as_str()
-        .and_then(|s| s.parse().ok())
-        .map(Some)
-        .ok_or_else(|| {
-            let expected: &str = PublicDecryptionScheme::SolanaPublicDecryptV1.into();
-            Invalid::new("scheme", format!("must be \"{expected}\""))
-        })
+/// Whether the body is the Solana DTO: its first `ctHandles` entry names a Solana chain. The EVM body names its
+/// handles `ciphertextHandles`, so any other body is the EVM one, whose parse reports why.
+pub fn is_solana(body: &RawValue) -> bool {
+    field(body, "ctHandles")
+        .and_then(|handles| handles.get(0)?.as_str()?.parse::<B256>().ok())
+        .is_some_and(|handle| is_solana_host_chain_id(handle_chain_id(&handle.0)))
 }
 
 /// The connector's cheap handle rules, the `extraData` format, then the Solana form (one store per handle, the
@@ -79,15 +71,14 @@ pub fn validate_solana(
     Ok(())
 }
 
-/// Read the body (bounded by `http.body_read_timeout`), dispatch on its `scheme`, validate, aggregate,
+/// Read the body (bounded by `http.body_read_timeout`), dispatch on its handles' chain, validate, aggregate,
 /// answer.
 async fn process(app: &App, request: Request, log: &mut Log) -> Result<Response, ApiError> {
     let body = read_json(app, request, log).await?;
-    match scheme(&body).map_err(|e| invalid(log, e))? {
-        None => process_evm(app, &body, log).await,
-        Some(PublicDecryptionScheme::SolanaPublicDecryptV1) => {
-            process_solana(app, &body, log).await
-        }
+    if is_solana(&body) {
+        process_solana(app, &body, log).await
+    } else {
+        process_evm(app, &body, log).await
     }
 }
 
@@ -138,7 +129,6 @@ pub(crate) mod tests {
     /// A Solana public body: two handles on `SOLANA` and their stores.
     pub(crate) fn public_body() -> SolanaPublicDecryptionRequest {
         SolanaPublicDecryptionRequest {
-            scheme: PublicDecryptionScheme::SolanaPublicDecryptV1.to_string(),
             ctHandles: vec![handle(SOLANA, 0), handle(SOLANA, 5)],
             extraData: Bytes::from_static(&[0]),
             encryptedStores: vec![B256::repeat_byte(0x30), B256::repeat_byte(0x31)],
@@ -150,19 +140,12 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn scheme_tags_the_solana_body_only() {
-        assert_eq!(scheme(&raw(&wire())), Ok(None));
-        let tagged = serde_json::to_string(&public_body()).unwrap();
-        assert_eq!(
-            scheme(&raw(&tagged)),
-            Ok(Some(PublicDecryptionScheme::SolanaPublicDecryptV1))
-        );
-        for bad in [
-            r#"{"scheme": "solana-public-decrypt-v2"}"#,
-            r#"{"scheme": 1}"#,
-        ] {
-            assert_eq!(scheme(&raw(bad)).unwrap_err().field, "scheme", "{bad}");
-        }
+    fn the_first_ct_handle_names_the_solana_body() {
+        assert!(!is_solana(&raw(&wire())));
+        let mut solana = serde_json::to_value(public_body()).unwrap();
+        assert!(is_solana(&raw(&solana.to_string())));
+        solana["ctHandles"][0] = serde_json::json!(handle(137, 0));
+        assert!(!is_solana(&raw(&solana.to_string())));
     }
 
     #[test]

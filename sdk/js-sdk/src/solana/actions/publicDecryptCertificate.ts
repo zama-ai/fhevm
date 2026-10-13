@@ -14,9 +14,6 @@ import { retrySolanaDecryption } from '../decryption/retry.js';
 import type { SolanaClientParameters } from '../clients/createFhevmBaseClient.js';
 import { readActiveKmsRouting, type SolanaHostKmsReads } from './hostKms.js';
 
-/** The scheme that selects the Solana public-decrypt body at the Connector; part of the decryption id. */
-const SOLANA_PUBLIC_DECRYPT_SCHEME = 'solana-public-decrypt-v1';
-
 export type SolanaPublicDecryptCertificateContext = {
   readonly chain: FhevmSolanaChain;
   readonly runtime: FhevmRuntime;
@@ -163,7 +160,6 @@ export async function publicDecryptCertificate(
     ...parameters.options,
   });
   const body = {
-    scheme: SOLANA_PUBLIC_DECRYPT_SCHEME,
     ctHandles: handles,
     extraData: requestExtraDataHex,
     encryptedStores: parameters.entries.map((entry) => bytesToHex(entry.encryptedStore)),

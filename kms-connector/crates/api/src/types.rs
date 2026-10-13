@@ -3,8 +3,9 @@
 //! The request bodies are declared with `sol!` for the EIP-712 hash implementation used to
 //! compute the `decryption_id`.
 //!
-//! EVM `v1` shapes take no new fields. Another scheme is a new tag value on the same route:
-//! `attestationType` on user decryption, `scheme` on the Solana public decryption body.
+//! EVM `v1` shapes take no new fields. The Solana bodies share the EVM routes: `attestationType`
+//! names the user decryption scheme, and a public decryption body is the Solana one when its
+//! handles name a Solana chain.
 
 use alloy::{
     primitives::{B256, Bytes},
@@ -95,13 +96,11 @@ sol! {
         bytes extraData;
     }
 
-    /// The Solana body of `POST v1/public-decrypt`, tagged by `scheme` (see
-    /// [`crate::PublicDecryptionScheme`]): each handle names the encrypted store its
+    /// The Solana body of `POST v1/public-decrypt`: each handle names the encrypted store its
     /// public-decrypt leaf is proven against, as a store is not derivable from a handle.
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     #[serde(deny_unknown_fields)]
     struct SolanaPublicDecryptionRequest {
-        string scheme;
         bytes32[] ctHandles;
         bytes extraData;
         bytes32[] encryptedStores;
@@ -267,23 +266,30 @@ mod tests {
         assert!(serde_json::from_value::<SolanaUserDecryptionRequest>(json).is_err());
     }
 
+    /// Both public bodies answer from one table keyed by id, which their EIP-712 type names keep
+    /// apart: the same handles and `extraData` are two requests, even with no store.
     #[test]
-    fn solana_public_id_binds_scheme_and_stores() {
+    fn solana_public_id_binds_stores_and_is_not_an_evm_id() {
         let request = SolanaPublicDecryptionRequest {
-            scheme: crate::PublicDecryptionScheme::SolanaPublicDecryptV1.to_string(),
             ctHandles: vec![B256::repeat_byte(0x11)],
             extraData: Bytes::from(vec![0x00]),
             encryptedStores: vec![B256::repeat_byte(0x33)],
         };
         let id = request.id();
         let mut other = request.clone();
-        other.scheme = "solana-public-decrypt-v2".into();
-        assert_ne!(id, other.id());
-        let mut other = request.clone();
         other.encryptedStores[0] = B256::repeat_byte(0x34);
         assert_ne!(id, other.id());
+        let evm = PublicDecryptionRequest {
+            ctHandles: request.ctHandles.clone(),
+            extraData: request.extraData.clone(),
+        };
+        let storeless = SolanaPublicDecryptionRequest {
+            encryptedStores: vec![],
+            ..request.clone()
+        };
+        assert_ne!(storeless.id(), evm.id());
         let mut json = serde_json::to_value(&request).unwrap();
-        json.as_object_mut().unwrap().remove("scheme");
+        json.as_object_mut().unwrap().remove("encryptedStores");
         assert!(serde_json::from_value::<SolanaPublicDecryptionRequest>(json).is_err());
     }
 

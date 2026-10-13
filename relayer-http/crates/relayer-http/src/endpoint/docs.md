@@ -19,12 +19,12 @@ Configuration (`http:` in `config/config.yaml`): `endpoint` (bind address), `max
 `body_read_timeout` (default 10 s, total time to receive a request body), `supported_chain_ids` (host chain ids a
 handle may carry). One port for everything; no version endpoint yet.
 
-Both routes take an EVM body and a Solana body. The handler reads the JSON once and dispatches on a tag, as the
-connector does: `attestationType` on user decrypt (`solana-srfc38-user-decrypt-v1` is Solana, any other value is
-the EVM body and its rules), `scheme` on public decrypt (absent is the EVM body, `solana-public-decrypt-v1` is
-Solana, any other value is `400 malformed "scheme: must be \"solana-public-decrypt-v1\""`). The typed body is then
-parsed from the same bytes, so an EVM body gets the same rejection messages as without the Solana arm, except an EVM
-public body with a `scheme` key, which gets the `scheme` rule's message (still `400 malformed`).
+Both routes take an EVM body and a Solana body. The handler reads the JSON once and dispatches as the connector does:
+on `attestationType` on user decrypt (`solana-srfc38-user-decrypt-v1` is Solana, any other value is the EVM body and
+its rules), and on the chain of the first `ctHandles` entry on public decrypt (a Solana chain is the Solana body;
+the EVM body names its handles `ciphertextHandles`, so any other body is the EVM one). The typed body is then parsed
+from the same bytes, so an EVM body gets the same rejection messages as without the Solana arm. A public body mixing
+EVM and Solana handles is a `400 malformed` in either body and either order.
 
 ## 2. Request payloads
 
@@ -101,7 +101,7 @@ pins both shapes and their `decryptionId`.
 ```
 
 ```json
-{ "scheme": "solana-public-decrypt-v1", "ctHandles": ["0x…"], "extraData": "0x00", "encryptedStores": ["0x…"] }
+{ "ctHandles": ["0x<handle on a Solana chain>"], "extraData": "0x00", "encryptedStores": ["0x…"] }
 ```
 
 A Solana public decrypt is aggregated at `kms_aggregator.public_decrypt.threshold`, as an EVM one. zama-host accepts a
@@ -281,7 +281,8 @@ the oversized body, the dominant-error mapping, shutdown, the probes, and the lo
 validation failure, unparsable body) captured through a thread-local JSON subscriber: every `request …` line has
 the four identifiers, with the expected values at each step. The Solana arm: a Solana user body and a Solana public
 body reach the nodes equal field by field to the JSON posted, an EVM body with Solana handles is a 400 with no
-connector call, and an untagged or unknown tag is a 400. `cargo test -p relayer-http endpoint`.
+connector call, and a public body mixing EVM and Solana handles, in either body and either order, or a user body of
+another attestation type is a 400. `cargo test -p relayer-http endpoint`.
 
 Manual smoke, with the API key env vars set:
 

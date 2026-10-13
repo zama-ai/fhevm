@@ -9,7 +9,7 @@ use crate::core::{
         decrypt::{self, DecryptionRoute},
     },
     validation::{
-        ValidationError, parse_body, public_decryption_scheme, validate_public_decryption,
+        ValidationError, is_solana_public_decryption, parse_body, validate_public_decryption,
         validate_solana_public_decryption,
     },
 };
@@ -24,7 +24,7 @@ use connector_utils::types::{
 };
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PublicDecryptionRequest, PublicDecryptionResponse,
-    PublicDecryptionScheme, SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody,
+    SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody,
 };
 use serde_json::Value;
 use sqlx::{
@@ -51,23 +51,20 @@ pub async fn public_decrypt(
     decrypt::handle::<PublicRoute>(&state, id, &request).await
 }
 
-/// A Solana body carries a `scheme` tag; the EVM `v1` body has none.
+/// The chain of its handles tells the Solana body from the EVM `v1` body.
 fn validate(
     body: Value,
     config: &Config,
 ) -> Result<(B256, ValidatedPublicDecryption), ValidationError> {
-    match public_decryption_scheme(&body)? {
-        Some(PublicDecryptionScheme::SolanaPublicDecryptV1) => {
-            let request: SolanaPublicDecryptionBody = parse_body(body)?;
-            let id = request.id();
-            let request = validate_solana_public_decryption(id, &request, config)?;
-            Ok((id, ValidatedPublicDecryption::Solana(request)))
-        }
-        None => {
-            let request: PublicDecryptionRequest = parse_body(body)?;
-            validate_public_decryption(&request, config)?;
-            Ok((request.id(), ValidatedPublicDecryption::Evm(request)))
-        }
+    if is_solana_public_decryption(&body) {
+        let request: SolanaPublicDecryptionBody = parse_body(body)?;
+        let id = request.id();
+        let request = validate_solana_public_decryption(id, &request, config)?;
+        Ok((id, ValidatedPublicDecryption::Solana(request)))
+    } else {
+        let request: PublicDecryptionRequest = parse_body(body)?;
+        validate_public_decryption(&request, config)?;
+        Ok((request.id(), ValidatedPublicDecryption::Evm(request)))
     }
 }
 
@@ -137,6 +134,62 @@ impl DecryptionRoute for PublicRoute {
                 "inconsistent response row",
                 Some(id),
             )),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::validation::tests::{config, handle};
+    use alloy::primitives::Bytes;
+    use tfhe::FheTypes;
+    use zama_solana_acl::host_chain::solana_host_chain_id;
+
+    /// The first handle's chain picks the body. A body mixing EVM and Solana handles is malformed,
+    /// whichever comes first and whichever body carries them.
+    #[test]
+    fn the_handles_chain_picks_the_body_and_a_mix_is_malformed() {
+        let solana_chain = solana_host_chain_id(12345);
+        let config = Config {
+            supported_chain_ids: vec![1, solana_chain],
+            ..config()
+        };
+        let euint64 = FheTypes::Uint64 as u8;
+        let (evm, solana) = (handle(1, euint64), handle(solana_chain, euint64));
+        let evm_body = |handles| {
+            serde_json::to_value(PublicDecryptionRequest {
+                ctHandles: handles,
+                extraData: Bytes::new(),
+            })
+            .unwrap()
+        };
+        let solana_body = |handles: Vec<B256>| {
+            serde_json::to_value(SolanaPublicDecryptionBody {
+                encryptedStores: vec![B256::repeat_byte(0x03); handles.len()],
+                ctHandles: handles,
+                extraData: Bytes::new(),
+            })
+            .unwrap()
+        };
+
+        assert!(matches!(
+            validate(evm_body(vec![evm]), &config),
+            Ok((_, ValidatedPublicDecryption::Evm(_)))
+        ));
+        assert!(matches!(
+            validate(solana_body(vec![solana]), &config),
+            Ok((_, ValidatedPublicDecryption::Solana(_)))
+        ));
+        for handles in [vec![evm, solana], vec![solana, evm]] {
+            for body in [evm_body(handles.clone()), solana_body(handles.clone())] {
+                let error = validate(body.clone(), &config).err();
+                assert_eq!(
+                    error.map(|e| e.code()),
+                    Some(ErrorCode::Malformed),
+                    "{body}"
+                );
+            }
         }
     }
 }
