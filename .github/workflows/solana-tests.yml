@@ -52,7 +52,7 @@ jobs:
               - solana/**
               # Rendered by `zama_host::cleartext::sdk_constants`, whose test fails when it drifts.
               - sdk/js-sdk/src/solana/internal/hostConstants.ts
-              - coprocessor/fhevm-engine/host-listener/build.rs
+              - coprocessor/fhevm-engine/host-listener/idl/solana_abi_golden.json
               - coprocessor/fhevm-engine/host-listener/idl/zama_host.json
             deployer:
               - .github/workflows/solana-tests.yml

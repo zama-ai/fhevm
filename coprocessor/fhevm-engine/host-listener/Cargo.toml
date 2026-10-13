@@ -100,8 +100,5 @@ tracing-test = { workspace = true }
 path = "."
 features = ["test_bypass_key_extraction"]
 
-[build-dependencies]
-serde_json = { workspace = true }
-
 [lints]
 workspace = true
