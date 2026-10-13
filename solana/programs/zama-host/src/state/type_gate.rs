@@ -26,7 +26,7 @@ fn assert_supported_binary_output_type(op: FheBinaryOpCode, fhe_type: u8) -> Res
 }
 
 /// True when `fhe_type` is a legal result type for `op` (after the supported-type gate).
-pub fn binary_output_type_ok(op: FheBinaryOpCode, fhe_type: u8) -> bool {
+fn binary_output_type_ok(op: FheBinaryOpCode, fhe_type: u8) -> bool {
     match op {
         FheBinaryOpCode::Add
         | FheBinaryOpCode::Sub
@@ -142,7 +142,7 @@ fn assert_supported_unary_output_type(op: FheUnaryOpCode, fhe_type: u8) -> Resul
 }
 
 /// True when `fhe_type` is a legal result type for `op` (after the supported-type gate).
-pub fn unary_output_type_ok(op: FheUnaryOpCode, fhe_type: u8) -> bool {
+fn unary_output_type_ok(op: FheUnaryOpCode, fhe_type: u8) -> bool {
     match op {
         FheUnaryOpCode::Neg => is_supported_uint_fhe_type(fhe_type),
         FheUnaryOpCode::Not => is_supported_fhe_type(fhe_type),

@@ -3,13 +3,12 @@
 //! Public API surface: app programs. The op methods mirror the host's op set one-for-one on
 //! purpose — an app author who can call `add` must be able to call `mul`, `shl`, or `is_in` — so
 //! the surface is complete by design and is not trimmed to whatever the demo programs happen to
-//! use. The host-side cost table and the operand validation are what keep it honest.
+//! use. The host-side cost table and the host's operand validation are what keep it honest.
 //!
-//! Every method validates its operands, then appends through
-//! [`FheExecutionBuilder::commit_step`], which enforces the step ceiling; `builder.rs` lists all
-//! three ceilings. Heap admission is [`crate::heap_tally::HeapBudget`]: intern
-//! tables grow through `try_push`. `verified_input` registers attestations on the same budget;
-//! it is not a step.
+//! Every method appends through [`FheExecutionBuilder::commit_step`], which enforces the step
+//! ceiling; `builder.rs` lists all three ceilings. Heap admission is
+//! [`crate::heap_tally::HeapBudget`]: intern tables grow through `try_push`. `verified_input`
+//! registers attestations on the same budget; it is not a step.
 
 use zama_host::{
     is_mul_div_fhe_type, max_reduction_operands, CoprocessorInputAttestation, FheBinaryOpCode,
@@ -23,8 +22,7 @@ use crate::types::{
     binary_rhs_operand, BinaryRhs, Bool, Encrypted, FheType, FheTyped, FheUint, Scalar, Uint,
 };
 use crate::validate::{
-    handle_fhe_type, operand_fhe_type, validate_binary_step, validate_supported_fhe_type,
-    validate_ternary_step, validate_uint_fhe_type, validate_unary_step,
+    handle_fhe_type, operand_fhe_type, validate_supported_fhe_type, validate_uint_fhe_type,
 };
 use crate::{FheExecutionError, Result};
 
@@ -119,9 +117,6 @@ impl<'id> FheExecutionBuilder<'id> {
         if matches!(lhs.0, OperandKind::Scalar(_)) {
             return Err(FheExecutionError::ScalarLhsOperand);
         }
-        validate_binary_step(op, &lhs, &rhs, output_fhe_type, self.steps.len(), |index| {
-            self.produced_types.get(index as usize).copied()
-        })?;
         let op_index = self.commit_step(output_fhe_type, |lowering| {
             let lhs = lowering.operand(lhs)?;
             let rhs = lowering.operand(rhs)?;
@@ -148,14 +143,6 @@ impl<'id> FheExecutionBuilder<'id> {
         let output_fhe_type =
             self.encrypted_operand_type(&if_true, FheExecutionError::ScalarEncryptedOperand)?;
         let output_fhe_type = output_fhe_type.byte();
-        validate_ternary_step(
-            &control,
-            &if_true,
-            &if_false,
-            output_fhe_type,
-            self.steps.len(),
-            |index| self.produced_types.get(index as usize).copied(),
-        )?;
         let step_index = self.commit_step(output_fhe_type, |lowering| {
             let control = lowering.operand(control)?;
             let if_true = lowering.operand(if_true)?;
@@ -242,29 +229,32 @@ impl<'id> FheExecutionBuilder<'id> {
     pub fn div<T: FheUint>(
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
-        rhs: impl Into<BinaryRhs<'id, T>>,
+        divisor: Scalar<T>,
     ) -> Result<Encrypted<'id, T>> {
-        self.binary_op(
-            FheBinaryOpCode::Div,
-            lhs.into().operand(),
-            binary_rhs_operand(rhs),
-            T::FHE_TYPE,
-        )
-        .map(Encrypted::from_operand)
+        self.scalar_division(FheBinaryOpCode::Div, lhs.into(), divisor)
     }
 
     pub fn rem<T: FheUint>(
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
-        rhs: impl Into<BinaryRhs<'id, T>>,
+        divisor: Scalar<T>,
     ) -> Result<Encrypted<'id, T>> {
-        self.binary_op(
-            FheBinaryOpCode::Rem,
-            lhs.into().operand(),
-            binary_rhs_operand(rhs),
-            T::FHE_TYPE,
-        )
-        .map(Encrypted::from_operand)
+        self.scalar_division(FheBinaryOpCode::Rem, lhs.into(), divisor)
+    }
+
+    /// Div and rem take a plaintext divisor, as EVM's `FHE.div` and `FHE.rem` do.
+    fn scalar_division<T: FheUint>(
+        &mut self,
+        op: FheBinaryOpCode,
+        lhs: Encrypted<'id, T>,
+        divisor: Scalar<T>,
+    ) -> Result<Encrypted<'id, T>> {
+        let divisor = divisor.bytes();
+        if divisor == [0; 32] {
+            return Err(FheExecutionError::DivisionByZero);
+        }
+        self.binary_op(op, lhs.operand(), Operand::scalar(divisor), T::FHE_TYPE)
+            .map(Encrypted::from_operand)
     }
 
     pub fn and<T: FheTyped>(
@@ -585,9 +575,6 @@ impl<'id> FheExecutionBuilder<'id> {
         if matches!(operand.0, OperandKind::Scalar(_)) {
             return Err(FheExecutionError::ScalarEncryptedOperand);
         }
-        validate_unary_step(op, &operand, output_fhe_type, self.steps.len(), |index| {
-            self.produced_types.get(index as usize).copied()
-        })?;
         let step_index = self.commit_step(output_fhe_type, |lowering| {
             let operand = lowering.operand(operand)?;
 

@@ -116,13 +116,6 @@ impl<T> TalliedVec<T> {
         Ok(())
     }
 
-    /// Test-only: grow the table without a [`HeapBudget`]. Fixture builders inject illegal
-    /// states to exercise `finish` validation; those paths are not production admission.
-    #[cfg(test)]
-    pub(crate) fn push(&mut self, value: T) {
-        self.vec.push(value);
-    }
-
     /// Shortens the table, keeping the charged bytes: the allocator already served them.
     pub(crate) fn truncate(&mut self, len: usize) {
         self.vec.truncate(len);

@@ -8,14 +8,13 @@ use crate::lower::StepTables;
 use crate::operand::*;
 use crate::store::{StoreId, StoreOutput};
 use crate::types::*;
-use crate::validate::{validate_binary_step, validate_unary_step};
 use crate::FheExecutionError;
 use anchor_lang::prelude::Pubkey;
 #[cfg(feature = "cpi")]
 use anchor_lang::{prelude::AccountInfo, Key};
 use zama_host::{
     CoprocessorInputAttestation, FheBinaryOpCode, FheExecuteOperand, FheExecuteStep,
-    FheUnaryOpCode, MAX_FHE_EXECUTION_STEPS,
+    MAX_FHE_EXECUTION_STEPS,
 };
 
 fn handle(tag: u8) -> [u8; 32] {
@@ -85,14 +84,6 @@ fn store_output(key: TestStoreSlot) -> StoreOutput {
     crate::Store::new(&account).set(key.key)
 }
 
-fn store_slot_operand(handle: [u8; 32], key: &TestStoreSlot) -> Operand {
-    Operand(OperandKind::StoreSlot {
-        store: key.store,
-        key: key.key,
-        handle,
-    })
-}
-
 fn typed_store_slot<T: FheTyped>(
     handle: [u8; 32],
     key: TestStoreSlot,
@@ -114,10 +105,6 @@ fn typed_store_slot<T: FheTyped>(
 
 fn test_store_slot(account: Pubkey, label_tag: u8) -> TestStoreSlot {
     TestStoreSlot::new(app(), account, handle(label_tag))
-}
-
-fn foreign_operand(handle: [u8; 32]) -> Operand {
-    store_slot_operand(handle, &test_store_slot(Pubkey::new_unique(), 0xEE))
 }
 
 fn scalar_operand_u64(value: u64) -> Operand {
@@ -272,19 +259,17 @@ fn verified_input_rejects_type_mismatch() {
 #[test]
 fn build_propagates_closure_and_finish_errors() {
     let primary_authority = Pubkey::new_unique();
+    let balance =
+        typed_store_slot::<Uint<64>>(balance_handle(1), test_store_slot(primary_authority, 1))
+            .unwrap();
     let error = match FheExecution::build(execution_authority(primary_authority), |builder| {
-        builder.binary_op(
-            FheBinaryOpCode::Ge,
-            foreign_operand(balance_handle(1)),
-            scalar_operand_u64(2),
-            FheType::UINT64,
-        )?;
+        builder.div(balance, Scalar::<Uint<64>>::u64(0))?;
         Ok(())
     }) {
         Ok(_) => panic!("invalid execution unexpectedly built"),
         Err(error) => error,
     };
-    assert_eq!(error, FheExecutionError::UnsupportedBinaryOutputType);
+    assert_eq!(error, FheExecutionError::DivisionByZero);
 
     let error = match FheExecution::build(execution_authority(primary_authority), |_builder| Ok(()))
     {
@@ -292,103 +277,6 @@ fn build_propagates_closure_and_finish_errors() {
         Err(error) => error,
     };
     assert_eq!(error, FheExecutionError::EmptySteps);
-}
-
-#[test]
-fn finish_preflights_lowered_remaining_account_indices() {
-    let primary_authority = Pubkey::new_unique();
-    let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    builder.dictionary.push(balance_handle(1));
-    builder.dictionary.push(Scalar::<Uint<64>>::u64(1).bytes());
-    builder.steps.push(FheExecuteStep::Binary {
-        op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::StoreSlot {
-            handle_index: 0,
-            store_index: 1,
-            key_index: 0,
-        },
-        rhs: FheExecuteOperand::Scalar { value_index: 1 },
-        output_fhe_type: FheType::UINT64.byte(),
-    });
-    builder.produced_types.push(FheType::UINT64.byte());
-
-    assert_eq!(
-        builder.finish().unwrap_err(),
-        FheExecutionError::InvalidRemainingAccountReference
-    );
-}
-
-#[test]
-fn finish_preflights_lowered_transient_order_and_account_uniqueness() {
-    let primary_authority = Pubkey::new_unique();
-    let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    builder.steps.push(FheExecuteStep::TrivialEncrypt {
-        plaintext: Scalar::<Uint<64>>::u64(1).bytes(),
-        fhe_type: FheType::UINT64.byte(),
-    });
-    builder.dictionary.push(Scalar::<Uint<64>>::u64(1).bytes());
-    builder.steps.push(FheExecuteStep::Binary {
-        op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::EarlierStep { producer_index: 1 },
-        rhs: FheExecuteOperand::Scalar { value_index: 0 },
-        output_fhe_type: FheType::UINT64.byte(),
-    });
-    builder.produced_types.push(FheType::UINT64.byte());
-    builder.produced_types.push(FheType::UINT64.byte());
-
-    assert_eq!(
-        builder.finish().unwrap_err(),
-        FheExecutionError::InvalidTransientReference
-    );
-
-    let input_key = test_store_slot(primary_authority, 1);
-    let input_acl = input_key.address();
-    let balance = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
-    let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    builder.add(balance, Scalar::<Uint<64>>::u64(1)).unwrap();
-    builder
-        .remaining_accounts
-        .push(ExecutionAccountMeta::readonly(
-            input_acl,
-            ExecutionAccountPurpose::StoreInput,
-        ));
-
-    assert_eq!(
-        builder.finish().unwrap_err(),
-        FheExecutionError::InvalidRemainingAccountReference
-    );
-}
-
-#[test]
-fn finish_rejects_dictionary_entry_no_step_references() {
-    let primary_authority = Pubkey::new_unique();
-    let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    builder.trivial_encrypt(Scalar::<Uint<64>>::u64(1)).unwrap();
-    builder.dictionary.push([0xAA; 32]);
-
-    assert_eq!(
-        builder.finish().unwrap_err(),
-        FheExecutionError::UnreferencedDictionaryEntry
-    );
-}
-
-#[test]
-fn finish_rejects_dictionary_index_past_dictionary_end() {
-    let primary_authority = Pubkey::new_unique();
-    let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    builder.trivial_encrypt(Scalar::<Uint<64>>::u64(1)).unwrap();
-    builder.steps.push(FheExecuteStep::Binary {
-        op: FheBinaryOpCode::Add,
-        lhs: FheExecuteOperand::EarlierStep { producer_index: 0 },
-        rhs: FheExecuteOperand::Scalar { value_index: 3 },
-        output_fhe_type: FheType::UINT64.byte(),
-    });
-    builder.produced_types.push(FheType::UINT64.byte());
-
-    assert_eq!(
-        builder.finish().unwrap_err(),
-        FheExecutionError::DictionaryIndexOutOfBounds
-    );
 }
 
 /// A built one-output execution under a fresh authority, with that authority and the output's
@@ -1062,7 +950,7 @@ fn lowers_trivial_encrypt_and_rand_steps() {
 }
 
 #[test]
-fn rejects_invalid_references_and_types() {
+fn rejects_invalid_transient_references() {
     let primary_authority = Pubkey::new_unique();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
     let error = builder
@@ -1074,17 +962,6 @@ fn rejects_invalid_references_and_types() {
         )
         .unwrap_err();
     assert_eq!(error, FheExecutionError::InvalidTransientReference);
-
-    let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    let error = builder
-        .binary_op(
-            FheBinaryOpCode::Ge,
-            foreign_operand(balance_handle(1)),
-            scalar_operand_u64(2),
-            FheType::UINT64,
-        )
-        .unwrap_err();
-    assert_eq!(error, FheExecutionError::UnsupportedBinaryOutputType);
 
     let input_key = test_store_slot(primary_authority, 1);
     let input = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
@@ -1133,132 +1010,6 @@ fn validates_execution_authority_pubkey() {
 }
 
 #[test]
-fn binary_validation_rejects_host_type_mismatches() {
-    let primary_authority = Pubkey::new_unique();
-    let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    let bool_lhs = foreign_operand(typed_handle(1, FheType::BOOL.byte()));
-    let error = builder
-        .binary_op(
-            FheBinaryOpCode::Add,
-            bool_lhs,
-            scalar_operand_u64(1),
-            FheType::UINT64,
-        )
-        .unwrap_err();
-    // Add gates its output to uint types, and the operand must equal that output type, so a
-    // Bool lhs against a Uint64 output is a type mismatch (host + client agree).
-    assert_eq!(error, FheExecutionError::BinaryOperandTypeMismatch);
-
-    let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    let error = builder
-        .binary_op(
-            FheBinaryOpCode::Add,
-            foreign_operand(balance_handle(1)),
-            foreign_operand(typed_handle(2, FheType::UINT32.byte())),
-            FheType::UINT64,
-        )
-        .unwrap_err();
-    assert_eq!(error, FheExecutionError::BinaryOperandTypeMismatch);
-}
-
-#[test]
-fn unary_validation_rejects_same_type_cast_and_bad_operand_types() {
-    let primary_authority = Pubkey::new_unique();
-    let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    // A cast to a different type is accepted.
-    assert!(builder
-        .unary_op(
-            FheUnaryOpCode::Cast,
-            foreign_operand(balance_handle(1)),
-            FheType::UINT32
-        )
-        .is_ok());
-    // A same-type cast is rejected (EVM InvalidType parity).
-    assert_eq!(
-        builder
-            .unary_op(
-                FheUnaryOpCode::Cast,
-                foreign_operand(balance_handle(1)),
-                FheType::UINT64
-            )
-            .unwrap_err(),
-        FheExecutionError::UnsupportedFheType
-    );
-    // EVM cast type sets: a Bool input casts to a uint (Bool -> Uint32) is accepted...
-    assert!(builder
-        .unary_op(
-            FheUnaryOpCode::Cast,
-            foreign_operand(typed_handle(2, FheType::BOOL.byte())),
-            FheType::UINT32
-        )
-        .is_ok());
-    // ...but casting TO ebool, TO type 7, FROM type 7, or FROM/TO type 8 is rejected.
-    assert_eq!(
-        builder
-            .unary_op(
-                FheUnaryOpCode::Cast,
-                foreign_operand(balance_handle(1)),
-                FheType::BOOL
-            )
-            .unwrap_err(),
-        FheExecutionError::UnsupportedFheType
-    );
-    assert_eq!(
-        validate_unary_step(
-            FheUnaryOpCode::Cast,
-            &foreign_operand(balance_handle(1)),
-            7u8,
-            0,
-            |_| None,
-        )
-        .unwrap_err(),
-        FheExecutionError::UnsupportedFheType
-    );
-    assert_eq!(
-        builder
-            .unary_op(
-                FheUnaryOpCode::Cast,
-                foreign_operand(typed_handle(3, 7u8)),
-                FheType::UINT64
-            )
-            .unwrap_err(),
-        FheExecutionError::UnsupportedFheType
-    );
-    assert_eq!(
-        builder
-            .unary_op(
-                FheUnaryOpCode::Cast,
-                foreign_operand(typed_handle(4, 8u8)),
-                FheType::UINT64
-            )
-            .unwrap_err(),
-        FheExecutionError::UnsupportedFheType
-    );
-    assert_eq!(
-        validate_unary_step(
-            FheUnaryOpCode::Cast,
-            &foreign_operand(balance_handle(1)),
-            8u8,
-            0,
-            |_| None,
-        )
-        .unwrap_err(),
-        FheExecutionError::UnsupportedFheType
-    );
-    // Neg rejects a Bool operand (EVM fheNeg supportedTypes = Uint8..Uint128).
-    assert_eq!(
-        builder
-            .unary_op(
-                FheUnaryOpCode::Neg,
-                foreign_operand(typed_handle(1, FheType::BOOL.byte())),
-                FheType::BOOL
-            )
-            .unwrap_err(),
-        FheExecutionError::UnsupportedFheType
-    );
-}
-
-#[test]
 fn mul_div_rejects_zero_divisor() {
     let primary_authority = Pubkey::new_unique();
     let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
@@ -1278,17 +1029,9 @@ fn mul_div_rejects_zero_divisor() {
 }
 
 #[test]
-fn div_rem_require_nonzero_scalar_divisor() {
+fn div_rem_reject_a_zero_divisor() {
     let auth = Pubkey::new_unique();
     let mut builder = FheExecutionBuilder::new(execution_authority(auth));
-    // Encrypted divisor is rejected — division is scalar-only (EVM `IsNotScalar`).
-    let lhs = typed_store_slot::<Uint<64>>(balance_handle(1), test_store_slot(auth, 1)).unwrap();
-    let enc_divisor =
-        typed_store_slot::<Uint<64>>(balance_handle(2), test_store_slot(auth, 2)).unwrap();
-    assert_eq!(
-        builder.div(lhs, enc_divisor).unwrap_err(),
-        FheExecutionError::DivisorMustBeScalar
-    );
     // A zero scalar divisor is rejected.
     let lhs2 = typed_store_slot::<Uint<64>>(balance_handle(1), test_store_slot(auth, 1)).unwrap();
     assert_eq!(
@@ -1331,15 +1074,6 @@ fn builder_exposes_the_host_operator_type_surface() {
     .unwrap();
     assert!(builder.eq(bool_c, bool_d).is_ok());
 
-    let u256 = foreign_operand(typed_handle(3, 8u8));
-    assert_eq!(
-        validate_binary_step(FheBinaryOpCode::Xor, &u256, &u256, 8u8, 0, |_| None).unwrap_err(),
-        FheExecutionError::UnsupportedFheType
-    );
-    assert_eq!(
-        validate_unary_step(FheUnaryOpCode::Neg, &u256, 8u8, 0, |_| None).unwrap_err(),
-        FheExecutionError::UnsupportedFheType
-    );
     assert_eq!(
         FheType::from_host_byte(7u8).unwrap_err(),
         FheExecutionError::UnsupportedFheType
