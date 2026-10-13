@@ -71,6 +71,7 @@ party_common() {
     --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${i}-master:6379"
     --set-string "txSender.wallet.secret.value=${privkey}"
     --set-string "snsWorker.wallet.secret.value=${privkey}"
+    --set-string "consensusDetector.wallet.secret.value=${privkey}"
   )
   if [[ "${OBSERVABILITY}" == "true" ]]; then
     common_args+=(
