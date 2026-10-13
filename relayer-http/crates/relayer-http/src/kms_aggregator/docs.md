@@ -120,14 +120,22 @@ not stored.
 
 ## 5. One node call (`Caller::call`)
 
-`permit → POST → decode → retry?`, under the cancellation token.
+`sign → permit → POST → decode → retry?`, under the cancellation token.
+
+- Each call signs its node's `FhevmSig` header (RFC-038, `signer.rs`): an EIP-712 signature over the route, the
+  `keccak256` of the exact body, an expiry (`auth.validity` from now) and the node's `audience` (its KMS tx-sender
+  address), sent as `authorization: FhevmSig expires=<unix seconds>, digest=0x<keccak256(body)>, sig=0x<65 bytes>`.
+  The 13 calls sign in parallel, outside the semaphore (an AWS KMS signature takes ~10–30 ms). The header is reused by every attempt of
+  the call (`auth.validity > call.timeout`), and re-signed after an `auth_expired` answer (clock drift between the
+  relayer and that node).
 
 - The semaphore (`max_concurrent_calls`) bounds HTTP calls in flight across all aggregations of the process. A permit
   is held for one attempt only, never while sleeping between attempts.
 - Retries happen only for retryable errors, at most `max_retries` times, with delay `min(delay * 2^(k-1), backoff_max)`
   before retry `k`. The deadline is the real bound: a retry whose delay does not fit in the remaining time is skipped
   (the call gives up), so `max_retries` has no ceiling and no call outlives `call.timeout`.
-- An authentication rejection is never retried: our key is wrong for that node.
+- An authentication rejection (`sender_authentication_failed`, a bare 401) is never retried: our key or that node's
+  audience is wrong. `auth_expired` is retried like any retryable error, with a fresh header.
 - The reqwest client has `timeout(call.timeout)` and a 3 s connect timeout as safety nets for a socket that stops
   answering. The aggregator's deadline is the decision.
 
@@ -136,13 +144,15 @@ not stored.
 | 2xx with a valid DTO | — | — |
 | 2xx with an unreadable body | `Body` | no |
 | any body above 4 MiB (declared `content-length`, or bytes received when the stream is cut) | `TooLarge(bytes)` | no |
-| non-2xx with the connector error body | `Api { status, error }` | by `error.code`: `malformed`, `unsupported_attestation_type` (400), `sender_authentication_failed` (401), `user_decryption_expired` (403), `kms_context_destroyed` (410), `unprocessable` (422) are final; `acl_denied`, `user_signature_rejected` (403), `ciphertext_not_found` (404), `kms_context_invalid` (412), `rate_limited` (429), `copro_consensus_failed`, `upstream_transient` (502), `overloaded` (503), `timeout` (504) retry with backoff; `unknown` follows the body's `retryable` flag |
+| non-2xx with the connector error body | `Api { status, error }` | by `error.code`: `malformed`, `unsupported_attestation_type` (400), `sender_authentication_failed` (401), `user_decryption_expired` (403), `kms_context_destroyed` (410), `unprocessable` (422) are final; `auth_expired` (401, re-signed), `acl_denied`, `user_signature_rejected` (403), `ciphertext_not_found` (404), `kms_context_invalid` (412), `rate_limited` (429), `copro_consensus_failed`, `upstream_transient` (502), `overloaded` (503), `timeout` (504) retry with backoff; `unknown` follows the body's `retryable` flag |
 | non-2xx without a JSON body (empty 404, HTML 502, a 3xx: never followed) | `Status` | 408, 429 and 5xx only |
 | connection refused or reset, TLS failure, client-side timeout | `Transport` | yes |
+| the header could not be signed (AWS KMS unreachable); nothing was sent | `Signer` | yes |
 
 For the dominant error, a bare 401 counts as `sender_authentication_failed`, a bare 429 as `rate_limited`, a transport
-failure or a bare 5xx as `upstream_transient`, a bad 2xx body as `unknown`. No rate limiter sits in front of the
-connector today (the proxy never answers 429); the bare 429 covers a future proxy (pingora) limit or an ingress.
+failure or a bare 5xx as `upstream_transient`, a bad 2xx body or a signing failure as `unknown`. The connector proxy
+does not rate-limit yet; a `429` (with or without the error body) retries with our own backoff, `Retry-After` is not
+used.
 
 ## 6. Response checks (`flows/`)
 
@@ -186,7 +196,7 @@ Bytes are hex without `0x`; `extraData` keeps its `0x` prefix.
 
 ```yaml
 kms_aggregator:
-  allow_insecure_http: false   # local only: plain http and `auth: none` to non-loopback hosts (an api_key over http is sent in clear)
+  allow_insecure_http: false   # local only: plain http to non-loopback hosts
   max_concurrent_calls: 4096   # semaphore size, >= number of endpoints; one aggregation takes up to n permits
   call:
     timeout: 5000ms            # the deadline (<= 60s)
@@ -195,8 +205,13 @@ kms_aggregator:
   user_decrypt:
     threshold: 9
     checks: { decryption_id_match: false, decryption_id_majority: false }   # optional, section 6
+  auth:                        # FhevmSig signing, section 5
+    chain_id: 1                # EIP-712 domain: Ethereum chain id ...
+    protocol_config: "0x…"     # ... and ProtocolConfig address
+    validity: 2m               # > call.timeout, <= 5m (the connectors' DEFAULT_MAX_AUTH_VALIDITY)
+    signer: { type: private_key, value_env: RELAYER_SIGNER_KEY }   # or { type: aws_kms, key_id, region, endpoint? }
   endpoints:
-    - { name: kms_00, url: "https://kms-00.example.net:8443", auth: { type: api_key, value_env: KMS_00_API_KEY } }
+    - { name: kms_00, url: "https://kms-00.example.net:8443", audience: "0x…" }   # audience: the connector's tx-sender address
 ```
 
 Sizing `max_concurrent_calls` (Little's law): permits in use on a pod = decryptions per second × the sum over the nodes
@@ -215,12 +230,14 @@ misbehaving node); one pooled connection per call. A pod whose permits are exhau
 `/healthz`: see `endpoint/docs.md` section 11.
 
 - Validation (`KmsAggregatorConfig::validate`, also run by `Caller::new`): endpoints non-empty with unique names and
-  URLs; `http(s)` with a host, no credentials, query or fragment; plain `http` or `auth: none` only towards loopback
-  unless `allow_insecure_http`; `max_concurrent_calls >= n`; `timeout` within `1ms..=60s`;
+  URLs; `http(s)` with a host, no credentials, query or fragment; plain `http` only towards loopback unless
+  `allow_insecure_http`; non-zero, unique audiences; `max_concurrent_calls >= n`; `timeout` within `1ms..=60s`;
+  `call.timeout < auth.validity <= 5m`; non-empty signer fields;
   `0 < delay <= backoff_max <= timeout` when retries are on (`max_retries` itself has no ceiling); each `threshold`
   within `1..=n`. Every message names the field with its dotted path.
-- The API key is read from the named env var at startup and sent as `authorization: Bearer <key>`; it is never in the
-  config, the logs or any error message.
+- The signing key is loaded at startup, from the env var named by `auth.signer.value_env` (hex private key) or from
+  AWS KMS (`key_id`, `region`, ambient AWS credentials); it is never in the config, the logs or any error message.
+  The signer's address is logged at startup: every connector proxy must whitelist it (`auth.allowed_senders`).
 - `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s` overrides a field; durations need a unit.
 - TLS uses the platform trust store: the container image needs CA certificates.
 
@@ -299,7 +316,7 @@ Version 1 is the fan-out and the aggregation only.
   modules in front of the aggregator.
 - **No storage of responses and no cache**: responses arriving after the answer are cancelled, so a response cache in
   front of the aggregator would first need every accepted response to be registered as it arrives.
-- A new authentication scheme: `Endpoint.auth` becomes an enum, built by `Endpoint::from_config`.
+- Endpoint audiences read from `ProtocolConfig` instead of the config (RFC-033).
 - Transciphering: one more `Flow` implementation (request/response DTOs, route, check, counted, output).
 - The module only depends on its `config.rs` structs and the api crate: it can move to its own crate when needed.
 - **Everything the relayer may ever read on chain is read on a host chain (Ethereum), through host contracts. The

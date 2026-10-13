@@ -11,6 +11,7 @@ use kms_connector_api::{
     PublicDecryptionResponse, SolanaPublicDecryptionRequest, SolanaUserDecryptionRequest,
     USER_DECRYPTION_ROUTE, UserDecryptionRequest, UserDecryptionResponse,
 };
+use reqwest::header::HeaderValue;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use tokio::time::sleep;
@@ -18,12 +19,15 @@ use url::Url;
 
 use super::call::Caller;
 use super::client::{AttemptError, ConnectorClient, Endpoint, HttpReply};
+use super::config::tests::{audience, valid};
 use super::config::{
-    AuthConfig, CallConfig, EndpointConfig, KmsAggregatorConfig, PublicDecryptConfig, RetryConfig,
-    UserChecks, UserDecryptConfig,
+    CallConfig, EndpointConfig, KmsAggregatorConfig, PublicDecryptConfig, RetryConfig, UserChecks,
+    UserDecryptConfig,
 };
 use super::flows::public_decrypt::PublicRequest;
 use super::flows::user_decrypt::UserRequest;
+use super::signer::RequestSigner;
+use super::signer::tests::test_signer;
 use crate::endpoint::flows::public_decrypt::is_solana;
 
 /// From `kms-connector/crates/api/tests/vectors.json`.
@@ -104,17 +108,21 @@ pub struct MockClient {
     delay: Duration,
     attempts: Mutex<Vec<u32>>,
     last_body: Mutex<Option<Bytes>>,
+    /// The `Authorization` value of every attempt, per node.
+    authorizations: Mutex<Vec<Vec<HeaderValue>>>,
 }
 
 impl MockClient {
     /// `scripts[node]` = replies per attempt (the last one repeats). Endpoint names are `node-<i>`.
     pub fn new(scripts: Vec<Vec<Reply>>, delay: Duration) -> Arc<Self> {
         let attempts = Mutex::new(vec![0; scripts.len()]);
+        let authorizations = Mutex::new(vec![Vec::new(); scripts.len()]);
         Arc::new(Self {
             scripts,
             delay,
             attempts,
             last_body: Mutex::new(None),
+            authorizations,
         })
     }
 
@@ -127,7 +135,12 @@ impl MockClient {
         self.last_body.lock().unwrap().clone()
     }
 
-    /// A validated config for `n` mock nodes (loopback urls, no auth, thresholds 1).
+    /// The `Authorization` values `node` received, one per attempt.
+    pub fn authorizations(&self, node: usize) -> Vec<HeaderValue> {
+        self.authorizations.lock().unwrap()[node].clone()
+    }
+
+    /// A validated config for `n` mock nodes (loopback urls, audiences `audience(i)`, thresholds 1).
     pub fn config(n: usize, timeout: Duration, max_retries: u32) -> KmsAggregatorConfig {
         KmsAggregatorConfig {
             allow_insecure_http: false,
@@ -146,20 +159,31 @@ impl MockClient {
                 checks: UserChecks::default(),
             },
             public_decrypt: PublicDecryptConfig { threshold: 1 },
+            auth: valid(0).auth,
             endpoints: (0..n)
                 .map(|i| EndpointConfig {
                     name: format!("node-{i}"),
                     url: Url::parse(&format!("http://localhost:3000/{i}")).unwrap(),
-                    auth: AuthConfig::None,
+                    audience: audience(i),
                 })
                 .collect(),
         }
     }
 
-    /// A `Caller` over this mock, one endpoint per script.
+    /// A `Caller` over this mock, one endpoint per script, signing with `test_signer()`.
     pub fn caller(self: Arc<Self>, timeout: Duration, max_retries: u32) -> Arc<Caller> {
+        self.caller_with(timeout, max_retries, test_signer())
+    }
+
+    /// A `Caller` over this mock signing with `signer`.
+    pub fn caller_with(
+        self: Arc<Self>,
+        timeout: Duration,
+        max_retries: u32,
+        signer: Arc<RequestSigner>,
+    ) -> Arc<Caller> {
         let cfg = Self::config(self.scripts.len(), timeout, max_retries);
-        Arc::new(Caller::new(&cfg, self).unwrap())
+        Arc::new(Caller::new(&cfg, self, signer).unwrap())
     }
 }
 
@@ -170,6 +194,7 @@ impl ConnectorClient for MockClient {
         endpoint: &Endpoint,
         route: &str,
         body: Bytes,
+        authorization: &HeaderValue,
     ) -> Result<HttpReply, AttemptError> {
         let node: usize = endpoint
             .name
@@ -182,6 +207,7 @@ impl ConnectorClient for MockClient {
             attempts[node] += 1;
             attempts[node] - 1
         };
+        self.authorizations.lock().unwrap()[node].push(authorization.clone());
         let script = &self.scripts[node];
         let reply = script
             .get(attempt as usize)
@@ -414,13 +440,14 @@ mod tests {
         let endpoint = Endpoint {
             name: "node-0".into(),
             url: Url::parse("http://localhost:3000/0").unwrap(),
-            auth: None,
+            audience: audience(0),
         };
         let body = Bytes::from_static(USER_REQUEST_JSON.as_bytes());
+        let auth = HeaderValue::from_static("FhevmSig expires=1, sig=0x00");
         let mut seen = Vec::new();
         for _ in 0..3 {
             let reply = mock
-                .post(&endpoint, USER_DECRYPTION_ROUTE, body.clone())
+                .post(&endpoint, USER_DECRYPTION_ROUTE, body.clone(), &auth)
                 .await
                 .unwrap();
             seen.push(reply.status);
