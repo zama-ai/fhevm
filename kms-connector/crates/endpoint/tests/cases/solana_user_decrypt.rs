@@ -3,9 +3,7 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     tests::rand::solana_user_decryption_request,
     types::{
-        ProtocolEventKind,
-        db::{AttestationType as RowAttestationType, insert_solana_user_decryption},
-        event::from_user_decryption_row,
+        ProtocolEventKind, db::insert_solana_user_decryption, event::from_user_decryption_row,
         solana_request::SolanaUserDecryptionRequestV1,
     },
 };
@@ -30,10 +28,6 @@ async fn a_solana_http_request_is_stored_as_its_typed_request() -> anyhow::Resul
         async move { request.json(&body).send().await }
     });
     let http_row = wait_for_request_row(&endpoint.db, USER_REQUESTS, id).await;
-    assert_eq!(
-        http_row.get::<RowAttestationType, _>("attestation_type"),
-        RowAttestationType::Solana
-    );
     assert_eq!(
         http_row.get::<Vec<u8>, _>("user_address"),
         request.request.permit().user_address().as_bytes()

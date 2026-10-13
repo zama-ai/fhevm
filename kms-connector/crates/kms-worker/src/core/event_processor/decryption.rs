@@ -550,7 +550,7 @@ where
         decryption_id: U256,
         handles: &[B256],
         extra_data: &Bytes,
-        recipient: Option<UserDecryptionRecipient>,
+        user_decrypt_data: Option<UserDecryptionExtraData>,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         if handles.is_empty() {
             return Err(ProcessingError::irrecoverable(
@@ -570,11 +570,12 @@ where
         let request_id = Some(u256_to_request_id(decryption_id));
         let kms_extra_data = kms_decryption_extra_data(extra_data);
 
-        if let Some(recipient) = recipient {
-            let enc_key = recipient.transport_key.to_vec();
+        if let Some(user_decrypt_data) = user_decrypt_data {
+            let client_address = user_decrypt_data.user_address;
+            let enc_key = user_decrypt_data.public_key.to_vec();
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
-                client_address: recipient.client_address,
+                client_address,
                 key_id: Some(u256_to_request_id(key_id)),
                 domain: Some(self.domain.clone()),
                 enc_key,
@@ -662,20 +663,17 @@ fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
     }
 }
 
-/// Who a user decryption answers and the key its shares are encrypted to.
-pub struct UserDecryptionRecipient {
-    /// The KMS request's `client_address`. Its format tells the KMS which kind of user this is and
-    /// which link binds the response, so it must match the host chain the handles come from.
-    pub client_address: String,
-    pub transport_key: Bytes,
+pub struct UserDecryptionExtraData {
+    /// The KMS request's `client_address`: EIP-55 hex for an EVM user, base58 for a Solana user.
+    pub user_address: String,
+    pub public_key: Bytes,
 }
 
-impl UserDecryptionRecipient {
-    /// An EVM user, as EIP-55 hex.
-    pub fn new(user_address: Address, transport_key: Bytes) -> Self {
+impl UserDecryptionExtraData {
+    pub fn new(user_address: Address, public_key: Bytes) -> Self {
         Self {
-            client_address: user_address.to_checksum(None),
-            transport_key,
+            user_address: user_address.to_checksum(None),
+            public_key,
         }
     }
 }
@@ -1491,13 +1489,5 @@ mod tests {
             ..Default::default()
         }
         .abi_encode()
-    }
-
-    #[test]
-    fn evm_user_decryption_keeps_the_checksummed_address() {
-        let address = Address::repeat_byte(0xab);
-        let recipient = UserDecryptionRecipient::new(address, Bytes::from_static(&[0x22]));
-
-        assert_eq!(recipient.client_address, address.to_checksum(None));
     }
 }

@@ -132,15 +132,6 @@ impl Display for RequestSource {
     }
 }
 
-/// Struct representing the generated `attestation_type` column of `user_decryption_requests`.
-#[derive(sqlx::Type, Copy, Clone, Debug, PartialEq, Eq)]
-#[sqlx(type_name = "attestation_type", rename_all = "lowercase")]
-pub enum AttestationType {
-    Legacy,
-    Eip712,
-    Solana,
-}
-
 /// Enum of all the events monitored by the KMS Connector.
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
 pub enum EventType {
@@ -270,11 +261,9 @@ impl EventType {
 
     /// Returns every topic0 hash that maps to this `EventType` in the Gateway ABI.
     ///
-    /// `UserDecryptionRequest` covers two subscribed shapes, the bytes32[] handles-only shape and
-    /// the RFC016 EVM unified shape. Both topic0 hashes must be listed in the `eth_getLogs`
-    /// filter; otherwise the gw-listener never ingests that shape and its requests silently never
-    /// complete. All other event types map one-to-one to a single
-    /// topic0. The subscribed set is pinned by `gw-listener/tests/event_topic_pins.rs`.
+    /// `UserDecryptionRequest` currently covers two overloaded events — the legacy shape and the
+    /// RFC016 shape — so both topic0 hashes must be listed in the `eth_getLogs` filter. All other
+    /// event types map one-to-one to a single topic0.
     pub fn signature_hashes(&self) -> Vec<B256> {
         match self {
             EventType::UserDecryptionRequest => vec![

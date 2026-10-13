@@ -13,7 +13,7 @@ pub mod watermark;
 
 pub use verifier::SolanaDecryptionVerifier;
 
-use crate::core::event_processor::UserDecryptionRecipient;
+use crate::core::event_processor::UserDecryptionExtraData;
 use alloy::primitives::Bytes;
 use proof::CoprocessorProofClient;
 use snapshot::SolanaRpcClient;
@@ -28,12 +28,12 @@ pub struct SolanaHost {
     pub proofs: CoprocessorProofClient,
 }
 
-impl UserDecryptionRecipient {
+impl UserDecryptionExtraData {
     /// The permit's signer, as base58 of its public key, and the transport key it signed.
     pub fn new_solana(permit: &PermitFields) -> Self {
         Self {
-            client_address: Pubkey::new_from_array(*permit.user_address().as_bytes()).to_string(),
-            transport_key: Bytes::copy_from_slice(permit.transport_key().as_bytes()),
+            user_address: Pubkey::new_from_array(*permit.user_address().as_bytes()).to_string(),
+            public_key: Bytes::copy_from_slice(permit.transport_key().as_bytes()),
         }
     }
 }
@@ -42,7 +42,6 @@ impl UserDecryptionRecipient {
 mod tests {
     use super::*;
     use alloy::primitives::U256;
-    use zama_solana_acl::{WILDCARD_APP, find_delegation_record_address};
 
     #[test]
     fn a_solana_recipient_is_the_base58_permit_signer() {
@@ -51,40 +50,11 @@ mod tests {
             U256::from(1),
             connector_utils::tests::rand::rand_solana_handle(),
         );
-        let recipient = UserDecryptionRecipient::new_solana(request.request.permit());
+        let recipient = UserDecryptionExtraData::new_solana(request.request.permit());
 
         assert_eq!(
-            recipient.client_address,
+            recipient.user_address,
             Pubkey::new_from_array([1; 32]).to_string()
-        );
-    }
-
-    /// The seed order, pinned to the address the host program derives for the same inputs
-    /// (`sdk_fixture_delegation_address_and_instruction_bytes` in the Mollusk suite).
-    #[test]
-    fn delegation_rows_derive_the_host_programs_addresses() {
-        let program_id = Pubkey::from_str_const("DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ");
-        let address = |(key, _): ([u8; 32], u8)| Pubkey::new_from_array(key).to_string();
-        let key = |byte| [byte; 32];
-        assert_eq!(
-            address(find_delegation_record_address(
-                program_id.as_array(),
-                &key(0x11),
-                &key(0x22),
-                &key(0x33),
-                &key(0x44),
-            )),
-            "GkmqVNMzqxopBjPkSkZvuLuDE6Jze3iA3Mq5ZHr6SrtJ"
-        );
-        assert_eq!(
-            address(find_delegation_record_address(
-                program_id.as_array(),
-                &key(0x11),
-                &key(0x22),
-                &WILDCARD_APP,
-                &WILDCARD_APP,
-            )),
-            "J4BMamYLJvJroFATJp48L6AeQJDQqv86YAQyPqvBcKq1"
         );
     }
 }

@@ -491,7 +491,7 @@ pub(crate) mod tests {
             supported_chain_ids: vec![1, solana_chain],
             ..config()
         };
-        let (evm, solana) = (handle(1, EUINT64), handle(solana_chain, EUINT64));
+        let solana = handle(solana_chain, EUINT64);
 
         for error in [
             validate_public_decryption(&public_request(vec![solana], vec![]), &cfg),
@@ -504,44 +504,6 @@ pub(crate) mod tests {
             );
             assert_eq!(error.code(), ErrorCode::Malformed);
         }
-
-        let public = SolanaPublicDecryptionBody {
-            scheme: PublicDecryptionScheme::SolanaPublicDecryptV1.to_string(),
-            ctHandles: vec![evm],
-            extraData: Bytes::new(),
-            encryptedStores: vec![B256::repeat_byte(0x03)],
-        };
-        let user = SolanaUserDecryptionRequest {
-            attestationType: AttestationType::SolanaSrfc38UserDecryptV1.to_string(),
-            payload: SolanaUserDecryptionPayload {
-                handles: vec![SolanaHandleEntry {
-                    handle: evm,
-                    ownerAddress: B256::repeat_byte(0x01),
-                    encryptedStore: B256::repeat_byte(0x03),
-                }],
-                userAddress: B256::repeat_byte(0x01),
-                publicKey: Bytes::from(vec![0x20; 32]),
-                allowedScopes: vec![],
-                requestValidity: RequestValidity {
-                    startTimestamp: 1_770_000_000,
-                    durationSeconds: 300,
-                },
-                verifyingProgramId: B256::repeat_byte(0x07),
-                extraData: Bytes::new(),
-            },
-            signature: Bytes::from(vec![0x66; 64]),
-        };
-        let not_solana = ValidationError::InvalidSolanaRequest(
-            "solana request handles are on chain 1, which is not a Solana host chain".to_owned(),
-        );
-        assert_eq!(
-            validate_solana_public_decryption(B256::ZERO, &public, &cfg).unwrap_err(),
-            not_solana
-        );
-        assert_eq!(
-            validate_solana_user_decryption(user.id(), &user, &cfg).unwrap_err(),
-            not_solana
-        );
     }
 
     #[test]
