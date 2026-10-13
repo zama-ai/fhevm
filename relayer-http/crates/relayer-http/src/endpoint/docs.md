@@ -104,9 +104,10 @@ pins both shapes and their `decryptionId`.
 { "scheme": "solana-public-decrypt-v1", "ctHandles": ["0x…"], "extraData": "0x00", "encryptedStores": ["0x…"] }
 ```
 
-A Solana public decrypt is aggregated at `kms_aggregator.public_decrypt.threshold`, as an EVM one: zama-host accepts a
-certificate with its KMS context's public-decryption threshold of signatures (2t + 1), so a relayer serving Solana
-sets that threshold to at least 2t + 1, the value the test-suite and the preview configure for both chains.
+A Solana public decrypt is aggregated at `kms_aggregator.public_decrypt.threshold`, as an EVM one. zama-host accepts a
+certificate with at least its KMS context's public-decryption threshold of signatures, so
+`kms_aggregator.public_decrypt.threshold` must be at least that value. The deploy sets zama-host's thresholds equal to
+the EVM ones, so one setting serves both chains.
 
 ## 3. Validation
 
