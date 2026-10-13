@@ -86,11 +86,11 @@ export const CANONICAL_HOST_CONTRACT_UPGRADES = [["task:upgradeKMSGeneration", "
 
 /**
  * Every host contract with an upgrade task that is deployed on each host chain.
- * HCULimit goes first because ACL calls it on every grant.
+ * HCULimit goes before ACL because ACL calls it on every grant.
  */
 export const HOST_CONTRACT_UPGRADES = [
-  ["task:upgradeHCULimit", "HCULimit"],
   ["task:upgradeFHEVMExecutor", "FHEVMExecutor"],
+  ["task:upgradeHCULimit", "HCULimit"],
   ["task:upgradeACL", "ACL"],
   ["task:upgradeInputVerifier", "InputVerifier"],
   ["task:upgradeKMSVerifier", "KMSVerifier"],
