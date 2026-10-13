@@ -256,7 +256,7 @@ const applyDiscoveryEnv = (
   envs["test-suite"].BRIDGE_REAL_LZ = chains.some((chain) => realLzEndpointFor(chain.key)) ? "true" : "";
 };
 
-export type KmsParty = { party: number; endpoint: string; privateKey: string; dbName: string };
+export type KmsParty = { party: number; endpoint: string; address: string; privateKey: string; dbName: string };
 
 /**
  * ProtocolConfig context globals the host deploy reads, shared by both KMS modes.
@@ -342,10 +342,11 @@ const applyKmsThresholdGatewayEnv = async (
     if (party === 1) {
       envs["kms-connector"].KMS_CONNECTOR_KMS_CORE_ENDPOINTS = endpoint;
       envs["kms-connector"].KMS_CONNECTOR_PRIVATE_KEY = wallet.privateKey;
+      envs["kms-connector"].KMS_CONNECTOR_TX_SENDER_ADDRESS = wallet.address;
       envs["kms-connector"].KMS_CONNECTOR_DATABASE_URL = `postgresql://db:5432/${dbName}`;
       envs["kms-connector"].DATABASE_URL = `postgresql://db:5432/${dbName}`;
     }
-    result.push({ party, endpoint, privateKey: wallet.privateKey, dbName });
+    result.push({ party, endpoint, address: wallet.address, privateKey: wallet.privateKey, dbName });
   }
   return result;
 };
@@ -410,11 +411,12 @@ const buildKmsConnectorInstanceEnvs = (
   kmsParties: KmsParty[],
 ): Record<string, Record<string, string>> => {
   const instanceEnvs: Record<string, Record<string, string>> = {};
-  for (const { party, endpoint, privateKey, dbName } of kmsParties) {
+  for (const { party, endpoint, address, privateKey, dbName } of kmsParties) {
     if (party === 1) continue; // party 1 uses the base kms-connector.env
     const next = { ...envs["kms-connector"] };
     next.KMS_CONNECTOR_KMS_CORE_ENDPOINTS = endpoint;
     next.KMS_CONNECTOR_PRIVATE_KEY = privateKey;
+    next.KMS_CONNECTOR_TX_SENDER_ADDRESS = address;
     next.KMS_CONNECTOR_DATABASE_URL = `postgresql://db:5432/${dbName}`;
     next.DATABASE_URL = `postgresql://db:5432/${dbName}`;
     next.KMS_CONNECTOR_ENDPOINT_ADDRESSES = connectorEndpointAddress(envs, party);
@@ -499,11 +501,14 @@ const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, pla
   envs["kms-connector"].KMS_CONNECTOR_ENDPOINT_ADDRESSES = connectorEndpointAddress(envs, 1);
   const supported = supportsConnectorHttp(plan);
   const proxyPort = (envs["kms-connector"].KMS_CONNECTOR_PROXY_BIND_ADDRESS ?? "").split(":").pop() || "8443";
-  envs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS = supported
-    ? kmsPartyIds(plan.kms.committeeSize)
-        .map((party) => `https://${kmsConnectorPrefix(party)}-proxy:${proxyPort}`)
-        .join(",")
-    : "";
+  const parties = supported ? kmsPartyIds(plan.kms.committeeSize) : [];
+  envs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS = parties
+    .map((party) => `https://${kmsConnectorPrefix(party)}-proxy:${proxyPort}`)
+    .join(",");
+  // The `audience` each party's proxy accepts, aligned with the URLs.
+  envs["test-suite"].KMS_CONNECTOR_TX_SENDER_ADDRESSES = parties
+    .map((party) => envs["gateway-sc"][`KMS_TX_SENDER_ADDRESS_${party - 1}`])
+    .join(",");
   envs["test-suite"].KMS_THRESHOLD = String(plan.kms.threshold);
 };
 
