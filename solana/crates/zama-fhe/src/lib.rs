@@ -21,6 +21,10 @@
 //! [`StoreOutput::allow`] appends decrypt permission to the Store history;
 //! [`StoreOutput::allow_transient`] shares computation rights through transaction transient store.
 //! Intermediate [`Encrypted`] values can be consumed by later steps in the same execution.
+//!
+//! `rand`, `rand_u64` and `rand_bounded_u64` (with [`BoundedU64UpperBound`]) are the app-facing
+//! form of EVM's `FHE.rand*`: product surface that no in-repo program calls yet, and the API the
+//! host's rand and bounded-rand execution serves.
 
 #![allow(unexpected_cfgs)]
 

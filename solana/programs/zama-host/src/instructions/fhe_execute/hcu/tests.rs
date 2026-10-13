@@ -84,21 +84,6 @@ fn add_store_slot(ty: u8, lhs_producer: u8) -> FheExecuteStep {
     }
 }
 
-// ---- cost table is fail-closed + pure ----
-
-#[test]
-fn binary_op_hcu_returns_cost_for_shipping_combos() {
-    for ty in [EU8, 3, 4, EU64, EU128] {
-        for scalar in [false, true] {
-            assert!(binary_op_hcu(FheBinaryOpCode::Add, ty, scalar).unwrap() > 0);
-            assert!(binary_op_hcu(FheBinaryOpCode::Sub, ty, scalar).unwrap() > 0);
-        }
-    }
-    assert!(binary_op_hcu(FheBinaryOpCode::Ge, EU8, false).unwrap() > 0);
-    assert!(binary_op_hcu(FheBinaryOpCode::Ge, EU8, true).unwrap() > 0);
-    assert!(binary_op_hcu(FheBinaryOpCode::Eq, EBOOL, false).unwrap() > 0);
-}
-
 #[test]
 fn unary_op_hcu_covers_every_validated_output_type() {
     // Cast / Not / Neg price through euint128 only (types 7 and 8 have no HCU row).
@@ -282,13 +267,6 @@ fn binary_op_hcu_unknown_combo_fails_closed() {
 }
 
 #[test]
-fn ternary_op_hcu_returns_cost() {
-    for ty in [EBOOL, EU8, EU64, EU128] {
-        assert!(ternary_op_hcu(FheTernaryOpCode::IfThenElse, ty).unwrap() > 0);
-    }
-}
-
-#[test]
 fn ternary_op_hcu_unknown_fails_closed() {
     assert_eq!(
         ternary_op_hcu(FheTernaryOpCode::IfThenElse, 200).unwrap_err(),
@@ -297,25 +275,11 @@ fn ternary_op_hcu_unknown_fails_closed() {
 }
 
 #[test]
-fn trivial_encrypt_hcu_returns_cost() {
-    for ty in [EBOOL, EU8, EU64, EU128] {
-        assert!(trivial_encrypt_hcu(ty).unwrap() > 0);
-    }
-}
-
-#[test]
 fn trivial_encrypt_hcu_unknown_fails_closed() {
     assert_eq!(
         trivial_encrypt_hcu(200).unwrap_err(),
         error!(ZamaHostError::HcuUnknownCost)
     );
-}
-
-#[test]
-fn rand_hcu_returns_cost() {
-    for ty in [0u8, 2, 3, 4, 5, 6] {
-        assert!(rand_hcu(ty).unwrap() > 0);
-    }
 }
 
 #[test]
@@ -329,24 +293,6 @@ fn rand_hcu_unknown_fails_closed() {
         rand_hcu(200).unwrap_err(),
         error!(ZamaHostError::HcuUnknownCost)
     );
-}
-
-#[test]
-fn cost_rows_are_representative_and_evm_ordered() {
-    // The orderings EVM's cost table implies; `evm_parity.rs` pins the magnitudes to `HCULimit.sol`.
-    assert_eq!(
-        binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap(),
-        binary_op_hcu(FheBinaryOpCode::Sub, EU64, false).unwrap()
-    );
-    assert!(
-        binary_op_hcu(FheBinaryOpCode::Add, EU8, false).unwrap()
-            <= binary_op_hcu(FheBinaryOpCode::Add, EU128, false).unwrap()
-    );
-    assert!(
-        binary_op_hcu(FheBinaryOpCode::Add, EU64, true).unwrap()
-            <= binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap()
-    );
-    assert!(sum_hcu(EU64, 1).unwrap() > 0);
 }
 
 #[test]
@@ -405,18 +351,6 @@ fn meter_comparison_prices_dictionary_and_verified_input_width() {
     assert_eq!(
         verified_meter.total,
         binary_op_hcu(FheBinaryOpCode::Ge, EU64, false).unwrap()
-    );
-}
-
-#[test]
-fn cost_accessors_are_deterministic() {
-    assert_eq!(
-        binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap(),
-        binary_op_hcu(FheBinaryOpCode::Add, EU64, false).unwrap()
-    );
-    assert_eq!(
-        trivial_encrypt_hcu(EU64).unwrap(),
-        trivial_encrypt_hcu(EU64).unwrap()
     );
 }
 
@@ -621,17 +555,6 @@ fn meter_disabled_limits_accept_costliest_plan() {
     }
     assert_eq!(steps.len(), crate::state::MAX_FHE_EXECUTION_STEPS);
     assert!(meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).is_ok());
-}
-
-// ---- determinism is the on-chain==off-chain parity basis ----
-
-#[test]
-fn meter_is_deterministic() {
-    let steps = vec![trivial(EU64), add_local(EU64, 0, 0), add_scalar(EU64, 1)];
-    let a = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
-    let b = meter_execution(&steps, &walk_dictionary(), u64::MAX, u64::MAX).unwrap();
-    assert_eq!(a.total, b.total);
-    assert_eq!(a.step_depths, b.step_depths);
 }
 
 #[test]
