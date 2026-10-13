@@ -2440,6 +2440,15 @@ async fn tfhe_worker_cycle(
         }
     };
 
+    let stop_queue_report = shutdown.child_token();
+    let _stop_queue_report_on_exit = stop_queue_report.clone().drop_guard();
+    if !args.disable_dcid_locking {
+        tokio::spawn(dependence_chain::report_chain_queue(
+            pool.clone(),
+            stop_queue_report,
+        ));
+    }
+
     // Release all owned locks on startup to avoid stale locks
     dcid_mngr.release_all_owned_locks().await?;
     dcid_mngr.do_cleanup().await?;
