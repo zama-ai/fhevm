@@ -43,7 +43,7 @@ cores reach it, and where it publishes its public key material:
 - **two distinct wallets**: the _tx-sender_ is the **KMS connector's** wallet (it
   pays gas and submits on-chain confirmations). The _signer_ is the
   **KMS core's** signing key (it signs key-material attestations, the lifecycle
-  confirmations and the core's responses to gRPC commands — keygens, decryptions).
+  confirmations and the core's responses to gRPC commands, such as keygens and decryptions).
   A common mistake is swapping them;
 - **network endpoints**: the core's MPC endpoint (peer-to-peer between parties) and
   the public vault (S3 bucket) where the core publishes its verification address and
@@ -405,7 +405,7 @@ carrying the real values.
 
 **Upgrade precondition (ProtocolConfig v0.4.0)**: settle any in-flight lifecycle operation
 first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. v0.4.0 ignores v0.3.0 context
-creation and epoch activation votes, so they do not count toward the signed quorums. An epoch
+creation and epoch activation confirmations, so they do not count toward the signed quorums. An epoch
 destroyed before the upgrade cannot collect signed destruction confirmations.
 The replica owner applies that destruction through the mirror path.
 
@@ -476,7 +476,7 @@ Quorum cheat-sheet:
     committee.
   - The MPC reshare needs the same `n − t` old-committee senders, so both phases
     tolerate up to **t** dead-or-silent previous nodes.
-  - Epoch activation: **unanimous** — every new-committee signer must sign the _same_
+  - Epoch activation: **unanimous**. Every new-committee signer must sign the _same_
     digest (`epochMaterialHash` and `extraData`). One divergent signature splits the vote and the epoch stays
     Pending until governance destroys it (`destroyKmsEpoch`).
 - **One switch in flight at a time — by convention, not by contract check.**

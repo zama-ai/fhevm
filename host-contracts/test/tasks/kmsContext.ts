@@ -359,7 +359,7 @@ describe('KMS context tasks', function () {
         publicDecryption: 1,
         userDecryption: 1,
         kmsGen: 1,
-        mpc: 2, // -> previousSignerThreshold = 3 - 2 = 1
+        mpc: 2, // previousSignerThreshold = 3 - 2 = 1
       });
       protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
     });
@@ -452,7 +452,7 @@ describe('KMS context tasks', function () {
         await oldSigners[1].getAddress(),
         await oldSigners[2].getAddress(),
       ]);
-      // Active committee: 3 nodes, mpc = 2 -> n - t = 1.
+      // Active committee: 3 nodes and mpc = 2, so n - t = 1.
       expect(result.contextDestruction?.threshold).to.equal(1);
       expect(result.contextDestruction?.diverged).to.equal(false);
 

@@ -1962,7 +1962,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         ProtocolConfig(protocolConfigAdd).reinitializeV4();
     }
 
-    /// @dev A v0.3.0 vote sits in the unused base field epochActivationConfirmedBySigner (field 18 of the
+    /// @dev A v0.3.0 vote is stored in the unused base field epochActivationConfirmedBySigner (field 18 of the
     ///      base namespace). The current code reads the canonical namespace, so that vote does not block the signer.
     function test_confirmEpochActivationIgnoresV030VoteInBaseStorage() public {
         _setupEpochLifecycle();
@@ -2216,7 +2216,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
     // EIP-712 context creation confirmations
     // -----------------------------------------------------------------------
 
-    /// @dev The recovered signer counts, not the caller: an unrelated account submits both signatures.
+    /// @dev The recovered signer counts, not the caller. An unrelated account submits both signatures.
     function test_confirmKmsContextCreationAcceptsAnySender() public {
         _setupEpochLifecycle();
         vm.prank(owner);
@@ -2265,7 +2265,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         protocolConfig.confirmKmsContextCreation(newContextId, abi.encodePacked(r, s), "");
     }
 
-    /// @dev nodeConfigHash binds the stored nodes and thresholds: a signature over other thresholds
+    /// @dev nodeConfigHash binds the stored nodes and thresholds. A signature over other thresholds
     ///      recovers an unrelated address, and the same signer over the defined ones is accepted.
     function test_revertConfirmKmsContextCreationOverOtherNodeConfig() public {
         _setupEpochLifecycle();
@@ -2298,7 +2298,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         protocolConfig.confirmKmsContextCreation(newContextId, signature, "");
     }
 
-    /// @dev Confirmations count per digest: two signers with different extraData never reach the
+    /// @dev Confirmations count per digest. Two signers with different extraData never reach the
     ///      all-new-signers quorum, so no epoch is created for the switch.
     function test_confirmKmsContextCreationDivergentExtraDataDoesNotComplete() public {
         _setupEpochLifecycle();
@@ -2309,7 +2309,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         _confirmContextCreation(newContextId, kmsPk0, "");
         _confirmContextCreation(newContextId, kmsPk1, hex"01");
 
-        // The latest-issued epoch is still the genesis one: the switch never got its epoch.
+        // The latest-issued epoch is still the genesis one, so the switch never got its epoch.
         vm.prank(owner);
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -2321,7 +2321,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         protocolConfig.defineNewEpochForCurrentKmsContext();
     }
 
-    /// @dev Both quorums must hold on one digest: the previous quorum on extraData X and new-committee
+    /// @dev Both quorums must hold on one digest. The previous quorum on extraData X and new-committee
     ///      unanimity on extraData Y do not complete the switch.
     function test_confirmKmsContextCreationQuorumsOnDifferentExtraDataDoNotComplete() public {
         _setupEpochLifecycle();
@@ -2348,7 +2348,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         protocolConfig.defineNewEpochForCurrentKmsContext();
     }
 
-    /// @dev previousContextId is the latest active context, not `newContextId - 1`: a destroyed switch
+    /// @dev previousContextId is the latest active context, not `newContextId - 1`, because a destroyed switch
     ///      leaves a gap in the ids.
     function test_confirmKmsContextCreationPreviousContextIdSkipsDestroyedContext() public {
         _setupEpochLifecycle();
@@ -2399,7 +2399,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, "");
     }
 
-    /// @dev Activation needs every signer on one digest: the same material with different extraData
+    /// @dev Activation needs every signer on one digest. The same material with different extraData
     ///      splits the vote.
     function test_confirmEpochActivationDivergentExtraDataDoesNotActivate() public {
         _setupEpochLifecycle();
@@ -2425,7 +2425,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         assertEq(activeEpochId, EPOCH_COUNTER_BASE + 1);
     }
 
-    /// @dev previousEpochId is the latest active epoch, not `epochId - 1`: a destroyed Pending epoch
+    /// @dev previousEpochId is the latest active epoch, not `epochId - 1`, because a destroyed Pending epoch
     ///      leaves a gap in the ids.
     function test_confirmEpochActivationPreviousEpochIdSkipsDestroyedEpoch() public {
         _setupEpochLifecycle();

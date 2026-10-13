@@ -64,7 +64,7 @@ export function generateVectors(): unknown {
   const genesisNodes = wallets.slice(0, 4).map(node);
   // Switch A is defined then destroyed, so switch B leaves a gap in the context ids.
   const switchANodes = wallets.slice(4, 7).map((w, i) => node(w, i + 4));
-  // Switch B shares wallets[3] with the genesis committee: one signature counts for both committees.
+  // Switch B shares wallets[3] with the genesis committee, so one signature counts for both committees.
   const switchBNodes = wallets.slice(3, 7).map((w, i) => node(w, i + 3));
 
   const genesisContextId = KMS_CONTEXT_COUNTER_BASE + 1n;
