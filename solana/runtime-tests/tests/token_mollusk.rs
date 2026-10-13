@@ -2235,6 +2235,47 @@ fn mollusk_confidential_transfer_rejects_owner_mismatch() {
     );
 }
 
+/// The sender must sign: a transfer that names the owner without its signature is refused, even
+/// when another key signs as payer.
+#[test]
+fn mollusk_confidential_transfer_rejects_an_unsigned_owner() {
+    let fixture = TokenFixture::new();
+    let context = fixture_context(mollusk(), fixture.base_accounts());
+    let attestation = sender_attestation(&fixture, 32, 0);
+    let mut ix = confidential_transfer_ix(
+        &fixture,
+        fixture.alice_token,
+        fixture.bob_token,
+        fixture.alice_balance_store,
+        fixture.bob_balance_store,
+        attestation,
+    );
+    // The builder uses one key as owner and payer: the first meta is the owner, the second the
+    // payer.
+    let mut owner_metas = ix
+        .accounts
+        .iter_mut()
+        .filter(|meta| meta.pubkey == fixture.owner);
+    owner_metas.next().expect("owner meta").is_signer = false;
+    let payer = owner_metas.next().expect("payer meta");
+    payer.pubkey = fixture.bob_owner;
+    payer.is_signer = true;
+
+    check_token_instruction(
+        &context,
+        &ix,
+        &[anchor_error(
+            anchor_lang::error::ErrorCode::AccountNotSigner,
+        )],
+    );
+
+    let alice_balance = read_encrypted_store(&context, fixture.alice_balance_store);
+    assert_eq!(
+        store_handle(&alice_balance, token::balance_key()),
+        fixture.alice_initial
+    );
+}
+
 /// The attested amount must be a euint64 written by the transfer authority for this program. Each
 /// mismatch is refused before either balance changes.
 #[test]

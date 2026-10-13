@@ -5,8 +5,8 @@
 //! needed to prepare CPI accounts and to verify host-owned ACL state off-chain.
 //!
 //! Public API surface: app programs preparing host CPIs and off-chain callers checking handle
-//! derivation — `runtime-tests`' Mollusk suites and execution contracts read the enum
-//! discriminants and handle fields these helpers expose.
+//! derivation — `runtime-tests`' Mollusk suites read the enum discriminants and handle fields
+//! these helpers expose.
 
 use anchor_lang::prelude::*;
 use solana_keccak_hasher::hashv as keccak_hashv;

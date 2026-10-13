@@ -145,7 +145,6 @@ FHE_ROOTS=(
   solana/runtime-tests/tests/token_mollusk.rs
   solana/runtime-tests/tests/operator_conformance.rs
   solana/runtime-tests/tests/operator_mollusk_conformance.rs
-  solana/runtime-tests/tests/execution_contracts.rs
 )
 ALL_ROOTS=("${RUST_ROOTS[@]}" "${TS_ROOTS[@]}" "${SCRIPT_ROOTS[@]}")
 
@@ -157,10 +156,8 @@ KMS_EXTRA_ROOTS=(
   solana/test-fixtures
 )
 
-# A root that no longer exists makes every sweep over it silently narrower, which is the failure
-# this script exists to prevent. `batch_contracts.rs` sat in FHE_ROOTS after being renamed to
-# `execution_contracts.rs` and the FHE sweep quietly stopped reading it: grep's error went to
-# /dev/null and the `|| true` swallowed the status. Named roots are asserted instead.
+# A root that no longer exists makes every sweep over it silently narrower (grep's error goes to
+# /dev/null and `|| true` swallows the status), so named roots are asserted.
 # `kms-connector/crates` and `solana/test-fixtures` are named here because they are reachable only
 # through the `kms` scope, which builds its root list inline — so neither appeared in any list this
 # loop walked, and a rename of either would have silently narrowed three alias entries behind
