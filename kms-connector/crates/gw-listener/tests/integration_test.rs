@@ -63,7 +63,7 @@ async fn test_kms_context_destroyed_invalidates_context_epochs() -> anyhow::Resu
         publish_context_and_epoch(test_instance.db(), context_id, epoch_id).await?;
     }
 
-    info!("Destroying KMS context #{destroyed_context_id} on Anvil...");
+    info!("Destroying KMS context #{destroyed_context_id:#066x} on Anvil...");
     test_instance
         .protocol_config_contract()
         .destroyKmsContext(destroyed_context_id)
@@ -105,13 +105,13 @@ async fn poll_db_for_invalid_context(db: &Pool<Postgres>, context_id: U256) -> a
         let valid_flags = fetch_valid_flags(db, context_id).await?;
         if !valid_flags.is_empty() && valid_flags.iter().all(|valid| !valid) {
             info!(
-                "All {} epoch(s) of context #{context_id} invalidated in DB!",
+                "All {} epoch(s) of context #{context_id:#066x} invalidated in DB!",
                 valid_flags.len()
             );
             return Ok(());
         }
         if start.elapsed() > timeout {
-            anyhow::bail!("Timed out waiting for context #{context_id} invalidation in DB");
+            anyhow::bail!("Timed out waiting for context #{context_id:#066x} invalidation in DB");
         }
         tokio::time::sleep(poll_interval).await;
     }
