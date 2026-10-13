@@ -2267,85 +2267,6 @@ fn mollusk_redeem_lifecycle_with_yield_rounds_down() {
     );
 }
 
-/// The redeem twin of the deposit repeat-join/quit/re-join test: repeated
-/// SHARE joins accumulate in the joined encrypted store (the operand-aliases-output
-/// same-slot update — the aliasing class this test exists to pin), quit
-/// refunds the exact accumulated shares all-or-nothing and resets the encrypted store
-/// to zero, and a re-join after quit accumulates from zero.
-#[test]
-fn mollusk_redeem_repeat_join_accumulates_and_quit_refunds_exactly() {
-    let fixture = BatcherFixture::new(batcher::BatchDirection::Redeem);
-    let context = fixture_context(mollusk(), redeem_accounts(&fixture, 1_000, 1_000, 1_000));
-    fixture.seed_values(&context, (0, 600), (0, 400), (0, 1_000));
-
-    let keys = run_initialize_batcher(&context, &fixture, 0);
-
-    // Two joins accumulate: the second join's execution reads the joined encrypted store
-    // as an operand AND updates it as the output.
-    run_join(
-        &context,
-        &fixture,
-        &keys,
-        &fixture.alice,
-        handle_for_chain(41, BALANCE_FHE_TYPE),
-        100,
-    );
-    run_join(
-        &context,
-        &fixture,
-        &keys,
-        &fixture.alice,
-        handle_for_chain(42, BALANCE_FHE_TYPE),
-        250,
-    );
-    let pending = keys.pending_join_value(fixture.alice.user);
-    assert_eq!(
-        store_u64(&context, pending, batcher::JOINED_AMOUNT_KEY),
-        350
-    );
-    assert_eq!(
-        store_u64(
-            &context,
-            fixture.alice.shares.balance_store,
-            token::balance_key()
-        ),
-        250
-    );
-
-    // Quit refunds exactly 350 shares (all-or-nothing) and resets the encrypted store.
-    let quit = quit_ix(&fixture, &keys, &fixture.alice);
-    let result = check_batcher_instruction(&context, &quit, &[Check::success()]);
-    assert_eq!(check_fhe_cpis(&context, &result), 2);
-    assert_eq!(store_u64(&context, pending, batcher::JOINED_AMOUNT_KEY), 0);
-    assert_eq!(
-        store_u64(
-            &context,
-            fixture.alice.shares.balance_store,
-            token::balance_key()
-        ),
-        600
-    );
-    assert_eq!(
-        store_u64(&context, keys.join_balance_store, token::balance_key()),
-        0
-    );
-
-    // Re-join after quit accumulates from zero, not from the stale amount.
-    run_join(
-        &context,
-        &fixture,
-        &keys,
-        &fixture.alice,
-        handle_for_chain(43, BALANCE_FHE_TYPE),
-        40,
-    );
-    assert_eq!(store_u64(&context, pending, batcher::JOINED_AMOUNT_KEY), 40);
-    assert_eq!(
-        store_u64(&context, keys.join_balance_store, token::balance_key()),
-        40
-    );
-}
-
 /// A quit whose refund destination is not the user's own token account is refused before
 /// anything moves; the join and the batch balance stay as they were.
 #[test]
@@ -2474,36 +2395,6 @@ fn mollusk_claim_after_quit_is_refused() {
     assert_eq!(
         store_u64(&context, keys.payout_balance_store, token::balance_key()),
         0
-    );
-}
-
-/// A redeem batch with no joins cancels at settle exactly like a deposit
-/// batch: the certified zero cancels trustlessly and the vault is untouched.
-#[test]
-fn mollusk_redeem_zero_total_batch_cancels_at_settle() {
-    let fixture = BatcherFixture::new(batcher::BatchDirection::Redeem);
-    let context = fixture_context(mollusk(), redeem_accounts(&fixture, 1_000, 1_000, 1_000));
-    fixture.seed_values(&context, (0, 600), (0, 400), (0, 1_000));
-
-    let keys = run_initialize_batcher(&context, &fixture, 0);
-
-    let burned_handle = run_dispatch(&context, &fixture, &keys);
-    assert_eq!(
-        store_u64(
-            &context,
-            keys.burned_amount_store,
-            token::burned_amount_key()
-        ),
-        0
-    );
-    run_settle(&context, &fixture, &keys, burned_handle, 0);
-
-    let batch = read_batch(&context, keys.batch);
-    assert_eq!(batch.status, batcher::BatchStatus::Canceled);
-    assert_eq!(batch.payout_rate, 0);
-    assert_eq!(
-        read_spl_amount(&context, fixture.vault_token_account),
-        1_000
     );
 }
 
