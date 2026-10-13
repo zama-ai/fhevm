@@ -102,7 +102,6 @@ describe('publicDecryptCertificate', () => {
     expect(url).toBe('https://decryption.relayer.example.com/v4/public-decrypt');
     expect((init.headers as Record<string, string>)['x-api-key']).toBe('test');
     expect(JSON.parse(String(init.body))).toStrictEqual({
-      scheme: 'solana-public-decrypt-v1',
       ctHandles: [bytesToHex(handle), bytesToHex(otherHandle)],
       extraData: requestExtraData(),
       encryptedStores: [bytesToHex(account), bytesToHex(otherAccount)],

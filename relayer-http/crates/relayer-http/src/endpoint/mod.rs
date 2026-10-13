@@ -222,22 +222,36 @@ mod tests {
         assert_eq!(body["result"]["extraData"], "0x00");
     }
 
+    /// A public body mixing EVM and Solana handles is malformed in either body and either order; a
+    /// user body of another attestation type is the EVM one.
     #[tokio::test]
-    async fn solana_bodies_need_their_tag() {
-        let tagged = serde_json::to_value(public_body()).unwrap();
-        let mut untagged = tagged.clone();
-        untagged.as_object_mut().unwrap().remove("scheme");
-        let mut unknown = tagged;
-        unknown["scheme"] = "solana-public-decrypt-v2".into();
+    async fn mixed_chains_and_other_tags_are_malformed() {
+        let (evm, solana) = (handle(137, 5), handle(SOLANA, 5));
+        let dto = |handles: [B256; 2]| {
+            let mut body = serde_json::to_value(public_body()).unwrap();
+            body["ctHandles"] = serde_json::json!(handles);
+            body
+        };
+        let wire = |handles: [B256; 2]| serde_json::json!({ "ciphertextHandles": handles, "extraData": "0x00" });
         let mut user = serde_json::to_value(user_body(flows::now() - 10)).unwrap();
         user["attestationType"] = "solana-srfc38-user-decrypt-v2".into();
         for (route, body, expected) in [
-            // No tag: the EVM body, which has no `ctHandles`.
-            ("/v4/public-decrypt", untagged, "unknown field `ctHandles`"),
+            ("/v4/public-decrypt", dto([solana, evm]), "ctHandles[1]"),
+            // An EVM first handle: the EVM body, which has no `ctHandles`.
             (
                 "/v4/public-decrypt",
-                unknown,
-                "scheme: must be \"solana-public-decrypt-v1\"",
+                dto([evm, solana]),
+                "unknown field `ctHandles`",
+            ),
+            (
+                "/v4/public-decrypt",
+                wire([evm, solana]),
+                "ciphertextHandles[1]",
+            ),
+            (
+                "/v4/public-decrypt",
+                wire([solana, evm]),
+                "ciphertextHandles[1]",
             ),
             // Another attestation type: the EVM body, whose payload has no `allowedScopes`.
             ("/v4/user-decrypt", user, "unknown field"),
@@ -249,6 +263,38 @@ mod tests {
                 response["message"].as_str().unwrap().contains(expected),
                 "{expected}: {response}"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn stores_that_do_not_match_the_handles_chain_are_malformed_before_any_connector_call() {
+        // The parse is the stores check: the EVM body has no `encryptedStores`, the Solana body requires it.
+        let mut evm_with_stores: Value =
+            serde_json::from_str(&flows::public_decrypt::tests::wire()).unwrap();
+        evm_with_stores["encryptedStores"] = serde_json::json!([B256::repeat_byte(0x03)]);
+        let mut solana_without_stores = serde_json::to_value(public_body()).unwrap();
+        solana_without_stores
+            .as_object_mut()
+            .unwrap()
+            .remove("encryptedStores");
+        for (body, expected) in [
+            (evm_with_stores, "unknown field `encryptedStores`"),
+            (solana_without_stores, "missing field `encryptedStores`"),
+        ] {
+            let (app, mock) = scripted(
+                vec![vec![Reply::Fixed(Fixed::Ok)]; 13],
+                UserChecks::default(),
+                CancellationToken::new(),
+            );
+            let (status, _, response) =
+                call(app, "POST", "/v4/public-decrypt", &body.to_string()).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{expected}: {response}");
+            assert_eq!(response["code"], "malformed");
+            assert!(
+                response["message"].as_str().unwrap().contains(expected),
+                "{expected}: {response}"
+            );
+            assert_eq!(calls(&mock), 0, "{expected}");
         }
     }
 

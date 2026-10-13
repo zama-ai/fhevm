@@ -8,7 +8,7 @@ use connector_utils::types::{
     solana_request::{SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1},
 };
 use kms_connector_api::{
-    AttestationType, ErrorCode, PublicDecryptionRequest, PublicDecryptionScheme, RequestValidity,
+    AttestationType, ErrorCode, PublicDecryptionRequest, RequestValidity,
     SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody, SolanaUserDecryptionRequest,
     UserDecryptionRequest,
 };
@@ -16,7 +16,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tfhe::FheTypes;
 use thiserror::Error;
-use zama_solana_acl::host_chain::is_solana_host_chain_id;
+use zama_solana_acl::host_chain::{handle_chain_id, is_solana_host_chain_id};
 
 /// The maximum total bit size of the handles of a single decryption request. Mirrors
 /// `MAX_DECRYPTION_REQUEST_BITS` of the `Decryption` gateway contract.
@@ -81,7 +81,7 @@ pub fn validate_public_decryption(
     request: &PublicDecryptionRequest,
     config: &Config,
 ) -> Result<(), ValidationError> {
-    validate_evm_handles(&request.ctHandles, config)?;
+    validate_handles(&request.ctHandles, config)?;
     validate_extra_data(&request.extraData)
 }
 
@@ -149,20 +149,14 @@ pub fn attestation_type(body: &Value) -> Result<AttestationType, ValidationError
         .map_err(|_| ValidationError::UnsupportedAttestationType)
 }
 
-/// The `scheme` tag of a public-decryption body. `None` is the EVM `v1` body, which has no tag.
-pub fn public_decryption_scheme(
-    body: &Value,
-) -> Result<Option<PublicDecryptionScheme>, ValidationError> {
-    let Some(scheme) = body.get("scheme") else {
-        return Ok(None);
-    };
-    let scheme = scheme
-        .as_str()
-        .ok_or_else(|| ValidationError::InvalidBody("scheme must be a string".into()))?;
-    scheme
-        .parse()
-        .map(Some)
-        .map_err(|_| ValidationError::InvalidBody(format!("unsupported scheme {scheme}")))
+/// Whether a public-decryption body is the Solana one: its first handle names a Solana chain. A
+/// body without a readable first handle is the EVM one, whose parse refuses it.
+pub fn is_solana_public_decryption(body: &Value) -> bool {
+    body.get("ctHandles")
+        .and_then(|handles| handles.get(0))
+        .and_then(Value::as_str)
+        .and_then(|handle| handle.parse::<B256>().ok())
+        .is_some_and(|handle| is_solana_host_chain_id(handle_chain_id(&handle.0)))
 }
 
 pub fn parse_body<T: DeserializeOwned>(body: Value) -> Result<T, ValidationError> {
@@ -369,7 +363,6 @@ pub(crate) mod tests {
     /// A Solana public decryption of `handles`, one store each.
     fn solana_public_request(handles: Vec<B256>) -> SolanaPublicDecryptionBody {
         SolanaPublicDecryptionBody {
-            scheme: PublicDecryptionScheme::SolanaPublicDecryptV1.to_string(),
             encryptedStores: vec![B256::repeat_byte(0x03); handles.len()],
             ctHandles: handles,
             extraData: Bytes::new(),
@@ -518,17 +511,13 @@ pub(crate) mod tests {
         };
         let (evm, solana) = (handle(1, EUINT64), handle(solana_chain, EUINT64));
 
-        for error in [
-            validate_public_decryption(&public_request(vec![solana], vec![]), &cfg),
-            validate_user_decryption(&user_request(vec![solana], vec![]), &cfg),
-        ] {
-            let error = error.unwrap_err();
-            assert_eq!(
-                error,
-                ValidationError::SolanaChainInEvmRequest(solana_chain)
-            );
-            assert_eq!(error.code(), ErrorCode::Malformed);
-        }
+        let error =
+            validate_user_decryption(&user_request(vec![solana], vec![]), &cfg).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::SolanaChainInEvmRequest(solana_chain)
+        );
+        assert_eq!(error.code(), ErrorCode::Malformed);
 
         let public = solana_public_request(vec![evm]);
         let user = solana_user_request(vec![evm], 1_770_000_000, vec![]);

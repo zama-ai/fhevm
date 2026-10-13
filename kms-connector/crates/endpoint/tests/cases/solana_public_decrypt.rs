@@ -3,14 +3,11 @@ use connector_utils::types::{
     ProtocolEventKind, event::from_public_decryption_row,
     solana_request::SolanaPublicDecryptionRequest,
 };
-use kms_connector_api::{
-    PublicDecryptionScheme, SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody,
-};
+use kms_connector_api::SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody;
 use sqlx::postgres::PgRow;
 
 fn solana_body(stores: usize) -> SolanaPublicDecryptionBody {
     SolanaPublicDecryptionBody {
-        scheme: PublicDecryptionScheme::SolanaPublicDecryptV1.to_string(),
         ctHandles: vec![rand_handle(SOLANA_CHAIN_ID), rand_handle(SOLANA_CHAIN_ID)],
         extraData: vec![0x00].into(),
         encryptedStores: (0..stores)
@@ -83,35 +80,6 @@ async fn a_solana_public_request_names_one_store_per_handle() -> anyhow::Result<
             "{stores} stores"
         );
         assert_eq!(error_body(response).await.code, ErrorCode::Malformed);
-    }
-    assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 0);
-    endpoint.stop().await
-}
-
-#[tokio::test]
-async fn a_solana_public_body_needs_its_scheme_tag() -> anyhow::Result<()> {
-    let endpoint = solana_endpoint().await?;
-    let tagged = serde_json::to_value(solana_body(2))?;
-    let mut untagged = tagged.clone();
-    untagged.as_object_mut().unwrap().remove("scheme");
-    let mut unknown = tagged.clone();
-    unknown["scheme"] = "solana-public-decrypt-v2".into();
-    let mut not_a_string = tagged;
-    not_a_string["scheme"] = 1.into();
-    for (case, body) in [
-        ("untagged", untagged),
-        ("unknown scheme", unknown),
-        ("scheme not a string", not_a_string),
-    ] {
-        let response = endpoint
-            .post_raw(PUBLIC_DECRYPTION_ROUTE, serde_json::to_string(&body)?)
-            .await;
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{case}");
-        assert_eq!(
-            error_body(response).await.code,
-            ErrorCode::Malformed,
-            "{case}"
-        );
     }
     assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 0);
     endpoint.stop().await

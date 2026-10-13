@@ -12,6 +12,7 @@ use kms_connector_api::{
     USER_DECRYPTION_ROUTE, UserDecryptionRequest, UserDecryptionResponse,
 };
 use serde::Deserialize;
+use serde_json::value::RawValue;
 use tokio::time::sleep;
 use url::Url;
 
@@ -23,6 +24,7 @@ use super::config::{
 };
 use super::flows::public_decrypt::PublicRequest;
 use super::flows::user_decrypt::UserRequest;
+use crate::endpoint::flows::public_decrypt::is_solana;
 
 /// From `kms-connector/crates/api/tests/vectors.json`.
 pub const USER_REQUEST_JSON: &str = r#"{"attestationType":"eip712-unified-user-decrypt-v1","payload":{"handles":[{"handle":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","contractAddress":"0x3333333333333333333333333333333333333333","ownerAddress":"0x4444444444444444444444444444444444444444"}],"userAddress":"0x5555555555555555555555555555555555555555","publicKey":"0x20002000","allowedContracts":["0x3333333333333333333333333333333333333333"],"requestValidity":{"startTimestamp":1770000000,"durationSeconds":300},"extraData":"0x00"},"signature":"0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"}"#;
@@ -223,10 +225,10 @@ pub fn result(variant: u8) -> AlloyBytes {
 }
 
 /// The request's derived id and echoed `extraData`, by route and, as the connector does, by the
-/// body's tag (`attestationType` on user decrypt, `scheme` on public decrypt).
+/// body's `attestationType` on user decrypt and its handles' chain on public decrypt.
 fn request_facts(route: &str, body: &[u8]) -> (B256, AlloyBytes) {
-    let json: serde_json::Value = serde_json::from_slice(body).expect("mock: JSON body");
     if route == USER_DECRYPTION_ROUTE {
+        let json: serde_json::Value = serde_json::from_slice(body).expect("mock: JSON body");
         let solana: &str = AttestationType::SolanaSrfc38UserDecryptV1.into();
         if json["attestationType"] == solana {
             let request: SolanaUserDecryptionRequest =
@@ -239,13 +241,14 @@ fn request_facts(route: &str, body: &[u8]) -> (B256, AlloyBytes) {
         }
     } else {
         assert_eq!(route, PUBLIC_DECRYPTION_ROUTE, "mock: unknown route");
-        if json.get("scheme").is_some() {
+        let raw: Box<RawValue> = serde_json::from_slice(body).expect("mock: JSON body");
+        if is_solana(&raw) {
             let request: SolanaPublicDecryptionRequest =
-                serde_json::from_value(json).expect("mock: Solana public body");
+                serde_json::from_str(raw.get()).expect("mock: Solana public body");
             (request.id(), request.extraData)
         } else {
             let request: PublicDecryptionRequest =
-                serde_json::from_value(json).expect("mock: public body");
+                serde_json::from_str(raw.get()).expect("mock: public body");
             (request.id(), request.extraData)
         }
     }
@@ -315,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn ok_reply_reads_a_solana_body_by_its_tag() {
+    fn ok_reply_reads_a_solana_body_as_the_connector_does() {
         for (route, kind) in [
             (USER_DECRYPTION_ROUTE, "solanaUserDecryption"),
             (PUBLIC_DECRYPTION_ROUTE, "solanaPublicDecryption"),

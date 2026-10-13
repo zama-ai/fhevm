@@ -2073,8 +2073,8 @@ Recorded in zama-ai/fhevm#4120 and zama-ai/fhevm#4357.
 become part of a signed field whose version space EVM owns, and every layer (relayer, Gateway,
 connector, host verifier, SDK) would parse a Solana-only version.
 
-The Solana body of `POST /v1/public-decrypt` is tagged `scheme: "solana-public-decrypt-v1"` and
-carries `ctHandles`, `extraData` and `encryptedStores`: one Store per handle, in handle order.
+The Solana body of `POST /v1/public-decrypt` is the one whose first `ctHandles` entry names a Solana
+chain. It carries `ctHandles`, `extraData` and `encryptedStores`: one Store per handle, in handle order.
 `extraData` holds only KMS routing (v0, v1 or v2) on both chains. relayer-http and the connector
 endpoint both run `zama_solana_request::public_request_chain_id`, which refuses handles that are not
 of one Solana chain and a store count that differs from the handle count. The connector keeps the
