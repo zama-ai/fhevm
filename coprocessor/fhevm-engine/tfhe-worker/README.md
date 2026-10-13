@@ -121,6 +121,11 @@ Main scheduling batch by default.
 
 Select it with `BENCH_ONE_SHOT_SCENARIO=cross_tx_dependent_1000_50x20`.
 
+Workload `long_chains_1600_8x200` has the same per-transfer transaction IDs
+but only 8 chains of 200, the shape of the 2026-10-12 testnet backlog. It is
+not in the canonical suite; select it with
+`BENCH_ONE_SHOT_SCENARIO=long_chains_1600_8x200`.
+
 ### Running the canonical suite
 
 `BENCH_ONE_SHOT_CANONICAL_SCENARIOS` in the Makefile lists the canonical

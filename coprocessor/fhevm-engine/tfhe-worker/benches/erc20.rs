@@ -894,6 +894,18 @@ const MAIN_BLOCK_ONE_SHOT_SCENARIOS: &[MainBlockOneShotScenario] = &[
             short_chains: 50,
         },
     },
+    // Testnet backlog of 2026-10-12: a few long chains instead of many short
+    // ones. A queue-based autoscaler counts 8 chains here, which one worker
+    // can hold, so this measures how much one worker drains and what a
+    // smaller chains-per-worker target would gain. Not in the canonical suite.
+    MainBlockOneShotScenario {
+        name: "long_chains_1600_8x200",
+        workload: MainBlockWorkload::Erc20,
+        transfers: 1_600,
+        chain_len: 200,
+        erc20_transaction_identity: Erc20TransactionIdentity::PerTransfer,
+        staging: MainBlockOneShotStaging::OneLogicalBlock,
+    },
     // Native port of gpu-e2e-perf's ConfidentialAuctionBidBench batch.  It
     // is one L1 block with 300 bids, 150 bidder chains, 39 price aggregates,
     // and 32 holding-wallet aggregates.
