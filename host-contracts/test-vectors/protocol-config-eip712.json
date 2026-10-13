@@ -1,0 +1,887 @@
+{
+  "domain": {
+    "name": "ProtocolConfig",
+    "version": "1",
+    "chainId": "12345",
+    "verifyingContract": "0x00000000000000000000000000000000C0FFEE01",
+    "separator": "0x6e0cdaf41c481fc4962f40739b80af58c49dec3aea9b6b1d0ca7548edc981c58"
+  },
+  "signers": [
+    {
+      "privateKey": "0x0000000000000000000000000000000000000000000000000000000000000100",
+      "address": "0xFc32402667182d11B29fab5c5e323e80483e7800"
+    },
+    {
+      "privateKey": "0x0000000000000000000000000000000000000000000000000000000000000200",
+      "address": "0x06d31BD867343e5A9D8A82b99618253b38f63b8c"
+    },
+    {
+      "privateKey": "0x0000000000000000000000000000000000000000000000000000000000000300",
+      "address": "0x237b5431e14834eA9B54b92Ac95F8B0d98a0c4E4"
+    },
+    {
+      "privateKey": "0x0000000000000000000000000000000000000000000000000000000000000400",
+      "address": "0x4eeAF03A8EBD4596Fd3FBe1CcEEcB44bD9B3aBa9"
+    },
+    {
+      "privateKey": "0x0000000000000000000000000000000000000000000000000000000000000500",
+      "address": "0x120914bdF39A940d770d04D9AD8e33771cf11e37"
+    },
+    {
+      "privateKey": "0x0000000000000000000000000000000000000000000000000000000000000600",
+      "address": "0x41ABcA639b47CB89CCEBd3C17Bb6C3e175c1cb74"
+    },
+    {
+      "privateKey": "0x0000000000000000000000000000000000000000000000000000000000000700",
+      "address": "0xc267e5A8a40472Ef7A0c1965ec9cFcf816beAf15"
+    }
+  ],
+  "scenario": {
+    "thresholds": {
+      "publicDecryption": "1",
+      "userDecryption": "1",
+      "kmsGen": "1",
+      "mpc": "1"
+    },
+    "genesis": {
+      "contextId": "3166189940082864718613269121331309980362851143201109172953918312716374638593",
+      "epochId": "3618502788666131106986593281521497120414687020801267626233049500247285301249",
+      "kmsNodeParams": [
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a1",
+          "signerAddress": "0xFc32402667182d11B29fab5c5e323e80483e7800",
+          "ipAddress": "127.0.0.1",
+          "storageUrl": "https://s0.example.com",
+          "partyId": 0,
+          "mpcIdentity": "127.0.0.1",
+          "caCert": "0x",
+          "storagePrefix": "kms/node0"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a2",
+          "signerAddress": "0x06d31BD867343e5A9D8A82b99618253b38f63b8c",
+          "ipAddress": "127.0.0.2",
+          "storageUrl": "https://s1.example.com",
+          "partyId": 1,
+          "mpcIdentity": "127.0.0.2",
+          "caCert": "0x",
+          "storagePrefix": "kms/node1"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a3",
+          "signerAddress": "0x237b5431e14834eA9B54b92Ac95F8B0d98a0c4E4",
+          "ipAddress": "127.0.0.3",
+          "storageUrl": "https://s2.example.com",
+          "partyId": 2,
+          "mpcIdentity": "127.0.0.3",
+          "caCert": "0x",
+          "storagePrefix": "kms/node2"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a4",
+          "signerAddress": "0x4eeAF03A8EBD4596Fd3FBe1CcEEcB44bD9B3aBa9",
+          "ipAddress": "127.0.0.4",
+          "storageUrl": "https://s3.example.com",
+          "partyId": 3,
+          "mpcIdentity": "127.0.0.4",
+          "caCert": "0x",
+          "storagePrefix": "kms/node3"
+        }
+      ]
+    },
+    "switchA": {
+      "contextId": "3166189940082864718613269121331309980362851143201109172953918312716374638594",
+      "kmsNodeParams": [
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a5",
+          "signerAddress": "0x120914bdF39A940d770d04D9AD8e33771cf11e37",
+          "ipAddress": "127.0.0.5",
+          "storageUrl": "https://s4.example.com",
+          "partyId": 4,
+          "mpcIdentity": "127.0.0.5",
+          "caCert": "0x",
+          "storagePrefix": "kms/node4"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a6",
+          "signerAddress": "0x41ABcA639b47CB89CCEBd3C17Bb6C3e175c1cb74",
+          "ipAddress": "127.0.0.6",
+          "storageUrl": "https://s5.example.com",
+          "partyId": 5,
+          "mpcIdentity": "127.0.0.6",
+          "caCert": "0x",
+          "storagePrefix": "kms/node5"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a7",
+          "signerAddress": "0xc267e5A8a40472Ef7A0c1965ec9cFcf816beAf15",
+          "ipAddress": "127.0.0.7",
+          "storageUrl": "https://s6.example.com",
+          "partyId": 6,
+          "mpcIdentity": "127.0.0.7",
+          "caCert": "0x",
+          "storagePrefix": "kms/node6"
+        }
+      ]
+    },
+    "switchB": {
+      "contextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+      "epochId": "3618502788666131106986593281521497120414687020801267626233049500247285301250",
+      "kmsNodeParams": [
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a4",
+          "signerAddress": "0x4eeAF03A8EBD4596Fd3FBe1CcEEcB44bD9B3aBa9",
+          "ipAddress": "127.0.0.4",
+          "storageUrl": "https://s3.example.com",
+          "partyId": 3,
+          "mpcIdentity": "127.0.0.4",
+          "caCert": "0x",
+          "storagePrefix": "kms/node3"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a5",
+          "signerAddress": "0x120914bdF39A940d770d04D9AD8e33771cf11e37",
+          "ipAddress": "127.0.0.5",
+          "storageUrl": "https://s4.example.com",
+          "partyId": 4,
+          "mpcIdentity": "127.0.0.5",
+          "caCert": "0x",
+          "storagePrefix": "kms/node4"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a6",
+          "signerAddress": "0x41ABcA639b47CB89CCEBd3C17Bb6C3e175c1cb74",
+          "ipAddress": "127.0.0.6",
+          "storageUrl": "https://s5.example.com",
+          "partyId": 5,
+          "mpcIdentity": "127.0.0.6",
+          "caCert": "0x",
+          "storagePrefix": "kms/node5"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a7",
+          "signerAddress": "0xc267e5A8a40472Ef7A0c1965ec9cFcf816beAf15",
+          "ipAddress": "127.0.0.7",
+          "storageUrl": "https://s6.example.com",
+          "partyId": 6,
+          "mpcIdentity": "127.0.0.7",
+          "caCert": "0x",
+          "storagePrefix": "kms/node6"
+        }
+      ]
+    },
+    "abortedResharingEpochId": "3618502788666131106986593281521497120414687020801267626233049500247285301251",
+    "resharingEpochId": "3618502788666131106986593281521497120414687020801267626233049500247285301252"
+  },
+  "nodeConfigHash": [
+    {
+      "kmsNodeParams": [
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a4",
+          "signerAddress": "0x4eeAF03A8EBD4596Fd3FBe1CcEEcB44bD9B3aBa9",
+          "ipAddress": "127.0.0.4",
+          "storageUrl": "https://s3.example.com",
+          "partyId": 3,
+          "mpcIdentity": "127.0.0.4",
+          "caCert": "0x",
+          "storagePrefix": "kms/node3"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a5",
+          "signerAddress": "0x120914bdF39A940d770d04D9AD8e33771cf11e37",
+          "ipAddress": "127.0.0.5",
+          "storageUrl": "https://s4.example.com",
+          "partyId": 4,
+          "mpcIdentity": "127.0.0.5",
+          "caCert": "0x",
+          "storagePrefix": "kms/node4"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a6",
+          "signerAddress": "0x41ABcA639b47CB89CCEBd3C17Bb6C3e175c1cb74",
+          "ipAddress": "127.0.0.6",
+          "storageUrl": "https://s5.example.com",
+          "partyId": 5,
+          "mpcIdentity": "127.0.0.6",
+          "caCert": "0x",
+          "storagePrefix": "kms/node5"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a7",
+          "signerAddress": "0xc267e5A8a40472Ef7A0c1965ec9cFcf816beAf15",
+          "ipAddress": "127.0.0.7",
+          "storageUrl": "https://s6.example.com",
+          "partyId": 6,
+          "mpcIdentity": "127.0.0.7",
+          "caCert": "0x",
+          "storagePrefix": "kms/node6"
+        }
+      ],
+      "nodes": [
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a4",
+          "signerAddress": "0x4eeAF03A8EBD4596Fd3FBe1CcEEcB44bD9B3aBa9",
+          "ipAddress": "127.0.0.4",
+          "storageUrl": "https://s3.example.com"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a5",
+          "signerAddress": "0x120914bdF39A940d770d04D9AD8e33771cf11e37",
+          "ipAddress": "127.0.0.5",
+          "storageUrl": "https://s4.example.com"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a6",
+          "signerAddress": "0x41ABcA639b47CB89CCEBd3C17Bb6C3e175c1cb74",
+          "ipAddress": "127.0.0.6",
+          "storageUrl": "https://s5.example.com"
+        },
+        {
+          "txSenderAddress": "0x00000000000000000000000000000000000000a7",
+          "signerAddress": "0xc267e5A8a40472Ef7A0c1965ec9cFcf816beAf15",
+          "ipAddress": "127.0.0.7",
+          "storageUrl": "https://s6.example.com"
+        }
+      ],
+      "thresholds": {
+        "publicDecryption": "1",
+        "userDecryption": "1",
+        "kmsGen": "1",
+        "mpc": "1"
+      },
+      "encoded": "0x00000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000001800000000000000000000000000000000000000000000000000000000000000280000000000000000000000000000000000000000000000000000000000000038000000000000000000000000000000000000000000000000000000000000000a40000000000000000000000004eeaf03a8ebd4596fd3fbe1cceecb44bd9b3aba9000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000093132372e302e302e340000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001668747470733a2f2f73332e6578616d706c652e636f6d0000000000000000000000000000000000000000000000000000000000000000000000000000000000a5000000000000000000000000120914bdf39a940d770d04d9ad8e33771cf11e37000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000093132372e302e302e350000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001668747470733a2f2f73342e6578616d706c652e636f6d0000000000000000000000000000000000000000000000000000000000000000000000000000000000a600000000000000000000000041abca639b47cb89ccebd3c17bb6c3e175c1cb74000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000093132372e302e302e360000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001668747470733a2f2f73352e6578616d706c652e636f6d0000000000000000000000000000000000000000000000000000000000000000000000000000000000a7000000000000000000000000c267e5a8a40472ef7a0c1965ec9cfcf816beaf15000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000093132372e302e302e370000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001668747470733a2f2f73362e6578616d706c652e636f6d00000000000000000000",
+      "hash": "0xb1d0726694150c9d51dab66701946be2c247e324cf7839adf707510b772942ce"
+    }
+  ],
+  "epochMaterialHash": [
+    {
+      "keys": [
+        {
+          "prepKeygenId": "1356938545749799165119972480570561420155507632800475359837393562592731987969",
+          "keyId": "1809251394333065553493296640760748560207343510400633813116524750123642650625",
+          "keyDigests": [
+            {
+              "keyType": 0,
+              "digest": "0xaabbccdd"
+            },
+            {
+              "keyType": 1,
+              "digest": "0x11223344"
+            }
+          ]
+        }
+      ],
+      "crs": [
+        {
+          "crsId": "2261564242916331941866620800950935700259179388000792266395655937654553313281",
+          "maxBitLength": "4096",
+          "crsDigest": "0xdeadbeef"
+        }
+      ],
+      "keyHashes": [
+        "0xd19958d041a6b7b6f8e399a5314e62afe2d4741ed384349a53f73f14c60e1234"
+      ],
+      "crsHashes": [
+        "0xea049dc457aaa7f12a014f272c3b27385e3381151e5b41cefd2b9bb4a076c060"
+      ],
+      "hash": "0xe9f6cbf09139ef92f6d1aaa71b942facf8279eed4ab3b7a3dd81923fae0ab9d7"
+    }
+  ],
+  "messages": {
+    "contextDestruction": [
+      {
+        "typeString": "ContextDestructionConfirmation(uint256 destroyedContextId,uint256[] destroyedEpochIds,bytes extraData)",
+        "typehash": "0xc687b63525ef20d95442d56bd140c9da6c10c6e23f482486c246c05236ceef9c",
+        "fields": {
+          "destroyedContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638594",
+          "destroyedEpochIds": [],
+          "extraData": "0x"
+        },
+        "structHash": "0x965fbc968c9f7f02c8349516334af70bc4bc9d8d77d2a4307a938895e10b443b",
+        "digest": "0xed222e5d9b3e3fdc99f7ff0ab6d0023ea24575a6e246c94b4240fb89cbc21739",
+        "signer": "0xFc32402667182d11B29fab5c5e323e80483e7800",
+        "signature": "0x69f888edc51d10e280366fe718e73acbdd383c1911fccbe45c8375076585d2005199686d7d391f5b36dd8d47826d8e7bf14279daea0665b04acbaebce21797161b"
+      },
+      {
+        "typeString": "ContextDestructionConfirmation(uint256 destroyedContextId,uint256[] destroyedEpochIds,bytes extraData)",
+        "typehash": "0xc687b63525ef20d95442d56bd140c9da6c10c6e23f482486c246c05236ceef9c",
+        "fields": {
+          "destroyedContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638594",
+          "destroyedEpochIds": [
+            "3618502788666131106986593281521497120414687020801267626233049500247285301258",
+            "3618502788666131106986593281521497120414687020801267626233049500247285301259"
+          ],
+          "extraData": "0x01abcdef"
+        },
+        "structHash": "0xa70e1ff28a5c1e3cb7ee9ca5d17f4513360aa83443501ac33f1fa7c3a475a72b",
+        "digest": "0x46b0e7c2fe5e69e9e7e218088eef9e46b7be1630fb787e140a69eab7072648d7",
+        "signer": "0x06d31BD867343e5A9D8A82b99618253b38f63b8c",
+        "signature": "0x65fa5af594edcaa6d295e653129a37e324dc94cb495e7e1bf7b7ae62424160fe5c88b732d230055ccb8266810271c01f7179c62b40d243aeb501f5cdb8b081c11b"
+      }
+    ],
+    "contextCreation": [
+      {
+        "typeString": "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)",
+        "typehash": "0x8a7d3190a514cdb5d57c841cb7382e85ad21b892b7fdfd3b87ab000925d9d501",
+        "fields": {
+          "previousContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638593",
+          "newContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "nodeConfigHash": "0xb1d0726694150c9d51dab66701946be2c247e324cf7839adf707510b772942ce",
+          "extraData": "0x"
+        },
+        "structHash": "0xa69b07e3c43a0f4c6f8a757ae606a086eae6b183c02825773b5d593a4c1d6f35",
+        "digest": "0x4282b23546048c6cc1ad32ec549d43e791fafcec8cde4de6bba005d5ca87638b",
+        "signer": "0xFc32402667182d11B29fab5c5e323e80483e7800",
+        "signature": "0x4bbf258e252543c3902aa416994c61e710675817c1f5a4c8a1602e6456d6bc53208da9f9e72ad604447f156b00a538fe188787e106634fc53e18940e5579875d1c"
+      },
+      {
+        "typeString": "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)",
+        "typehash": "0x8a7d3190a514cdb5d57c841cb7382e85ad21b892b7fdfd3b87ab000925d9d501",
+        "fields": {
+          "previousContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638593",
+          "newContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "nodeConfigHash": "0xb1d0726694150c9d51dab66701946be2c247e324cf7839adf707510b772942ce",
+          "extraData": "0x"
+        },
+        "structHash": "0xa69b07e3c43a0f4c6f8a757ae606a086eae6b183c02825773b5d593a4c1d6f35",
+        "digest": "0x4282b23546048c6cc1ad32ec549d43e791fafcec8cde4de6bba005d5ca87638b",
+        "signer": "0x06d31BD867343e5A9D8A82b99618253b38f63b8c",
+        "signature": "0xf72c5af47a473afc9c0b300f159ffd8a83b511ca48f30c65a624941da152662807ea39fa102f39e274c2f5ff398e4301abe4ba034f51cf977eac60adb6ac33461c"
+      },
+      {
+        "typeString": "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)",
+        "typehash": "0x8a7d3190a514cdb5d57c841cb7382e85ad21b892b7fdfd3b87ab000925d9d501",
+        "fields": {
+          "previousContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638593",
+          "newContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "nodeConfigHash": "0xb1d0726694150c9d51dab66701946be2c247e324cf7839adf707510b772942ce",
+          "extraData": "0x"
+        },
+        "structHash": "0xa69b07e3c43a0f4c6f8a757ae606a086eae6b183c02825773b5d593a4c1d6f35",
+        "digest": "0x4282b23546048c6cc1ad32ec549d43e791fafcec8cde4de6bba005d5ca87638b",
+        "signer": "0x120914bdF39A940d770d04D9AD8e33771cf11e37",
+        "signature": "0x4f5c818070aaea5b5100be64125f13e8cde05a59ce50d50fdaf0b06caab85722524e497edc1618777e984990e41fc5a679781c87a90b9af31afbd0ab8e325ad71c"
+      },
+      {
+        "typeString": "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)",
+        "typehash": "0x8a7d3190a514cdb5d57c841cb7382e85ad21b892b7fdfd3b87ab000925d9d501",
+        "fields": {
+          "previousContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638593",
+          "newContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "nodeConfigHash": "0xb1d0726694150c9d51dab66701946be2c247e324cf7839adf707510b772942ce",
+          "extraData": "0x"
+        },
+        "structHash": "0xa69b07e3c43a0f4c6f8a757ae606a086eae6b183c02825773b5d593a4c1d6f35",
+        "digest": "0x4282b23546048c6cc1ad32ec549d43e791fafcec8cde4de6bba005d5ca87638b",
+        "signer": "0x41ABcA639b47CB89CCEBd3C17Bb6C3e175c1cb74",
+        "signature": "0xf81de61fe14c86f55805191de39df7f462d6c59a1e9f048ea353cb738c495eb5342a4e610569c21dae0ac8a46defd1b0a9b059a44448e120e6739fa3a415d9fd1c"
+      },
+      {
+        "typeString": "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)",
+        "typehash": "0x8a7d3190a514cdb5d57c841cb7382e85ad21b892b7fdfd3b87ab000925d9d501",
+        "fields": {
+          "previousContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638593",
+          "newContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "nodeConfigHash": "0xb1d0726694150c9d51dab66701946be2c247e324cf7839adf707510b772942ce",
+          "extraData": "0x"
+        },
+        "structHash": "0xa69b07e3c43a0f4c6f8a757ae606a086eae6b183c02825773b5d593a4c1d6f35",
+        "digest": "0x4282b23546048c6cc1ad32ec549d43e791fafcec8cde4de6bba005d5ca87638b",
+        "signer": "0xc267e5A8a40472Ef7A0c1965ec9cFcf816beAf15",
+        "signature": "0xc5aa97d881f3f6cd831a8c4c3a12bbd86e29a6e8f41b52d2bcfedd11fbfe221233f758f2a289f821af6e29a33dcf75e582acead3aecb5cb231666c2b2fac2c1c1c"
+      },
+      {
+        "typeString": "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)",
+        "typehash": "0x8a7d3190a514cdb5d57c841cb7382e85ad21b892b7fdfd3b87ab000925d9d501",
+        "fields": {
+          "previousContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638593",
+          "newContextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "nodeConfigHash": "0xb1d0726694150c9d51dab66701946be2c247e324cf7839adf707510b772942ce",
+          "extraData": "0x"
+        },
+        "structHash": "0xa69b07e3c43a0f4c6f8a757ae606a086eae6b183c02825773b5d593a4c1d6f35",
+        "digest": "0x4282b23546048c6cc1ad32ec549d43e791fafcec8cde4de6bba005d5ca87638b",
+        "signer": "0x4eeAF03A8EBD4596Fd3FBe1CcEEcB44bD9B3aBa9",
+        "signature": "0xcc1b3e83901282ce5024fd444d24be47d6dbfb8ac158d676c379c5a6ac17295d08022495527b2e1948d3597ffdcfd9cb3768420d384b2f20b63dfd8bc8603b631b"
+      }
+    ],
+    "epochActivation": [
+      {
+        "typeString": "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)",
+        "typehash": "0x6cf47d8f5bed73ad2a8c60adbdd5b555d665357db758662abd49ea977f80d19a",
+        "fields": {
+          "contextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "previousEpochId": "3618502788666131106986593281521497120414687020801267626233049500247285301249",
+          "epochId": "3618502788666131106986593281521497120414687020801267626233049500247285301250",
+          "epochMaterialHash": "0xe9f6cbf09139ef92f6d1aaa71b942facf8279eed4ab3b7a3dd81923fae0ab9d7",
+          "extraData": "0x"
+        },
+        "structHash": "0x174055c55cd4c333137bd099ce4a03d301c8f97b9c4d219380bcb1c2056754ea",
+        "digest": "0x42aa9837b53b17c895fca0dc94e35f996af7b0da4a9f767c41ad8d5d7ef78a37",
+        "signer": "0x4eeAF03A8EBD4596Fd3FBe1CcEEcB44bD9B3aBa9",
+        "signature": "0xb5d168ac915539dd4a5918e1a8f85afce9860df97dda65fb07832dfd1ce468a22142a681f612024e9ebbeecb93aca51e9c19bd8c4388e50aa39754a8ae99406e1c",
+        "keySignatures": [
+          "0x8380766d5161a70e77ad370c05c2896001338aa878901a92c1a897e74d4acf0a3b39f4c1b36dbafbd1a8998a7276cabf04f0f21b4947319d92e414f06c28a9081b"
+        ],
+        "crsSignatures": [
+          "0xf52d310e39c14bcdfeb1a4a54f70e36d1b13ba0638025a7a6975d84b7a7879d808bc7b2e5a2254e126b8194a7d2303087fc1f7a2085c90198d8fa1dbf6d845101b"
+        ]
+      },
+      {
+        "typeString": "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)",
+        "typehash": "0x6cf47d8f5bed73ad2a8c60adbdd5b555d665357db758662abd49ea977f80d19a",
+        "fields": {
+          "contextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "previousEpochId": "3618502788666131106986593281521497120414687020801267626233049500247285301249",
+          "epochId": "3618502788666131106986593281521497120414687020801267626233049500247285301250",
+          "epochMaterialHash": "0xe9f6cbf09139ef92f6d1aaa71b942facf8279eed4ab3b7a3dd81923fae0ab9d7",
+          "extraData": "0x"
+        },
+        "structHash": "0x174055c55cd4c333137bd099ce4a03d301c8f97b9c4d219380bcb1c2056754ea",
+        "digest": "0x42aa9837b53b17c895fca0dc94e35f996af7b0da4a9f767c41ad8d5d7ef78a37",
+        "signer": "0x120914bdF39A940d770d04D9AD8e33771cf11e37",
+        "signature": "0x07d633c3b4519a3d49b36174ba7d0fd112ef4de762b26b7ddf73a2b522c36a29524efbee6619903f62a703905b3bc9429cc0d77af2e7c40d33c3de953a5e5d971b",
+        "keySignatures": [
+          "0x85e90ad90f59657662542695d03ac385832ed04b237c79b1e352f6d62184804a0f9f58263f7c55fb3be657531e7d5f9b9228bf43f8816ea107aeac3a4bf5aae81c"
+        ],
+        "crsSignatures": [
+          "0x59ae1fd28e0450fab87d856d30c86cef9f388fb8b97abf1ca69ccdbd74885c6c0bfaf954fd6512ee96e77665a96d3eda390d316cdde6de354533029b16eae9b11b"
+        ]
+      },
+      {
+        "typeString": "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)",
+        "typehash": "0x6cf47d8f5bed73ad2a8c60adbdd5b555d665357db758662abd49ea977f80d19a",
+        "fields": {
+          "contextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "previousEpochId": "3618502788666131106986593281521497120414687020801267626233049500247285301249",
+          "epochId": "3618502788666131106986593281521497120414687020801267626233049500247285301250",
+          "epochMaterialHash": "0xe9f6cbf09139ef92f6d1aaa71b942facf8279eed4ab3b7a3dd81923fae0ab9d7",
+          "extraData": "0x"
+        },
+        "structHash": "0x174055c55cd4c333137bd099ce4a03d301c8f97b9c4d219380bcb1c2056754ea",
+        "digest": "0x42aa9837b53b17c895fca0dc94e35f996af7b0da4a9f767c41ad8d5d7ef78a37",
+        "signer": "0x41ABcA639b47CB89CCEBd3C17Bb6C3e175c1cb74",
+        "signature": "0xfff3a278746464efa9274739e8544cc9452a431cd2eb70654d05b69c77b6ef9c6c399c60f648aba8a6c756aece9b28e4527acaa9b677a02129d2ba0d25e680711c",
+        "keySignatures": [
+          "0x4cc1f635e41b01e0d9c57292c3bdddd375a071e62be692c50ec073ebd65e4bfe7ccbb4d3a80f4e137a1d94c6b575661d259e8c3d43d0d3315cc4ae97ee46b2ed1b"
+        ],
+        "crsSignatures": [
+          "0xab46b0dbe167a34686af14aba2e53d60047a9e7220b4ed7e697588361801b10f3ef38b3a3dad3de4b373655e615ab9c464e95560adc3604b3242f648da3af84c1c"
+        ]
+      },
+      {
+        "typeString": "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)",
+        "typehash": "0x6cf47d8f5bed73ad2a8c60adbdd5b555d665357db758662abd49ea977f80d19a",
+        "fields": {
+          "contextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "previousEpochId": "3618502788666131106986593281521497120414687020801267626233049500247285301249",
+          "epochId": "3618502788666131106986593281521497120414687020801267626233049500247285301250",
+          "epochMaterialHash": "0xe9f6cbf09139ef92f6d1aaa71b942facf8279eed4ab3b7a3dd81923fae0ab9d7",
+          "extraData": "0x"
+        },
+        "structHash": "0x174055c55cd4c333137bd099ce4a03d301c8f97b9c4d219380bcb1c2056754ea",
+        "digest": "0x42aa9837b53b17c895fca0dc94e35f996af7b0da4a9f767c41ad8d5d7ef78a37",
+        "signer": "0xc267e5A8a40472Ef7A0c1965ec9cFcf816beAf15",
+        "signature": "0xf4b9c52199c820037d78a4fc01d484403060f00cbac4da1cf3883507d71d353a369a864ad14ebdfe822acd1eaa9c0f0ad603c07a7c5c5c4ae9571d4af19b505a1c",
+        "keySignatures": [
+          "0x2b5795a984c05c8029880132ff727cec4a6d1ddb52f52e358744ab2b62af776f153455594f18b142bc7e5444a869670cbcb53f0aed174fd2c33b22f8c165d0791b"
+        ],
+        "crsSignatures": [
+          "0x1e7a4fd4fb029821d5850a1fc8a572755fd12f57113ed17f9d08702e3cceb46638a81439b429f10bd4c320bbd27bf2f838b9c5298343fd8f3928b45e9cd4f48b1c"
+        ]
+      },
+      {
+        "typeString": "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)",
+        "typehash": "0x6cf47d8f5bed73ad2a8c60adbdd5b555d665357db758662abd49ea977f80d19a",
+        "fields": {
+          "contextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "previousEpochId": "3618502788666131106986593281521497120414687020801267626233049500247285301250",
+          "epochId": "3618502788666131106986593281521497120414687020801267626233049500247285301252",
+          "epochMaterialHash": "0xe9f6cbf09139ef92f6d1aaa71b942facf8279eed4ab3b7a3dd81923fae0ab9d7",
+          "extraData": "0x"
+        },
+        "structHash": "0x2392b6435652d0869bd8c22fc1dab7e5587127b29601a7c6c156f6bdc9f9913f",
+        "digest": "0x5770de6268e06b717a71fb4ed765229073ee52760d0849e1d5dd5ea8867e53bb",
+        "signer": "0x4eeAF03A8EBD4596Fd3FBe1CcEEcB44bD9B3aBa9",
+        "signature": "0x3a091e0299d3b511ce6d30810b6b752a1b21e4794cb63ead8a266db0c7539d3512efc7eb6ea87e54052ca12ea3d5808de5daa251ddd2bda73346da5a1b28f93b1c",
+        "keySignatures": [
+          "0x64907154374711f4087502ccf4d5d2a4756f217c406795ab136a68fd3ae2cab936e76fadad8a1315fd7b28ea1d791c25b5238ffce2c31ce6e1bda711c749c0f51c"
+        ],
+        "crsSignatures": [
+          "0x42be149190a5ec3d08411b3babb0bda21d7497b08cc577b32cf0f0ea773980ba5632af78340bd56575d72677f5d79017107cda0a6e0b4f108c096cb12dae37761b"
+        ]
+      },
+      {
+        "typeString": "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)",
+        "typehash": "0x6cf47d8f5bed73ad2a8c60adbdd5b555d665357db758662abd49ea977f80d19a",
+        "fields": {
+          "contextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "previousEpochId": "3618502788666131106986593281521497120414687020801267626233049500247285301250",
+          "epochId": "3618502788666131106986593281521497120414687020801267626233049500247285301252",
+          "epochMaterialHash": "0xe9f6cbf09139ef92f6d1aaa71b942facf8279eed4ab3b7a3dd81923fae0ab9d7",
+          "extraData": "0x"
+        },
+        "structHash": "0x2392b6435652d0869bd8c22fc1dab7e5587127b29601a7c6c156f6bdc9f9913f",
+        "digest": "0x5770de6268e06b717a71fb4ed765229073ee52760d0849e1d5dd5ea8867e53bb",
+        "signer": "0x120914bdF39A940d770d04D9AD8e33771cf11e37",
+        "signature": "0x2fd155a48355227f6e1f5567c9188dc95d855e73af0a80b331f03dd507cae0474d719bebf2a18cfef7f4025a5d73747b540b11c98a5b7eb3cd5a285b688a7a051c",
+        "keySignatures": [
+          "0x3f31389a20aa35ec5851d931844f7e598ede45e9d0d5218e8d5e2b6fb03f87f07e872778405ccd5fe34ec7488a854b7939eb6bf3856504999e19a1787aadec161b"
+        ],
+        "crsSignatures": [
+          "0x1f7207efba8e55620b7628ccba9f9d79e0fec71fe336d54f905265e05f1978cb621bf694bd955de857062646b80ca589309682241a65034c3c7ed7b77a166e0d1c"
+        ]
+      },
+      {
+        "typeString": "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)",
+        "typehash": "0x6cf47d8f5bed73ad2a8c60adbdd5b555d665357db758662abd49ea977f80d19a",
+        "fields": {
+          "contextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "previousEpochId": "3618502788666131106986593281521497120414687020801267626233049500247285301250",
+          "epochId": "3618502788666131106986593281521497120414687020801267626233049500247285301252",
+          "epochMaterialHash": "0xe9f6cbf09139ef92f6d1aaa71b942facf8279eed4ab3b7a3dd81923fae0ab9d7",
+          "extraData": "0x"
+        },
+        "structHash": "0x2392b6435652d0869bd8c22fc1dab7e5587127b29601a7c6c156f6bdc9f9913f",
+        "digest": "0x5770de6268e06b717a71fb4ed765229073ee52760d0849e1d5dd5ea8867e53bb",
+        "signer": "0x41ABcA639b47CB89CCEBd3C17Bb6C3e175c1cb74",
+        "signature": "0x1c864bc8f622006287062cf43483842d88f8c1d43fa74fe4ac435f5618fa400e4d2dc02e6553f376b0a932a51f6c3ab909f5d0a0c7d27bb992a65bf323bd23281b",
+        "keySignatures": [
+          "0x504185da7b8876a9fb60c572d957351e0e1dda5cd0511c9d9b081c7b4b325a4b71d64a276ff261a507cb5fc391274c9c954789f1581d5e8785e6d9b9edebaa0a1c"
+        ],
+        "crsSignatures": [
+          "0xdf14e07fbfc9f46386c1d0b13e19344a283a7de6212141579d69be8d535ab75c2e8e4e6f0641f1a0dbcaa2a30022689bea9d5e00e417012ee32818dc5659918f1b"
+        ]
+      },
+      {
+        "typeString": "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)",
+        "typehash": "0x6cf47d8f5bed73ad2a8c60adbdd5b555d665357db758662abd49ea977f80d19a",
+        "fields": {
+          "contextId": "3166189940082864718613269121331309980362851143201109172953918312716374638595",
+          "previousEpochId": "3618502788666131106986593281521497120414687020801267626233049500247285301250",
+          "epochId": "3618502788666131106986593281521497120414687020801267626233049500247285301252",
+          "epochMaterialHash": "0xe9f6cbf09139ef92f6d1aaa71b942facf8279eed4ab3b7a3dd81923fae0ab9d7",
+          "extraData": "0x"
+        },
+        "structHash": "0x2392b6435652d0869bd8c22fc1dab7e5587127b29601a7c6c156f6bdc9f9913f",
+        "digest": "0x5770de6268e06b717a71fb4ed765229073ee52760d0849e1d5dd5ea8867e53bb",
+        "signer": "0xc267e5A8a40472Ef7A0c1965ec9cFcf816beAf15",
+        "signature": "0x29683297181fdfcb1c63ebe057051cbf90e9aa6b5950dcb32355a4567113a8665e413878f0ce30661f92e3e4399e00716288dea1fecd9e96a8e632a0f8316dc81b",
+        "keySignatures": [
+          "0x4b1648165bfc30381b3b434088fb0c0b4aa57713f3fa318d535b35159730a36e400fd307b5dab56b772e21f3e860e76d741853096b907e7c2e48f5576dc8f9a41b"
+        ],
+        "crsSignatures": [
+          "0x09cb4e9340f87c6042113974517faad6c4d7fe7a3bf6f69478af4bc50f77017b6544e85bb6669f4f810e62680b8ce31f3bcb5f577292d76c0611fcb511a364e81c"
+        ]
+      }
+    ],
+    "epochDestruction": [
+      {
+        "typeString": "EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)",
+        "typehash": "0x4af2c2967c6c1fa8706c2504bb0cad843f8d0fac79f31f2d0206e747f049fca2",
+        "fields": {
+          "destroyedEpochId": "3618502788666131106986593281521497120414687020801267626233049500247285301251",
+          "extraData": "0x"
+        },
+        "structHash": "0x0ddca2124908d9e6ec159cb53d60269c540218d140082abf8ececa24c14b6816",
+        "digest": "0x5563322eec4b830b4b152649b19ddae294008a08fa61cdb67c157e6b2d7305bc",
+        "signer": "0x4eeAF03A8EBD4596Fd3FBe1CcEEcB44bD9B3aBa9",
+        "signature": "0xd2918decb5ec5947fb919bfcb60a96d376805534eb21d291e0ac6b4bf1c51d3941ed121a3593f8c6299ba870f239fe8af8e3e43a6c3e2adc4712feae4e5be5531b"
+      },
+      {
+        "typeString": "EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)",
+        "typehash": "0x4af2c2967c6c1fa8706c2504bb0cad843f8d0fac79f31f2d0206e747f049fca2",
+        "fields": {
+          "destroyedEpochId": "3618502788666131106986593281521497120414687020801267626233049500247285301250",
+          "extraData": "0x01abcdef"
+        },
+        "structHash": "0xcb37121eeb62d90c642b7631bec72446efaf53a8129e7eeb9882c08e8aab7baa",
+        "digest": "0x8a2c920b08c3288accfc073dbd45381e2c0523bb0b2c310d24fbc92446be28f2",
+        "signer": "0x120914bdF39A940d770d04D9AD8e33771cf11e37",
+        "signature": "0xb32315f24cc379f407ccefec93b6d143bfa103cf5234a00e7a2eda4fd283e1f20a934d8bc6f17d9cc6ef74de1736b13976c4129dcf7ac575fbbaf043ad42e8e71c"
+      }
+    ]
+  },
+  "perResult": [
+    {
+      "type": "KeygenVerification",
+      "fields": {
+        "prepKeygenId": "1356938545749799165119972480570561420155507632800475359837393562592731987969",
+        "keyId": "1809251394333065553493296640760748560207343510400633813116524750123642650625",
+        "keyDigests": [
+          {
+            "keyType": 0,
+            "digest": "0xaabbccdd"
+          },
+          {
+            "keyType": 1,
+            "digest": "0x11223344"
+          }
+        ],
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000002"
+      },
+      "structHash": "0x78472d634e717f30c7af83f1966892f2d70d52b574d087ddd6611350f3f09003",
+      "digest": "0x5d5f3777a71031e69753076eb225bce18edb9221b339fbd8dc07e21109a472d6",
+      "signer": "0x4eeAF03A8EBD4596Fd3FBe1CcEEcB44bD9B3aBa9",
+      "signature": "0x8380766d5161a70e77ad370c05c2896001338aa878901a92c1a897e74d4acf0a3b39f4c1b36dbafbd1a8998a7276cabf04f0f21b4947319d92e414f06c28a9081b"
+    },
+    {
+      "type": "CrsgenVerification",
+      "fields": {
+        "crsId": "2261564242916331941866620800950935700259179388000792266395655937654553313281",
+        "maxBitLength": "4096",
+        "crsDigest": "0xdeadbeef",
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000002"
+      },
+      "structHash": "0x32ea7e03ab127fe47e9f7986524341467048607932de563c533882fe2c6ea4c8",
+      "digest": "0x834361a575eab29c602505be1b0ad4829cbf2960d657961a7661983936fe5594",
+      "signer": "0x4eeAF03A8EBD4596Fd3FBe1CcEEcB44bD9B3aBa9",
+      "signature": "0xf52d310e39c14bcdfeb1a4a54f70e36d1b13ba0638025a7a6975d84b7a7879d808bc7b2e5a2254e126b8194a7d2303087fc1f7a2085c90198d8fa1dbf6d845101b"
+    },
+    {
+      "type": "KeygenVerification",
+      "fields": {
+        "prepKeygenId": "1356938545749799165119972480570561420155507632800475359837393562592731987969",
+        "keyId": "1809251394333065553493296640760748560207343510400633813116524750123642650625",
+        "keyDigests": [
+          {
+            "keyType": 0,
+            "digest": "0xaabbccdd"
+          },
+          {
+            "keyType": 1,
+            "digest": "0x11223344"
+          }
+        ],
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000002"
+      },
+      "structHash": "0x78472d634e717f30c7af83f1966892f2d70d52b574d087ddd6611350f3f09003",
+      "digest": "0x5d5f3777a71031e69753076eb225bce18edb9221b339fbd8dc07e21109a472d6",
+      "signer": "0x120914bdF39A940d770d04D9AD8e33771cf11e37",
+      "signature": "0x85e90ad90f59657662542695d03ac385832ed04b237c79b1e352f6d62184804a0f9f58263f7c55fb3be657531e7d5f9b9228bf43f8816ea107aeac3a4bf5aae81c"
+    },
+    {
+      "type": "CrsgenVerification",
+      "fields": {
+        "crsId": "2261564242916331941866620800950935700259179388000792266395655937654553313281",
+        "maxBitLength": "4096",
+        "crsDigest": "0xdeadbeef",
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000002"
+      },
+      "structHash": "0x32ea7e03ab127fe47e9f7986524341467048607932de563c533882fe2c6ea4c8",
+      "digest": "0x834361a575eab29c602505be1b0ad4829cbf2960d657961a7661983936fe5594",
+      "signer": "0x120914bdF39A940d770d04D9AD8e33771cf11e37",
+      "signature": "0x59ae1fd28e0450fab87d856d30c86cef9f388fb8b97abf1ca69ccdbd74885c6c0bfaf954fd6512ee96e77665a96d3eda390d316cdde6de354533029b16eae9b11b"
+    },
+    {
+      "type": "KeygenVerification",
+      "fields": {
+        "prepKeygenId": "1356938545749799165119972480570561420155507632800475359837393562592731987969",
+        "keyId": "1809251394333065553493296640760748560207343510400633813116524750123642650625",
+        "keyDigests": [
+          {
+            "keyType": 0,
+            "digest": "0xaabbccdd"
+          },
+          {
+            "keyType": 1,
+            "digest": "0x11223344"
+          }
+        ],
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000002"
+      },
+      "structHash": "0x78472d634e717f30c7af83f1966892f2d70d52b574d087ddd6611350f3f09003",
+      "digest": "0x5d5f3777a71031e69753076eb225bce18edb9221b339fbd8dc07e21109a472d6",
+      "signer": "0x41ABcA639b47CB89CCEBd3C17Bb6C3e175c1cb74",
+      "signature": "0x4cc1f635e41b01e0d9c57292c3bdddd375a071e62be692c50ec073ebd65e4bfe7ccbb4d3a80f4e137a1d94c6b575661d259e8c3d43d0d3315cc4ae97ee46b2ed1b"
+    },
+    {
+      "type": "CrsgenVerification",
+      "fields": {
+        "crsId": "2261564242916331941866620800950935700259179388000792266395655937654553313281",
+        "maxBitLength": "4096",
+        "crsDigest": "0xdeadbeef",
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000002"
+      },
+      "structHash": "0x32ea7e03ab127fe47e9f7986524341467048607932de563c533882fe2c6ea4c8",
+      "digest": "0x834361a575eab29c602505be1b0ad4829cbf2960d657961a7661983936fe5594",
+      "signer": "0x41ABcA639b47CB89CCEBd3C17Bb6C3e175c1cb74",
+      "signature": "0xab46b0dbe167a34686af14aba2e53d60047a9e7220b4ed7e697588361801b10f3ef38b3a3dad3de4b373655e615ab9c464e95560adc3604b3242f648da3af84c1c"
+    },
+    {
+      "type": "KeygenVerification",
+      "fields": {
+        "prepKeygenId": "1356938545749799165119972480570561420155507632800475359837393562592731987969",
+        "keyId": "1809251394333065553493296640760748560207343510400633813116524750123642650625",
+        "keyDigests": [
+          {
+            "keyType": 0,
+            "digest": "0xaabbccdd"
+          },
+          {
+            "keyType": 1,
+            "digest": "0x11223344"
+          }
+        ],
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000002"
+      },
+      "structHash": "0x78472d634e717f30c7af83f1966892f2d70d52b574d087ddd6611350f3f09003",
+      "digest": "0x5d5f3777a71031e69753076eb225bce18edb9221b339fbd8dc07e21109a472d6",
+      "signer": "0xc267e5A8a40472Ef7A0c1965ec9cFcf816beAf15",
+      "signature": "0x2b5795a984c05c8029880132ff727cec4a6d1ddb52f52e358744ab2b62af776f153455594f18b142bc7e5444a869670cbcb53f0aed174fd2c33b22f8c165d0791b"
+    },
+    {
+      "type": "CrsgenVerification",
+      "fields": {
+        "crsId": "2261564242916331941866620800950935700259179388000792266395655937654553313281",
+        "maxBitLength": "4096",
+        "crsDigest": "0xdeadbeef",
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000002"
+      },
+      "structHash": "0x32ea7e03ab127fe47e9f7986524341467048607932de563c533882fe2c6ea4c8",
+      "digest": "0x834361a575eab29c602505be1b0ad4829cbf2960d657961a7661983936fe5594",
+      "signer": "0xc267e5A8a40472Ef7A0c1965ec9cFcf816beAf15",
+      "signature": "0x1e7a4fd4fb029821d5850a1fc8a572755fd12f57113ed17f9d08702e3cceb46638a81439b429f10bd4c320bbd27bf2f838b9c5298343fd8f3928b45e9cd4f48b1c"
+    },
+    {
+      "type": "KeygenVerification",
+      "fields": {
+        "prepKeygenId": "1356938545749799165119972480570561420155507632800475359837393562592731987969",
+        "keyId": "1809251394333065553493296640760748560207343510400633813116524750123642650625",
+        "keyDigests": [
+          {
+            "keyType": 0,
+            "digest": "0xaabbccdd"
+          },
+          {
+            "keyType": 1,
+            "digest": "0x11223344"
+          }
+        ],
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000004"
+      },
+      "structHash": "0x90ff651b37e377c42462f7fd84619e060a96d9f1f79d05254180b70ccf529e0b",
+      "digest": "0x593fcf4d97631ad390d83a940534390ae54123a19e66a63627dabbdfdcaa6318",
+      "signer": "0x4eeAF03A8EBD4596Fd3FBe1CcEEcB44bD9B3aBa9",
+      "signature": "0x64907154374711f4087502ccf4d5d2a4756f217c406795ab136a68fd3ae2cab936e76fadad8a1315fd7b28ea1d791c25b5238ffce2c31ce6e1bda711c749c0f51c"
+    },
+    {
+      "type": "CrsgenVerification",
+      "fields": {
+        "crsId": "2261564242916331941866620800950935700259179388000792266395655937654553313281",
+        "maxBitLength": "4096",
+        "crsDigest": "0xdeadbeef",
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000004"
+      },
+      "structHash": "0xa6b0b930af574cef12605527d775431f0794d784d3621b96d68ea49cf3267677",
+      "digest": "0x5a51ad1a5a8a25d513dd83fd5a0f50f510549b9fa4a95096cfceb3e44575ca2e",
+      "signer": "0x4eeAF03A8EBD4596Fd3FBe1CcEEcB44bD9B3aBa9",
+      "signature": "0x42be149190a5ec3d08411b3babb0bda21d7497b08cc577b32cf0f0ea773980ba5632af78340bd56575d72677f5d79017107cda0a6e0b4f108c096cb12dae37761b"
+    },
+    {
+      "type": "KeygenVerification",
+      "fields": {
+        "prepKeygenId": "1356938545749799165119972480570561420155507632800475359837393562592731987969",
+        "keyId": "1809251394333065553493296640760748560207343510400633813116524750123642650625",
+        "keyDigests": [
+          {
+            "keyType": 0,
+            "digest": "0xaabbccdd"
+          },
+          {
+            "keyType": 1,
+            "digest": "0x11223344"
+          }
+        ],
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000004"
+      },
+      "structHash": "0x90ff651b37e377c42462f7fd84619e060a96d9f1f79d05254180b70ccf529e0b",
+      "digest": "0x593fcf4d97631ad390d83a940534390ae54123a19e66a63627dabbdfdcaa6318",
+      "signer": "0x120914bdF39A940d770d04D9AD8e33771cf11e37",
+      "signature": "0x3f31389a20aa35ec5851d931844f7e598ede45e9d0d5218e8d5e2b6fb03f87f07e872778405ccd5fe34ec7488a854b7939eb6bf3856504999e19a1787aadec161b"
+    },
+    {
+      "type": "CrsgenVerification",
+      "fields": {
+        "crsId": "2261564242916331941866620800950935700259179388000792266395655937654553313281",
+        "maxBitLength": "4096",
+        "crsDigest": "0xdeadbeef",
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000004"
+      },
+      "structHash": "0xa6b0b930af574cef12605527d775431f0794d784d3621b96d68ea49cf3267677",
+      "digest": "0x5a51ad1a5a8a25d513dd83fd5a0f50f510549b9fa4a95096cfceb3e44575ca2e",
+      "signer": "0x120914bdF39A940d770d04D9AD8e33771cf11e37",
+      "signature": "0x1f7207efba8e55620b7628ccba9f9d79e0fec71fe336d54f905265e05f1978cb621bf694bd955de857062646b80ca589309682241a65034c3c7ed7b77a166e0d1c"
+    },
+    {
+      "type": "KeygenVerification",
+      "fields": {
+        "prepKeygenId": "1356938545749799165119972480570561420155507632800475359837393562592731987969",
+        "keyId": "1809251394333065553493296640760748560207343510400633813116524750123642650625",
+        "keyDigests": [
+          {
+            "keyType": 0,
+            "digest": "0xaabbccdd"
+          },
+          {
+            "keyType": 1,
+            "digest": "0x11223344"
+          }
+        ],
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000004"
+      },
+      "structHash": "0x90ff651b37e377c42462f7fd84619e060a96d9f1f79d05254180b70ccf529e0b",
+      "digest": "0x593fcf4d97631ad390d83a940534390ae54123a19e66a63627dabbdfdcaa6318",
+      "signer": "0x41ABcA639b47CB89CCEBd3C17Bb6C3e175c1cb74",
+      "signature": "0x504185da7b8876a9fb60c572d957351e0e1dda5cd0511c9d9b081c7b4b325a4b71d64a276ff261a507cb5fc391274c9c954789f1581d5e8785e6d9b9edebaa0a1c"
+    },
+    {
+      "type": "CrsgenVerification",
+      "fields": {
+        "crsId": "2261564242916331941866620800950935700259179388000792266395655937654553313281",
+        "maxBitLength": "4096",
+        "crsDigest": "0xdeadbeef",
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000004"
+      },
+      "structHash": "0xa6b0b930af574cef12605527d775431f0794d784d3621b96d68ea49cf3267677",
+      "digest": "0x5a51ad1a5a8a25d513dd83fd5a0f50f510549b9fa4a95096cfceb3e44575ca2e",
+      "signer": "0x41ABcA639b47CB89CCEBd3C17Bb6C3e175c1cb74",
+      "signature": "0xdf14e07fbfc9f46386c1d0b13e19344a283a7de6212141579d69be8d535ab75c2e8e4e6f0641f1a0dbcaa2a30022689bea9d5e00e417012ee32818dc5659918f1b"
+    },
+    {
+      "type": "KeygenVerification",
+      "fields": {
+        "prepKeygenId": "1356938545749799165119972480570561420155507632800475359837393562592731987969",
+        "keyId": "1809251394333065553493296640760748560207343510400633813116524750123642650625",
+        "keyDigests": [
+          {
+            "keyType": 0,
+            "digest": "0xaabbccdd"
+          },
+          {
+            "keyType": 1,
+            "digest": "0x11223344"
+          }
+        ],
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000004"
+      },
+      "structHash": "0x90ff651b37e377c42462f7fd84619e060a96d9f1f79d05254180b70ccf529e0b",
+      "digest": "0x593fcf4d97631ad390d83a940534390ae54123a19e66a63627dabbdfdcaa6318",
+      "signer": "0xc267e5A8a40472Ef7A0c1965ec9cFcf816beAf15",
+      "signature": "0x4b1648165bfc30381b3b434088fb0c0b4aa57713f3fa318d535b35159730a36e400fd307b5dab56b772e21f3e860e76d741853096b907e7c2e48f5576dc8f9a41b"
+    },
+    {
+      "type": "CrsgenVerification",
+      "fields": {
+        "crsId": "2261564242916331941866620800950935700259179388000792266395655937654553313281",
+        "maxBitLength": "4096",
+        "crsDigest": "0xdeadbeef",
+        "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000030800000000000000000000000000000000000000000000000000000000000004"
+      },
+      "structHash": "0xa6b0b930af574cef12605527d775431f0794d784d3621b96d68ea49cf3267677",
+      "digest": "0x5a51ad1a5a8a25d513dd83fd5a0f50f510549b9fa4a95096cfceb3e44575ca2e",
+      "signer": "0xc267e5A8a40472Ef7A0c1965ec9cFcf816beAf15",
+      "signature": "0x09cb4e9340f87c6042113974517faad6c4d7fe7a3bf6f69478af4bc50f77017b6544e85bb6669f4f810e62680b8ce31f3bcb5f577292d76c0611fcb511a364e81c"
+    }
+  ]
+}
