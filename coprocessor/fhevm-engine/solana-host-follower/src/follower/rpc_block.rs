@@ -10,6 +10,7 @@
 //! the host's instructions as it arrives ([`prepare_rpc_transaction`]). JSON spells legacy, v0
 //! and v1 messages alike, so no SDK message type has to know the version.
 
+use crate::source::decode_hash;
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use solana_sdk::{pubkey::Pubkey, signature::Signature};
 use solana_transaction_status_client_types::{
@@ -77,11 +78,12 @@ pub(super) fn list_rpc_block(
     Ok(RpcBlockListing {
         block: SealedBlock {
             slot,
-            block_hash: decode_hash(&block.blockhash)
-                .context("getBlock blockhash")?,
+            block_hash: decode_hash("getBlock blockhash", &block.blockhash)?,
             parent_slot: block.parent_slot,
-            parent_block_hash: decode_hash(&block.previous_blockhash)
-                .context("getBlock previousBlockhash")?,
+            parent_block_hash: decode_hash(
+                "getBlock previousBlockhash",
+                &block.previous_blockhash,
+            )?,
             block_time: block.block_time,
             block_height: block.block_height,
             executed_transaction_count,
@@ -204,15 +206,9 @@ fn compiled_instruction(
 }
 
 fn decode_keys(keys: &[String]) -> Result<Vec<[u8; 32]>> {
-    keys.iter().map(|key| decode_hash(key)).collect()
-}
-
-fn decode_hash(value: &str) -> Result<[u8; 32]> {
-    let bytes = bs58::decode(value)
-        .into_vec()
-        .with_context(|| format!("{value} is not base58"))?;
-    <[u8; 32]>::try_from(bytes.as_slice())
-        .map_err(|_| anyhow!("{value} is {} bytes, expected 32", bytes.len()))
+    keys.iter()
+        .map(|key| decode_hash("account key", key))
+        .collect()
 }
 
 #[cfg(test)]

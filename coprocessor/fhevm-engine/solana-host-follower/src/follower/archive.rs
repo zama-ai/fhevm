@@ -31,8 +31,8 @@ use tracing::info;
 
 use super::rpc_block::{list_rpc_block, prepare_rpc_transaction};
 use super::{
-    apply_prepared_block, BlockCheckpoint, BlockSink, FatalIngestError,
-    FollowerConfig, IngestionProgress, PreparedBlock, StartPosition,
+    apply_prepared_block, BlockCheckpoint, BlockSink, FollowerConfig,
+    IngestFailure, IngestionProgress, PreparedBlock, StartPosition,
 };
 use crate::source::SealedBlock;
 
@@ -126,7 +126,7 @@ async fn fetch_block(
     program: &Pubkey,
 ) -> Result<PreparedBlock> {
     let fatal = |error: anyhow::Error| -> anyhow::Error {
-        FatalIngestError::new(error.context("prepare archive Solana block"))
+        IngestFailure::fatal(error.context("prepare archive Solana block"))
             .into()
     };
     let listing = list_rpc_block(slot, archive.block(slot).await?, program)
@@ -322,12 +322,12 @@ fn extends_checkpoint(
         ),
         StartPosition::Tip => return Err(no_checkpoint()),
     };
-    Err(FatalIngestError::new(fork).into())
+    Err(IngestFailure::fatal(fork).into())
 }
 
 /// The stream only refuses a replay, so a tip start never reaches catch-up.
 fn no_checkpoint() -> anyhow::Error {
-    FatalIngestError::new(anyhow!(
+    IngestFailure::fatal(anyhow!(
         "archive catch-up needs a checkpoint to extend"
     ))
     .into()
@@ -367,8 +367,8 @@ mod tests {
     };
     use super::super::{
         accept_transaction, apply_prepared_block, prepare_transaction,
-        BlockCheckpoint, BlockSink, FatalIngestError, IngestFailure,
-        IngestionProgress, PreparedBlock, PreparedTransaction, StartPosition,
+        BlockCheckpoint, BlockSink, IngestFailure, IngestionProgress,
+        PreparedBlock, PreparedTransaction, StartPosition,
     };
     use super::{
         block_checkpoint, catch_up, extends_checkpoint, fetch_block,
@@ -413,7 +413,9 @@ mod tests {
     }
 
     fn is_fatal(error: &anyhow::Error) -> bool {
-        error.downcast_ref::<FatalIngestError>().is_some()
+        error
+            .downcast_ref::<IngestFailure>()
+            .is_some_and(IngestFailure::is_fatal)
     }
 
     /// One produced slot: its parent and its transactions, rendered for either transport.

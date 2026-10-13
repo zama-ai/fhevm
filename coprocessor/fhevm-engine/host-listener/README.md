@@ -119,18 +119,9 @@ cargo test -p host-listener --test host_listener_integration_tests \
 ### Solana bootstrap and restart
 
 `solana_host_listener` reconstructs compute rows from finalized Yellowstone
-blocks. It subscribes to the successful transactions naming the host
-program, one per message, and to every slot's block meta, and seals a slot when
-its block meta arrives. The provider must send every transaction of a slot
-before that slot's block meta, live and on `from_slot` replay; Yellowstone does.
-DD-062 lists the slots the listener skips, the order breaks that stop it, and
-the repair after a transaction arrives for a slot already applied. Each
-`fhe_execute` is paired with the `FheExecutedEvent` it emits: the listener
-stores the result handles in the event and re-derives each one as a check.
-Each applied block also gets its `host_chain_blocks_valid` row for manifest
-consensus, finalized and numbered by block height rather than slot, as are the
-block's computation rows (DD-071). A block without a height or a block time, or
-whose parent row is not at the height below, stops the listener.
+blocks, numbered by block height rather than slot (DD-062 and DD-071 in
+`solana/docs/DESIGN_DECISIONS.md` give the stream contract and the stop
+conditions).
 
 On an empty database, `--start-slot <slot>` selects an existing
 finalized block to replay **inclusively**. Choose one before the host activity
@@ -148,13 +139,8 @@ and does not reconstruct earlier computations.
 Yellowstone replays only recent slots: **256** with the local configuration in
 `solana/geyser/yellowstone-config.json`, about 24 hours on a hosted provider.
 When it refuses the checkpoint as too old, the listener catches up from
-`--archive-url` (default `--url`): it lists the produced slots with `getBlocks`,
-lists each block's transactions with `getBlock` and `transactionDetails:
-"accounts"`, fetches each successful transaction naming the host with
-`getTransaction`, and applies the block at finalized commitment, through the
-same ancestry check and ingest path, up to the slot the archive had finalized
-when catch-up began. Then it subscribes again from the checkpoint (DD-059 in
-`solana/docs/DESIGN_DECISIONS.md`). The archive must hold the ledger back to the
+`--archive-url` (default `--url`) through the same ingest path, then subscribes
+again from the checkpoint (DD-059). The archive must hold the ledger back to the
 checkpoint. Catch-up lists every block after the checkpoint, so a day of mainnet
 takes hours. An archive missing slots after the checkpoint is retried. A
 provider that cannot replay from any slot, or a block of another

@@ -104,26 +104,7 @@ impl fmt::Display for IngestFailure {
     }
 }
 
-#[derive(Debug)]
-struct FatalIngestError(anyhow::Error);
-
-impl FatalIngestError {
-    fn new(error: anyhow::Error) -> Self {
-        Self(error)
-    }
-
-    fn into_inner(self) -> anyhow::Error {
-        self.0
-    }
-}
-
-impl fmt::Display for FatalIngestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::error::Error for FatalIngestError {}
+impl std::error::Error for IngestFailure {}
 
 #[derive(Clone)]
 pub struct FollowerConfig {
@@ -277,9 +258,10 @@ pub async fn run(
             }
             Err(err) => err,
         };
-        match err.downcast::<FatalIngestError>() {
+        // A retryable failure leaves its `IngestFailure` before it gets here, so one found here is fatal.
+        match err.downcast::<IngestFailure>() {
             Ok(fatal) => {
-                let err = fatal.into_inner();
+                let err = fatal.into_error();
                 error!(error = format!("{err:#}"), checkpoint = ?progress.applied, retry_cursor = ?progress.retry, "Solana host follower stopped on fail-closed ingestion error");
                 return Err(err);
             }
@@ -332,9 +314,6 @@ fn resolve_transaction_instructions(
     message: &TransactionMessage,
     meta: &TransactionStatusMeta,
 ) -> Result<Vec<zama_solana_transaction::ResolvedInstruction>> {
-    if meta.err.is_some() {
-        return Ok(Vec::new());
-    }
     let static_keys = validated_account_keys(&message.account_keys)?;
     let loaded_writable_keys =
         validated_account_keys(&meta.loaded_writable_addresses)?;
@@ -473,7 +452,7 @@ async fn subscribe_loop(
                         return Ok(StreamEnd::ReplayWindowPassed(status));
                     }
                     Err(status) if is_resume && is_replay_unsupported(&status) => {
-                        return Err(FatalIngestError::new(anyhow!(
+                        return Err(IngestFailure::fatal(anyhow!(
                             "Yellowstone provider cannot replay from a slot: {status}"
                         )).into());
                     }
@@ -490,14 +469,14 @@ async fn subscribe_loop(
                     Some(UpdateOneof::Transaction(update)) => {
                         accept_transaction(&mut validator, update, &config.program_id)
                             .map_err(|error| {
-                                FatalIngestError::new(error.context(
+                                IngestFailure::fatal(error.context(
                                     "validate Solana transaction",
                                 ))
                             })?;
                     }
                     Some(UpdateOneof::BlockMeta(meta)) => {
                         let decision = validator.block_meta(meta).map_err(|error| {
-                            FatalIngestError::new(error.context(
+                            IngestFailure::fatal(error.context(
                                 "validate sealed Solana block",
                             ))
                         })?;
@@ -608,11 +587,9 @@ async fn apply_prepared_block(
         Err(err) if !err.is_fatal() => Err(err
             .into_error()
             .context("retryable sealed block ingest failure")),
-        Err(err) => Err(FatalIngestError::new(
-            err.into_error()
-                .context("fatal sealed block ingest failure"),
-        )
-        .into()),
+        Err(err) => {
+            Err(err.context("fatal sealed block ingest failure").into())
+        }
     }
 }
 
@@ -786,13 +763,8 @@ async fn ingest_block(
 mod account_resolution_tests {
     use super::test_support::ZAMA_HOST;
     use super::wire_fixtures::app_transaction;
-    use super::{
-        prepare_transaction, resolve_transaction_instructions,
-        validated_account_keys,
-    };
-    use yellowstone_grpc_proto::prelude::{
-        Message as TransactionMessage, TransactionError, TransactionStatusMeta,
-    };
+    use super::{prepare_transaction, validated_account_keys};
+    use yellowstone_grpc_proto::prelude::TransactionError;
 
     #[test]
     fn a_node_without_inner_instructions_is_refused() {
@@ -826,23 +798,6 @@ mod account_resolution_tests {
         assert!(err.to_string().contains(
             "account key 1 has invalid length 31, expected 32 bytes"
         ));
-    }
-
-    #[test]
-    fn failed_transaction_is_ignored_before_instruction_decoding() {
-        let message = TransactionMessage {
-            account_keys: vec![vec![1; 31]],
-            ..Default::default()
-        };
-        let meta = TransactionStatusMeta {
-            err: Some(TransactionError { err: vec![1] }),
-            ..Default::default()
-        };
-
-        let instructions = resolve_transaction_instructions(&message, &meta)
-            .expect("failed transactions are valid chain history");
-
-        assert!(instructions.is_empty());
     }
 }
 

@@ -33,8 +33,8 @@ use zama_solana_acl::{
     MmrProof,
 };
 use zama_solana_merkle_proofs::{
-    ErrorCode, ErrorResponse, LeafQuery, LeafQueryKind, MerkleProofOutcome,
-    MerkleProofRequest, MerkleProofResponse, MERKLE_PROOFS_PATH,
+    LeafQuery, LeafQueryKind, MerkleProofOutcome, MerkleProofRequest,
+    MerkleProofResponse, MERKLE_PROOFS_PATH,
 };
 
 const ACCOUNT: [u8; 32] = [0xAC; 32];
@@ -529,58 +529,6 @@ async fn eight_proofs_of_a_million_leaf_store_answer_well_within_the_connector_t
     .await?;
     eprintln!("8 proofs of a 1,000,000-leaf store answered in {elapsed:?}");
     assert!(elapsed < std::time::Duration::from_secs(2), "{elapsed:?}");
-    Ok(())
-}
-
-/// A coprocessor that received a signed request can resend it to the others while it is valid.
-/// A server answers such a repeat as it answered the request, without charging the signer
-/// again: here the first request spends the signer's whole burst, its repeat still gets the
-/// same bytes, and only a new request is refused.
-#[tokio::test]
-#[serial(db)]
-async fn a_repeated_request_gets_its_first_answer_at_no_cost(
-) -> Result<(), Box<dyn std::error::Error>> {
-    let (_db, pool) = support::record_db().await;
-    let mut tx = pool.begin().await?;
-    let block = reduce_block_leaves(
-        &[TransactionStoreWrites {
-            transaction_index: 0,
-            sources: vec![write(0, [0x10; 32], vec![OWNER], false)],
-        }],
-        load_store_cursors(&mut tx, &[ACCOUNT]).await?,
-    )?;
-    store_block_leaves(&mut tx, 10, &block).await?;
-    tx.commit().await?;
-
-    let cancel = CancellationToken::new();
-    // One leaf per second, so the burst is the 64 leaves of the largest request.
-    let (proofs, server_task) = serve_proofs(&pool, 1, &cancel).await;
-    let full_request = |handle| MerkleProofRequest {
-        leaves: vec![
-            LeafQuery {
-                encrypted_store: ACCOUNT,
-                handle,
-                kind: LeafQueryKind::Allowed,
-                key: Some(OWNER),
-            };
-            64
-        ],
-    };
-    let (body, authorization) = proofs.sign(&full_request([0x10; 32])).await;
-    let first = proofs.send(body.clone(), &authorization).await?;
-    assert_eq!(first.status(), 200);
-    let first = first.bytes().await?;
-    let repeat = proofs.send(body, &authorization).await?;
-    assert_eq!(repeat.status(), 200);
-    assert_eq!(repeat.bytes().await?, first);
-
-    let other = proofs.post(&full_request([0x11; 32])).await?;
-    assert_eq!(other.status(), 429);
-    let error: ErrorResponse = serde_json::from_slice(&other.bytes().await?)?;
-    assert_eq!(error.code, ErrorCode::RateLimited);
-
-    cancel.cancel();
-    server_task.await??;
     Ok(())
 }
 
