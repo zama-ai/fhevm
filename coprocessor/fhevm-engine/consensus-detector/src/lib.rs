@@ -72,7 +72,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgListener, Executor, Pool, Postgres};
 use thiserror::Error;
 use tokio::select;
-use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn, Level};
 
@@ -872,30 +871,6 @@ async fn notify_unanimity(
     Ok(())
 }
 
-/// Handle a `new_operator_added` notification.
-///
-/// Placeholder — the intended behaviour is to re-fetch the operator signer set
-/// from `GatewayConfig` (via `S3Service::refresh_signer_urls`) and update the
-/// shared URL list. The wiring is left here so the refresh can be turned on
-/// in a follow-up without changing the dispatch surface.
-async fn handle_new_operator_added<P>(
-    s3_urls: &Arc<RwLock<Vec<String>>>,
-    s3_service: &S3Service<P>,
-    raw_payload: &str,
-) -> Result<(), Error>
-where
-    P: Provider<Ethereum>,
-{
-    info!(
-        payload = raw_payload,
-        "new_operator_added received (placeholder — operator set refresh not yet wired)"
-    );
-
-    // Suppress unused-variable warnings without dropping the wiring.
-    let _ = (s3_urls, s3_service);
-    Ok(())
-}
-
 /// Sealed Gateway blocks for which this operator has already produced a local
 /// `state_hash` row — the candidate set for the Gateway consensus poll. Bounded
 /// to `[gw_start, gw_tip]` so only sealed blocks are polled, and capped to the
@@ -978,18 +953,6 @@ where
     fhevm_engine_common::metrics_server::spawn(config.metrics_addr.clone(), cancel.child_token());
 
     let s3_service = S3Service::new(provider, config.gateway_config_address);
-    let urls = s3_service.refresh_signer_urls().await?;
-    if urls.is_empty() {
-        return Err(anyhow::anyhow!(
-            "GatewayConfig returned no operator S3 URLs at startup"
-        ));
-    }
-    info!(
-        operator_count = urls.len(),
-        urls = ?urls,
-        "fetched operator S3 URLs from GatewayConfig"
-    );
-    let s3_urls: Arc<RwLock<Vec<String>>> = Arc::new(RwLock::new(urls));
 
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
@@ -1111,12 +1074,10 @@ where
                             NEW_BLOCK_CHANNEL | GW_NEW_BLOCK_CHANNEL => {
                                 consensus_pass!();
                             }
+                            // Each attempt resolves its own members, so this
+                            // refreshes nothing.
                             NEW_OPERATOR_ADDED_CHANNEL => {
-                                if let Err(e) =
-                                    handle_new_operator_added(&s3_urls, &s3_service, payload).await
-                                {
-                                    error!(channel, error = %e, "failed to handle notification");
-                                }
+                                info!(payload, "new_operator_added received");
                             }
                             other => {
                                 warn!(channel = other, "ignoring notification on unexpected channel");
