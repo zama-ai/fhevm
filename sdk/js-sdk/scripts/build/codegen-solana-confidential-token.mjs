@@ -78,8 +78,7 @@ const hostProgram = rootNodeFromAnchor(hostIdl).program;
 // An app IDL repeats the host types it touches, host accounts included (HostConfig, EncryptedStore, …).
 const hostTypeNames = new Set([...hostProgram.definedTypes, ...hostProgram.accounts].map(({ name }) => name));
 
-// A target's `programAddress.ts`: `<IDL NAME>_PROGRAM_ADDRESS`, named after the IDL's own program name.
-// A target with a `programAddress` of its own appends to this.
+// Codama's builders import <IDL NAME>_PROGRAM_ADDRESS from here (see the ../programs/index.js rewrite).
 function programAddressSource(program, anchorIdl) {
   const name = anchorIdl.metadata.name;
   return (

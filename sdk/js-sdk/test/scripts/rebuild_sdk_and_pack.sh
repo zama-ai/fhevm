@@ -20,7 +20,7 @@ NC='\033[0m'
 echo -e "${GREEN}Cleaning existing tarball from $PACK_DIR${NC}"
 
 # Clean stale tarballs before packing
-rm -f "$PACK_DIR"/fhevm-sdk-*.tgz "$PACK_DIR"/fhevm-solana-zama-host-*.tgz
+rm -f "$PACK_DIR"/fhevm-sdk-*.tgz
 
 mkdir -p "$PACK_DIR"
 PACK_DIR=$(cd "$PACK_DIR" && pwd)
@@ -44,15 +44,14 @@ TARBALL=$(echo "$PACK_DIR"/fhevm-sdk-*.tgz)
 TARBALL_NAME=$(basename "$TARBALL")
 echo -e "${GREEN}Packed: ${TARBALL_NAME}${NC}"
 
-# The SDK's Solana entry needs its zama-host peer, so that client is packed beside it. The SDK's
-# postinstall builds it.
-(cd "$ROOT_DIR/../../solana/clients/zama-host" && npm pack --pack-destination "$PACK_DIR")
-HOST_TARBALL_NAME=$(basename "$PACK_DIR"/fhevm-solana-zama-host-*.tgz)
+# The SDK's Solana entry needs its zama-host peer; sdk/js-sdk's postinstall already built its dist.
+HOST_TARBALL_NAME=$(cd "$ROOT_DIR/../../solana/clients/zama-host" && npm pack --pack-destination "$PACK_DIR")
 
 # Read peer dep versions from the root package.json
 ETHERS_VERSION=$(node -p "require('$ROOT_DIR/package.json').devDependencies.ethers")
 VIEM_VERSION=$(node -p "require('$ROOT_DIR/package.json').devDependencies.viem")
-SOLANA_PEERS=$(node -p "const d = require('$ROOT_DIR/package.json').devDependencies; ['@solana/kit', '@solana/sysvars', '@solana/wallet-standard-features', '@wallet-standard/base'].map((n) => JSON.stringify(n) + ': ' + JSON.stringify(d[n])).join(', ')")
+# The SDK's optional Solana peers, at the versions the SDK develops against.
+SOLANA_PEERS=$(node -p "const versions = require('$ROOT_DIR/package.json').devDependencies; Object.keys(require('$ROOT_DIR/src/package.json').peerDependencies).filter((name) => /^@(solana|wallet-standard)\//.test(name)).map((name) => JSON.stringify(name) + ': ' + JSON.stringify(versions[name])).join(', ')")
 
 # Write package.json referencing the freshly packed tarball
 echo -e "${GREEN}Writing $MANUAL_PACK_DIRNAME/package.json...${NC}"
@@ -62,13 +61,13 @@ cat > "$PACK_DIR/package.json" <<EOF
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "@fhevm/sdk": "file:${TARBALL_NAME}",
-    "@fhevm/solana-zama-host": "file:${HOST_TARBALL_NAME}"
+    "@fhevm/solana-zama-host": "file:${HOST_TARBALL_NAME}",
+    ${SOLANA_PEERS},
+    "@fhevm/sdk": "file:${TARBALL_NAME}"
   },
   "devDependencies": {
     "ethers": "${ETHERS_VERSION}",
-    "viem": "${VIEM_VERSION}",
-    ${SOLANA_PEERS}
+    "viem": "${VIEM_VERSION}"
   }
 }
 EOF
@@ -80,11 +79,15 @@ rm -rf "$PACK_DIR/node_modules" "$PACK_DIR/package-lock.json"
 echo -e "${GREEN}Installing packed SDK into $MANUAL_PACK_DIRNAME/node_modules...${NC}"
 (cd "$PACK_DIR" && npm install)
 
-# The packed SDK's Solana entry loads beside the packed zama-host, as ESM and as CommonJS. Module
-# lookup would fall back to the SDK's own node_modules above this directory, so the SDK must also
-# resolve zama-host from this install.
+# The packed SDK's Solana entry loads as ESM and as CommonJS. Node's lookup would fall back to
+# sdk/js-sdk/node_modules above this directory, so the SDK must also resolve zama-host and each
+# Solana peer from this install.
 (cd "$PACK_DIR" && node --input-type=module -e "await import('@fhevm/sdk/solana')" && node -e "
-  require('@fhevm/sdk/solana');
-  const host = require.resolve('@fhevm/solana-zama-host', { paths: [require.resolve('@fhevm/sdk/solana')] });
-  if (!host.startsWith(process.cwd() + '/node_modules/')) throw new Error('zama-host resolved outside the pack: ' + host);
+  const sdk = require.resolve('@fhevm/sdk/solana');
+  require(sdk);
+  const peers = Object.keys(require('@fhevm/sdk/package.json').peerDependencies);
+  for (const name of peers.filter((name) => /^@(fhevm|solana|wallet-standard)\//.test(name))) {
+    const found = require.resolve(name, { paths: [sdk] });
+    if (!found.startsWith(process.cwd() + '/node_modules/')) throw new Error(name + ' resolved outside the pack: ' + found);
+  }
 ")
