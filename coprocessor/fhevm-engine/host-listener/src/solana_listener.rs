@@ -244,7 +244,7 @@ async fn apply_block(
             tfhe_events = stats.tfhe_events,
             material_requests = stats.material_requests,
             inserted_records = stats.inserted_records,
-            "ingested Solana host records (gRPC)"
+            "ingested Solana host records"
         );
     }
     // Best effort, as on EVM: a failure only delays pruning.

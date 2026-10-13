@@ -114,7 +114,8 @@ pub struct FollowerConfig {
     pub x_token: Option<String>,
     /// Base58 zama-host program id to follow (not the id this crate was compiled with).
     pub program_id: Pubkey,
-    /// On-chain HostConfig chain id, the `host_chain_id` label of the follower's metrics.
+    /// On-chain HostConfig chain id. Handles are derived with it, and it is the `host_chain_id`
+    /// label of the follower's metrics.
     pub chain_id: u64,
 }
 

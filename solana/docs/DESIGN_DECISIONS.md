@@ -2421,9 +2421,9 @@ binaries:
   deployment slot, whose hash it reads from the archive endpoint. It never starts at the tip. It
   stops on a Store first seen above leaf zero (`UnrecordedHistory`) and on a leaf count that
   skips.
-- Re-handing the checkpoint block with the same hash writes nothing. A different hash at that
-  slot or a block below it stops the indexer. The finalized follower applies one block at a time
-  and filters older redeliveries. Moving the checkpoint back does not rewind the Store cursors:
+- A block at or below the checkpoint was already applied, by this replica or another, and writes
+  nothing. A different hash at the checkpoint's slot stops the indexer. The finalized follower
+  applies one block at a time and filters older redeliveries. Moving the checkpoint back does not rewind the Store cursors:
   re-applying recorded leaves fails on their previous leaf count. A wrong record is rebuilt from
   the start slot into an empty database or restored from another record's dump.
 - `solana_merkle_proof_server` serves the proofs from that database over
