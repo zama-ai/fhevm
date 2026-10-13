@@ -58,12 +58,12 @@ const FINALIZED = { commitment: 'finalized' } as const;
  */
 export const MAX_REQUEST_HANDLES = 32;
 
-/** The relayer's final refusal of a request over the handle cap, as it words it. */
-function overHandleCap(count: number): SolanaDecryptionRejection | undefined {
+/** relayer-http's final refusal of a request over the handle cap, as it words it for `field`. */
+function overHandleCap(field: string, count: number): SolanaDecryptionRejection | undefined {
   if (count <= MAX_REQUEST_HANDLES) return undefined;
   return {
     code: 'malformed',
-    message: `solana request names ${count} handles, expected at most ${MAX_REQUEST_HANDLES}`,
+    message: `${field}: solana request names ${count} handles, expected at most ${MAX_REQUEST_HANDLES}`,
   };
 }
 
@@ -87,19 +87,20 @@ export function cleartextUserDecryptExecution(
     });
     // Admission as on the relayer path: a request that can never be submitted is refused here.
     buildSolanaUserDecryptRequest({ signedPermit: session.signedPermit, entries });
+    const overCap = overHandleCap('payload', entries.length);
     const response = await retrySolanaDecryption({
       // The deadline ends an attempt stalled on a read, as it ends a stalled relayer request.
       submit: () =>
         deadline.bound(async (signal): Promise<SolanaDecryptionOutcome<readonly SolanaUserDecryptPlaintext[]>> => {
+          // relayer-http refuses an over-cap request before it reads anything.
+          if (overCap !== undefined) return { ok: false, rejection: overCap };
           const readAccounts = hostAccountsReader(rpc, signal);
           // Each attempt is judged against the host as it is then, as the Connector rechecks the KMS
           // context on every attempt.
           const host = await fetchHostDecryptionState(rpc, programAddress, fields.kmsRouting.kmsContextId, signal);
 
-          // The decryption relayer's admission: the handle cap, the handles' chain, which admission made
-          // the permit's, and the validity window against its wall clock.
-          const overCap = overHandleCap(entries.length);
-          if (overCap !== undefined) return { ok: false, rejection: overCap };
+          // The decryption relayer's admission: the handles' chain, which admission made the permit's,
+          // and the validity window against its wall clock.
           if (fields.chainId !== host.config.chainId) {
             const message = `the handles are on host chain ${fields.chainId}; this host is chain ${host.config.chainId}`;
             return { ok: false, rejection: { code: 'malformed', message } };
@@ -233,10 +234,10 @@ export function cleartextPublicDecryptCertifier(
       const handle = toFhevmHandle(entry.handle);
       return { handle, handleBytes: hexToBytes(handle.bytes32Hex), encryptedStore: entry.encryptedStore };
     });
+    const overCap = overHandleCap('ctHandles', entries.length);
     await retrySolanaDecryption({
       submit: () =>
         deadline.bound(async (attemptSignal): Promise<SolanaDecryptionOutcome<undefined>> => {
-          const overCap = overHandleCap(entries.length);
           if (overCap !== undefined) return { ok: false, rejection: overCap };
           const rejection = cleartextConnectorRejection(
             await judgeSolanaPublicDecryption({
