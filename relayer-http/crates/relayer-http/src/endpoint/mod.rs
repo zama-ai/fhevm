@@ -42,12 +42,14 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use alloy::primitives::B256;
     use axum::body::Body;
     use axum::http::{Request, StatusCode, header};
     use kms_connector_api::ErrorCode;
     use serde_json::Value;
     use tokio_util::sync::CancellationToken;
     use tower::ServiceExt;
+    use zama_solana_request::MAX_REQUEST_HANDLES;
 
     use super::*;
     use crate::config::HttpConfig;
@@ -150,6 +152,52 @@ mod tests {
             let (status, _, response) = call(app, "POST", route, &body).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{route}: {response}");
             assert_eq!(response["message"], expected, "{route}");
+            assert_eq!(calls(&mock), 0, "{route}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_solana_request_over_the_handle_cap_is_refused_before_any_connector_call() {
+        // Ebool handles keep the request within the 2048-bit budget, so the handle cap refuses it.
+        let over = MAX_REQUEST_HANDLES + 1;
+        let mut public = public_body();
+        public.ctHandles = vec![handle(SOLANA, 0); over];
+        public.encryptedStores = vec![B256::repeat_byte(0x30); over];
+        let mut user = user_body(flows::now() - 10);
+        user.payload.handles[0].handle = handle(SOLANA, 0);
+        user.payload.handles = vec![user.payload.handles[0].clone(); over];
+        for (route, body, field) in [
+            (
+                "/v4/public-decrypt",
+                serde_json::to_string(&public).unwrap(),
+                "ctHandles",
+            ),
+            (
+                "/v4/user-decrypt",
+                serde_json::to_string(&user).unwrap(),
+                "payload",
+            ),
+        ] {
+            let (mut app, mock) = scripted(
+                vec![vec![Reply::Fixed(Fixed::Ok)]; 13],
+                UserChecks::default(),
+                CancellationToken::new(),
+            );
+            // 33 handles outgrow the test's 4096-byte body limit; production allows 1 MiB.
+            app.http = Arc::new(HttpConfig {
+                max_body_bytes: 16 * 1024,
+                ..(*app.http).clone()
+            });
+            let (status, _, response) = call(app, "POST", route, &body).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{route}: {response}");
+            assert_eq!(response["code"], "malformed", "{route}");
+            assert_eq!(
+                response["message"],
+                format!(
+                    "{field}: solana request names {over} handles, expected at most {MAX_REQUEST_HANDLES}"
+                ),
+                "{route}"
+            );
             assert_eq!(calls(&mock), 0, "{route}");
         }
     }

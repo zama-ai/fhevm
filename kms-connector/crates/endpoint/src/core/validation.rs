@@ -268,6 +268,7 @@ fn validate_extra_data(extra_data: &[u8]) -> Result<(), ValidationError> {
 pub(crate) mod tests {
     use super::*;
     use alloy::primitives::{Address, Bytes};
+    use connector_utils::types::solana_request::MAX_REQUEST_HANDLES;
     use kms_connector_api::{
         AttestationType, HandleEntry, SolanaHandleEntry, SolanaUserDecryptionPayload,
         UserDecryptionPayload,
@@ -331,6 +332,47 @@ pub(crate) mod tests {
                 extraData: Bytes::from(extra_data),
             },
             signature: Bytes::from(vec![0x66; 65]),
+        }
+    }
+
+    /// A Solana user decryption of `handles`, all with one owner and one store.
+    fn solana_user_request(
+        handles: Vec<B256>,
+        start_timestamp: u64,
+        extra_data: Vec<u8>,
+    ) -> SolanaUserDecryptionRequest {
+        SolanaUserDecryptionRequest {
+            attestationType: AttestationType::SolanaSrfc38UserDecryptV1.to_string(),
+            payload: SolanaUserDecryptionPayload {
+                handles: handles
+                    .into_iter()
+                    .map(|handle| SolanaHandleEntry {
+                        handle,
+                        ownerAddress: B256::repeat_byte(0x01),
+                        encryptedStore: B256::repeat_byte(0x03),
+                    })
+                    .collect(),
+                userAddress: B256::repeat_byte(0x01),
+                publicKey: Bytes::from(vec![0x20; 32]),
+                allowedScopes: vec![],
+                requestValidity: RequestValidity {
+                    startTimestamp: start_timestamp,
+                    durationSeconds: 300,
+                },
+                verifyingProgramId: B256::repeat_byte(0x07),
+                extraData: Bytes::from(extra_data),
+            },
+            signature: Bytes::from(vec![0x66; 64]),
+        }
+    }
+
+    /// A Solana public decryption of `handles`, one store each.
+    fn solana_public_request(handles: Vec<B256>) -> SolanaPublicDecryptionBody {
+        SolanaPublicDecryptionBody {
+            scheme: PublicDecryptionScheme::SolanaPublicDecryptV1.to_string(),
+            encryptedStores: vec![B256::repeat_byte(0x03); handles.len()],
+            ctHandles: handles,
+            extraData: Bytes::new(),
         }
     }
 
@@ -451,25 +493,8 @@ pub(crate) mod tests {
     #[test]
     fn solana_payload_gets_the_eip712_payload_checks() {
         let cfg = config();
-        let solana_request = |start_timestamp, extra_data: Vec<u8>| SolanaUserDecryptionRequest {
-            attestationType: AttestationType::SolanaSrfc38UserDecryptV1.to_string(),
-            payload: SolanaUserDecryptionPayload {
-                handles: vec![SolanaHandleEntry {
-                    handle: handle(1, EUINT64),
-                    ownerAddress: B256::repeat_byte(0x01),
-                    encryptedStore: B256::repeat_byte(0x03),
-                }],
-                userAddress: B256::repeat_byte(0x01),
-                publicKey: Bytes::from(vec![0x20; 32]),
-                allowedScopes: vec![],
-                requestValidity: RequestValidity {
-                    startTimestamp: start_timestamp,
-                    durationSeconds: 300,
-                },
-                verifyingProgramId: B256::repeat_byte(0x07),
-                extraData: Bytes::from(extra_data),
-            },
-            signature: Bytes::from(vec![0x66; 64]),
+        let solana_request = |start_timestamp, extra_data| {
+            solana_user_request(vec![handle(1, EUINT64)], start_timestamp, extra_data)
         };
         let validate = |request: SolanaUserDecryptionRequest| {
             validate_solana_user_decryption(request.id(), &request, &cfg)
@@ -505,32 +530,8 @@ pub(crate) mod tests {
             assert_eq!(error.code(), ErrorCode::Malformed);
         }
 
-        let public = SolanaPublicDecryptionBody {
-            scheme: PublicDecryptionScheme::SolanaPublicDecryptV1.to_string(),
-            ctHandles: vec![evm],
-            extraData: Bytes::new(),
-            encryptedStores: vec![B256::repeat_byte(0x03)],
-        };
-        let user = SolanaUserDecryptionRequest {
-            attestationType: AttestationType::SolanaSrfc38UserDecryptV1.to_string(),
-            payload: SolanaUserDecryptionPayload {
-                handles: vec![SolanaHandleEntry {
-                    handle: evm,
-                    ownerAddress: B256::repeat_byte(0x01),
-                    encryptedStore: B256::repeat_byte(0x03),
-                }],
-                userAddress: B256::repeat_byte(0x01),
-                publicKey: Bytes::from(vec![0x20; 32]),
-                allowedScopes: vec![],
-                requestValidity: RequestValidity {
-                    startTimestamp: 1_770_000_000,
-                    durationSeconds: 300,
-                },
-                verifyingProgramId: B256::repeat_byte(0x07),
-                extraData: Bytes::new(),
-            },
-            signature: Bytes::from(vec![0x66; 64]),
-        };
+        let public = solana_public_request(vec![evm]);
+        let user = solana_user_request(vec![evm], 1_770_000_000, vec![]);
         let not_solana = ValidationError::InvalidSolanaRequest(
             "solana request handles are on chain 1, which is not a Solana host chain".to_owned(),
         );
@@ -542,6 +543,30 @@ pub(crate) mod tests {
             validate_solana_user_decryption(user.id(), &user, &cfg).unwrap_err(),
             not_solana
         );
+    }
+
+    #[test]
+    fn a_solana_request_over_the_handle_cap_is_malformed() {
+        // Ebool handles keep the request within the bit budget, so the handle cap refuses it.
+        let solana_chain = zama_solana_acl::host_chain::solana_host_chain_id(12345);
+        let cfg = Config {
+            supported_chain_ids: vec![solana_chain],
+            ..config()
+        };
+        let over = MAX_REQUEST_HANDLES + 1;
+        let handles = vec![handle(solana_chain, EBOOL); over];
+        let public = solana_public_request(handles.clone());
+        let user = solana_user_request(handles, 1_770_000_000, vec![]);
+        let too_many = ValidationError::InvalidSolanaRequest(format!(
+            "solana request names {over} handles, expected at most {MAX_REQUEST_HANDLES}"
+        ));
+        for error in [
+            validate_solana_public_decryption(B256::ZERO, &public, &cfg).unwrap_err(),
+            validate_solana_user_decryption(user.id(), &user, &cfg).unwrap_err(),
+        ] {
+            assert_eq!(error, too_many);
+            assert_eq!(error.code(), ErrorCode::Malformed);
+        }
     }
 
     #[test]

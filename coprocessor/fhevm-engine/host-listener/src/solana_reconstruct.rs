@@ -91,7 +91,8 @@ pub struct HandleMismatch {
 ///
 /// `host_operations` already checked that the event holds one result per step and one seed
 /// per random step. Returns `None` when the walk still does not fit: an operand or dictionary
-/// reference out of range, or a `Scalar` where only an encrypted operand is valid.
+/// reference out of range, a `Scalar` where only an encrypted operand is valid, or a step with
+/// more than 256 operands, which `zama_host::operand_boundary_mask` refuses as the host does.
 /// `program_id` is the deployment followed, not the id this crate was compiled with;
 /// `chain_id` comes from the on-chain `HostConfig`.
 pub fn reconstruct_fhe_execute(
