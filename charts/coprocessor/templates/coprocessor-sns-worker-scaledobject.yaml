@@ -31,8 +31,8 @@ spec:
       metadata:
         targetQueryValue: {{ .Values.snsWorker.keda.readyTasksPerWorker | quote }}
         query: {{ .Files.Get "configs/sns-worker-scaling-query.sql" | quote }}
-        {{- with .Values.snsWorker.keda.connectionFromEnv }}
-        connectionFromEnv: {{ . }}
+        {{- if not .Values.snsWorker.keda.authenticationRef }}
+        connectionFromEnv: DATABASE_URL
         {{- end }}
       {{- with .Values.snsWorker.keda.authenticationRef }}
       authenticationRef:

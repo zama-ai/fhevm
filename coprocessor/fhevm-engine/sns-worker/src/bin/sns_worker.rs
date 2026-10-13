@@ -9,9 +9,9 @@ mod utils;
 
 /// SIGTERM (Kubernetes scale-in, rollout) and SIGINT stop the worker; tasks
 /// not yet processed stay pending for the other workers.
-fn handle_shutdown_signals(token: CancellationToken) {
-    let mut sigint = unix::signal(unix::SignalKind::interrupt()).unwrap();
-    let mut sigterm = unix::signal(unix::SignalKind::terminate()).unwrap();
+fn install_signal_handlers(token: CancellationToken) -> std::io::Result<()> {
+    let mut sigint = unix::signal(unix::SignalKind::interrupt())?;
+    let mut sigterm = unix::signal(unix::SignalKind::terminate())?;
     tokio::spawn(async move {
         tokio::select! {
             _ = sigint.recv() => {}
@@ -19,6 +19,7 @@ fn handle_shutdown_signals(token: CancellationToken) {
         }
         token.cancel();
     });
+    Ok(())
 }
 
 fn construct_config() -> Result<Config, fhevm_engine_common::database::DatabaseConnectionError> {
@@ -110,7 +111,10 @@ async fn main() {
             }
         };
 
-    handle_shutdown_signals(parent.clone());
+    if let Err(err) = install_signal_handlers(parent.clone()) {
+        error!(error = %err, "Failed to install signal handlers");
+        std::process::exit(1);
+    }
 
     sns_worker::run_all(config, parent, None)
         .await

@@ -2282,6 +2282,12 @@ async fn run_tfhe_worker_inner(
         .await
         {
             WORKER_ERRORS_COUNTER.inc();
+            // Stopping already: exiting the process here would also take down
+            // an embedding test binary whose database is being dropped.
+            if shutdown.is_cancelled() {
+                warn!(target: "tfhe_worker", error = %cycle_error, "Error while shutting down; owned chains expire with the lock TTL");
+                return Ok(());
+            }
             if cycle_error.is_fatal_connection() {
                 error!(target: "tfhe_worker", error = %cycle_error, "Fatal DB connection error; exiting for k8s restart");
                 fhevm_engine_common::telemetry::flush();
@@ -2719,11 +2725,13 @@ async fn tfhe_worker_cycle(
         };
         let Some(executed) = executed else {
             // Roll back first: a chain must not look free while this
-            // transaction can still write its results.
-            drop(trx);
-            info!(target: "tfhe_worker", "Shutting down — abandoned the open batch, releasing owned chains");
-            release_owned_locks_on_exit(&mut dcid_mngr).await;
-            return Ok(());
+            // transaction still holds its row locks. Dropping `trx` would
+            // only queue the rollback until `conn` is reused.
+            if let Err(error) = trx.rollback().await {
+                warn!(target: "tfhe_worker", { error = %error }, "rollback of the abandoned batch failed");
+            }
+            info!(target: "tfhe_worker", "Shutting down — abandoned the open batch");
+            continue; // the shutdown check at the top releases the chains
         };
         let mut tx_graph = match executed {
             Ok(tx_graph) => {
@@ -2809,7 +2817,10 @@ async fn tfhe_worker_cycle(
                 // notifications pending the select below would return
                 // immediately — hammering a Postgres whose distress caused
                 // the failure.
-                tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
+                tokio::select! {
+                    _ = shutdown.cancelled() => {}
+                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(5000)) => {}
+                }
                 immediately_poll_more_work = false;
                 continue;
             }

@@ -1,15 +1,13 @@
 use std::time::{Duration, Instant};
 
-use fhevm_engine_common::chain_id::ChainId;
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{Database as ListenerDatabase, Handle};
 
 use crate::tests::event_helpers::{
     insert_event, insert_trivial_encrypt, next_handle, next_handle_with_type, scalar_flag,
-    zero_address, TEST_CHAIN_ID,
+    setup_event_harness_with, wait_until_computed, zero_address, EventHarness,
 };
-use crate::tests::utils::{default_dependence_cache_size, setup_test_app_with};
 
 const FHE_UINT64: i32 = 5;
 // Long enough that the batch is still running when the worker is stopped.
@@ -19,37 +17,22 @@ const LONG_CHAIN: usize = 1500;
 /// hands its chain back at once, instead of holding it until the lease expires.
 #[tokio::test]
 async fn test_stop_mid_batch_releases_chain_without_committing() {
-    let app = setup_test_app_with(|args| {
+    let EventHarness {
+        app,
+        pool,
+        listener_db,
+    } = setup_event_harness_with(|args| {
         args.disable_dcid_locking = false;
         // The lease manager needs connections beside the listener and the batch.
         args.pg_pool_max_connections = 6;
     })
     .await
     .unwrap();
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(app.db_url())
-        .await
-        .unwrap();
-    let listener_db = ListenerDatabase::new(
-        &app.db_url().into(),
-        ChainId::try_from(TEST_CHAIN_ID).unwrap(),
-        default_dependence_cache_size(),
-    )
-    .await
-    .unwrap();
 
     // Server-key loading does not yield, so the stop would wait for it.
     // A short chain first puts the key in the worker's cache.
-    let (warmup_id, warmup_output) = stage_mul_chain(&listener_db, &pool, 2).await;
-    let started = Instant::now();
-    while !is_completed(&pool, &warmup_id, &warmup_output).await {
-        assert!(
-            started.elapsed() < Duration::from_secs(600),
-            "warm-up chain never completed"
-        );
-        tokio::time::sleep(Duration::from_millis(200)).await;
-    }
+    stage_mul_chain(&listener_db, &pool, 2).await;
+    wait_until_computed(&app).await.unwrap();
 
     let (chain_id, output) = stage_mul_chain(&listener_db, &pool, LONG_CHAIN).await;
     let started = Instant::now();

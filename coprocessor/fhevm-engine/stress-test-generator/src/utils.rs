@@ -491,7 +491,7 @@ pub async fn insert_tfhe_event(
 /// listener does: a new chain, or a waiting continuation of an existing one.
 /// Event helpers give each transaction its own chain; a dependent scenario
 /// moves its transactions into one chain.
-pub async fn file_into_dependence_chain(
+pub async fn add_to_dependence_chain(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     transaction_id: Handle,
     dependence_chain: Handle,

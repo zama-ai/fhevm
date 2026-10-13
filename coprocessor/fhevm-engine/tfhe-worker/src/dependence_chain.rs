@@ -61,8 +61,7 @@ static SLOW_LANE_CHAINS_GAUGE: LazyLock<IntGauge> = LazyLock::new(|| {
 const CLEANUP_AGE_THRESHOLD_SECONDS: u32 = 48 * 60 * 60; // 48 hours
 
 /// Dependence chains by acquisition state, database-wide: every worker
-/// reports the same values. The autoscaling signal is their sum: one worker
-/// per `--dependence-chains-per-batch` chains held, waiting or lease-expired.
+/// reports the same values. The chart's KEDA query scales on their sum.
 static CHAIN_QUEUE_GAUGE: LazyLock<IntGaugeVec> = LazyLock::new(|| {
     register_int_gauge_vec!(
         "coprocessor_dependence_chains",

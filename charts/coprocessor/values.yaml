@@ -1233,21 +1233,18 @@ tfheWorker:
             value: 40
             periodSeconds: 60
 
-  # Queue-based autoscaling with KEDA (the cluster must run KEDA). Asks for one
-  # worker per --dependence-chains-per-batch chains held, waiting or with an
-  # expired lease; that per-worker number is read from extraArgs (default 20).
-  # Use instead of hpa, not with it.
+  # Queue-based autoscaling with KEDA, instead of hpa (the cluster must run
+  # KEDA). Set chainsPerWorker to the worker's --dependence-chains-per-batch.
   keda:
     enabled: false
     minReplicas: 1
     maxReplicas: 6
     pollingInterval: 15
+    chainsPerWorker: 20
     # Replicas to hold while the queue cannot be read; unset keeps the count.
     fallbackReplicas:
-    # The scaling query connects with this env var of the worker container.
-    # A password-less URL (IAM auth) needs authenticationRef instead.
-    connectionFromEnv: DATABASE_URL
-    # TriggerAuthentication with a read-only role (connection or password).
+    # Unset, the query connects with the worker's DATABASE_URL. Name a
+    # TriggerAuthentication that supplies `connection` for a read-only role.
     authenticationRef: ""
     # Keeps workers between waves of a burst.
     behavior:
@@ -1573,9 +1570,8 @@ snsWorker:
             value: 40
             periodSeconds: 60
 
-  # Queue-based autoscaling with KEDA (the cluster must run KEDA): one worker
-  # per readyTasksPerWorker SnS tasks whose input ciphertext is ready. Choose
-  # readyTasksPerWorker from measured throughput. Use instead of hpa.
+  # Queue-based autoscaling with KEDA, instead of hpa; same settings as
+  # tfheWorker.keda. Choose readyTasksPerWorker from measured throughput.
   keda:
     enabled: false
     minReplicas: 1
@@ -1583,7 +1579,6 @@ snsWorker:
     pollingInterval: 15
     readyTasksPerWorker: 100
     fallbackReplicas:
-    connectionFromEnv: DATABASE_URL
     authenticationRef: ""
     behavior:
       scaleDown:

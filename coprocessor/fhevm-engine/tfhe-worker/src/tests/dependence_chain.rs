@@ -1503,11 +1503,8 @@ async fn test_chain_queue_counts_each_acquisition_state() {
     // count what the gauge counts.
     let configs = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../charts/coprocessor/configs");
-    let Ok(tfhe_query) = std::fs::read_to_string(configs.join("tfhe-worker-scaling-query.sql"))
-    else {
-        eprintln!("skipping chart queries: {} not present", configs.display());
-        return;
-    };
+    let tfhe_query =
+        std::fs::read_to_string(configs.join("tfhe-worker-scaling-query.sql")).unwrap();
     let scaling_count: i64 = sqlx::query_scalar(&tfhe_query)
         .fetch_one(&pool)
         .await

@@ -35,7 +35,7 @@ use stress_test_generator::{
 use stress_test_generator::{
     erc7984,
     utils::{
-        allow_handles, default_dependence_cache_size, file_into_dependence_chain,
+        add_to_dependence_chain, allow_handles, default_dependence_cache_size,
         get_ciphertext_digests, next_random_handle, Dependence, GeneratorKind, Transaction,
         DEF_TYPE,
     },
@@ -795,7 +795,7 @@ async fn generate_transaction(
             (e_total_paid, e_total_paid)
         }
     };
-    file_into_dependence_chain(
+    add_to_dependence_chain(
         &mut tx,
         transaction_id,
         dependence_chain.unwrap_or(transaction_id),
