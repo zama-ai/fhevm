@@ -25,7 +25,9 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::{HttpConfig, RelayerConfig};
-use kms_aggregator::{Aggregator, Caller, ConfigError, HttpClient, PublicDecrypt, UserDecrypt};
+use kms_aggregator::{
+    Aggregator, Caller, ConfigError, HttpClient, PublicDecrypt, RequestSigner, UserDecrypt,
+};
 
 /// Everything a request handler needs: the one shared state of the process. Built once in `main`, cloned per
 /// request (Arcs only). Both aggregators share one `Caller`: one HTTP client, one call semaphore.
@@ -40,11 +42,16 @@ pub struct App {
 }
 
 impl App {
-    /// Resolves the API keys from the environment, builds the shared HTTP client, semaphore and both aggregators.
-    pub fn new(config: &RelayerConfig, shutdown: CancellationToken) -> Result<Self, ConfigError> {
+    /// Loads the signing key (env var or AWS KMS), builds the shared HTTP client, semaphore and both aggregators.
+    pub async fn new(
+        config: &RelayerConfig,
+        shutdown: CancellationToken,
+    ) -> Result<Self, ConfigError> {
         let kms = &config.kms_aggregator;
         let client = Arc::new(HttpClient::new(kms)?);
-        let caller = Arc::new(Caller::new(kms, client)?);
+        let signer = Arc::new(RequestSigner::from_config(&kms.auth).await?);
+        tracing::info!(address = %signer.address(), "FhevmSig signer loaded");
+        let caller = Arc::new(Caller::new(kms, client, signer)?);
         Ok(Self {
             user_decrypt: Arc::new(Aggregator::new(
                 caller.clone(),
@@ -67,25 +74,23 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kms_aggregator::config::AuthConfig;
+    use crate::kms_aggregator::config::SignerConfig;
 
     const EXAMPLE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../config/config.yaml");
 
-    #[test]
-    fn app_needs_every_api_key() {
-        let config = RelayerConfig::load(EXAMPLE).unwrap();
-        let e = App::new(&config, CancellationToken::new()).err().unwrap();
-        assert!(e.0.contains("KMS_00_API_KEY is not set"), "{e}");
-    }
-
-    #[test]
-    fn app_builds_without_authentication() {
+    #[tokio::test]
+    async fn app_needs_the_signing_key() {
         let mut config = RelayerConfig::load(EXAMPLE).unwrap();
-        config.kms_aggregator.allow_insecure_http = true;
-        for endpoint in &mut config.kms_aggregator.endpoints {
-            endpoint.auth = AuthConfig::None;
-        }
-        let app = App::new(&config, CancellationToken::new()).unwrap();
-        let _shared = app.clone();
+        config.kms_aggregator.auth.signer = SignerConfig::PrivateKey {
+            value_env: "RELAYER_HTTP_TEST_UNSET_KEY".to_owned(),
+        };
+        let e = App::new(&config, CancellationToken::new())
+            .await
+            .err()
+            .unwrap();
+        assert!(
+            e.0.contains("RELAYER_HTTP_TEST_UNSET_KEY is not set"),
+            "{e}"
+        );
     }
 }

@@ -1,9 +1,11 @@
-//! One node call: semaphore permit → POST → decode → retry with backoff, cancellable and bounded by the deadline.
+//! One node call: sign → semaphore permit → POST → decode → retry with backoff, cancellable and bounded by the
+//! deadline.
 
 use std::sync::Arc;
 
 use bytes::Bytes;
 use kms_connector_api::ErrorCode;
+use reqwest::header::HeaderValue;
 use serde::de::DeserializeOwned;
 use tokio::sync::Semaphore;
 use tokio::time::{Duration, Instant, sleep};
@@ -12,6 +14,7 @@ use tracing::warn;
 
 use super::client::{AttemptError, ConnectorClient, Endpoint, decode};
 use super::config::{CallConfig, ConfigError, KmsAggregatorConfig};
+use super::signer::RequestSigner;
 
 /// Terminal outcome of one node call.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -42,30 +45,29 @@ pub struct CallResult<R> {
     pub result: Result<R, CallError>,
 }
 
-/// Shared by every aggregation: the HTTP client, the endpoints, the call semaphore and the retry policy.
+/// Shared by every aggregation: the HTTP client, the signer, the endpoints, the call semaphore and the retry policy.
 pub struct Caller {
     client: Arc<dyn ConnectorClient>,
+    signer: Arc<RequestSigner>,
     endpoints: Vec<Endpoint>,
     cfg: CallConfig,
     permits: Semaphore,
 }
 
 impl Caller {
-    /// Validates the config, resolves every endpoint (API keys from the environment) and sizes the semaphore.
+    /// Validates the config, resolves every endpoint and sizes the semaphore.
     pub fn new(
         cfg: &KmsAggregatorConfig,
         client: Arc<dyn ConnectorClient>,
+        signer: Arc<RequestSigner>,
     ) -> Result<Self, ConfigError> {
         // The deadline arithmetic and the semaphore size rely on these bounds.
         cfg.validate()?;
-        let endpoints = cfg
-            .endpoints
-            .iter()
-            .map(Endpoint::from_config)
-            .collect::<Result<_, _>>()?;
+        let endpoints = cfg.endpoints.iter().map(Endpoint::from).collect();
         let permits = Semaphore::new(cfg.max_concurrent_calls.min(Semaphore::MAX_PERMITS));
         Ok(Self {
             client,
+            signer,
             endpoints,
             cfg: cfg.call.clone(),
             permits,
@@ -113,25 +115,45 @@ impl Caller {
         deadline: Instant,
         attempts: &mut u32,
     ) -> Result<R, CallError> {
+        // Signed once for this node and reused by every attempt: `auth.validity` exceeds the deadline.
+        let mut authorization: Option<HeaderValue> = None;
         loop {
-            let Ok(permit) = self.permits.acquire().await else {
-                return Err(CallError::Failed(AttemptError::Transport(
-                    "call limiter closed".to_owned(),
-                )));
-            };
-            *attempts += 1;
-            let attempt_started = Instant::now();
-            let outcome = self
-                .client
-                .post(endpoint, route, body.clone())
+            let mut attempt_started = Instant::now();
+            let outcome = match self
+                .authorization(&mut authorization, endpoint, route, &body)
                 .await
-                .and_then(decode::<R>);
-            // Never hold a slot while sleeping.
-            drop(permit);
+            {
+                Err(failure) => {
+                    *attempts += 1;
+                    Err(failure)
+                }
+                Ok(header) => {
+                    // Signing happens outside the slot: a slow KMS signer never holds one.
+                    let Ok(permit) = self.permits.acquire().await else {
+                        return Err(CallError::Failed(AttemptError::Transport(
+                            "call limiter closed".to_owned(),
+                        )));
+                    };
+                    *attempts += 1;
+                    attempt_started = Instant::now();
+                    let outcome = self
+                        .client
+                        .post(endpoint, route, body.clone(), &header)
+                        .await
+                        .and_then(decode::<R>);
+                    // Never hold a slot while sleeping.
+                    drop(permit);
+                    outcome
+                }
+            };
             let failure = match outcome {
                 Ok(value) => return Ok(value),
                 Err(failure) => failure,
             };
+            // The node found our header expired (clock drift): the retry carries a fresh one.
+            if failure.code() == ErrorCode::AuthExpired {
+                authorization = None;
+            }
             let delay = self.cfg.retries.delay_for(*attempts);
             let fits = delay < deadline.saturating_duration_since(Instant::now());
             // Never retry an authentication rejection (our key is wrong for that node), a non-retryable
@@ -152,6 +174,26 @@ impl Caller {
             }
             sleep(delay).await;
         }
+    }
+
+    /// The node's `FhevmSig` header: the cached one, or a fresh signature for its audience.
+    async fn authorization(
+        &self,
+        cached: &mut Option<HeaderValue>,
+        endpoint: &Endpoint,
+        route: &str,
+        body: &[u8],
+    ) -> Result<HeaderValue, AttemptError> {
+        if let Some(header) = cached {
+            return Ok(header.clone());
+        }
+        let header = self
+            .signer
+            .sign(endpoint.audience, route, body)
+            .await
+            .map_err(AttemptError::Signer)?;
+        *cached = Some(header.clone());
+        Ok(header)
     }
 }
 
@@ -180,8 +222,16 @@ pub(crate) mod tests {
     use kms_connector_api::{ErrorCode, USER_DECRYPTION_ROUTE, UserDecryptionResponse};
 
     use super::*;
-    use crate::kms_aggregator::config::tests::valid;
+    use std::collections::HashSet;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use alloy::primitives::{Address, B256, ChainId, Signature, keccak256};
+    use alloy::signers::Signer;
+    use alloy::signers::local::PrivateKeySigner;
+
+    use crate::kms_aggregator::config::tests::{audience, valid};
     use crate::kms_aggregator::mock::{Fixed, MockClient, Reply, USER_REQUEST_JSON};
+    use crate::kms_aggregator::signer::tests::{test_domain, test_signer};
     use crate::logging::capture::{Sink, capture};
 
     const OK: Reply = Reply::Fixed(Fixed::Ok);
@@ -388,14 +438,114 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn new_rejects_an_invalid_config_and_a_missing_key() {
+    fn new_rejects_an_invalid_config() {
         let mock = MockClient::new(vec![vec![OK]], ms(1));
         let mut cfg = valid(1);
         cfg.call.timeout = Duration::ZERO;
-        let e = Caller::new(&cfg, mock.clone()).err().unwrap();
+        let e = Caller::new(&cfg, mock, test_signer()).err().unwrap();
         assert!(e.0.contains("call.timeout"), "{e}");
-        let e = Caller::new(&valid(1), mock).err().unwrap();
-        assert!(e.0.contains("KMS_00_API_KEY is not set"), "{e}");
+    }
+
+    /// A local signer counting its signatures.
+    struct CountingSigner {
+        inner: PrivateKeySigner,
+        signatures: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl Signer for CountingSigner {
+        async fn sign_hash(&self, hash: &B256) -> alloy::signers::Result<Signature> {
+            self.signatures.fetch_add(1, Ordering::SeqCst);
+            self.inner.sign_hash(hash).await
+        }
+
+        fn address(&self) -> Address {
+            self.inner.address()
+        }
+
+        fn chain_id(&self) -> Option<ChainId> {
+            None
+        }
+
+        fn set_chain_id(&mut self, _chain_id: Option<ChainId>) {}
+    }
+
+    /// One mock node with `script` and `max_retries`, signing with a `CountingSigner`.
+    async fn run_counting(script: Vec<Reply>, max_retries: u32) -> (Arc<MockClient>, usize) {
+        let counting = Arc::new(CountingSigner {
+            inner: PrivateKeySigner::random(),
+            signatures: AtomicUsize::new(0),
+        });
+        let signer = Arc::new(RequestSigner::new(
+            counting.clone(),
+            test_domain(),
+            Duration::from_secs(60),
+        ));
+        let mock = MockClient::new(vec![script], ms(10));
+        let caller = mock
+            .clone()
+            .caller_with(Duration::from_secs(5), max_retries, signer);
+        let result: CallResult<UserDecryptionResponse> = caller
+            .call(
+                &caller.endpoints()[0],
+                USER_DECRYPTION_ROUTE,
+                Bytes::from_static(USER_REQUEST_JSON.as_bytes()),
+                Instant::now() + Duration::from_secs(5),
+                CancellationToken::new(),
+            )
+            .await;
+        assert!(result.result.is_ok(), "{:?}", result.result.err());
+        (mock, counting.signatures.load(Ordering::SeqCst))
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn each_node_gets_its_own_header_reused_across_retries() {
+        let mock = MockClient::new(vec![vec![RATE, OK], vec![OK]], ms(10));
+        let caller = mock.clone().caller(Duration::from_secs(5), 1);
+        for endpoint in caller.endpoints() {
+            let result: CallResult<UserDecryptionResponse> = caller
+                .call(
+                    endpoint,
+                    USER_DECRYPTION_ROUTE,
+                    Bytes::from_static(USER_REQUEST_JSON.as_bytes()),
+                    Instant::now() + Duration::from_secs(5),
+                    CancellationToken::new(),
+                )
+                .await;
+            assert!(result.result.is_ok());
+        }
+        let node0 = mock.authorizations(0);
+        assert_eq!(node0.len(), 2);
+        assert_eq!(node0[0], node0[1], "a retry reuses the header");
+
+        let now = fhevm_sig_auth::unix_now();
+        for node in 0..2 {
+            let header = &mock.authorizations(node)[0];
+            let signer = fhevm_sig_auth::FhevmSigVerifier::new(
+                test_domain(),
+                audience(node),
+                HashSet::new(),
+            )
+            .recover(
+                Some(header.as_bytes()),
+                &fhevm_sig_auth::PathAndQuery::from_static(USER_DECRYPTION_ROUTE),
+                now,
+            );
+            let digest = keccak256(USER_REQUEST_JSON.as_bytes());
+            assert_eq!(signer, Ok((test_signer().address(), digest)), "node {node}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn auth_expired_is_retried_with_a_fresh_signature() {
+        let (mock, signatures) =
+            run_counting(vec![Reply::Error(ErrorCode::AuthExpired), OK], 1).await;
+        assert_eq!(mock.attempts(0), 2);
+        assert_eq!(signatures, 2);
+
+        let (mock, signatures) = run_counting(vec![RATE, OK], 1).await;
+        assert_eq!(mock.attempts(0), 2);
+        assert_eq!(signatures, 1);
     }
 
     #[test]

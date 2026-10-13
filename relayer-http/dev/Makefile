@@ -6,8 +6,6 @@ REPO    := $(abspath ../..)
 KMS     ?= $(shell docker ps --format '{{.Names}}' 2>/dev/null | grep -cE '^kms-connector(-[0-9]+)?-endpoint$$')
 T       ?= $(shell grep -s '^KMS_THRESHOLD=' $(REPO)/.fhevm/runtime/env/test-suite.env | cut -d= -f2)
 CONFIG  ?= $(ROOT)/dev/config/kms-$(KMS).yaml
-API_KEY ?= fhevm-e2e-kms-connector-api-key
-export API_KEY
 CLIPPY  := cargo clippy --workspace --all-targets -- -W clippy::perf -W clippy::suspicious -W clippy::style -D warnings
 
 .PHONY: help fmt fmt-fix clippy test check build up down status run config public-decrypt user-decrypt
