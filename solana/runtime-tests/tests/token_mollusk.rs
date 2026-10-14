@@ -3266,7 +3266,9 @@ fn run_burn(
         fixture.owner_attestation(amount_seed, 0),
         pending_burn,
     );
-    check_token_instruction(context, &ix, &[Check::success()]);
+    let result = check_token_instruction(context, &ix, &[Check::success()]);
+    let balance_event: token::BalanceHandleUpdatedEvent = only_event(&result);
+    assert_eq!(balance_event.encrypted_store, fixture.balance_store);
     read_store_handle(
         context,
         fixture.burned_amount_store,
