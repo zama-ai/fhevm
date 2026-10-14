@@ -1,7 +1,7 @@
 //! The Pingora [`ProxyHttp`] implementation of [`Proxy`]: the request lifecycle of the proxy.
 
 use crate::core::{Proxy, Route, match_route};
-use alloy::primitives::{Address, B256, Keccak256, keccak256};
+use alloy::primitives::{Address, B256, KECCAK256_EMPTY, Keccak256};
 use async_trait::async_trait;
 use bytes::Bytes;
 use fhevm_sig_auth::AuthError;
@@ -173,7 +173,7 @@ impl ProxyHttp for Proxy {
             return Ok(true);
         }
 
-        if session.is_body_empty() && keccak256([]) != body_digest {
+        if session.is_body_empty() && KECCAK256_EMPTY != body_digest {
             self.respond_with_error(session, auth_error_response(&AuthError::BodyMismatch))
                 .await?;
             return Ok(true);
