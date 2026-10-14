@@ -4708,13 +4708,6 @@
                 32
               ]
             }
-          },
-          {
-            "name": "burned_encrypted_store",
-            "docs": [
-              "ZamaHost ACL record for `burned_handle`."
-            ],
-            "type": "pubkey"
           }
         ]
       }
@@ -5497,13 +5490,6 @@
                 32
               ]
             }
-          },
-          {
-            "name": "burned_encrypted_store",
-            "docs": [
-              "Shared `burned_amount` EncryptedStore account for the token account."
-            ],
-            "type": "pubkey"
           }
         ]
       }
