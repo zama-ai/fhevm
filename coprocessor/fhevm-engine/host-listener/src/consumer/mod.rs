@@ -456,11 +456,17 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         client.cancel_token.clone(),
     );
 
-    // ...and when it does, stop reading. Only the two read flows are
-    // cancelled: the stats observer and the identity migration below are
-    // children of the parent token and keep running until shutdown. A group
-    // cannot be released while something is still blocked in `XREADGROUP` on
-    // it, so the release happens after both flows have returned, not here.
+    // ...and when it does, stop reading. This watcher cancels only the two
+    // read flows, so the stats observer and the identity migration below are
+    // untouched by retirement itself. They do not outlive it for long: once
+    // the first read flow returns, the loop below cancels the parent token and
+    // takes every remaining child down with it. An interrupted migration is
+    // safe to cut short — it is spawned again on the next start, before the
+    // retirement check — but nothing here keeps it running to completion.
+    //
+    // A group cannot be released while something is still blocked in
+    // `XREADGROUP` on it, so the release happens after both flows have
+    // returned, not here.
     spawn_retirement_watcher(
         stack_mode.clone(),
         client.clone(),
