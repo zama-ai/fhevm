@@ -2465,7 +2465,8 @@ fn mollusk_confidential_transfer_rejects_foreign_zama_event_authority_seeds() {
 /// Mint A's token accounts with mint B's balance stores, so the write would land in B's scope. B is
 /// a real `ConfidentialMint` owned by the token program, and the stores sit at the addresses B
 /// derives, so the token-account seeds, which bind each account to its mint, refuse the pair
-/// (fhevm-internal#1994).
+/// (fhevm-internal#1994). The `to_account` rows keep mint A and A's sender but pay mint B's token
+/// account, with the store A derives for it, so only the recipient's seeds can refuse them.
 #[test]
 fn mollusk_transfers_reject_another_confidential_mint() {
     let fixture = TokenFixture::new();
@@ -2487,6 +2488,26 @@ fn mollusk_transfers_reject_another_confidential_mint() {
     };
     let alice_store = other_store(fixture.alice_token, fixture.alice_initial);
     let bob_store = other_store(fixture.bob_token, fixture.bob_initial);
+    let recipient = other.bob_token;
+    accounts.insert(
+        recipient,
+        other.confidential_token_account(other.bob_owner, other.bob_balance_store),
+    );
+    fixture
+        .extra_token_owners
+        .borrow_mut()
+        .insert(recipient, other.bob_owner);
+    let (recipient_store, store) = new_test_state(
+        fixture.app(),
+        recipient,
+        token::balance_key(),
+        other.bob_initial,
+    );
+    accounts.insert(recipient_store, encrypted_store_account(&store));
+    fixture
+        .state_keys
+        .borrow_mut()
+        .insert(recipient_store, token::balance_key());
     let amount_store = seed_amount_store(
         &fixture,
         &mut accounts,
@@ -2528,6 +2549,32 @@ fn mollusk_transfers_reject_another_confidential_mint() {
         }
         (name, ix)
     });
+    let mut rows = Vec::from(rows);
+    rows.extend([
+        (
+            "confidential_transfer to_account",
+            confidential_transfer_ix(
+                &fixture,
+                fixture.alice_token,
+                recipient,
+                fixture.alice_balance_store,
+                recipient_store,
+                sender_attestation(&fixture, 37, 0),
+            ),
+        ),
+        (
+            "confidential_transfer_from_value to_account",
+            confidential_transfer_from_value_ix(
+                &fixture,
+                fixture.owner,
+                fixture.alice_token,
+                recipient,
+                fixture.alice_balance_store,
+                recipient_store,
+                amount_store,
+            ),
+        ),
+    ]);
     assert_eq!(not_refused_by_seeds(&context, &rows), []);
     assert_eq!(
         read_store_handle(&context, alice_store, token::balance_key()),
