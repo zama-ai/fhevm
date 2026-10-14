@@ -4,7 +4,7 @@ import { SHIFT_CASES, decryptBatch, useOperatorEdgeCaseFixture } from './operato
 import { expectedRotl, expectedRotr, expectedShl, expectedShr } from './shiftSemantics';
 
 describe('FHEVM manual operations - shift and rotate edge cases', function () {
-  useOperatorEdgeCaseFixture();
+  useOperatorEdgeCaseFixture(109);
 
   SHIFT_CASES.forEach(({ bits, valueType, value, amounts }) => {
     amounts.forEach((amount) => {

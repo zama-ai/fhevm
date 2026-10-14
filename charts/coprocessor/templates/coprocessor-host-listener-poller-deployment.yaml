@@ -117,7 +117,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- with $.Values.commonConfig.databaseEndpoint }}
@@ -126,7 +126,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- if eq (include "coprocessorDatabaseAuthMode" $) "password" }}
@@ -136,7 +136,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- end }}
@@ -153,7 +153,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" $) "true" }}
@@ -166,7 +166,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- if or $chain.httpUrl $chain.httpUrlValueFrom }}
@@ -175,7 +175,7 @@ spec:
               value: {{ $chain.httpUrl | quote }}
               {{- else if $chain.httpUrlValueFrom }}
               valueFrom:
-                {{- toYaml $chain.httpUrlValueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $chain.httpUrlValueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- if or $chain.aclContractAddress $chain.aclContractAddressValueFrom }}
@@ -184,7 +184,7 @@ spec:
               value: {{ $chain.aclContractAddress | quote }}
               {{- else if $chain.aclContractAddressValueFrom }}
               valueFrom:
-                {{- toYaml $chain.aclContractAddressValueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $chain.aclContractAddressValueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- if or $chain.fhevmExecutorContractAddress $chain.fhevmExecutorContractAddressValueFrom }}
@@ -193,7 +193,7 @@ spec:
               value: {{ $chain.fhevmExecutorContractAddress | quote }}
               {{- else if $chain.fhevmExecutorContractAddressValueFrom }}
               valueFrom:
-                {{- toYaml $chain.fhevmExecutorContractAddressValueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $chain.fhevmExecutorContractAddressValueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- if or $chain.kmsGenerationContractAddress $chain.kmsGenerationContractAddressValueFrom }}
@@ -202,7 +202,7 @@ spec:
               value: {{ $chain.kmsGenerationContractAddress | quote }}
               {{- else if $chain.kmsGenerationContractAddressValueFrom }}
               valueFrom:
-                {{- toYaml $chain.kmsGenerationContractAddressValueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $chain.kmsGenerationContractAddressValueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- if or $chain.protocolConfigContractAddress $chain.protocolConfigContractAddressValueFrom }}
@@ -211,7 +211,7 @@ spec:
               value: {{ $chain.protocolConfigContractAddress | quote }}
               {{- else if $chain.protocolConfigContractAddressValueFrom }}
               valueFrom:
-                {{- toYaml $chain.protocolConfigContractAddressValueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $chain.protocolConfigContractAddressValueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- with $.Values.commonConfig.canonicalProtocolConfigChainId }}
@@ -231,13 +231,13 @@ spec:
               {{- end }}
           {{- end }}
           {{- with $.Values.commonConfig.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
           {{- end }}
           {{- with $.Values.hostListenerPollerShared.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
           {{- end }}
           {{- with $chain.hostListenerPoller.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
           {{- end }}
           ports:
             {{- range $portName, $portValue := $.Values.hostListenerPollerShared.ports }}

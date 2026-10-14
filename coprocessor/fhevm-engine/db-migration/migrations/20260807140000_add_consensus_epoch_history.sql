@@ -2,7 +2,7 @@
 -- Green resolves its independent copy through `"gcs-<version>",public`.
 -- The GCS copy is merged into public at cutover.
 --
--- Genesis is `legacy`. Later identifiers are `{version}/block_{n}` from the
+-- Genesis is `legacy`. Later identifiers are `{consensus_version}/block_{n}` from the
 -- finalized CoprocessorUpgradeProposed log, not a shared counter and not
 -- gwStartBlock. The log is only ingested on
 -- CANONICAL_PROTOCOL_CONFIG_CHAIN_ID, so the chain id is omitted.
@@ -26,6 +26,13 @@ CREATE TABLE IF NOT EXISTS consensus_epoch_history
     proposal_id BYTEA NULL CHECK (proposal_id IS NULL OR OCTET_LENGTH(proposal_id) = 32),
     proposal_block BIGINT NULL CHECK (proposal_block IS NULL OR proposal_block >= 0),
     stack_version TEXT NULL,
+    -- Protocol version of the epoch's stack. An upgrade's is the live
+    -- versioning.consensus_version plus one when the proposal was ingested;
+    -- binaries compare it with their compiled CONSENSUS_PROTOCOL_VERSION and
+    -- refuse an upgrade epoch without it. `legacy` holds the version live
+    -- before the first upgrade (see below); healing stamps it on ciphertexts
+    -- downloaded from that epoch's objects.
+    consensus_version BIGINT NULL,
     outcome TEXT NOT NULL CHECK (outcome IN ('initial', 'pending', 'succeeded', 'failed')),
     allocated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at TIMESTAMPTZ NULL,
@@ -38,9 +45,11 @@ CREATE TABLE IF NOT EXISTS consensus_epoch_history
 );
 
 -- Existing deployments began in the genesis epoch `legacy`. It is a completed
--- baseline, not an upgrade attempt, so it has no proposal identity.
-INSERT INTO consensus_epoch_history (consensus_epoch, outcome, completed_at)
-VALUES ('legacy', 'initial', NOW())
+-- baseline, not an upgrade attempt, so it has no proposal identity. Its
+-- protocol version is 1, the one existing networks run; a new database's
+-- version setup (bootstrap_versioning) replaces it with the compiled one.
+INSERT INTO consensus_epoch_history (consensus_epoch, consensus_version, outcome, completed_at)
+VALUES ('legacy', 1, 'initial', NOW())
 ON CONFLICT (consensus_epoch) DO NOTHING;
 
 -- A replay of one accepted proposal must return the same identifier. A later

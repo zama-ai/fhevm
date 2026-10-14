@@ -21,7 +21,7 @@ use alloy_signer_local::PrivateKeySigner;
 use ciphertext_attestation::{
     BoundedClient, CiphertextAttestation, CiphertextAttestationPayload, CiphertextFormat,
     ConsensusCheckError, CoprocessorEntry, CoprocessorRegistrySnapshot, ResolvedConsensus,
-    S3_METADATA_ATTESTATION_HEADER, Version, fetch_attestations_and_check_consensus,
+    S3_METADATA_ATTESTATION_HEADER, ciphertext::Version, fetch_attestations_and_check_consensus,
 };
 use std::{num::NonZeroUsize, time::Duration};
 use wiremock::{
