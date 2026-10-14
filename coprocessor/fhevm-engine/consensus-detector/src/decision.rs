@@ -181,6 +181,35 @@ pub(crate) async fn put(
     }
 }
 
+/// Read this operator's own record from its own bucket. The record names the
+/// members, so a restart recovers the attempt without the chain.
+pub(crate) async fn get_own(
+    client: &Client,
+    bucket: &str,
+    signer: Address,
+    proposal_id: &[u8],
+    proposal_block: i64,
+) -> Option<Record> {
+    let key = key(proposal_id, proposal_block);
+    let object = client
+        .get_object()
+        .bucket(bucket)
+        .key(&key)
+        .send()
+        .await
+        .ok()?;
+    let body = object.body.collect().await.ok()?.into_bytes();
+    let record: Record = serde_json::from_slice(&body).ok()?;
+    if !record.is_valid_from(signer, proposal_id, proposal_block) {
+        warn!(
+            bucket,
+            key, "own decision record failed verification; ignoring"
+        );
+        return None;
+    }
+    Some(record)
+}
+
 /// Read one member's record. An absent record, an unreadable one and one that
 /// fails verification are the same answer: none of them lets this operator act.
 pub(crate) async fn get(
