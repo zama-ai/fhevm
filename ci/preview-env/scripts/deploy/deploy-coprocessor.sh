@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install BCS (and optional GCS) coprocessor releases.
 # Env: NAMESPACE, NB_COPROCESSOR, BLUE_GREEN, GPU, DEPLOY_POLYGON, OBSERVABILITY,
-# AUTOMATED_TESTS, COPROCESSOR_CHART, TAGS_JSON, BCS_IMAGE_TAG, GPU_IMAGE_TAG,
+# AUTOMATED_TESTS, INSECURE_KEYGEN, COPROCESSOR_CHART, TAGS_JSON, BCS_IMAGE_TAG, GPU_IMAGE_TAG,
 # OTLP_ENDPOINT, COPROC_WALLETS_JSON, GCS_STACK_VERSION (pod label for the GCS
 # fleet; optional).
 set -euo pipefail
@@ -72,6 +72,10 @@ party_common() {
     --set-string "txSender.wallet.secret.value=${privkey}"
     --set-string "snsWorker.wallet.secret.value=${privkey}"
   )
+  # Each zkproof task loads the Default server key; at 8Gi the CPU worker is OOM-killed.
+  if [[ "${INSECURE_KEYGEN:-false}" == "true" && "${GPU:-false}" != "true" ]]; then
+    common_args+=(--set-string "zkProofWorker.resources.limits.memory=32Gi")
+  fi
   if [[ "${OBSERVABILITY}" == "true" ]]; then
     common_args+=(
       --set "commonConfig.tracing.enabled=true"
