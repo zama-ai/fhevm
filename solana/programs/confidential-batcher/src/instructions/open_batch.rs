@@ -108,18 +108,20 @@ pub(crate) fn open_batch<'info>(
                     mint: mint.to_account_info(),
                     token_account: token_account.to_account_info(),
                     balance_encrypted_store: balance_store.to_account_info(),
-                    zama_event_authority: accounts.zama_event_authority.to_account_info(),
-                    transient_store: accounts.transient_store.to_account_info(),
-                    instructions: accounts.instructions.to_account_info(),
-                    zama_program: accounts.zama_program.to_account_info(),
-                    host_config: accounts.host_config.to_account_info(),
+                    zama: ct::cpi::accounts::ZamaHostCpi {
+                        host_config: accounts.host_config.to_account_info(),
+                        zama_event_authority: accounts.zama_event_authority.to_account_info(),
+                        transient_store: accounts.transient_store.to_account_info(),
+                        instructions: accounts.instructions.to_account_info(),
+                        zama_program: accounts.zama_program.to_account_info(),
+                        hcu_block_meter: hcu_block_meter
+                            .as_ref()
+                            .map(|account| account.to_account_info()),
+                        hcu_trusted_app_record: hcu_trusted_app_record
+                            .as_ref()
+                            .map(|account| account.to_account_info()),
+                    },
                     system_program: accounts.system_program.to_account_info(),
-                    hcu_block_meter: hcu_block_meter
-                        .as_ref()
-                        .map(|account| account.to_account_info()),
-                    hcu_trusted_app_record: hcu_trusted_app_record
-                        .as_ref()
-                        .map(|account| account.to_account_info()),
                     event_authority: accounts
                         .confidential_token_event_authority
                         .to_account_info(),

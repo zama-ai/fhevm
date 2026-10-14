@@ -103,7 +103,8 @@ const targets = [
     programAddress(program, anchorIdl) {
       const zamaHostProgramAddress = anchorIdl.instructions
         .find(({ name }) => name === 'confidential_transfer')
-        ?.accounts.find(({ name }) => name === 'zama_program')?.address;
+        ?.accounts.flatMap((account) => account.accounts ?? [account])
+        .find(({ name }) => name === 'zama_program')?.address;
       if (typeof zamaHostProgramAddress !== 'string') {
         throw new Error('confidential_transfer.zama_program.address is missing from the committed IDL');
       }

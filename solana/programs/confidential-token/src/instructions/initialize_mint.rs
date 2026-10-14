@@ -22,30 +22,9 @@ pub struct InitializeMint<'info> {
     /// CHECK: initialized and validated by the Zama host program CPI.
     #[account(mut)]
     pub total_supply_encrypted_store: UncheckedAccount<'info>,
-    /// CHECK: Anchor event CPI authority for the Zama host program.
-    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
-    pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction transient store, validated by ZamaHost.
-    #[account(mut)]
-    pub transient_store: UncheckedAccount<'info>,
-    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
-    pub instructions: UncheckedAccount<'info>,
-    /// ZamaHost program used to create the initial total-supply handle.
-    pub zama_program: Program<'info, ZamaHost>,
-    /// ZamaHost config used for handle derivation.
-    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
-    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for account creation.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
-    /// metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
-    #[account(mut)]
-    pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
-    /// means the mint is metered.
-    pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+    pub zama: ZamaHostCpi<'info>,
 }
 
 /// Initializes a confidential mint and creates its zero encrypted total supply, allowed to nobody
@@ -62,7 +41,7 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         ctx.accounts.mint.to_account_info(),
         ctx.accounts.total_supply_encrypted_store.to_account_info(),
         ctx.accounts.authority.to_account_info(),
-        ctx.accounts.host_config.to_account_info(),
+        ctx.accounts.zama.host_config.to_account_info(),
         ctx.accounts.system_program.to_account_info(),
     )?;
     let total_supply_encrypted_store = ctx.accounts.total_supply_encrypted_store.key();
@@ -85,19 +64,13 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
     fhe::execute(fhe::Execute {
         context: fhe::ExecuteContext {
             payer: &ctx.accounts.authority,
-            event_authority: &ctx.accounts.zama_event_authority,
-            transient_store: &ctx.accounts.transient_store,
-            instructions: &ctx.accounts.instructions,
-            zama_program: &ctx.accounts.zama_program,
-            host_config: &ctx.accounts.host_config,
+            zama: &ctx.accounts.zama,
             deny_scope_records: fhe::deny_scope_records(
-                &ctx.accounts.host_config,
+                &ctx.accounts.zama.host_config,
                 ctx.remaining_accounts,
                 [token_app(mint_key)],
             )?,
             system_program: &ctx.accounts.system_program,
-            hcu_block_meter: ctx.accounts.hcu_block_meter.as_ref(),
-            hcu_trusted_app_record: ctx.accounts.hcu_trusted_app_record.as_ref(),
         },
         accounts: &execution_accounts,
         execution,

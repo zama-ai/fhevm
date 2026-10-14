@@ -212,22 +212,24 @@ fn pay_claim<'info>(
                 amount_store: None,
                 amount_authority: None,
 
-                zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
-                transient_store: ctx.accounts.transient_store.to_account_info(),
-                instructions: ctx.accounts.instructions.to_account_info(),
-                zama_program: ctx.accounts.zama_program.to_account_info(),
-                host_config: ctx.accounts.host_config.to_account_info(),
+                zama: ct::cpi::accounts::ZamaHostCpi {
+                    host_config: ctx.accounts.host_config.to_account_info(),
+                    zama_event_authority: ctx.accounts.zama_event_authority.to_account_info(),
+                    transient_store: ctx.accounts.transient_store.to_account_info(),
+                    instructions: ctx.accounts.instructions.to_account_info(),
+                    zama_program: ctx.accounts.zama_program.to_account_info(),
+                    hcu_block_meter: ctx
+                        .accounts
+                        .payout_mint_hcu_block_meter
+                        .as_ref()
+                        .map(|account| account.to_account_info()),
+                    hcu_trusted_app_record: ctx
+                        .accounts
+                        .payout_mint_hcu_trusted_app_record
+                        .as_ref()
+                        .map(|account| account.to_account_info()),
+                },
                 system_program: ctx.accounts.system_program.to_account_info(),
-                hcu_block_meter: ctx
-                    .accounts
-                    .payout_mint_hcu_block_meter
-                    .as_ref()
-                    .map(|account| account.to_account_info()),
-                hcu_trusted_app_record: ctx
-                    .accounts
-                    .payout_mint_hcu_trusted_app_record
-                    .as_ref()
-                    .map(|account| account.to_account_info()),
                 event_authority: ctx
                     .accounts
                     .confidential_token_event_authority

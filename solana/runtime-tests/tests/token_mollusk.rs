@@ -470,6 +470,20 @@ impl TokenFixture {
 
 // Instruction builders
 
+/// ZamaHost accounts of a token FHE instruction whose `payer` funds the transient store, without
+/// the optional HCU accounts.
+fn zama_host_cpi(payer: Pubkey, host_config: Pubkey) -> token::accounts::ZamaHostCpi {
+    token::accounts::ZamaHostCpi {
+        host_config,
+        zama_event_authority: event_authority(host::id()),
+        transient_store: host::transient_store_address(payer).0,
+        instructions: solana_sdk::sysvar::instructions::ID,
+        zama_program: host::id(),
+        hcu_block_meter: None,
+        hcu_trusted_app_record: None,
+    }
+}
+
 fn initialize_mint_ix(
     authority: Pubkey,
     mint: Pubkey,
@@ -480,8 +494,7 @@ fn initialize_mint_ix(
     anchor_ix(
         token::id(),
         token::accounts::InitializeMint {
-            transient_store: host::transient_store_address(authority).0,
-            instructions: solana_sdk::sysvar::instructions::ID,
+            zama: zama_host_cpi(authority, host_config),
             authority,
             mint,
             underlying_mint,
@@ -492,12 +505,7 @@ fn initialize_mint_ix(
                 token::total_supply_authority_address(mint).0,
             )
             .0,
-            zama_event_authority: event_authority(host::id()),
-            zama_program: host::id(),
-            host_config,
             system_program: system_program::ID,
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -515,19 +523,13 @@ fn initialize_token_account_ix(
     anchor_ix(
         token::id(),
         token::accounts::InitializeTokenAccount {
-            transient_store: host::transient_store_address(payer).0,
-            instructions: solana_sdk::sysvar::instructions::ID,
+            zama: zama_host_cpi(payer, host_config),
             payer,
             owner,
             mint,
             token_account,
             balance_encrypted_store: token::encrypted_store_address(mint, token_account).0,
-            zama_event_authority: event_authority(host::id()),
-            zama_program: host::id(),
-            host_config,
             system_program: system_program::ID,
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -561,8 +563,7 @@ fn confidential_self_transfer_with_result_grant_ix(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransfer {
-            transient_store: host::transient_store_address(fixture.owner).0,
-            instructions: solana_sdk::sysvar::instructions::ID,
+            zama: zama_host_cpi(fixture.owner, fixture.host_config),
             owner: fixture.owner,
             payer: fixture.owner,
             mint: fixture.mint,
@@ -573,12 +574,7 @@ fn confidential_self_transfer_with_result_grant_ix(
             to_account: fixture.alice_token,
             from_store: fixture.alice_balance_store,
             to_store: fixture.alice_balance_store,
-            zama_event_authority: event_authority(host::id()),
-            zama_program: host::id(),
-            host_config: fixture.host_config,
             system_program: system_program::ID,
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
             result_store: Some(result_store),
 
             event_authority: event_authority(token::id()),
@@ -631,8 +627,11 @@ fn confidential_transfer_ix_with_block_cap_accounts(
     let mut ix = anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransfer {
-            transient_store: host::transient_store_address(fixture.owner).0,
-            instructions: solana_sdk::sysvar::instructions::ID,
+            zama: token::accounts::ZamaHostCpi {
+                hcu_block_meter,
+                hcu_trusted_app_record,
+                ..zama_host_cpi(fixture.owner, fixture.host_config)
+            },
             owner: fixture.owner,
             payer: fixture.owner,
             mint: fixture.mint,
@@ -643,12 +642,7 @@ fn confidential_transfer_ix_with_block_cap_accounts(
             to_account: to_token,
             from_store,
             to_store,
-            zama_event_authority: event_authority(host::id()),
-            zama_program: host::id(),
-            host_config: fixture.host_config,
             system_program: system_program::ID,
-            hcu_block_meter,
-            hcu_trusted_app_record,
             result_store: None,
 
             event_authority: event_authority(token::id()),
@@ -681,8 +675,7 @@ fn confidential_transfer_from_value_ix(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialTransferFromValue {
-            transient_store: host::transient_store_address(signer_owner).0,
-            instructions: solana_sdk::sysvar::instructions::ID,
+            zama: zama_host_cpi(signer_owner, fixture.host_config),
             owner: signer_owner,
             payer: signer_owner,
             mint: fixture.mint,
@@ -696,12 +689,7 @@ fn confidential_transfer_from_value_ix(
             amount_store: Some(amount_store),
             amount_authority: None,
 
-            zama_event_authority: event_authority(host::id()),
-            zama_program: host::id(),
-            host_config: fixture.host_config,
             system_program: system_program::ID,
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -747,19 +735,13 @@ fn allow_balance_viewers_ix(
     anchor_ix(
         token::id(),
         token::accounts::AllowBalanceViewers {
-            transient_store: host::transient_store_address(owner).0,
-            instructions: solana_sdk::sysvar::instructions::ID,
+            zama: zama_host_cpi(owner, host_config),
             payer: owner,
             owner,
             mint,
             token_account,
             balance_store,
-            host_config,
-            zama_event_authority: event_authority(host::id()),
-            zama_program: host::id(),
             system_program: system_program::ID,
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -775,19 +757,13 @@ fn allow_total_supply_viewers_ix(
     anchor_ix(
         token::id(),
         token::accounts::AllowTotalSupplyViewers {
-            transient_store: host::transient_store_address(authority).0,
-            instructions: solana_sdk::sysvar::instructions::ID,
+            zama: zama_host_cpi(authority, fixture.host_config),
             payer: authority,
             authority,
             mint: fixture.mint,
             total_supply_authority: fixture.total_supply_authority,
             total_supply_store: fixture.total_supply_store,
-            host_config: fixture.host_config,
-            zama_event_authority: event_authority(host::id()),
-            zama_program: host::id(),
             system_program: system_program::ID,
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -3092,8 +3068,7 @@ fn confidential_burn_ix(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialBurn {
-            transient_store: host::transient_store_address(fixture.owner).0,
-            instructions: solana_sdk::sysvar::instructions::ID,
+            zama: zama_host_cpi(fixture.owner, fixture.host_config),
             owner: fixture.owner,
             mint: fixture.mint,
             underlying_mint: fixture.underlying_mint,
@@ -3103,12 +3078,7 @@ fn confidential_burn_ix(
             balance_store: fixture.balance_store,
             total_supply_store: fixture.total_supply_store,
             pending_burn,
-            zama_event_authority: event_authority(host::id()),
-            zama_program: host::id(),
-            host_config: fixture.host_config,
             system_program: system_program::ID,
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -3132,8 +3102,7 @@ fn confidential_burn_from_value_ix(
     anchor_ix(
         token::id(),
         token::accounts::ConfidentialBurnFromValue {
-            transient_store: host::transient_store_address(payer).0,
-            instructions: solana_sdk::sysvar::instructions::ID,
+            zama: zama_host_cpi(payer, fixture.host_config),
             owner,
             payer,
             mint: fixture.mint,
@@ -3145,12 +3114,7 @@ fn confidential_burn_from_value_ix(
             total_supply_store: fixture.total_supply_store,
             pending_burn,
             amount_store,
-            zama_event_authority: event_authority(host::id()),
-            zama_program: host::id(),
-            host_config: fixture.host_config,
             system_program: system_program::ID,
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -3291,8 +3255,7 @@ fn cancel_pending_burn_ix(
     let mut ix = anchor_ix(
         token::id(),
         token::accounts::CancelPendingBurn {
-            transient_store: host::transient_store_address(fixture.owner).0,
-            instructions: solana_sdk::sysvar::instructions::ID,
+            zama: zama_host_cpi(fixture.owner, fixture.host_config),
             owner: fixture.owner,
             mint: fixture.mint,
             token_account: fixture.token_account,
@@ -3300,12 +3263,7 @@ fn cancel_pending_burn_ix(
             balance_store: fixture.balance_store,
             total_supply_store: fixture.total_supply_store,
             pending_burn,
-            host_config: fixture.host_config,
-            zama_event_authority: event_authority(host::id()),
-            zama_program: host::id(),
             system_program: system_program::ID,
-            hcu_block_meter: None,
-            hcu_trusted_app_record: None,
             event_authority: event_authority(token::id()),
             program: token::id(),
         },
@@ -4584,8 +4542,7 @@ impl<'a> WrapUsdcParams<'a> {
         anchor_ix(
             token::id(),
             token::accounts::WrapUsdc {
-                transient_store: host::transient_store_address(self.owner).0,
-                instructions: solana_sdk::sysvar::instructions::ID,
+                zama: zama_host_cpi(self.owner, fixture.host_config),
                 owner: self.owner,
                 mint: fixture.mint,
                 token_account: fixture.token_account,
@@ -4596,13 +4553,8 @@ impl<'a> WrapUsdcParams<'a> {
                 total_supply_authority: self.total_supply_authority,
                 balance_store: fixture.balance_store,
                 total_supply_store: fixture.total_supply_store,
-                zama_event_authority: event_authority(host::id()),
-                zama_program: host::id(),
-                host_config: fixture.host_config,
                 token_program: self.token_program,
                 system_program: system_program::ID,
-                hcu_block_meter: None,
-                hcu_trusted_app_record: None,
                 event_authority: event_authority(token::id()),
                 program: token::id(),
             },

@@ -33,29 +33,9 @@ pub struct ConfidentialTransfer<'info> {
     /// Recipient store: the host reads and updates its balance slot.
     #[account(mut, dup, seeds = [zama_host::ENCRYPTED_STORE_SEED, crate::ID.as_ref(), to_account.key().as_ref(), mint.key().as_ref()], bump = to_store.bump, seeds::program = zama_host::ID)]
     pub to_store: Box<Account<'info, zama_host::EncryptedStore>>,
-    /// CHECK: Anchor event CPI authority for the Zama host program.
-    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
-    pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction transient store, validated by ZamaHost.
-    #[account(mut)]
-    pub transient_store: UncheckedAccount<'info>,
-    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
-    pub instructions: UncheckedAccount<'info>,
-    /// ZamaHost program used for FHE operations.
-    pub zama_program: Program<'info, ZamaHost>,
-    /// ZamaHost config used for handle derivation.
-    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
-    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-block-meter", program, mint]` PDA. The per-mint HCU block meter — supplied
-    /// by an untrusted mint under a metering-band cap, omitted otherwise.
-    #[account(mut)]
-    pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it. The HCU
-    /// trust witness — present + valid bypasses the cap; absent means untrusted (metered).
-    pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+    pub zama: ZamaHostCpi<'info>,
     /// CHECK: canonical recipient of the result grant, validated by the host.
     pub result_store: Option<UncheckedAccount<'info>>,
 }
@@ -73,15 +53,9 @@ impl<'info> ConfidentialTransfer<'info> {
             to_account: &self.to_account,
             from_store: self.from_store.to_account_info(),
             to_store: self.to_store.to_account_info(),
-            zama_event_authority: &self.zama_event_authority,
-            transient_store: &self.transient_store,
-            instructions: &self.instructions,
-            zama_program: &self.zama_program,
-            host_config: &self.host_config,
+            zama: &self.zama,
             remaining_accounts,
             system_program: &self.system_program,
-            hcu_block_meter: self.hcu_block_meter.as_ref(),
-            hcu_trusted_app_record: self.hcu_trusted_app_record.as_ref(),
             underlying_mint: self.underlying_mint.to_account_info(),
             from_ata: self.from_ata.to_account_info(),
             to_ata: self.to_ata.to_account_info(),
@@ -181,29 +155,9 @@ pub struct ConfidentialTransferFromValue<'info> {
     /// CHECK: store identity is read for the spend gate; the host validates it in the CPI.
     pub amount_store: Option<UncheckedAccount<'info>>,
     pub amount_authority: Option<Signer<'info>>,
-    /// CHECK: Anchor event CPI authority for the Zama host program.
-    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
-    pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction transient store, validated by ZamaHost.
-    #[account(mut)]
-    pub transient_store: UncheckedAccount<'info>,
-    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
-    pub instructions: UncheckedAccount<'info>,
-    /// ZamaHost program used for FHE operations.
-    pub zama_program: Program<'info, ZamaHost>,
-    /// ZamaHost config used for handle derivation.
-    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
-    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-block-meter", program, mint]` PDA. The per-mint HCU block meter — supplied
-    /// by an untrusted mint under a metering-band cap, omitted otherwise.
-    #[account(mut)]
-    pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it. The HCU
-    /// trust witness — present + valid bypasses the cap; absent means untrusted (metered).
-    pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+    pub zama: ZamaHostCpi<'info>,
 }
 
 impl<'info> ConfidentialTransferFromValue<'info> {
@@ -219,15 +173,9 @@ impl<'info> ConfidentialTransferFromValue<'info> {
             to_account: &self.to_account,
             from_store: self.from_store.to_account_info(),
             to_store: self.to_store.to_account_info(),
-            zama_event_authority: &self.zama_event_authority,
-            transient_store: &self.transient_store,
-            instructions: &self.instructions,
-            zama_program: &self.zama_program,
-            host_config: &self.host_config,
+            zama: &self.zama,
             remaining_accounts,
             system_program: &self.system_program,
-            hcu_block_meter: self.hcu_block_meter.as_ref(),
-            hcu_trusted_app_record: self.hcu_trusted_app_record.as_ref(),
             underlying_mint: self.underlying_mint.to_account_info(),
             from_ata: self.from_ata.to_account_info(),
             to_ata: self.to_ata.to_account_info(),
