@@ -761,7 +761,7 @@ where
     }
 
     let verdict = if both_anchored {
-        Some(decision::Decision::Prepared)
+        Some(decision::Decision::Quorum)
     } else if expired {
         Some(decision::Decision::Abort)
     } else {
@@ -790,7 +790,7 @@ where
         }
     }
 
-    // Cut over only on `prepared` from every member, roll back on `abort` from any
+    // Cut over only on `quorum` from every member, roll back on `abort` from any
     // member. An unreadable record counts as neither, so this operator waits.
     let addresses = members
         .iter()
@@ -833,7 +833,7 @@ where
         // Re-emit each anchor every pass so a controller that missed the NOTIFY still
         // latches. The anchors come from this operator's own record, so a restart
         // finishes the cutover without re-deriving them from the state hashes.
-        Some(decision::Decision::Prepared) => {
+        Some(decision::Decision::Quorum) => {
             let anchors = own
                 .map(|r| r.payload.anchors)
                 .unwrap_or_else(|| unanimity_notifications(host_tracks, gateway));

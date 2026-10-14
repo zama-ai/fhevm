@@ -1,7 +1,7 @@
 //! One signed decision record per operator per upgrade attempt.
 //!
-//! An operator records `prepared` after every track reached unanimity, or
-//! `abort` after the deadline. It cuts over only after it reads `prepared` from
+//! An operator records `quorum` after every track reached unanimity, or
+//! `abort` after the deadline. It cuts over only after it reads `quorum` from
 //! every member, and it rolls back after it reads `abort` from one member. Both
 //! actions need a record, so a peer's silence makes this operator wait.
 
@@ -19,7 +19,7 @@ const DOMAIN: &[u8] = b"fhevm/upgrade-decision/v1";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Decision {
-    Prepared,
+    Quorum,
     Abort,
 }
 
@@ -237,14 +237,14 @@ pub(crate) async fn get(
 }
 
 /// Rules 2 and 3 over one record per member. `Abort` wins, so an operator that
-/// wrote `prepared` still rolls back. `None` means wait: an absent or unreadable
+/// wrote `quorum` still rolls back. `None` means wait: an absent or unreadable
 /// record is not a decision.
 pub(crate) fn fleet_outcome(records: &[Option<Decision>]) -> Option<Decision> {
     if records.contains(&Some(Decision::Abort)) {
         return Some(Decision::Abort);
     }
-    if !records.is_empty() && records.iter().all(|r| *r == Some(Decision::Prepared)) {
-        return Some(Decision::Prepared);
+    if !records.is_empty() && records.iter().all(|r| *r == Some(Decision::Quorum)) {
+        return Some(Decision::Quorum);
     }
     None
 }
@@ -283,7 +283,7 @@ mod tests {
     async fn a_signed_record_verifies_only_for_its_own_signer_and_attempt() {
         let key = PrivateKeySigner::random();
         let members = member_list(&[key.address(), addr(9)]);
-        let (address, record) = signed(&key, Decision::Prepared, &members).await;
+        let (address, record) = signed(&key, Decision::Quorum, &members).await;
 
         assert!(record.is_valid_from(address, &[0x01], 5));
         assert!(!record.is_valid_from(addr(9), &[0x01], 5));
@@ -295,7 +295,7 @@ mod tests {
     async fn a_tampered_record_fails_verification() {
         let key = PrivateKeySigner::random();
         let members = member_list(&[key.address()]);
-        let (address, mut record) = signed(&key, Decision::Prepared, &members).await;
+        let (address, mut record) = signed(&key, Decision::Quorum, &members).await;
 
         record.payload.decision = Decision::Abort;
         assert!(!record.is_valid_from(address, &[0x01], 5));
@@ -305,7 +305,7 @@ mod tests {
     async fn a_signer_outside_the_member_set_is_rejected() {
         let key = PrivateKeySigner::random();
         let members = member_list(&[addr(9)]);
-        let (address, record) = signed(&key, Decision::Prepared, &members).await;
+        let (address, record) = signed(&key, Decision::Quorum, &members).await;
 
         assert!(!record.is_valid_from(address, &[0x01], 5));
     }
@@ -317,7 +317,7 @@ mod tests {
         let key = PrivateKeySigner::from_slice(&[0x11; 32]).expect("key");
         let peer = addr(0xff);
         let members = member_list(&[key.address(), peer]);
-        let (address, mut record) = signed(&key, Decision::Prepared, &members).await;
+        let (address, mut record) = signed(&key, Decision::Quorum, &members).await;
         let signed_digest = record.payload.digest();
 
         // The signer comes first, so its URL can absorb the peer behind it.
@@ -349,15 +349,15 @@ mod tests {
     }
 
     #[test]
-    fn abort_beats_prepared_and_a_gap_decides_nothing() {
-        use Decision::{Abort, Prepared};
-        assert_eq!(fleet_outcome(&[Some(Prepared); 3]), Some(Prepared));
+    fn abort_beats_quorum_and_a_gap_decides_nothing() {
+        use Decision::{Abort, Quorum};
+        assert_eq!(fleet_outcome(&[Some(Quorum); 3]), Some(Quorum));
         assert_eq!(
-            fleet_outcome(&[Some(Prepared), Some(Abort), Some(Prepared)]),
+            fleet_outcome(&[Some(Quorum), Some(Abort), Some(Quorum)]),
             Some(Abort)
         );
         assert_eq!(fleet_outcome(&[Some(Abort), None]), Some(Abort));
-        assert_eq!(fleet_outcome(&[Some(Prepared), None]), None);
+        assert_eq!(fleet_outcome(&[Some(Quorum), None]), None);
         assert_eq!(fleet_outcome(&[None, None]), None);
         assert_eq!(fleet_outcome(&[]), None);
     }
