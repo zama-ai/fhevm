@@ -303,15 +303,11 @@ The two host chains are the real public testnets, so this is the only preview sh
   room for both in one pod. CPU testnets stay at 60 m / 40 m waits and 110 m Helm.
   This GPU path deliberately consumes most of the deploy job's six-hour budget.
   Dispatch `insecure_keygen` / `--insecure-keygen` also selects Default
-  parameters, on CPU or GPU, but routes each kms-worker through
-  `kms-test-keygen-proxy-<i>`, the docker e2e stack's proxy
-  (`test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs`). The proxy turns
-  keygen into the KMS's Insecure* RPCs: party 1 generates the keys and shares
-  them, with no DKG. The CRS ceremony stays the secure one, so CPU Anvil launches
-  allow 15 m for keygen, 1 h for CRS generation and 90 m Helm; GPU launches keep
-  their waits. A secure-flavor KMS image (kms >= v0.15) is rejected up front. The
-  proxy stays on every kms-worker call (decryptions too) and opens one upstream
-  connection per request, so KMS latency measured on such a preview includes it.
+  parameters, on CPU or GPU, and routes each kms-worker through
+  `kms-test-keygen-proxy-<i>`, the docker stack's proxy, which switches keygen to
+  the KMS insecure keygen (minutes, no DKG). The CRS ceremony is unchanged, so CPU
+  Anvil launches allow 15 m for keygen, 1 h for CRS and 90 m Helm. The proxy also
+  sits on every other kms-worker call, decryptions included.
   The relayer inherits the same dependency - it seeds `/v2/keyurl` from `getCrsMaterials`
   at the finalized block and exits if the CRS is not visible yet - so `deploy-relayer.sh`
   waits on its rollout before the e2e Workflows start, otherwise every test fails on

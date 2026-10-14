@@ -38,9 +38,8 @@ name: preview-env-deploy
 #     Blue only and no proposal; Green, the proposal and the checks come from
 #     ci/preview-env/scripts/bg/bg-*.sh. With deploy_polygon the upgrade spans
 #     both host chains. N=1 is rejected.
-# Dispatch-only: insecure_keygen (CLI --insecure-keygen) generates Default FHE
-# keys through the KMS insecure keygen (party 1 generates and shares them)
-# instead of Test params on CPU or the multi-hour DKG on GPU. Not a secure DKG.
+# Dispatch-only: insecure_keygen (CLI --insecure-keygen) makes Default FHE keys
+# with the KMS insecure keygen instead of the DKG. Test environments only.
 # Dispatch-only: listener_v2_only (CLI --listener-v2-only) runs the host side
 # on the listener v2 stack ONLY (listener-core producer -> Redis ->
 # host-listener-consumer); the host-listener pollers (coprocessor-poller-<i>,
@@ -98,7 +97,7 @@ on:
           - "false"
           - "true"
       insecure_keygen:
-        description: "Generate Default (production-size) FHE keys with the KMS insecure keygen (one party generates the key and shares it; not a DKG) instead of Test params on CPU or the multi-hour DKG on GPU. CRS generation stays the normal ceremony. Test environments only."
+        description: "Default (production-size) FHE keys from the KMS insecure keygen, in minutes, instead of the DKG. Test environments only."
         required: false
         type: boolean
         default: false
@@ -775,14 +774,6 @@ jobs:
         run: |
           image="${KMS_ENCLAVE_IMAGE}:${KMS_CORE_TAG}"
           inspect=$(docker inspect "${image}")
-          # Secure builds (kms >= v0.15) have no Insecure* RPCs; without this,
-          # insecure_keygen would only fail at the ActivateKey wait. Pre-split
-          # images carry no flavor label and serve them.
-          flavor=$(jq -r '.[0].Config.Labels["org.zama.kms.flavor"] // ""' <<<"${inspect}")
-          if [[ "${INSECURE_KEYGEN}" == "true" && "${flavor}" == "secure" ]]; then
-            echo "::error::insecure_keygen needs an insecure KMS build, but ${image} is flavor=secure"
-            exit 1
-          fi
           for n in 0 1 2; do
             pcr=$(jq -r ".[0].Config.Labels[\"zama.kms.eif_pcr${n}\"]" <<<"${inspect}")
             # jq emits the literal "null" for a missing label and command
@@ -1387,7 +1378,7 @@ jobs:
             echo
             echo "Namespace \`${NAMESPACE}\` on zws-dev."
             echo
-            echo "Topology: **${NB_KMS_CORE}** KMS core parties · **${NB_COPROCESSOR}** coprocessor parties (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, listener producer, Redis broker and host-listener-consumer)$([[ "${BLUE_GREEN}" == "true" ]] && echo " · RFC-021 blue-green (BCS ${BCS_IMAGE_TAG} + GCS from this build compiled ${GCS_VERSION#v})")$([[ "${DEPLOY_POLYGON}" == "true" ]] && echo " · a second Polygon Amoy (80002) host chain reusing the ETH KMS key")$([[ "${LISTENER_V2_ONLY}" == "true" ]] && echo " · listener v2 only (no host-listener pollers)")$([[ "${INSECURE_KEYGEN}" == "true" ]] && echo " · Default FHE keys from the KMS insecure keygen (not a DKG)") · chain mode ${CHAIN_MODE} (host ${HOST_CHAIN_ID}, gateway ${GATEWAY_CHAIN_ID}). Note: each coprocessor party requests substantial tfhe/sns worker capacity on the coprocessor nodepool, so nb_coprocessor > 1 multiplies the cluster resources needed."
+            echo "Topology: **${NB_KMS_CORE}** KMS core parties · **${NB_COPROCESSOR}** coprocessor parties (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, listener producer, Redis broker and host-listener-consumer)$([[ "${BLUE_GREEN}" == "true" ]] && echo " · RFC-021 blue-green (BCS ${BCS_IMAGE_TAG} + GCS from this build compiled ${GCS_VERSION#v})")$([[ "${DEPLOY_POLYGON}" == "true" ]] && echo " · a second Polygon Amoy (80002) host chain reusing the ETH KMS key")$([[ "${LISTENER_V2_ONLY}" == "true" ]] && echo " · listener v2 only (no host-listener pollers)") · chain mode ${CHAIN_MODE} (host ${HOST_CHAIN_ID}, gateway ${GATEWAY_CHAIN_ID}). Note: each coprocessor party requests substantial tfhe/sns worker capacity on the coprocessor nodepool, so nb_coprocessor > 1 multiplies the cluster resources needed."
             echo
             echo "Connect:"
             echo '```bash'

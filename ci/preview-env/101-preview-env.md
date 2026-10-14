@@ -82,10 +82,8 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   carry a worker tag. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS
   stays CPU. CPU Anvil stays on Test params.
 - `insecure_keygen` — Default (production-size) FHE keys from the KMS
-  **insecure** keygen (default `false`, a checkbox). CLI `--insecure-keygen`.
-  Party 1 generates the keys and shares them, so this is not a DKG: test
-  environments only. On CPU it replaces Test params; with `enable_gpu` it
-  replaces the multi-hour DKG. CRS generation is unchanged. Dispatch-only.
+  **insecure** keygen, in minutes, instead of the DKG (default `false`). CLI
+  `--insecure-keygen`. Test environments only. Dispatch-only.
 - `workers_tag` — image tag for tfhe, sns, and zkproof. Required when
   `enable_gpu=true` on a dispatch (CLI `--workers-tag`). Must be empty when
   GPU is off. The `preview-env-gpu` label cannot carry a tag, so a GPU
@@ -207,8 +205,6 @@ ci/preview-env/preview-env launch --ref <your-branch> --tests \
 `--gpu` sends `enable_gpu=true` (GPU workers and Default FHE params) and
 requires `--workers-tag`, the image tag for tfhe, sns, and zkproof. Combine
 with `--testnets` for Sepolia/Amoy, or `--blue-green` for Green-only GPU.
-`--insecure-keygen` sends `insecure_keygen=true`: Default FHE keys on CPU,
-through the KMS insecure keygen (not a DKG).
 `--parties 2` without `--blue-green` is two-party consensus only.
 
 `launch` polls for the new Actions run and prints its id. Stream progress with

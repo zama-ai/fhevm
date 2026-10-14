@@ -1,11 +1,7 @@
-# Per-party gRPC proxy between kms-connector's kms-worker and kms-core, deployed
-# only with the insecure_keygen dispatch input (CLI --insecure-keygen). It
-# forwards every call unchanged except KeyGenPreproc/KeyGen and their result
-# polls, which it sends to the KMS's Insecure* RPCs. That gives Default FHE keys
-# in minutes, without the threshold DKG. The script is
-# test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs, the same one the
-# docker e2e stack runs; deploy-kms-connector.sh loads it with --set-file and
-# passes the party's kms-core address as the first arg.
+# Per-party gRPC proxy between kms-worker and kms-core, deployed only with
+# insecure_keygen. It runs the docker stack's
+# test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs (loaded with --set-file),
+# which sends keygen to the KMS insecure keygen and forwards everything else.
 #
 # Deployed as:
 #   helm upgrade --install kms-test-keygen-proxy-<i> \

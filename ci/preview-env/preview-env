@@ -55,9 +55,8 @@ launch options:
   --workers-tag <tag>       image tag for tfhe, sns, and zkproof when --gpu is set
                             (for example fd282b1-cuda12.8-sm70). Required with --gpu
   --insecure-keygen         insecure_keygen=true: Default FHE keys from the KMS
-                            insecure keygen (party 1 generates and shares them; not a
-                            DKG). Production-size keys on CPU; with --gpu it
-                            replaces the multi-hour DKG. Test environments only
+                            insecure keygen, in minutes, instead of the DKG.
+                            Test environments only
   --blockchain-dev          chain_mode=blockchain-dev: shared Geth/Nitro instead of Anvil
   --testnets                chain_mode=testnets: public Sepolia + Amoy hosts, Nitro gateway
                             (implies --polygon; RPC URLs + funder key come from AWS
@@ -278,27 +277,24 @@ print(json.dumps(out, separators=(",", ":")))
   echo "  parties=${parties} blue_green=${blue_green} gpu=${gpu} workers_tag=${workers_tag:-<none>} chain_mode=${chain_mode} tests=${tests} polygon=${polygon} listener_v2_only=${listener_v2_only} insecure_keygen=${insecure_keygen} lifetime=${lifetime}h"
   echo "  overrides=${overrides}"
 
-  local -a inputs=(
-    -f "build_images=${build_images}"
-    -f "build_test_suite_only=${test_suite_only}"
-    -f "automated_tests=${tests}"
-    -f "observability=${observability}"
-    -f "nb_coprocessor=${parties}"
-    -f "enable_blue_green=${blue_green}"
-    -f "enable_gpu=${gpu}"
-    -f "workers_tag=${workers_tag}"
-    -f "nb_kms_core=${kms_parties}"
-    -f "deploy_polygon=${polygon}"
-    -f "chain_mode=${chain_mode}"
-    -f "listener_v2_only=${listener_v2_only}"
-    -f "lifetime=${lifetime}"
-    -f "overrides=${overrides}"
-  )
   # Sent only when set, so a --ref whose workflow predates the input still dispatches.
-  if [[ "${insecure_keygen}" == "true" ]]; then
-    inputs+=(-f "insecure_keygen=true")
-  fi
-  gh workflow run "${DEPLOY_WORKFLOW}" -R "${REPO}" --ref "${ref}" "${inputs[@]}"
+  local -a optional_inputs=()
+  [[ "${insecure_keygen}" == "true" ]] && optional_inputs+=(-f "insecure_keygen=true")
+  gh workflow run "${DEPLOY_WORKFLOW}" -R "${REPO}" --ref "${ref}" \
+    -f "build_images=${build_images}" \
+    -f "build_test_suite_only=${test_suite_only}" \
+    -f "automated_tests=${tests}" \
+    -f "observability=${observability}" \
+    -f "nb_coprocessor=${parties}" \
+    -f "enable_blue_green=${blue_green}" \
+    -f "enable_gpu=${gpu}" \
+    -f "workers_tag=${workers_tag}" \
+    -f "nb_kms_core=${kms_parties}" \
+    -f "deploy_polygon=${polygon}" \
+    -f "chain_mode=${chain_mode}" \
+    -f "listener_v2_only=${listener_v2_only}" \
+    -f "lifetime=${lifetime}" \
+    -f "overrides=${overrides}" ${optional_inputs[@]+"${optional_inputs[@]}"}
 
   echo "waiting for Actions run to appear on ${ref}..."
   run_id=$(wait_for_new_run "${ref}") || die "timed out waiting for a new ${DEPLOY_WORKFLOW} run"
