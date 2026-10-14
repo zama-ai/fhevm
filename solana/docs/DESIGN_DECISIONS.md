@@ -1076,7 +1076,7 @@ so the batch stays dispatched until unpause or its deadline, and the deadline is
 on EVM. The admin is not the join mint's wrapper authority, which stays the recipient of
 `reclaim_batch_authority`; the demo seeds the deployer as admin and the keeper as wrapper authority.
 `AUTHORITY.md` is generated for zama-host only, so the batcher's roles are recorded here. The
-batcher's events stay `emit!` app events for demo indexers; DD-044's event-CPI rule covers
+batcher's events stay `emit!` app events, which nothing off-chain reads; DD-044's event-CPI rule covers
 zama-host.
 
 A deposit batch whose certified total floors to zero shares at the vault's current price settles

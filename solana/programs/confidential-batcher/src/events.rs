@@ -1,6 +1,6 @@
 //! App-local events for the confidential batcher.
 //!
-//! For frontend/demo indexers. The generic coprocessor host-listener does not
+//! Nothing off-chain reads them. The generic coprocessor host-listener does not
 //! consume these: the FHE-protocol events are emitted by the ZamaHost CPIs the
 //! batcher composes. Only settled events carry amounts — everything else stays
 //! encrypted.

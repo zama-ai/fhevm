@@ -437,9 +437,6 @@
         },
         {
           "name": "batch_payout_token_account",
-          "docs": [
-            "validated by the token CPI and pinned below."
-          ],
           "writable": true
         },
         {
@@ -837,9 +834,6 @@
         },
         {
           "name": "batch_join_token_account",
-          "docs": [
-            "token CPI and pinned below."
-          ],
           "writable": true
         },
         {
@@ -2369,9 +2363,6 @@
         },
         {
           "name": "batch_join_token_account",
-          "docs": [
-            "validated by the token CPI and pinned below."
-          ],
           "writable": true
         },
         {

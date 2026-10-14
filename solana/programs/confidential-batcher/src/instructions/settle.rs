@@ -239,15 +239,6 @@ pub fn settle<'info>(
     // Phase 1: on-chain KMS certificate verification + plain token release. The
     // token program asserts the certified cleartext equals `cleartext_total`
     // and closes the pending-burn account opened at dispatch.
-    require_keys_eq!(
-        ctx.accounts.pending_burn.key(),
-        ct::pending_burn_address(
-            ctx.accounts.join_confidential_mint.key(),
-            ctx.accounts.batch_join_token_account.key(),
-        )
-        .0,
-        BatcherError::DerivedAccountMismatch
-    );
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
     ct::cpi::redeem_burned_amount(

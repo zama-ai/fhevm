@@ -259,7 +259,6 @@ export type DispatchAsyncInput<
   joinUnderlyingMint: TAccountJoinUnderlyingMint;
   batchAuthorityAta: TAccountBatchAuthorityAta;
   totalSupplyAuthority: TAccountTotalSupplyAuthority;
-  /** token CPI and pinned below. */
   batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
   /** replaced as the burn's balance output (the whole-balance alias). */
   batchBalanceStore: TAccountBatchBalanceStore;
@@ -937,7 +936,6 @@ export type DispatchInput<
   joinUnderlyingMint: TAccountJoinUnderlyingMint;
   batchAuthorityAta: TAccountBatchAuthorityAta;
   totalSupplyAuthority: TAccountTotalSupplyAuthority;
-  /** token CPI and pinned below. */
   batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
   /** replaced as the burn's balance output (the whole-balance alias). */
   batchBalanceStore: TAccountBatchBalanceStore;
@@ -1534,7 +1532,6 @@ export type ParsedDispatchInstruction<
     joinUnderlyingMint: TAccountMetas[5];
     batchAuthorityAta: TAccountMetas[6];
     totalSupplyAuthority: TAccountMetas[7];
-    /** token CPI and pinned below. */
     batchJoinTokenAccount: TAccountMetas[8];
     /** replaced as the burn's balance output (the whole-balance alias). */
     batchBalanceStore: TAccountMetas[9];

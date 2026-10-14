@@ -1,6 +1,6 @@
 //! App-local events for demo-vault.
 //!
-//! These events are for frontend/demo indexers. The generic coprocessor
+//! Nothing off-chain reads these events. The generic coprocessor
 //! host-listener does not consume them: the vault is the public half of the
 //! confidential-vault design and emits no Zama host protocol events.
 

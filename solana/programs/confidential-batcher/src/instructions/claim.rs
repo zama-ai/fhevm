@@ -58,8 +58,7 @@ pub struct Claim<'info> {
     pub batch_authority_payout_ata: UncheckedAccount<'info>,
     /// CHECK: ATA of `user` on `payout_underlying_mint`. Uninitialized → not frozen.
     pub user_payout_ata: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential payout token account (transfer source);
-    /// validated by the token CPI and pinned below.
+    /// CHECK: batch's confidential payout token account (transfer source); validated by the token CPI.
     #[account(mut)]
     pub batch_payout_token_account: UncheckedAccount<'info>,
     /// CHECK: user's confidential payout token account (transfer destination);
@@ -129,14 +128,8 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
     let payout_mint_key = ctx.accounts.payout_confidential_mint.key();
     let batch_key = ctx.accounts.batch.key();
     let user = ctx.accounts.user.key();
-    let batch_authority = ctx.accounts.batch_authority.key();
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
-    require_keys_eq!(
-        ctx.accounts.batch_payout_token_account.key(),
-        ct::token_account_address(payout_mint_key, batch_authority).0,
-        BatcherError::DerivedAccountMismatch
-    );
     require_keys_eq!(
         ctx.accounts.user_payout_token_account.key(),
         ct::token_account_address(payout_mint_key, user).0,
