@@ -2810,10 +2810,9 @@
       "docs": [
         "Settles a dispatched batch with the KMS certificate for its burned",
         "total: redeems the plain tokens, moves them through the vault",
-        "(deposit for deposit batchers, withdraw for redeem batchers), wraps",
-        "the received payout into confidential payout tokens, and records the",
-        "batch's informational public rate. A zero-total batch is canceled",
-        "instead, and a deposit worth zero vault shares is wrapped back and opens",
+        "(deposit for deposit batchers, withdraw for redeem batchers), and wraps",
+        "the received payout into confidential payout tokens. A zero-total batch",
+        "is canceled instead, and a deposit worth zero vault shares is wrapped back and opens",
         "refunds. Permissionless, before the batch's settle deadline; refused while paused unless",
         "the total is zero.",
         "Deny records: `(token, payout mint)` then `(token, join mint)` for the zero-shares refund, or",
@@ -3412,19 +3411,6 @@
       ]
     },
     {
-      "name": "BatchAuthorityReclaimed",
-      "discriminator": [
-        109,
-        109,
-        186,
-        58,
-        101,
-        201,
-        30,
-        173
-      ]
-    },
-    {
       "name": "BatchCanceled",
       "discriminator": [
         231,
@@ -3526,19 +3512,6 @@
         177,
         183,
         52
-      ]
-    },
-    {
-      "name": "JoinRecordClosed",
-      "discriminator": [
-        231,
-        12,
-        123,
-        40,
-        7,
-        153,
-        206,
-        173
       ]
     },
     {
@@ -3764,13 +3737,6 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
             "name": "batcher",
             "docs": [
               "Batcher config account."
@@ -3872,13 +3838,6 @@
             "type": "u8"
           },
           {
-            "name": "bump",
-            "docs": [
-              "PDA bump for `(batcher, index)`."
-            ],
-            "type": "u8"
-          },
-          {
             "name": "burned_total_handle",
             "docs": [
               "Created-public handle of the burned batch total (set at dispatch)."
@@ -3903,47 +3862,6 @@
               "Payout units the vault phase produced for the batch total (set at settle)."
             ],
             "type": "u64"
-          },
-          {
-            "name": "payout_rate",
-            "docs": [
-              "Informational rate `payout_received * RATE_SCALE / total_joined`,",
-              "saturating at u64::MAX (settle). Claims use exact proportional division",
-              "instead — never this field."
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "BatchAuthorityReclaimed",
-      "docs": [
-        "Emitted when a finished batch's unspent authority funding returns to the operator."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "batch",
-            "docs": [
-              "Batch account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "lamports",
-            "docs": [
-              "Lamports moved from the batch authority to the join mint's wrapper authority."
-            ],
-            "type": "u64"
           }
         ]
       }
@@ -3952,18 +3870,11 @@
       "name": "BatchCanceled",
       "docs": [
         "Emitted when a zero-total batch is canceled at settle time (nothing to",
-        "move through the vault, no rate to freeze — the division never happens)."
+        "move through the vault)."
       ],
       "type": {
         "kind": "struct",
         "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
           {
             "name": "batch",
             "docs": [
@@ -4004,13 +3915,6 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
             "name": "batch",
             "docs": [
               "Batch account."
@@ -4029,13 +3933,6 @@
       "type": {
         "kind": "struct",
         "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
           {
             "name": "batch",
             "docs": [
@@ -4066,13 +3963,6 @@
       "type": {
         "kind": "struct",
         "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
           {
             "name": "batcher",
             "docs": [
@@ -4136,13 +4026,6 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
             "name": "batch",
             "docs": [
               "Batch account."
@@ -4160,14 +4043,6 @@
             "name": "payout_received",
             "docs": [
               "Payout units the vault phase produced for the batch total."
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "payout_rate",
-            "docs": [
-              "Informational rate `payout_received * RATE_SCALE / total_joined`,",
-              "saturating at u64::MAX. Claims use exact proportional division."
             ],
             "type": "u64"
           }
@@ -4290,13 +4165,6 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
             "name": "batcher",
             "docs": [
               "Batcher config account."
@@ -4368,13 +4236,6 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
             "name": "batcher",
             "docs": [
               "Batcher config account."
@@ -4392,13 +4253,6 @@
       "type": {
         "kind": "struct",
         "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
           {
             "name": "batcher",
             "docs": [
@@ -4758,38 +4612,6 @@
       }
     },
     {
-      "name": "JoinRecordClosed",
-      "docs": [
-        "Emitted when a user closes their spent join record."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "batch",
-            "docs": [
-              "Batch account."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "user",
-            "docs": [
-              "User whose record was closed; received its rent."
-            ],
-            "type": "pubkey"
-          }
-        ]
-      }
-    },
-    {
       "name": "JoinedBatch",
       "docs": [
         "Emitted when a user joins a batch. The amount stays encrypted; only the",
@@ -4798,13 +4620,6 @@
       "type": {
         "kind": "struct",
         "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
           {
             "name": "batch",
             "docs": [
@@ -4849,13 +4664,6 @@
       "type": {
         "kind": "struct",
         "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
           {
             "name": "batcher",
             "docs": [
@@ -4918,13 +4726,6 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
             "name": "batch",
             "docs": [
               "Batch account."
@@ -4970,13 +4771,6 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
             "name": "batch",
             "docs": [
               "Batch account."
@@ -5001,13 +4795,6 @@
       "type": {
         "kind": "struct",
         "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
           {
             "name": "batcher",
             "docs": [

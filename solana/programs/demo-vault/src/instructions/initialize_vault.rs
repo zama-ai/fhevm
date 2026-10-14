@@ -60,7 +60,6 @@ pub fn initialize_vault(ctx: Context<InitializeVault>) -> Result<()> {
     vault.authority_bump = ctx.bumps.vault_authority;
 
     emit!(VaultInitialized {
-        version: APP_EVENT_VERSION,
         vault: vault.key(),
         underlying_mint,
         share_mint,

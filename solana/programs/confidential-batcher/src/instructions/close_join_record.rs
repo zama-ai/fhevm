@@ -33,11 +33,5 @@ pub fn close_join_record(ctx: Context<CloseJoinRecord>) -> Result<()> {
         BatchStatus::Pending | BatchStatus::Dispatched | BatchStatus::Refunding => false,
     };
     require!(spent, BatcherError::JoinRecordStillLive);
-
-    emit!(JoinRecordClosed {
-        version: APP_EVENT_VERSION,
-        batch: ctx.accounts.batch.key(),
-        user: ctx.accounts.user.key(),
-    });
     Ok(())
 }

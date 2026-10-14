@@ -76,20 +76,12 @@ export type Batch = {
   joinCount: bigint;
   /** Bump of the per-batch authority PDA. */
   authorityBump: number;
-  /** PDA bump for `(batcher, index)`. */
-  bump: number;
   /** Created-public handle of the burned batch total (set at dispatch). */
   burnedTotalHandle: ReadonlyUint8Array;
   /** KMS-certified batch join total (set at settle; public by design). */
   totalJoined: bigint;
   /** Payout units the vault phase produced for the batch total (set at settle). */
   payoutReceived: bigint;
-  /**
-   * Informational rate `payout_received * RATE_SCALE / total_joined`,
-   * saturating at u64::MAX (settle). Claims use exact proportional division
-   * instead — never this field.
-   */
-  payoutRate: bigint;
 };
 
 export type BatchArgs = {
@@ -114,20 +106,12 @@ export type BatchArgs = {
   joinCount: number | bigint;
   /** Bump of the per-batch authority PDA. */
   authorityBump: number;
-  /** PDA bump for `(batcher, index)`. */
-  bump: number;
   /** Created-public handle of the burned batch total (set at dispatch). */
   burnedTotalHandle: ReadonlyUint8Array;
   /** KMS-certified batch join total (set at settle; public by design). */
   totalJoined: number | bigint;
   /** Payout units the vault phase produced for the batch total (set at settle). */
   payoutReceived: number | bigint;
-  /**
-   * Informational rate `payout_received * RATE_SCALE / total_joined`,
-   * saturating at u64::MAX (settle). Claims use exact proportional division
-   * instead — never this field.
-   */
-  payoutRate: number | bigint;
 };
 
 /** Gets the encoder for {@link BatchArgs} account data. */
@@ -144,11 +128,9 @@ export function getBatchEncoder(): FixedSizeEncoder<BatchArgs> {
       ['dispatchedAt', getI64Encoder()],
       ['joinCount', getU64Encoder()],
       ['authorityBump', getU8Encoder()],
-      ['bump', getU8Encoder()],
       ['burnedTotalHandle', fixEncoderSize(getBytesEncoder(), 32)],
       ['totalJoined', getU64Encoder()],
       ['payoutReceived', getU64Encoder()],
-      ['payoutRate', getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: BATCH_DISCRIMINATOR }),
   );
@@ -167,11 +149,9 @@ export function getBatchDecoder(): FixedSizeDecoder<Batch> {
     ['dispatchedAt', getI64Decoder()],
     ['joinCount', getU64Decoder()],
     ['authorityBump', getU8Decoder()],
-    ['bump', getU8Decoder()],
     ['burnedTotalHandle', fixDecoderSize(getBytesDecoder(), 32)],
     ['totalJoined', getU64Decoder()],
     ['payoutReceived', getU64Decoder()],
-    ['payoutRate', getU64Decoder()],
   ]);
 }
 
@@ -231,5 +211,5 @@ export async function fetchAllMaybeBatch(
 }
 
 export function getBatchSize(): number {
-  return 147;
+  return 138;
 }

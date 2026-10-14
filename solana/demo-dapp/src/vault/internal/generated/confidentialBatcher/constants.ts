@@ -6,9 +6,6 @@ export const JOINED_AMOUNT_KEY: Uint8Array = new Uint8Array([
   95, 95, 95, 95, 95,
 ]);
 export const ADMIN_SET_DISCRIMINATOR: Uint8Array = new Uint8Array([157, 245, 205, 226, 118, 125, 183, 97]);
-export const BATCH_AUTHORITY_RECLAIMED_DISCRIMINATOR: Uint8Array = new Uint8Array([
-  109, 109, 186, 58, 101, 201, 30, 173,
-]);
 export const BATCH_CANCELED_DISCRIMINATOR: Uint8Array = new Uint8Array([231, 202, 46, 181, 82, 186, 207, 204]);
 export const BATCH_DISPATCH_CANCELLED_DISCRIMINATOR: Uint8Array = new Uint8Array([1, 113, 239, 120, 144, 108, 42, 204]);
 export const BATCH_DISPATCHED_DISCRIMINATOR: Uint8Array = new Uint8Array([237, 65, 137, 68, 118, 131, 203, 152]);
@@ -17,7 +14,6 @@ export const BATCH_SETTLED_DISCRIMINATOR: Uint8Array = new Uint8Array([238, 14, 
 export const BATCHER_INITIALIZED_DISCRIMINATOR: Uint8Array = new Uint8Array([150, 89, 241, 94, 92, 3, 100, 63]);
 export const BATCHER_PAUSED_DISCRIMINATOR: Uint8Array = new Uint8Array([80, 206, 123, 84, 28, 202, 208, 112]);
 export const BATCHER_UNPAUSED_DISCRIMINATOR: Uint8Array = new Uint8Array([92, 61, 27, 147, 225, 177, 183, 52]);
-export const JOIN_RECORD_CLOSED_DISCRIMINATOR: Uint8Array = new Uint8Array([231, 12, 123, 40, 7, 153, 206, 173]);
 export const JOINED_BATCH_DISCRIMINATOR: Uint8Array = new Uint8Array([207, 72, 81, 69, 202, 159, 217, 241]);
 export const MIN_BATCH_AGE_SET_DISCRIMINATOR: Uint8Array = new Uint8Array([199, 118, 179, 95, 242, 72, 0, 158]);
 export const PAYOUT_CLAIMED_DISCRIMINATOR: Uint8Array = new Uint8Array([200, 39, 105, 112, 116, 63, 58, 149]);

@@ -228,7 +228,6 @@ pub fn dispatch<'info>(
     batch.burned_total_handle = burned_total_handle;
 
     emit!(BatchDispatched {
-        version: APP_EVENT_VERSION,
         batch: batch_key,
         burned_total_handle,
     });
@@ -239,7 +238,6 @@ pub fn dispatch<'info>(
             payer: &accounts.payer,
             batcher: &mut accounts.batcher,
             batch: &mut accounts.next_batch,
-            batch_bump: ctx.bumps.next_batch,
             batch_authority: &accounts.next_batch_authority,
             batch_authority_bump: ctx.bumps.next_batch_authority,
             join_confidential_mint: &accounts.join_confidential_mint,

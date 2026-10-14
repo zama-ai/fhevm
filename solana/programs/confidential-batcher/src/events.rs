@@ -12,8 +12,6 @@ use crate::state::BatchDirection;
 /// Emitted when a batcher config is created.
 #[event]
 pub struct BatcherInitialized {
-    /// Event schema version.
-    pub version: u8,
     /// Batcher config account.
     pub batcher: Pubkey,
     /// Direction of this batcher instance.
@@ -35,8 +33,6 @@ pub struct BatcherInitialized {
 /// Emitted when the admin pauses the batcher.
 #[event]
 pub struct BatcherPaused {
-    /// Event schema version.
-    pub version: u8,
     /// Batcher config account.
     pub batcher: Pubkey,
 }
@@ -44,8 +40,6 @@ pub struct BatcherPaused {
 /// Emitted when the admin unpauses the batcher.
 #[event]
 pub struct BatcherUnpaused {
-    /// Event schema version.
-    pub version: u8,
     /// Batcher config account.
     pub batcher: Pubkey,
 }
@@ -53,8 +47,6 @@ pub struct BatcherUnpaused {
 /// Emitted when the admin sets the minimum batch age that batches opened from now on copy.
 #[event]
 pub struct MinBatchAgeSet {
-    /// Event schema version.
-    pub version: u8,
     /// Batcher config account.
     pub batcher: Pubkey,
     /// New minimum batch age in seconds.
@@ -64,8 +56,6 @@ pub struct MinBatchAgeSet {
 /// Emitted when the admin sets the settle deadline that batches opened from now on copy.
 #[event]
 pub struct SettleDeadlineSet {
-    /// Event schema version.
-    pub version: u8,
     /// Batcher config account.
     pub batcher: Pubkey,
     /// New settle deadline in seconds after dispatch.
@@ -75,8 +65,6 @@ pub struct SettleDeadlineSet {
 /// Emitted when the admin role moves to a new key.
 #[event]
 pub struct AdminSet {
-    /// Event schema version.
-    pub version: u8,
     /// Batcher config account.
     pub batcher: Pubkey,
     /// The admin that signed the change.
@@ -88,8 +76,6 @@ pub struct AdminSet {
 /// Emitted when a new batch opens.
 #[event]
 pub struct BatchOpened {
-    /// Event schema version.
-    pub version: u8,
     /// Batcher config account.
     pub batcher: Pubkey,
     /// Batch account.
@@ -110,8 +96,6 @@ pub struct BatchOpened {
 /// participation is public (by design — see CONFIDENTIAL_VAULTS.md).
 #[event]
 pub struct JoinedBatch {
-    /// Event schema version.
-    pub version: u8,
     /// Batch account.
     pub batch: Pubkey,
     /// Joining user.
@@ -126,8 +110,6 @@ pub struct JoinedBatch {
 /// transferred back, the joined encrypted store reset to zero and the join record closed.
 #[event]
 pub struct QuitBatch {
-    /// Event schema version.
-    pub version: u8,
     /// Batch account.
     pub batch: Pubkey,
     /// Quitting user.
@@ -138,8 +120,6 @@ pub struct QuitBatch {
 /// and the created-public burned handle awaits KMS certification.
 #[event]
 pub struct BatchDispatched {
-    /// Event schema version.
-    pub version: u8,
     /// Batch account.
     pub batch: Pubkey,
     /// Created-public handle of the burned batch total.
@@ -151,25 +131,18 @@ pub struct BatchDispatched {
 /// batch aggregates, intentionally public.
 #[event]
 pub struct BatchSettled {
-    /// Event schema version.
-    pub version: u8,
     /// Batch account.
     pub batch: Pubkey,
     /// KMS-certified batch join total (public by design).
     pub total_joined: u64,
     /// Payout units the vault phase produced for the batch total.
     pub payout_received: u64,
-    /// Informational rate `payout_received * RATE_SCALE / total_joined`,
-    /// saturating at u64::MAX. Claims use exact proportional division.
-    pub payout_rate: u64,
 }
 
 /// Emitted when a zero-total batch is canceled at settle time (nothing to
-/// move through the vault, no rate to freeze — the division never happens).
+/// move through the vault).
 #[event]
 pub struct BatchCanceled {
-    /// Event schema version.
-    pub version: u8,
     /// Batch account.
     pub batch: Pubkey,
 }
@@ -178,8 +151,6 @@ pub struct BatchCanceled {
 /// `settle` wrapped back a deposit worth zero vault shares.
 #[event]
 pub struct BatchDispatchCancelled {
-    /// Event schema version.
-    pub version: u8,
     /// Batch account.
     pub batch: Pubkey,
 }
@@ -187,8 +158,6 @@ pub struct BatchDispatchCancelled {
 /// Emitted when a user's confidential payout is claimed from a settled batch.
 #[event]
 pub struct PayoutClaimed {
-    /// Event schema version.
-    pub version: u8,
     /// Batch account.
     pub batch: Pubkey,
     /// User the payout was transferred to.
@@ -197,26 +166,4 @@ pub struct PayoutClaimed {
     pub claim_store: Pubkey,
     /// Calculated entitlement, distinct from the token transfer event's paid handle.
     pub claim_handle: [u8; 32],
-}
-
-/// Emitted when a finished batch's unspent authority funding returns to the operator.
-#[event]
-pub struct BatchAuthorityReclaimed {
-    /// Event schema version.
-    pub version: u8,
-    /// Batch account.
-    pub batch: Pubkey,
-    /// Lamports moved from the batch authority to the join mint's wrapper authority.
-    pub lamports: u64,
-}
-
-/// Emitted when a user closes their spent join record.
-#[event]
-pub struct JoinRecordClosed {
-    /// Event schema version.
-    pub version: u8,
-    /// Batch account.
-    pub batch: Pubkey,
-    /// User whose record was closed; received its rent.
-    pub user: Pubkey,
 }

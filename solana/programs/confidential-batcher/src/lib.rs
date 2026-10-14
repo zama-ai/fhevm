@@ -11,11 +11,10 @@
 //! Users join a batch with encrypted amounts; the batch's own confidential
 //! token account accumulates them while encrypted; dispatch burns the batch
 //! total and the KMS certifies the one public number; settle moves that
-//! number through the vault (deposit or withdraw), wraps what comes back into
-//! the payout confidential mint, and records the batch's informational public
-//! rate; claim pays each user the exact proportional floor
-//! `encrypted(joined) x payout_received / total_joined` in confidential
-//! payout tokens. Individual amounts stay encrypted end to end — only each
+//! number through the vault (deposit or withdraw) and wraps what comes back
+//! into the payout confidential mint; claim pays each user the exact
+//! proportional floor `encrypted(joined) x payout_received / total_joined` in
+//! confidential payout tokens. Individual amounts stay encrypted end to end — only each
 //! batch's total is ever revealed.
 //!
 //! This program evolves the earlier `confidential-deposit-app` reference: the
@@ -34,7 +33,7 @@
 #![allow(unexpected_cfgs)]
 #![allow(clippy::diverging_sub_expression, clippy::too_many_arguments)]
 
-/// Shared constants, PDA seed bytes, and the fixed rate scale.
+/// Shared constants and PDA seed bytes.
 pub mod constants;
 /// Program-specific errors returned by confidential-batcher instructions.
 pub mod errors;
@@ -213,10 +212,9 @@ pub mod confidential_batcher {
 
     /// Settles a dispatched batch with the KMS certificate for its burned
     /// total: redeems the plain tokens, moves them through the vault
-    /// (deposit for deposit batchers, withdraw for redeem batchers), wraps
-    /// the received payout into confidential payout tokens, and records the
-    /// batch's informational public rate. A zero-total batch is canceled
-    /// instead, and a deposit worth zero vault shares is wrapped back and opens
+    /// (deposit for deposit batchers, withdraw for redeem batchers), and wraps
+    /// the received payout into confidential payout tokens. A zero-total batch
+    /// is canceled instead, and a deposit worth zero vault shares is wrapped back and opens
     /// refunds. Permissionless, before the batch's settle deadline; refused while paused unless
     /// the total is zero.
     /// Deny records: `(token, payout mint)` then `(token, join mint)` for the zero-shares refund, or

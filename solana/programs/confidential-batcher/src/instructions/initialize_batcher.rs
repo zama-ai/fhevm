@@ -160,7 +160,6 @@ pub fn initialize_batcher<'info>(
     batcher.next_batch_index = 0;
 
     emit!(BatcherInitialized {
-        version: APP_EVENT_VERSION,
         batcher: batcher.key(),
         direction,
         join_confidential_mint: batcher.join_confidential_mint,
@@ -179,7 +178,6 @@ pub fn initialize_batcher<'info>(
             payer: &accounts.payer,
             batcher: &mut accounts.batcher,
             batch: &mut accounts.batch,
-            batch_bump: ctx.bumps.batch,
             batch_authority: &accounts.batch_authority,
             batch_authority_bump: ctx.bumps.batch_authority,
             join_confidential_mint: &accounts.join_confidential_mint,

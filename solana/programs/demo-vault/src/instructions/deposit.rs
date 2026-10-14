@@ -87,7 +87,6 @@ pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
     )?;
 
     emit!(Deposited {
-        version: APP_EVENT_VERSION,
         vault: vault_key,
         depositor: ctx.accounts.depositor.key(),
         assets: amount,

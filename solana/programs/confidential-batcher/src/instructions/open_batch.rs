@@ -18,7 +18,6 @@ pub(crate) struct OpenBatch<'a, 'info> {
     pub payer: &'a Signer<'info>,
     pub batcher: &'a mut Account<'info, Batcher>,
     pub batch: &'a mut Account<'info, Batch>,
-    pub batch_bump: u8,
     pub batch_authority: &'a UncheckedAccount<'info>,
     pub batch_authority_bump: u8,
     pub join_confidential_mint: &'a Account<'info, ct::ConfidentialMint>,
@@ -144,11 +143,9 @@ pub(crate) fn open_batch<'info>(
     batch.dispatched_at = 0;
     batch.join_count = 0;
     batch.authority_bump = accounts.batch_authority_bump;
-    batch.bump = accounts.batch_bump;
     batch.burned_total_handle = [0; 32];
     batch.total_joined = 0;
     batch.payout_received = 0;
-    batch.payout_rate = 0;
 
     let batcher = accounts.batcher;
     batcher.next_batch_index = index
@@ -156,7 +153,6 @@ pub(crate) fn open_batch<'info>(
         .ok_or(BatcherError::BatchIndexOverflow)?;
 
     emit!(BatchOpened {
-        version: APP_EVENT_VERSION,
         batcher: batcher.key(),
         batch: batch_key,
         index,

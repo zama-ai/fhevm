@@ -9,8 +9,6 @@ use anchor_lang::prelude::*;
 /// Emitted when a vault is created.
 #[event]
 pub struct VaultInitialized {
-    /// Event schema version.
-    pub version: u8,
     /// Vault state account.
     pub vault: Pubkey,
     /// Underlying token mint the vault accepts.
@@ -26,8 +24,6 @@ pub struct VaultInitialized {
 /// Emitted when underlying assets are deposited for freshly minted shares.
 #[event]
 pub struct Deposited {
-    /// Event schema version.
-    pub version: u8,
     /// Vault state account.
     pub vault: Pubkey,
     /// Depositor and transfer authority.
@@ -41,8 +37,6 @@ pub struct Deposited {
 /// Emitted when shares are burned for underlying assets.
 #[event]
 pub struct Withdrawn {
-    /// Event schema version.
-    pub version: u8,
     /// Vault state account.
     pub vault: Pubkey,
     /// Share owner and burn authority.
@@ -60,8 +54,6 @@ pub struct Withdrawn {
 /// role; here it is permissionless.
 #[event]
 pub struct Harvested {
-    /// Event schema version.
-    pub version: u8,
     /// Vault state account.
     pub vault: Pubkey,
     /// Donor and transfer authority.

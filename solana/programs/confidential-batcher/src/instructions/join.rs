@@ -201,7 +201,6 @@ pub fn join<'info>(
     batch.join_count = batch.join_count.saturating_add(1);
 
     emit!(JoinedBatch {
-        version: APP_EVENT_VERSION,
         batch: batch_key,
         user,
         joined_encrypted_store: ctx.accounts.join_store.key(),

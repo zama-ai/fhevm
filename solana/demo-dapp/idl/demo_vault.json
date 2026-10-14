@@ -713,13 +713,6 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
             "name": "vault",
             "docs": [
               "Vault state account."
@@ -762,13 +755,6 @@
       "type": {
         "kind": "struct",
         "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
           {
             "name": "vault",
             "docs": [
@@ -847,13 +833,6 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
-          {
             "name": "vault",
             "docs": [
               "Vault state account."
@@ -899,13 +878,6 @@
       "type": {
         "kind": "struct",
         "fields": [
-          {
-            "name": "version",
-            "docs": [
-              "Event schema version."
-            ],
-            "type": "u8"
-          },
           {
             "name": "vault",
             "docs": [
