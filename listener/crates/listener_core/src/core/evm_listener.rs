@@ -191,34 +191,41 @@ impl EvmListener {
     ) -> Result<FetchedBlock, EvmListenerError> {
         let fetcher = self.create_fetcher(cancel_token, compute_block);
 
-        let result = match self.fetcher_strategy {
-            BlockFetcherStrategy::BlockReceipts => {
-                fetcher
-                    .fetch_block_with_block_receipts_by_number(block_number)
-                    .await
-            }
-            BlockFetcherStrategy::BatchReceiptsFull => {
-                fetcher
-                    .fetch_block_with_batch_receipts_by_number(block_number)
-                    .await
-            }
-            BlockFetcherStrategy::BatchReceiptsRange => {
-                let batch_size = self.batch_receipts_size_range.unwrap_or(1);
-                fetcher
-                    .fetch_block_by_number_with_parallel_batched_receipts(block_number, batch_size)
-                    .await
-            }
-            BlockFetcherStrategy::TransactionReceiptsParallel => {
-                fetcher
-                    .fetch_block_with_individual_receipts_by_number(block_number)
-                    .await
-            }
-            BlockFetcherStrategy::TransactionReceiptsSequential => {
-                fetcher
-                    .fetch_block_with_sequential_receipts_by_number(block_number)
-                    .await
-            }
-        };
+        let result = fetcher
+            .retry_inconsistent_snapshot(|| async {
+                match self.fetcher_strategy {
+                    BlockFetcherStrategy::BlockReceipts => {
+                        fetcher
+                            .fetch_block_with_block_receipts_by_number(block_number)
+                            .await
+                    }
+                    BlockFetcherStrategy::BatchReceiptsFull => {
+                        fetcher
+                            .fetch_block_with_batch_receipts_by_number(block_number)
+                            .await
+                    }
+                    BlockFetcherStrategy::BatchReceiptsRange => {
+                        let batch_size = self.batch_receipts_size_range.unwrap_or(1);
+                        fetcher
+                            .fetch_block_by_number_with_parallel_batched_receipts(
+                                block_number,
+                                batch_size,
+                            )
+                            .await
+                    }
+                    BlockFetcherStrategy::TransactionReceiptsParallel => {
+                        fetcher
+                            .fetch_block_with_individual_receipts_by_number(block_number)
+                            .await
+                    }
+                    BlockFetcherStrategy::TransactionReceiptsSequential => {
+                        fetcher
+                            .fetch_block_with_sequential_receipts_by_number(block_number)
+                            .await
+                    }
+                }
+            })
+            .await;
 
         result.map_err(Self::map_fetch_error)
     }
@@ -240,30 +247,34 @@ impl EvmListener {
     ) -> Result<FetchedBlock, EvmListenerError> {
         let fetcher = self.create_fetcher(cancel_token, compute_block);
 
-        let result = match self.fetcher_strategy {
-            BlockFetcherStrategy::BlockReceipts => {
-                fetcher.fetch_block_with_block_receipts_by_hash(hash).await
-            }
-            BlockFetcherStrategy::BatchReceiptsFull => {
-                fetcher.fetch_block_with_batch_receipts_by_hash(hash).await
-            }
-            BlockFetcherStrategy::BatchReceiptsRange => {
-                let batch_size = self.batch_receipts_size_range.unwrap_or(1);
-                fetcher
-                    .fetch_block_by_hash_with_parallel_batched_receipts(hash, batch_size)
-                    .await
-            }
-            BlockFetcherStrategy::TransactionReceiptsParallel => {
-                fetcher
-                    .fetch_block_with_individual_receipts_by_hash(hash)
-                    .await
-            }
-            BlockFetcherStrategy::TransactionReceiptsSequential => {
-                fetcher
-                    .fetch_block_with_sequential_receipts_by_hash(hash)
-                    .await
-            }
-        };
+        let result = fetcher
+            .retry_inconsistent_snapshot(|| async {
+                match self.fetcher_strategy {
+                    BlockFetcherStrategy::BlockReceipts => {
+                        fetcher.fetch_block_with_block_receipts_by_hash(hash).await
+                    }
+                    BlockFetcherStrategy::BatchReceiptsFull => {
+                        fetcher.fetch_block_with_batch_receipts_by_hash(hash).await
+                    }
+                    BlockFetcherStrategy::BatchReceiptsRange => {
+                        let batch_size = self.batch_receipts_size_range.unwrap_or(1);
+                        fetcher
+                            .fetch_block_by_hash_with_parallel_batched_receipts(hash, batch_size)
+                            .await
+                    }
+                    BlockFetcherStrategy::TransactionReceiptsParallel => {
+                        fetcher
+                            .fetch_block_with_individual_receipts_by_hash(hash)
+                            .await
+                    }
+                    BlockFetcherStrategy::TransactionReceiptsSequential => {
+                        fetcher
+                            .fetch_block_with_sequential_receipts_by_hash(hash)
+                            .await
+                    }
+                }
+            })
+            .await;
 
         result.map_err(Self::map_fetch_error)
     }

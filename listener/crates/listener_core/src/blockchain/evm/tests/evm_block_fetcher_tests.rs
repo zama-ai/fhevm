@@ -1440,3 +1440,138 @@ fn test_classify_error_semaphore_closed_is_recoverable() {
         ErrorClassification::Recoverable
     ));
 }
+
+fn identity_fixture() -> (AnyRpcBlock, serde_json::Value) {
+    use alloy::primitives::{Address, Bloom};
+    use alloy::rpc::types::{Block, BlockTransactions, Log};
+
+    let hash = B256::with_last_byte(1);
+    let tx_hash = B256::with_last_byte(2);
+    let mut block: Block = Block::default();
+    block.header.hash = hash;
+    block.header.inner.number = 42;
+    block.transactions = BlockTransactions::Hashes(vec![tx_hash]);
+    let block = serde_json::from_value(serde_json::to_value(block).unwrap()).unwrap();
+    let log: Log = Log {
+        block_hash: Some(hash),
+        block_number: Some(42),
+        transaction_hash: Some(tx_hash),
+        transaction_index: Some(0),
+        log_index: Some(0),
+        ..Default::default()
+    };
+    let receipt = serde_json::json!({
+        "type": "0x0", "status": "0x1", "cumulativeGasUsed": "0x0",
+        "logsBloom": Bloom::ZERO, "logs": [log],
+        "transactionHash": tx_hash, "transactionIndex": "0x0",
+        "blockHash": hash, "blockNumber": "0x2a", "gasUsed": "0x0",
+        "effectiveGasPrice": "0x0", "from": Address::ZERO,
+        "to": null, "contractAddress": null
+    });
+    (block, receipt)
+}
+
+fn identity_fetcher() -> EvmBlockFetcher {
+    // These tests validate supplied snapshots; this provider is never contacted.
+    EvmBlockFetcher::new(SemEvmRpcProvider::new("http://127.0.0.1:1".into(), 1).unwrap())
+        .with_verify_block(false)
+        .with_retry_interval(Duration::ZERO)
+}
+
+#[test]
+fn snapshot_identity_validation_is_mandatory_without_block_verification() {
+    let fetcher = identity_fetcher();
+    let (block, receipt) = identity_fixture();
+    let valid = serde_json::from_value(receipt.clone()).unwrap();
+    assert!(
+        fetcher
+            .build_fetched_block(Uuid::new_v4(), block.clone(), vec![valid])
+            .is_ok()
+    );
+
+    for (pointer, replacement) in [
+        ("/blockHash", serde_json::json!(B256::with_last_byte(3))),
+        ("/blockNumber", serde_json::json!("0x2b")),
+        ("/transactionIndex", serde_json::json!("0x1")),
+        (
+            "/logs/0/blockHash",
+            serde_json::json!(B256::with_last_byte(3)),
+        ),
+        ("/logs/0/blockNumber", serde_json::json!("0x2b")),
+        (
+            "/logs/0/transactionHash",
+            serde_json::json!(B256::with_last_byte(3)),
+        ),
+        ("/logs/0/logIndex", serde_json::Value::Null),
+        ("/logs/0/removed", serde_json::json!(true)),
+    ] {
+        let mut altered = receipt.clone();
+        *altered.pointer_mut(pointer).unwrap() = replacement;
+        let altered = serde_json::from_value(altered).unwrap();
+        let result = fetcher.build_fetched_block(Uuid::new_v4(), block.clone(), vec![altered]);
+        assert!(
+            matches!(
+                result,
+                Err(BlockFetchError::ReceiptBlockMismatch { .. }
+                    | BlockFetchError::LogBlockMismatch { .. })
+            ),
+            "accepted inconsistent receipt field {pointer}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn snapshot_identity_retry_refetches_and_is_bounded() {
+    let fetcher = identity_fetcher();
+    let (block, receipt) = identity_fixture();
+    let receipt = serde_json::from_value(receipt).unwrap();
+    let valid = fetcher
+        .build_fetched_block(Uuid::new_v4(), block, vec![receipt])
+        .unwrap();
+    let calls = std::cell::Cell::new(0);
+    let result = fetcher
+        .retry_inconsistent_snapshot(|| {
+            calls.set(calls.get() + 1);
+            let response = if calls.get() == 1 {
+                Err(BlockFetchError::LogBlockMismatch {
+                    tx_hash: B256::ZERO,
+                })
+            } else {
+                Ok(valid.clone())
+            };
+            std::future::ready(response)
+        })
+        .await;
+    assert!(result.is_ok());
+    assert_eq!(calls.get(), 2);
+
+    calls.set(0);
+    let result = fetcher
+        .retry_inconsistent_snapshot(|| {
+            calls.set(calls.get() + 1);
+            std::future::ready(Err(BlockFetchError::LogBlockMismatch {
+                tx_hash: B256::ZERO,
+            }))
+        })
+        .await;
+    assert!(matches!(
+        result,
+        Err(BlockFetchError::LogBlockMismatch { .. })
+    ));
+    assert_eq!(calls.get(), 4);
+}
+
+#[tokio::test]
+async fn snapshot_identity_retry_obeys_cancellation() {
+    let cancel = CancellationToken::new();
+    let fetcher = identity_fetcher().with_cancellation_token(cancel.clone());
+    cancel.cancel();
+    let result = fetcher
+        .retry_inconsistent_snapshot(|| {
+            std::future::ready(Err(BlockFetchError::LogBlockMismatch {
+                tx_hash: B256::ZERO,
+            }))
+        })
+        .await;
+    assert!(matches!(result, Err(BlockFetchError::Cancelled)));
+}
