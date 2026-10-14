@@ -13,7 +13,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn, Level};
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -26,7 +26,8 @@ use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 use sqlx::postgres::PgPoolOptions;
 
 use crate::database::ingest::{
-    ingest_block_logs, update_finalized_blocks, BlockLogs, IngestOptions,
+    ingest_block_logs, update_finalized_blocks, validate_block_logs, BlockLogs,
+    IngestOptions,
 };
 use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::HealthCheck;
@@ -189,9 +190,13 @@ pub struct InfiniteLogIter {
                       * events data */
     contract_addresses: Vec<Address>,
     catchup_blocks: Option<(u64, Option<u64>)>, // to do catchup blocks by chunks
+    catchup_state: Option<(Database, String)>,
+    pending_catchup_page: Option<CatchupPage>,
     // Option<(from_block, optional to_block)>
     next_blocklogs: VecDeque<BlockLogs<Log>>, // logs already fetched but not yet processed
     stream: Option<SubscriptionStream<Header>>,
+    #[cfg(test)]
+    catchup_provider: Option<BlockchainProvider>,
     pub provider: Arc<RwLock<Option<BlockchainProvider>>>, // required to maintain the stream
     last_valid_block: Option<u64>,
     start_at_block: Option<i64>,
@@ -205,6 +210,13 @@ pub struct InfiniteLogIter {
     block_history: BlockHistory,           // to detect reorgs
     catchup_finalization_in_blocks: u64,
     timeout_request_websocket: u64,
+}
+
+struct CatchupPage {
+    from_block: u64,
+    next_page: u64,
+    remaining_blocks: usize,
+    generation: i64,
 }
 
 enum BlockOrTimeoutOrNone {
@@ -255,8 +267,12 @@ impl InfiniteLogIter {
             block_time: args.initial_block_time,
             contract_addresses,
             catchup_blocks: None,
+            catchup_state: None,
+            pending_catchup_page: None,
             next_blocklogs: VecDeque::new(),
             stream: None,
+            #[cfg(test)]
+            catchup_provider: None,
             provider: Arc::new(RwLock::new(None)),
             last_valid_block: None,
             start_at_block: args.start_at_block,
@@ -313,7 +329,8 @@ impl InfiniteLogIter {
         provider: &BlockchainProvider,
     ) -> Result<u64> {
         if let Some(last_seen_block) = self.last_valid_block {
-            return Ok(last_seen_block - self.catchup_margin + 1);
+            return Ok(last_seen_block
+                .saturating_sub(self.catchup_margin.saturating_sub(1)));
         }
         if let Some(start_at_block) = self.start_at_block {
             if start_at_block >= 0 {
@@ -346,26 +363,7 @@ impl InfiniteLogIter {
         if !self.contract_addresses.is_empty() {
             filter = filter.address(self.contract_addresses.clone())
         }
-        // we use a specific provider to not disturb the real-time one (no buffer shared)
-        let config = websocket_config();
-        let ws = WsConnect::new(&self.url)
-            .with_config(config)
-            // disabled, retried explicitly later
-            .with_max_retries(0);
-        // Timeout to prevent slow reconnection
-        let provider = tokio::time::timeout(
-            Duration::from_secs(self.timeout_request_websocket),
-            ProviderBuilder::new().connect_ws(ws),
-        );
-        let provider = match provider.await {
-            Err(_) => {
-                anyhow::bail!("Timeout getting provider for logs range")
-            }
-            Ok(Err(err)) => {
-                anyhow::bail!("Cannot get provider for logs range due to {err}")
-            }
-            Ok(Ok(provider)) => provider,
-        };
+        let provider = self.connect_catchup_provider().await?;
         // Timeout to prevent hanging indefinitely on buggy node
         match tokio::time::timeout(
             Duration::from_secs(self.timeout_request_websocket),
@@ -389,122 +387,121 @@ impl InfiniteLogIter {
         }
     }
 
-    async fn deduce_block_summary(
-        &self,
-        number: u64,
-        log: &Log,
-        previous_block: Option<&BlockLogs<Log>>,
-    ) -> BlockSummary {
-        // find in memory
-        if let Some(summary) = self.block_history.find_block_by_number(number) {
-            return *summary;
-        };
-        // ask to chain
-        if let Ok(block_header) = self.get_block_by_number(number).await {
-            return block_header.into();
-        };
-        error!(log = ?log, number, "Cannot get block header from chain, using log data and previous block data");
-        let hash = log.block_hash.unwrap_or(BlockHash::ZERO);
-        // fake hash may cause this block to be refetched later because it's considered missing
-        let estimated_timestamp =
-            previous_block.map(|b| b.summary.timestamp).unwrap_or(0)
-                + self.block_time;
-        let timestamp = log.block_timestamp.unwrap_or(estimated_timestamp);
-        // inaccurate timestamp is ok
-        let parent_hash = previous_block
-            .map(|bl| bl.summary.hash)
-            .unwrap_or(BlockHash::ZERO);
-        // inaccurate parent hash is ok
-        BlockSummary {
-            number,
-            hash,
-            parent_hash,
-            timestamp,
+    async fn connect_catchup_provider(&self) -> Result<BlockchainProvider> {
+        #[cfg(test)]
+        if let Some(provider) = &self.catchup_provider {
+            return Ok(provider.clone());
+        }
+        // we use a specific provider to not disturb the real-time one (no buffer shared)
+        let config = websocket_config();
+        let ws = WsConnect::new(&self.url)
+            .with_config(config)
+            // disabled, retried explicitly later
+            .with_max_retries(0);
+        // Timeout to prevent slow reconnection
+        let provider = tokio::time::timeout(
+            Duration::from_secs(self.timeout_request_websocket),
+            ProviderBuilder::new().connect_ws(ws),
+        );
+        match provider.await {
+            Err(_) => {
+                anyhow::bail!("Timeout getting provider for logs range")
+            }
+            Ok(Err(err)) => {
+                anyhow::bail!("Cannot get provider for logs range due to {err}")
+            }
+            Ok(Ok(provider)) => Ok(provider),
         }
     }
 
     async fn split_by_block(
         &mut self,
-        mut logs: Vec<Log>,
-    ) -> Vec<BlockLogs<Log>> {
-        if logs.is_empty() {
-            return vec![];
+        logs: Vec<Log>,
+    ) -> Result<Vec<BlockLogs<Log>>> {
+        let mut by_number = BTreeMap::<u64, Vec<Log>>::new();
+        for log in logs {
+            let number = log.block_number.ok_or_else(|| {
+                anyhow!("Catchup log is missing its block number")
+            })?;
+            by_number.entry(number).or_default().push(log);
         }
-        let mut is_sorted = true;
-        let mut last_of_block = vec![false; logs.len()];
-        let mut prev_block_number = 0;
-        let last_index = logs.len() - 1;
-        // Sort if needed and ensure log.block_number is not None
-        for log in &mut logs[0..last_index] {
-            let log_block_number =
-                log.block_number.unwrap_or(prev_block_number);
-            if log.block_number.is_none() {
-                error!(log = ?log, assumed_block_number = prev_block_number, "Log without block number, assuming same block");
-                log.block_number = Some(prev_block_number);
-            };
-            is_sorted = is_sorted && prev_block_number <= log_block_number;
-            prev_block_number = log_block_number;
-        }
-        if !is_sorted {
-            error!("Logs are not ordered by block number in catch-up");
-            logs.sort_by_key(|log| log.block_number.unwrap());
-        };
-        // Find blocks limits and check block number ordering
-        for (index, log) in logs[0..last_index].iter().enumerate() {
-            last_of_block[index] =
-                logs[index + 1].block_number != log.block_number
-        }
-        last_of_block[last_index] = true;
-        // Regroup log by block in increasing block number order
         let mut blocks_logs = vec![];
-        let mut current_logs: Vec<Log> = vec![];
-        for (index, log) in logs.into_iter().enumerate() {
-            if !last_of_block[index] {
-                current_logs.push(log);
-                continue;
+        for (number, logs) in by_number {
+            // A cached header at this height may belong to an orphan. Read the
+            // current header and reject the whole page if the range RPC raced
+            // with a reorg. The caller retains its cursor and refetches it.
+            let summary: BlockSummary =
+                self.get_block_by_number(number).await?.into();
+            if summary.number != number
+                || logs.iter().any(|log| {
+                    log.block_hash != Some(summary.hash) || log.removed
+                })
+            {
+                anyhow::bail!(
+                    "Catchup logs do not match canonical block {number} ({})",
+                    summary.hash
+                );
             }
-            let summary = self
-                .deduce_block_summary(
-                    log.block_number.unwrap(),
-                    &log,
-                    blocks_logs.last(),
-                )
-                .await;
-            current_logs.push(log);
             let block_logs = BlockLogs {
-                logs: std::mem::take(&mut current_logs),
+                logs,
                 summary,
                 catchup: true,
                 finalized: true,
             };
+            validate_block_logs(&block_logs)?;
             blocks_logs.push(block_logs);
         }
-        assert!(current_logs.is_empty());
-        blocks_logs
+        Ok(blocks_logs)
     }
 
     async fn consume_catchup_blocks(&mut self) {
-        let Some((from_block, to_block)) = self.catchup_blocks else {
+        let Some((mut from_block, to_block)) = self.catchup_blocks else {
             // nothing to consume
             return;
         };
+        let mut generation = 0;
+        // Persist an in-memory rewind before fetching it, and honor any
+        // earlier gap registered by another instance with the same identity.
+        if let Some((db, listener_id)) = &self.catchup_state {
+            match db.initialize_catchup_cursor(listener_id, from_block).await {
+                Ok(cursor) => {
+                    from_block = cursor.next_block_number;
+                    generation = cursor.generation;
+                    self.catchup_blocks = Some((from_block, to_block));
+                }
+                Err(err) => {
+                    warn!(error = %err, "Cannot persist catchup cursor before fetch");
+                    return;
+                }
+            }
+        }
         let to_block_or_max = to_block.unwrap_or(u64::MAX);
         if from_block > to_block_or_max {
             self.catchup_blocks = None;
             info!("Catchup no next get_logs step");
             return;
         }
-        let finalized_block =
-            if let Some(current_block) = self.block_history.tip() {
-                // non finalized block will be post-poned until they are finalized
-                current_block
+        let finalized_block = if let Some(current_block) =
+            self.block_history.tip()
+        {
+            // non finalized block will be post-poned until they are finalized
+            current_block
+                .number
+                .saturating_sub(self.catchup_finalization_in_blocks)
+        } else {
+            // Startup must obey the same finality lag as steady state.
+            // Otherwise the first page can finalize a block mid-reorg.
+            match self.get_current_block().await {
+                Ok(block) => block
+                    .header
                     .number
-                    .saturating_sub(self.catchup_finalization_in_blocks)
-            } else {
-                // happen at service start, assuming everything is finalized
-                info!("Unknown top block, assuming full finalized catchup");
-                from_block + self.catchup_paging
-            };
+                    .saturating_sub(self.catchup_finalization_in_blocks),
+                Err(err) => {
+                    warn!(error = %err, "Cannot determine catchup finality boundary");
+                    return;
+                }
+            }
+        };
         if from_block >= finalized_block {
             // non finalized blocks are post-poned
             info!("Post-pone catchup");
@@ -550,9 +547,59 @@ impl InfiniteLogIter {
             to_block = to_block,
             "Catchup get_logs step done"
         );
-        let by_blocks = self.split_by_block(logs).await;
+        let by_blocks = match self.split_by_block(logs).await {
+            Ok(blocks) => blocks,
+            Err(err) => {
+                warn!(error = %err, from_block, paging_to_block,
+                    "Catchup snapshot changed, retaining cursor for refetch");
+                return;
+            }
+        };
+        let remaining_blocks = by_blocks.len();
         self.next_blocklogs.extend(by_blocks);
-        self.catchup_blocks = Some((paging_to_block + 1, to_block)); // end is detected at function start
+        self.pending_catchup_page = Some(CatchupPage {
+            from_block,
+            next_page: paging_to_block + 1,
+            remaining_blocks,
+            generation,
+        });
+        if remaining_blocks == 0 {
+            if let Err(err) = self.finish_pending_catchup_page().await {
+                warn!(error = %err, "Cannot checkpoint empty catchup page; retaining cursor");
+            }
+        }
+    }
+
+    async fn finish_pending_catchup_page(&mut self) -> Result<()> {
+        let Some(page) = &self.pending_catchup_page else {
+            return Ok(());
+        };
+        if page.remaining_blocks != 0 {
+            return Ok(());
+        }
+        let next_page = if let Some((db, listener_id)) = &self.catchup_state {
+            db.finish_catchup_page(
+                listener_id,
+                page.from_block,
+                page.next_page,
+                page.generation,
+            )
+            .await?
+            .next_block_number
+            .min(page.next_page)
+        } else {
+            page.next_page
+        };
+        self.catchup_blocks = Some((next_page, self.absolute_end_at_block));
+        self.pending_catchup_page = None;
+        Ok(())
+    }
+
+    async fn acknowledge_catchup_block(&mut self) -> Result<()> {
+        if let Some(page) = &mut self.pending_catchup_page {
+            page.remaining_blocks = page.remaining_blocks.saturating_sub(1);
+        }
+        self.finish_pending_catchup_page().await
     }
 
     pub async fn get_block_by_number(&self, number: u64) -> Result<Block> {
@@ -791,6 +838,20 @@ impl InfiniteLogIter {
             .with_max_retries(0); // disabled, alloy skips events
         let provider = ProviderBuilder::new().connect_ws(ws).await?;
         let catch_up_from = self.catchup_block_from(&provider).await?;
+        // A reconnect must not discard an unfinished catchup range merely
+        // because realtime ingestion has advanced the high watermark.
+        let catch_up_from = self
+            .catchup_blocks
+            .map(|(from, _)| from.min(catch_up_from))
+            .unwrap_or(catch_up_from);
+        let catch_up_from = if let Some((db, listener_id)) = &self.catchup_state
+        {
+            db.initialize_catchup_cursor(listener_id, catch_up_from)
+                .await?
+                .next_block_number
+        } else {
+            catch_up_from
+        };
         self.absolute_end_at_block =
             self.resolve_end_at_block(&provider).await?;
         self.catchup_blocks = Some((catch_up_from, self.absolute_end_at_block));
@@ -856,6 +917,12 @@ impl InfiniteLogIter {
         let Some(end_at_block) = self.absolute_end_at_block else {
             return false;
         };
+        if self
+            .catchup_blocks
+            .is_some_and(|(from, _)| from <= end_at_block)
+        {
+            return false;
+        }
         let current_block_number =
             if let Some(current_block) = self.block_history.tip() {
                 current_block.number
@@ -874,7 +941,16 @@ impl InfiniteLogIter {
                 continue;
             };
             if self.next_blocklogs.is_empty() {
+                let before = self.catchup_blocks;
                 self.consume_catchup_blocks().await;
+                // An empty page is still successful progress. Keep draining
+                // historical pages before considering the realtime stream or
+                // --end-at-block, which may already be behind the chain tip.
+                if self.next_blocklogs.is_empty()
+                    && self.catchup_blocks != before
+                {
+                    continue;
+                }
             };
             if !self.next_blocklogs.is_empty() {
                 return self.next_blocklogs.pop_front();
@@ -939,9 +1015,35 @@ impl InfiniteLogIter {
     /// Reset state for the next catchup loop iteration.
     fn reset_for_catchup_loop(&mut self) {
         self.catchup_blocks = None;
+        self.pending_catchup_page = None;
         self.next_blocklogs.clear();
         self.last_valid_block = None;
         self.absolute_end_at_block = None;
+        self.block_history =
+            BlockHistory::new(self.reorg_maximum_duration_in_blocks as usize);
+    }
+
+    /// Refetch the entire uncommitted page after a failed database insertion.
+    /// Its durable cursor remains at the page start. Do not reuse a batch
+    /// that may have become invalid during a reorg.
+    fn retry_from_block(&mut self, block_number: u64) {
+        let block_number = self
+            .pending_catchup_page
+            .as_ref()
+            .map(|page| page.from_block.min(block_number))
+            .unwrap_or(block_number);
+        let from_block = self
+            .catchup_blocks
+            .map(|(from, _)| from.min(block_number))
+            .unwrap_or(block_number);
+        self.catchup_blocks = Some((from_block, self.absolute_end_at_block));
+        self.next_blocklogs.clear();
+        self.pending_catchup_page = None;
+        self.last_valid_block = Some(
+            self.last_valid_block
+                .unwrap_or(block_number)
+                .min(block_number.saturating_sub(1)),
+        );
         self.block_history =
             BlockHistory::new(self.reorg_maximum_duration_in_blocks as usize);
     }
@@ -956,6 +1058,9 @@ async fn db_insert_block(
     kms_generation_address: &Option<Address>,
     args: &Args,
 ) -> anyhow::Result<()> {
+    // An inconsistent RPC snapshot must be fetched again; retrying the same
+    // immutable batch against the database cannot repair it.
+    validate_block_logs(block_logs)?;
     info!(
         block = ?block_logs.summary,
         nb_events = block_logs.logs.len(),
@@ -1075,6 +1180,19 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let mut db =
         Database::new(&args.database_url, chain_id, args.dependence_cache_size)
             .await?;
+    // Separate differently configured manual replay jobs from the ordinary
+    // listener, while retaining a stable identity across process restarts.
+    let listener_id = format!(
+        "{}:start={:?}:end={:?}:catchup={}:acl={}:tfhe={}:kms={}",
+        args.service_name,
+        args.start_at_block,
+        args.end_at_block,
+        args.only_catchup_loop,
+        args.acl_contract_address,
+        args.tfhe_contract_address,
+        args.kms_generation_address,
+    );
+    log_iter.catchup_state = Some((db.clone(), listener_id));
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: log_iter.tick_timeout.clone(),
@@ -1144,6 +1262,15 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             if args.only_catchup_loop && !block_logs.catchup {
                 break;
             }
+            if !block_logs.catchup
+                && log_iter
+                    .absolute_end_at_block
+                    .is_some_and(|end| block_logs.summary.number > end)
+            {
+                // Keep observing the tip so pending catchup can reach finality,
+                // without ingesting realtime blocks beyond a requested range.
+                continue;
+            }
             let status = db_insert_block(
                 chain_id,
                 &mut db,
@@ -1156,8 +1283,12 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             .await;
             if status.is_err() {
                 // logging & retry on error is already done in db_insert_block
+                log_iter.retry_from_block(block_logs.summary.number);
                 continue;
             };
+            // The block transaction has committed. A checkpoint failure exits
+            // with the old durable cursor intact, so restart replays the page.
+            log_iter.acknowledge_catchup_block().await?;
             log_iter.last_valid_block = Some(
                 block_logs
                     .summary
@@ -1224,8 +1355,11 @@ mod tests {
             block_time: 12,
             contract_addresses: vec![],
             catchup_blocks: None,
+            catchup_state: None,
+            pending_catchup_page: None,
             next_blocklogs: VecDeque::new(),
             stream: None,
+            catchup_provider: None,
             provider: Arc::new(RwLock::new(None)),
             last_valid_block: None,
             start_at_block: None,
@@ -1240,6 +1374,138 @@ mod tests {
             catchup_finalization_in_blocks: 20,
             timeout_request_websocket: 15,
         }
+    }
+
+    fn rpc_block(hash: u8) -> Block {
+        let mut block: Block = Block::default();
+        block.header.hash = BlockHash::with_last_byte(hash);
+        block.header.inner.number = 42;
+        block
+    }
+
+    #[tokio::test]
+    async fn catchup_uses_current_header_and_rejects_mixed_snapshots() {
+        use alloy::transports::mock::Asserter;
+        let asserter = Asserter::new();
+        let old = rpc_block(1);
+        let canonical = rpc_block(2);
+        asserter.push_success(&canonical);
+        asserter.push_success(&canonical);
+        let provider = ProviderBuilder::new().connect_mocked_client(asserter);
+        let mut iter = new_test_iter(50);
+        iter.block_history.add_block(old.clone().into());
+        *iter.provider.write().await = Some(provider);
+        let log = Log {
+            block_hash: Some(canonical.header.hash),
+            block_number: Some(42),
+            transaction_hash: Some(BlockHash::with_last_byte(3)),
+            log_index: Some(0),
+            ..Default::default()
+        };
+
+        let blocks = iter.split_by_block(vec![log.clone()]).await.unwrap();
+        assert_eq!(blocks[0].summary.hash, canonical.header.hash);
+        let orphan_log = Log {
+            block_hash: Some(old.header.hash),
+            ..log
+        };
+        assert!(iter.split_by_block(vec![orphan_log]).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn catchup_checkpoint_waits_for_whole_page_and_rewinds_on_failure() {
+        let mut iter = new_test_iter(50);
+        iter.catchup_blocks = Some((40, Some(100)));
+        iter.absolute_end_at_block = Some(100);
+        iter.last_valid_block = Some(200); // realtime is ahead of catchup
+        iter.pending_catchup_page = Some(CatchupPage {
+            from_block: 40,
+            next_page: 60,
+            remaining_blocks: 2,
+            generation: 0,
+        });
+        iter.acknowledge_catchup_block().await.unwrap();
+        assert_eq!(iter.catchup_blocks.unwrap().0, 40);
+
+        iter.retry_from_block(50);
+        assert_eq!(iter.catchup_blocks.unwrap().0, 40);
+        assert_eq!(iter.last_valid_block, Some(39));
+        assert!(iter.pending_catchup_page.is_none());
+
+        iter.pending_catchup_page = Some(CatchupPage {
+            from_block: 40,
+            next_page: 60,
+            remaining_blocks: 2,
+            generation: 0,
+        });
+        iter.acknowledge_catchup_block().await.unwrap();
+        assert_eq!(iter.catchup_blocks.unwrap().0, 40);
+        iter.acknowledge_catchup_block().await.unwrap();
+        assert_eq!(iter.catchup_blocks.unwrap().0, 60);
+    }
+
+    #[tokio::test]
+    async fn catchup_end_waits_for_remaining_historical_pages() {
+        let mut iter = new_test_iter(50);
+        iter.absolute_end_at_block = Some(100);
+        let mut tip = rpc_block(1);
+        tip.header.inner.number = 200;
+        iter.block_history.add_block(tip.into());
+        // An empty page or failed fetch must not let the newer realtime head
+        // terminate a bounded replay before the rest of its range is read.
+        iter.catchup_blocks = Some((60, Some(100)));
+        assert!(!iter.end_at_block_reached().await);
+        iter.catchup_blocks = Some((101, Some(100)));
+        assert!(iter.end_at_block_reached().await);
+    }
+
+    #[tokio::test]
+    async fn catchup_empty_page_continues_before_bounded_replay_ends() {
+        use alloy::pubsub::RawSubscription;
+        use alloy::transports::mock::Asserter;
+
+        let asserter = Asserter::new();
+        asserter.push_success(&Vec::<Log>::new()); // 40..=59 is empty
+        let mut block = rpc_block(2);
+        block.header.inner.number = 60;
+        let log: Log = Log {
+            block_hash: Some(block.header.hash),
+            block_number: Some(60),
+            transaction_hash: Some(BlockHash::with_last_byte(3)),
+            log_index: Some(0),
+            ..Default::default()
+        };
+        asserter.push_success(&vec![log]);
+        asserter.push_success(&block);
+        let provider = ProviderBuilder::new().connect_mocked_client(asserter);
+        let mut iter = new_test_iter(50);
+        iter.catchup_provider = Some(provider.clone());
+        *iter.provider.write().await = Some(provider);
+        let (_sender, rx) = tokio::sync::broadcast::channel(1);
+        iter.stream = Some(
+            RawSubscription {
+                rx,
+                local_id: BlockHash::ZERO,
+            }
+            .into_typed::<Header>()
+            .into_stream(),
+        );
+        iter.catchup_paging = 20;
+        iter.catchup_blocks = Some((40, Some(79)));
+        iter.absolute_end_at_block = Some(79);
+        let mut tip = rpc_block(1);
+        tip.header.inner.number = 200;
+        iter.block_history.add_block(tip.into());
+
+        // No realtime message is needed to move past the empty first page.
+        let next = tokio::time::timeout(Duration::from_secs(1), iter.next())
+            .await
+            .expect("catchup must continue without reading realtime")
+            .expect("the second page has a computation");
+        assert_eq!(next.summary.number, 60);
+        assert_eq!(iter.catchup_blocks.unwrap().0, 60);
+        iter.acknowledge_catchup_block().await.unwrap();
+        assert!(iter.next().await.is_none());
     }
 
     async fn setup_iter_with_chain(

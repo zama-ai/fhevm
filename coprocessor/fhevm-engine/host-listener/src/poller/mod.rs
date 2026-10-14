@@ -20,7 +20,6 @@ use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 use sqlx::postgres::PgPoolOptions;
 
-use crate::cmd::block_history::BlockSummary;
 use crate::database::ingest::{
     ingest_block_logs, update_finalized_blocks_aux, BlockLogs, IngestOptions,
 };
@@ -339,46 +338,21 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         let mut rpc_errors = 0;
 
         for block in (last_caught_up_block + 1)..=target {
-            let logs = match client.logs_for_block(block).await {
-                Ok(logs) => {
+            let block_logs = match client.block_logs_for_number(block).await {
+                Ok(block_logs) => {
                     consecutive_rpc_failures = 0;
-                    logs
+                    block_logs
                 }
                 Err(err) => {
                     handle_rpc_failure(
                         &mut consecutive_rpc_failures,
                         Some(block),
                         &err,
-                        "Failed to fetch logs for block after retries",
+                        "Failed to fetch a coherent block snapshot after retries",
                     )?;
                     rpc_errors += 1;
                     break;
                 }
-            };
-
-            let header = match client.header_for_block(block).await {
-                Ok(header) => {
-                    consecutive_rpc_failures = 0;
-                    header
-                }
-                Err(err) => {
-                    handle_rpc_failure(
-                        &mut consecutive_rpc_failures,
-                        Some(block),
-                        &err,
-                        "Failed to fetch header for block after retries",
-                    )?;
-                    rpc_errors += 1;
-                    break;
-                }
-            };
-
-            let summary: BlockSummary = header.into();
-            let block_logs = BlockLogs {
-                logs,
-                summary,
-                catchup: true,
-                finalized: true,
             };
 
             let ingest_options = IngestOptions {
