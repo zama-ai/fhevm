@@ -15,6 +15,7 @@ use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::DatabaseURL;
 use fhevm_engine_common::utils::{to_hex, HeartBeat};
 use prometheus::{register_int_counter_vec, IntCounterVec};
+use sha3::{Digest, Keccak256};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Error as SqlxError;
@@ -390,12 +391,9 @@ impl Database {
     ) -> Result<bool, SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        // A computation first ingested without its ACL allow event (e.g. a
-        // partial get_logs during reorg recovery) is stored as not allowed and
-        // already completed, so it is never scheduled. When a later ingestion
-        // of the same event sees it allowed, upgrade the row while its
-        // ciphertext does not exist yet, and re-queue its dependence chain.
-        let row = sqlx::query!(
+        // Reconcile ACL evidence and repair chains after *all* computation
+        // writes. Taking chain locks here reverses the worker's lock order.
+        let result = sqlx::query!(
             r#"
             INSERT INTO computations (
                 output_handle,
@@ -412,17 +410,7 @@ impl Database {
                 block_number
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11)
-            ON CONFLICT (output_handle, transaction_id) DO UPDATE
-            SET is_allowed = TRUE,
-                is_completed = FALSE,
-                completed_at = NULL
-            WHERE EXCLUDED.is_allowed
-              AND NOT computations.is_allowed
-              AND NOT EXISTS (
-                  SELECT 1 FROM ciphertexts ct
-                  WHERE ct.handle = computations.output_handle
-              )
-            RETURNING (xmax = 0) AS "inserted!", dependence_chain_id
+            ON CONFLICT (output_handle, transaction_id) DO NOTHING
             "#,
             output_handle,
             &dependencies,
@@ -439,97 +427,161 @@ impl Database {
             self.chain_id.as_i64(),
             log.block_number as i64
         )
-        .fetch_optional(tx.deref_mut())
+        .execute(tx.deref_mut())
         .await?;
-        let Some(row) = row else {
-            // Neither inserted nor upgraded: the row already exists. If it is
-            // still pending, its stored chain must be reachable by the
-            // tfhe-worker. A chain marked processed while this work was
-            // being added (a worker finished the orphan version of a reorged
-            // block just before the canonical version was ingested), a chain
-            // removed by cleanup, or a chain id that differs from the one this
-            // listener's cache assigns on replay would otherwise leave the
-            // computation unscheduled forever. Re-arm only processed or
-            // missing chains, so chains that are pending or being processed
-            // are not disturbed by ordinary duplicate ingestion.
-            self.rearm_pending_computation_chain(tx, &output_handle, log)
-                .await?;
-            return Ok(false);
-        };
-        if !row.inserted {
-            warn!(
-                output_handle = to_hex(&output_handle),
-                "Computation upgraded to allowed, re-queuing its dependence chain"
-            );
-            if let Some(dependence_chain_id) = row.dependence_chain_id {
-                // Cleanup may have removed the original processed chain,
-                // and this listener's cache may assign a different chain on
-                // replay. Recreate the stored chain so its work is reachable.
-                // For existing chains, preserve ownership and dependencies.
-                sqlx::query!(
-                    r#"
-                    INSERT INTO dependence_chain (
-                        dependence_chain_id, status, last_updated_at
-                    )
-                    VALUES ($1, 'updated', $2::timestamp)
-                    ON CONFLICT (dependence_chain_id) DO UPDATE
-                    SET status = 'updated'
-                    "#,
-                    dependence_chain_id,
-                    log.block_timestamp,
-                )
-                .execute(tx.deref_mut())
-                .await?;
-            }
-        }
-        Ok(true)
+        Ok(result.rows_affected() > 0)
     }
 
-    /// Re-arm the stored dependence chain of an existing, still pending
-    /// computation (allowed, not completed, not in error, no ciphertext) when
-    /// that chain is processed or missing. Returns true if a chain was
-    /// re-armed or recreated.
-    async fn rearm_pending_computation_chain(
+    /// Serialize overlapping computation/ACL batches, including deliveries in
+    /// different blocks or listener processes. A shared handle is the unit of
+    /// reconciliation; independent blocks can still ingest concurrently.
+    pub async fn lock_ingestion_handles(
         &self,
         tx: &mut Transaction<'_>,
-        output_handle: &[u8],
-        log: &LogTfhe,
-    ) -> Result<bool, SqlxError> {
-        let rearmed = sqlx::query_scalar!(
+        handles: &[Vec<u8>],
+    ) -> Result<(), SqlxError> {
+        // Bound PostgreSQL lock-table use even for very large blocks. Hash
+        // collisions only serialize otherwise independent handles; they cannot
+        // make overlapping deliveries observe inconsistent ACL evidence.
+        let mut namespace = Keccak256::new();
+        namespace.update(b"fhevm-ingestion-handles");
+        namespace.update(self.chain_id.as_i64().to_be_bytes());
+        let namespace = namespace.finalize();
+        let namespace = i32::from_be_bytes(
+            namespace[..4].try_into().expect("four-byte hash prefix"),
+        );
+        let mut locks = handles
+            .iter()
+            .map(|handle| {
+                let digest = Keccak256::digest(handle);
+                i32::from(digest[0] & 127)
+            })
+            .collect::<Vec<_>>();
+        locks.sort_unstable();
+        locks.dedup();
+        sqlx::query(
+            "SELECT pg_advisory_xact_lock($1, lock_id)
+             FROM unnest($2::int[]) AS locks(lock_id) ORDER BY lock_id",
+        )
+        .bind(namespace)
+        .bind(&locks)
+        .execute(tx.as_mut())
+        .await?;
+        Ok(())
+    }
+
+    pub async fn allowed_computation_handles(
+        &self,
+        tx: &mut Transaction<'_>,
+        handles: &[Vec<u8>],
+    ) -> Result<Vec<Vec<u8>>, SqlxError> {
+        sqlx::query_scalar(
+            "SELECT DISTINCT handle FROM allowed_handles
+             WHERE handle = ANY($1::bytea[])
+               AND (host_chain_id = $2 OR host_chain_id IS NULL)",
+        )
+        .bind(handles)
+        .bind(self.chain_id.as_i64())
+        .fetch_all(tx.as_mut())
+        .await
+    }
+
+    /// Also runs for ACL-only deliveries and duplicate ACL events. The handle
+    /// locks above make the ACL-first and computation-first cases converge even
+    /// when independent listener transactions start simultaneously.
+    pub async fn upgrade_allowed_computations(
+        &self,
+        tx: &mut Transaction<'_>,
+        handles: &[Vec<u8>],
+    ) -> Result<Vec<(Vec<u8>, Option<Vec<u8>>)>, SqlxError> {
+        let upgraded: Vec<(Vec<u8>, Option<Vec<u8>>)> = sqlx::query_as(
             r#"
-            INSERT INTO dependence_chain (
-                dependence_chain_id, status, last_updated_at
-            )
-            SELECT c.dependence_chain_id, 'updated', $3::timestamp
-            FROM computations c
-            WHERE c.output_handle = $1
-              AND c.transaction_id = $2
-              AND c.dependence_chain_id IS NOT NULL
-              AND c.is_allowed
-              AND NOT c.is_completed
-              AND NOT c.is_error
+            UPDATE computations c
+            SET is_allowed = TRUE, is_completed = FALSE, completed_at = NULL
+            WHERE c.output_handle = ANY($1::bytea[])
+              AND c.host_chain_id = $2
+              AND NOT c.is_allowed
+              AND EXISTS (
+                  SELECT 1 FROM allowed_handles a
+                  WHERE a.handle = c.output_handle
+                    AND (a.host_chain_id = $2 OR a.host_chain_id IS NULL)
+              )
               AND NOT EXISTS (
                   SELECT 1 FROM ciphertexts ct WHERE ct.handle = c.output_handle
               )
-            ON CONFLICT (dependence_chain_id) DO UPDATE
-            SET status = 'updated'
-            WHERE dependence_chain.status = 'processed'
-            RETURNING dependence_chain_id
+            RETURNING c.output_handle, c.dependence_chain_id
             "#,
-            output_handle,
-            log.transaction_hash.map(|txh| txh.to_vec()),
-            log.block_timestamp,
         )
-        .fetch_optional(tx.deref_mut())
+        .bind(handles)
+        .bind(self.chain_id.as_i64())
+        .fetch_all(tx.as_mut())
         .await?;
-        if let Some(dependence_chain_id) = &rearmed {
+        if !upgraded.is_empty() {
+            warn!(count = upgraded.len(), "Computations upgraded to allowed, re-queuing their dependence chains");
+        }
+        Ok(upgraded)
+    }
+
+    /// Repair the persisted chain identity, which can differ from the grouping
+    /// inferred on replay. Only upgrades wake an active owner; ordinary pending
+    /// duplicates repair processed/missing chains without changing a valid lease.
+    /// This must run after every computation write in the transaction.
+    pub async fn repair_pending_computation_chains(
+        &self,
+        tx: &mut Transaction<'_>,
+        handles: &[Vec<u8>],
+        upgraded_chains: &[Vec<u8>],
+        slow_chains: &[Vec<u8>],
+    ) -> Result<(), SqlxError> {
+        let repaired: Vec<Vec<u8>> = sqlx::query_scalar(
+            r#"
+            INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at, schedule_priority)
+            SELECT c.dependence_chain_id, 'updated', MIN(c.schedule_order),
+                   CASE WHEN c.dependence_chain_id = ANY($4::bytea[]) THEN 1 ELSE 0 END
+            FROM computations c
+            WHERE c.output_handle = ANY($1::bytea[])
+              AND c.host_chain_id = $2
+              AND c.dependence_chain_id IS NOT NULL
+              AND c.is_allowed AND NOT c.is_completed AND NOT c.is_error
+              AND NOT EXISTS (SELECT 1 FROM ciphertexts ct WHERE ct.handle = c.output_handle)
+            GROUP BY c.dependence_chain_id
+            ORDER BY c.dependence_chain_id
+            ON CONFLICT (dependence_chain_id) DO UPDATE
+            SET status = CASE
+                    WHEN dependence_chain.status = 'processed'
+                      OR dependence_chain.dependence_chain_id = ANY($3::bytea[])
+                    THEN 'updated' ELSE dependence_chain.status END,
+                schedule_priority = GREATEST(dependence_chain.schedule_priority, EXCLUDED.schedule_priority)
+            WHERE dependence_chain.status = 'processed'
+               OR dependence_chain.dependence_chain_id = ANY($3::bytea[])
+               OR dependence_chain.schedule_priority < EXCLUDED.schedule_priority
+            RETURNING dependence_chain_id
+            "#
+        ).bind(handles).bind(self.chain_id.as_i64()).bind(upgraded_chains).bind(slow_chains)
+            .fetch_all(tx.as_mut()).await?;
+        if !repaired.is_empty() {
             warn!(
-                output_handle = to_hex(output_handle),
-                dependence_chain_id = to_hex(dependence_chain_id),
-                "Pending computation had an unreachable dependence chain, re-armed it"
+                count = repaired.len(),
+                "Pending computation dependence chains re-armed"
             );
         }
-        Ok(rearmed.is_some())
+        Ok(())
+    }
+
+    /// Publish committed identities, not a replay's newly inferred grouping.
+    /// Prefer pending work when a reusable handle occurs in several transactions.
+    pub async fn computation_chain_cache_entries(
+        &self,
+        tx: &mut Transaction<'_>,
+        handles: &[Vec<u8>],
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, SqlxError> {
+        sqlx::query_as(
+            "SELECT DISTINCT ON (output_handle) output_handle, dependence_chain_id
+             FROM computations
+             WHERE output_handle = ANY($1::bytea[]) AND host_chain_id = $2
+               AND is_allowed AND NOT is_error AND dependence_chain_id IS NOT NULL
+             ORDER BY output_handle, is_completed, schedule_order, transaction_id"
+        ).bind(handles).bind(self.chain_id.as_i64()).fetch_all(tx.as_mut()).await
     }
 
     #[rustfmt::skip]
@@ -1172,11 +1224,12 @@ impl Database {
     pub async fn update_dependence_chain(
         &self,
         tx: &mut Transaction<'_>,
-        chains: OrderedChains,
+        mut chains: OrderedChains,
         block_timestamp: PrimitiveDateTime,
         block_summary: &BlockSummary,
         slow_dep_chain_ids: &HashSet<ChainHash>,
     ) -> Result<(), SqlxError> {
+        chains.sort_by_key(|chain| chain.hash);
         for chain in chains {
             let schedule_priority = if slow_dep_chain_ids.contains(&chain.hash)
             {

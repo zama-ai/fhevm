@@ -575,8 +575,8 @@ async fn canonical_version_after_orphan_chain_processed() -> anyhow::Result<()>
     };
     assert_eq!(reachable(canonical_out).await?, 1);
 
-    // Even if the chain is marked processed again (the race), re-ingesting the
-    // canonical block (catch-up after deploying the fix) re-arms it.
+    // A stale processed status must also be repaired when the canonical
+    // block is replayed; this models recovery, not the origin of that status.
     set_chain_status(&pool, producer_tx, "processed").await?;
     assert_eq!(reachable(canonical_out).await?, 0);
     let mut replay_db =

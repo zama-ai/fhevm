@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
@@ -24,6 +26,25 @@ pub struct BlockLogs<T> {
     pub summary: BlockSummary,
     pub catchup: bool,
     pub finalized: bool,
+}
+
+/// Refuse to commit logs under a header from another fork, or logs whose
+/// identity/order cannot be established. The caller must refetch the batch.
+pub fn validate_block_logs(block: &BlockLogs<Log>) -> Result<(), sqlx::Error> {
+    for log in &block.logs {
+        if log.block_hash != Some(block.summary.hash)
+            || log.block_number != Some(block.summary.number)
+            || log.removed
+            || log.transaction_hash.is_none()
+            || log.log_index.is_none()
+        {
+            return Err(sqlx::Error::Protocol(format!(
+                "Invalid log identity in block {} ({:?}); refetch the block",
+                block.summary.number, block.summary.hash
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -151,7 +172,9 @@ pub async fn ingest_block_logs(
     kms_generation_contract_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
+    validate_block_logs(block_logs)?;
     let mut tx = db.new_transaction().await?;
+    let mut acl_event_logs = vec![];
     let mut is_allowed = HashSet::<Handle>::new();
     let mut tfhe_event_log = vec![];
     let mut kms_gen_events = vec![];
@@ -164,7 +187,6 @@ pub async fn ingest_block_logs(
     for log in &block_logs.logs {
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
-        let transaction_hash = log.transaction_hash;
         if acl_contract_address.is_none() || is_acl_address {
             if let Ok(event) =
                 AclContract::AclContractEvents::decode_log(&log.inner)
@@ -173,33 +195,7 @@ pub async fn ingest_block_logs(
                 for handle in handles {
                     is_allowed.insert(handle.to_vec());
                 }
-                let inserted = db
-                    .handle_acl_event(
-                        &mut tx,
-                        &event,
-                        &log.transaction_hash,
-                        chain_id,
-                        block_hash.as_ref(),
-                        block_number,
-                    )
-                    .await?;
-                at_least_one_insertion |= inserted;
-                if block_logs.catchup && inserted {
-                    info!(
-                        acl_event = ?event,
-                        ?transaction_hash,
-                        ?block_number,
-                        "ACL event missed before"
-                    );
-                    catchup_insertion += 1;
-                } else {
-                    info!(
-                        acl_event = ?event,
-                        ?transaction_hash,
-                        ?block_number,
-                        "ACL event"
-                    );
-                }
+                acl_event_logs.push((event, log.transaction_hash));
                 continue;
             }
         }
@@ -247,8 +243,46 @@ pub async fn ingest_block_logs(
                 log = ?log,
                 "Cannot decode event",
             );
+            return Err(sqlx::Error::Protocol(format!(
+                "Cannot decode event from configured contract {:?} in block {}",
+                log.inner.address, block_number
+            )));
         }
     }
+    // Read and publish ACL evidence under the same per-handle transaction locks
+    // as computation writes. This also serializes split deliveries across blocks.
+    let mut touched_handles = is_allowed.clone();
+    for log in &tfhe_event_log {
+        if let Some(handle) = tfhe_result_handle(&log.event) {
+            touched_handles.insert(handle.to_vec());
+        }
+    }
+    let touched_handles = touched_handles.into_iter().collect::<Vec<_>>();
+    db.lock_ingestion_handles(&mut tx, &touched_handles).await?;
+    for (event, transaction_hash) in acl_event_logs {
+        let inserted = db
+            .handle_acl_event(
+                &mut tx,
+                &event,
+                &transaction_hash,
+                chain_id,
+                block_hash.as_ref(),
+                block_number,
+            )
+            .await?;
+        at_least_one_insertion |= inserted;
+        if block_logs.catchup && inserted {
+            info!(acl_event = ?event, ?transaction_hash, block_number, "ACL event missed before");
+            catchup_insertion += 1;
+        } else {
+            info!(acl_event = ?event, ?transaction_hash, block_number, "ACL event");
+        }
+    }
+    is_allowed.extend(
+        db.allowed_computation_handles(&mut tx, &touched_handles)
+            .await?,
+    );
+
     for tfhe_log in tfhe_event_log.iter_mut() {
         tfhe_log.is_allowed =
             if let Some(result_handle) = tfhe_result_handle(&tfhe_log.event) {
@@ -258,14 +292,25 @@ pub async fn ingest_block_logs(
             };
     }
 
+    // Group on a private snapshot. Publishing before commit leaks mappings from
+    // rolled-back batches into later or concurrently ingested blocks.
+    let private_cache =
+        Arc::new(RwLock::new(db.dependence_chain.read().await.clone()));
     let chains = dependence_chains(
         &mut tfhe_event_log,
-        &db.dependence_chain,
+        &private_cache,
         options.dependence_by_connexity,
         options.dependence_cross_block,
     )
     .await;
 
+    let inferred_chains = tfhe_event_log
+        .iter()
+        .filter_map(|log| {
+            tfhe_result_handle(&log.event)
+                .map(|handle| (handle.to_vec(), log.dependence_chain))
+        })
+        .collect::<HashMap<_, _>>();
     let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
     let mut dependent_ops_by_chain: HashMap<ChainHash, u64> = HashMap::new();
     for tfhe_log in tfhe_event_log {
@@ -287,6 +332,27 @@ pub async fn ingest_block_logs(
         }
     }
 
+    let upgraded = db
+        .upgrade_allowed_computations(&mut tx, &touched_handles)
+        .await?;
+    let upgraded_chains = upgraded
+        .iter()
+        .filter_map(|(_, chain)| chain.clone())
+        .collect::<Vec<_>>();
+    at_least_one_insertion |= !upgraded.is_empty();
+    if slow_lane_enabled {
+        for (handle, stored_chain) in &upgraded {
+            let chain = inferred_chains.get(handle).copied().or_else(|| {
+                stored_chain
+                    .as_ref()
+                    .and_then(|id| ChainHash::try_from(id.as_slice()).ok())
+            });
+            if let Some(chain) = chain {
+                *dependent_ops_by_chain.entry(chain).or_default() += 1;
+            }
+        }
+    }
+
     let mut slow_dep_chain_ids: HashSet<ChainHash> = HashSet::new();
     if slow_lane_enabled {
         let max_per_chain = u64::from(options.dependent_ops_max_per_chain);
@@ -296,6 +362,13 @@ pub async fn ingest_block_logs(
             max_per_chain,
         );
 
+        // ACL-only replay may have no newly inferred chain at all.
+        slow_dep_chain_ids.extend(
+            dependent_ops_by_chain
+                .iter()
+                .filter(|(_, count)| **count > max_per_chain)
+                .map(|(chain, _)| *chain),
+        );
         let parent_dep_chain_ids = chains
             .iter()
             .flat_map(|chain| {
@@ -313,6 +386,21 @@ pub async fn ingest_block_logs(
         slow_dep_chain_ids.extend(existing_slow_parents);
         propagate_slow_lane_to_dependents(&chains, &mut slow_dep_chain_ids);
 
+        // Preserve classification on the stored identity when replay grouped
+        // an upgraded computation differently from its first ingestion.
+        for (handle, stored_chain) in &upgraded {
+            if inferred_chains
+                .get(handle)
+                .is_some_and(|chain| slow_dep_chain_ids.contains(chain))
+            {
+                if let Some(chain) = stored_chain
+                    .as_ref()
+                    .and_then(|id| ChainHash::try_from(id.as_slice()).ok())
+                {
+                    slow_dep_chain_ids.insert(chain);
+                }
+            }
+        }
         let slow_marked_chains = chains
             .iter()
             .filter(|chain| slow_dep_chain_ids.contains(&chain.hash))
@@ -350,7 +438,39 @@ pub async fn ingest_block_logs(
         )
         .await?;
     }
-    tx.commit().await
+    db.repair_pending_computation_chains(
+        &mut tx,
+        &touched_handles,
+        &upgraded_chains,
+        &slow_dep_chain_ids
+            .iter()
+            .map(|id| id.to_vec())
+            .collect::<Vec<_>>(),
+    )
+    .await?;
+    let cache_updates = if options.dependence_cross_block {
+        db.computation_chain_cache_entries(&mut tx, &touched_handles)
+            .await?
+    } else {
+        vec![]
+    };
+    tx.commit().await?;
+    if options.dependence_cross_block {
+        // Merge only this batch's entries: replacing the entire snapshot could
+        // erase another listener clone's successful publication.
+        let mut shared_cache = db.dependence_chain.write().await;
+        for (handle, chain) in cache_updates {
+            if let (Ok(handle), Ok(chain)) = (
+                alloy::primitives::FixedBytes::<32>::try_from(
+                    handle.as_slice(),
+                ),
+                ChainHash::try_from(chain.as_slice()),
+            ) {
+                shared_cache.put(handle, chain);
+            }
+        }
+    }
+    Ok(())
 }
 
 pub async fn update_finalized_blocks(
