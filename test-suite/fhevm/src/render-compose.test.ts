@@ -15,7 +15,7 @@ import {
   serviceNameList,
 } from "./generate/compose";
 import { ANVIL_CHAIN_ID, DEFAULT_CHAIN_ID, COMPOSE_OUT_DIR, TEMPLATE_COMPOSE_DIR, composePath, envPath } from "./layout";
-import { listenerBrokerUrl } from "./generate/listener-core";
+import { listenerBrokerUrl, listenerPublishersForState } from "./generate/listener-core";
 import { presetBundle } from "./resolve/target";
 import {
   loadCoprocessorScenario,
@@ -1036,6 +1036,38 @@ gcs:
       expect(doc.services["coprocessor1-db-migration"]).toBeDefined();
       expect(doc.services["coprocessor-gcs-db-migration"]).toBeUndefined();
       expect(doc.services["coprocessor1-gcs-db-migration"]).toBeUndefined();
+    });
+  });
+
+  test("multi-operator blue-green renders every publisher it starts", async () => {
+    const multiOpBlueGreen = resolveBlueGreenScenario(
+      path.join("/tmp", "blue-green-2op-publishers.yaml"),
+      parseBlueGreenScenario(`
+version: 1
+kind: blue-green
+topology:
+  count: 2
+  threshold: 2
+gcs:
+  source: { mode: local }
+`),
+    );
+    const bgState: State = { ...state, scenario: multiOpBlueGreen };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(bgState, stackSpecForState(bgState));
+      // Blue/Green declares no hostListenerMode, but it still runs an operator
+      // per party, and `pointConsumerAtItsOperator` already sends operator 1's
+      // consumer to its own keyspace. Fan-out therefore follows the operator
+      // count, not the mode: a publisher the override skips is a service `up`
+      // cannot start. The merged doc is what `docker compose -f` resolves.
+      const merged = await loadMergedComposeDoc("listener-core");
+      for (const publisher of listenerPublishersForState(bgState)) {
+        expect(merged.services[publisher]).toBeDefined();
+      }
+      expect(listenerPublishersForState(bgState)).toContain("listener1-publisher-for-anvil");
     });
   });
 

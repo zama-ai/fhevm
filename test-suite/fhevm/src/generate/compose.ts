@@ -1052,6 +1052,44 @@ const applyDockerSocketRuntime = (services: ComposeDoc["services"]) => {
 const LISTENER_CONFIG_MOUNT = ":/config.yaml:ro";
 
 /**
+ * The operator and chain axes that decide which publishers a stack renders.
+ *
+ * Shared by the renderer below and by the gate that decides whether to run it,
+ * so the two cannot disagree about which containers exist: a stack that starts
+ * a publisher the generated override never rendered fails on `no such service`.
+ */
+const listenerCoreAxes = (plan: Pick<StackSpec, "coprocessor" | "hostChains">) => {
+  const instances = plan.coprocessor?.instances ?? [];
+  return {
+    operators: listenerOperators(instances.length, instances),
+    chains: listenerPublisherChains(plan.hostChains, plan.coprocessor?.hostListenerMode === "consumer"),
+  };
+};
+
+/**
+ * Whether a stack runs more publishers than the single one the template ships.
+ *
+ * Fan-out follows the operator and chain counts, not the listener mode: a
+ * Blue/Green scenario declares no `hostListenerMode` yet still runs an operator
+ * per party, and every operator past 0 needs a publisher feeding the Redis
+ * keyspace its consumer already reads (see `pointConsumerAtItsOperator`).
+ */
+export const needsListenerCoreFanOut = (plan: Pick<StackSpec, "coprocessor" | "hostChains">) => {
+  const { operators, chains } = listenerCoreAxes(plan);
+  return operators.length > 1 || chains.length > 1;
+};
+
+/** Where a chain's generated publisher config is written. */
+const listenerPublisherConfigPath = (chain?: Parameters<typeof listenerPublisherService>[1]) =>
+  path.join(COMPOSE_OUT_DIR, `${listenerPublisherService(0, chain)}.yaml`);
+
+/** The generated publisher configs a fanned-out listener-core mounts. */
+export const listenerPublisherConfigPaths = (plan: Pick<StackSpec, "coprocessor" | "hostChains">) =>
+  needsListenerCoreFanOut(plan)
+    ? listenerCoreAxes(plan).chains.map((chain) => listenerPublisherConfigPath(chain))
+    : [];
+
+/**
  * Replicates the listener publisher across both axes: one container per
  * operator, per host chain (mirrors `buildCoprocessorOverride`). Operator 0 on
  * the default chain keeps every template name — service, container, listener
@@ -1089,10 +1127,8 @@ const buildListenerCoreOverride = async (plan: StackSpec): Promise<ComposeDoc> =
     }
     services[templateName] = next;
   }
-  const instances = plan.coprocessor?.instances ?? [];
-  const operators = listenerOperators(instances.length, instances);
-  const chains = listenerPublisherChains(plan.hostChains, plan.coprocessor?.hostListenerMode === "consumer");
-  if (!base || (operators.length < 2 && chains.length < 2)) {
+  const { operators, chains } = listenerCoreAxes(plan);
+  if (!base || !needsListenerCoreFanOut(plan)) {
     return { services };
   }
   const built = services[templateName] ?? base;
@@ -1104,7 +1140,7 @@ const buildListenerCoreOverride = async (plan: StackSpec): Promise<ComposeDoc> =
       const chainConfig = structuredClone(config);
       chainConfig.blockchain.chain_id = Number(chain.chainId);
       chainConfig.blockchain.rpc_url = `http://${chain.node}:${chain.rpcPort}`;
-      const file = path.join(COMPOSE_OUT_DIR, `${listenerPublisherService(0, chain)}.yaml`);
+      const file = listenerPublisherConfigPath(chain);
       await fs.writeFile(file, YAML.stringify(chainConfig));
       volumes = [`${file}${LISTENER_CONFIG_MOUNT}`];
     }
@@ -1354,10 +1390,12 @@ const buildExtraCoprocessorListenerOverride = async (
 };
 
 /** Lists which components need generated compose overrides for a runtime plan. */
-export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "kms" | "coprocessor">) =>
+export const generatedComposeComponents = (
+  plan: Pick<StackSpec, "overrides" | "kms" | "coprocessor" | "hostChains">,
+) =>
   new Set([
     "coprocessor",
-    ...(plan.coprocessor?.hostListenerMode === "consumer" ? ["listener-core"] : []),
+    ...(needsListenerCoreFanOut(plan) ? ["listener-core"] : []),
     // Always generated: it carries the host Docker socket wiring for the e2e runner,
     // which depends on host facts rather than on any local build override.
     "test-suite",
