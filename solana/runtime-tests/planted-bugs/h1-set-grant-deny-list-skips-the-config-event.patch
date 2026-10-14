@@ -1,4 +1,4 @@
-Expect: H1: set_grant_deny_list_enabled changed the config without a HostConfigUpdatedEvent CPI
+Expect: Test failed: H1: set_grant_deny_list_enabled changed the config without a HostConfigUpdatedEvent CPI
 
 --- a/solana/programs/zama-host/src/instructions/set_grant_deny_list_enabled.rs
 +++ b/solana/programs/zama-host/src/instructions/set_grant_deny_list_enabled.rs

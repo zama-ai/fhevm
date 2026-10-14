@@ -1,4 +1,4 @@
-Expect: H1: Pause
+Expect: Test failed: H1: Pause
 
 --- a/solana/programs/zama-host/src/instructions/pause.rs
 +++ b/solana/programs/zama-host/src/instructions/pause.rs
