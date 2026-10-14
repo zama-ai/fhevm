@@ -2462,11 +2462,10 @@ fn mollusk_confidential_transfer_rejects_foreign_zama_event_authority_seeds() {
     assert_transfer_rejects_foreign_seeds(&context, &fixture, &ix);
 }
 
-/// Mint A's token accounts with mint B's balance stores, so the write would land in B's scope. B is
-/// a real `ConfidentialMint` owned by the token program, and the stores sit at the addresses B
-/// derives, so the token-account seeds, which bind each account to its mint, refuse the pair
-/// (fhevm-internal#1994). The `to_account` rows keep mint A and A's sender but pay mint B's token
-/// account, with the store A derives for it, so only the recipient's seeds can refuse them.
+/// Each transfer refuses a token account of another real `ConfidentialMint` on either side, so a
+/// write cannot land in another mint's scope (fhevm-internal#1994). In each row exactly one side is
+/// the wrong mint's account, and every other mint-bound account is the one the passed mint derives,
+/// so only that side's token-account seeds can refuse it.
 #[test]
 fn mollusk_transfers_reject_another_confidential_mint() {
     let fixture = TokenFixture::new();
@@ -2476,38 +2475,30 @@ fn mollusk_transfers_reject_another_confidential_mint() {
         other.mint,
         confidential_mint_account(other.owner, other.underlying_mint),
     );
-    let mut other_store = |token_account: Pubkey, handle: [u8; 32]| {
-        let (address, store) =
-            new_test_state(other.app(), token_account, token::balance_key(), handle);
-        assert_eq!(
-            address,
-            token::encrypted_store_address(other.mint, token_account).0
-        );
-        accounts.insert(address, encrypted_store_account(&store));
-        address
-    };
-    let alice_store = other_store(fixture.alice_token, fixture.alice_initial);
-    let bob_store = other_store(fixture.bob_token, fixture.bob_initial);
-    let recipient = other.bob_token;
     accounts.insert(
-        recipient,
+        other.bob_token,
         other.confidential_token_account(other.bob_owner, other.bob_balance_store),
     );
     fixture
         .extra_token_owners
         .borrow_mut()
-        .insert(recipient, other.bob_owner);
-    let (recipient_store, store) = new_test_state(
-        fixture.app(),
-        recipient,
-        token::balance_key(),
-        other.bob_initial,
-    );
-    accounts.insert(recipient_store, encrypted_store_account(&store));
-    fixture
-        .state_keys
-        .borrow_mut()
-        .insert(recipient_store, token::balance_key());
+        .insert(other.bob_token, other.bob_owner);
+    // Each side's balance store at the address the given mint derives for it.
+    let mut store = |owner: &TokenFixture, token_account: Pubkey, handle: [u8; 32]| {
+        let (address, store) =
+            new_test_state(owner.app(), token_account, token::balance_key(), handle);
+        accounts.insert(address, encrypted_store_account(&store));
+        fixture
+            .state_keys
+            .borrow_mut()
+            .insert(address, token::balance_key());
+        address
+    };
+    // Mint B with A's sender and B's own recipient: only the sender's seeds can refuse.
+    let sender_under_b = store(&other, fixture.alice_token, fixture.alice_initial);
+    let recipient_under_b = store(&other, other.bob_token, other.bob_initial);
+    // Mint A with A's sender and B's recipient: only the recipient's seeds can refuse.
+    let recipient_under_a = store(&fixture, other.bob_token, other.bob_initial);
     let amount_store = seed_amount_store(
         &fixture,
         &mut accounts,
@@ -2516,73 +2507,61 @@ fn mollusk_transfers_reject_another_confidential_mint() {
         handle_for_chain(41, BALANCE_FHE_TYPE),
     );
     let context = fixture_context(mollusk(), accounts);
-    let rows = [
-        (
-            "confidential_transfer",
-            confidential_transfer_ix(
-                &fixture,
-                fixture.alice_token,
-                fixture.bob_token,
-                alice_store,
-                bob_store,
-                sender_attestation(&fixture, 36, 0),
-            ),
-        ),
-        (
-            "confidential_transfer_from_value",
-            confidential_transfer_from_value_ix(
-                &fixture,
-                fixture.owner,
-                fixture.alice_token,
-                fixture.bob_token,
-                alice_store,
-                bob_store,
-                amount_store,
-            ),
-        ),
-    ]
-    .map(|(name, mut ix)| {
+    let under_mint_b = |mut ix: Instruction| {
         for meta in &mut ix.accounts {
             if meta.pubkey == fixture.mint {
                 meta.pubkey = other.mint;
             }
         }
-        (name, ix)
-    });
-    let mut rows = Vec::from(rows);
-    rows.extend([
+        ix
+    };
+    let transfer = |from_store, to_store| {
+        confidential_transfer_ix(
+            &fixture,
+            fixture.alice_token,
+            other.bob_token,
+            from_store,
+            to_store,
+            sender_attestation(&fixture, 36, 0),
+        )
+    };
+    let transfer_from_value = |from_store, to_store| {
+        confidential_transfer_from_value_ix(
+            &fixture,
+            fixture.owner,
+            fixture.alice_token,
+            other.bob_token,
+            from_store,
+            to_store,
+            amount_store,
+        )
+    };
+    let rows = [
+        (
+            "confidential_transfer from_account",
+            under_mint_b(transfer(sender_under_b, recipient_under_b)),
+        ),
         (
             "confidential_transfer to_account",
-            confidential_transfer_ix(
-                &fixture,
-                fixture.alice_token,
-                recipient,
-                fixture.alice_balance_store,
-                recipient_store,
-                sender_attestation(&fixture, 37, 0),
-            ),
+            transfer(fixture.alice_balance_store, recipient_under_a),
+        ),
+        (
+            "confidential_transfer_from_value from_account",
+            under_mint_b(transfer_from_value(sender_under_b, recipient_under_b)),
         ),
         (
             "confidential_transfer_from_value to_account",
-            confidential_transfer_from_value_ix(
-                &fixture,
-                fixture.owner,
-                fixture.alice_token,
-                recipient,
-                fixture.alice_balance_store,
-                recipient_store,
-                amount_store,
-            ),
+            transfer_from_value(fixture.alice_balance_store, recipient_under_a),
         ),
-    ]);
+    ];
     assert_eq!(not_refused_by_seeds(&context, &rows), []);
     assert_eq!(
-        read_store_handle(&context, alice_store, token::balance_key()),
+        read_store_handle(&context, sender_under_b, token::balance_key()),
         fixture.alice_initial,
     );
     assert_eq!(
-        read_store_handle(&context, bob_store, token::balance_key()),
-        fixture.bob_initial,
+        read_store_handle(&context, recipient_under_b, token::balance_key()),
+        other.bob_initial,
     );
 }
 
@@ -3360,7 +3339,7 @@ fn run_burn(
 }
 
 /// Mint A's token account under mint B, a second real `ConfidentialMint` over the same underlying
-/// mint, in every other instruction that takes a token account. Each other account is the one B
+/// mint, in every instruction other than the transfers that takes a token account. Each other account is the one B
 /// derives for that token account, so the token-account seeds, which bind the account to its mint,
 /// are what refuse the pair.
 #[test]
@@ -3406,6 +3385,7 @@ fn mollusk_token_account_instructions_reject_another_confidential_mint() {
         ),
     ];
     let mut admitted = not_refused_by_seeds(&context, &burns);
+    // A burn opens the pending burn, so the burns run before it is seeded for cancel and redeem.
     let burned_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
     let pending_burn = seed_pending_burn_in_context(&context, &other, burned_handle);
     admitted.extend(not_refused_by_seeds(
