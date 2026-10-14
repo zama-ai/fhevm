@@ -71,9 +71,6 @@ jobs:
           token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
           persist-credentials: 'false'
 
-      - name: Setup common environment variables
-        run: echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "${GITHUB_ENV}"
-
       - name: Setup Rust
         uses: ./.github/actions/setup_rust
         with:
@@ -115,7 +112,6 @@ jobs:
         run: |
           version="$(grep 'channel' "$GH_WORKSPACE/kms-connector/rust-toolchain.toml" | awk -F' = ' '{print $2}' | tr -d '"')"
           echo "RUST_IMAGE_VERSION=$version" >> "$GITHUB_ENV"
-          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "${GITHUB_ENV}"
 
       - name: Login to GitHub Container Registry
         uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
