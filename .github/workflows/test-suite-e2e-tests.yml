@@ -110,7 +110,7 @@ on:
         default: "two-of-three-multi-chain"
         type: string
       test-profile:
-        description: "Named test profile to run instead of the default standard suite"
+        description: "Named test profiles to run in order, space-separated, instead of the default standard suite"
         default: "standard"
         type: string
   workflow_call:
@@ -364,8 +364,10 @@ jobs:
       - name: Selected e2e suite
         working-directory: test-suite/fhevm
         run: |
-          args=("$TEST_PROFILE")
-          ./fhevm-cli test "${args[@]}"
+          read -ra profiles <<< "$TEST_PROFILE"
+          for profile in "${profiles[@]}"; do
+            ./fhevm-cli test "$profile"
+          done
 
       - name: Verify consumer-only topology after tests
         if: ${{ always() && env.SCENARIO == 'two-of-three-multi-chain-consumer' }}

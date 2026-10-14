@@ -306,9 +306,10 @@ jobs:
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
       relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
       relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
-      # Host ingestion by listener-core and host-consumers only.
+      # Host ingestion by listener-core and host-consumers only. A smoke on both chains:
+      # the shards already run the standard suite on the legacy host listener.
       scenario: two-of-three-multi-chain-consumer
-      test-profile: standard
+      test-profile: light multi-chain-isolation
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
 
   run-e2e-tests-shard-decryption:
