@@ -92,7 +92,7 @@
       "fixture_len": 44,
       "name": "allow_balance_viewers",
       "program": "confidential_token",
-      "schema_hash": "3aaa1846961fb2652b9e3584d6d370277b29945b33f7459a3dc30373c4fce46d"
+      "schema_hash": "94b1c63ec6ebc6c5dc95e4233ef41c46eb6da8adaea3814f9d628cf9b86aaaa9"
     },
     {
       "category": "instruction_args",
@@ -172,7 +172,7 @@
       "fixture_len": 41,
       "name": "make_token_account_handle_public",
       "program": "confidential_token",
-      "schema_hash": "12243915306c8d8adc6f105871fc9676a8567f5f82c35885a318e0524157dee4"
+      "schema_hash": "893b90537e38d1d566f0511fd697be703162d5ed8f1195b7f73511e27c78e906"
     },
     {
       "category": "instruction_args",
