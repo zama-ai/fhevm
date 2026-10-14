@@ -118,11 +118,6 @@ pub fn redeem_burned_amount(
         ctx.accounts.owner.key(),
         ConfidentialTokenError::OwnerMismatch
     );
-    require_keys_eq!(
-        ctx.accounts.token_account.mint,
-        mint_key,
-        ConfidentialTokenError::MintMismatch
-    );
 
     let pending = &ctx.accounts.pending_burn;
     require_keys_eq!(

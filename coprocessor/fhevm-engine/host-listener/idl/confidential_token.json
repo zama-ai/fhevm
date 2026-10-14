@@ -46,10 +46,7 @@
           ]
         },
         {
-          "name": "mint",
-          "relations": [
-            "token_account"
-          ]
+          "name": "mint"
         },
         {
           "name": "token_account",
@@ -3286,10 +3283,7 @@
           ]
         },
         {
-          "name": "mint",
-          "relations": [
-            "token_account"
-          ]
+          "name": "mint"
         },
         {
           "name": "token_account",
@@ -4345,136 +4339,131 @@
     },
     {
       "code": 6001,
-      "name": "MintMismatch",
-      "msg": "Token account mint does not match"
-    },
-    {
-      "code": 6002,
       "name": "MintAuthorityMismatch",
       "msg": "Confidential mint authority does not match signer"
     },
     {
-      "code": 6003,
+      "code": 6002,
       "name": "UnexpectedRemainingAccounts",
       "msg": "instruction has unexpected remaining accounts"
     },
     {
-      "code": 6004,
+      "code": 6003,
       "name": "UnderlyingMintMismatch",
       "msg": "Underlying mint does not match confidential mint"
     },
     {
-      "code": 6005,
+      "code": 6004,
       "name": "VaultAuthorityMismatch",
       "msg": "Vault token account authority does not match vault authority PDA"
     },
     {
-      "code": 6006,
+      "code": 6005,
       "name": "VaultAccountMismatch",
       "msg": "Vault token account is not the canonical mint vault"
     },
     {
-      "code": 6007,
+      "code": 6006,
       "name": "CurrentEncryptedStoreMismatch",
       "msg": "current encrypted value does not match token account state"
     },
     {
-      "code": 6008,
+      "code": 6007,
       "name": "AmountHandleTypeMismatch",
       "msg": "transfer amount handle type is invalid"
     },
     {
-      "code": 6009,
+      "code": 6008,
       "name": "AmountAclMismatch",
       "msg": "transfer amount ACL record is invalid"
     },
     {
-      "code": 6010,
+      "code": 6009,
       "name": "AttestationUserMismatch",
       "msg": "attested input user does not match owner"
     },
     {
-      "code": 6011,
+      "code": 6010,
       "name": "AttestationContractMismatch",
       "msg": "attested input contract does not match the token program"
     },
     {
-      "code": 6012,
+      "code": 6011,
       "name": "AmountSpendAuthorityMismatch",
       "msg": "amount value spender does not control the amount"
     },
     {
-      "code": 6013,
+      "code": 6012,
       "name": "MissingFheOutputAuthority",
       "msg": "FHE execution is missing a required output authority"
     },
     {
-      "code": 6014,
+      "code": 6013,
       "name": "VerifierReturnDataInvalid",
       "msg": "public-decrypt verifier return data is invalid"
     },
     {
-      "code": 6015,
+      "code": 6014,
       "name": "DisclosedHandleMismatch",
       "msg": "disclosed handle does not match the pinned handle"
     },
     {
-      "code": 6016,
+      "code": 6015,
       "name": "CleartextExceedsEuint64",
       "msg": "certified cleartext exceeds euint64 width"
     },
     {
-      "code": 6017,
+      "code": 6016,
       "name": "PendingBurnAlreadyInitialized",
       "msg": "pending burn is already initialized"
     },
     {
-      "code": 6018,
+      "code": 6017,
       "name": "PendingBurnHandleNotCurrent",
       "msg": "pending burn handle is not the burned amount current handle"
     },
     {
-      "code": 6019,
+      "code": 6018,
       "name": "PendingBurnMismatch",
       "msg": "pending burn fields do not match"
     },
     {
-      "code": 6020,
+      "code": 6019,
       "name": "UnderlyingTokenProgramMismatch",
       "msg": "underlying token program does not match"
     },
     {
-      "code": 6021,
+      "code": 6020,
       "name": "UnsupportedToken2022Extension",
       "msg": "unsupported Token-2022 extension"
     },
     {
-      "code": 6022,
+      "code": 6021,
       "name": "UnderlyingTokenAccountFrozen",
       "msg": "underlying token account is frozen"
     },
     {
-      "code": 6023,
+      "code": 6022,
       "name": "DisclosedValueBindingMismatch",
       "msg": "disclosed value does not match its declared token state field"
     },
     {
-      "code": 6024,
+      "code": 6023,
       "name": "EncryptedStoreAuthorityMismatch",
       "msg": "encrypted store authority does not match token account"
     },
     {
-      "code": 6025,
+      "code": 6024,
       "name": "TokenEncryptedStoreMismatch",
       "msg": "token encrypted store is not canonical"
     },
     {
-      "code": 6026,
+      "code": 6025,
       "name": "UnderlyingAssociatedAccountMismatch",
       "msg": "underlying associated token account does not match"
     },
     {
-      "code": 6027,
+      "code": 6026,
       "name": "ResultGrantMismatch",
       "msg": "invalid result grant accounts or self-transfer result request"
     }
@@ -4711,7 +4700,9 @@
           {
             "name": "burned_handle",
             "docs": [
-              "Encrypted amount actually burned."
+              "Encrypted amount actually burned.",
+              "It sits in the token account's encrypted store, which this instruction's",
+              "`BalanceHandleUpdatedEvent` names."
             ],
             "type": {
               "array": [
@@ -4719,13 +4710,6 @@
                 32
               ]
             }
-          },
-          {
-            "name": "burned_encrypted_store",
-            "docs": [
-              "ZamaHost ACL record for `burned_handle`."
-            ],
-            "type": "pubkey"
           }
         ]
       }
@@ -5500,7 +5484,9 @@
           {
             "name": "burned_handle",
             "docs": [
-              "Burned amount handle that was cancelled (must be the current handle)."
+              "Burned amount handle that was cancelled (must be the current handle).",
+              "It sits in the token account's encrypted store, which this instruction's",
+              "`BalanceHandleUpdatedEvent` names."
             ],
             "type": {
               "array": [
@@ -5508,13 +5494,6 @@
                 32
               ]
             }
-          },
-          {
-            "name": "burned_encrypted_store",
-            "docs": [
-              "Shared `burned_amount` EncryptedStore account for the token account."
-            ],
-            "type": "pubkey"
           }
         ]
       }
