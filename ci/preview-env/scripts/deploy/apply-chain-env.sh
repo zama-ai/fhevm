@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Patch preview-env Helm values in the working tree.
 # External chain modes (blockchain-dev | testnets) rewrite RPC/mnemonic overlays.
-# GPU=true (Anvil or external) switches keygen to Default FHE params.
-# Anvil without GPU is a no-op.
+# GPU=true or INSECURE_KEYGEN=true (Anvil or external) switches keygen to
+# Default FHE params. Anvil without either is a no-op.
 set -euo pipefail
 
-if [[ "${EXTERNAL_CHAINS:-false}" != "true" && "${GPU:-false}" != "true" ]]; then
+if [[ "${EXTERNAL_CHAINS:-false}" != "true" && "${GPU:-false}" != "true" && "${INSECURE_KEYGEN:-false}" != "true" ]]; then
   echo "Anvil mode: leaving values overlays unchanged."
   exit 0
 fi
@@ -73,6 +73,13 @@ if [[ "${GPU:-false}" == "true" ]]; then
   apply_gpu_keygen
   if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
     echo "Anvil GPU: Default FHE params and long keygen waits."
+    exit 0
+  fi
+elif [[ "${INSECURE_KEYGEN:-false}" == "true" ]]; then
+  # Insecure keygen skips the DKG, so the CPU waits stay.
+  set_named_env "${root}/host-chain/values-host-trigger-keygen-e2e.yaml" ".scDeploy.env" KEYGEN_PARAMS_TYPE 0
+  if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
+    echo "Anvil insecure keygen: Default FHE params."
     exit 0
   fi
 fi

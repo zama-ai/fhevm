@@ -70,6 +70,7 @@ ci/preview-env/
 ├── kms-connector/
 │   ├── values-kms-connector-e2e.yaml       # kms-connector overlay
 │   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain to hostChains (deploy_polygon)
+│   ├── values-kms-test-keygen-proxy-e2e.yaml # `common` chart overlay: kms-worker -> kms-core proxy, insecure keygen (insecure_keygen)
 │   └── values-postgres-connector-e2e.yaml  # `common` chart overlay: in-cluster Postgres, dedicated to kms-connector
 ├── observability/
 │   ├── values-prometheus-e2e.yaml # `common` chart overlay (raw objects): in-namespace Prometheus, endpoints-SD scraping
@@ -301,6 +302,12 @@ The two host chains are the real public testnets, so this is the only preview sh
   for keygen and 1 h for CRS generation, with `KEYGEN_TIMEOUT=310m` giving Helm
   room for both in one pod. CPU testnets stay at 60 m / 40 m waits and 110 m Helm.
   This GPU path deliberately consumes most of the deploy job's six-hour budget.
+  Dispatch `insecure_keygen` / `--insecure-keygen` also selects Default
+  parameters, on CPU or GPU, but routes each kms-worker through
+  `kms-test-keygen-proxy-<i>`, the docker e2e stack's proxy
+  (`test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs`). The proxy turns
+  keygen into the KMS's Insecure* RPCs: party 1 generates the keys and shares
+  them, with no DKG. CPU launches keep their keygen waits; GPU launches keep theirs.
   The relayer inherits the same dependency - it seeds `/v2/keyurl` from `getCrsMaterials`
   at the finalized block and exits if the CRS is not visible yet - so `deploy-relayer.sh`
   waits on its rollout before the e2e Workflows start, otherwise every test fails on
@@ -515,7 +522,7 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
   `preview-env-gpu` label cannot carry a tag, so GPU deploys are dispatch-only.
   GPU launches generate Default FHE params. With `preview-env-blue-green` / `--blue-green`
   as well, that overlay lands on Green (GCS) only; Blue (BCS) stays on the CPU
-  `coprocessor` pool. CPU launches keep Test params.
+  `coprocessor` pool. CPU launches keep Test params unless `insecure_keygen` is set.
 - ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain
   (`deploy_polygon`)" above (opt-in; ETH + Polygon Amoy sharing one KMS key).
 - ~~Deploy against real public testnets~~ — done, see "Chain modes" above

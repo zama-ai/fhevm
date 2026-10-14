@@ -1,0 +1,60 @@
+# Per-party gRPC proxy between kms-connector's kms-worker and kms-core, deployed
+# only with the insecure_keygen dispatch input (CLI --insecure-keygen). It
+# forwards every call unchanged except KeyGenPreproc/KeyGen and their result
+# polls, which it sends to the KMS's Insecure* RPCs. That gives Default FHE keys
+# in minutes, without the threshold DKG. The script is
+# test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs, the same one the
+# docker e2e stack runs; deploy-kms-connector.sh loads it with --set-file and
+# passes the party's kms-core address as the first arg.
+#
+# Deployed as:
+#   helm upgrade --install kms-test-keygen-proxy-<i> \
+#     oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
+#     -n <namespace> -f this-file --set-string fullnameOverride=kms-test-keygen-proxy-<i> ...
+fullnameOverride: kms-test-keygen-proxy
+
+deployment:
+  enabled: true
+
+image:
+  # Same image and digest as the docker stack's proxy (test-suite/fhevm/src/generate/kms-core.ts).
+  repository: node
+  tag: "22-bookworm-slim@sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9"
+  pullPolicy: IfNotPresent
+
+command: ["node", "/proxy/kms-test-keygen-proxy.cjs"]
+
+configmapFiles:
+  enabled: true
+  volumeMount:
+    mountPath: /proxy
+    subPath: ""
+    readOnly: true
+
+service:
+  enabled: true
+  ports:
+    - {name: grpc, port: 3000}
+
+readinessProbe:
+  tcpSocket: {port: 3000}
+  initialDelaySeconds: 2
+  periodSeconds: 5
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "1"
+    memory: "512Mi"
+
+# Pins onto the zws-pool Karpenter node pool - see
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"

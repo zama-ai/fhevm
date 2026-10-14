@@ -38,6 +38,9 @@ name: preview-env-deploy
 #     Blue only and no proposal; Green, the proposal and the checks come from
 #     ci/preview-env/scripts/bg/bg-*.sh. With deploy_polygon the upgrade spans
 #     both host chains. N=1 is rejected.
+# Dispatch-only: insecure_keygen (CLI --insecure-keygen) generates Default FHE
+# keys through the KMS insecure keygen (party 1 generates and shares them)
+# instead of Test params on CPU or the multi-hour DKG on GPU. Not a secure DKG.
 # Dispatch-only: listener_v2_only (CLI --listener-v2-only) runs the host side
 # on the listener v2 stack ONLY (listener-core producer -> Redis ->
 # host-listener-consumer); the host-listener pollers (coprocessor-poller-<i>,
@@ -94,6 +97,11 @@ on:
         options:
           - "false"
           - "true"
+      insecure_keygen:
+        description: "Generate Default (production-size) FHE keys with the KMS insecure keygen (one party generates the key and shares it; not a DKG) instead of Test params on CPU or the multi-hour DKG on GPU. CRS generation stays the normal ceremony. Test environments only."
+        required: false
+        type: boolean
+        default: false
       listener_v2_only:
         description: "Run the host side on the listener v2 stack ONLY (listener-core producer -> Redis -> host-listener-consumer): skip the host-listener pollers (coprocessor-poller-<i>, coprocessor-poller-polygon-<i>). Pair with automated_tests to run e2e against it."
         required: false
@@ -230,6 +238,7 @@ jobs:
       automated_tests: ${{ steps.check.outputs.automated_tests }}
       gpu: ${{ steps.check.outputs.gpu }}
       workers_tag: ${{ steps.check.outputs.workers_tag }}
+      insecure_keygen: ${{ steps.check.outputs.insecure_keygen }}
       observability: ${{ steps.check.outputs.observability }}
       blue_green: ${{ steps.check.outputs.blue_green }}
       listener_v2_only: ${{ steps.check.outputs.listener_v2_only }}
@@ -296,6 +305,7 @@ jobs:
           DISPATCH_ENABLE_BLUE_GREEN: ${{ inputs.enable_blue_green || 'false' }}
           DISPATCH_ENABLE_GPU: ${{ inputs.enable_gpu || 'false' }}
           DISPATCH_WORKERS_TAG: ${{ inputs.workers_tag }}
+          DISPATCH_INSECURE_KEYGEN: ${{ inputs.insecure_keygen || false }}
           DISPATCH_LISTENER_V2_ONLY: ${{ inputs.listener_v2_only || false }}
           DISPATCH_CHAIN_MODE: ${{ inputs.chain_mode || 'anvil' }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
@@ -306,6 +316,7 @@ jobs:
           # in via the preview-env-e2e-tests label (handled below).
           # GPU scheduling is dispatch enable_gpu plus workers_tag. The
           # preview-env-gpu label has no tag, so check-labels fails it.
+          # insecure_keygen is a dispatch-only knob (no PR label), off by default.
           # observability is a dispatch-only knob for
           # now (no PR label), off by default.
           # RFC-021 dual fleet. Dispatch: enable_blue_green=true (plain N=2
@@ -317,6 +328,7 @@ jobs:
             echo "automated_tests=false"
             echo "gpu=false"
             echo "workers_tag="
+            echo "insecure_keygen=false"
             echo "observability=false"
             echo "blue_green=false"
             echo "listener_v2_only=false"
@@ -343,6 +355,7 @@ jobs:
               echo "automated_tests=${DISPATCH_AUTOMATED_TESTS:-false}"
               echo "gpu=${DISPATCH_ENABLE_GPU:-false}"
               echo "workers_tag=${workers_tag}"
+              echo "insecure_keygen=${DISPATCH_INSECURE_KEYGEN:-false}"
               echo "observability=${DISPATCH_OBSERVABILITY:-false}"
               echo "blue_green=${blue_green}"
               echo "listener_v2_only=${DISPATCH_LISTENER_V2_ONLY:-false}"
@@ -576,6 +589,7 @@ jobs:
       AUTOMATED_TESTS: ${{ needs.check-labels.outputs.automated_tests }}
       GPU: ${{ needs.check-labels.outputs.gpu }}
       GPU_IMAGE_TAG: ${{ needs.check-labels.outputs.workers_tag }}
+      INSECURE_KEYGEN: ${{ needs.check-labels.outputs.insecure_keygen }}
       OBSERVABILITY: ${{ needs.check-labels.outputs.observability }}
       BLUE_GREEN: ${{ needs.check-labels.outputs.blue_green }}
       # Dispatch listener_v2_only: skip the host-listener poller releases.
@@ -949,11 +963,11 @@ jobs:
           NODE_PATH: /tmp/wallet-tools/node_modules
         run: bash ci/preview-env/scripts/wallets/fund-wallets.sh
 
-      # External chains rewrite RPC overlays. Anvil GPU only switches keygen
-      # to Default params; the script exits before those rewrites. CPU Anvil
-      # skips this step and keeps Test params.
+      # External chains rewrite RPC overlays. Anvil GPU or insecure_keygen
+      # only switches keygen to Default params; the script exits before those
+      # rewrites. Other CPU Anvil runs skip this step and keep Test params.
       - name: Apply chain values overlays
-        if: env.EXTERNAL_CHAINS == 'true' || env.GPU == 'true'
+        if: env.EXTERNAL_CHAINS == 'true' || env.GPU == 'true' || env.INSECURE_KEYGEN == 'true'
         run: bash ci/preview-env/scripts/deploy/apply-chain-env.sh
 
       ######################################################################
@@ -1365,7 +1379,7 @@ jobs:
             echo
             echo "Namespace \`${NAMESPACE}\` on zws-dev."
             echo
-            echo "Topology: **${NB_KMS_CORE}** KMS core parties · **${NB_COPROCESSOR}** coprocessor parties (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, listener producer, Redis broker and host-listener-consumer)$([[ "${BLUE_GREEN}" == "true" ]] && echo " · RFC-021 blue-green (BCS ${BCS_IMAGE_TAG} + GCS from this build compiled ${GCS_VERSION#v})")$([[ "${DEPLOY_POLYGON}" == "true" ]] && echo " · a second Polygon Amoy (80002) host chain reusing the ETH KMS key")$([[ "${LISTENER_V2_ONLY}" == "true" ]] && echo " · listener v2 only (no host-listener pollers)") · chain mode ${CHAIN_MODE} (host ${HOST_CHAIN_ID}, gateway ${GATEWAY_CHAIN_ID}). Note: each coprocessor party requests substantial tfhe/sns worker capacity on the coprocessor nodepool, so nb_coprocessor > 1 multiplies the cluster resources needed."
+            echo "Topology: **${NB_KMS_CORE}** KMS core parties · **${NB_COPROCESSOR}** coprocessor parties (each a full independent stack: its own Postgres, S3 bucket, tx-sender identity, listener producer, Redis broker and host-listener-consumer)$([[ "${BLUE_GREEN}" == "true" ]] && echo " · RFC-021 blue-green (BCS ${BCS_IMAGE_TAG} + GCS from this build compiled ${GCS_VERSION#v})")$([[ "${DEPLOY_POLYGON}" == "true" ]] && echo " · a second Polygon Amoy (80002) host chain reusing the ETH KMS key")$([[ "${LISTENER_V2_ONLY}" == "true" ]] && echo " · listener v2 only (no host-listener pollers)")$([[ "${INSECURE_KEYGEN}" == "true" ]] && echo " · Default FHE keys from the KMS insecure keygen (not a DKG)") · chain mode ${CHAIN_MODE} (host ${HOST_CHAIN_ID}, gateway ${GATEWAY_CHAIN_ID}). Note: each coprocessor party requests substantial tfhe/sns worker capacity on the coprocessor nodepool, so nb_coprocessor > 1 multiplies the cluster resources needed."
             echo
             echo "Connect:"
             echo '```bash'

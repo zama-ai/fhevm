@@ -81,6 +81,11 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   on Anvil. CLI `--gpu`. Dispatch-only: the `preview-env-gpu` label cannot
   carry a worker tag. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS
   stays CPU. CPU Anvil stays on Test params.
+- `insecure_keygen` — Default (production-size) FHE keys from the KMS
+  **insecure** keygen (default `false`, a checkbox). CLI `--insecure-keygen`.
+  Party 1 generates the keys and shares them, so this is not a DKG: test
+  environments only. On CPU it replaces Test params; with `enable_gpu` it
+  replaces the multi-hour DKG. CRS generation is unchanged. Dispatch-only.
 - `workers_tag` — image tag for tfhe, sns, and zkproof. Required when
   `enable_gpu=true` on a dispatch (CLI `--workers-tag`). Must be empty when
   GPU is off. The `preview-env-gpu` label cannot carry a tag, so a GPU
@@ -188,6 +193,7 @@ helm-install; Actions stays the write path. `--ref` must already be on origin.
 ci/preview-env/preview-env launch --ref <your-branch> --tests
 ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b1-cuda12.8-sm70 --tests
 ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b1-cuda12.8-sm70 --testnets --tests
+ci/preview-env/preview-env launch --ref <your-branch> --insecure-keygen --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
 ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
@@ -201,6 +207,8 @@ ci/preview-env/preview-env launch --ref <your-branch> --tests \
 `--gpu` sends `enable_gpu=true` (GPU workers and Default FHE params) and
 requires `--workers-tag`, the image tag for tfhe, sns, and zkproof. Combine
 with `--testnets` for Sepolia/Amoy, or `--blue-green` for Green-only GPU.
+`--insecure-keygen` sends `insecure_keygen=true`: Default FHE keys on CPU,
+through the KMS insecure keygen (not a DKG).
 `--parties 2` without `--blue-green` is two-party consensus only.
 
 `launch` polls for the new Actions run and prints its id. Stream progress with
