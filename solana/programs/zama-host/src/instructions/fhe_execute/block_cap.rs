@@ -91,7 +91,7 @@ pub(super) fn charge<'info>(
 /// - `None` / absent (system-owned + empty) ⇒ untrusted (benign — fall through to the meter);
 /// - present, program-owned, canonical PDA, `trusted == true` ⇒ bypass;
 /// - present, program-owned, canonical PDA, `trusted == false` ⇒ untrusted (fall through);
-/// - present but wrong PDA / owner / layout ⇒ `HcuTrustedAppRecordMismatch`.
+/// - present but wrong PDA / owner ⇒ `HcuTrustedAppRecordMismatch`.
 fn resolve_trusted<'info>(ctx: &Context<'info, FheExecute<'info>>, app: AppScope) -> Result<bool> {
     let Some(witness) = ctx.accounts.hcu_trusted_app_record.as_ref() else {
         return Ok(false);

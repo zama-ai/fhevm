@@ -595,7 +595,7 @@ fn assert_pending_burn_available(pending_burn_ai: &AccountInfo<'_>) -> Result<()
 /// Opens the single `PendingBurn` account after a successful burn `fhe_execute`.
 ///
 /// Creates the PDA with fund/allocate/assign so a pre-funded lamport balance cannot grief creation
-/// (same pattern as zama-host `create_pda_strict`).
+/// (same pattern as zama-host `create_pda`).
 fn open_pending_burn<'info>(
     payer: &Signer<'info>,
     pending_burn_ai: &AccountInfo<'info>,
