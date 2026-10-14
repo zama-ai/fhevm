@@ -4578,7 +4578,7 @@
           {
             "name": "encrypted_store",
             "docs": [
-              "ZamaHost encrypted store holding both handles."
+              "ZamaHost encrypted store whose slot moved from `old_handle` to `new_handle`."
             ],
             "type": "pubkey"
           },
@@ -5572,7 +5572,7 @@
           {
             "name": "encrypted_store",
             "docs": [
-              "ZamaHost encrypted store holding both handles."
+              "ZamaHost encrypted store whose slot moved from `old_handle` to `new_handle`."
             ],
             "type": "pubkey"
           },

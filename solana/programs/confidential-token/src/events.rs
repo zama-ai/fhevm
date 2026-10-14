@@ -20,7 +20,7 @@ pub struct BalanceHandleUpdatedEvent {
     pub old_handle: [u8; 32],
     /// New balance handle.
     pub new_handle: [u8; 32],
-    /// ZamaHost encrypted store holding both handles.
+    /// ZamaHost encrypted store whose slot moved from `old_handle` to `new_handle`.
     pub encrypted_store: Pubkey,
     /// Reason this balance pointer changed.
     pub reason: BalanceHandleUpdateReason,
@@ -60,7 +60,7 @@ pub struct TotalSupplyHandleUpdatedEvent {
     pub old_handle: [u8; 32],
     /// New total-supply handle.
     pub new_handle: [u8; 32],
-    /// ZamaHost encrypted store holding both handles.
+    /// ZamaHost encrypted store whose slot moved from `old_handle` to `new_handle`.
     pub encrypted_store: Pubkey,
     /// Reason this total-supply pointer changed.
     pub reason: TotalSupplyUpdateReason,
