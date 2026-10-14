@@ -826,11 +826,18 @@ async fn a_new_group_takes_over_from_its_predecessor_instead_of_replaying() {
     // Wait for it to drain. Nothing else is published, so once its lag is zero
     // its cursor is at the end of the stream and cannot move again — otherwise
     // the cursor read here and the one the successor seeds from are two
-    // different moments and the comparison below means nothing.
+    // different moments and the comparison below means nothing. Waiting on the
+    // pending list too is what pins this test to the caught-up case: a
+    // predecessor still holding entries seeds its successor somewhere else
+    // entirely, which is the test below this one.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     let legacy_cursor = loop {
         match group_named(&current, &stream, &stream).await {
-            Some(group) if group.lag == Some(0) && group.last_delivered_id != "0-0" => {
+            Some(group)
+                if group.lag == Some(0)
+                    && group.pending == 0
+                    && group.last_delivered_id != "0-0" =>
+            {
                 break group.last_delivered_id;
             }
             other => assert!(
@@ -895,11 +902,187 @@ async fn a_new_group_takes_over_from_its_predecessor_instead_of_replaying() {
     );
 }
 
-/// With nothing reading a populated stream, a new group starts at the end.
+/// Deliver entries to a group and acknowledge none of them, which is the state
+/// a consumer killed mid-batch leaves its group in.
+async fn deliver_without_ack(url: &str, stream: &str, group: &str, count: usize) {
+    let client = redis::Client::open(url).unwrap();
+    let mut conn = client.get_multiplexed_async_connection().await.unwrap();
+    let _: redis::Value = redis::cmd("XREADGROUP")
+        .arg("GROUP")
+        .arg(group)
+        .arg("killed-consumer")
+        .arg("COUNT")
+        .arg(count)
+        .arg("STREAMS")
+        .arg(stream)
+        .arg(">")
+        .query_async(&mut conn)
+        .await
+        .unwrap();
+}
+
+/// The entry IDs in an `XREADGROUP` reply, which is nested four deep:
+/// streams, then this stream's entries, then each entry's id and fields.
+fn ids_in_read_reply(reply: &redis::Value) -> Vec<String> {
+    let redis::Value::Array(streams) = reply else {
+        return Vec::new();
+    };
+    let mut ids = Vec::new();
+    for stream in streams {
+        let redis::Value::Array(parts) = stream else {
+            continue;
+        };
+        let Some(redis::Value::Array(entries)) = parts.get(1) else {
+            continue;
+        };
+        for entry in entries {
+            let redis::Value::Array(fields) = entry else {
+                continue;
+            };
+            if let Some(redis::Value::BulkString(id)) = fields.first() {
+                ids.push(String::from_utf8_lossy(id).into_owned());
+            }
+        }
+    }
+    ids
+}
+
+/// Deliver `count` entries to a group and acknowledge every one, which parks
+/// its cursor `count` entries further on with nothing left outstanding.
+///
+/// Acknowledging exactly what was handed over — rather than the first `count`
+/// entries on the stream — is what lets this be called on a group that was
+/// itself seeded partway along.
+async fn deliver_and_ack(url: &str, stream: &str, group: &str, count: usize) {
+    let client = redis::Client::open(url).unwrap();
+    let mut conn = client.get_multiplexed_async_connection().await.unwrap();
+
+    let reply: redis::Value = redis::cmd("XREADGROUP")
+        .arg("GROUP")
+        .arg(group)
+        .arg("acking-consumer")
+        .arg("COUNT")
+        .arg(count)
+        .arg("STREAMS")
+        .arg(stream)
+        .arg(">")
+        .query_async(&mut conn)
+        .await
+        .unwrap();
+
+    let ids = ids_in_read_reply(&reply);
+    assert_eq!(
+        ids.len(),
+        count,
+        "the stream must hold {count} undelivered entries for this group"
+    );
+
+    let mut ack = redis::cmd("XACK");
+    ack.arg(stream).arg(group);
+    for id in &ids {
+        ack.arg(id);
+    }
+    let acked: u64 = ack.query_async(&mut conn).await.unwrap();
+    assert_eq!(acked as usize, count, "every delivered entry must be acked");
+}
+
+/// Consume `client`'s live stream until `count` blocks arrive or ten seconds
+/// pass, then stop and return the block numbers seen, in order.
+///
+/// This is the assertion of choice for a seeded group. `XINFO GROUPS` reports
+/// a null lag for a group created at an arbitrary mid-stream ID — Redis only
+/// derives it exactly at the boundaries — and the delivered blocks are the
+/// thing being tested in any case.
+async fn drain_live(client: &ListenerConsumer, count: usize) -> Vec<u64> {
+    let seen = Arc::new(Mutex::new(Vec::<u64>::new()));
+    let slot = seen.clone();
+    let handle = tokio::spawn(client.clone().consume(move |p: BlockPayload, _cancel| {
+        let slot = slot.clone();
+        async move {
+            slot.lock().unwrap().push(p.block_number);
+            Ok(AckDecision::Ack)
+        }
+    }));
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while seen.lock().unwrap().len() < count && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    // Keep reading briefly past the target so that delivering too much fails
+    // here rather than passing unnoticed.
+    tokio::time::sleep(Duration::from_millis(250)).await;
+
+    client.cancel();
+    handle.abort();
+    seen.lock().unwrap().clone()
+}
+
+/// A group arriving on a stream whose predecessor left work outstanding starts
+/// at the oldest entry that predecessor never finished, not at its cursor.
+///
+/// A cursor records what a group was handed, not what it completed. Nothing
+/// reclaims a dead consumer's pending entries and the host listener takes no
+/// part in its own shutdown, so whatever was in flight when a pod was replaced
+/// stays outstanding for good. A successor inheriting the cursor steps over
+/// that work and no reader ever comes back for it. Re-reading a few entries
+/// into the same database is the cheaper mistake.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn a_new_group_picks_up_what_its_predecessor_left_unfinished() {
+    let _guard = REDIS_TEST_LOCK.lock().await;
+    let url = consumer_redis_url().await;
+    reset_redis(&url).await;
+    let broker = Broker::redis(&url).await.unwrap();
+
+    let consumer_id = unique_name("ladder-pending");
+    let legacy = ListenerConsumer::new(&broker, 1, &consumer_id);
+    let current = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v2");
+    let stream = legacy.consumer_topic().key();
+
+    legacy.ensure_consumer().await.unwrap();
+    publish_blocks(&broker, &stream, 5).await;
+
+    // No live consumer here on purpose: the five entries are handed over and
+    // never acknowledged, so the cursor reaches the end of the stream while
+    // none of the work behind it is done.
+    deliver_without_ack(&url, &stream, &stream, 5).await;
+
+    let predecessor = group_named(&current, &stream, &stream)
+        .await
+        .expect("the predecessor group must exist");
+    assert_eq!(
+        predecessor.pending, 5,
+        "the predecessor must be holding all five entries"
+    );
+    assert_eq!(
+        predecessor.lag,
+        Some(0),
+        "its cursor must be at the end of the stream, which is what makes \
+         inheriting the cursor the wrong answer here"
+    );
+
+    current.ensure_consumer().await.unwrap();
+
+    let successor = group_named(&current, &stream, &format!("{stream}.v2"))
+        .await
+        .expect("the suffixed group must have been created");
+
+    assert_eq!(
+        successor.lag,
+        Some(5),
+        "the successor must start behind all five unfinished entries, not at \
+         the predecessor's cursor"
+    );
+}
+
+/// With nothing older reading a populated stream, a new group starts at the
+/// end.
 ///
 /// There is no cursor to inherit and no way to tell how old the retained
-/// entries are. Re-ingesting them is not recovery — the gap is closed from the
-/// chain by catchup, which knows which blocks are actually missing.
+/// entries are, so the tip is the floor: re-ingesting an unknown quantity of
+/// history into a fresh database is the worse of the two mistakes. It is a
+/// floor and not a recovery — this consumer wires no catchup flow — which is
+/// why the case below, where there *is* something to inherit from, matters.
 #[tokio::test]
 #[ignore = "requires Docker"]
 async fn a_first_group_on_an_unread_stream_starts_at_the_end() {
@@ -939,6 +1122,180 @@ async fn a_first_group_on_an_unread_stream_starts_at_the_end() {
         Some(0),
         "a group starting at the end has no backlog waiting for it, \
          but one starting at the beginning would report all five"
+    );
+}
+
+/// A fresh identity starts at the end of a stream that does not exist yet, and
+/// misses nothing by doing so.
+///
+/// This is the shape of an identity change: the new consumer id names streams
+/// nobody has ever published to, so there is no predecessor to find and the
+/// end of the stream is also its beginning. Continuity across that kind of
+/// change comes from both identities being published to at once, not from a
+/// cursor — which is why starting at the tip here is not a gap.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn a_fresh_identity_starts_at_the_tip_and_misses_nothing() {
+    let _guard = REDIS_TEST_LOCK.lock().await;
+    let url = consumer_redis_url().await;
+    reset_redis(&url).await;
+    let broker = Broker::redis(&url).await.unwrap();
+
+    let client =
+        ListenerConsumer::new(&broker, 1, &unique_name("ladder-newid")).with_group_suffix("v2");
+    let stream = client.consumer_topic().key();
+
+    // Nothing has ever been published under this identity.
+    assert!(
+        redis_group_names(&url, &stream).await.is_empty(),
+        "a fresh identity must start with no groups"
+    );
+
+    client.ensure_consumer().await.unwrap();
+    publish_blocks(&broker, &stream, 3).await;
+
+    assert_eq!(
+        drain_live(&client, 3).await,
+        vec![1, 2, 3],
+        "the group was created before anything was published, so the tip it \
+         started at was the beginning and every block arrived"
+    );
+}
+
+/// A suffixed predecessor is inherited from, not stepped over.
+///
+/// Both builds carry a group suffix whenever they disagree about the protocol
+/// version, so at every cutover after the first the predecessor's group has a
+/// suffix too. Matching only the unsuffixed name would find nothing here and
+/// start at the tip, silently skipping everything the predecessor had not
+/// reached.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn a_suffixed_predecessor_is_inherited_from() {
+    let _guard = REDIS_TEST_LOCK.lock().await;
+    let url = consumer_redis_url().await;
+    reset_redis(&url).await;
+    let broker = Broker::redis(&url).await.unwrap();
+
+    let consumer_id = unique_name("ladder-suffixed");
+    let blue = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v1");
+    let green = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v2");
+    let stream = blue.consumer_topic().key();
+
+    // The predecessor reads two of five and finishes both, leaving its cursor
+    // short of the end with nothing outstanding. Being *behind* is what makes
+    // this decisive: a predecessor that had caught up would be indistinguishable
+    // from starting at the tip.
+    blue.ensure_consumer().await.unwrap();
+    publish_blocks(&broker, &stream, 5).await;
+    deliver_and_ack(&url, &stream, &format!("{stream}.v1"), 2).await;
+
+    let predecessor = group_named(&green, &stream, &format!("{stream}.v1"))
+        .await
+        .expect("the predecessor group must exist");
+    assert_eq!(predecessor.pending, 0, "it finished what it was handed");
+    assert_eq!(
+        predecessor.lag,
+        Some(3),
+        "and it is three entries short of the end"
+    );
+
+    green.ensure_consumer().await.unwrap();
+
+    let successor = group_named(&green, &stream, &format!("{stream}.v2"))
+        .await
+        .expect("the suffixed successor must have been created");
+    assert_eq!(
+        successor.last_delivered_id, predecessor.last_delivered_id,
+        "the successor must start at its suffixed predecessor's cursor"
+    );
+
+    assert_eq!(
+        drain_live(&green, 3).await,
+        vec![3, 4, 5],
+        "the successor must receive exactly the blocks its predecessor never \
+         reached; starting at the tip would deliver none of them"
+    );
+}
+
+/// Each rung inherits from the one below it, every time, not only the first.
+///
+/// The first cutover has an unsuffixed group to inherit from and the ones after
+/// it do not. Walking three rungs is what separates a mechanism that works from
+/// one that works once: `v2` must take over from `v1`, and `v3` from `v2` and
+/// not from `v1`.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn every_rung_inherits_from_the_one_below_it() {
+    let _guard = REDIS_TEST_LOCK.lock().await;
+    let url = consumer_redis_url().await;
+    reset_redis(&url).await;
+    let broker = Broker::redis(&url).await.unwrap();
+
+    let consumer_id = unique_name("ladder-walk");
+    let v1 = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v1");
+    let v2 = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v2");
+    let v3 = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v3");
+    let stream = v1.consumer_topic().key();
+
+    v1.ensure_consumer().await.unwrap();
+    publish_blocks(&broker, &stream, 10).await;
+
+    // Rung one gets through three of ten.
+    deliver_and_ack(&url, &stream, &format!("{stream}.v1"), 3).await;
+
+    // Rung two takes over there and gets through three more. That this call
+    // finds three undelivered entries at all is the first half of the proof:
+    // a group started at the tip would have none to hand over.
+    v2.ensure_consumer().await.unwrap();
+    deliver_and_ack(&url, &stream, &format!("{stream}.v2"), 3).await;
+
+    // Rung three must take over from rung two, which is the nearest below it.
+    v3.ensure_consumer().await.unwrap();
+
+    assert_eq!(
+        drain_live(&v3, 4).await,
+        vec![7, 8, 9, 10],
+        "v3 must pick up where v2 stopped. Starting from v1 would replay \
+         blocks four through six, and starting at the tip would deliver none"
+    );
+}
+
+/// A newer group on the same stream is never treated as a predecessor.
+///
+/// During a cutover the successor is reading the same stream as the stack being
+/// replaced, so "another group is here" is not the same question as "something
+/// older is here". Inheriting forwards would hand a restarting predecessor its
+/// successor's position and skip whatever sits between them.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn a_newer_group_is_never_treated_as_a_predecessor() {
+    let _guard = REDIS_TEST_LOCK.lock().await;
+    let url = consumer_redis_url().await;
+    reset_redis(&url).await;
+    let broker = Broker::redis(&url).await.unwrap();
+
+    let consumer_id = unique_name("ladder-newer");
+    let legacy = ListenerConsumer::new(&broker, 1, &consumer_id);
+    let v2 = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v2");
+    let v3 = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v3");
+    let stream = legacy.consumer_topic().key();
+
+    // Two groups are already here, one on either side of the one being created:
+    // the unsuffixed one a single entry in, and a newer one much further along.
+    legacy.ensure_consumer().await.unwrap();
+    v3.ensure_consumer().await.unwrap();
+    publish_blocks(&broker, &stream, 5).await;
+    deliver_and_ack(&url, &stream, &stream, 1).await;
+    deliver_and_ack(&url, &stream, &format!("{stream}.v3"), 4).await;
+
+    v2.ensure_consumer().await.unwrap();
+
+    assert_eq!(
+        drain_live(&v2, 4).await,
+        vec![2, 3, 4, 5],
+        "v2 must inherit from the unsuffixed group below it. Taking v3's \
+         position instead would deliver only block five"
     );
 }
 
