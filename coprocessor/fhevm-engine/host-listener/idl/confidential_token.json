@@ -4700,7 +4700,9 @@
           {
             "name": "burned_handle",
             "docs": [
-              "Encrypted amount actually burned."
+              "Encrypted amount actually burned.",
+              "It sits in the token account's encrypted store, which this instruction's",
+              "`BalanceHandleUpdatedEvent` names."
             ],
             "type": {
               "array": [
@@ -5482,7 +5484,9 @@
           {
             "name": "burned_handle",
             "docs": [
-              "Burned amount handle that was cancelled (must be the current handle)."
+              "Burned amount handle that was cancelled (must be the current handle).",
+              "It sits in the token account's encrypted store, which this instruction's",
+              "`BalanceHandleUpdatedEvent` names."
             ],
             "type": {
               "array": [
