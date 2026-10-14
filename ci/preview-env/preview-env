@@ -275,10 +275,7 @@ print(json.dumps(out, separators=(",", ":")))
 
   need_gh
   echo "dispatching ${DEPLOY_WORKFLOW} on ${REPO} @ ${ref}"
-  echo "  parties=${parties} blue_green=${blue_green} gpu=${gpu} workers_tag=${workers_tag:-<none>} chain_mode=${chain_mode} tests=${tests} polygon=${polygon} listener_v2_only=${listener_v2_only} lifetime=${lifetime}h"
-  if [[ "${insecure_keygen}" == "true" ]]; then
-    echo "  insecure_keygen=true (Default FHE keys, insecure keygen, not a DKG)"
-  fi
+  echo "  parties=${parties} blue_green=${blue_green} gpu=${gpu} workers_tag=${workers_tag:-<none>} chain_mode=${chain_mode} tests=${tests} polygon=${polygon} listener_v2_only=${listener_v2_only} insecure_keygen=${insecure_keygen} lifetime=${lifetime}h"
   echo "  overrides=${overrides}"
 
   local -a inputs=(

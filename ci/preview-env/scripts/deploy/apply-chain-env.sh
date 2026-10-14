@@ -60,26 +60,18 @@ set_poller_flag() {
 # Workflow run-test env is nested; match by .name anywhere under a given file
 # would collide on DEPLOYER_PRIVATE_KEY. Keep file-specific helpers instead.
 
-apply_gpu_keygen() {
-  # GPU workers cannot ingest Test keys (DriftTechniqueNoiseReduction). Bound
-  # Default params + the multi-hour waits to this path only.
-  local keygen="${root}/host-chain/values-host-trigger-keygen-e2e.yaml"
+# GPU workers cannot ingest Test keys (DriftTechniqueNoiseReduction), and
+# insecure_keygen asks for Default keys. Both keep the secure CRS ceremony, which
+# at Default size gets the hour; only the GPU DKG needs the multi-hour keygen wait.
+if [[ "${GPU:-false}" == "true" || "${INSECURE_KEYGEN:-false}" == "true" ]]; then
+  keygen="${root}/host-chain/values-host-trigger-keygen-e2e.yaml"
   set_named_env "${keygen}" ".scDeploy.env" KEYGEN_PARAMS_TYPE 0
-  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-14400000}"
-  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-3600000}"
-}
-
-if [[ "${GPU:-false}" == "true" ]]; then
-  apply_gpu_keygen
-  if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
-    echo "Anvil GPU: Default FHE params and long keygen waits."
-    exit 0
+  if [[ "${GPU:-false}" == "true" ]]; then
+    set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-14400000}"
   fi
-elif [[ "${INSECURE_KEYGEN:-false}" == "true" ]]; then
-  # Insecure keygen skips the DKG, so the CPU waits stay.
-  set_named_env "${root}/host-chain/values-host-trigger-keygen-e2e.yaml" ".scDeploy.env" KEYGEN_PARAMS_TYPE 0
+  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-3600000}"
   if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
-    echo "Anvil insecure keygen: Default FHE params."
+    echo "Anvil: Default FHE params (gpu=${GPU:-false}, insecure_keygen=${INSECURE_KEYGEN:-false})."
     exit 0
   fi
 fi
