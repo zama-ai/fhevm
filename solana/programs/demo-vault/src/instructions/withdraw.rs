@@ -89,11 +89,5 @@ pub fn withdraw(ctx: Context<Withdraw>, shares: u64) -> Result<()> {
         ctx.accounts.underlying_mint.decimals,
     )?;
 
-    emit!(Withdrawn {
-        vault: vault_key,
-        owner: ctx.accounts.owner.key(),
-        shares,
-        assets,
-    });
     Ok(())
 }

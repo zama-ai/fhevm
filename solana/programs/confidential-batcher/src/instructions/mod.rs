@@ -21,7 +21,7 @@ use confidential_token::{self as ct, program::ConfidentialToken};
 use demo_vault::program::DemoVault;
 use zama_host::program::ZamaHost;
 
-use crate::{constants::*, errors::*, events::*, fhe, state::*};
+use crate::{constants::*, errors::*, fhe, state::*};
 
 pub use admin::*;
 pub use cancel_dispatch::*;

@@ -215,11 +215,6 @@ pub fn dispatch<'info>(
     batch.settle_deadline = now.saturating_add(batch.settle_deadline_secs as i64);
     batch.burned_total_handle = burned_total_handle;
 
-    emit!(BatchDispatched {
-        batch: batch_key,
-        burned_total_handle,
-    });
-
     let accounts = &mut *ctx.accounts;
     open_batch(
         OpenBatch {

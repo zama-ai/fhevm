@@ -4564,13 +4564,6 @@
             }
           },
           {
-            "name": "old_encrypted_store",
-            "docs": [
-              "Previous ZamaHost ACL record."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "new_handle",
             "docs": [
               "New balance handle."
@@ -4583,9 +4576,9 @@
             }
           },
           {
-            "name": "new_encrypted_store",
+            "name": "encrypted_store",
             "docs": [
-              "New ZamaHost ACL record."
+              "ZamaHost encrypted store whose slot moved from `old_handle` to `new_handle`."
             ],
             "type": "pubkey"
           },
@@ -4869,13 +4862,6 @@
                 32
               ]
             }
-          },
-          {
-            "name": "transferred_encrypted_store",
-            "docs": [
-              "ZamaHost ACL record for `transferred_handle`."
-            ],
-            "type": "pubkey"
           }
         ]
       }
@@ -5572,13 +5558,6 @@
             }
           },
           {
-            "name": "old_encrypted_store",
-            "docs": [
-              "Previous ZamaHost ACL record."
-            ],
-            "type": "pubkey"
-          },
-          {
             "name": "new_handle",
             "docs": [
               "New total-supply handle."
@@ -5591,9 +5570,9 @@
             }
           },
           {
-            "name": "new_encrypted_store",
+            "name": "encrypted_store",
             "docs": [
-              "New ZamaHost ACL record."
+              "ZamaHost encrypted store whose slot moved from `old_handle` to `new_handle`."
             ],
             "type": "pubkey"
           },

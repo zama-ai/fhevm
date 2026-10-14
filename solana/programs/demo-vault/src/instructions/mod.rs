@@ -15,7 +15,6 @@ use anchor_spl::token::{
 
 use crate::constants::*;
 use crate::errors::*;
-use crate::events::*;
 use crate::state::*;
 
 pub use deposit::*;

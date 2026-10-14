@@ -166,7 +166,7 @@ pub fn join<'info>(
         builder.output(joined, output)?;
         Ok(joined)
     })?;
-    let joined_handle = fhe::JoinExecute {
+    fhe::JoinExecute {
         batch: batch_key,
         user,
         bump: ctx.bumps.join_record,
@@ -192,12 +192,6 @@ pub fn join<'info>(
     let batch = &mut ctx.accounts.batch;
     batch.join_count = batch.join_count.saturating_add(1);
 
-    emit!(JoinedBatch {
-        batch: batch_key,
-        user,
-        joined_encrypted_store: ctx.accounts.join_store.key(),
-        joined_handle,
-    });
     Ok(())
 }
 

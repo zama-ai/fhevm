@@ -111,9 +111,8 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
         version: APP_EVENT_VERSION,
         mint: mint_key,
         old_handle: [0; 32],
-        old_encrypted_store: Pubkey::default(),
         new_handle: total_supply_handle,
-        new_encrypted_store: total_supply_encrypted_store,
+        encrypted_store: total_supply_encrypted_store,
         reason: TotalSupplyUpdateReason::Initialize,
     });
     Ok(())

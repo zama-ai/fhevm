@@ -37,8 +37,6 @@
 pub mod constants;
 /// Program-specific errors returned by confidential-batcher instructions.
 pub mod errors;
-/// App-local events.
-pub mod events;
 mod fhe;
 /// Instruction account contexts and handlers.
 pub mod instructions;
@@ -51,8 +49,6 @@ use anchor_lang::prelude::*;
 pub use constants::*;
 /// Re-export errors for generated clients and tests.
 pub use errors::*;
-/// Re-export events for generated clients and tests.
-pub use events::*;
 use instructions::*;
 /// Re-export instruction account contexts for tests.
 pub use instructions::{

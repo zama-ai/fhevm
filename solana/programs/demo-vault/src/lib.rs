@@ -10,8 +10,8 @@
 //! real venue later.
 //!
 //! It is standalone: plain SPL Token only, no dependency on `zama-host` or
-//! `confidential-token`, and it emits no Zama host protocol events (the
-//! coprocessor host-listener never ingests this program).
+//! `confidential-token`, and it emits no events (the coprocessor host-listener
+//! never ingests this program).
 
 // Anchor macros generate framework-shaped code that trips rustc/Clippy checks.
 #![allow(unexpected_cfgs)]
@@ -25,8 +25,6 @@
 pub mod constants;
 /// Program-specific errors returned by demo-vault instructions.
 pub mod errors;
-/// App-local events.
-pub mod events;
 /// Instruction account contexts and handlers.
 pub mod instructions;
 /// Vault account layout and share-price math.
@@ -38,8 +36,6 @@ use anchor_lang::prelude::*;
 pub use constants::*;
 /// Re-export errors for generated clients and tests.
 pub use errors::*;
-/// Re-export events for generated clients and tests.
-pub use events::*;
 use instructions::*;
 /// Re-export instruction account contexts for tests.
 pub use instructions::{Deposit, Harvest, InitializeVault, Withdraw};

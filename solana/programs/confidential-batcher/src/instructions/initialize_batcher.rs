@@ -159,17 +159,6 @@ pub fn initialize_batcher<'info>(
     batcher.settle_deadline_secs = settle_deadline_secs;
     batcher.next_batch_index = 0;
 
-    emit!(BatcherInitialized {
-        batcher: batcher.key(),
-        direction,
-        join_confidential_mint: batcher.join_confidential_mint,
-        payout_confidential_mint: batcher.payout_confidential_mint,
-        vault: batcher.vault,
-        admin,
-        min_batch_age_secs,
-        settle_deadline_secs,
-    });
-
     let deny_records =
         split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [1, 1])?;
     let accounts = &mut *ctx.accounts;

@@ -48,10 +48,5 @@ pub fn harvest(ctx: Context<Harvest>, amount: u64) -> Result<()> {
         ctx.accounts.underlying_mint.decimals,
     )?;
 
-    emit!(Harvested {
-        vault: ctx.accounts.vault.key(),
-        donor: ctx.accounts.donor.key(),
-        assets: amount,
-    });
     Ok(())
 }

@@ -152,14 +152,5 @@ pub(crate) fn open_batch<'info>(
         .checked_add(1)
         .ok_or(BatcherError::BatchIndexOverflow)?;
 
-    emit!(BatchOpened {
-        batcher: batcher.key(),
-        batch: batch_key,
-        index,
-        batch_authority: accounts.batch_authority.key(),
-        opened_at,
-        min_batch_age_secs: batcher.min_batch_age_secs,
-        settle_deadline_secs: batch.settle_deadline_secs,
-    });
     Ok(())
 }

@@ -278,7 +278,6 @@ pub fn settle<'info>(
     // store). The only branch the redeem direction shares verbatim.
     if cleartext_total == 0 {
         ctx.accounts.batch.status = BatchStatus::Canceled;
-        emit!(BatchCanceled { batch: batch_key });
         return Ok(());
     }
     // Only the vault phase waits for unpause, as EVM checks the pause after its zero-total cancel
@@ -411,11 +410,6 @@ pub fn settle<'info>(
     batch.total_joined = cleartext_total;
     batch.payout_received = payout_received;
 
-    emit!(BatchSettled {
-        batch: batch_key,
-        total_joined: cleartext_total,
-        payout_received,
-    });
     Ok(())
 }
 
@@ -473,6 +467,5 @@ fn refund_zero_shares<'info>(
     let batch = &mut ctx.accounts.batch;
     batch.status = BatchStatus::Refunding;
     batch.burned_total_handle = [0; 32];
-    emit!(BatchDispatchCancelled { batch: batch.key() });
     Ok(())
 }

@@ -57,9 +57,6 @@ pub fn pause(ctx: Context<BatcherAdmin>) -> Result<()> {
     let batcher = &mut ctx.accounts.batcher;
     require_not_paused(batcher)?;
     batcher.paused = true;
-    emit!(BatcherPaused {
-        batcher: batcher.key(),
-    });
     Ok(())
 }
 
@@ -67,9 +64,6 @@ pub fn unpause(ctx: Context<BatcherAdmin>) -> Result<()> {
     let batcher = &mut ctx.accounts.batcher;
     require!(batcher.paused, BatcherError::NotPaused);
     batcher.paused = false;
-    emit!(BatcherUnpaused {
-        batcher: batcher.key(),
-    });
     Ok(())
 }
 
@@ -77,10 +71,6 @@ pub fn set_min_batch_age(ctx: Context<BatcherAdmin>, min_batch_age_secs: u64) ->
     require_valid_min_batch_age(min_batch_age_secs)?;
     let batcher = &mut ctx.accounts.batcher;
     batcher.min_batch_age_secs = min_batch_age_secs;
-    emit!(MinBatchAgeSet {
-        batcher: batcher.key(),
-        min_batch_age_secs,
-    });
     Ok(())
 }
 
@@ -88,10 +78,6 @@ pub fn set_settle_deadline(ctx: Context<BatcherAdmin>, settle_deadline_secs: u64
     require_valid_settle_deadline(settle_deadline_secs)?;
     let batcher = &mut ctx.accounts.batcher;
     batcher.settle_deadline_secs = settle_deadline_secs;
-    emit!(SettleDeadlineSet {
-        batcher: batcher.key(),
-        settle_deadline_secs,
-    });
     Ok(())
 }
 
@@ -103,12 +89,6 @@ pub fn set_admin(ctx: Context<SetAdmin>) -> Result<()> {
         BatcherError::NewAdminNotAccepted
     );
     let batcher = &mut ctx.accounts.batcher;
-    let previous_admin = batcher.admin;
     batcher.admin = new_admin.key();
-    emit!(AdminSet {
-        batcher: batcher.key(),
-        previous_admin,
-        new_admin: new_admin.key(),
-    });
     Ok(())
 }

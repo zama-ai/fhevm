@@ -115,9 +115,8 @@ pub fn allow_balance_viewers<'info>(
         owner,
         token_account: token_account.key(),
         old_handle: old_balance_handle,
-        old_encrypted_store: balance_store.key(),
         new_handle: new_balance_handle,
-        new_encrypted_store: balance_store.key(),
+        encrypted_store: balance_store.key(),
         reason: BalanceHandleUpdateReason::AllowViewers,
     });
     Ok(())
