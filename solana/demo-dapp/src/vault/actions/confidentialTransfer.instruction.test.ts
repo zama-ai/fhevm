@@ -70,12 +70,12 @@ describe('generated confidentialTransfer instruction', () => {
       [aliasedToken, AccountRole.WRITABLE],
       [aliasedBalance, AccountRole.WRITABLE],
       [aliasedBalance, AccountRole.WRITABLE],
+      [SYSTEM_PROGRAM_ADDRESS, AccountRole.READONLY],
       [zamaEvent, AccountRole.READONLY],
       [transientStore.address, AccountRole.WRITABLE],
       [INSTRUCTIONS_SYSVAR_ADDRESS, AccountRole.READONLY],
       [ZAMA_HOST_PROGRAM_ADDRESS, AccountRole.READONLY],
       [hostConfig, AccountRole.READONLY],
-      [SYSTEM_PROGRAM_ADDRESS, AccountRole.READONLY],
       // HCU witnesses and the optional result State resolve to the program id.
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
       [CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY],
