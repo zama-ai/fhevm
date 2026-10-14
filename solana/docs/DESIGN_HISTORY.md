@@ -1393,6 +1393,20 @@ and the measurement that backed it, as first written:
 > u64-scale two-user batch). The exact floor strands at most one unit per claim (pinned by
 > `exact_division_strands_less_than_the_rate_would`).
 
+### DD-042, the informational payout rate
+
+Settle no longer records a payout rate. Claims never read it, and no client did. As first written:
+
+> and the rate is fixed-point at `RATE_SCALE = 10^9` with both divisions rounding down, so the sum
+> of claims can never exceed the wrapped shares (the claim MulDiv's 128-bit intermediate and euint64
+> result are bounded by `shares * RATE_SCALE`). [...] a preloaded share balance stays inert instead
+> of inflating the rate past u64 and bricking the batch (pinned by
+> `mollusk_preloaded_shares_do_not_poison_the_rate`).
+
+> The frozen `payout_rate` remains on the batch and in `BatchSettled`, but is informational only
+> and SATURATES at u64::MAX instead of failing settle (a redeem batch of few shares against a large
+> payout can legitimately exceed the u64 rate domain — a display number must not brick funds).
+
 ### DD-042, replaced in part by the settle deadline
 
 zama-ai/fhevm#4385 gave each dispatched batch a settle deadline, after which anyone may cancel it and

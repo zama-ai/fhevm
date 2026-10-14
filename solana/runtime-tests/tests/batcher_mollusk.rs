@@ -1497,14 +1497,12 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
         &[batcher_error(batcher::BatcherError::BatchStillLive)],
     );
 
-    // Settle: the KMS certifies 800; the vault (empty, 1:1) mints 800 shares;
-    // the informational rate lands at exactly RATE_SCALE.
+    // Settle: the KMS certifies 800; the vault (empty, 1:1) mints 800 shares.
     run_settle(&context, &fixture, &keys, burned_handle, 800);
     let settled = read_batch(&context, keys.batch);
     assert_eq!(settled.status, batcher::BatchStatus::Settled);
     assert_eq!(settled.total_joined, 800);
     assert_eq!(settled.payout_received, 800);
-    assert_eq!(settled.payout_rate, batcher::RATE_SCALE);
     assert_eq!(read_spl_amount(&context, fixture.vault_token_account), 800);
     // The received shares were wrapped: the plain payout account drained into
     // the shares mint's escrow, and the batch's confidential payout balance is
@@ -1613,11 +1611,9 @@ fn mollusk_lifecycle_with_yield_rate_rounds_down() {
     let burned_handle = run_dispatch(&context, &fixture, &keys);
     run_settle(&context, &fixture, &keys, burned_handle, 800);
 
-    // shares = 800 * (1_000 + 1) / (2_000 + 1) = 400 (floor);
-    // informational rate = 400 * RATE_SCALE / 800 = RATE_SCALE / 2.
+    // shares = 800 * (1_000 + 1) / (2_000 + 1) = 400 (floor).
     let settled = read_batch(&context, keys.batch);
     assert_eq!(settled.payout_received, 400);
-    assert_eq!(settled.payout_rate, batcher::RATE_SCALE / 2);
 
     run_claim(&context, &fixture, &keys, &fixture.alice);
     run_claim(&context, &fixture, &keys, &fixture.bob);
@@ -2004,7 +2000,6 @@ fn mollusk_zero_total_batch_cancels_at_settle() {
 
     let batch = read_batch(&context, keys.batch);
     assert_eq!(batch.status, batcher::BatchStatus::Canceled);
-    assert_eq!(batch.payout_rate, 0);
     assert_eq!(read_spl_amount(&context, fixture.vault_token_account), 0);
     run_reclaim_batch_authority(&context, &fixture, &keys);
 
@@ -2164,7 +2159,6 @@ fn mollusk_redeem_lifecycle_two_users_join_dispatch_settle_claim() {
     assert_eq!(settled.status, batcher::BatchStatus::Settled);
     assert_eq!(settled.total_joined, 700);
     assert_eq!(settled.payout_received, 700);
-    assert_eq!(settled.payout_rate, batcher::RATE_SCALE);
     // 700 shares burned from the escrowed plain shares; 700 underlying left
     // the vault and got wrapped into the underlying mint's escrow.
     assert_eq!(read_spl_amount(&context, fixture.vault_token_account), 300);
@@ -4438,14 +4432,11 @@ fn mollusk_settle_at_the_largest_kms_certificate_fits_the_compute_budget() {
 /// vault shares into the PDA-owned `batch_payout_underlying` account of a
 /// deposit batch before settlement. Settle must price and wrap only the
 /// vault-minted delta across its deposit phase: with balance-based accounting,
-/// this preload would have inflated the batch's payout accounting (and, under
-/// the old rate math, overflowed the u64 rate and bricked the batch). The
+/// this preload would have inflated the batch's payout accounting. The
 /// attacker acquires the shares through a genuine demo-vault deposit and a
 /// genuine SPL transfer — no seeded shortcuts.
 #[test]
-fn mollusk_preloaded_shares_do_not_poison_the_rate() {
-    // Large enough that (PRELOAD + 800) * RATE_SCALE / 800 > u64::MAX, so a
-    // balance-based rate would have left the u64 domain entirely.
+fn mollusk_preloaded_shares_stay_out_of_the_payout() {
     const PRELOAD: u64 = 15_000_000_000_000;
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let attacker = Pubkey::new_unique();
@@ -4519,14 +4510,12 @@ fn mollusk_preloaded_shares_do_not_poison_the_rate() {
     run_settle(&context, &fixture, &keys, burned_handle, 800);
 
     // Settle succeeded and the recorded payout reflects only the vault-minted
-    // delta: 800 in, 800 shares out at the (still ~1:1) price, informational
-    // rate exactly RATE_SCALE. The preloaded shares sit in the account,
-    // unwrapped, inert.
+    // delta: 800 in, 800 shares out at the (still ~1:1) price. The preloaded
+    // shares sit in the account, unwrapped, inert.
     let settled = read_batch(&context, keys.batch);
     assert_eq!(settled.status, batcher::BatchStatus::Settled);
     assert_eq!(settled.total_joined, 800);
     assert_eq!(settled.payout_received, 800);
-    assert_eq!(settled.payout_rate, batcher::RATE_SCALE);
     assert_eq!(read_spl_amount(&context, keys.payout_underlying), PRELOAD);
     assert_eq!(
         store_u64(&context, keys.payout_balance_store, token::balance_key()),

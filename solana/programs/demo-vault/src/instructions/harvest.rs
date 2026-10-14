@@ -49,7 +49,6 @@ pub fn harvest(ctx: Context<Harvest>, amount: u64) -> Result<()> {
     )?;
 
     emit!(Harvested {
-        version: APP_EVENT_VERSION,
         vault: ctx.accounts.vault.key(),
         donor: ctx.accounts.donor.key(),
         assets: amount,

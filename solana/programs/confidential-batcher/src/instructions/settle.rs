@@ -1,6 +1,6 @@
 //! Settles a dispatched batch with the KMS certificate for its burned total.
 //!
-//! Four phases, one instruction, all permissionless — and the batch lifecycle's
+//! Three phases, one instruction, all permissionless — and the batch lifecycle's
 //! only direction branch (the vault CPI; `initialize_batcher` additionally
 //! validates the mint wiring per direction at setup):
 //! 1. `redeem_burned_amount` — the host verifies the KMS certificate on-chain
@@ -15,12 +15,9 @@
 //!    nothing new leaks). "Received" is the balance DELTA across phase 2, never
 //!    the account's raw balance: SPL destinations cannot refuse transfers, so
 //!    a preloaded balance must stay unpriced and unwrapped (inert).
-//! 4. Record `payout_rate = payout_received * RATE_SCALE / total_joined`
-//!    (informational, saturating). Claims use exact proportional division —
-//!    `joined * payout_received / total_joined` — never this rate.
 //!
 //! A zero-total batch cancels after phase 1: the certificate still proves the
-//! total (so cancellation is trustless), and the division never happens.
+//! total, so cancellation is trustless.
 //!
 //! Settle runs only before the batch's settle deadline; from then on anyone may `cancel_dispatch`.
 //!
@@ -178,7 +175,7 @@ pub struct Settle<'info> {
     pub join_mint_hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
 }
 
-/// Redeems, moves the total through the vault, wraps, and records the rate —
+/// Redeems, moves the total through the vault, and wraps the payout —
 /// or cancels on zero total, or opens refunds when a deposit would mint zero shares.
 pub fn settle<'info>(
     ctx: Context<'info, Settle<'info>>,
@@ -284,16 +281,13 @@ pub fn settle<'info>(
         extra_data,
     )?;
 
-    // Zero-total batch: nothing to move through the vault, no rate to record —
-    // cancel. The certificate above still proved the total, so this branch is
-    // trustless and public (it branches on the certified cleartext, never on
-    // encrypted store). The only branch the redeem direction shares verbatim.
+    // Zero-total batch: nothing to move through the vault — cancel. The
+    // certificate above still proved the total, so this branch is trustless and
+    // public (it branches on the certified cleartext, never on encrypted
+    // store). The only branch the redeem direction shares verbatim.
     if cleartext_total == 0 {
         ctx.accounts.batch.status = BatchStatus::Canceled;
-        emit!(BatchCanceled {
-            version: APP_EVENT_VERSION,
-            batch: batch_key,
-        });
+        emit!(BatchCanceled { batch: batch_key });
         return Ok(());
     }
     // Only the vault phase waits for unpause, as EVM checks the pause after its zero-total cancel
@@ -421,21 +415,15 @@ pub fn settle<'info>(
         payout_received,
     )?;
 
-    // Phase 4: record the batch's informational public rate (saturating) — the
-    // one plaintext division of the whole flow, display-only.
-    let payout_rate = payout_rate(payout_received, cleartext_total)?;
     let batch = &mut ctx.accounts.batch;
     batch.status = BatchStatus::Settled;
     batch.total_joined = cleartext_total;
     batch.payout_received = payout_received;
-    batch.payout_rate = payout_rate;
 
     emit!(BatchSettled {
-        version: APP_EVENT_VERSION,
         batch: batch_key,
         total_joined: cleartext_total,
         payout_received,
-        payout_rate,
     });
     Ok(())
 }
@@ -494,9 +482,6 @@ fn refund_zero_shares<'info>(
     let batch = &mut ctx.accounts.batch;
     batch.status = BatchStatus::Refunding;
     batch.burned_total_handle = [0; 32];
-    emit!(BatchDispatchCancelled {
-        version: APP_EVENT_VERSION,
-        batch: batch.key(),
-    });
+    emit!(BatchDispatchCancelled { batch: batch.key() });
     Ok(())
 }

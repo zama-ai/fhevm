@@ -350,7 +350,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       // Step 14: on-chain assertions for the settle phase. A settled batch publishes its certified
       // totals: with a single join the batch total IS alice's deposit — inherent to a one-member
       // batch, not a leak this scenario introduces — so it can be asserted exactly. payoutReceived
-      // is the vault's share payout for that total; payoutRate is informational and left alone.
+      // is the vault's share payout for that total.
       console.log("deposit-arc settle: asserting settled batch state on-chain...");
       const batchAfterSettle = await until(
         async () => {

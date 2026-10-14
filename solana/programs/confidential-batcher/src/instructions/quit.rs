@@ -199,7 +199,6 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     .invoke(execution, vec![ctx.accounts.join_store.to_account_info()])?;
 
     emit!(QuitBatch {
-        version: APP_EVENT_VERSION,
         batch: batch_key,
         user,
     });

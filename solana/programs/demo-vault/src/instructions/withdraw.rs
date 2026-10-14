@@ -90,7 +90,6 @@ pub fn withdraw(ctx: Context<Withdraw>, shares: u64) -> Result<()> {
     )?;
 
     emit!(Withdrawn {
-        version: APP_EVENT_VERSION,
         vault: vault_key,
         owner: ctx.accounts.owner.key(),
         shares,

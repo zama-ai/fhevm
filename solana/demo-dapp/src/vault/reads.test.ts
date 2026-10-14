@@ -95,10 +95,8 @@ describe('getBatchJoinRecords', () => {
         joinCount: 0n,
         totalJoined: 0n,
         payoutReceived: 0n,
-        payoutRate: 0n,
         burnedTotalHandle: new Uint8Array(32),
         authorityBump: 0,
-        bump: 0,
       }),
     );
     const rpc = programAccountsRpc([record(addr(4), addr(100)), record(addr(5), addr(101)), record(addr(4), addr(102)), otherAccount]);

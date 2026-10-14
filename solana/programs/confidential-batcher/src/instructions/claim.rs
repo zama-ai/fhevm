@@ -10,8 +10,7 @@
 //!
 //! Rounding guarantees delivery: every claim floors its exact share of the
 //! aggregate, so the sum of all claims never exceeds the wrapped payout and
-//! the all-or-zero transfer always moves the full claim. Claims use exact
-//! division, not the informational `payout_rate`. The MulDiv's
+//! the all-or-zero transfer always moves the full claim. The MulDiv's
 //! intermediate `joined * payout_received < 2^128` stays inside the
 //! coprocessor's widened MulDiv, and the result is at most `payout_received`,
 //! so it fits euint64. `total_joined > 0` because zero-total batches cancel.
@@ -201,7 +200,6 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
     ctx.accounts.join_record.claimed = true;
 
     emit!(PayoutClaimed {
-        version: APP_EVENT_VERSION,
         batch: batch_key,
         user,
         claim_store: ctx.accounts.join_store.key(),

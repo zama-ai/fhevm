@@ -2,29 +2,11 @@
 
 use anchor_lang::prelude::constant;
 
-/// App event schema version, following the demo-vault pattern. The batcher is
-/// not ingested by the coprocessor host-listener (host protocol events are
-/// emitted by the ZamaHost CPIs it composes); this versions app/demo indexer
-/// reads. Version 4: the batcher admin, pause and policy events, and the policy each batch opens with.
-pub const APP_EVENT_VERSION: u8 = 4;
-
 /// Upper bound on `Batcher::min_batch_age_secs`.
 pub const MAX_MIN_BATCH_AGE_SECS: u64 = 7 * 24 * 60 * 60;
 
 /// Upper bound on `Batcher::settle_deadline_secs`.
 pub const MAX_SETTLE_DEADLINE_SECS: u64 = 30 * 24 * 60 * 60;
-
-/// Fixed-point scale of a batch's public payout rate:
-/// `payout_rate = payout_received * RATE_SCALE / total_joined`.
-///
-/// The rate is event-facing and informational only. Claims do NOT multiply by
-/// it: each claim is the exact proportional floor
-/// `encrypted(joined) * payout_received / total_joined` in one MulDiv execution (the
-/// intermediate `joined * payout_received < 2^128` stays inside the
-/// coprocessor's widened MulDiv, and the result is at most `payout_received`,
-/// so it fits euint64). On the redeem direction the rate itself can exceed
-/// u64 at extreme share prices, so it saturates instead of failing settle.
-pub const RATE_SCALE: u64 = 1_000_000_000;
 
 /// PDA seed for a batch, keyed by batcher and batch index.
 #[constant]

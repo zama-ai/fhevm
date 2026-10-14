@@ -65,11 +65,5 @@ pub fn reclaim_batch_authority(ctx: Context<ReclaimBatchAuthority>) -> Result<()
         ),
         lamports,
     )?;
-
-    emit!(BatchAuthorityReclaimed {
-        version: APP_EVENT_VERSION,
-        batch,
-        lamports,
-    });
     Ok(())
 }

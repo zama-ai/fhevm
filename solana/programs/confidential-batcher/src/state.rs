@@ -1,4 +1,4 @@
-//! Account layouts, PDA helpers, encrypted-value labels, and the payout math.
+//! Account layouts, PDA helpers and encrypted-value labels.
 //!
 //! Public API surface: off-chain callers deriving batcher PDAs — `runtime-tests`' `batcher_mollusk`
 //! fixtures. TypeScript clients are generated from the Anchor IDL.
@@ -85,18 +85,12 @@ pub struct Batch {
     pub join_count: u64,
     /// Bump of the per-batch authority PDA.
     pub authority_bump: u8,
-    /// PDA bump for `(batcher, index)`.
-    pub bump: u8,
     /// Created-public handle of the burned batch total (set at dispatch).
     pub burned_total_handle: [u8; 32],
     /// KMS-certified batch join total (set at settle; public by design).
     pub total_joined: u64,
     /// Payout units the vault phase produced for the batch total (set at settle).
     pub payout_received: u64,
-    /// Informational rate `payout_received * RATE_SCALE / total_joined`,
-    /// saturating at u64::MAX (settle). Claims use exact proportional division
-    /// instead — never this field.
-    pub payout_rate: u64,
 }
 
 impl Batch {
@@ -162,22 +156,6 @@ pub fn batch_payout_underlying_address(batch: Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[BATCH_PAYOUT_UNDERLYING_SEED, batch.as_ref()], &crate::ID)
 }
 
-/// Computes the informational payout rate of a settled batch, rounded DOWN
-/// and saturating at u64::MAX:
-/// `rate = payout_received * RATE_SCALE / total_joined`.
-///
-/// Event-facing only — claims never multiply by it (they use exact
-/// proportional division), so a redeem batch whose per-unit payout exceeds
-/// the u64 rate range (extreme share price) must not fail settle over a
-/// display number. `total_joined` must be non-zero (zero-total batches cancel
-/// instead).
-pub fn payout_rate(payout_received: u64, total_joined: u64) -> Result<u64> {
-    let rate = ((payout_received as u128) * (RATE_SCALE as u128))
-        .checked_div(total_joined as u128)
-        .ok_or(ProgramError::ArithmeticOverflow)?;
-    Ok(u64::try_from(rate).unwrap_or(u64::MAX))
-}
-
 pub fn join_store_id(batch: Pubkey, record: Pubkey) -> zama_fhe::StoreId {
     zama_fhe::StoreId::new(crate::ID, record, batch)
 }
@@ -185,64 +163,3 @@ pub fn join_store_id(batch: Pubkey, record: Pubkey) -> zama_fhe::StoreId {
 /// Join-store key of the user's encrypted joined amount.
 #[constant]
 pub const JOINED_AMOUNT_KEY: [u8; 32] = *b"joined_amount___________________";
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The cleartext mirror of the claim MulDiv: the exact proportional floor
-    /// `joined * payout_received / total_joined`.
-    fn claim_payout(joined: u64, payout_received: u64, total_joined: u64) -> u64 {
-        ((joined as u128) * (payout_received as u128) / (total_joined as u128)) as u64
-    }
-
-    #[test]
-    fn one_to_one_payout_rate_is_the_scale() {
-        assert_eq!(payout_rate(1_000, 1_000).unwrap(), RATE_SCALE);
-    }
-
-    #[test]
-    fn rate_rounds_down() {
-        // 2 payout units for 3 joined: rate = 2 * 1e9 / 3 = 666_666_666 (floor).
-        assert_eq!(payout_rate(2, 3).unwrap(), 666_666_666);
-    }
-
-    #[test]
-    fn rate_saturates_instead_of_failing_settle() {
-        // A redeem batch of 1 share paying out u64::MAX underlying: the true
-        // rate is above u64; the informational field saturates.
-        assert_eq!(payout_rate(u64::MAX, 1).unwrap(), u64::MAX);
-    }
-
-    #[test]
-    fn claims_never_exceed_received_payout() {
-        // Adversarially rounded batches, including the u64-scale case of
-        // fhevm-internal#1774: sum(floor(joined_i * payout / total)) <= payout.
-        let cases: &[(&[u64], u64)] = &[
-            (&[300, 500], 799),
-            (&[1, 1, 1], 2),
-            (&[7, 11, 13], 17),
-            (&[u64::MAX / 2, u64::MAX / 2 - 100], u64::MAX / 3),
-            (&[u64::MAX / 3, u64::MAX / 3, u64::MAX / 3], u64::MAX - 5),
-        ];
-        for (joins, payout) in cases {
-            let total: u64 = joins
-                .iter()
-                .copied()
-                .fold(0, |acc, j| acc.checked_add(j).unwrap());
-            let distributed: u128 = joins
-                .iter()
-                .map(|joined| claim_payout(*joined, *payout, total) as u128)
-                .sum();
-            assert!(
-                distributed <= *payout as u128,
-                "distributed {distributed} > payout {payout} for joins {joins:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn zero_total_rate_is_rejected() {
-        assert!(payout_rate(10, 0).is_err());
-    }
-}

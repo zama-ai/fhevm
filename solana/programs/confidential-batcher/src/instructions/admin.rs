@@ -58,7 +58,6 @@ pub fn pause(ctx: Context<BatcherAdmin>) -> Result<()> {
     require_not_paused(batcher)?;
     batcher.paused = true;
     emit!(BatcherPaused {
-        version: APP_EVENT_VERSION,
         batcher: batcher.key(),
     });
     Ok(())
@@ -69,7 +68,6 @@ pub fn unpause(ctx: Context<BatcherAdmin>) -> Result<()> {
     require!(batcher.paused, BatcherError::NotPaused);
     batcher.paused = false;
     emit!(BatcherUnpaused {
-        version: APP_EVENT_VERSION,
         batcher: batcher.key(),
     });
     Ok(())
@@ -80,7 +78,6 @@ pub fn set_min_batch_age(ctx: Context<BatcherAdmin>, min_batch_age_secs: u64) ->
     let batcher = &mut ctx.accounts.batcher;
     batcher.min_batch_age_secs = min_batch_age_secs;
     emit!(MinBatchAgeSet {
-        version: APP_EVENT_VERSION,
         batcher: batcher.key(),
         min_batch_age_secs,
     });
@@ -92,7 +89,6 @@ pub fn set_settle_deadline(ctx: Context<BatcherAdmin>, settle_deadline_secs: u64
     let batcher = &mut ctx.accounts.batcher;
     batcher.settle_deadline_secs = settle_deadline_secs;
     emit!(SettleDeadlineSet {
-        version: APP_EVENT_VERSION,
         batcher: batcher.key(),
         settle_deadline_secs,
     });
@@ -110,7 +106,6 @@ pub fn set_admin(ctx: Context<SetAdmin>) -> Result<()> {
     let previous_admin = batcher.admin;
     batcher.admin = new_admin.key();
     emit!(AdminSet {
-        version: APP_EVENT_VERSION,
         batcher: batcher.key(),
         previous_admin,
         new_admin: new_admin.key(),

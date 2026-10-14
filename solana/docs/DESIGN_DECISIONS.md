@@ -1050,13 +1050,10 @@ JoinRecord owns its contribution Store, and the token returns the transferred ha
 to that Store through the transient store (DD-049); "next batch opens immediately" is `dispatch`
 itself: it opens the next batch in the same instruction, as EVM's `dispatchBatch` does, and
 `initialize_batcher` opens batch 0 (INVARIANTS #70). Whoever dispatches pays the next batch's rent and funds its authority, as EVM's dispatcher pays
-for the new batch's storage, and a next batch that cannot open reverts the dispatch; and the rate
-is fixed-point at `RATE_SCALE = 10^9` with both divisions rounding down, so the sum of claims can
-never exceed the wrapped shares (the claim MulDiv's 128-bit intermediate and euint64 result are
-bounded by `shares * RATE_SCALE`). Settle prices and wraps only the vault-minted share DELTA across
-its deposit phase — never the share account's raw balance — because SPL destinations cannot refuse
-incoming transfers: a preloaded share balance stays inert instead of inflating the rate past u64 and
-bricking the batch (pinned by `mollusk_preloaded_shares_do_not_poison_the_rate`).
+for the new batch's storage, and a next batch that cannot open reverts the dispatch. Settle prices
+and wraps only the vault-minted share DELTA across its deposit phase — never the share account's raw
+balance — because SPL destinations cannot refuse incoming transfers: a preloaded share balance stays
+unpriced and unwrapped (pinned by `mollusk_preloaded_shares_stay_out_of_the_payout`).
 
 The batcher has an admin, as EVM's batcher has an owner. `initialize_batcher` names it and refuses
 the default key, as OZ `Ownable` refuses `address(0)`. It is called `admin` because on Solana an
@@ -1115,9 +1112,7 @@ In both directions a claim is the exact proportional floor
 Sum-of-claims <= payout holds: `sum(floor(j_i * P / T)) <= floor(sum(j_i) * P / T) = P`. The MulDiv intermediate
 `joined * payout_received < 2^128` stays inside the coprocessor's widened MulDiv and the result is
 at most `payout_received`, so it fits euint64; `total_joined > 0` because zero-total batches
-cancel. The frozen `payout_rate` remains on the batch and in `BatchSettled`, but is informational
-only and SATURATES at u64::MAX instead of failing settle (a redeem batch of few shares against a
-large payout can legitimately exceed the u64 rate domain — a display number must not brick funds).
+cancel.
 
 Settle's delta accounting is preserved as a security invariant on the redeem direction's
 underlying-received phase: the payout is the batch payout account's SPL balance DELTA across the

@@ -1,10 +1,5 @@
 //! Shared constants and PDA seed bytes for the demo-vault program.
 
-/// App event schema version. This vault is not ingested by the coprocessor
-/// host-listener; the field exists so app/demo indexers can version their reads
-/// the same way the other PoC programs do.
-pub const APP_EVENT_VERSION: u8 = 1;
-
 /// Virtual assets added to the denominator of every share-price computation.
 ///
 /// Together with [`VIRTUAL_SHARES`] this is the ERC-4626 virtual-offset defense
