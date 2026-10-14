@@ -94,9 +94,9 @@ case "${CHAIN_MODE}" in
       # 12s blocks stretch hardhat deploys and the keygen ceremony.
       echo "CONTRACTS_DEPLOY_TIMEOUT=30m"
       # Keygen + crsgen on Sepolia (~43 min + ~25 min, waits 60m + 40m) plus
-      # compile; the Default CRS ceremony waits 60m. default-secure overwrites
+      # compile; the Default CRS ceremony waits 60m. The Default DKG overwrites
       # KEYGEN_TIMEOUT to 310m after this case.
-      if [[ "${KEYGEN:?}" == "test-secure" ]]; then
+      if [[ "${FHE_PARAMS:?}" == "test" ]]; then
         echo "KEYGEN_TIMEOUT=110m"
       else
         echo "KEYGEN_TIMEOUT=130m"
@@ -108,6 +108,6 @@ esac
 
 # Default-parameter DKG needs a Helm wait that outlasts 4h keygen + 1h
 # crsgen plus compile, still under the six-hour deploy-job cap.
-if [[ "${KEYGEN:?}" == "default-secure" ]]; then
+if [[ "${FHE_PARAMS:?}" == "default" && "${KEYGEN:?}" == "secure" ]]; then
   echo "KEYGEN_TIMEOUT=310m" >> "${GITHUB_ENV}"
 fi

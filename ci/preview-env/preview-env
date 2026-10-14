@@ -49,15 +49,15 @@ launch options:
   --blue-green              enable_blue_green=true and nb_coprocessor=2; with --tests the
                             automated RFC-021 round, without it Blue only (manual QA mode)
   --gpu                     enable_gpu=true: GPU workers (need Default FHE params, so not
-                            --keygen test-secure). Requires --workers-tag. Combines with
+                            --fhe-params test). Requires --workers-tag. Combines with
                             --testnets, --blockchain-dev, and --blue-green
                             (Green/GCS GPU; Blue stays CPU)
   --workers-tag <tag>       image tag for tfhe, sns, and zkproof when --gpu is set
                             (for example fd282b1-cuda12.8-sm70). Required with --gpu
-  --keygen <mode>           FHE keys (default default-insecure):
-                              default-insecure  Default params, KMS insecure keygen, minutes
-                              default-secure    Default params, real DKG, hours
-                              test-secure       Test params, real DKG
+  --fhe-params default|test FHE parameters (default: default, production-size).
+                            test needs --keygen secure
+  --keygen insecure|secure  insecure (default): KMS insecure keygen, minutes.
+                            secure: real preprocessing + DKG, hours with Default params
   --blockchain-dev          chain_mode=blockchain-dev: shared Geth/Nitro instead of Anvil
   --testnets                chain_mode=testnets: public Sepolia + Amoy hosts, Nitro gateway
                             (implies --polygon; RPC URLs + funder key come from AWS
@@ -196,7 +196,7 @@ cmd_launch() {
   local tests="false" polygon="false" observability="false"
   local build_images="true" test_suite_only="false" kms_parties="4"
   local do_watch="false" lifetime="8" workers_tag="" listener_v2_only="false"
-  local keygen=""
+  local fhe_params="" keygen=""
   local -a sets=()
 
   while [[ $# -gt 0 ]]; do
@@ -206,6 +206,7 @@ cmd_launch() {
       --blue-green) blue_green="true"; shift ;;
       --gpu) gpu="true"; shift ;;
       --workers-tag) workers_tag="${2:-}"; shift 2 ;;
+      --fhe-params) fhe_params="${2:-}"; shift 2 ;;
       --keygen) keygen="${2:-}"; shift 2 ;;
       --blockchain-dev) chain_mode="blockchain-dev"; shift ;;
       --testnets) chain_mode="testnets"; shift ;;
@@ -242,11 +243,12 @@ cmd_launch() {
   elif [[ -n "${workers_tag}" ]]; then
     die "--workers-tag is only used with --gpu"
   fi
-  case "${keygen}" in
-    ""|default-insecure|default-secure|test-secure) ;;
-    *) die "--keygen must be default-insecure, default-secure or test-secure" ;;
-  esac
-  [[ "${gpu}" == "true" && "${keygen}" == "test-secure" ]] && die "--gpu needs Default FHE params; not with --keygen test-secure"
+  case "${fhe_params}" in ""|default|test) ;; *) die "--fhe-params must be default or test" ;; esac
+  case "${keygen}" in ""|insecure|secure) ;; *) die "--keygen must be insecure or secure" ;; esac
+  if [[ "${fhe_params}" == "test" ]]; then
+    [[ "${keygen}" == "secure" ]] || die "--fhe-params test needs --keygen secure (Test params with the insecure keygen test neither real keys nor the real keygen)"
+    [[ "${gpu}" != "true" ]] || die "--gpu needs Default FHE params; GPU workers cannot use Test keys"
+  fi
   if [[ "${blue_green}" == "true" && "${parties}" == "1" ]]; then
     parties="2"
   fi
@@ -280,11 +282,12 @@ print(json.dumps(out, separators=(",", ":")))
 
   need_gh
   echo "dispatching ${DEPLOY_WORKFLOW} on ${REPO} @ ${ref}"
-  echo "  parties=${parties} blue_green=${blue_green} gpu=${gpu} workers_tag=${workers_tag:-<none>} chain_mode=${chain_mode} tests=${tests} polygon=${polygon} listener_v2_only=${listener_v2_only} keygen=${keygen:-default-insecure} lifetime=${lifetime}h"
+  echo "  parties=${parties} blue_green=${blue_green} gpu=${gpu} workers_tag=${workers_tag:-<none>} chain_mode=${chain_mode} tests=${tests} polygon=${polygon} listener_v2_only=${listener_v2_only} fhe_params=${fhe_params:-default} keygen=${keygen:-insecure} lifetime=${lifetime}h"
   echo "  overrides=${overrides}"
 
   # Sent only when set, so a --ref whose workflow predates the input still dispatches.
   local -a optional_inputs=()
+  [[ -n "${fhe_params}" ]] && optional_inputs+=(-f "fhe_params=${fhe_params}")
   [[ -n "${keygen}" ]] && optional_inputs+=(-f "keygen=${keygen}")
   gh workflow run "${DEPLOY_WORKFLOW}" -R "${REPO}" --ref "${ref}" \
     -f "build_images=${build_images}" \

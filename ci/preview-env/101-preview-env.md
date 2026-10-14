@@ -80,9 +80,11 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
 - `enable_gpu` — GPU workers (default `false`), including on Anvil. CLI
   `--gpu`. Dispatch-only: the `preview-env-gpu` label cannot carry a worker
   tag. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS stays CPU. GPU
-  workers need Default FHE params, so not with `keygen=test-secure`.
-- `keygen` — which FHE keys and how they are made (default
-  `default-insecure`). CLI `--keygen`. See "FHE keys" below.
+  workers need Default FHE params, so not with `fhe_params=test`.
+- `fhe_params` — `default` (production-size, the default) or `test`. CLI
+  `--fhe-params`. See "FHE keys" below.
+- `keygen` — `insecure` (KMS insecure keygen, minutes, the default) or
+  `secure` (real DKG). CLI `--keygen`. See "FHE keys" below.
 - `workers_tag` — image tag for tfhe, sns, and zkproof. Required when
   `enable_gpu=true` on a dispatch (CLI `--workers-tag`). Must be empty when
   GPU is off. The `preview-env-gpu` label cannot carry a tag, so a GPU
@@ -190,7 +192,7 @@ helm-install; Actions stays the write path. `--ref` must already be on origin.
 ci/preview-env/preview-env launch --ref <your-branch> --tests
 ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b1-cuda12.8-sm70 --tests
 ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b1-cuda12.8-sm70 --testnets --tests
-ci/preview-env/preview-env launch --ref <your-branch> --keygen default-secure --lifetime 12 --tests
+ci/preview-env/preview-env launch --ref <your-branch> --keygen secure --lifetime 12 --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
 ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
@@ -221,19 +223,25 @@ ci/preview-env/preview-env namespace --run-id <run-id>
 
 ## FHE keys
 
-Each preview makes its own FHE keys. Pick the mode with `keygen` (CLI
-`--keygen`):
+Each preview makes its own FHE keys. Two choices decide how, `fhe_params`
+(CLI `--fhe-params`) and `keygen` (CLI `--keygen`):
 
-| `keygen` | Parameters | Key generation | Time (4 KMS parties) | Use it for |
-| --- | --- | --- | --- | --- |
-| `default-insecure` (default) | Default, as in production | KMS insecure keygen | key in about 6 min | Almost everything: production-size keys, made with a shortcut. |
-| `default-secure` | Default | Real preprocessing and DKG | about 2 h | Production-like runs, and testing the preprocessing and DKG themselves. Set `--lifetime` to cover it. |
-| `test-secure` | Test (small) | Real preprocessing and DKG | tens of minutes | Testing the keygen flow faster. GPU workers cannot use Test keys. |
+| `fhe_params` | `keygen` | Time (4 KMS parties) | Use it for |
+| --- | --- | --- | --- |
+| `default` | `insecure` (the default) | key in about 6 min | Almost everything: production-size keys, made with a shortcut. |
+| `default` | `secure` | about 2 h | Production-like runs, and testing the preprocessing and DKG themselves. Set `--lifetime` to cover it. |
+| `test` | `secure` | tens of minutes | Testing the preprocessing and keygen flow faster (for example key rotation). |
+| `test` | `insecure` | refused | Tests neither production-size keys nor the real keygen. |
 
-Test parameters with the insecure keygen are not offered: they test neither
-production-size keys nor the real keygen. The CRS is made by the real ceremony
-in every mode. `default-insecure` runs the docker stack's
-`kms-test-keygen-proxy` in front of each KMS core (see `README.md`).
+- `default` parameters are the production ones. `test` parameters are much
+  smaller, so FHE operations are far cheaper than in production.
+- `insecure`: the KMS insecure keygen, a shortcut where one party makes the key
+  and shares it. Test environments only. The preview runs the docker stack's
+  `kms-test-keygen-proxy` in front of each KMS core to use it (see `README.md`).
+- `secure`: the real multi-party preprocessing and DKG, as in production.
+- The CRS is always made by the real ceremony.
+- GPU workers need `default` parameters, so `--gpu` refuses `--fhe-params test`.
+- PR-label deploys always use the defaults.
 
 ## Connect to your environment
 

@@ -27,7 +27,7 @@ name: preview-env-deploy
 #     (CLI --workers-tag), the image tag for tfhe, sns, and zkproof.
 #     Workers land on the coprocessor-gpu nodepool. With enable_blue_green,
 #     Green/GCS is GPU and Blue/BCS stays CPU. GPU workers need Default FHE
-#     params, so keygen=test-secure is rejected with it.
+#     params, so fhe_params=test is rejected with it.
 #   - preview-env-blue-green: deploy RFC-021 BCS+GCS on each party (forces
 #     nb_coprocessor=2) on chain_mode=blockchain-dev. Dispatch opt-in is
 #     enable_blue_green=true (plain nb_coprocessor=2 is two-party consensus
@@ -38,10 +38,10 @@ name: preview-env-deploy
 #     Blue only and no proposal; Green, the proposal and the checks come from
 #     ci/preview-env/scripts/bg/bg-*.sh. With deploy_polygon the upgrade spans
 #     both host chains. N=1 is rejected.
-# keygen (CLI --keygen) picks the FHE keys: default-insecure (Default params
-# from the KMS insecure keygen, minutes; the default, also for PR labels),
-# default-secure (Default params from the DKG, hours) or test-secure (Test
-# params from the DKG). Test params with the insecure keygen are not offered.
+# fhe_params (CLI --fhe-params) and keygen (CLI --keygen) pick the FHE keys.
+# Default for dispatch and PR labels: Default params from the KMS insecure
+# keygen (minutes). keygen=secure runs the real DKG (hours with Default params).
+# Test params need keygen=secure.
 # Dispatch-only: listener_v2_only (CLI --listener-v2-only) runs the host side
 # on the listener v2 stack ONLY (listener-core producer -> Redis ->
 # host-listener-consumer); the host-listener pollers (coprocessor-poller-<i>,
@@ -91,22 +91,29 @@ on:
           - "false"
           - "true"
       enable_gpu:
-        description: "Schedule TFHE/SnS/zkproof workers on the coprocessor-gpu nodepool (one GPU each). Needs Default FHE params (keygen other than test-secure). Requires workers_tag. With enable_blue_green, Green/GCS is GPU and Blue/BCS stays CPU. The preview-env-gpu label cannot set this."
+        description: "Schedule TFHE/SnS/zkproof workers on the coprocessor-gpu nodepool (one GPU each). Needs fhe_params=default. Requires workers_tag. With enable_blue_green, Green/GCS is GPU and Blue/BCS stays CPU. The preview-env-gpu label cannot set this."
         required: true
         type: choice
         default: "false"
         options:
           - "false"
           - "true"
-      keygen:
-        description: "FHE keys. default-insecure: production-size (Default) params from the KMS insecure keygen, in minutes. default-secure: Default params from the real DKG, hours; to test the DKG itself. test-secure: small Test params from the real DKG; to test the keygen flow faster."
+      fhe_params:
+        description: "FHE parameters. default: production-size. test: small and cheaper; needs keygen=secure and no GPU."
         required: false
         type: choice
-        default: default-insecure
+        default: default
         options:
-          - default-insecure
-          - default-secure
-          - test-secure
+          - default
+          - test
+      keygen:
+        description: "How the KMS makes the keys. insecure: the KMS insecure keygen, in minutes. secure: the real preprocessing and DKG, hours with Default params; to test the DKG itself."
+        required: false
+        type: choice
+        default: insecure
+        options:
+          - insecure
+          - secure
       listener_v2_only:
         description: "Run the host side on the listener v2 stack ONLY (listener-core producer -> Redis -> host-listener-consumer): skip the host-listener pollers (coprocessor-poller-<i>, coprocessor-poller-polygon-<i>). Pair with automated_tests to run e2e against it."
         required: false
@@ -243,6 +250,7 @@ jobs:
       automated_tests: ${{ steps.check.outputs.automated_tests }}
       gpu: ${{ steps.check.outputs.gpu }}
       workers_tag: ${{ steps.check.outputs.workers_tag }}
+      fhe_params: ${{ steps.check.outputs.fhe_params }}
       keygen: ${{ steps.check.outputs.keygen }}
       observability: ${{ steps.check.outputs.observability }}
       blue_green: ${{ steps.check.outputs.blue_green }}
@@ -310,7 +318,8 @@ jobs:
           DISPATCH_ENABLE_BLUE_GREEN: ${{ inputs.enable_blue_green || 'false' }}
           DISPATCH_ENABLE_GPU: ${{ inputs.enable_gpu || 'false' }}
           DISPATCH_WORKERS_TAG: ${{ inputs.workers_tag }}
-          DISPATCH_KEYGEN: ${{ inputs.keygen || 'default-insecure' }}
+          DISPATCH_FHE_PARAMS: ${{ inputs.fhe_params || 'default' }}
+          DISPATCH_KEYGEN: ${{ inputs.keygen || 'insecure' }}
           DISPATCH_LISTENER_V2_ONLY: ${{ inputs.listener_v2_only || false }}
           DISPATCH_CHAIN_MODE: ${{ inputs.chain_mode || 'anvil' }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
@@ -321,8 +330,8 @@ jobs:
           # in via the preview-env-e2e-tests label (handled below).
           # GPU scheduling is dispatch enable_gpu plus workers_tag. The
           # preview-env-gpu label has no tag, so check-labels fails it.
-          # keygen is a dispatch-only knob (no PR label); PR runs use the
-          # default-insecure default.
+          # fhe_params and keygen are dispatch-only knobs (no PR label); PR
+          # runs use the defaults (Default params, insecure keygen).
           # observability is a dispatch-only knob for
           # now (no PR label), off by default.
           # RFC-021 dual fleet. Dispatch: enable_blue_green=true (plain N=2
@@ -334,7 +343,8 @@ jobs:
             echo "automated_tests=false"
             echo "gpu=false"
             echo "workers_tag="
-            echo "keygen=default-insecure"
+            echo "fhe_params=default"
+            echo "keygen=insecure"
             echo "observability=false"
             echo "blue_green=false"
             echo "listener_v2_only=false"
@@ -348,8 +358,12 @@ jobs:
             if [[ "${DISPATCH_ENABLE_GPU}" == "true" ]]; then
               workers_tag="${DISPATCH_WORKERS_TAG}"
             fi
-            if [[ "${DISPATCH_ENABLE_GPU}" == "true" && "${DISPATCH_KEYGEN}" == "test-secure" ]]; then
-              echo "::error::enable_gpu needs Default FHE params; keygen=test-secure cannot run on GPU workers"
+            if [[ "${DISPATCH_FHE_PARAMS}" == "test" && "${DISPATCH_KEYGEN}" == "insecure" ]]; then
+              echo "::error::fhe_params=test needs keygen=secure: Test params with the insecure keygen test neither real keys nor the real keygen"
+              exit 1
+            fi
+            if [[ "${DISPATCH_ENABLE_GPU}" == "true" && "${DISPATCH_FHE_PARAMS}" == "test" ]]; then
+              echo "::error::enable_gpu needs fhe_params=default; GPU workers cannot use Test keys"
               exit 1
             fi
             if [[ "${DISPATCH_ENABLE_BLUE_GREEN}" == "true" ]]; then
@@ -365,6 +379,7 @@ jobs:
               echo "automated_tests=${DISPATCH_AUTOMATED_TESTS:-false}"
               echo "gpu=${DISPATCH_ENABLE_GPU:-false}"
               echo "workers_tag=${workers_tag}"
+              echo "fhe_params=${DISPATCH_FHE_PARAMS}"
               echo "keygen=${DISPATCH_KEYGEN}"
               echo "observability=${DISPATCH_OBSERVABILITY:-false}"
               echo "blue_green=${blue_green}"
@@ -599,6 +614,7 @@ jobs:
       AUTOMATED_TESTS: ${{ needs.check-labels.outputs.automated_tests }}
       GPU: ${{ needs.check-labels.outputs.gpu }}
       GPU_IMAGE_TAG: ${{ needs.check-labels.outputs.workers_tag }}
+      FHE_PARAMS: ${{ needs.check-labels.outputs.fhe_params }}
       KEYGEN: ${{ needs.check-labels.outputs.keygen }}
       OBSERVABILITY: ${{ needs.check-labels.outputs.observability }}
       BLUE_GREEN: ${{ needs.check-labels.outputs.blue_green }}
@@ -973,11 +989,11 @@ jobs:
           NODE_PATH: /tmp/wallet-tools/node_modules
         run: bash ci/preview-env/scripts/wallets/fund-wallets.sh
 
-      # External chains rewrite RPC overlays. On Anvil the values hold
-      # keygen=default-insecure; the other keygen modes only patch the keygen
+      # External chains rewrite RPC overlays. On Anvil the values hold Default
+      # params with the insecure keygen; other choices only patch the keygen
       # values and the script exits before the RPC rewrites.
       - name: Apply chain values overlays
-        if: env.EXTERNAL_CHAINS == 'true' || env.KEYGEN != 'default-insecure'
+        if: env.EXTERNAL_CHAINS == 'true' || env.FHE_PARAMS != 'default' || env.KEYGEN != 'insecure'
         run: bash ci/preview-env/scripts/deploy/apply-chain-env.sh
 
       ######################################################################
