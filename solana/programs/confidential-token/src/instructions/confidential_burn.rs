@@ -83,14 +83,8 @@ impl<'info> ConfidentialBurn<'info> {
             host_config: &self.host_config,
             remaining_accounts,
             system_program: &self.system_program,
-            hcu_block_meter: self
-                .hcu_block_meter
-                .as_ref()
-                .map(|account| account.to_account_info()),
-            hcu_trusted_app_record: self
-                .hcu_trusted_app_record
-                .as_ref()
-                .map(|account| account.to_account_info()),
+            hcu_block_meter: self.hcu_block_meter.as_ref(),
+            hcu_trusted_app_record: self.hcu_trusted_app_record.as_ref(),
             underlying_mint: self.underlying_mint.to_account_info(),
             owner_ata: self.owner_ata.to_account_info(),
         }
@@ -240,14 +234,8 @@ impl<'info> ConfidentialBurnFromValue<'info> {
             host_config: &self.host_config,
             remaining_accounts,
             system_program: &self.system_program,
-            hcu_block_meter: self
-                .hcu_block_meter
-                .as_ref()
-                .map(|account| account.to_account_info()),
-            hcu_trusted_app_record: self
-                .hcu_trusted_app_record
-                .as_ref()
-                .map(|account| account.to_account_info()),
+            hcu_block_meter: self.hcu_block_meter.as_ref(),
+            hcu_trusted_app_record: self.hcu_trusted_app_record.as_ref(),
             underlying_mint: self.underlying_mint.to_account_info(),
             owner_ata: self.owner_ata.to_account_info(),
         }
@@ -357,8 +345,8 @@ struct BurnAccounts<'a, 'info> {
     host_config: &'a Account<'info, zama_host::HostConfig>,
     remaining_accounts: &'a [AccountInfo<'info>],
     system_program: &'a Program<'info, System>,
-    hcu_block_meter: Option<AccountInfo<'info>>,
-    hcu_trusted_app_record: Option<AccountInfo<'info>>,
+    hcu_block_meter: Option<&'a UncheckedAccount<'info>>,
+    hcu_trusted_app_record: Option<&'a UncheckedAccount<'info>>,
     underlying_mint: AccountInfo<'info>,
     owner_ata: AccountInfo<'info>,
 }
@@ -382,7 +370,6 @@ fn execute_burn<'info>(
     accounts: BurnAccounts<'_, 'info>,
     amount_source: BurnAmountSource<'info>,
 ) -> Result<BurnOutcome> {
-    assert_confidential_mint_shape(accounts.mint)?;
     let mint_key = accounts.mint.key();
     let token_account = accounts.token_account;
     let owner = token_account.owner;
@@ -402,7 +389,6 @@ fn execute_burn<'info>(
         mint_key,
         ConfidentialTokenError::MintMismatch
     );
-    assert_confidential_token_account_shape(token_account, mint_key, owner)?;
     check_underlying_ata_not_frozen(
         accounts.mint,
         owner,
@@ -542,8 +528,8 @@ fn execute_burn<'info>(
                 })),
             )?,
             system_program: accounts.system_program,
-            hcu_block_meter: accounts.hcu_block_meter.clone(),
-            hcu_trusted_app_record: accounts.hcu_trusted_app_record.clone(),
+            hcu_block_meter: accounts.hcu_block_meter,
+            hcu_trusted_app_record: accounts.hcu_trusted_app_record,
         },
         accounts: &execution_accounts,
         execution,
@@ -602,7 +588,7 @@ fn open_pending_burn<'info>(
     system_program: &Program<'info, System>,
     pending: PendingBurn,
 ) -> Result<()> {
-    let space = 8 + PendingBurn::SPACE;
+    let space = 8 + PendingBurn::INIT_SPACE;
     let bump_seed = [pending.bump];
     let seeds: &[&[u8]] = &[
         PENDING_BURN_SEED,

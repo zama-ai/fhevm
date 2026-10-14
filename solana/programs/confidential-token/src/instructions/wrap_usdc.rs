@@ -73,7 +73,6 @@ pub struct WrapUsdc<'info> {
 
 /// Escrows public USDC and updates the confidential balance by `amount`.
 pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Result<()> {
-    assert_confidential_mint_shape(&ctx.accounts.mint)?;
     assert_supported_underlying_mint(&ctx.accounts.underlying_mint, &ctx.accounts.token_program)?;
     assert_supported_underlying_token_account(
         &ctx.accounts.user_usdc,
@@ -100,7 +99,6 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
         mint_key,
         ConfidentialTokenError::MintMismatch
     );
-    assert_confidential_token_account_shape(token_account, mint_key, ctx.accounts.owner.key())?;
     require_keys_eq!(
         ctx.accounts.mint.underlying_mint,
         ctx.accounts.underlying_mint.key(),
@@ -190,16 +188,8 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
                 [token_app(mint_key)],
             )?,
             system_program: &ctx.accounts.system_program,
-            hcu_block_meter: ctx
-                .accounts
-                .hcu_block_meter
-                .as_ref()
-                .map(|account| account.to_account_info()),
-            hcu_trusted_app_record: ctx
-                .accounts
-                .hcu_trusted_app_record
-                .as_ref()
-                .map(|account| account.to_account_info()),
+            hcu_block_meter: ctx.accounts.hcu_block_meter.as_ref(),
+            hcu_trusted_app_record: ctx.accounts.hcu_trusted_app_record.as_ref(),
         },
         accounts: &execution_accounts,
         execution,

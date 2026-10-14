@@ -72,7 +72,6 @@ pub struct CancelPendingBurn<'info> {
 /// Re-credits the pending burned amount onto the owner's confidential balance and encrypted total
 /// supply, then closes the pending account.
 pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>) -> Result<()> {
-    assert_confidential_mint_shape(&ctx.accounts.mint)?;
     let mint_key = ctx.accounts.mint.key();
     let token_account = ctx.accounts.token_account.as_ref();
     let owner = token_account.owner;
@@ -89,7 +88,6 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
         mint_key,
         ConfidentialTokenError::MintMismatch
     );
-    assert_confidential_token_account_shape(token_account, mint_key, owner)?;
 
     require_keys_eq!(
         pending.owner,
@@ -170,16 +168,8 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
                 [token_app(mint_key)],
             )?,
             system_program: &ctx.accounts.system_program,
-            hcu_block_meter: ctx
-                .accounts
-                .hcu_block_meter
-                .as_ref()
-                .map(|account| account.to_account_info()),
-            hcu_trusted_app_record: ctx
-                .accounts
-                .hcu_trusted_app_record
-                .as_ref()
-                .map(|account| account.to_account_info()),
+            hcu_block_meter: ctx.accounts.hcu_block_meter.as_ref(),
+            hcu_trusted_app_record: ctx.accounts.hcu_trusted_app_record.as_ref(),
         },
         accounts: &execution_accounts,
         execution,

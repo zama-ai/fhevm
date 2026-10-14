@@ -25,8 +25,8 @@ pub(crate) struct JoinExecute<'a, 'info> {
     pub program: AccountInfo<'info>,
     pub system_program: AccountInfo<'info>,
     pub deny_records: &'a [AccountInfo<'info>],
-    pub hcu_block_meter: Option<AccountInfo<'info>>,
-    pub hcu_trusted_app_record: Option<AccountInfo<'info>>,
+    pub hcu_block_meter: Option<&'a UncheckedAccount<'info>>,
+    pub hcu_trusted_app_record: Option<&'a UncheckedAccount<'info>>,
 }
 
 impl<'info> JoinExecute<'_, 'info> {
@@ -52,8 +52,10 @@ impl<'info> JoinExecute<'_, 'info> {
                 host_config: self.host_config,
                 deny_scope_records: self.deny_records.to_vec(),
                 system_program: self.system_program,
-                hcu_block_meter: self.hcu_block_meter,
-                hcu_trusted_app_record: self.hcu_trusted_app_record,
+                hcu_block_meter: self.hcu_block_meter.map(ToAccountInfo::to_account_info),
+                hcu_trusted_app_record: self
+                    .hcu_trusted_app_record
+                    .map(ToAccountInfo::to_account_info),
                 rand_nonce: None,
                 event_authority: self.event_authority,
                 transient_store: self.transient_store,

@@ -11,18 +11,12 @@ pub enum ConfidentialTokenError {
     /// Token account mint did not match the supplied mint.
     #[msg("Token account mint does not match")]
     MintMismatch,
-    /// Confidential mint account shape is invalid.
-    #[msg("Confidential mint account is invalid")]
-    MintAccountMismatch,
     /// Confidential mint authority did not match the required signer.
     #[msg("Confidential mint authority does not match signer")]
     MintAuthorityMismatch,
     /// The instruction included undeclared trailing account metas.
     #[msg("instruction has unexpected remaining accounts")]
     UnexpectedRemainingAccounts,
-    /// Token account was not the canonical owner/mint PDA.
-    #[msg("Confidential token account is not canonical")]
-    TokenAccountMismatch,
     /// Underlying SPL mint did not match the confidential mint metadata.
     #[msg("Underlying mint does not match confidential mint")]
     UnderlyingMintMismatch,

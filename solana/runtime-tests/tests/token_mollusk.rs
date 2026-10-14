@@ -2470,8 +2470,8 @@ fn mollusk_confidential_transfer_rejects_foreign_zama_event_authority_seeds() {
 
 /// Mint A's token accounts with mint B's balance stores, so the write would land in B's scope. B is
 /// a real `ConfidentialMint` owned by the token program, and the stores sit at the addresses B
-/// derives, so the token's mint binding refuses the pair with `MintMismatch` before the
-/// token-account address check (`TokenAccountMismatch`) would (fhevm-internal#1994).
+/// derives, so the token-account seeds, which bind each account to its mint, refuse the pair
+/// (fhevm-internal#1994).
 #[test]
 fn mollusk_confidential_transfer_rejects_another_confidential_mint() {
     let fixture = TokenFixture::new();

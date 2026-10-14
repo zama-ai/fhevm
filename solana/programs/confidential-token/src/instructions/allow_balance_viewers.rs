@@ -101,16 +101,8 @@ pub fn allow_balance_viewers<'info>(
                 [token_app(mint_key)],
             )?,
             system_program: &ctx.accounts.system_program,
-            hcu_block_meter: ctx
-                .accounts
-                .hcu_block_meter
-                .as_ref()
-                .map(|account| account.to_account_info()),
-            hcu_trusted_app_record: ctx
-                .accounts
-                .hcu_trusted_app_record
-                .as_ref()
-                .map(|account| account.to_account_info()),
+            hcu_block_meter: ctx.accounts.hcu_block_meter.as_ref(),
+            hcu_trusted_app_record: ctx.accounts.hcu_trusted_app_record.as_ref(),
         },
         balance_store,
         balance_slot(mint_key, token_account.key()),

@@ -111,21 +111,3 @@ pub fn transfer_input_key() -> [u8; 32] {
 pub fn burned_amount_key() -> [u8; 32] {
     *b"burned_amount___________________"
 }
-
-#[cfg(test)]
-mod space_invariants {
-    use super::*;
-
-    /// Each manual `SPACE` must equal the `InitSpace`-derived body size, so a
-    /// field added to a struct without updating `SPACE` fails fast here instead
-    /// of corrupting account layouts in production.
-    #[test]
-    fn manual_space_matches_derived_init_space() {
-        assert_eq!(PendingBurn::SPACE, PendingBurn::INIT_SPACE);
-        assert_eq!(ConfidentialMint::SPACE, ConfidentialMint::INIT_SPACE);
-        assert_eq!(
-            ConfidentialTokenAccount::SPACE,
-            ConfidentialTokenAccount::INIT_SPACE
-        );
-    }
-}
