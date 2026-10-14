@@ -113,7 +113,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- with .Values.commonConfig.databaseEndpoint }}
@@ -122,7 +122,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
@@ -132,7 +132,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- end }}
@@ -149,7 +149,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" .) "true" }}
@@ -162,7 +162,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- with .Values.txSender.config.hostChainUrl }}
@@ -171,7 +171,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- with .Values.commonConfig.gatewayContractAddresses.inputVerification }}
@@ -180,7 +180,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- with .Values.commonConfig.gatewayContractAddresses.ciphertextCommits }}
@@ -189,7 +189,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- with .Values.commonConfig.gatewayContractAddresses.multichainAcl }}
@@ -198,7 +198,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- if .Values.txSender.wallet.awsKms.enabled }}
@@ -230,10 +230,10 @@ spec:
               {{- end }}
           {{- end }}
           {{- with .Values.commonConfig.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
           {{- end }}
           {{- with .Values.txSender.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
           {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.txSender.ports }}
