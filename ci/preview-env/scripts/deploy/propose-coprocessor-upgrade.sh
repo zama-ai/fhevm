@@ -230,6 +230,34 @@ psql_party() {
     env PGPASSWORD=zama psql -U zama -d fhevm_e2e -tAqc "${sql}"
 }
 
+# Per-party rows for the Actions run summary. A dispatch run gets no PR comment
+# (preview-env-deploy.yml only comments on pull_request), so without this the
+# cutover outcome lives in the step log alone. Emitted from an EXIT trap so a
+# timeout still renders the table it failed on, and a no-op off Actions, where
+# the bg/ QA scripts run this from a laptop.
+SUMMARY_ROWS=()
+
+emit_cutover_summary() {
+  [[ -n "${GITHUB_STEP_SUMMARY:-}" ]] || return 0
+  (( ${#SUMMARY_ROWS[@]} )) || return 0
+  {
+    # The workflow runs this script twice (DryRunStarted gate, then the
+    # versioning assert), so name the phase or the page shows two same-titled
+    # tables.
+    local phase="dry run"
+    [[ "${ASSERT_CUTOVER}" == "true" ]] && phase="cutover"
+    echo "### RFC-021 ${phase}${BCS_IMAGE_TAG:+ — BCS \`${BCS_IMAGE_TAG}\`} → GCS ${LIVE_VERSION}"
+    echo
+    echo "| Party | Phase | Observed | Result |"
+    echo "| --- | --- | --- | --- |"
+    printf '%s\n' "${SUMMARY_ROWS[@]}"
+  } >> "${GITHUB_STEP_SUMMARY}"
+}
+# Bash keeps one EXIT handler, so this replaces `trap cleanup EXIT` above and
+# must keep running it: cleanup deletes the pod and the secret holding the
+# deployer key.
+trap 'cleanup; emit_cutover_summary' EXIT
+
 # After in-window e2e, cutover may already have flipped the row to
 # UpgradeAuthorized/LIVE. Skip the DryRunStarted gate when we only want
 # the versioning assert.
@@ -247,9 +275,11 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
       || echo 0)
     if [[ "${ready}" -ge "${expected_chains}" ]]; then
       echo "party ${i}: ${state}"
+      SUMMARY_ROWS+=("| ${i} | DryRunStarted | \`${state}\` | ✅ ${ready}/${expected_chains} chain(s) |")
       break
     fi
     if (( SECONDS >= deadline )); then
+      SUMMARY_ROWS+=("| ${i} | DryRunStarted | \`${state:-none}\` | ❌ timed out after ${TIMEOUT_SECS}s |")
       echo "::error::party ${i} did not reach DryRunStarted on all ${expected_chains} chain(s) (last='${state}')"
       # The dry run starts once every chain's consumer has processed start_block; on Amoy the consumer can trail head by hours.
       psql_party "${i}" "SELECT 'chain '||u.host_chain_id||': consumer at '||COALESCE(MAX(c.block_number),0)||', start_block '||u.start_block FROM upgrade_state u LEFT JOIN host_chain_consumer_blocks c ON c.chain_id = u.host_chain_id WHERE u.stack_role='GCS' GROUP BY u.host_chain_id, u.start_block;" || true
@@ -272,9 +302,11 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     version=$(psql_party "${i}" "SELECT stack_version FROM versioning;" || true)
     if [[ "$(version_major_minor "${version}")" == "${LIVE_VERSION}" ]]; then
       echo "party ${i}: versioning=${version}"
+      SUMMARY_ROWS+=("| ${i} | LIVE | \`${version}\` | ✅ cutover |")
       break
     fi
     if (( SECONDS >= deadline )); then
+      SUMMARY_ROWS+=("| ${i} | LIVE | \`${version:-none}\` | ❌ expected ${LIVE_VERSION} |")
       echo "::error::party ${i} versioning='${version}', expected ${LIVE_VERSION} (major.minor)"
       psql_party "${i}" "SELECT stack_role, host_chain_id, state, status, version FROM upgrade_state;" || true
       exit 1
