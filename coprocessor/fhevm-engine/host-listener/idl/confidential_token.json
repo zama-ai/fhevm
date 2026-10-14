@@ -89,162 +89,173 @@
           "writable": true
         },
         {
-          "name": "host_config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "zama_event_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  95,
-                  95,
-                  101,
-                  118,
-                  101,
-                  110,
-                  116,
-                  95,
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "transient_store",
-          "writable": true
-        },
-        {
-          "name": "instructions"
-        },
-        {
-          "name": "zama_program",
-          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
-        },
-        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_block_meter",
-          "docs": [
-            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
-            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
-          ],
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "hcu_trusted_app_record",
-          "docs": [
-            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
-            "means the mint is metered."
-          ],
-          "optional": true
+          "name": "zama",
+          "accounts": [
+            {
+              "name": "zama_event_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      95,
+                      95,
+                      101,
+                      118,
+                      101,
+                      110,
+                      116,
+                      95,
+                      97,
+                      117,
+                      116,
+                      104,
+                      111,
+                      114,
+                      105,
+                      116,
+                      121
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "transient_store",
+              "writable": true
+            },
+            {
+              "name": "instructions"
+            },
+            {
+              "name": "zama_program",
+              "docs": [
+                "ZamaHost program used for FHE operations."
+              ],
+              "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
+            },
+            {
+              "name": "host_config",
+              "docs": [
+                "ZamaHost config used for handle derivation and the deny policy."
+              ],
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      104,
+                      111,
+                      115,
+                      116,
+                      45,
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "hcu_block_meter",
+              "docs": [
+                "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
+                "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+              ],
+              "writable": true,
+              "optional": true
+            },
+            {
+              "name": "hcu_trusted_app_record",
+              "docs": [
+                "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
+                "means the mint is metered."
+              ],
+              "optional": true
+            }
+          ]
         },
         {
           "name": "event_authority"
@@ -336,162 +347,173 @@
           "writable": true
         },
         {
-          "name": "host_config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "zama_event_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  95,
-                  95,
-                  101,
-                  118,
-                  101,
-                  110,
-                  116,
-                  95,
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "transient_store",
-          "writable": true
-        },
-        {
-          "name": "instructions"
-        },
-        {
-          "name": "zama_program",
-          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
-        },
-        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_block_meter",
-          "docs": [
-            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
-            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
-          ],
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "hcu_trusted_app_record",
-          "docs": [
-            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
-            "means the mint is metered."
-          ],
-          "optional": true
+          "name": "zama",
+          "accounts": [
+            {
+              "name": "zama_event_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      95,
+                      95,
+                      101,
+                      118,
+                      101,
+                      110,
+                      116,
+                      95,
+                      97,
+                      117,
+                      116,
+                      104,
+                      111,
+                      114,
+                      105,
+                      116,
+                      121
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "transient_store",
+              "writable": true
+            },
+            {
+              "name": "instructions"
+            },
+            {
+              "name": "zama_program",
+              "docs": [
+                "ZamaHost program used for FHE operations."
+              ],
+              "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
+            },
+            {
+              "name": "host_config",
+              "docs": [
+                "ZamaHost config used for handle derivation and the deny policy."
+              ],
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      104,
+                      111,
+                      115,
+                      116,
+                      45,
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "hcu_block_meter",
+              "docs": [
+                "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
+                "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+              ],
+              "writable": true,
+              "optional": true
+            },
+            {
+              "name": "hcu_trusted_app_record",
+              "docs": [
+                "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
+                "means the mint is metered."
+              ],
+              "optional": true
+            }
+          ]
         },
         {
           "name": "event_authority"
@@ -657,149 +679,6 @@
           }
         },
         {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for handle derivation."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "zama_event_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  95,
-                  95,
-                  101,
-                  118,
-                  101,
-                  110,
-                  116,
-                  95,
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "transient_store",
-          "writable": true
-        },
-        {
-          "name": "instructions"
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used for FHE operations."
-          ],
-          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
-        },
-        {
           "name": "system_program",
           "docs": [
             "System program used for ACL account creation on the balance/supply update path."
@@ -807,21 +686,169 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_block_meter",
-          "docs": [
-            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
-            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
-          ],
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "hcu_trusted_app_record",
-          "docs": [
-            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
-            "means the mint is metered."
-          ],
-          "optional": true
+          "name": "zama",
+          "accounts": [
+            {
+              "name": "zama_event_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      95,
+                      95,
+                      101,
+                      118,
+                      101,
+                      110,
+                      116,
+                      95,
+                      97,
+                      117,
+                      116,
+                      104,
+                      111,
+                      114,
+                      105,
+                      116,
+                      121
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "transient_store",
+              "writable": true
+            },
+            {
+              "name": "instructions"
+            },
+            {
+              "name": "zama_program",
+              "docs": [
+                "ZamaHost program used for FHE operations."
+              ],
+              "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
+            },
+            {
+              "name": "host_config",
+              "docs": [
+                "ZamaHost config used for handle derivation and the deny policy."
+              ],
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      104,
+                      111,
+                      115,
+                      116,
+                      45,
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "hcu_block_meter",
+              "docs": [
+                "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
+                "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+              ],
+              "writable": true,
+              "optional": true
+            },
+            {
+              "name": "hcu_trusted_app_record",
+              "docs": [
+                "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
+                "means the mint is metered."
+              ],
+              "optional": true
+            }
+          ]
         },
         {
           "name": "event_authority"
@@ -987,149 +1014,6 @@
           }
         },
         {
-          "name": "zama_event_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  95,
-                  95,
-                  101,
-                  118,
-                  101,
-                  110,
-                  116,
-                  95,
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "transient_store",
-          "writable": true
-        },
-        {
-          "name": "instructions"
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used for FHE operations."
-          ],
-          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for handle derivation."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
           "name": "system_program",
           "docs": [
             "System program used for ACL account creation and the pending-burn PDA."
@@ -1137,21 +1021,169 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_block_meter",
-          "docs": [
-            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
-            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
-          ],
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "hcu_trusted_app_record",
-          "docs": [
-            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
-            "means the mint is metered."
-          ],
-          "optional": true
+          "name": "zama",
+          "accounts": [
+            {
+              "name": "zama_event_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      95,
+                      95,
+                      101,
+                      118,
+                      101,
+                      110,
+                      116,
+                      95,
+                      97,
+                      117,
+                      116,
+                      104,
+                      111,
+                      114,
+                      105,
+                      116,
+                      121
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "transient_store",
+              "writable": true
+            },
+            {
+              "name": "instructions"
+            },
+            {
+              "name": "zama_program",
+              "docs": [
+                "ZamaHost program used for FHE operations."
+              ],
+              "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
+            },
+            {
+              "name": "host_config",
+              "docs": [
+                "ZamaHost config used for handle derivation and the deny policy."
+              ],
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      104,
+                      111,
+                      115,
+                      116,
+                      45,
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "hcu_block_meter",
+              "docs": [
+                "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
+                "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+              ],
+              "writable": true,
+              "optional": true
+            },
+            {
+              "name": "hcu_trusted_app_record",
+              "docs": [
+                "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
+                "means the mint is metered."
+              ],
+              "optional": true
+            }
+          ]
         },
         {
           "name": "event_authority"
@@ -1350,149 +1382,6 @@
           ]
         },
         {
-          "name": "zama_event_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  95,
-                  95,
-                  101,
-                  118,
-                  101,
-                  110,
-                  116,
-                  95,
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "transient_store",
-          "writable": true
-        },
-        {
-          "name": "instructions"
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used for FHE operations."
-          ],
-          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for handle derivation."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
           "name": "system_program",
           "docs": [
             "System program used for ACL account creation and the pending-burn PDA."
@@ -1500,21 +1389,169 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_block_meter",
-          "docs": [
-            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
-            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
-          ],
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "hcu_trusted_app_record",
-          "docs": [
-            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
-            "means the mint is metered."
-          ],
-          "optional": true
+          "name": "zama",
+          "accounts": [
+            {
+              "name": "zama_event_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      95,
+                      95,
+                      101,
+                      118,
+                      101,
+                      110,
+                      116,
+                      95,
+                      97,
+                      117,
+                      116,
+                      104,
+                      111,
+                      114,
+                      105,
+                      116,
+                      121
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "transient_store",
+              "writable": true
+            },
+            {
+              "name": "instructions"
+            },
+            {
+              "name": "zama_program",
+              "docs": [
+                "ZamaHost program used for FHE operations."
+              ],
+              "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
+            },
+            {
+              "name": "host_config",
+              "docs": [
+                "ZamaHost config used for handle derivation and the deny policy."
+              ],
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      104,
+                      111,
+                      115,
+                      116,
+                      45,
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "hcu_block_meter",
+              "docs": [
+                "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
+                "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+              ],
+              "writable": true,
+              "optional": true
+            },
+            {
+              "name": "hcu_trusted_app_record",
+              "docs": [
+                "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
+                "means the mint is metered."
+              ],
+              "optional": true
+            }
+          ]
         },
         {
           "name": "event_authority"
@@ -1883,149 +1920,6 @@
           }
         },
         {
-          "name": "zama_event_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  95,
-                  95,
-                  101,
-                  118,
-                  101,
-                  110,
-                  116,
-                  95,
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "transient_store",
-          "writable": true
-        },
-        {
-          "name": "instructions"
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used for FHE operations."
-          ],
-          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for handle derivation."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
           "name": "system_program",
           "docs": [
             "System program used for ACL account creation."
@@ -2033,20 +1927,169 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_block_meter",
-          "docs": [
-            "canonical `[\"hcu-block-meter\", program, mint]` PDA. The per-mint HCU block meter — supplied",
-            "by an untrusted mint under a metering-band cap, omitted otherwise."
-          ],
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "hcu_trusted_app_record",
-          "docs": [
-            "trust witness — present + valid bypasses the cap; absent means untrusted (metered)."
-          ],
-          "optional": true
+          "name": "zama",
+          "accounts": [
+            {
+              "name": "zama_event_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      95,
+                      95,
+                      101,
+                      118,
+                      101,
+                      110,
+                      116,
+                      95,
+                      97,
+                      117,
+                      116,
+                      104,
+                      111,
+                      114,
+                      105,
+                      116,
+                      121
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "transient_store",
+              "writable": true
+            },
+            {
+              "name": "instructions"
+            },
+            {
+              "name": "zama_program",
+              "docs": [
+                "ZamaHost program used for FHE operations."
+              ],
+              "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
+            },
+            {
+              "name": "host_config",
+              "docs": [
+                "ZamaHost config used for handle derivation and the deny policy."
+              ],
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      104,
+                      111,
+                      115,
+                      116,
+                      45,
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "hcu_block_meter",
+              "docs": [
+                "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
+                "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+              ],
+              "writable": true,
+              "optional": true
+            },
+            {
+              "name": "hcu_trusted_app_record",
+              "docs": [
+                "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
+                "means the mint is metered."
+              ],
+              "optional": true
+            }
+          ]
         },
         {
           "name": "result_store",
@@ -2428,149 +2471,6 @@
           "optional": true
         },
         {
-          "name": "zama_event_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  95,
-                  95,
-                  101,
-                  118,
-                  101,
-                  110,
-                  116,
-                  95,
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "transient_store",
-          "writable": true
-        },
-        {
-          "name": "instructions"
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used for FHE operations."
-          ],
-          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for handle derivation."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
           "name": "system_program",
           "docs": [
             "System program used for ACL account creation."
@@ -2578,20 +2478,169 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_block_meter",
-          "docs": [
-            "canonical `[\"hcu-block-meter\", program, mint]` PDA. The per-mint HCU block meter — supplied",
-            "by an untrusted mint under a metering-band cap, omitted otherwise."
-          ],
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "hcu_trusted_app_record",
-          "docs": [
-            "trust witness — present + valid bypasses the cap; absent means untrusted (metered)."
-          ],
-          "optional": true
+          "name": "zama",
+          "accounts": [
+            {
+              "name": "zama_event_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      95,
+                      95,
+                      101,
+                      118,
+                      101,
+                      110,
+                      116,
+                      95,
+                      97,
+                      117,
+                      116,
+                      104,
+                      111,
+                      114,
+                      105,
+                      116,
+                      121
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "transient_store",
+              "writable": true
+            },
+            {
+              "name": "instructions"
+            },
+            {
+              "name": "zama_program",
+              "docs": [
+                "ZamaHost program used for FHE operations."
+              ],
+              "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
+            },
+            {
+              "name": "host_config",
+              "docs": [
+                "ZamaHost config used for handle derivation and the deny policy."
+              ],
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      104,
+                      111,
+                      115,
+                      116,
+                      45,
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "hcu_block_meter",
+              "docs": [
+                "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
+                "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+              ],
+              "writable": true,
+              "optional": true
+            },
+            {
+              "name": "hcu_trusted_app_record",
+              "docs": [
+                "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
+                "means the mint is metered."
+              ],
+              "optional": true
+            }
+          ]
         },
         {
           "name": "event_authority"
@@ -2826,149 +2875,6 @@
           "writable": true
         },
         {
-          "name": "zama_event_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  95,
-                  95,
-                  101,
-                  118,
-                  101,
-                  110,
-                  116,
-                  95,
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "transient_store",
-          "writable": true
-        },
-        {
-          "name": "instructions"
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used to create the initial total-supply handle."
-          ],
-          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for handle derivation."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
           "name": "system_program",
           "docs": [
             "System program used for account creation."
@@ -2976,21 +2882,169 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_block_meter",
-          "docs": [
-            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
-            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
-          ],
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "hcu_trusted_app_record",
-          "docs": [
-            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
-            "means the mint is metered."
-          ],
-          "optional": true
+          "name": "zama",
+          "accounts": [
+            {
+              "name": "zama_event_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      95,
+                      95,
+                      101,
+                      118,
+                      101,
+                      110,
+                      116,
+                      95,
+                      97,
+                      117,
+                      116,
+                      104,
+                      111,
+                      114,
+                      105,
+                      116,
+                      121
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "transient_store",
+              "writable": true
+            },
+            {
+              "name": "instructions"
+            },
+            {
+              "name": "zama_program",
+              "docs": [
+                "ZamaHost program used for FHE operations."
+              ],
+              "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
+            },
+            {
+              "name": "host_config",
+              "docs": [
+                "ZamaHost config used for handle derivation and the deny policy."
+              ],
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      104,
+                      111,
+                      115,
+                      116,
+                      45,
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "hcu_block_meter",
+              "docs": [
+                "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
+                "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+              ],
+              "writable": true,
+              "optional": true
+            },
+            {
+              "name": "hcu_trusted_app_record",
+              "docs": [
+                "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
+                "means the mint is metered."
+              ],
+              "optional": true
+            }
+          ]
         },
         {
           "name": "event_authority"
@@ -3078,149 +3132,6 @@
           "writable": true
         },
         {
-          "name": "zama_event_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  95,
-                  95,
-                  101,
-                  118,
-                  101,
-                  110,
-                  116,
-                  95,
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "transient_store",
-          "writable": true
-        },
-        {
-          "name": "instructions"
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used to create the initial balance handle."
-          ],
-          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for handle derivation."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
           "name": "system_program",
           "docs": [
             "System program used for account creation."
@@ -3228,21 +3139,169 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_block_meter",
-          "docs": [
-            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
-            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
-          ],
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "hcu_trusted_app_record",
-          "docs": [
-            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
-            "means the mint is metered."
-          ],
-          "optional": true
+          "name": "zama",
+          "accounts": [
+            {
+              "name": "zama_event_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      95,
+                      95,
+                      101,
+                      118,
+                      101,
+                      110,
+                      116,
+                      95,
+                      97,
+                      117,
+                      116,
+                      104,
+                      111,
+                      114,
+                      105,
+                      116,
+                      121
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "transient_store",
+              "writable": true
+            },
+            {
+              "name": "instructions"
+            },
+            {
+              "name": "zama_program",
+              "docs": [
+                "ZamaHost program used for FHE operations."
+              ],
+              "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
+            },
+            {
+              "name": "host_config",
+              "docs": [
+                "ZamaHost config used for handle derivation and the deny policy."
+              ],
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      104,
+                      111,
+                      115,
+                      116,
+                      45,
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "hcu_block_meter",
+              "docs": [
+                "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
+                "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+              ],
+              "writable": true,
+              "optional": true
+            },
+            {
+              "name": "hcu_trusted_app_record",
+              "docs": [
+                "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
+                "means the mint is metered."
+              ],
+              "optional": true
+            }
+          ]
         },
         {
           "name": "event_authority"
@@ -4010,149 +4069,6 @@
           "writable": true
         },
         {
-          "name": "zama_event_authority",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  95,
-                  95,
-                  101,
-                  118,
-                  101,
-                  110,
-                  116,
-                  95,
-                  97,
-                  117,
-                  116,
-                  104,
-                  111,
-                  114,
-                  105,
-                  116,
-                  121
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
-          "name": "transient_store",
-          "writable": true
-        },
-        {
-          "name": "instructions"
-        },
-        {
-          "name": "zama_program",
-          "docs": [
-            "ZamaHost program used for FHE operations."
-          ],
-          "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "ZamaHost config used for handle derivation."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ],
-            "program": {
-              "kind": "const",
-              "value": [
-                184,
-                37,
-                100,
-                59,
-                121,
-                191,
-                68,
-                153,
-                255,
-                49,
-                204,
-                254,
-                138,
-                41,
-                122,
-                160,
-                235,
-                48,
-                168,
-                160,
-                204,
-                31,
-                35,
-                25,
-                232,
-                33,
-                118,
-                193,
-                180,
-                214,
-                94,
-                113
-              ]
-            }
-          }
-        },
-        {
           "name": "token_program",
           "docs": [
             "Classic Token or Token-2022 program owning the underlying mint and token accounts."
@@ -4166,21 +4082,169 @@
           "address": "11111111111111111111111111111111"
         },
         {
-          "name": "hcu_block_meter",
-          "docs": [
-            "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
-            "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
-          ],
-          "writable": true,
-          "optional": true
-        },
-        {
-          "name": "hcu_trusted_app_record",
-          "docs": [
-            "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
-            "means the mint is metered."
-          ],
-          "optional": true
+          "name": "zama",
+          "accounts": [
+            {
+              "name": "zama_event_authority",
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      95,
+                      95,
+                      101,
+                      118,
+                      101,
+                      110,
+                      116,
+                      95,
+                      97,
+                      117,
+                      116,
+                      104,
+                      111,
+                      114,
+                      105,
+                      116,
+                      121
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "transient_store",
+              "writable": true
+            },
+            {
+              "name": "instructions"
+            },
+            {
+              "name": "zama_program",
+              "docs": [
+                "ZamaHost program used for FHE operations."
+              ],
+              "address": "DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ"
+            },
+            {
+              "name": "host_config",
+              "docs": [
+                "ZamaHost config used for handle derivation and the deny policy."
+              ],
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      104,
+                      111,
+                      115,
+                      116,
+                      45,
+                      99,
+                      111,
+                      110,
+                      102,
+                      105,
+                      103
+                    ]
+                  }
+                ],
+                "program": {
+                  "kind": "const",
+                  "value": [
+                    184,
+                    37,
+                    100,
+                    59,
+                    121,
+                    191,
+                    68,
+                    153,
+                    255,
+                    49,
+                    204,
+                    254,
+                    138,
+                    41,
+                    122,
+                    160,
+                    235,
+                    48,
+                    168,
+                    160,
+                    204,
+                    31,
+                    35,
+                    25,
+                    232,
+                    33,
+                    118,
+                    193,
+                    180,
+                    214,
+                    94,
+                    113
+                  ]
+                }
+              }
+            },
+            {
+              "name": "hcu_block_meter",
+              "docs": [
+                "canonical `[\"hcu-block-meter\", program, mint]` PDA. Supplied by an untrusted mint under a",
+                "metering-band cap; omitted when the mint is trusted or the cap is unrestricted."
+              ],
+              "writable": true,
+              "optional": true
+            },
+            {
+              "name": "hcu_trusted_app_record",
+              "docs": [
+                "canonical `[\"hcu-trusted\", program, mint]` PDA. Present + valid bypasses the cap; absent",
+                "means the mint is metered."
+              ],
+              "optional": true
+            }
+          ]
         },
         {
           "name": "event_authority"

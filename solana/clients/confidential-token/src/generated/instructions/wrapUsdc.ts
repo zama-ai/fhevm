@@ -65,13 +65,13 @@ export type WrapUsdcInstruction<
   TAccountTotalSupplyAuthority extends string | AccountMeta<string> = string,
   TAccountBalanceStore extends string | AccountMeta<string> = string,
   TAccountTotalSupplyStore extends string | AccountMeta<string> = string,
+  TAccountTokenProgram extends string | AccountMeta<string> = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+  TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = 'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ',
   TAccountHostConfig extends string | AccountMeta<string> = string,
-  TAccountTokenProgram extends string | AccountMeta<string> = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
-  TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountHcuBlockMeter extends string | AccountMeta<string> = string,
   TAccountHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
@@ -95,6 +95,8 @@ export type WrapUsdcInstruction<
         : TAccountTotalSupplyAuthority,
       TAccountBalanceStore extends string ? WritableAccount<TAccountBalanceStore> : TAccountBalanceStore,
       TAccountTotalSupplyStore extends string ? WritableAccount<TAccountTotalSupplyStore> : TAccountTotalSupplyStore,
+      TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram,
+      TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
@@ -102,8 +104,6 @@ export type WrapUsdcInstruction<
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
-      TAccountTokenProgram extends string ? ReadonlyAccount<TAccountTokenProgram> : TAccountTokenProgram,
-      TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
       TAccountHcuBlockMeter extends string ? WritableAccount<TAccountHcuBlockMeter> : TAccountHcuBlockMeter,
       TAccountHcuTrustedAppRecord extends string
         ? ReadonlyAccount<TAccountHcuTrustedAppRecord>
@@ -156,13 +156,13 @@ export type WrapUsdcAsyncInput<
   TAccountTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountBalanceStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
-  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
@@ -186,17 +186,17 @@ export type WrapUsdcAsyncInput<
   balanceStore: TAccountBalanceStore;
   /** Stable total-supply encrypted store; read for the current handle and replaced by this execution. */
   totalSupplyStore: TAccountTotalSupplyStore;
+  /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
+  tokenProgram?: TAccountTokenProgram;
+  /** System program used for ACL account creation. */
+  systemProgram?: TAccountSystemProgram;
   zamaEventAuthority?: TAccountZamaEventAuthority;
   transientStore: TAccountTransientStore;
   instructions: TAccountInstructions;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: TAccountZamaProgram;
-  /** ZamaHost config used for handle derivation. */
+  /** ZamaHost config used for handle derivation and the deny policy. */
   hostConfig?: TAccountHostConfig;
-  /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
-  tokenProgram?: TAccountTokenProgram;
-  /** System program used for ACL account creation. */
-  systemProgram?: TAccountSystemProgram;
   /**
    * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
@@ -223,13 +223,13 @@ export async function getWrapUsdcInstructionAsync<
   TAccountTotalSupplyAuthority extends InstructionAccountInput,
   TAccountBalanceStore extends InstructionAccountInput,
   TAccountTotalSupplyStore extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput,
   TAccountHostConfig extends InstructionAccountInput,
-  TAccountTokenProgram extends InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
@@ -247,13 +247,13 @@ export async function getWrapUsdcInstructionAsync<
     TAccountTotalSupplyAuthority,
     TAccountBalanceStore,
     TAccountTotalSupplyStore,
+    TAccountTokenProgram,
+    TAccountSystemProgram,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
-    TAccountTokenProgram,
-    TAccountSystemProgram,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
     TAccountEventAuthority,
@@ -276,6 +276,8 @@ export async function getWrapUsdcInstructionAsync<
     >,
     ResolvedInstructionAccountMeta<TAccountBalanceStore, InstructionAccountInputAddress<TAccountBalanceStore>>,
     ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -284,8 +286,6 @@ export async function getWrapUsdcInstructionAsync<
     ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
     ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
     ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
-    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
     ResolvedInstructionAccountMeta<
       TAccountHcuTrustedAppRecord,
@@ -345,6 +345,16 @@ export async function getWrapUsdcInstructionAsync<
       isSigner: false,
       isWritable: true,
     },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isSigner: false,
@@ -367,16 +377,6 @@ export async function getWrapUsdcInstructionAsync<
     },
     hostConfig: {
       value: input.hostConfig ?? null,
-      isSigner: false,
-      isWritable: false,
-    },
-    tokenProgram: {
-      value: input.tokenProgram ?? null,
-      isSigner: false,
-      isWritable: false,
-    },
-    systemProgram: {
-      value: input.systemProgram ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -423,6 +423,13 @@ export async function getWrapUsdcInstructionAsync<
       { programAddress },
     );
   }
+  if (!accounts.tokenProgram.value) {
+    accounts.tokenProgram.value =
+      'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
+  }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
       'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
@@ -436,13 +443,6 @@ export async function getWrapUsdcInstructionAsync<
     accounts.hostConfig.value = await findHostConfigPda({
       programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
     });
-  }
-  if (!accounts.tokenProgram.value) {
-    accounts.tokenProgram.value =
-      'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
-  }
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
   if (!accounts.eventAuthority.value) {
     accounts.eventAuthority.value = await getProgramDerivedAddress({
@@ -471,13 +471,13 @@ export async function getWrapUsdcInstructionAsync<
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('balanceStore', accounts.balanceStore),
       getAccountMeta('totalSupplyStore', accounts.totalSupplyStore),
+      getAccountMeta('tokenProgram', accounts.tokenProgram),
+      getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
-      getAccountMeta('tokenProgram', accounts.tokenProgram),
-      getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('hcuBlockMeter', accounts.hcuBlockMeter),
       getAccountMeta('hcuTrustedAppRecord', accounts.hcuTrustedAppRecord),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
@@ -500,6 +500,8 @@ export async function getWrapUsdcInstructionAsync<
     >,
     ResolvedInstructionAccountMeta<TAccountBalanceStore, InstructionAccountInputAddress<TAccountBalanceStore>>,
     ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -508,8 +510,6 @@ export async function getWrapUsdcInstructionAsync<
     ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
     ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
     ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
-    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
     ResolvedInstructionAccountMeta<
       TAccountHcuTrustedAppRecord,
@@ -531,13 +531,13 @@ export type WrapUsdcInput<
   TAccountTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountBalanceStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
-  TAccountTokenProgram extends InstructionAccountInput = InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
@@ -561,17 +561,17 @@ export type WrapUsdcInput<
   balanceStore: TAccountBalanceStore;
   /** Stable total-supply encrypted store; read for the current handle and replaced by this execution. */
   totalSupplyStore: TAccountTotalSupplyStore;
+  /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
+  tokenProgram?: TAccountTokenProgram;
+  /** System program used for ACL account creation. */
+  systemProgram?: TAccountSystemProgram;
   zamaEventAuthority: TAccountZamaEventAuthority;
   transientStore: TAccountTransientStore;
   instructions: TAccountInstructions;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: TAccountZamaProgram;
-  /** ZamaHost config used for handle derivation. */
+  /** ZamaHost config used for handle derivation and the deny policy. */
   hostConfig: TAccountHostConfig;
-  /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
-  tokenProgram?: TAccountTokenProgram;
-  /** System program used for ACL account creation. */
-  systemProgram?: TAccountSystemProgram;
   /**
    * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
@@ -598,13 +598,13 @@ export function getWrapUsdcInstruction<
   TAccountTotalSupplyAuthority extends InstructionAccountInput,
   TAccountBalanceStore extends InstructionAccountInput,
   TAccountTotalSupplyStore extends InstructionAccountInput,
+  TAccountTokenProgram extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput,
   TAccountHostConfig extends InstructionAccountInput,
-  TAccountTokenProgram extends InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
@@ -622,13 +622,13 @@ export function getWrapUsdcInstruction<
     TAccountTotalSupplyAuthority,
     TAccountBalanceStore,
     TAccountTotalSupplyStore,
+    TAccountTokenProgram,
+    TAccountSystemProgram,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
-    TAccountTokenProgram,
-    TAccountSystemProgram,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
     TAccountEventAuthority,
@@ -650,6 +650,8 @@ export function getWrapUsdcInstruction<
   >,
   ResolvedInstructionAccountMeta<TAccountBalanceStore, InstructionAccountInputAddress<TAccountBalanceStore>>,
   ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
+  ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
   ResolvedInstructionAccountMeta<
     TAccountZamaEventAuthority,
     InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -658,8 +660,6 @@ export function getWrapUsdcInstruction<
   ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
   ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
   ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
-  ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
-  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
   ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
   ResolvedInstructionAccountMeta<
     TAccountHcuTrustedAppRecord,
@@ -718,6 +718,16 @@ export function getWrapUsdcInstruction<
       isSigner: false,
       isWritable: true,
     },
+    tokenProgram: {
+      value: input.tokenProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isSigner: false,
@@ -740,16 +750,6 @@ export function getWrapUsdcInstruction<
     },
     hostConfig: {
       value: input.hostConfig ?? null,
-      isSigner: false,
-      isWritable: false,
-    },
-    tokenProgram: {
-      value: input.tokenProgram ?? null,
-      isSigner: false,
-      isWritable: false,
-    },
-    systemProgram: {
-      value: input.systemProgram ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -780,16 +780,16 @@ export function getWrapUsdcInstruction<
   const args = { ...input };
 
   // Resolve default values.
-  if (!accounts.zamaProgram.value) {
-    accounts.zamaProgram.value =
-      'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
-  }
   if (!accounts.tokenProgram.value) {
     accounts.tokenProgram.value =
       'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' as Address<'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'>;
   }
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
+  if (!accounts.zamaProgram.value) {
+    accounts.zamaProgram.value =
+      'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
   }
   if (!accounts.program.value) {
     accounts.program.value = programAddress;
@@ -808,13 +808,13 @@ export function getWrapUsdcInstruction<
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('balanceStore', accounts.balanceStore),
       getAccountMeta('totalSupplyStore', accounts.totalSupplyStore),
+      getAccountMeta('tokenProgram', accounts.tokenProgram),
+      getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
-      getAccountMeta('tokenProgram', accounts.tokenProgram),
-      getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('hcuBlockMeter', accounts.hcuBlockMeter),
       getAccountMeta('hcuTrustedAppRecord', accounts.hcuTrustedAppRecord),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
@@ -837,6 +837,8 @@ export function getWrapUsdcInstruction<
     >,
     ResolvedInstructionAccountMeta<TAccountBalanceStore, InstructionAccountInputAddress<TAccountBalanceStore>>,
     ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
+    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -845,8 +847,6 @@ export function getWrapUsdcInstruction<
     ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
     ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
     ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
-    ResolvedInstructionAccountMeta<TAccountTokenProgram, InstructionAccountInputAddress<TAccountTokenProgram>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
     ResolvedInstructionAccountMeta<
       TAccountHcuTrustedAppRecord,
@@ -881,17 +881,17 @@ export type ParsedWrapUsdcInstruction<
     balanceStore: TAccountMetas[8];
     /** Stable total-supply encrypted store; read for the current handle and replaced by this execution. */
     totalSupplyStore: TAccountMetas[9];
-    zamaEventAuthority: TAccountMetas[10];
-    transientStore: TAccountMetas[11];
-    instructions: TAccountMetas[12];
-    /** ZamaHost program used for FHE operations. */
-    zamaProgram: TAccountMetas[13];
-    /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[14];
     /** Classic Token or Token-2022 program owning the underlying mint and token accounts. */
-    tokenProgram: TAccountMetas[15];
+    tokenProgram: TAccountMetas[10];
     /** System program used for ACL account creation. */
-    systemProgram: TAccountMetas[16];
+    systemProgram: TAccountMetas[11];
+    zamaEventAuthority: TAccountMetas[12];
+    transientStore: TAccountMetas[13];
+    instructions: TAccountMetas[14];
+    /** ZamaHost program used for FHE operations. */
+    zamaProgram: TAccountMetas[15];
+    /** ZamaHost config used for handle derivation and the deny policy. */
+    hostConfig: TAccountMetas[16];
     /**
      * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
      * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
@@ -940,13 +940,13 @@ export function parseWrapUsdcInstruction<TProgram extends string, TAccountMetas 
       totalSupplyAuthority: getNextAccount(),
       balanceStore: getNextAccount(),
       totalSupplyStore: getNextAccount(),
+      tokenProgram: getNextAccount(),
+      systemProgram: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       transientStore: getNextAccount(),
       instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),
-      tokenProgram: getNextAccount(),
-      systemProgram: getNextAccount(),
       hcuBlockMeter: getNextOptionalAccount(),
       hcuTrustedAppRecord: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),

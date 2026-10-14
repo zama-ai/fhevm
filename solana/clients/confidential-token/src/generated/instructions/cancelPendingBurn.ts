@@ -62,12 +62,12 @@ export type CancelPendingBurnInstruction<
   TAccountBalanceStore extends string | AccountMeta<string> = string,
   TAccountTotalSupplyStore extends string | AccountMeta<string> = string,
   TAccountPendingBurn extends string | AccountMeta<string> = string,
-  TAccountHostConfig extends string | AccountMeta<string> = string,
+  TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = 'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ',
-  TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
+  TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountHcuBlockMeter extends string | AccountMeta<string> = string,
   TAccountHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
@@ -88,14 +88,14 @@ export type CancelPendingBurnInstruction<
       TAccountBalanceStore extends string ? WritableAccount<TAccountBalanceStore> : TAccountBalanceStore,
       TAccountTotalSupplyStore extends string ? WritableAccount<TAccountTotalSupplyStore> : TAccountTotalSupplyStore,
       TAccountPendingBurn extends string ? WritableAccount<TAccountPendingBurn> : TAccountPendingBurn,
-      TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
+      TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
       TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
-      TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
+      TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountHcuBlockMeter extends string ? WritableAccount<TAccountHcuBlockMeter> : TAccountHcuBlockMeter,
       TAccountHcuTrustedAppRecord extends string
         ? ReadonlyAccount<TAccountHcuTrustedAppRecord>
@@ -138,12 +138,12 @@ export type CancelPendingBurnAsyncInput<
   TAccountBalanceStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountPendingBurn extends InstructionAccountInput = InstructionAccountInput,
-  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
@@ -162,15 +162,15 @@ export type CancelPendingBurnAsyncInput<
   totalSupplyStore: TAccountTotalSupplyStore;
   /** Pending-burn account; closed on successful cancellation. */
   pendingBurn?: TAccountPendingBurn;
-  /** ZamaHost config used for handle derivation. */
-  hostConfig?: TAccountHostConfig;
+  /** System program used for ACL account creation on the balance/supply update path. */
+  systemProgram?: TAccountSystemProgram;
   zamaEventAuthority?: TAccountZamaEventAuthority;
   transientStore: TAccountTransientStore;
   instructions: TAccountInstructions;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: TAccountZamaProgram;
-  /** System program used for ACL account creation on the balance/supply update path. */
-  systemProgram?: TAccountSystemProgram;
+  /** ZamaHost config used for handle derivation and the deny policy. */
+  hostConfig?: TAccountHostConfig;
   /**
    * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
@@ -193,12 +193,12 @@ export async function getCancelPendingBurnInstructionAsync<
   TAccountBalanceStore extends InstructionAccountInput,
   TAccountTotalSupplyStore extends InstructionAccountInput,
   TAccountPendingBurn extends InstructionAccountInput,
-  TAccountHostConfig extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
@@ -213,12 +213,12 @@ export async function getCancelPendingBurnInstructionAsync<
     TAccountBalanceStore,
     TAccountTotalSupplyStore,
     TAccountPendingBurn,
-    TAccountHostConfig,
+    TAccountSystemProgram,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
-    TAccountSystemProgram,
+    TAccountHostConfig,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
     TAccountEventAuthority,
@@ -238,7 +238,7 @@ export async function getCancelPendingBurnInstructionAsync<
     ResolvedInstructionAccountMeta<TAccountBalanceStore, InstructionAccountInputAddress<TAccountBalanceStore>>,
     ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
     ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
-    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -246,7 +246,7 @@ export async function getCancelPendingBurnInstructionAsync<
     ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
     ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
     ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
     ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
     ResolvedInstructionAccountMeta<
       TAccountHcuTrustedAppRecord,
@@ -291,8 +291,8 @@ export async function getCancelPendingBurnInstructionAsync<
       isSigner: false,
       isWritable: true,
     },
-    hostConfig: {
-      value: input.hostConfig ?? null,
+    systemProgram: {
+      value: input.systemProgram ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -316,8 +316,8 @@ export async function getCancelPendingBurnInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
-    systemProgram: {
-      value: input.systemProgram ?? null,
+    hostConfig: {
+      value: input.hostConfig ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -362,22 +362,22 @@ export async function getCancelPendingBurnInstructionAsync<
       { programAddress },
     );
   }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
       'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
-  }
-  if (!accounts.hostConfig.value) {
-    accounts.hostConfig.value = await findHostConfigPda({
-      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
-    });
   }
   if (!accounts.zamaEventAuthority.value) {
     accounts.zamaEventAuthority.value = await findEventAuthorityPda({
       programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
     });
   }
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  if (!accounts.hostConfig.value) {
+    accounts.hostConfig.value = await findHostConfigPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
   }
   if (!accounts.eventAuthority.value) {
     accounts.eventAuthority.value = await getProgramDerivedAddress({
@@ -403,12 +403,12 @@ export async function getCancelPendingBurnInstructionAsync<
       getAccountMeta('balanceStore', accounts.balanceStore),
       getAccountMeta('totalSupplyStore', accounts.totalSupplyStore),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
-      getAccountMeta('hostConfig', accounts.hostConfig),
+      getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
-      getAccountMeta('systemProgram', accounts.systemProgram),
+      getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('hcuBlockMeter', accounts.hcuBlockMeter),
       getAccountMeta('hcuTrustedAppRecord', accounts.hcuTrustedAppRecord),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
@@ -428,7 +428,7 @@ export async function getCancelPendingBurnInstructionAsync<
     ResolvedInstructionAccountMeta<TAccountBalanceStore, InstructionAccountInputAddress<TAccountBalanceStore>>,
     ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
     ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
-    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -436,7 +436,7 @@ export async function getCancelPendingBurnInstructionAsync<
     ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
     ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
     ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
     ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
     ResolvedInstructionAccountMeta<
       TAccountHcuTrustedAppRecord,
@@ -455,12 +455,12 @@ export type CancelPendingBurnInput<
   TAccountBalanceStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountPendingBurn extends InstructionAccountInput = InstructionAccountInput,
-  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
@@ -479,15 +479,15 @@ export type CancelPendingBurnInput<
   totalSupplyStore: TAccountTotalSupplyStore;
   /** Pending-burn account; closed on successful cancellation. */
   pendingBurn: TAccountPendingBurn;
-  /** ZamaHost config used for handle derivation. */
-  hostConfig: TAccountHostConfig;
+  /** System program used for ACL account creation on the balance/supply update path. */
+  systemProgram?: TAccountSystemProgram;
   zamaEventAuthority: TAccountZamaEventAuthority;
   transientStore: TAccountTransientStore;
   instructions: TAccountInstructions;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: TAccountZamaProgram;
-  /** System program used for ACL account creation on the balance/supply update path. */
-  systemProgram?: TAccountSystemProgram;
+  /** ZamaHost config used for handle derivation and the deny policy. */
+  hostConfig: TAccountHostConfig;
   /**
    * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
@@ -510,12 +510,12 @@ export function getCancelPendingBurnInstruction<
   TAccountBalanceStore extends InstructionAccountInput,
   TAccountTotalSupplyStore extends InstructionAccountInput,
   TAccountPendingBurn extends InstructionAccountInput,
-  TAccountHostConfig extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
@@ -530,12 +530,12 @@ export function getCancelPendingBurnInstruction<
     TAccountBalanceStore,
     TAccountTotalSupplyStore,
     TAccountPendingBurn,
-    TAccountHostConfig,
+    TAccountSystemProgram,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
-    TAccountSystemProgram,
+    TAccountHostConfig,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
     TAccountEventAuthority,
@@ -554,7 +554,7 @@ export function getCancelPendingBurnInstruction<
   ResolvedInstructionAccountMeta<TAccountBalanceStore, InstructionAccountInputAddress<TAccountBalanceStore>>,
   ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
   ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
-  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
   ResolvedInstructionAccountMeta<
     TAccountZamaEventAuthority,
     InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -562,7 +562,7 @@ export function getCancelPendingBurnInstruction<
   ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
   ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
   ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
-  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
   ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
   ResolvedInstructionAccountMeta<
     TAccountHcuTrustedAppRecord,
@@ -606,8 +606,8 @@ export function getCancelPendingBurnInstruction<
       isSigner: false,
       isWritable: true,
     },
-    hostConfig: {
-      value: input.hostConfig ?? null,
+    systemProgram: {
+      value: input.systemProgram ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -631,8 +631,8 @@ export function getCancelPendingBurnInstruction<
       isSigner: false,
       isWritable: false,
     },
-    systemProgram: {
-      value: input.systemProgram ?? null,
+    hostConfig: {
+      value: input.hostConfig ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -660,12 +660,12 @@ export function getCancelPendingBurnInstruction<
   const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
 
   // Resolve default values.
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
       'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
-  }
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
   if (!accounts.program.value) {
     accounts.program.value = programAddress;
@@ -681,12 +681,12 @@ export function getCancelPendingBurnInstruction<
       getAccountMeta('balanceStore', accounts.balanceStore),
       getAccountMeta('totalSupplyStore', accounts.totalSupplyStore),
       getAccountMeta('pendingBurn', accounts.pendingBurn),
-      getAccountMeta('hostConfig', accounts.hostConfig),
+      getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
-      getAccountMeta('systemProgram', accounts.systemProgram),
+      getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('hcuBlockMeter', accounts.hcuBlockMeter),
       getAccountMeta('hcuTrustedAppRecord', accounts.hcuTrustedAppRecord),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
@@ -706,7 +706,7 @@ export function getCancelPendingBurnInstruction<
     ResolvedInstructionAccountMeta<TAccountBalanceStore, InstructionAccountInputAddress<TAccountBalanceStore>>,
     ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
     ResolvedInstructionAccountMeta<TAccountPendingBurn, InstructionAccountInputAddress<TAccountPendingBurn>>,
-    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -714,7 +714,7 @@ export function getCancelPendingBurnInstruction<
     ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
     ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
     ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
     ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
     ResolvedInstructionAccountMeta<
       TAccountHcuTrustedAppRecord,
@@ -744,15 +744,15 @@ export type ParsedCancelPendingBurnInstruction<
     totalSupplyStore: TAccountMetas[5];
     /** Pending-burn account; closed on successful cancellation. */
     pendingBurn: TAccountMetas[6];
-    /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[7];
+    /** System program used for ACL account creation on the balance/supply update path. */
+    systemProgram: TAccountMetas[7];
     zamaEventAuthority: TAccountMetas[8];
     transientStore: TAccountMetas[9];
     instructions: TAccountMetas[10];
     /** ZamaHost program used for FHE operations. */
     zamaProgram: TAccountMetas[11];
-    /** System program used for ACL account creation on the balance/supply update path. */
-    systemProgram: TAccountMetas[12];
+    /** ZamaHost config used for handle derivation and the deny policy. */
+    hostConfig: TAccountMetas[12];
     /**
      * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
      * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
@@ -801,12 +801,12 @@ export function parseCancelPendingBurnInstruction<
       balanceStore: getNextAccount(),
       totalSupplyStore: getNextAccount(),
       pendingBurn: getNextAccount(),
-      hostConfig: getNextAccount(),
+      systemProgram: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       transientStore: getNextAccount(),
       instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
-      systemProgram: getNextAccount(),
+      hostConfig: getNextAccount(),
       hcuBlockMeter: getNextOptionalAccount(),
       hcuTrustedAppRecord: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
