@@ -239,7 +239,7 @@ impl StreamManager {
 
         match result {
             Ok(value) => Ok(parse_group_statuses(&value)),
-            Err(e) if e.kind() == redis::ErrorKind::ResponseError => {
+            Err(e) if is_missing_key(&e) => {
                 debug!(stream = %stream, "Stream does not exist, reporting no groups");
                 Ok(Vec::new())
             }
@@ -276,7 +276,7 @@ impl StreamManager {
                 Ok(flat_array_to_map(&fields).get("last-generated-id").cloned())
             }
             Ok(_) => Ok(None),
-            Err(e) if e.kind() == redis::ErrorKind::ResponseError => {
+            Err(e) if is_missing_key(&e) => {
                 debug!(stream = %stream, "Stream does not exist, reporting no write position");
                 Ok(None)
             }
@@ -284,6 +284,69 @@ impl StreamManager {
                 stream: stream.to_string(),
                 source: e,
             }),
+        }
+    }
+
+    /// The oldest entry a group was handed but never acknowledged, via
+    /// `XPENDING`.
+    ///
+    /// `last_delivered_id` says how far a group has read, not how far it has
+    /// got; the difference between the two is the pending-entries list. A
+    /// consumer killed mid-batch leaves its share of that list behind for
+    /// good, because nothing here reclaims another consumer's pending entries
+    /// and the host listener takes no part in its own shutdown. A successor
+    /// seeded from `last_delivered_id` therefore starts past work that nobody
+    /// finished.
+    ///
+    /// `None` means the group has nothing outstanding, or is already gone —
+    /// a caller that read the group from [`list_groups`](Self::list_groups)
+    /// can be raced by a retiring replica destroying it, which is not an
+    /// error worth propagating.
+    pub async fn oldest_pending_id(
+        &self,
+        stream: &str,
+        group: &str,
+    ) -> Result<Option<String>, RedisConsumerError> {
+        let mut conn = self.connection.get_connection();
+
+        // Summary form: [count, min_id, max_id, [[consumer, count], ...]].
+        let result: Result<Value, _> = redis::cmd("XPENDING")
+            .arg(stream)
+            .arg(group)
+            .query_async(&mut conn)
+            .await;
+
+        let value = match result {
+            Ok(value) => value,
+            // Matched on the code rather than the kind: a missing key and a
+            // missing group both answer NOGROUP, and redis-rs files unknown
+            // codes under a catch-all rather than giving them a kind of their
+            // own. Matching the kind here would swallow unrelated failures.
+            Err(e) if e.code() == Some("NOGROUP") => {
+                debug!(
+                    stream = %stream,
+                    group = %group,
+                    "Group is gone, reporting nothing pending"
+                );
+                return Ok(None);
+            }
+            Err(e) => {
+                return Err(RedisConsumerError::StreamRead {
+                    stream: stream.to_string(),
+                    source: e,
+                });
+            }
+        };
+
+        let Value::Array(parts) = value else {
+            return Ok(None);
+        };
+
+        // A group holding nothing answers [0, nil, nil, nil], so the ID coming
+        // back as a string is itself the "has outstanding work" signal.
+        match parts.get(1) {
+            Some(Value::BulkString(id)) => Ok(Some(String::from_utf8_lossy(id).to_string())),
+            _ => Ok(None),
         }
     }
 
@@ -387,6 +450,52 @@ impl StreamManager {
             })?;
 
         Ok(len)
+    }
+}
+
+/// Whether an error is Redis saying the key is not there.
+///
+/// `XINFO` answers a missing stream with a bare `ERR no such key`, and a bare
+/// `ERR` is the one reply carrying no distinguishing code of its own: in
+/// `redis-rs` every other server error — `WRONGTYPE`, `NOPERM`, `NOGROUP` —
+/// keeps its code, so only `ERR` collides. Matching the error kind alone would
+/// therefore read *any* bare `ERR` as "the stream does not exist", including a
+/// malformed command, and the caller would carry on against a stream it had
+/// been told nothing about. The detail string is the only thing that separates
+/// them.
+fn is_missing_key(e: &redis::RedisError) -> bool {
+    e.kind() == redis::ErrorKind::ResponseError
+        && e.detail()
+            .is_some_and(|detail| detail.contains("no such key"))
+}
+
+/// The largest stream ID strictly below `id`.
+///
+/// `XGROUP CREATE` is told the last ID a group should treat as already seen,
+/// so asking a group to start *at* an entry means naming the one before it.
+/// IDs are `<milliseconds>-<sequence>` ordered on the pair, which makes the
+/// predecessor of sequence zero the previous millisecond at the highest
+/// sequence that millisecond could hold.
+///
+/// Anything that is not a well-formed ID comes back unchanged. The only
+/// caller hands the result straight to Redis, which rejects a malformed ID
+/// with a better message than this could invent.
+pub fn id_before(id: &str) -> String {
+    let Some((ms, seq)) = id.split_once('-') else {
+        return id.to_string();
+    };
+    let (Ok(ms), Ok(seq)) = (ms.parse::<u64>(), seq.parse::<u64>()) else {
+        return id.to_string();
+    };
+
+    match seq.checked_sub(1) {
+        Some(previous) => format!("{ms}-{previous}"),
+        None => match ms.checked_sub(1) {
+            Some(previous) => format!("{previous}-{}", u64::MAX),
+            // `0-0` is the only ID with nothing below it, and Redis will not
+            // issue it for a real entry, so this is unreachable in practice.
+            None => "0-0".to_string(),
+        },
     }
 }
 
@@ -587,5 +696,30 @@ mod tests {
             .ensure_consumer_group(&topology.main, "app-b-group", "0")
             .await;
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn id_before_steps_back_one_sequence() {
+        assert_eq!(id_before("1700000000000-5"), "1700000000000-4");
+        assert_eq!(id_before("1700000000000-1"), "1700000000000-0");
+    }
+
+    #[test]
+    fn id_before_crosses_into_the_previous_millisecond() {
+        assert_eq!(
+            id_before("1700000000000-0"),
+            format!("1699999999999-{}", u64::MAX),
+            "the predecessor of sequence zero is the millisecond before it, at \
+             the highest sequence that millisecond could have held"
+        );
+    }
+
+    #[test]
+    fn id_before_leaves_malformed_ids_alone() {
+        // Redis rejects these with a better message than this could invent.
+        assert_eq!(id_before("$"), "$");
+        assert_eq!(id_before("not-an-id"), "not-an-id");
+        assert_eq!(id_before("1700000000000"), "1700000000000");
+        assert_eq!(id_before("0-0"), "0-0");
     }
 }

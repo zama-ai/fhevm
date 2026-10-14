@@ -1,7 +1,7 @@
 use alloy_primitives::Address;
 use async_trait::async_trait;
 pub use broker::redis::GroupStatus;
-use broker::redis::StreamManager;
+use broker::redis::{StreamManager, id_before};
 pub use broker::{AckDecision, Broker, HandlerError};
 use broker::{BrokerError, CancellationToken, Consumer, Handler, Message, Topic};
 use primitives::event::{
@@ -18,6 +18,49 @@ use crate::options::{CatchupConsumerOptions, LiveConsumerOptions};
 
 /// Redis start position meaning "deliver only what arrives from now on".
 const NEW_ENTRIES_ONLY: &str = "$";
+
+/// Where `name` sits in the succession of groups on `stream`, or `None` if it
+/// is not part of one.
+///
+/// The unsuffixed group is rung 0. It comes from a build that predates group
+/// suffixes entirely, so every suffixed build is newer than it, and a build
+/// that finds it is the first of the versioned ones.
+///
+/// Anything that is not `{stream}` or `{stream}.v{digits}` is unranked: a
+/// group belonging to a different stream, or a suffix in a shape this
+/// ordering was not built to compare.
+fn rung(stream: &str, name: &str) -> Option<u32> {
+    if name == stream {
+        return Some(0);
+    }
+    name.strip_prefix(stream)
+        .and_then(|rest| rest.strip_prefix(".v"))
+        .and_then(|digits| digits.parse().ok())
+}
+
+/// The group on `stream` whose position a group with `suffix` should start
+/// from: the highest rung below its own.
+///
+/// `None` means there is nothing older to inherit — an empty stream, a stream
+/// carrying only newer groups, or a suffix that does not name a version,
+/// which is a shape this ordering cannot rank and so will not guess at.
+fn predecessor_group<'a>(
+    stream: &str,
+    suffix: Option<&str>,
+    existing: &'a [GroupStatus],
+) -> Option<&'a GroupStatus> {
+    let mine = rung(stream, &format!("{stream}.{}", suffix?))?;
+
+    existing
+        .iter()
+        .filter_map(|candidate| {
+            rung(stream, &candidate.name)
+                .filter(|rung| *rung < mine)
+                .map(|rung| (rung, candidate))
+        })
+        .max_by_key(|(rung, _)| *rung)
+        .map(|(_, candidate)| candidate)
+}
 
 /// Chain & Consumer-scoped client for the consumer library.
 ///
@@ -132,8 +175,12 @@ impl ListenerConsumer {
     /// exactly when it is needed and not otherwise. Deriving it from something
     /// an operator sets by hand makes it a footgun.
     ///
-    /// A new group starts from the beginning of retained history, so the first
-    /// build to run with a suffix replays whatever is still on the stream.
+    /// A new group does not start from the beginning of retained history. It
+    /// takes over from the newest group ranking below its own suffix, and only
+    /// starts at the end of the stream when there is nothing below it to take
+    /// over from. Suffixes that rank — `v1`, `v2` and so on, with the
+    /// unsuffixed name ranking below all of them — are what make that handover
+    /// possible; one that does not rank always starts at the end.
     ///
     /// On AMQP the group is the queue, so changing the suffix points the
     /// consumer at a different queue and anything still in the old one is left
@@ -642,15 +689,30 @@ impl ListenerConsumer {
     ///
     /// - **This group already exists.** Nothing to decide — it resumes from
     ///   its own cursor.
-    /// - **A predecessor is reading this stream under the same identity
-    ///   without a group suffix.** Start where it is. Entries behind its
-    ///   cursor are work it already did, and this identity writes to the same
-    ///   database, so re-reading them would be redundant; entries ahead of it
-    ///   are work nobody has taken.
-    /// - **Nothing is reading this stream.** Start at the end. The retained
-    ///   entries are of unknown age with no cursor to inherit, and a gap in
-    ///   ingestion is recovered from the chain by catchup, not by replaying
-    ///   however much history the stream happens to be holding.
+    /// - **An older group is reading this stream under the same identity.**
+    ///   Start where its unfinished work begins. Groups on one stream are
+    ///   ordered by the version in their suffix, the unsuffixed group oldest
+    ///   of all; the one to inherit from is the newest below our own, because
+    ///   an interrupted cutover can leave more than one behind and only the
+    ///   latest has a position worth having. A *newer* group is never
+    ///   inherited from: during a blue/green the successor reads the same
+    ///   stream, and it is not a predecessor.
+    ///
+    ///   Its cursor records what it was handed, not what it completed, and a
+    ///   consumer killed mid-batch leaves the difference outstanding for
+    ///   good: nothing reclaims another consumer's pending entries, and the
+    ///   host listener takes no part in its own shutdown. Inheriting the
+    ///   cursor steps over that work. Starting at the oldest entry the
+    ///   predecessor still owes repeats a few blocks into the same database
+    ///   instead, which is the cheaper of the two mistakes.
+    /// - **Nothing older is reading this stream.** Start at the end. On a
+    ///   stream nothing has ever been published to — a fresh identity, and
+    ///   the usual case, since the group is created before the filters that
+    ///   set the publisher going — the end is also the beginning and nothing
+    ///   is skipped. On a populated one the retained entries are of unknown
+    ///   age with no cursor to inherit, and the host listener wires no
+    ///   catchup flow that would fetch them from the chain instead, so the
+    ///   tip is a floor and not a recovery.
     ///
     /// Without this, a group created on a populated stream starts at `0` and
     /// replays everything retained — which, on a stream whose trimming has
@@ -673,11 +735,18 @@ impl ListenerConsumer {
             return Ok(());
         }
 
-        let start = existing
-            .iter()
-            .find(|candidate| candidate.name == stream)
-            .map(|predecessor| predecessor.last_delivered_id.clone())
-            .unwrap_or_else(|| NEW_ENTRIES_ONLY.to_string());
+        let start = match predecessor_group(&stream, self.group_suffix.as_deref(), &existing) {
+            Some(predecessor) => {
+                match manager
+                    .oldest_pending_id(&stream, &predecessor.name)
+                    .await?
+                {
+                    Some(oldest) => id_before(&oldest),
+                    None => predecessor.last_delivered_id.clone(),
+                }
+            }
+            None => NEW_ENTRIES_ONLY.to_string(),
+        };
 
         manager
             .ensure_consumer_group(&stream, &group, &start)
@@ -1035,6 +1104,93 @@ mod tests {
 
     fn unique_name(prefix: &str) -> String {
         format!("{prefix}-{}", TEST_ID.fetch_add(1, Ordering::Relaxed))
+    }
+
+    const STREAM: &str = "host-listener-consumer.11155111.new-event";
+
+    fn group(name: &str) -> GroupStatus {
+        GroupStatus {
+            name: name.to_string(),
+            last_delivered_id: "1700000000000-0".to_string(),
+            pending: 0,
+            lag: Some(0),
+        }
+    }
+
+    #[test]
+    fn the_unsuffixed_group_is_the_oldest_rung() {
+        assert_eq!(rung(STREAM, STREAM), Some(0));
+    }
+
+    #[test]
+    fn a_versioned_suffix_is_its_own_rung() {
+        assert_eq!(rung(STREAM, &format!("{STREAM}.v1")), Some(1));
+        assert_eq!(rung(STREAM, &format!("{STREAM}.v2")), Some(2));
+        assert_eq!(rung(STREAM, &format!("{STREAM}.v17")), Some(17));
+    }
+
+    #[test]
+    fn names_this_ordering_cannot_rank_are_unranked() {
+        // Another stream's group, which `XINFO GROUPS` would never return for
+        // this stream but which the ordering should still refuse to rank.
+        assert_eq!(rung(STREAM, "somewhere-else.new-event.v2"), None);
+        // Suffixes that are not `v<digits>`.
+        assert_eq!(rung(STREAM, &format!("{STREAM}.v")), None);
+        assert_eq!(rung(STREAM, &format!("{STREAM}.vx")), None);
+        assert_eq!(rung(STREAM, &format!("{STREAM}.v2x")), None);
+        assert_eq!(rung(STREAM, &format!("{STREAM}.beta")), None);
+        // Suffixed, but not with the separator `group_for` writes.
+        assert_eq!(rung(STREAM, &format!("{STREAM}v2")), None);
+    }
+
+    #[test]
+    fn the_newest_group_below_mine_is_the_predecessor() {
+        let existing = vec![
+            group(STREAM),
+            group(&format!("{STREAM}.v1")),
+            group(&format!("{STREAM}.v2")),
+        ];
+        let found = predecessor_group(STREAM, Some("v3"), &existing).unwrap();
+        assert_eq!(
+            found.name,
+            format!("{STREAM}.v2"),
+            "an interrupted cutover leaves several behind; only the latest has \
+             a position worth having"
+        );
+    }
+
+    #[test]
+    fn a_newer_group_is_never_inherited_from() {
+        // The shape of a blue/green: the successor is reading the same stream
+        // while this one is being created.
+        let existing = vec![group(&format!("{STREAM}.v3"))];
+        assert!(predecessor_group(STREAM, Some("v2"), &existing).is_none());
+    }
+
+    #[test]
+    fn my_own_group_is_not_my_predecessor() {
+        let existing = vec![group(&format!("{STREAM}.v2"))];
+        assert!(predecessor_group(STREAM, Some("v2"), &existing).is_none());
+    }
+
+    #[test]
+    fn an_unsuffixed_predecessor_is_still_found() {
+        // The rung-0 case, and the only one the matcher handled before.
+        let existing = vec![group(STREAM)];
+        let found = predecessor_group(STREAM, Some("v2"), &existing).unwrap();
+        assert_eq!(found.name, STREAM);
+    }
+
+    #[test]
+    fn nothing_on_the_stream_means_no_predecessor() {
+        assert!(predecessor_group(STREAM, Some("v2"), &[]).is_none());
+    }
+
+    #[test]
+    fn an_unrankable_suffix_declines_to_guess() {
+        let existing = vec![group(STREAM), group(&format!("{STREAM}.v1"))];
+        assert!(predecessor_group(STREAM, Some("beta"), &existing).is_none());
+        assert!(predecessor_group(STREAM, None, &existing).is_none());
     }
 
     #[tokio::test]
