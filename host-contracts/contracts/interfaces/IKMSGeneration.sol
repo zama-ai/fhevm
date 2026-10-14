@@ -36,11 +36,11 @@ interface IKMSGeneration {
     }
 
     /**
-     * @notice The full record of a completed key, used to seed resharing of previous materials.
-     * @param prepKeygenId The preprocessing keygen ID the key derives from.
+     * @notice The record KMS nodes hold for a completed key, used to seed resharing of previous materials.
+     * @param prepKeygenId The preprocessing keygen ID the key's current material derives from.
      * @param keyId The key ID.
      * @param paramsType The key parameters type.
-     * @param keyDigests The per-type digests of the key.
+     * @param keyDigests The per-type digests of the key's current material.
      */
     struct KeyInfo {
         uint256 prepKeygenId;
@@ -425,7 +425,10 @@ interface IKMSGeneration {
     function getKeyMaterials(uint256 keyId) external view returns (string[] memory, KeyDigest[] memory);
 
     /**
-     * @notice Get the full completed-key record for a given key ID, in a single call.
+     * @notice Get the record KMS nodes hold for a completed key, in a single call.
+     * @dev After a compressed key migration, KMS nodes replace the key's record with the migrated
+     * one. This returns the migration's preprocessing ID and omits the legacy `Server` digest that
+     * {getKeyMaterials} keeps.
      * @param keyId The ID of the key.
      * @return The key record (prepKeygenId, keyId, paramsType, key digests).
      */

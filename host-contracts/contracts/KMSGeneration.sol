@@ -100,14 +100,14 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     string private constant CONTRACT_NAME = "KMSGeneration";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 4;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
      * @dev Constant used for making sure the version number used in the `reinitializer` modifier
-     * is identical between `initializeFromEmptyProxy` and `reinitializeV3`.
+     * is identical between `initializeFromEmptyProxy` and `reinitializeV4`.
      */
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    uint64 private constant REINITIALIZER_VERSION = 5;
 
     // ----------------------------------------------------------------------------------------------
     // Contract storage:
@@ -222,11 +222,11 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes the contract from V2 or V3.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {
+    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {
         // The V3 mappings use their zero-value state. V2 already populated the completed ID arrays.
     }
 
@@ -653,10 +653,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
         _checkGeneratedKeyId(keyId);
 
-        uint256 materialRequestId = $.requestIdByExistingKeyId[keyId];
-        if (materialRequestId == 0 || $.consensusDigest[materialRequestId] == bytes32(0)) {
-            materialRequestId = keyId;
-        }
+        uint256 materialRequestId = _materialRequestId(keyId);
         bytes32 digest = $.consensusDigest[materialRequestId];
         address[] memory consensusTxSenders = $.consensusTxSenderAddresses[materialRequestId][digest];
         uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[materialRequestId]);
@@ -671,13 +668,18 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     function getKeyInfo(uint256 keyId) external view virtual returns (KeyInfo memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         _checkGeneratedKeyId(keyId);
-        uint256 prepKeygenId = $.keygenIdPairs[keyId];
+        uint256 materialRequestId = _materialRequestId(keyId);
+        uint256 prepKeygenId = $.keygenIdPairs[materialRequestId];
+        KeyDigest[] memory keyDigests = $.keyDigests[keyId];
+        if (materialRequestId != keyId) {
+            keyDigests = _withoutServerDigests(keyDigests);
+        }
         return
             KeyInfo({
                 prepKeygenId: prepKeygenId,
                 keyId: keyId,
                 paramsType: $.requestParamsType[prepKeygenId],
-                keyDigests: $.keyDigests[keyId]
+                keyDigests: keyDigests
             });
     }
 
@@ -827,6 +829,43 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     ) internal view virtual returns (bool) {
         uint256 consensusThreshold = PROTOCOL_CONFIG.getKmsGenThresholdForContext(contextId);
         return kmsCounter >= consensusThreshold;
+    }
+
+    /**
+     * @notice Returns the request whose consensus describes a key: its completed compressed key
+     * migration if any, otherwise the key's own keygen request.
+     * @param keyId The ID of the key.
+     * @return The ID of the request whose consensus describes the key.
+     */
+    function _materialRequestId(uint256 keyId) internal view virtual returns (uint256) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        uint256 migrationRequestId = $.requestIdByExistingKeyId[keyId];
+        if (migrationRequestId == 0 || $.consensusDigest[migrationRequestId] == bytes32(0)) {
+            return keyId;
+        }
+        return migrationRequestId;
+    }
+
+    /**
+     * @notice Returns the given key digests without their `Server` entries.
+     * @param keyDigests The key digests.
+     * @return The key digests without `Server` entries.
+     */
+    function _withoutServerDigests(KeyDigest[] memory keyDigests) internal pure virtual returns (KeyDigest[] memory) {
+        uint256 serverDigestCount = 0;
+        for (uint256 i = 0; i < keyDigests.length; i++) {
+            if (keyDigests[i].keyType == KeyType.Server) {
+                serverDigestCount++;
+            }
+        }
+        KeyDigest[] memory filteredDigests = new KeyDigest[](keyDigests.length - serverDigestCount);
+        uint256 j = 0;
+        for (uint256 i = 0; i < keyDigests.length; i++) {
+            if (keyDigests[i].keyType != KeyType.Server) {
+                filteredDigests[j++] = keyDigests[i];
+            }
+        }
+        return filteredDigests;
     }
 
     /**
