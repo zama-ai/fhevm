@@ -13,58 +13,50 @@ export const ZAMA_FHE_ERROR__TOO_MANY_RESULT_GRANTS = 10003;
 export const ZAMA_FHE_ERROR__TOO_MANY_REMAINING_ACCOUNTS = 10004;
 /** TooManyDictionaryEntries: More dictionary entries than fit in the host's u8 indices */
 export const ZAMA_FHE_ERROR__TOO_MANY_DICTIONARY_ENTRIES = 10005;
-/** InvalidTransientReference: A transient operand references an operation not yet produced */
-export const ZAMA_FHE_ERROR__INVALID_TRANSIENT_REFERENCE = 10006;
 /** DuplicateSlotWrite: Two effects write the same store slot */
-export const ZAMA_FHE_ERROR__DUPLICATE_SLOT_WRITE = 10007;
+export const ZAMA_FHE_ERROR__DUPLICATE_SLOT_WRITE = 10006;
 /** TooManySteps: More steps than the host accepts */
-export const ZAMA_FHE_ERROR__TOO_MANY_STEPS = 10008;
+export const ZAMA_FHE_ERROR__TOO_MANY_STEPS = 10007;
 /** TooManyEffects: More effects than the host accepts */
-export const ZAMA_FHE_ERROR__TOO_MANY_EFFECTS = 10009;
+export const ZAMA_FHE_ERROR__TOO_MANY_EFFECTS = 10008;
 /** ExceedsCpiInstructionDataLimit: The fhe_execute packet exceeds the CPI instruction data limit */
-export const ZAMA_FHE_ERROR__EXCEEDS_CPI_INSTRUCTION_DATA_LIMIT = 10010;
+export const ZAMA_FHE_ERROR__EXCEEDS_CPI_INSTRUCTION_DATA_LIMIT = 10009;
 /** ExceedsBuildHeapBudget: The execution exceeds the builder's heap budget */
-export const ZAMA_FHE_ERROR__EXCEEDS_BUILD_HEAP_BUDGET = 10011;
+export const ZAMA_FHE_ERROR__EXCEEDS_BUILD_HEAP_BUDGET = 10010;
 /** EmptySteps: The execution has no steps */
-export const ZAMA_FHE_ERROR__EMPTY_STEPS = 10012;
+export const ZAMA_FHE_ERROR__EMPTY_STEPS = 10011;
 /** MixedScopes: Persistent values of two applications under one authority */
-export const ZAMA_FHE_ERROR__MIXED_SCOPES = 10013;
-/** ScalarLhsOperand: A scalar was supplied as the left-hand operand */
-export const ZAMA_FHE_ERROR__SCALAR_LHS_OPERAND = 10014;
-/** ScalarEncryptedOperand: A scalar was supplied where an encrypted operand is required */
-export const ZAMA_FHE_ERROR__SCALAR_ENCRYPTED_OPERAND = 10015;
+export const ZAMA_FHE_ERROR__MIXED_SCOPES = 10012;
 /** UnsupportedFheType: The FHE type is not supported by the host */
-export const ZAMA_FHE_ERROR__UNSUPPORTED_FHE_TYPE = 10016;
+export const ZAMA_FHE_ERROR__UNSUPPORTED_FHE_TYPE = 10013;
 /** InvalidRandomUpperBound: The random upper bound is invalid */
-export const ZAMA_FHE_ERROR__INVALID_RANDOM_UPPER_BOUND = 10017;
+export const ZAMA_FHE_ERROR__INVALID_RANDOM_UPPER_BOUND = 10014;
 /** InvalidExecutionAuthority: The execution authority is the default pubkey */
-export const ZAMA_FHE_ERROR__INVALID_EXECUTION_AUTHORITY = 10018;
-/** MissingVerifiedInput: A verified input references an unregistered attestation */
-export const ZAMA_FHE_ERROR__MISSING_VERIFIED_INPUT = 10019;
+export const ZAMA_FHE_ERROR__INVALID_EXECUTION_AUTHORITY = 10015;
 /** TooManyReductionOperands: Too many operands for sum or is_in */
-export const ZAMA_FHE_ERROR__TOO_MANY_REDUCTION_OPERANDS = 10020;
+export const ZAMA_FHE_ERROR__TOO_MANY_REDUCTION_OPERANDS = 10016;
 /** MulDivDivisorZero: mul_div divisor is zero */
-export const ZAMA_FHE_ERROR__MUL_DIV_DIVISOR_ZERO = 10021;
+export const ZAMA_FHE_ERROR__MUL_DIV_DIVISOR_ZERO = 10017;
 /** DivisionByZero: Division by zero */
-export const ZAMA_FHE_ERROR__DIVISION_BY_ZERO = 10022;
+export const ZAMA_FHE_ERROR__DIVISION_BY_ZERO = 10018;
 /** DuplicateDynamicAccount: A dynamic account was supplied more than once */
-export const ZAMA_FHE_ERROR__DUPLICATE_DYNAMIC_ACCOUNT = 10023;
+export const ZAMA_FHE_ERROR__DUPLICATE_DYNAMIC_ACCOUNT = 10019;
 /** UnexpectedDynamicAccount: A supplied dynamic account is not required by the execution */
-export const ZAMA_FHE_ERROR__UNEXPECTED_DYNAMIC_ACCOUNT = 10024;
+export const ZAMA_FHE_ERROR__UNEXPECTED_DYNAMIC_ACCOUNT = 10020;
 /** MissingDynamicAccount: A dynamic account required by the execution was not supplied */
-export const ZAMA_FHE_ERROR__MISSING_DYNAMIC_ACCOUNT = 10025;
+export const ZAMA_FHE_ERROR__MISSING_DYNAMIC_ACCOUNT = 10021;
 /** DynamicAccountNotWritable: A dynamic account the execution writes was supplied read-only */
-export const ZAMA_FHE_ERROR__DYNAMIC_ACCOUNT_NOT_WRITABLE = 10026;
+export const ZAMA_FHE_ERROR__DYNAMIC_ACCOUNT_NOT_WRITABLE = 10022;
 /** DuplicateStoreAuthority: A value authority was supplied more than once */
-export const ZAMA_FHE_ERROR__DUPLICATE_STORE_AUTHORITY = 10027;
+export const ZAMA_FHE_ERROR__DUPLICATE_STORE_AUTHORITY = 10023;
 /** UnexpectedStoreAuthority: A supplied value authority is not required by the execution */
-export const ZAMA_FHE_ERROR__UNEXPECTED_STORE_AUTHORITY = 10028;
+export const ZAMA_FHE_ERROR__UNEXPECTED_STORE_AUTHORITY = 10024;
 /** MissingStoreAuthority: A value authority required by the execution was not supplied */
-export const ZAMA_FHE_ERROR__MISSING_STORE_AUTHORITY = 10029;
+export const ZAMA_FHE_ERROR__MISSING_STORE_AUTHORITY = 10025;
 /** HostProgramMismatch: The host program account is not zama-host */
-export const ZAMA_FHE_ERROR__HOST_PROGRAM_MISMATCH = 10030;
+export const ZAMA_FHE_ERROR__HOST_PROGRAM_MISMATCH = 10026;
 /** ExecutionAuthorityMismatch: The authority account is not the execution's authority */
-export const ZAMA_FHE_ERROR__EXECUTION_AUTHORITY_MISMATCH = 10031;
+export const ZAMA_FHE_ERROR__EXECUTION_AUTHORITY_MISMATCH = 10027;
 
 export type ZamaFheError =
   | typeof ZAMA_FHE_ERROR__MISSING_STORE_SLOT
@@ -73,7 +65,6 @@ export type ZamaFheError =
   | typeof ZAMA_FHE_ERROR__TOO_MANY_RESULT_GRANTS
   | typeof ZAMA_FHE_ERROR__TOO_MANY_REMAINING_ACCOUNTS
   | typeof ZAMA_FHE_ERROR__TOO_MANY_DICTIONARY_ENTRIES
-  | typeof ZAMA_FHE_ERROR__INVALID_TRANSIENT_REFERENCE
   | typeof ZAMA_FHE_ERROR__DUPLICATE_SLOT_WRITE
   | typeof ZAMA_FHE_ERROR__TOO_MANY_STEPS
   | typeof ZAMA_FHE_ERROR__TOO_MANY_EFFECTS
@@ -81,12 +72,9 @@ export type ZamaFheError =
   | typeof ZAMA_FHE_ERROR__EXCEEDS_BUILD_HEAP_BUDGET
   | typeof ZAMA_FHE_ERROR__EMPTY_STEPS
   | typeof ZAMA_FHE_ERROR__MIXED_SCOPES
-  | typeof ZAMA_FHE_ERROR__SCALAR_LHS_OPERAND
-  | typeof ZAMA_FHE_ERROR__SCALAR_ENCRYPTED_OPERAND
   | typeof ZAMA_FHE_ERROR__UNSUPPORTED_FHE_TYPE
   | typeof ZAMA_FHE_ERROR__INVALID_RANDOM_UPPER_BOUND
   | typeof ZAMA_FHE_ERROR__INVALID_EXECUTION_AUTHORITY
-  | typeof ZAMA_FHE_ERROR__MISSING_VERIFIED_INPUT
   | typeof ZAMA_FHE_ERROR__TOO_MANY_REDUCTION_OPERANDS
   | typeof ZAMA_FHE_ERROR__MUL_DIV_DIVISOR_ZERO
   | typeof ZAMA_FHE_ERROR__DIVISION_BY_ZERO
@@ -107,7 +95,6 @@ const zamaFheErrorMessages: Record<ZamaFheError, string> = {
   [ZAMA_FHE_ERROR__TOO_MANY_RESULT_GRANTS]: 'Too many result grants',
   [ZAMA_FHE_ERROR__TOO_MANY_REMAINING_ACCOUNTS]: "More accounts than fit in the host's u8 account indices",
   [ZAMA_FHE_ERROR__TOO_MANY_DICTIONARY_ENTRIES]: "More dictionary entries than fit in the host's u8 indices",
-  [ZAMA_FHE_ERROR__INVALID_TRANSIENT_REFERENCE]: 'A transient operand references an operation not yet produced',
   [ZAMA_FHE_ERROR__DUPLICATE_SLOT_WRITE]: 'Two effects write the same store slot',
   [ZAMA_FHE_ERROR__TOO_MANY_STEPS]: 'More steps than the host accepts',
   [ZAMA_FHE_ERROR__TOO_MANY_EFFECTS]: 'More effects than the host accepts',
@@ -115,12 +102,9 @@ const zamaFheErrorMessages: Record<ZamaFheError, string> = {
   [ZAMA_FHE_ERROR__EXCEEDS_BUILD_HEAP_BUDGET]: "The execution exceeds the builder's heap budget",
   [ZAMA_FHE_ERROR__EMPTY_STEPS]: 'The execution has no steps',
   [ZAMA_FHE_ERROR__MIXED_SCOPES]: 'Persistent values of two applications under one authority',
-  [ZAMA_FHE_ERROR__SCALAR_LHS_OPERAND]: 'A scalar was supplied as the left-hand operand',
-  [ZAMA_FHE_ERROR__SCALAR_ENCRYPTED_OPERAND]: 'A scalar was supplied where an encrypted operand is required',
   [ZAMA_FHE_ERROR__UNSUPPORTED_FHE_TYPE]: 'The FHE type is not supported by the host',
   [ZAMA_FHE_ERROR__INVALID_RANDOM_UPPER_BOUND]: 'The random upper bound is invalid',
   [ZAMA_FHE_ERROR__INVALID_EXECUTION_AUTHORITY]: 'The execution authority is the default pubkey',
-  [ZAMA_FHE_ERROR__MISSING_VERIFIED_INPUT]: 'A verified input references an unregistered attestation',
   [ZAMA_FHE_ERROR__TOO_MANY_REDUCTION_OPERANDS]: 'Too many operands for sum or is_in',
   [ZAMA_FHE_ERROR__MUL_DIV_DIVISOR_ZERO]: 'mul_div divisor is zero',
   [ZAMA_FHE_ERROR__DIVISION_BY_ZERO]: 'Division by zero',
