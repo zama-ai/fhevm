@@ -15,7 +15,7 @@ use std::{
 };
 use thiserror::Error;
 
-/// Why a request failed authentication..
+/// Why a request failed authentication.
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum AuthError {
     #[error("missing Authorization header")]
