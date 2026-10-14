@@ -1581,10 +1581,10 @@ fn mollusk_lifecycle_two_users_deposit_dispatch_settle_claim() {
 }
 
 /// Lifecycle against a vault with existing yield (2_000 assets / 1_000
-/// shares): the floor-rounded exact-proportional claims never exceed the
-/// wrapped shares.
+/// shares): the deposit's share conversion rounds down (800 assets to 400
+/// shares), and the exact-proportional claims never exceed the wrapped shares.
 #[test]
-fn mollusk_lifecycle_with_yield_rate_rounds_down() {
+fn mollusk_lifecycle_with_yield_rounds_down() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     // Share price ~2: 2_000 assets backing 1_000 shares.
     let context = fixture_context(mollusk(), fixture.accounts(2_000, 1_000));
