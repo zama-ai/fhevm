@@ -4107,6 +4107,8 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
     assert_eq!(event.owner, fixture.owner);
     assert_eq!(event.token_account, fixture.token_account);
     assert_eq!(event.burned_handle, burned_handle);
+    let balance_event: token::BalanceHandleUpdatedEvent = only_event(&burn_result);
+    assert_eq!(balance_event.encrypted_store, fixture.balance_store);
     assert_eq!(
         store_u64(
             &context,
@@ -4150,6 +4152,8 @@ fn mollusk_cancel_pending_burn_restores_balance_and_supply() {
     assert_eq!(event.owner, fixture.owner);
     assert_eq!(event.token_account, fixture.token_account);
     assert_eq!(event.burned_handle, burned_handle);
+    let balance_event: token::BalanceHandleUpdatedEvent = only_event(&cancel_result);
+    assert_eq!(balance_event.encrypted_store, fixture.balance_store);
 
     assert_eq!(balance(&context, fixture.token_account), 1_000);
     assert_eq!(

@@ -142,6 +142,8 @@ pub struct PendingBurnCancelledEvent {
     /// Confidential token account that produced the burned amount.
     pub token_account: Pubkey,
     /// Burned amount handle that was cancelled (must be the current handle).
+    /// It sits in the token account's encrypted store, which this instruction's
+    /// `BalanceHandleUpdatedEvent` names.
     pub burned_handle: [u8; 32],
 }
 
@@ -157,6 +159,8 @@ pub struct ConfidentialBurnEvent {
     /// Token account whose balance was debited.
     pub token_account: Pubkey,
     /// Encrypted amount actually burned.
+    /// It sits in the token account's encrypted store, which this instruction's
+    /// `BalanceHandleUpdatedEvent` names.
     pub burned_handle: [u8; 32],
 }
 
