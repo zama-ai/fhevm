@@ -208,7 +208,6 @@ export type QuitAsyncInput<
   joinUnderlyingMint: TAccountJoinUnderlyingMint;
   batchAuthorityAta: TAccountBatchAuthorityAta;
   userAta: TAccountUserAta;
-  /** validated by the token CPI and pinned below. */
   batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
   /** so the refund can only land with the quitting user, never back on the batch account. */
   userTokenAccount: TAccountUserTokenAccount;
@@ -712,7 +711,6 @@ export type QuitInput<
   joinUnderlyingMint: TAccountJoinUnderlyingMint;
   batchAuthorityAta: TAccountBatchAuthorityAta;
   userAta: TAccountUserAta;
-  /** validated by the token CPI and pinned below. */
   batchJoinTokenAccount: TAccountBatchJoinTokenAccount;
   /** so the refund can only land with the quitting user, never back on the batch account. */
   userTokenAccount: TAccountUserTokenAccount;
@@ -1156,7 +1154,6 @@ export type ParsedQuitInstruction<
     joinUnderlyingMint: TAccountMetas[7];
     batchAuthorityAta: TAccountMetas[8];
     userAta: TAccountMetas[9];
-    /** validated by the token CPI and pinned below. */
     batchJoinTokenAccount: TAccountMetas[10];
     /** so the refund can only land with the quitting user, never back on the batch account. */
     userTokenAccount: TAccountMetas[11];

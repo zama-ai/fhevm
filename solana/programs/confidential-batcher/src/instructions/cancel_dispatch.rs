@@ -29,7 +29,7 @@ pub struct CancelDispatch<'info> {
     pub join_confidential_mint: Box<Account<'info, ct::ConfidentialMint>>,
     /// CHECK: mint-scoped total-supply authority PDA; validated by the token CPI.
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential join token account; validated here and by the token CPI.
+    /// CHECK: batch's confidential join token account; validated by the token CPI.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
     /// CHECK: batch balance encrypted store; restored by the token CPI.
@@ -89,19 +89,7 @@ pub fn cancel_dispatch<'info>(
         BatcherError::SettleDeadlineNotReached
     );
 
-    let mint = ctx.accounts.join_confidential_mint.key();
     let batch = ctx.accounts.batch.key();
-    let batch_authority = ctx.accounts.batch_authority.key();
-    require_keys_eq!(
-        ctx.accounts.batch_join_token_account.key(),
-        ct::token_account_address(mint, batch_authority).0,
-        BatcherError::DerivedAccountMismatch
-    );
-    require_keys_eq!(
-        ctx.accounts.pending_burn.key(),
-        ct::pending_burn_address(mint, ctx.accounts.batch_join_token_account.key()).0,
-        BatcherError::DerivedAccountMismatch
-    );
 
     fund_batch_authority(
         &ctx.accounts.payer,

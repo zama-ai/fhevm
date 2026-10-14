@@ -1,9 +1,8 @@
 //! App-local events for the confidential batcher.
 //!
-//! For frontend/demo indexers. The generic coprocessor host-listener does not
-//! consume these: the FHE-protocol events are emitted by the ZamaHost CPIs the
-//! batcher composes. Only settled events carry amounts — everything else stays
-//! encrypted.
+//! Nothing off-chain reads these; the FHE-protocol events come from the ZamaHost
+//! CPIs the batcher composes. Only settled events carry amounts — everything else
+//! stays encrypted.
 
 use anchor_lang::prelude::*;
 

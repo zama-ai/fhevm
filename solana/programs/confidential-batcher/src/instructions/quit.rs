@@ -53,8 +53,7 @@ pub struct Quit<'info> {
     pub batch_authority_ata: UncheckedAccount<'info>,
     /// CHECK: ATA of `user` on `join_underlying_mint`. Uninitialized → not frozen.
     pub user_ata: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential join token account (refund source);
-    /// validated by the token CPI and pinned below.
+    /// CHECK: batch's confidential join token account (refund source); validated by the token CPI.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
     /// CHECK: user's canonical confidential token account (refund destination); pinned below
@@ -135,12 +134,6 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
     let mint_key = ctx.accounts.join_confidential_mint.key();
     let batch_key = ctx.accounts.batch.key();
     let user = ctx.accounts.user.key();
-    let batch_authority = ctx.accounts.batch_authority.key();
-    require_keys_eq!(
-        ctx.accounts.batch_join_token_account.key(),
-        ct::token_account_address(mint_key, batch_authority).0,
-        BatcherError::DerivedAccountMismatch
-    );
     // A destination equal to the source is a no-op transfer that the token program accepts;
     // phase 2 would then zero the join while the balance stays on the batch account and is
     // shared out to everyone else at settle. Pinning the destination to the user's canonical

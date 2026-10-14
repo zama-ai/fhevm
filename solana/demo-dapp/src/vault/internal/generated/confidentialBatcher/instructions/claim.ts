@@ -214,7 +214,6 @@ export type ClaimAsyncInput<
   payoutUnderlyingMint: TAccountPayoutUnderlyingMint;
   batchAuthorityPayoutAta: TAccountBatchAuthorityPayoutAta;
   userPayoutAta: TAccountUserPayoutAta;
-  /** validated by the token CPI and pinned below. */
   batchPayoutTokenAccount: TAccountBatchPayoutTokenAccount;
   /**
    * must already exist — the user initializes it once. Validated by the
@@ -717,7 +716,6 @@ export type ClaimInput<
   payoutUnderlyingMint: TAccountPayoutUnderlyingMint;
   batchAuthorityPayoutAta: TAccountBatchAuthorityPayoutAta;
   userPayoutAta: TAccountUserPayoutAta;
-  /** validated by the token CPI and pinned below. */
   batchPayoutTokenAccount: TAccountBatchPayoutTokenAccount;
   /**
    * must already exist — the user initializes it once. Validated by the
@@ -1168,7 +1166,6 @@ export type ParsedClaimInstruction<
     payoutUnderlyingMint: TAccountMetas[10];
     batchAuthorityPayoutAta: TAccountMetas[11];
     userPayoutAta: TAccountMetas[12];
-    /** validated by the token CPI and pinned below. */
     batchPayoutTokenAccount: TAccountMetas[13];
     /**
      * must already exist — the user initializes it once. Validated by the

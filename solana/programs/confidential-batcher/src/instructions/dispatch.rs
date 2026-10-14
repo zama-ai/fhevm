@@ -35,8 +35,7 @@ pub struct Dispatch<'info> {
     pub batch_authority_ata: UncheckedAccount<'info>,
     /// CHECK: mint-scoped total-supply authority PDA; validated by the token CPI.
     pub total_supply_authority: UncheckedAccount<'info>,
-    /// CHECK: batch's confidential join token account; validated by the
-    /// token CPI and pinned below.
+    /// CHECK: batch's confidential join token account; validated by the token CPI.
     #[account(mut)]
     pub batch_join_token_account: UncheckedAccount<'info>,
     /// CHECK: batch's stable balance encrypted store — read as the burn amount AND
@@ -157,22 +156,10 @@ pub fn dispatch<'info>(
         now >= ctx.accounts.batch.dispatchable_at(),
         BatcherError::BatchTooYoung
     );
-    let mint_key = ctx.accounts.join_confidential_mint.key();
     let batch_key = ctx.accounts.batch.key();
-    let batch_authority = ctx.accounts.batch_authority.key();
-    require_keys_eq!(
-        ctx.accounts.batch_join_token_account.key(),
-        ct::token_account_address(mint_key, batch_authority).0,
-        BatcherError::DerivedAccountMismatch
-    );
 
     let authority = BatchAuthoritySeeds::new(batch_key, ctx.accounts.batch.authority_bump);
     let authority_seeds = authority.seeds();
-    require_keys_eq!(
-        ctx.accounts.pending_burn.key(),
-        ct::pending_burn_address(mint_key, ctx.accounts.batch_join_token_account.key()).0,
-        BatcherError::DerivedAccountMismatch
-    );
     let [burn_deny_records, join_deny_records, payout_deny_records] =
         split_deny_records(&ctx.accounts.host_config, ctx.remaining_accounts, [1, 1, 1])?;
     ct::cpi::confidential_burn_from_value(
