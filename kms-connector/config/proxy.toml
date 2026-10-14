@@ -8,7 +8,7 @@
 # ENV: KMS_CONNECTOR_PROXY_BIND_ADDRESS
 # bind_address = "0.0.0.0:8443"
 
-# Chain ID for the Ethereum network (required)
+# Chain ID for the Ethereum network, Sepolia here (required)
 # ENV: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
 ethereum_chain_id = 11155111
 
