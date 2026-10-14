@@ -50,7 +50,7 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 /// Shapes of [`super::frontier_shapes`] the builder currently admits, asserted exactly by the
 /// keystone: a shape silently dropping out (a structural regression grew the tally) or joining
 /// (the budget widened) both fail until the change that moved the frontier updates this
-/// number and the documented tables with it.
+/// number.
 pub(crate) const ADMITTED_FRONTIER_SHAPES: usize = 70;
 
 /// A boxed shape constructor, so the frontier can hold shapes of different closure types.

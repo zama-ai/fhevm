@@ -195,11 +195,10 @@ pub(crate) fn lower_operand(
         OperandKind::Transient { producer_index } => {
             Ok(FheExecuteOperand::EarlierStep { producer_index })
         }
-        OperandKind::VerifiedInput {
-            attestation_index, ..
-        } => {
-            // `verified_input` hands out only indices of attestations it registered, and the
-            // registry never shrinks.
+        OperandKind::VerifiedInput { attestation_index } => {
+            // This builder's `verified_input` hands out only indices of attestations it
+            // registered, the registry never shrinks, and the `'id` brand keeps out every other
+            // builder's values.
             let attestation = &verified_inputs[attestation_index as usize];
             // Admit from the borrowed tables, then clone. On the never-freeing bump a rejected
             // embed must not have already spent those bytes.

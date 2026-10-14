@@ -48,14 +48,12 @@ impl<'id> FheExecutionBuilder<'id> {
         // (asserted at the top of this file).
         let attestation_index = u8::try_from(self.verified_inputs.len())
             .map_err(|_| FheExecutionError::ExceedsBuildHeapBudget)?;
-        let input_handle = attestation.input_handle;
         // The attestation moves in — its tables are the app's own bytes — but the registry
         // vector itself grows by doubling, and that growth is builder cost admitted against
         // the budget before the allocator serves it.
         self.verified_inputs
             .try_push(&mut self.budget, attestation)?;
         Ok(Encrypted::from_operand(Operand::verified_input(
-            input_handle,
             attestation_index,
         )))
     }

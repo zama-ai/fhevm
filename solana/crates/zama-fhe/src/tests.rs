@@ -1,4 +1,4 @@
-//! Unit tests for the builder, validators, lowering, and CPI plumbing.
+//! Unit tests for the builder, lowering, and CPI plumbing.
 
 use crate::accounts::*;
 use crate::acl::*;
@@ -1142,6 +1142,10 @@ fn lowers_bounded_rand_step_and_rejects_non_power_of_two_bounds() {
 
     assert_eq!(
         BoundedU64UpperBound::power_of_two(3).unwrap_err(),
+        FheExecutionError::InvalidRandomUpperBound
+    );
+    assert_eq!(
+        BoundedU64UpperBound::power_of_two(0).unwrap_err(),
         FheExecutionError::InvalidRandomUpperBound
     );
 }
