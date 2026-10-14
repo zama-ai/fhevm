@@ -5,7 +5,7 @@
 #   bash scripts/check-planted-bugs.sh
 #
 # Each patch in runtime-tests/planted-bugs/ removes one authorization check from zama-host. Its
-# `Expect:` line is text the failing test must print, such as `Expect: Test failed: H1: Pause`.
+# `Expect:` line is text the failing test must print, such as `Expect: Test failed: H2: FheExecute`.
 # An optional `Test: <test target> <test name>` line names a deterministic test to run instead of
 # the `capability_invariants` property test, whose random draws can miss a bug. For each patch,
 # this applies it, rebuilds the default artifact and requires that test to fail with that text.
