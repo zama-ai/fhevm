@@ -1,5 +1,5 @@
 # Per-party gRPC proxy between kms-worker and kms-core, deployed only with
-# insecure_keygen. It runs the docker stack's
+# keygen=default-insecure. It runs the docker stack's
 # test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs (loaded with --set-file),
 # which sends keygen to the KMS insecure keygen and forwards everything else.
 #

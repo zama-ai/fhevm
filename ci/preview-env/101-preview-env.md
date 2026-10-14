@@ -77,13 +77,12 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   Forces `nb_coprocessor=2` when N=1. The `preview-env-blue-green` PR label
   is the other gate. With `deploy_polygon` (so also with `chain_mode=testnets`)
   the upgrade spans both host chains.
-- `enable_gpu` — GPU workers + Default FHE params (default `false`), including
-  on Anvil. CLI `--gpu`. Dispatch-only: the `preview-env-gpu` label cannot
-  carry a worker tag. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS
-  stays CPU. CPU Anvil stays on Test params.
-- `insecure_keygen` — Default (production-size) FHE keys from the KMS
-  **insecure** keygen, in minutes, instead of the DKG (default `false`). CLI
-  `--insecure-keygen`. Test environments only. Dispatch-only.
+- `enable_gpu` — GPU workers (default `false`), including on Anvil. CLI
+  `--gpu`. Dispatch-only: the `preview-env-gpu` label cannot carry a worker
+  tag. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS stays CPU. GPU
+  workers need Default FHE params, so not with `keygen=test-secure`.
+- `keygen` — which FHE keys and how they are made (default
+  `default-insecure`). CLI `--keygen`. See "FHE keys" below.
 - `workers_tag` — image tag for tfhe, sns, and zkproof. Required when
   `enable_gpu=true` on a dispatch (CLI `--workers-tag`). Must be empty when
   GPU is off. The `preview-env-gpu` label cannot carry a tag, so a GPU
@@ -191,7 +190,7 @@ helm-install; Actions stays the write path. `--ref` must already be on origin.
 ci/preview-env/preview-env launch --ref <your-branch> --tests
 ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b1-cuda12.8-sm70 --tests
 ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b1-cuda12.8-sm70 --testnets --tests
-ci/preview-env/preview-env launch --ref <your-branch> --insecure-keygen --tests
+ci/preview-env/preview-env launch --ref <your-branch> --keygen default-secure --lifetime 12 --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
 ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
@@ -202,7 +201,7 @@ ci/preview-env/preview-env launch --ref <your-branch> --tests \
 ```
 
 `--blue-green` sends `enable_blue_green=true` and `nb_coprocessor=2`.
-`--gpu` sends `enable_gpu=true` (GPU workers and Default FHE params) and
+`--gpu` sends `enable_gpu=true` (GPU workers) and
 requires `--workers-tag`, the image tag for tfhe, sns, and zkproof. Combine
 with `--testnets` for Sepolia/Amoy, or `--blue-green` for Green-only GPU.
 `--parties 2` without `--blue-green` is two-party consensus only.
@@ -219,6 +218,22 @@ ci/preview-env/preview-env namespace --run-id <run-id>
 ```
 
 ---
+
+## FHE keys
+
+Each preview makes its own FHE keys. Pick the mode with `keygen` (CLI
+`--keygen`):
+
+| `keygen` | Parameters | Key generation | Time (4 KMS parties) | Use it for |
+| --- | --- | --- | --- | --- |
+| `default-insecure` (default) | Default, as in production | KMS insecure keygen | key in about 6 min | Almost everything: production-size keys, made with a shortcut. |
+| `default-secure` | Default | Real preprocessing and DKG | about 2 h | Production-like runs, and testing the preprocessing and DKG themselves. Set `--lifetime` to cover it. |
+| `test-secure` | Test (small) | Real preprocessing and DKG | tens of minutes | Testing the keygen flow faster. GPU workers cannot use Test keys. |
+
+Test parameters with the insecure keygen are not offered: they test neither
+production-size keys nor the real keygen. The CRS is made by the real ceremony
+in every mode. `default-insecure` runs the docker stack's
+`kms-test-keygen-proxy` in front of each KMS core (see `README.md`).
 
 ## Connect to your environment
 

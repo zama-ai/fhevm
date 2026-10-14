@@ -93,16 +93,21 @@ case "${CHAIN_MODE}" in
       echo "HARDHAT_NETWORK_TESTS=sepolia"
       # 12s blocks stretch hardhat deploys and the keygen ceremony.
       echo "CONTRACTS_DEPLOY_TIMEOUT=30m"
-      # Test-parameter keygen + crsgen on Sepolia (~43 min + ~25 min) plus
-      # compile. GPU overwrites KEYGEN_TIMEOUT to 310m after this case.
-      echo "KEYGEN_TIMEOUT=110m"
+      # Keygen + crsgen on Sepolia (~43 min + ~25 min, waits 60m + 40m) plus
+      # compile; the Default CRS ceremony waits 60m. default-secure overwrites
+      # KEYGEN_TIMEOUT to 310m after this case.
+      if [[ "${KEYGEN:?}" == "test-secure" ]]; then
+        echo "KEYGEN_TIMEOUT=110m"
+      else
+        echo "KEYGEN_TIMEOUT=130m"
+      fi
     } >> "${GITHUB_ENV}"
       echo "Chain mode: testnets (host 11155111 Sepolia, polygon 80002 Amoy from AWS Secrets Manager, gateway ${NITRO_CHAIN_ID} Nitro)"
     ;;
 esac
 
-# Default-parameter DKG (GPU only) needs a Helm wait that outlasts 4h keygen + 1h
+# Default-parameter DKG needs a Helm wait that outlasts 4h keygen + 1h
 # crsgen plus compile, still under the six-hour deploy-job cap.
-if [[ "${GPU:-false}" == "true" ]]; then
+if [[ "${KEYGEN:?}" == "default-secure" ]]; then
   echo "KEYGEN_TIMEOUT=310m" >> "${GITHUB_ENV}"
 fi

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Patch preview-env Helm values in the working tree.
 # External chain modes (blockchain-dev | testnets) rewrite RPC/mnemonic overlays.
-# GPU=true or INSECURE_KEYGEN=true (Anvil or external) switches keygen to
-# Default FHE params. Anvil without either is a no-op.
+# KEYGEN other than default-insecure (the values' default) patches the keygen
+# values. Anvil with default-insecure is a no-op.
 set -euo pipefail
 
-if [[ "${EXTERNAL_CHAINS:-false}" != "true" && "${GPU:-false}" != "true" && "${INSECURE_KEYGEN:-false}" != "true" ]]; then
+if [[ "${EXTERNAL_CHAINS:-false}" != "true" && "${KEYGEN:?}" == "default-insecure" ]]; then
   echo "Anvil mode: leaving values overlays unchanged."
   exit 0
 fi
@@ -60,20 +60,22 @@ set_poller_flag() {
 # Workflow run-test env is nested; match by .name anywhere under a given file
 # would collide on DEPLOYER_PRIVATE_KEY. Keep file-specific helpers instead.
 
-# GPU workers cannot ingest Test keys (DriftTechniqueNoiseReduction), and
-# insecure_keygen asks for Default keys. Both keep the secure CRS ceremony, which
-# at Default size gets the hour; only the GPU DKG needs the multi-hour keygen wait.
-if [[ "${GPU:-false}" == "true" || "${INSECURE_KEYGEN:-false}" == "true" ]]; then
-  keygen="${root}/host-chain/values-host-trigger-keygen-e2e.yaml"
-  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_PARAMS_TYPE 0
-  if [[ "${GPU:-false}" == "true" ]]; then
+# The values hold default-insecure: Default params, 15 min keygen wait, 1 h for
+# the Default CRS ceremony. The four-party Default DKG needs hours; Test params
+# need neither long wait.
+keygen="${root}/host-chain/values-host-trigger-keygen-e2e.yaml"
+case "${KEYGEN}" in
+  default-secure)
     set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-14400000}"
-  fi
-  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-3600000}"
-  if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
-    echo "Anvil: Default FHE params (gpu=${GPU:-false}, insecure_keygen=${INSECURE_KEYGEN:-false})."
-    exit 0
-  fi
+    ;;
+  test-secure)
+    set_named_env "${keygen}" ".scDeploy.env" KEYGEN_PARAMS_TYPE 1
+    set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-900000}"
+    ;;
+esac
+if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
+  echo "Anvil: keygen=${KEYGEN}."
+  exit 0
 fi
 
 : "${CHAIN_MODE:?}"
@@ -117,22 +119,24 @@ set_named_env "${host}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
 set_named_env "${host}" ".scDeploy.env" CHAIN_ID_GATEWAY "${GATEWAY_CHAIN_ID}"
 set_named_env "${host}" ".scDeploy.env" CHAIN_ID "${HOST_CHAIN_ID}"
 
-keygen="${root}/host-chain/values-host-trigger-keygen-e2e.yaml"
 set_named_env "${keygen}" ".scDeploy.env" MNEMONIC "${MNEMONIC}"
 if rpc_from_secret; then set_named_env_secret "${keygen}" ".scDeploy.env" RPC_URL ethereum-rpc-url; else set_named_env "${keygen}" ".scDeploy.env" RPC_URL "${HOST_HTTP}"; fi
 set_named_env "${keygen}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
 set_named_env "${keygen}" ".scDeploy.env" CHAIN_ID "${HOST_CHAIN_ID}"
-if [[ "${CHAIN_MODE}" == "testnets" && "${GPU:-false}" != "true" ]]; then
+if [[ "${CHAIN_MODE}" == "testnets" && "${KEYGEN}" != "default-secure" ]]; then
   # gw-listener pins its Ethereum reads to the FINALIZED block (BlockId::finalized() in
   # kms-connector/crates/gw-listener/src/core/ethereum.rs - not configurable), and Sepolia
   # finalizes ~14 min behind head. Keygen needs two such round trips (PrepKeygenRequest ->
   # response tx -> KeygenRequest -> response tx); measured end to end on Sepolia:
   # PrepKeygenRequest 19:55:12 -> ActivateKey 20:38:24, i.e. 43 min. 60m leaves headroom
   # for finality degrading further. Crsgen is a single round trip, so ~25 min; 40m keeps
-  # a genuine failure there from burning the full keygen budget.
+  # a genuine failure there from burning the full keygen budget. The Default CRS
+  # ceremony keeps its 1 h.
   # KEYGEN_TIMEOUT (resolve-chain.sh) must exceed their sum - both waits share one pod.
   set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-3600000}"
-  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-2400000}"
+  if [[ "${KEYGEN}" == "test-secure" ]]; then
+    set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-2400000}"
+  fi
 fi
 
 # --- listener ---
