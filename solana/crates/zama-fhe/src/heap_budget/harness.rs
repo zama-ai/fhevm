@@ -66,14 +66,6 @@ pub(crate) struct MeasuredShape {
     pub(crate) cost: crate::cost::FheExecutionCost,
 }
 
-impl MeasuredShape {
-    /// Everything the admission check charged: the measured build and packet plus the modeled
-    /// invoke-side account tables.
-    pub(crate) fn total(&self) -> usize {
-        self.build_bytes + self.packet_bytes + self.cost.invoke_heap_bytes
-    }
-}
-
 pub(crate) fn balance_handle(tag: u8) -> [u8; 32] {
     let mut handle = [tag; 32];
     handle[30] = 5;

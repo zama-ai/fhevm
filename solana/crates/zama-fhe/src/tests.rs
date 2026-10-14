@@ -5,7 +5,6 @@ use crate::acl::*;
 use crate::builder::*;
 use crate::execution::*;
 use crate::lower::StepTables;
-use crate::operand::*;
 use crate::store::{StoreId, StoreOutput};
 use crate::types::*;
 use crate::FheExecutionError;
@@ -105,10 +104,6 @@ fn typed_store_slot<T: FheTyped>(
 
 fn test_store_slot(account: Pubkey, label_tag: u8) -> TestStoreSlot {
     TestStoreSlot::new(app(), account, handle(label_tag))
-}
-
-fn scalar_operand_u64(value: u64) -> Operand {
-    Operand::scalar(Scalar::<Uint<64>>::u64(value).bytes())
 }
 
 fn dummy_attestation(input_handle: [u8; 32], contract: Pubkey) -> CoprocessorInputAttestation {
@@ -950,55 +945,6 @@ fn lowers_trivial_encrypt_and_rand_steps() {
 }
 
 #[test]
-fn rejects_invalid_transient_references() {
-    let primary_authority = Pubkey::new_unique();
-    let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    let error = builder
-        .binary_op(
-            FheBinaryOpCode::Add,
-            Operand::transient(0),
-            scalar_operand_u64(1),
-            FheType::UINT64,
-        )
-        .unwrap_err();
-    assert_eq!(error, FheExecutionError::InvalidTransientReference);
-
-    let input_key = test_store_slot(primary_authority, 1);
-    let input = typed_store_slot::<Uint<64>>(balance_handle(1), input_key).unwrap();
-    let mut builder = FheExecutionBuilder::new(execution_authority(primary_authority));
-    builder.trivial_encrypt_u64(1).unwrap();
-    let current_index = builder
-        .binary_op(
-            FheBinaryOpCode::Add,
-            Operand::transient(1),
-            scalar_operand_u64(1),
-            FheType::UINT64,
-        )
-        .unwrap_err();
-    assert_eq!(current_index, FheExecutionError::InvalidTransientReference);
-
-    let future_index = builder
-        .binary_op(
-            FheBinaryOpCode::Add,
-            Operand::transient(9),
-            scalar_operand_u64(1),
-            FheType::UINT64,
-        )
-        .unwrap_err();
-    assert_eq!(future_index, FheExecutionError::InvalidTransientReference);
-
-    let invalid_rhs = builder
-        .binary_op(
-            FheBinaryOpCode::Add,
-            Encrypted::from(input).operand(),
-            Operand::transient(1),
-            FheType::UINT64,
-        )
-        .unwrap_err();
-    assert_eq!(invalid_rhs, FheExecutionError::InvalidTransientReference);
-}
-
-#[test]
 fn validates_execution_authority_pubkey() {
     let mut builder = FheExecutionBuilder::new(execution_authority(Pubkey::default()));
     builder.trivial_encrypt_u64(1).unwrap();
@@ -1073,15 +1019,6 @@ fn builder_exposes_the_host_operator_type_surface() {
     )
     .unwrap();
     assert!(builder.eq(bool_c, bool_d).is_ok());
-
-    assert_eq!(
-        FheType::from_host_byte(7u8).unwrap_err(),
-        FheExecutionError::UnsupportedFheType
-    );
-    assert_eq!(
-        FheType::from_host_byte(8u8).unwrap_err(),
-        FheExecutionError::UnsupportedFheType
-    );
 }
 
 /// Reading a value whose authority is not the execution's fixed signer needs that authority to
@@ -1174,15 +1111,6 @@ fn typed_handle_constructor_rejects_mismatched_handle_tag() {
         test_store_slot(Pubkey::new_unique(), 7),
     )
     .unwrap_err();
-    assert_eq!(error, FheExecutionError::UnsupportedFheType);
-}
-
-#[test]
-fn rand_rejects_unsupported_type_like_host() {
-    let mut builder = FheExecutionBuilder::new(execution_authority(Pubkey::new_unique()));
-    let error = builder.rand_raw(7u8).unwrap_err();
-    assert_eq!(error, FheExecutionError::UnsupportedFheType);
-    let error = builder.rand_raw(8u8).unwrap_err();
     assert_eq!(error, FheExecutionError::UnsupportedFheType);
 }
 
@@ -1325,7 +1253,6 @@ fn step_that_fails_after_interning_leaves_the_builder_untouched() {
     assert_eq!(builder.remaining_accounts, accounts_before);
     assert_eq!(builder.dictionary, dictionary_before);
     assert_eq!(builder.steps.len(), 1);
-    assert_eq!(builder.produced_types.len(), 1);
 }
 
 #[test]

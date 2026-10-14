@@ -319,7 +319,7 @@ fn the_invoke_model_matches_a_counting_allocator_for_every_admitted_shape() {
             .map(|meta| meta.pubkey)
             .collect();
         let authority_keys: Vec<Pubkey> = execution.value_authorities().collect();
-        let fixed_keys: Vec<Pubkey> = (0..crate::heap_tally::FHE_EXECUTE_FIXED_CPI_ACCOUNTS)
+        let fixed_keys: Vec<Pubkey> = (0..zama_host::FHE_EXECUTE_FIXED_ACCOUNTS)
             .map(|_| Pubkey::new_unique())
             .collect();
         assert_eq!(dynamic_keys.len(), cost.dynamic_accounts, "{name}");
@@ -345,7 +345,7 @@ fn the_invoke_model_matches_a_counting_allocator_for_every_admitted_shape() {
         let fixed_infos = arena_infos(&fixed_keys, &mut fixed_lamports, &mut fixed_data, &owner);
         // Every optional witness present — the maximum the model charges; an absent one only
         // shrinks the real cost. A host account-list change breaks this literal, which is the
-        // pin behind `FHE_EXECUTE_FIXED_CPI_ACCOUNTS`.
+        // pin behind `FHE_EXECUTE_FIXED_ACCOUNTS`.
         let fixed = zama_host::cpi::accounts::FheExecute {
             payer: fixed_infos[0].clone(),
             authority: fixed_infos[1].clone(),
