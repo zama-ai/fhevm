@@ -380,11 +380,6 @@ fn execute_burn<'info>(
     let old_balance_handle = fhe::store_handle(&balance_store, balance_key())?;
     let old_total_supply_handle = fhe::store_handle(&total_supply_store, total_supply_key())?;
 
-    require_keys_eq!(
-        token_account.mint,
-        mint_key,
-        ConfidentialTokenError::MintMismatch
-    );
     check_underlying_ata_not_frozen(
         accounts.mint,
         owner,

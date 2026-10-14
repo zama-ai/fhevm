@@ -83,11 +83,6 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
         ctx.accounts.owner.key(),
         ConfidentialTokenError::OwnerMismatch
     );
-    require_keys_eq!(
-        token_account.mint,
-        mint_key,
-        ConfidentialTokenError::MintMismatch
-    );
 
     require_keys_eq!(
         pending.owner,

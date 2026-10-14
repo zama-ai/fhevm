@@ -8,9 +8,6 @@ pub enum ConfidentialTokenError {
     /// Token owner did not match the required signer.
     #[msg("Token owner does not match signer")]
     OwnerMismatch,
-    /// Token account mint did not match the supplied mint.
-    #[msg("Token account mint does not match")]
-    MintMismatch,
     /// Confidential mint authority did not match the required signer.
     #[msg("Confidential mint authority does not match signer")]
     MintAuthorityMismatch,

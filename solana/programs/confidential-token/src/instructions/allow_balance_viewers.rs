@@ -24,7 +24,6 @@ pub struct AllowBalanceViewers<'info> {
         seeds = [b"token-account", mint.key().as_ref(), owner.key().as_ref()],
         bump = token_account.bump,
         has_one = owner @ ConfidentialTokenError::OwnerMismatch,
-        has_one = mint @ ConfidentialTokenError::MintMismatch,
     )]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// Stable balance encrypted store; read for the current handle and replaced.
@@ -64,7 +63,6 @@ pub struct MakeTokenAccountHandlePublic<'info> {
         seeds = [b"token-account", mint.key().as_ref(), owner.key().as_ref()],
         bump = token_account.bump,
         has_one = owner @ ConfidentialTokenError::OwnerMismatch,
-        has_one = mint @ ConfidentialTokenError::MintMismatch,
     )]
     pub token_account: Box<Account<'info, ConfidentialTokenAccount>>,
     /// CHECK: canonical host account and exact token state binding are validated in the handler.

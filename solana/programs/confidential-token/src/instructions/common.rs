@@ -119,8 +119,6 @@ pub(crate) fn execute_transfer<'info>(
         // and euint64 type check in its instruction handler.
         assert_amount_attestation_binding(amount_attestation, accounts.transfer_authority.key())?;
     }
-    require_keys_eq!(from.mint, mint_key, ConfidentialTokenError::MintMismatch);
-    require_keys_eq!(to.mint, mint_key, ConfidentialTokenError::MintMismatch);
     check_underlying_ata_not_frozen(
         accounts.mint,
         from.owner,

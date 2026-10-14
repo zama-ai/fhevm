@@ -95,11 +95,6 @@ pub fn wrap_usdc<'info>(ctx: Context<'info, WrapUsdc<'info>>, amount: u64) -> Re
         ConfidentialTokenError::OwnerMismatch
     );
     require_keys_eq!(
-        token_account.mint,
-        mint_key,
-        ConfidentialTokenError::MintMismatch
-    );
-    require_keys_eq!(
         ctx.accounts.mint.underlying_mint,
         ctx.accounts.underlying_mint.key(),
         ConfidentialTokenError::UnderlyingMintMismatch
