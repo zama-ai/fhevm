@@ -20,7 +20,8 @@ pub struct EncryptedStore {
 }
 
 impl EncryptedStore {
-    pub fn canonical_address(&self) -> (Pubkey, u8) {
+    #[cfg(test)]
+    pub(crate) fn canonical_address(&self) -> (Pubkey, u8) {
         encrypted_store_address(self.program, self.authority, self.scope)
     }
 
