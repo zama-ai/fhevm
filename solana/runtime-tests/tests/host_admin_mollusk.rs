@@ -275,6 +275,23 @@ fn set_admin_ix(admin: Pubkey, host_config: Pubkey, new_admin: Pubkey) -> Instru
     )
 }
 
+/// Only the seeds constraint refuses a program-owned `HostConfig` at another address, here one
+/// that names the caller as admin.
+#[test]
+fn mollusk_set_admin_rejects_a_host_config_at_another_address() {
+    let caller = Pubkey::new_unique();
+    let (_, account) = host_config_account(caller);
+    let forged = Pubkey::new_unique();
+    let context = mollusk_execute_context(caller, vec![(forged, account)]);
+
+    context.process_and_validate_instruction(
+        &set_admin_ix(caller, forged, caller),
+        &[anchor_framework_error_check(
+            anchor_lang::error::ErrorCode::ConstraintSeeds,
+        )],
+    );
+}
+
 // ---- pausers ----
 
 fn set_pauser_ix(admin: Pubkey, host_config: Pubkey, pauser: Pubkey, enabled: bool) -> Instruction {

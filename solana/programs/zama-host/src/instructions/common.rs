@@ -10,9 +10,7 @@ use anchor_lang::solana_program::{
 use crate::{
     constants::HCU_UNLIMITED,
     errors::ZamaHostError,
-    state::{
-        deny_scope_address, host_config_address, AppScope, DenyScopeRecord, HostConfig, PauseArea,
-    },
+    state::{deny_scope_address, AppScope, DenyScopeRecord, HostConfig, PauseArea},
 };
 use crate::{events::HostConfigUpdatedEvent, state::EVENT_VERSION};
 
@@ -101,26 +99,7 @@ pub(super) fn assert_no_remaining_accounts(remaining_accounts: &[AccountInfo]) -
     Ok(())
 }
 
-pub(super) fn assert_host_config_shape(config: &Account<HostConfig>) -> Result<()> {
-    let (expected_key, expected_bump) = host_config_address();
-    require_keys_eq!(
-        config.key(),
-        expected_key,
-        ZamaHostError::HostConfigMismatch
-    );
-    require!(
-        config.to_account_info().data_len() == 8 + HostConfig::SPACE,
-        ZamaHostError::HostConfigMismatch
-    );
-    require!(
-        config.bump == expected_bump,
-        ZamaHostError::HostConfigMismatch
-    );
-    Ok(())
-}
-
 pub(super) fn assert_admin(config: &Account<HostConfig>, admin: &Signer) -> Result<()> {
-    assert_host_config_shape(config)?;
     require_keys_eq!(
         config.admin,
         admin.key(),
@@ -129,9 +108,8 @@ pub(super) fn assert_admin(config: &Account<HostConfig>, admin: &Signer) -> Resu
     Ok(())
 }
 
-/// Checks the canonical `HostConfig`, then fails while `area` is paused.
+/// Fails while `area` is paused.
 pub(super) fn assert_not_paused(config: &Account<HostConfig>, area: PauseArea) -> Result<()> {
-    assert_host_config_shape(config)?;
     config.paused.require_running(area)
 }
 
@@ -232,23 +210,17 @@ pub(super) fn check_scope_not_denied_info(
         return Ok(());
     }
     let info = deny_record.ok_or_else(|| error!(ZamaHostError::DenyRecordMissing))?;
-    let (expected, expected_bump) = deny_scope_address(app);
+    let (expected, _) = deny_scope_address(app);
     require_keys_eq!(info.key(), expected, ZamaHostError::DenyRecordMismatch);
 
     if is_uninitialized_pda_account(info, ZamaHostError::DenyRecordMismatch)? {
         return Ok(());
     }
+    // At the canonical address and program-owned, the record was created and written only by
+    // `set_deny_scope` for this application.
     require_keys_eq!(*info.owner, crate::ID, ZamaHostError::DenyRecordMismatch);
-    require!(
-        info.data_len() == 8 + DenyScopeRecord::SPACE,
-        ZamaHostError::DenyRecordMismatch
-    );
     let mut data: &[u8] = &info.try_borrow_data()?;
     let record = DenyScopeRecord::try_deserialize(&mut data)?;
-    require!(
-        record.bump == expected_bump && record.program == app.program && record.scope == app.scope,
-        ZamaHostError::DenyRecordMismatch
-    );
     require!(!record.denied, ZamaHostError::ScopeDenied);
     Ok(())
 }
@@ -268,41 +240,6 @@ pub(super) fn is_uninitialized_pda_account(
         return Ok(true);
     }
     Ok(false)
-}
-
-pub(super) fn create_pda_if_needed<'info>(
-    payer: &AccountInfo<'info>,
-    account: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    space: usize,
-    seeds: &[&[u8]],
-) -> Result<()> {
-    if account.owner == &crate::ID {
-        return Ok(());
-    }
-    require_keys_eq!(
-        *account.owner,
-        System::id(),
-        ZamaHostError::PdaCreationMismatch
-    );
-    require!(account.data_is_empty(), ZamaHostError::PdaCreationMismatch);
-    require!(!account.executable, ZamaHostError::PdaCreationMismatch);
-    let rent = fund_allocate_assign(payer, account, system_program, space, seeds)?;
-    require_keys_eq!(
-        *account.owner,
-        crate::ID,
-        ZamaHostError::PdaCreationMismatch
-    );
-    require!(!account.executable, ZamaHostError::PdaCreationMismatch);
-    require!(
-        account.data_len() == space,
-        ZamaHostError::PdaCreationMismatch
-    );
-    require!(
-        account.lamports() >= rent,
-        ZamaHostError::PdaCreationMismatch
-    );
-    Ok(())
 }
 
 /// Creates a program-owned PDA at `account`.
@@ -363,48 +300,30 @@ fn fund_allocate_assign<'info>(
     Ok(rent)
 }
 
-pub(super) fn create_pda_strict<'info>(
+/// Creates the program-owned PDA `account`, which must still be a system-owned, empty account; any
+/// other starting state, or a creation that did not take, fails with `error`.
+pub(super) fn create_pda<'info>(
     payer: &AccountInfo<'info>,
     account: &AccountInfo<'info>,
     system_program: &AccountInfo<'info>,
     space: usize,
     seeds: &[&[u8]],
+    error: ZamaHostError,
 ) -> Result<()> {
-    require!(account.is_writable, ZamaHostError::InvalidFheExecuteAccount);
-    require_keys_eq!(
-        *account.owner,
-        System::id(),
-        ZamaHostError::FheExecuteOutputAlreadyInitialized
-    );
-    require!(
-        account.data_is_empty(),
-        ZamaHostError::FheExecuteOutputAlreadyInitialized
-    );
-    require!(
-        !account.executable,
-        ZamaHostError::FheExecuteOutputAlreadyInitialized
-    );
-    // Predictable output-ACL addresses are equally pre-fundable, so create tolerant of a donated
-    // balance (see `fund_allocate_assign`); a lamport donation is not "initialization", so the
-    // strict system-owned/empty entry guards above still hold the real no-overwrite invariant.
+    if *account.owner != System::id() || !account.data_is_empty() || account.executable {
+        return Err(error.into());
+    }
+    // Predictable addresses are pre-fundable, so creation tolerates a donated balance (see
+    // `fund_allocate_assign`); a lamport donation is not initialization, so the system-owned and
+    // empty entry check above still holds the no-overwrite invariant.
     let rent = fund_allocate_assign(payer, account, system_program, space, seeds)?;
-    require_keys_eq!(
-        *account.owner,
-        crate::ID,
-        ZamaHostError::FheExecuteOutputAlreadyInitialized
-    );
-    require!(
-        !account.executable,
-        ZamaHostError::FheExecuteOutputAlreadyInitialized
-    );
-    require!(
-        account.data_len() == space,
-        ZamaHostError::FheExecuteOutputAlreadyInitialized
-    );
-    require!(
-        account.lamports() >= rent,
-        ZamaHostError::FheExecuteOutputAlreadyInitialized
-    );
+    if *account.owner != crate::ID
+        || account.executable
+        || account.data_len() != space
+        || account.lamports() < rent
+    {
+        return Err(error.into());
+    }
     Ok(())
 }
 

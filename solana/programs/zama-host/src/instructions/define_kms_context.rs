@@ -31,7 +31,7 @@ pub struct DefineKmsContext<'info> {
     #[account(
         init,
         payer = admin,
-        space = 8 + KmsContext::SPACE,
+        space = 8 + KmsContext::INIT_SPACE,
         seeds = [KMS_CONTEXT_SEED, &context_id],
         bump
     )]
@@ -95,7 +95,6 @@ pub fn define_kms_context(
     kms_context.context_id = context_id;
     kms_context.signers = signers.clone();
     kms_context.thresholds = thresholds;
-    kms_context.destroyed = false;
     kms_context.bump = ctx.bumps.kms_context;
     ctx.accounts.host_config.current_kms_context_id = context_id;
     ctx.accounts.host_config.current_kms_epoch_id = epoch_id;

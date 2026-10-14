@@ -1,4 +1,4 @@
-use super::common::{assert_no_remaining_accounts, create_pda_strict};
+use super::common::{assert_no_remaining_accounts, create_pda};
 use crate::{errors::ZamaHostError, state::*};
 use anchor_lang::solana_program::instruction::{
     get_stack_height, Instruction, TRANSACTION_LEVEL_STACK_HEIGHT,
@@ -41,12 +41,13 @@ pub fn open_transient_store<'info>(ctx: Context<'info, OpenTransientStore<'info>
     let address = ctx.accounts.transient_store.key();
     let bump = ctx.bumps.transient_store;
     assert_final_close(address, payer, &ctx.accounts.instructions)?;
-    create_pda_strict(
+    create_pda(
         &ctx.accounts.payer.to_account_info(),
         &ctx.accounts.transient_store.to_account_info(),
         &ctx.accounts.system_program.to_account_info(),
         TransientStore::SPACE,
         &[TRANSIENT_SEED, payer.as_ref(), &[bump]],
+        ZamaHostError::FheExecuteOutputAlreadyInitialized,
     )?;
     // The cleartext tail does not fit the 10 KiB an instruction may add to a new account, so the
     // first execution appends it. Its rent is paid here so that append spends no transfer.
@@ -100,11 +101,6 @@ pub fn close_transient_store(ctx: Context<CloseTransientStore>) -> Result<()> {
     require_keys_eq!(
         ctx.accounts.payer.key(),
         transient_store.payer,
-        ZamaHostError::TransientAccountInvalid
-    );
-    require_keys_neq!(
-        ctx.accounts.transient_store.key(),
-        ctx.accounts.payer.key(),
         ZamaHostError::TransientAccountInvalid
     );
     Ok(())

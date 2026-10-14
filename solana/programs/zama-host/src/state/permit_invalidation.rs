@@ -17,6 +17,7 @@ use super::*;
 /// A missing account reads as watermark zero. There is no migration and no
 /// initialization step: a user who has never revoked anything simply has no account.
 #[account]
+#[derive(InitSpace)]
 pub struct PermitInvalidation {
     /// The user whose permits this watermark governs. Stored although it is implied by
     /// the address, so a decoded account can be checked against the key it came from.
@@ -25,11 +26,6 @@ pub struct PermitInvalidation {
     pub invalidation_watermark: u64,
     /// PDA bump for this account.
     pub bump: u8,
-}
-
-impl PermitInvalidation {
-    /// Serialized size of the account body, excluding the Anchor discriminator.
-    pub const SPACE: usize = 32 + 8 + 1;
 }
 
 #[cfg(test)]
@@ -75,6 +71,6 @@ mod tests {
         let mut serialized = Vec::new();
         record.try_serialize(&mut serialized).expect("serializes");
 
-        assert_eq!(serialized.len(), 8 + PermitInvalidation::SPACE);
+        assert_eq!(serialized.len(), 8 + PermitInvalidation::INIT_SPACE);
     }
 }

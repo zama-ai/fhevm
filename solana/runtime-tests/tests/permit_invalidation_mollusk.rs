@@ -22,7 +22,8 @@
 //! these tests assert.
 
 use anchor_lang::{
-    prelude::system_program, AccountDeserialize, Discriminator, InstructionData, ToAccountMetas,
+    prelude::system_program, AccountDeserialize, Discriminator, InstructionData, Space,
+    ToAccountMetas,
 };
 use mollusk_svm::{result::Check, Mollusk};
 use solana_sdk::{
@@ -147,7 +148,7 @@ fn first_revocation_creates_the_account_and_records_the_clock() {
     assert_eq!(created.owner, host::id(), "the account is program-owned");
     assert_eq!(
         created.data.len(),
-        8 + PermitInvalidation::SPACE,
+        8 + PermitInvalidation::INIT_SPACE,
         "the account is exactly the record's size"
     );
     assert_eq!(
@@ -493,11 +494,11 @@ fn revocation_rejects_an_account_of_the_wrong_size() {
         (0usize, ErrorCode::AccountDiscriminatorNotFound),
         (8, ErrorCode::AccountDidNotDeserialize),
         (
-            8 + PermitInvalidation::SPACE - 1,
+            8 + PermitInvalidation::INIT_SPACE - 1,
             ErrorCode::AccountDidNotDeserialize,
         ),
         (
-            8 + PermitInvalidation::SPACE + 1,
+            8 + PermitInvalidation::INIT_SPACE + 1,
             ErrorCode::ConstraintSpace,
         ),
     ] {

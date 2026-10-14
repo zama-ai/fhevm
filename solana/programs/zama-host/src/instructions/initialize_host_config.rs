@@ -27,7 +27,7 @@ pub struct InitializeHostConfig<'info> {
     #[account(
         init,
         payer = payer,
-        space = 8 + HostConfig::SPACE,
+        space = 8 + HostConfig::INIT_SPACE,
         seeds = [HOST_CONFIG_SEED],
         bump
     )]
@@ -37,7 +37,7 @@ pub struct InitializeHostConfig<'info> {
     #[account(
         init,
         payer = payer,
-        space = 8 + RandNonce::SPACE,
+        space = 8 + RandNonce::INIT_SPACE,
         seeds = [RAND_NONCE_SEED],
         bump
     )]
@@ -66,9 +66,6 @@ pub fn initialize_host_config(
     config.coprocessor_signer_count = coprocessor_signer_count;
     config.coprocessor_threshold = args.coprocessor_threshold;
     config.decryption_contract = args.decryption_contract;
-    config.current_kms_context_id = [0u8; 32];
-    config.current_kms_epoch_id = [0u8; 32];
-    config.paused = PauseFlags::default();
     config.grant_deny_list_enabled = args.grant_deny_list_enabled;
     // Unlimited (u64::MAX) until the admin sets them: `bootstrapZamaHost` sets EVM's limits in the
     // same transaction (INVARIANTS #37).
@@ -78,7 +75,6 @@ pub fn initialize_host_config(
     // the cap and touches no meter. A `0` default would instead ban every untrusted app on deploy.
     config.hcu_block_cap_per_app = HCU_UNLIMITED;
     config.bump = ctx.bumps.host_config;
-    ctx.accounts.rand_nonce.nonce = 0;
     ctx.accounts.rand_nonce.bump = ctx.bumps.rand_nonce;
     let config = &ctx.accounts.host_config;
     let admin = config.admin;

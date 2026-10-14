@@ -9,6 +9,7 @@ use super::*;
 /// rather than carried over. Program-authority; lazy-created on the first metered execution;
 /// permanent (no close / reclamation in v1, so close+reopen cannot reset the counter mid-slot).
 #[account]
+#[derive(InitSpace)]
 pub struct HcuBlockMeter {
     /// The application program this meter counts.
     pub program: Pubkey,
@@ -20,9 +21,4 @@ pub struct HcuBlockMeter {
     pub used_hcu: u64,
     /// PDA bump for `PDA("hcu-block-meter", program, scope)`.
     pub bump: u8,
-}
-
-impl HcuBlockMeter {
-    /// Serialized size of the account body, excluding the Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 8 + 8 + 1;
 }

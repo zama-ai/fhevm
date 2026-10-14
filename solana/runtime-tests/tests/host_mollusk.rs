@@ -13,6 +13,7 @@
 
 use anchor_lang::{
     prelude::system_program, AccountDeserialize, AnchorDeserialize, Discriminator, InstructionData,
+    Space,
 };
 use mollusk_svm::result::Check;
 use solana_sdk::{
@@ -4315,7 +4316,7 @@ fn mollusk_fhe_execute_prefunded_empty_meter_is_created_not_griefed() {
     assert!(
         lamports
             >= anchor_lang::prelude::Rent::default()
-                .minimum_balance(8 + host::HcuBlockMeter::SPACE)
+                .minimum_balance(8 + host::HcuBlockMeter::INIT_SPACE)
     );
     read_encrypted_store(&fixture.context, fixture.output_value);
 }

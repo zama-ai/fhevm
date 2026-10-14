@@ -15,9 +15,6 @@ pub enum ZamaHostError {
     /// `fhe_execute` was attempted while execution is paused.
     #[msg("host execution is paused")]
     ExecutionPaused,
-    /// The host config account is not the canonical singleton or has invalid shape.
-    #[msg("host config account is invalid")]
-    HostConfigMismatch,
     /// The instruction included undeclared trailing account metas.
     #[msg("instruction has unexpected remaining accounts")]
     UnexpectedRemainingAccounts,

@@ -23,7 +23,8 @@
 //! anything these tests assert.
 
 use anchor_lang::{
-    prelude::system_program, AccountDeserialize, Discriminator, InstructionData, ToAccountMetas,
+    prelude::system_program, AccountDeserialize, Discriminator, InstructionData, Space,
+    ToAccountMetas,
 };
 use delegator_vault as vault;
 use mollusk_svm::{result::Check, Mollusk};
@@ -249,7 +250,7 @@ fn a_grant_creates_the_record_at_the_canonical_pda() {
     assert_eq!(created.owner, host::id(), "the record is program-owned");
     assert_eq!(
         created.data.len(),
-        8 + UserDecryptionDelegation::SPACE,
+        8 + UserDecryptionDelegation::INIT_SPACE,
         "the record is exactly the declared size"
     );
     assert_eq!(

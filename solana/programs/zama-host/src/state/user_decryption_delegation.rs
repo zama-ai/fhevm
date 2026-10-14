@@ -9,6 +9,7 @@ use super::*;
 /// The KMS Connector and the relayer read the record through `zama_solana_acl`'s decoder, so the
 /// layout is pinned by `shared_crate_decoder_reads_what_the_program_serializes` below.
 #[account]
+#[derive(InitSpace)]
 pub struct UserDecryptionDelegation {
     /// User granting delegated decrypt rights.
     pub delegator: Pubkey,
@@ -27,11 +28,6 @@ pub struct UserDecryptionDelegation {
     pub last_update_slot: u64,
     /// PDA bump for this delegation account.
     pub bump: u8,
-}
-
-impl UserDecryptionDelegation {
-    /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 32 + 32 + 8 + 8 + 8 + 1;
 }
 
 #[cfg(test)]
@@ -83,7 +79,7 @@ mod tests {
         let mut serialized = Vec::new();
         record.try_serialize(&mut serialized).expect("serializes");
 
-        assert_eq!(serialized.len(), 8 + UserDecryptionDelegation::SPACE);
+        assert_eq!(serialized.len(), 8 + UserDecryptionDelegation::INIT_SPACE);
     }
 
     /// The shared crate's decoder — the one byte-level reading the KMS connector and the

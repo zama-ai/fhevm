@@ -9,7 +9,7 @@
 use super::*;
 
 /// Per-operation signature thresholds for a KMS context (mirrors `KmsThresholds`).
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, PartialEq, Eq, InitSpace)]
 pub struct KmsThresholds {
     /// Threshold for public-decrypt (disclose/redeem) certificates.
     pub public_decryption: u8,
@@ -23,11 +23,13 @@ pub struct KmsThresholds {
 
 /// A KMS context: the signer set + thresholds active under a `context_id`.
 #[account]
+#[derive(InitSpace)]
 pub struct KmsContext {
     /// 32-byte context id (EVM `kmsContextId`), ordered as a big-endian integer; each new id is above
     /// the current one, so it is never all-zero.
     pub context_id: [u8; 32],
     /// KMS node signer EVM addresses authorized to sign certs in this context.
+    #[max_len(KmsContext::MAX_SIGNERS)]
     pub signers: Vec<[u8; 20]>,
     /// Per-operation signature thresholds.
     pub thresholds: KmsThresholds,
@@ -39,5 +41,4 @@ pub struct KmsContext {
 
 impl KmsContext {
     pub const MAX_SIGNERS: usize = crate::constants::MAX_KMS_SIGNERS as usize;
-    pub const SPACE: usize = 32 + (4 + Self::MAX_SIGNERS * 20) + 4 + 1 + 1;
 }
