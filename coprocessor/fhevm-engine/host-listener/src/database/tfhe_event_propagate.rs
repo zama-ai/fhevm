@@ -442,6 +442,18 @@ impl Database {
         .fetch_optional(tx.deref_mut())
         .await?;
         let Some(row) = row else {
+            // Neither inserted nor upgraded: the row already exists. If it is
+            // still pending, its stored chain must be reachable by the
+            // tfhe-worker. A chain marked processed while this work was
+            // being added (a worker finished the orphan version of a reorged
+            // block just before the canonical version was ingested), a chain
+            // removed by cleanup, or a chain id that differs from the one this
+            // listener's cache assigns on replay would otherwise leave the
+            // computation unscheduled forever. Re-arm only processed or
+            // missing chains, so chains that are pending or being processed
+            // are not disturbed by ordinary duplicate ingestion.
+            self.rearm_pending_computation_chain(tx, &output_handle, log)
+                .await?;
             return Ok(false);
         };
         if !row.inserted {
@@ -471,6 +483,53 @@ impl Database {
             }
         }
         Ok(true)
+    }
+
+    /// Re-arm the stored dependence chain of an existing, still pending
+    /// computation (allowed, not completed, not in error, no ciphertext) when
+    /// that chain is processed or missing. Returns true if a chain was
+    /// re-armed or recreated.
+    async fn rearm_pending_computation_chain(
+        &self,
+        tx: &mut Transaction<'_>,
+        output_handle: &[u8],
+        log: &LogTfhe,
+    ) -> Result<bool, SqlxError> {
+        let rearmed = sqlx::query_scalar!(
+            r#"
+            INSERT INTO dependence_chain (
+                dependence_chain_id, status, last_updated_at
+            )
+            SELECT c.dependence_chain_id, 'updated', $3::timestamp
+            FROM computations c
+            WHERE c.output_handle = $1
+              AND c.transaction_id = $2
+              AND c.dependence_chain_id IS NOT NULL
+              AND c.is_allowed
+              AND NOT c.is_completed
+              AND NOT c.is_error
+              AND NOT EXISTS (
+                  SELECT 1 FROM ciphertexts ct WHERE ct.handle = c.output_handle
+              )
+            ON CONFLICT (dependence_chain_id) DO UPDATE
+            SET status = 'updated'
+            WHERE dependence_chain.status = 'processed'
+            RETURNING dependence_chain_id
+            "#,
+            output_handle,
+            log.transaction_hash.map(|txh| txh.to_vec()),
+            log.block_timestamp,
+        )
+        .fetch_optional(tx.deref_mut())
+        .await?;
+        if let Some(dependence_chain_id) = &rearmed {
+            warn!(
+                output_handle = to_hex(output_handle),
+                dependence_chain_id = to_hex(dependence_chain_id),
+                "Pending computation had an unreachable dependence chain, re-armed it"
+            );
+        }
+        Ok(rearmed.is_some())
     }
 
     #[rustfmt::skip]
