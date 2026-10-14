@@ -12,8 +12,7 @@
 //! block cap, the rand nonce, `verify_public_decrypt`, and the cost profiles.
 
 use anchor_lang::{
-    prelude::system_program, AccountDeserialize, AnchorDeserialize, Discriminator, InstructionData,
-    Space,
+    prelude::system_program, AccountDeserialize, AnchorDeserialize, InstructionData, Space,
 };
 use mollusk_svm::result::Check;
 use solana_sdk::{
@@ -43,10 +42,10 @@ use zama_solana_test_kit::{
 
 mod host_fixtures;
 use host_fixtures::{
-    check_host_context, check_host_instruction, fhe_execute_ix, fhe_execute_ix_with_extras,
-    fixture_scope, host_admin_ix, host_config_account, host_config_account_with_flags,
-    mollusk_execute_context, public_store_outputs_execution, sole_store_authority, store_authority,
-    FheExecuteExtras, StoreAuthority,
+    check_host_context, check_host_instruction, emitted_events, fhe_execute_ix,
+    fhe_execute_ix_with_extras, fixture_scope, host_admin_ix, host_config_account,
+    host_config_account_with_flags, mollusk_execute_context, public_store_outputs_execution,
+    sole_emitted_event, sole_store_authority, store_authority, FheExecuteExtras, StoreAuthority,
 };
 
 // Harness
@@ -794,8 +793,8 @@ fn mollusk_create_encrypted_store_rejects_seeds_from_another_program() {
     );
 }
 
-/// `app` reads `foreign`'s value and writes its own output; `foreign_signs` decides whether the
-/// foreign authority is a signing remaining account.
+/// `app` reads `foreign`'s value and writes its own output. The foreign authority is always a
+/// remaining account; `foreign_signs` decides whether it signs.
 fn read_foreign_value_case(
     payer: Pubkey,
     app: &App,
@@ -820,10 +819,11 @@ fn read_foreign_value_case(
         },
         output_fhe_type: 5,
     }];
-    let mut remaining = vec![writable(foreign_address), writable(output)];
-    if foreign_signs {
-        remaining.push(readonly_signer(foreign.key()));
-    }
+    let remaining = vec![
+        writable(foreign_address),
+        writable(output),
+        AccountMeta::new_readonly(foreign.key(), foreign_signs),
+    ];
     let ix = fhe_execute_ix(
         payer,
         app.key(),
@@ -2081,66 +2081,6 @@ fn mollusk_fhe_execute_updates_persistent_output_with_previous_handle() {
 }
 
 // fhe_execute: public outputs and event readers
-
-/// The bytes an event-CPI inner instruction starts with: Anchor's event-CPI instruction tag, then
-/// the event's own discriminator.
-fn event_cpi_prefix<T: Discriminator>() -> Vec<u8> {
-    anchor_lang::event::EVENT_IX_TAG_LE
-        .iter()
-        .copied()
-        .chain(T::DISCRIMINATOR.iter().copied())
-        .collect()
-}
-
-/// Every `T` the host emitted during `result`, read back out of the inner instructions. Every event
-/// the program emits travels this way and none of them are logged, so one reader serves both the
-/// compute events and the admin ones.
-fn emitted_events<T: Discriminator + AnchorDeserialize>(
-    result: &mollusk_svm::result::InstructionResult,
-) -> Vec<T> {
-    let message = result.message.as_ref().expect("compiled Mollusk message");
-    let account_keys = message.account_keys();
-    let prefix = event_cpi_prefix::<T>();
-    result
-        .inner_instructions
-        .iter()
-        .filter_map(|inner| {
-            if account_keys.get(inner.instruction.program_id_index as usize) != Some(&host::id()) {
-                return None;
-            }
-            let payload = inner.instruction.data.strip_prefix(prefix.as_slice())?;
-            T::deserialize(&mut &*payload).ok()
-        })
-        .collect()
-}
-
-/// Asserts `result` carries exactly one `T`, on an inner instruction addressed to the host with the
-/// event authority as its only account, and returns the decoded event.
-fn sole_emitted_event<T: Discriminator + AnchorDeserialize>(
-    result: &mollusk_svm::result::InstructionResult,
-) -> T {
-    let prefix = event_cpi_prefix::<T>();
-    let message = result.message.as_ref().expect("compiled Mollusk message");
-    let account_keys = message.account_keys();
-    let carriers: Vec<_> = result
-        .inner_instructions
-        .iter()
-        .filter(|inner| {
-            account_keys.get(inner.instruction.program_id_index as usize) == Some(&host::id())
-                && inner.instruction.data.starts_with(&prefix)
-        })
-        .collect();
-    assert_eq!(carriers.len(), 1, "expected exactly one event CPI");
-    let inner = carriers[0];
-    assert_eq!(inner.instruction.accounts.len(), 1);
-    assert_eq!(
-        account_keys.get(inner.instruction.accounts[0] as usize),
-        Some(&event_authority(host::id()))
-    );
-    let mut events = emitted_events::<T>(result);
-    assert_eq!(events.len(), 1);
-    events.remove(0)
-}
 
 /// The Store's peaks after `execution`: for each public output in step order, one allow leaf for
 /// `payer` and then its public-decrypt leaf. The MMR is the only record that a handle became

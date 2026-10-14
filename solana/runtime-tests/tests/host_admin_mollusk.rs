@@ -25,7 +25,7 @@ use zama_solana_test_kit::{
 mod host_fixtures;
 use host_fixtures::{
     host_admin_ix, host_config_account, host_program_account, mollusk_execute_context,
-    vault_and_host_svm,
+    sole_emitted_event, vault_and_host_svm,
 };
 
 fn program_owned_account() -> Account {
@@ -696,7 +696,7 @@ fn mollusk_set_grant_deny_list_enabled_persists() {
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
+    let result = context.process_and_validate_instruction(
         &host_admin_ix(
             admin,
             host_config,
@@ -709,6 +709,10 @@ fn mollusk_set_grant_deny_list_enabled_persists() {
             .expect("config")
             .grant_deny_list_enabled
     );
+    let event = sole_emitted_event::<host::HostConfigUpdatedEvent>(&result);
+    assert_eq!(event.config, host_config);
+    assert_eq!(event.signer, admin);
+    assert!(event.grant_deny_list_enabled);
 }
 
 #[test]

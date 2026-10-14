@@ -110,8 +110,9 @@ Confidential-token ships owner-gated wrappers that `invoke_signed` as the **toke
 `make_token_account_handle_public`); the mint authority has the same pair for the total supply, signed as the
 total-supply authority PDA (`allow_total_supply_viewers`, `make_total_supply_handle_public`). (fhevm-internal#1862 #13;
 Solana access control RFC.) Pinned by `only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store`, which checks over
-random instruction sequences that no Store's bytes change unless the authority it records signed; the planted bug
-`runtime-tests/planted-bugs/h2-fhe-execute-accepts-an-unsigned-witness.patch` must make it fail. This covers the default
+random instruction sequences that no Store's bytes change unless the authority it records signed, and by
+`mollusk_fhe_execute_rejects_read_of_a_value_whose_authority_did_not_sign`, which the planted bug
+`runtime-tests/planted-bugs/h2-fhe-execute-accepts-an-unsigned-witness.patch` must make fail. This covers the default
 build; the preview-only `admin-sweep` build adds `close_owned_accounts`, which lets the upgrade authority close any
 Store (`AUTHORITY.md`). The token wrappers are
 pinned by `mollusk_owner_allows_balance_viewers`, `mollusk_non_owner_cannot_allow_balance_viewers`,
@@ -429,10 +430,10 @@ transaction the admin signed, apart from a signer holding an enabled pauser reco
 and that every `HostConfig` change emits its event CPI (`NewKmsContextEvent` from `define_kms_context`,
 `NewKmsEpochEvent` from `define_kms_epoch`, `HostConfigUpdatedEvent` from the rest). Every host instruction is drawn,
 with its admin or Store-authority role also filled by keys that lack it, signing or not, and a host account type the
-property does not classify fails it. The planted bug `runtime-tests/planted-bugs/h1-set-grant-deny-list-skips-the-config-event.patch`
-must make it fail; `h1-unpause-skips-assert-admin.patch` must make `mollusk_a_pauser_pauses_and_only_the_admin_unpauses`
-fail, and `h1-pause-accepts-a-withdrawn-pauser.patch` must make `mollusk_only_an_enabled_pauser_pauses` fail
-(`scripts/check-planted-bugs.sh`). This covers the default build; the preview-only `admin-sweep` build lets the
+property does not classify fails it. Each planted bug must make a deterministic test fail (`scripts/check-planted-bugs.sh`):
+`runtime-tests/planted-bugs/h1-unpause-skips-assert-admin.patch` fails `mollusk_a_pauser_pauses_and_only_the_admin_unpauses`,
+`h1-pause-accepts-a-withdrawn-pauser.patch` fails `mollusk_only_an_enabled_pauser_pauses`, and
+`h1-set-grant-deny-list-skips-the-config-event.patch` fails `mollusk_set_grant_deny_list_enabled_persists`. This covers the default build; the preview-only `admin-sweep` build lets the
 upgrade authority close `HostConfig` and the KMS contexts (`AUTHORITY.md`).
 
 **36. [HOLDS]** `HostConfig.paused` holds one flag per host area (DD-058). `execution` stops `fhe_execute`;

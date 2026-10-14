@@ -5,11 +5,10 @@
 #   bash scripts/check-planted-bugs.sh
 #
 # Each patch in runtime-tests/planted-bugs/ removes one authorization check from zama-host. Its
-# `Expect:` line is text the failing test must print, such as `Expect: Test failed: H2: FheExecute`.
-# An optional `Test: <test target> <test name>` line names a deterministic test to run instead of
-# the `capability_invariants` property test, whose random draws can miss a bug. For each patch,
-# this applies it, rebuilds the default artifact and requires that test to fail with that text.
-# On exit it reverts the patch and rebuilds the unpatched artifact.
+# `Test: <test target> <test name>` line names the deterministic test that must catch it, and its
+# `Expect:` line is text that test must print when it fails, such as `Expect: Got: \`Success\``.
+# For each patch, this applies it, rebuilds the default artifact and requires that test to fail
+# with that text. On exit it reverts the patch and rebuilds the unpatched artifact.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,12 +31,11 @@ trap restore EXIT
 
 for patch in runtime-tests/planted-bugs/*.patch; do
   expected="$(sed -n 's/^Expect: //p' "$patch")"
-  if [[ -z "$expected" ]]; then
-    echo "$patch: no Expect: line" >&2
+  read -r target name extra <<<"$(sed -n 's/^Test: //p' "$patch")"
+  if [[ -z "$expected" || -z "${name:-}" || -n "${extra:-}" ]]; then
+    echo "$patch: needs a Test: <target> <name> line and an Expect: line" >&2
     exit 1
   fi
-  test="$(sed -n 's/^Test: //p' "$patch")"
-  read -r target name <<<"${test:-capability_invariants only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store}"
   git apply "$patch"
   applied="$patch"
   build_host

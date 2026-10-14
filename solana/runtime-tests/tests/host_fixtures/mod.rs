@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use anchor_lang::prelude::system_program;
-use anchor_lang::InstructionData;
+use anchor_lang::{AnchorDeserialize, Discriminator, InstructionData};
 use mollusk_svm::MolluskContext;
 use solana_sdk::{
     account::Account,
@@ -319,7 +319,6 @@ pub fn check_host_instruction(
     accounts: &[(Pubkey, Account)],
     checks: &[mollusk_svm::result::Check],
 ) -> mollusk_svm::result::InstructionResult {
-    use anchor_lang::Discriminator;
     if instruction.program_id == host::ID
         && instruction
             .data
@@ -342,7 +341,6 @@ pub fn check_host_context(
     instruction: &Instruction,
     checks: &[mollusk_svm::result::Check],
 ) -> mollusk_svm::result::InstructionResult {
-    use anchor_lang::Discriminator;
     if instruction.program_id == host::ID
         && instruction
             .data
@@ -375,4 +373,64 @@ pub fn host_admin_ix(
         },
         data,
     )
+}
+
+/// The bytes an event-CPI inner instruction starts with: Anchor's event-CPI instruction tag, then
+/// the event's own discriminator.
+fn event_cpi_prefix<T: Discriminator>() -> Vec<u8> {
+    anchor_lang::event::EVENT_IX_TAG_LE
+        .iter()
+        .copied()
+        .chain(T::DISCRIMINATOR.iter().copied())
+        .collect()
+}
+
+/// Every `T` the host emitted during `result`, read back out of the inner instructions. Every event
+/// the program emits travels this way and none of them are logged, so one reader serves both the
+/// compute events and the admin ones.
+pub fn emitted_events<T: Discriminator + AnchorDeserialize>(
+    result: &mollusk_svm::result::InstructionResult,
+) -> Vec<T> {
+    let message = result.message.as_ref().expect("compiled Mollusk message");
+    let account_keys = message.account_keys();
+    let prefix = event_cpi_prefix::<T>();
+    result
+        .inner_instructions
+        .iter()
+        .filter_map(|inner| {
+            if account_keys.get(inner.instruction.program_id_index as usize) != Some(&host::id()) {
+                return None;
+            }
+            let payload = inner.instruction.data.strip_prefix(prefix.as_slice())?;
+            T::deserialize(&mut &*payload).ok()
+        })
+        .collect()
+}
+
+/// Asserts `result` carries exactly one `T`, on an inner instruction addressed to the host with the
+/// event authority as its only account, and returns the decoded event.
+pub fn sole_emitted_event<T: Discriminator + AnchorDeserialize>(
+    result: &mollusk_svm::result::InstructionResult,
+) -> T {
+    let prefix = event_cpi_prefix::<T>();
+    let message = result.message.as_ref().expect("compiled Mollusk message");
+    let account_keys = message.account_keys();
+    let carriers: Vec<_> = result
+        .inner_instructions
+        .iter()
+        .filter(|inner| {
+            account_keys.get(inner.instruction.program_id_index as usize) == Some(&host::id())
+                && inner.instruction.data.starts_with(&prefix)
+        })
+        .collect();
+    assert_eq!(carriers.len(), 1, "expected exactly one event CPI");
+    let inner = carriers[0];
+    assert_eq!(inner.instruction.accounts.len(), 1);
+    assert_eq!(
+        account_keys.get(inner.instruction.accounts[0] as usize),
+        Some(&event_authority(host::id()))
+    );
+    let mut events = emitted_events::<T>(result);
+    assert_eq!(events.len(), 1);
+    events.remove(0)
 }
