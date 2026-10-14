@@ -5,13 +5,19 @@ use alloy::{
     rpc::types::Transaction,
     sol_types::{SolCall, SolValue},
 };
-use connector_utils::tests::{
-    rand::rand_address,
-    setup::{S3_CT_BUCKET, s3_ct_attestation_signer},
+use connector_utils::{
+    tests::{
+        rand::rand_address,
+        setup::{S3_CT_BUCKET, s3_ct_attestation_signer},
+    },
+    types::handle::extract_chain_id_from_handle,
 };
 use fhevm_gateway_bindings::{
-    decryption::Decryption::{
-        CtHandleContractPair, userDecryptionRequest_1Call as userDecryptionRequestCall,
+    decryption::{
+        Decryption::{
+            CtHandleContractPair, userDecryptionRequest_1Call as userDecryptionRequestCall,
+        },
+        IDecryption::ContractsInfo,
     },
     gateway_config::GatewayConfig::Coprocessor,
 };
@@ -101,6 +107,10 @@ pub fn create_mock_user_decryption_request_tx(
             ctHandle: handle,
             contractAddress: rand_address(),
         }],
+        contractsInfo: ContractsInfo {
+            chainId: U256::from(extract_chain_id_from_handle(&handle).unwrap()),
+            addresses: vec![rand_address()],
+        },
         ..Default::default()
     }
     .abi_encode();
