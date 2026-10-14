@@ -627,6 +627,27 @@ where
         return Ok(());
     };
 
+    // This operator writes its record once and never replaces it, so a restart
+    // reuses the decision, the anchors and the members it already published.
+    let own = match (fleet.s3, fleet.bucket, fleet.signer) {
+        (Some(client), Some(bucket), Some(signer)) => {
+            decision::get_own(
+                client,
+                bucket,
+                signer.address(),
+                &proposal_id,
+                proposal_block,
+            )
+            .await
+        }
+        _ => None,
+    };
+
+    // The record names the members, so a restart recovers them without the chain.
+    if let Some(record) = own.as_ref().filter(|_| window_state.members.is_empty()) {
+        window_state.members = record.payload.members.clone();
+    }
+
     // This operator never replaces an unknown member set with the current one.
     // It waits instead of deciding over a set its peers do not share.
     if window_state.members.is_empty() {
@@ -684,16 +705,7 @@ where
     let both_anchored = host_consensus_ready(host_tracks) && gateway.anchored.is_some();
     let max_end = windows.iter().map(|&(_, _, end)| end).max().unwrap_or(0);
 
-    // This operator writes its record once and never replaces it, so a restart
-    // reuses the decision and the anchors it published.
     let own_name = fleet.signer.map(|s| decision::name_of(s.address()));
-    let own = match members
-        .iter()
-        .find(|m| Some(&m.address) == own_name.as_ref())
-    {
-        Some(member) => decision::get(http, member, &proposal_id, proposal_block).await,
-        None => None,
-    };
 
     // One global deadline, armed once every host chain reached its end_block
     // without agreeing, so the upgrade can be rerun.
