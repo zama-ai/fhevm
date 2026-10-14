@@ -2580,426 +2580,421 @@
     },
     {
       "code": 6002,
-      "name": "HostConfigMismatch",
-      "msg": "host config account is invalid"
-    },
-    {
-      "code": 6003,
       "name": "UnexpectedRemainingAccounts",
       "msg": "instruction has unexpected remaining accounts"
     },
     {
-      "code": 6004,
+      "code": 6003,
       "name": "MalformedInputAttestation",
       "msg": "input attestation payload is malformed"
     },
     {
-      "code": 6005,
+      "code": 6004,
       "name": "InvalidInputHandleIndex",
       "msg": "attestation handle index is invalid"
     },
     {
-      "code": 6006,
+      "code": 6005,
       "name": "InvalidInputHandle",
       "msg": "attestation selected handle does not match"
     },
     {
-      "code": 6007,
+      "code": 6006,
       "name": "InvalidInputAttestation",
       "msg": "coprocessor input attestation is invalid"
     },
     {
-      "code": 6008,
+      "code": 6007,
       "name": "GatewayVerifierConfigUnset",
       "msg": "gateway verifier config is not set"
     },
     {
-      "code": 6009,
+      "code": 6008,
       "name": "EmptyKmsContext",
       "msg": "KMS context has no signers"
     },
     {
-      "code": 6010,
+      "code": 6009,
       "name": "TooManyKmsSigners",
       "msg": "KMS context exceeds the maximum signer count"
     },
     {
-      "code": 6011,
+      "code": 6010,
       "name": "InvalidKmsThreshold",
       "msg": "KMS context threshold is invalid"
     },
     {
-      "code": 6012,
+      "code": 6011,
       "name": "NonIncreasingKmsContextId",
       "msg": "KMS context id must be above the current one"
     },
     {
-      "code": 6013,
+      "code": 6012,
       "name": "CurrentKmsContextCannotBeDestroyed",
       "msg": "current KMS context cannot be destroyed"
     },
     {
-      "code": 6014,
+      "code": 6013,
       "name": "InvalidInputHandleVersion",
       "msg": "input handle version is unsupported"
     },
     {
-      "code": 6015,
+      "code": 6014,
       "name": "InvalidInputHandleChain",
       "msg": "input handle chain id does not match host config"
     },
     {
-      "code": 6016,
+      "code": 6015,
       "name": "InvalidInputHandleType",
       "msg": "input handle FHE type is unsupported"
     },
     {
-      "code": 6017,
+      "code": 6016,
       "name": "UnsupportedFheType",
       "msg": "FHE type is unsupported"
     },
     {
-      "code": 6018,
+      "code": 6017,
       "name": "BinaryOperandTypeMismatch",
       "msg": "binary FHE operand type is incompatible"
     },
     {
-      "code": 6019,
+      "code": 6018,
       "name": "InvalidRandomUpperBound",
       "msg": "bounded random upper bound is invalid"
     },
     {
-      "code": 6020,
+      "code": 6019,
       "name": "EncryptedStoreAccountAuthorityMismatch",
       "msg": "signer does not match the encrypted store authority"
     },
     {
-      "code": 6021,
+      "code": 6020,
       "name": "EncryptedStoreAuthorityNotProgramPda",
       "msg": "encrypted value authority is not a PDA of the declared program"
     },
     {
-      "code": 6022,
+      "code": 6021,
       "name": "DenyRecordMissing",
       "msg": "deny-list witness account is required"
     },
     {
-      "code": 6023,
+      "code": 6022,
       "name": "DenyRecordMismatch",
       "msg": "deny-list account does not match the canonical PDA"
     },
     {
-      "code": 6024,
+      "code": 6023,
       "name": "ScopeDenied",
       "msg": "application scope is deny-listed"
     },
     {
-      "code": 6025,
+      "code": 6024,
       "name": "InvalidDelegation",
       "msg": "delegation tuple is invalid"
     },
     {
-      "code": 6026,
+      "code": 6025,
       "name": "NotDelegatedYet",
       "msg": "delegation is not granted"
     },
     {
-      "code": 6027,
+      "code": 6026,
       "name": "DelegationUpdatedInCurrentSlot",
       "msg": "delegation was already updated in the current slot"
     },
     {
-      "code": 6028,
+      "code": 6027,
       "name": "PreviousBankHashUnavailable",
       "msg": "previous bank hash is not available"
     },
     {
-      "code": 6029,
+      "code": 6028,
       "name": "PdaCreationMismatch",
       "msg": "PDA creation target is invalid"
     },
     {
-      "code": 6030,
+      "code": 6029,
       "name": "InvalidFheExecuteOperationCount",
       "msg": "fhe_execute operation count is invalid"
     },
     {
-      "code": 6031,
+      "code": 6030,
       "name": "InvalidFheExecuteAccount",
       "msg": "fhe_execute account reference is invalid"
     },
     {
-      "code": 6032,
+      "code": 6031,
       "name": "FheExecuteEarlierStepMissing",
       "msg": "fhe_execute transient operand is missing"
     },
     {
-      "code": 6033,
+      "code": 6032,
       "name": "FheExecuteOutputAlreadyInitialized",
       "msg": "fhe_execute persistent output ACL record already exists"
     },
     {
-      "code": 6034,
+      "code": 6033,
       "name": "FheExecuteRandNonceMissing",
       "msg": "fhe_execute rand step requires the rand nonce account"
     },
     {
-      "code": 6035,
+      "code": 6034,
       "name": "DuplicateKmsSigner",
       "msg": "KMS context signer set contains a duplicate address"
     },
     {
-      "code": 6036,
+      "code": 6035,
       "name": "InputBindContractMismatch",
       "msg": "attested contract address does not match the execution's program"
     },
     {
-      "code": 6037,
+      "code": 6036,
       "name": "HcuTransactionLimitExceeded",
       "msg": "FHE op total HCU exceeds the per-transaction limit"
     },
     {
-      "code": 6038,
+      "code": 6037,
       "name": "HcuTransactionDepthLimitExceeded",
       "msg": "FHE op depth HCU exceeds the per-transaction depth limit"
     },
     {
-      "code": 6039,
+      "code": 6038,
       "name": "HcuUnknownCost",
       "msg": "no HCU cost is defined for this op / type / scalar combination"
     },
     {
-      "code": 6040,
+      "code": 6039,
       "name": "HcuLimitOrderingInvalid",
       "msg": "HCU limits violate max_hcu_per_tx >= max_hcu_depth_per_tx"
     },
     {
-      "code": 6041,
+      "code": 6040,
       "name": "AttestationChainIdMismatch",
       "msg": "attested contract chain id does not match the host chain id"
     },
     {
-      "code": 6042,
+      "code": 6041,
       "name": "EncryptedStorePdaMismatch",
       "msg": "encrypted store does not match the canonical PDA"
     },
     {
-      "code": 6043,
+      "code": 6042,
       "name": "PreviousStoreMismatch",
       "msg": "encrypted value previous handle does not match the account"
     },
     {
-      "code": 6044,
+      "code": 6043,
       "name": "EncryptedStorePublicHandleMismatch",
       "msg": "encrypted value public handle does not match the account"
     },
     {
-      "code": 6045,
+      "code": 6044,
       "name": "InvalidAllowKey",
       "msg": "encrypted value allowed key is invalid"
     },
     {
-      "code": 6046,
+      "code": 6045,
       "name": "EncryptedStoreMmrInconsistent",
       "msg": "encrypted value MMR state is inconsistent"
     },
     {
-      "code": 6047,
+      "code": 6046,
       "name": "EncryptedStoreMmrPeakCapacityExceeded",
       "msg": "encrypted value MMR peak capacity exceeded"
     },
     {
-      "code": 6048,
+      "code": 6047,
       "name": "HcuBlockLimitExceeded",
       "msg": "per-app in-slot HCU exceeds the block cap"
     },
     {
-      "code": 6049,
+      "code": 6048,
       "name": "HcuBlockMeterMissing",
       "msg": "HCU block meter account is required for a metered app"
     },
     {
-      "code": 6050,
+      "code": 6049,
       "name": "HcuBlockMeterMismatch",
       "msg": "HCU block meter account does not match the canonical PDA"
     },
     {
-      "code": 6051,
+      "code": 6050,
       "name": "HcuTrustedAppRecordMismatch",
       "msg": "HCU trusted-app record does not match the canonical PDA"
     },
     {
-      "code": 6052,
+      "code": 6051,
       "name": "HcuBlockCapBelowMaxPerTx",
       "msg": "HCU block cap is below max_hcu_per_tx"
     },
     {
-      "code": 6053,
+      "code": 6052,
       "name": "MulDivDivisorZero",
       "msg": "fheMulDiv divisor must be non-zero"
     },
     {
-      "code": 6054,
+      "code": 6053,
       "name": "DivisorMustBeScalar",
       "msg": "fheDiv/fheRem divisor must be a plaintext scalar"
     },
     {
-      "code": 6055,
+      "code": 6054,
       "name": "DivisionByZero",
       "msg": "fheDiv/fheRem divisor must be non-zero"
     },
     {
-      "code": 6056,
+      "code": 6055,
       "name": "InvalidChainTypeByte",
       "msg": "host chain id must have type byte 0x01 and the gateway chain id must have type byte 0x00"
     },
     {
-      "code": 6057,
+      "code": 6056,
       "name": "FheExecuteMixedScopes",
       "msg": "FHE execution mixes values of different application scopes"
     },
     {
-      "code": 6058,
+      "code": 6057,
       "name": "InvalidKmsContext",
       "msg": "KMS context is destroyed, not the active one, or not the certificate's committed context"
     },
     {
-      "code": 6059,
+      "code": 6058,
       "name": "InvalidKmsCertificate",
       "msg": "KMS public-decrypt certificate is invalid"
     },
     {
-      "code": 6060,
+      "code": 6059,
       "name": "EmptyCoprocessorSignerSet",
       "msg": "coprocessor signer set must not be empty"
     },
     {
-      "code": 6061,
+      "code": 6060,
       "name": "TooManyCoprocessorSigners",
       "msg": "coprocessor signer set exceeds the maximum size"
     },
     {
-      "code": 6062,
+      "code": 6061,
       "name": "InvalidCoprocessorThreshold",
       "msg": "coprocessor threshold must be between 1 and the signer count"
     },
     {
-      "code": 6063,
+      "code": 6062,
       "name": "DuplicateCoprocessorSigner",
       "msg": "coprocessor signer set contains a duplicate signer"
     },
     {
-      "code": 6064,
+      "code": 6063,
       "name": "ZeroCoprocessorSigner",
       "msg": "coprocessor signer set contains the zero address"
     },
     {
-      "code": 6065,
+      "code": 6064,
       "name": "ZeroKmsSigner",
       "msg": "KMS signer set contains the zero address"
     },
     {
-      "code": 6066,
+      "code": 6065,
       "name": "ClockBeforeEpoch",
       "msg": "clock is before the unix epoch"
     },
     {
-      "code": 6067,
+      "code": 6066,
       "name": "FheExecuteDictionaryIndexOutOfBounds",
       "msg": "fhe_execute dictionary index out of bounds"
     },
     {
-      "code": 6068,
+      "code": 6067,
       "name": "FheExecuteAccountCountMismatch",
       "msg": "fhe_execute declared account count mismatch"
     },
     {
-      "code": 6069,
+      "code": 6068,
       "name": "FheExecuteDictionaryEntryUnreferenced",
       "msg": "fhe_execute dictionary entry is not referenced by any step"
     },
     {
-      "code": 6070,
+      "code": 6069,
       "name": "HcuLimitZeroReserved",
       "msg": "0 is not a valid HCU limit; use u64::MAX for unlimited"
     },
     {
-      "code": 6071,
+      "code": 6070,
       "name": "TransientAccountInvalid",
       "msg": "invalid transient store account"
     },
     {
-      "code": 6072,
+      "code": 6071,
       "name": "TransientCloseMissing",
       "msg": "matching final top-level transient_store close is required"
     },
     {
-      "code": 6073,
+      "code": 6072,
       "name": "TransientCapacityExceeded",
       "msg": "transient store grant capacity exceeded"
     },
     {
-      "code": 6074,
+      "code": 6073,
       "name": "EncryptedStoreCapacityExceeded",
       "msg": "encrypted store slot capacity exceeded"
     },
     {
-      "code": 6075,
+      "code": 6074,
       "name": "InvalidReturnSelection",
       "msg": "invalid execution return selection"
     },
     {
-      "code": 6076,
+      "code": 6075,
       "name": "TransientStoreNotOpened",
       "msg": "transient store must be opened for this transaction and closed last"
     },
     {
-      "code": 6077,
+      "code": 6076,
       "name": "WalletDelegationThroughCpi",
       "msg": "a wallet delegator must delegate in a top-level instruction"
     },
     {
-      "code": 6078,
+      "code": 6077,
       "name": "VerifiedInputsPaused",
       "msg": "verified inputs are paused"
     },
     {
-      "code": 6079,
+      "code": 6078,
       "name": "AclWritesPaused",
       "msg": "ACL writes are paused"
     },
     {
-      "code": 6080,
+      "code": 6079,
       "name": "NotPauser",
       "msg": "signer is not an enabled pauser"
     },
     {
-      "code": 6081,
+      "code": 6080,
       "name": "WalletPauseThroughCpi",
       "msg": "a wallet pauser must pause in a top-level instruction"
     },
     {
-      "code": 6082,
+      "code": 6081,
       "name": "EncryptedStoreScopeNotProgramAccount",
       "msg": "encrypted store scope is not an account of the store's program"
     },
     {
-      "code": 6083,
+      "code": 6082,
       "name": "DelegationScopeNotProgramAccount",
       "msg": "delegation scope is not an account of the delegated program"
     },
     {
-      "code": 6084,
+      "code": 6083,
       "name": "ScalarOutOfRange",
       "msg": "scalar exceeds the maximum of its FHE type"
     },
     {
-      "code": 6085,
+      "code": 6084,
       "name": "NonIncreasingKmsEpochId",
       "msg": "KMS epoch id must be above the current one"
     },
     {
-      "code": 6086,
+      "code": 6085,
       "name": "WalletRevokeThroughCpi",
       "msg": "a wallet must revoke in a top-level instruction"
     }
