@@ -36,9 +36,9 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) system_program: &'a Program<'info, System>,
     /// Per-mint HCU block meter forwarded into the host `fhe_execute` CPI (`None` = untrusted,
     /// no meter). The host keys the meter on the application `(program, mint)`.
-    pub(crate) hcu_block_meter: Option<AccountInfo<'info>>,
+    pub(crate) hcu_block_meter: Option<&'a UncheckedAccount<'info>>,
     /// HCU trust witness forwarded into the host `fhe_execute` CPI (`None` = untrusted).
-    pub(crate) hcu_trusted_app_record: Option<AccountInfo<'info>>,
+    pub(crate) hcu_trusted_app_record: Option<&'a UncheckedAccount<'info>>,
     /// Underlying SPL mint whose owner is the token program. Freeze checks read this account.
     pub(crate) underlying_mint: AccountInfo<'info>,
     /// ATA of `from_account.owner` on `underlying_mint`.
@@ -101,7 +101,6 @@ pub(crate) fn execute_transfer<'info>(
     accounts: TransferAccounts<'_, 'info>,
     amount_source: TransferAmountSource<'info>,
 ) -> Result<Option<TransferOutcome>> {
-    assert_confidential_mint_shape(accounts.mint)?;
     let mint_key = accounts.mint.key();
     let from = accounts.from_account;
     let to = accounts.to_account;
@@ -123,8 +122,6 @@ pub(crate) fn execute_transfer<'info>(
     }
     require_keys_eq!(from.mint, mint_key, ConfidentialTokenError::MintMismatch);
     require_keys_eq!(to.mint, mint_key, ConfidentialTokenError::MintMismatch);
-    assert_confidential_token_account_shape(from, mint_key, from.owner)?;
-    assert_confidential_token_account_shape(to, mint_key, to.owner)?;
     check_underlying_ata_not_frozen(
         accounts.mint,
         from.owner,
@@ -319,8 +316,8 @@ fn compute_transfer_handles<'info>(
                 })),
             )?,
             system_program: accounts.system_program,
-            hcu_block_meter: accounts.hcu_block_meter.clone(),
-            hcu_trusted_app_record: accounts.hcu_trusted_app_record.clone(),
+            hcu_block_meter: accounts.hcu_block_meter,
+            hcu_trusted_app_record: accounts.hcu_trusted_app_record,
         },
         accounts: &resolved,
         execution,
@@ -606,36 +603,6 @@ pub(crate) fn check_underlying_ata_not_frozen(
         state.base.state
             != anchor_spl::token_interface::spl_token_2022::state::AccountState::Frozen,
         ConfidentialTokenError::UnderlyingTokenAccountFrozen
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_confidential_mint_shape(mint: &Account<ConfidentialMint>) -> Result<()> {
-    require!(
-        mint.to_account_info().data_len() == 8 + ConfidentialMint::SPACE,
-        ConfidentialTokenError::MintAccountMismatch
-    );
-    Ok(())
-}
-
-pub(crate) fn assert_confidential_token_account_shape(
-    token_account: &Account<ConfidentialTokenAccount>,
-    mint: Pubkey,
-    owner: Pubkey,
-) -> Result<()> {
-    require!(
-        token_account.to_account_info().data_len() == 8 + ConfidentialTokenAccount::SPACE,
-        ConfidentialTokenError::TokenAccountMismatch
-    );
-    require_keys_eq!(
-        token_account.mint,
-        mint,
-        ConfidentialTokenError::MintMismatch
-    );
-    require_keys_eq!(
-        token_account.owner,
-        owner,
-        ConfidentialTokenError::OwnerMismatch
     );
     Ok(())
 }

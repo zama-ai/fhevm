@@ -91,7 +91,6 @@ pub fn redeem_burned_amount(
     extra_data: Vec<u8>,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_confidential_mint_shape(&ctx.accounts.mint)?;
     assert_supported_underlying_mint(&ctx.accounts.underlying_mint, &ctx.accounts.token_program)?;
     assert_supported_underlying_token_account(
         &ctx.accounts.vault_usdc,
@@ -124,11 +123,6 @@ pub fn redeem_burned_amount(
         mint_key,
         ConfidentialTokenError::MintMismatch
     );
-    assert_confidential_token_account_shape(
-        &ctx.accounts.token_account,
-        mint_key,
-        ctx.accounts.owner.key(),
-    )?;
 
     let pending = &ctx.accounts.pending_burn;
     require_keys_eq!(

@@ -370,9 +370,9 @@ pub(crate) struct ExecuteContext<'a, 'info> {
     /// caller threads it; behavior-neutral while the host cap is unrestricted). The host keys
     /// the meter on the execution's application `(program, mint)`, so metering stays per-mint
     /// automatically.
-    pub hcu_block_meter: Option<AccountInfo<'info>>,
+    pub hcu_block_meter: Option<&'a UncheckedAccount<'info>>,
     /// HCU trust witness forwarded into the host `fhe_execute` CPI (`None` unless threaded).
-    pub hcu_trusted_app_record: Option<AccountInfo<'info>>,
+    pub hcu_trusted_app_record: Option<&'a UncheckedAccount<'info>>,
 }
 
 /// Inputs for one instruction-local FHE execution.
@@ -434,8 +434,10 @@ fn invoke_with_authorities<'info, R>(
             host_config: context.host_config.to_account_info(),
             deny_scope_records: context.deny_scope_records,
             system_program: context.system_program.to_account_info(),
-            hcu_block_meter: context.hcu_block_meter,
-            hcu_trusted_app_record: context.hcu_trusted_app_record,
+            hcu_block_meter: context.hcu_block_meter.map(ToAccountInfo::to_account_info),
+            hcu_trusted_app_record: context
+                .hcu_trusted_app_record
+                .map(ToAccountInfo::to_account_info),
             rand_nonce: None,
             event_authority: context.event_authority.to_account_info(),
             transient_store: context.transient_store.to_account_info(),

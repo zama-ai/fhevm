@@ -80,14 +80,8 @@ impl<'info> ConfidentialTransfer<'info> {
             host_config: &self.host_config,
             remaining_accounts,
             system_program: &self.system_program,
-            hcu_block_meter: self
-                .hcu_block_meter
-                .as_ref()
-                .map(|account| account.to_account_info()),
-            hcu_trusted_app_record: self
-                .hcu_trusted_app_record
-                .as_ref()
-                .map(|account| account.to_account_info()),
+            hcu_block_meter: self.hcu_block_meter.as_ref(),
+            hcu_trusted_app_record: self.hcu_trusted_app_record.as_ref(),
             underlying_mint: self.underlying_mint.to_account_info(),
             from_ata: self.from_ata.to_account_info(),
             to_ata: self.to_ata.to_account_info(),
@@ -235,14 +229,8 @@ impl<'info> ConfidentialTransferFromValue<'info> {
             host_config: &self.host_config,
             remaining_accounts,
             system_program: &self.system_program,
-            hcu_block_meter: self
-                .hcu_block_meter
-                .as_ref()
-                .map(|account| account.to_account_info()),
-            hcu_trusted_app_record: self
-                .hcu_trusted_app_record
-                .as_ref()
-                .map(|account| account.to_account_info()),
+            hcu_block_meter: self.hcu_block_meter.as_ref(),
+            hcu_trusted_app_record: self.hcu_trusted_app_record.as_ref(),
             underlying_mint: self.underlying_mint.to_account_info(),
             from_ata: self.from_ata.to_account_info(),
             to_ata: self.to_ata.to_account_info(),

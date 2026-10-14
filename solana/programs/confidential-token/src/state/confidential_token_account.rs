@@ -17,8 +17,3 @@ pub struct ConfidentialTokenAccount {
     /// PDA bump for the token account.
     pub bump: u8,
 }
-
-impl ConfidentialTokenAccount {
-    /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 1;
-}

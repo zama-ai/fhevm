@@ -26,8 +26,3 @@ pub struct PendingBurn {
     /// PDA bump for `(mint, token_account)`.
     pub bump: u8,
 }
-
-impl PendingBurn {
-    /// Serialized size of the account body, excluding Anchor discriminator.
-    pub const SPACE: usize = 32 + 32 + 32 + 32 + 1;
-}

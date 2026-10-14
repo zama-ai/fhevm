@@ -18,7 +18,7 @@ pub struct InitializeTokenAccount<'info> {
     #[account(
         init_if_needed,
         payer = payer,
-        space = 8 + ConfidentialTokenAccount::SPACE,
+        space = 8 + ConfidentialTokenAccount::INIT_SPACE,
         seeds = [b"token-account", mint.key().as_ref(), owner.key().as_ref()],
         bump
     )]
@@ -57,7 +57,6 @@ pub struct InitializeTokenAccount<'info> {
 pub fn initialize_token_account<'info>(
     ctx: Context<'info, InitializeTokenAccount<'info>>,
 ) -> Result<()> {
-    assert_confidential_mint_shape(&ctx.accounts.mint)?;
     // An account this call creates is zeroed; one that existed holds its mint. The owner need not
     // sign, so anyone can create an account first: the batcher's `dispatch` must still succeed, and
     // the existing balance must not be replaced by a new zero.
@@ -113,16 +112,8 @@ pub fn initialize_token_account<'info>(
                 [token_app(mint_key)],
             )?,
             system_program: &ctx.accounts.system_program,
-            hcu_block_meter: ctx
-                .accounts
-                .hcu_block_meter
-                .as_ref()
-                .map(|account| account.to_account_info()),
-            hcu_trusted_app_record: ctx
-                .accounts
-                .hcu_trusted_app_record
-                .as_ref()
-                .map(|account| account.to_account_info()),
+            hcu_block_meter: ctx.accounts.hcu_block_meter.as_ref(),
+            hcu_trusted_app_record: ctx.accounts.hcu_trusted_app_record.as_ref(),
         },
         accounts: &execution_accounts,
         execution,

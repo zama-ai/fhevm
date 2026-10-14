@@ -178,16 +178,8 @@ pub fn quit<'info>(ctx: Context<'info, Quit<'info>>) -> Result<()> {
         program: ctx.accounts.zama_program.to_account_info(),
         system_program: ctx.accounts.system_program.to_account_info(),
         deny_records: reset_deny_records,
-        hcu_block_meter: ctx
-            .accounts
-            .batch_hcu_block_meter
-            .as_ref()
-            .map(|account| account.to_account_info()),
-        hcu_trusted_app_record: ctx
-            .accounts
-            .batch_hcu_trusted_app_record
-            .as_ref()
-            .map(|account| account.to_account_info()),
+        hcu_block_meter: ctx.accounts.batch_hcu_block_meter.as_ref(),
+        hcu_trusted_app_record: ctx.accounts.batch_hcu_trusted_app_record.as_ref(),
     }
     .invoke(execution, vec![ctx.accounts.join_store.to_account_info()])?;
 

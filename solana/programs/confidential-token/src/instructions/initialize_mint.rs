@@ -10,7 +10,7 @@ pub struct InitializeMint<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
     /// Confidential mint account created by this instruction.
-    #[account(init, payer = authority, space = 8 + ConfidentialMint::SPACE)]
+    #[account(init, payer = authority, space = 8 + ConfidentialMint::INIT_SPACE)]
     pub mint: Box<Account<'info, ConfidentialMint>>,
     /// Underlying SPL mint wrapped by this confidential mint.
     pub underlying_mint: Box<InterfaceAccount<'info, SplMint>>,
@@ -96,16 +96,8 @@ pub fn initialize_mint<'info>(ctx: Context<'info, InitializeMint<'info>>) -> Res
                 [token_app(mint_key)],
             )?,
             system_program: &ctx.accounts.system_program,
-            hcu_block_meter: ctx
-                .accounts
-                .hcu_block_meter
-                .as_ref()
-                .map(|account| account.to_account_info()),
-            hcu_trusted_app_record: ctx
-                .accounts
-                .hcu_trusted_app_record
-                .as_ref()
-                .map(|account| account.to_account_info()),
+            hcu_block_meter: ctx.accounts.hcu_block_meter.as_ref(),
+            hcu_trusted_app_record: ctx.accounts.hcu_trusted_app_record.as_ref(),
         },
         accounts: &execution_accounts,
         execution,
