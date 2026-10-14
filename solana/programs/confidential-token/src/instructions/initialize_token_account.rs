@@ -126,9 +126,8 @@ pub fn initialize_token_account<'info>(
         owner: ctx.accounts.owner.key(),
         token_account: token_account.key(),
         old_handle: [0; 32],
-        old_encrypted_store: Pubkey::default(),
         new_handle: balance_handle,
-        new_encrypted_store: balance_encrypted_store,
+        encrypted_store: balance_encrypted_store,
         reason: BalanceHandleUpdateReason::Initialize,
     });
     Ok(())

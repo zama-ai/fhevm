@@ -184,12 +184,6 @@ pub fn claim<'info>(ctx: Context<'info, Claim<'info>>) -> Result<()> {
 
     ctx.accounts.join_record.claimed = true;
 
-    emit!(PayoutClaimed {
-        batch: batch_key,
-        user,
-        claim_store: ctx.accounts.join_store.key(),
-        claim_handle,
-    });
     Ok(())
 }
 

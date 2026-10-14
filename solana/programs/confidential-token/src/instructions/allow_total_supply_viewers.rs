@@ -113,9 +113,8 @@ pub fn allow_total_supply_viewers<'info>(
         version: APP_EVENT_VERSION,
         mint,
         old_handle: old_total_supply_handle,
-        old_encrypted_store: total_supply_store.key(),
         new_handle: new_total_supply_handle,
-        new_encrypted_store: total_supply_store.key(),
+        encrypted_store: total_supply_store.key(),
         reason: TotalSupplyUpdateReason::AllowViewers,
     });
     Ok(())

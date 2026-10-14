@@ -142,6 +142,5 @@ pub fn cancel_dispatch<'info>(
 
     ctx.accounts.batch.status = BatchStatus::Refunding;
     ctx.accounts.batch.burned_total_handle = [0; 32];
-    emit!(BatchDispatchCancelled { batch });
     Ok(())
 }

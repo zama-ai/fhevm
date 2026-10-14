@@ -1188,9 +1188,8 @@ fn mollusk_initialize_mint_creates_total_supply_encrypted_store() {
     assert_eq!(event.version, token::APP_EVENT_VERSION);
     assert_eq!(event.mint, mint);
     assert_eq!(event.old_handle, [0; 32]);
-    assert_eq!(event.old_encrypted_store, Pubkey::default());
     assert_eq!(event.new_handle, total_supply);
-    assert_eq!(event.new_encrypted_store, total_supply_encrypted_store);
+    assert_eq!(event.encrypted_store, total_supply_encrypted_store);
     assert_eq!(event.reason, token::TotalSupplyUpdateReason::Initialize);
 }
 
@@ -1298,12 +1297,11 @@ fn mollusk_initialize_token_account_creates_initial_balance_encrypted_store() {
     assert_eq!(balance_event.owner, owner);
     assert_eq!(balance_event.token_account, token_account);
     assert_eq!(balance_event.old_handle, [0; 32]);
-    assert_eq!(balance_event.old_encrypted_store, Pubkey::default());
     assert_eq!(
         balance_event.new_handle,
         store_handle(&balance_store, token::balance_key())
     );
-    assert_eq!(balance_event.new_encrypted_store, balance_encrypted_store);
+    assert_eq!(balance_event.encrypted_store, balance_encrypted_store);
     assert_eq!(
         balance_event.reason,
         token::BalanceHandleUpdateReason::Initialize
@@ -1625,7 +1623,7 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     assert_eq!(
         handle_value(
             &context,
-            event.transferred_encrypted_store,
+            fixture.alice_balance_store,
             event.transferred_handle
         ),
         zama_solana_test_kit::cleartext::u64_value(400)
@@ -1680,10 +1678,6 @@ fn mollusk_confidential_transfer_updates_value_accounts_and_cleartext_balances()
     assert_eq!(event.from_token_account, fixture.alice_token);
     assert_eq!(event.to_owner, fixture.bob_owner);
     assert_eq!(event.to_token_account, fixture.bob_token);
-    assert_eq!(
-        event.transferred_encrypted_store,
-        fixture.alice_balance_store
-    );
 
     let balance_events: Vec<token::BalanceHandleUpdatedEvent> = result
         .inner_instructions
@@ -5121,7 +5115,7 @@ fn mollusk_transfer_from_value_spends_existing_amount() {
     assert_eq!(
         handle_value(
             &context,
-            event.transferred_encrypted_store,
+            fixture.alice_balance_store,
             event.transferred_handle
         ),
         zama_solana_test_kit::cleartext::u64_value(250)

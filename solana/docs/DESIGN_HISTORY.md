@@ -1407,6 +1407,15 @@ Settle no longer records a payout rate. Claims never read it, and no client did.
 > and SATURATES at u64::MAX instead of failing settle (a redeem batch of few shares against a large
 > payout can legitimately exceed the u64 rate domain — a display number must not brick funds).
 
+### DD-042, the batcher's and the vault's app events
+
+The batcher and the demo vault emitted plain `emit!` events (the batcher's batch lifecycle and admin
+changes; the vault's initialize, deposit, withdraw and harvest). No client, indexer or test read
+them, so they were removed. As first written:
+
+> The batcher's events stay `emit!` app events, which nothing off-chain reads; DD-044's event-CPI
+> rule covers zama-host.
+
 ### DD-042, replaced in part by the settle deadline
 
 zama-ai/fhevm#4385 gave each dispatched batch a settle deadline, after which anyone may cancel it and

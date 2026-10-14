@@ -45,10 +45,9 @@ pub struct InitializeVault<'info> {
     pub system_program: Program<'info, System>,
 }
 
-/// Records vault state and emits [`VaultInitialized`]. The share mint and vault
-/// token account are created by the Anchor `init` constraints above.
+/// Records vault state. The share mint and vault token account are created by the
+/// Anchor `init` constraints above.
 pub fn initialize_vault(ctx: Context<InitializeVault>) -> Result<()> {
-    let vault_authority = ctx.accounts.vault_authority.key();
     let underlying_mint = ctx.accounts.underlying_mint.key();
     let share_mint = ctx.accounts.share_mint.key();
     let vault_token_account = ctx.accounts.vault_token_account.key();
@@ -59,12 +58,5 @@ pub fn initialize_vault(ctx: Context<InitializeVault>) -> Result<()> {
     vault.vault_token_account = vault_token_account;
     vault.authority_bump = ctx.bumps.vault_authority;
 
-    emit!(VaultInitialized {
-        vault: vault.key(),
-        underlying_mint,
-        share_mint,
-        vault_token_account,
-        vault_authority,
-    });
     Ok(())
 }

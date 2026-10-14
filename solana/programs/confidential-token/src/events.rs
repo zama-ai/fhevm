@@ -18,12 +18,10 @@ pub struct BalanceHandleUpdatedEvent {
     pub token_account: Pubkey,
     /// Previous balance handle.
     pub old_handle: [u8; 32],
-    /// Previous ZamaHost ACL record.
-    pub old_encrypted_store: Pubkey,
     /// New balance handle.
     pub new_handle: [u8; 32],
-    /// New ZamaHost ACL record.
-    pub new_encrypted_store: Pubkey,
+    /// ZamaHost encrypted store holding both handles.
+    pub encrypted_store: Pubkey,
     /// Reason this balance pointer changed.
     pub reason: BalanceHandleUpdateReason,
 }
@@ -60,12 +58,10 @@ pub struct TotalSupplyHandleUpdatedEvent {
     pub mint: Pubkey,
     /// Previous total-supply handle.
     pub old_handle: [u8; 32],
-    /// Previous ZamaHost ACL record.
-    pub old_encrypted_store: Pubkey,
     /// New total-supply handle.
     pub new_handle: [u8; 32],
-    /// New ZamaHost ACL record.
-    pub new_encrypted_store: Pubkey,
+    /// ZamaHost encrypted store holding both handles.
+    pub encrypted_store: Pubkey,
     /// Reason this total-supply pointer changed.
     pub reason: TotalSupplyUpdateReason,
 }
@@ -185,6 +181,4 @@ pub struct ConfidentialTransferEvent {
     pub to_token_account: Pubkey,
     /// Encrypted amount actually transferred.
     pub transferred_handle: [u8; 32],
-    /// ZamaHost ACL record for `transferred_handle`.
-    pub transferred_encrypted_store: Pubkey,
 }

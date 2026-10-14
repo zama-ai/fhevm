@@ -86,11 +86,5 @@ pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
         shares,
     )?;
 
-    emit!(Deposited {
-        vault: vault_key,
-        depositor: ctx.accounts.depositor.key(),
-        assets: amount,
-        shares,
-    });
     Ok(())
 }

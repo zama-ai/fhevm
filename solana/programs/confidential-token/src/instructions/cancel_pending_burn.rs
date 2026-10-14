@@ -184,18 +184,16 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
         owner,
         token_account: token_account_key,
         old_handle: old_balance_handle,
-        old_encrypted_store: ctx.accounts.balance_store.key(),
         new_handle: new_balance_handle,
-        new_encrypted_store: ctx.accounts.balance_store.key(),
+        encrypted_store: ctx.accounts.balance_store.key(),
         reason: BalanceHandleUpdateReason::CancelBurn,
     });
     emit_cpi!(TotalSupplyHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: mint_key,
         old_handle: old_total_supply_handle,
-        old_encrypted_store: ctx.accounts.total_supply_store.key(),
         new_handle: new_total_supply_handle,
-        new_encrypted_store: ctx.accounts.total_supply_store.key(),
+        encrypted_store: ctx.accounts.total_supply_store.key(),
         reason: TotalSupplyUpdateReason::CancelBurn,
     });
     emit_cpi!(PendingBurnCancelledEvent {

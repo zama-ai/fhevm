@@ -88,7 +88,6 @@ pub(crate) struct TransferOutcome {
     pub(crate) new_from_handle: [u8; 32],
     pub(crate) from_encrypted_store: Pubkey,
     pub(crate) transferred_handle: [u8; 32],
-    pub(crate) transferred_encrypted_store: Pubkey,
     pub(crate) to_owner: Pubkey,
     pub(crate) to_token_account: Pubkey,
     pub(crate) old_to_handle: [u8; 32],
@@ -162,8 +161,6 @@ pub(crate) fn execute_transfer<'info>(
         &to_balance,
     )?;
 
-    let transferred_encrypted_store = accounts.from_store.key();
-
     Ok(Some(TransferOutcome {
         mint: mint_key,
         from_owner,
@@ -172,7 +169,6 @@ pub(crate) fn execute_transfer<'info>(
         new_from_handle,
         from_encrypted_store,
         transferred_handle,
-        transferred_encrypted_store,
         to_owner,
         to_token_account: to_key,
         old_to_handle,

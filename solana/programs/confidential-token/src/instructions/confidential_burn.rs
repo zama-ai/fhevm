@@ -118,18 +118,16 @@ pub fn confidential_burn<'info>(
         owner: outcome.owner,
         token_account: outcome.token_account,
         old_handle: outcome.old_balance_handle,
-        old_encrypted_store: outcome.balance_encrypted_store,
         new_handle: outcome.new_balance_handle,
-        new_encrypted_store: outcome.balance_encrypted_store,
+        encrypted_store: outcome.balance_encrypted_store,
         reason: BalanceHandleUpdateReason::BurnDebit,
     });
     emit_cpi!(TotalSupplyHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: outcome.mint,
         old_handle: outcome.old_total_supply_handle,
-        old_encrypted_store: outcome.total_supply_encrypted_store,
         new_handle: outcome.new_total_supply_handle,
-        new_encrypted_store: outcome.total_supply_encrypted_store,
+        encrypted_store: outcome.total_supply_encrypted_store,
         reason: TotalSupplyUpdateReason::Burn,
     });
     Ok(())
@@ -283,18 +281,16 @@ pub fn confidential_burn_from_value<'info>(
         owner: outcome.owner,
         token_account: outcome.token_account,
         old_handle: outcome.old_balance_handle,
-        old_encrypted_store: outcome.balance_encrypted_store,
         new_handle: outcome.new_balance_handle,
-        new_encrypted_store: outcome.balance_encrypted_store,
+        encrypted_store: outcome.balance_encrypted_store,
         reason: BalanceHandleUpdateReason::BurnDebit,
     });
     emit_cpi!(TotalSupplyHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
         mint: outcome.mint,
         old_handle: outcome.old_total_supply_handle,
-        old_encrypted_store: outcome.total_supply_encrypted_store,
         new_handle: outcome.new_total_supply_handle,
-        new_encrypted_store: outcome.total_supply_encrypted_store,
+        encrypted_store: outcome.total_supply_encrypted_store,
         reason: TotalSupplyUpdateReason::Burn,
     });
     Ok(())

@@ -121,7 +121,6 @@ fn emit_transfer_events<'info>(
             to_owner: outcome.to_owner,
             to_token_account: outcome.to_token_account,
             transferred_handle: outcome.transferred_handle,
-            transferred_encrypted_store: outcome.transferred_encrypted_store,
         });
         emit_cpi!(BalanceHandleUpdatedEvent {
             version: APP_EVENT_VERSION,
@@ -129,9 +128,8 @@ fn emit_transfer_events<'info>(
             owner: outcome.from_owner,
             token_account: outcome.from_token_account,
             old_handle: outcome.old_from_handle,
-            old_encrypted_store: outcome.from_encrypted_store,
             new_handle: outcome.new_from_handle,
-            new_encrypted_store: outcome.from_encrypted_store,
+            encrypted_store: outcome.from_encrypted_store,
             reason: BalanceHandleUpdateReason::TransferDebit,
         });
         emit_cpi!(BalanceHandleUpdatedEvent {
@@ -140,9 +138,8 @@ fn emit_transfer_events<'info>(
             owner: outcome.to_owner,
             token_account: outcome.to_token_account,
             old_handle: outcome.old_to_handle,
-            old_encrypted_store: outcome.to_encrypted_store,
             new_handle: outcome.new_to_handle,
-            new_encrypted_store: outcome.to_encrypted_store,
+            encrypted_store: outcome.to_encrypted_store,
             reason: BalanceHandleUpdateReason::TransferCredit,
         });
     }
@@ -290,7 +287,6 @@ pub fn confidential_transfer_from_value<'info>(
             to_owner: outcome.to_owner,
             to_token_account: outcome.to_token_account,
             transferred_handle: outcome.transferred_handle,
-            transferred_encrypted_store: outcome.transferred_encrypted_store,
         });
         emit_cpi!(BalanceHandleUpdatedEvent {
             version: APP_EVENT_VERSION,
@@ -298,9 +294,8 @@ pub fn confidential_transfer_from_value<'info>(
             owner: outcome.from_owner,
             token_account: outcome.from_token_account,
             old_handle: outcome.old_from_handle,
-            old_encrypted_store: outcome.from_encrypted_store,
             new_handle: outcome.new_from_handle,
-            new_encrypted_store: outcome.from_encrypted_store,
+            encrypted_store: outcome.from_encrypted_store,
             reason: BalanceHandleUpdateReason::TransferDebit,
         });
         emit_cpi!(BalanceHandleUpdatedEvent {
@@ -309,9 +304,8 @@ pub fn confidential_transfer_from_value<'info>(
             owner: outcome.to_owner,
             token_account: outcome.to_token_account,
             old_handle: outcome.old_to_handle,
-            old_encrypted_store: outcome.to_encrypted_store,
             new_handle: outcome.new_to_handle,
-            new_encrypted_store: outcome.to_encrypted_store,
+            encrypted_store: outcome.to_encrypted_store,
             reason: BalanceHandleUpdateReason::TransferCredit,
         });
         anchor_lang::solana_program::program::set_return_data(&outcome.transferred_handle);
