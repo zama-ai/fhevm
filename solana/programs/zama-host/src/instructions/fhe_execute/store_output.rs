@@ -11,7 +11,7 @@ pub(super) fn accept_store_output(
     make_public: bool,
     grants: &[ResultGrant],
     result: [u8; 32],
-) -> Result<Pubkey> {
+) -> Result<()> {
     let state_key = table.account(store_index.into())?.key();
     require!(
         table.state(store_index.into())?.leaf_count == previous_leaf_count,
@@ -53,5 +53,5 @@ pub(super) fn accept_store_output(
         let consumer = table.account(grant.consumer_store_index.into())?.key();
         transient_store.allow(result, consumer)?;
     }
-    Ok(state_key)
+    Ok(())
 }

@@ -1,8 +1,6 @@
 use anchor_lang::prelude::*;
 
-use super::common::{
-    assert_no_remaining_accounts, assert_not_paused, create_pda_strict, write_account,
-};
+use super::common::{assert_no_remaining_accounts, assert_not_paused, create_pda, write_account};
 use crate::{errors::ZamaHostError, state::*};
 
 #[derive(Accounts)]
@@ -55,7 +53,7 @@ pub fn create_encrypted_store(
     let space = zama_solana_acl::EncryptedStore::account_size(0, 0);
     #[cfg(feature = "cleartext")]
     let space = crate::cleartext::layout::STORE_ACCOUNT_SIZE;
-    create_pda_strict(
+    create_pda(
         &ctx.accounts.payer.to_account_info(),
         &info,
         &ctx.accounts.system_program.to_account_info(),
@@ -67,6 +65,7 @@ pub fn create_encrypted_store(
             scope.as_ref(),
             &[bump],
         ],
+        ZamaHostError::FheExecuteOutputAlreadyInitialized,
     )?;
     write_account(
         &info,

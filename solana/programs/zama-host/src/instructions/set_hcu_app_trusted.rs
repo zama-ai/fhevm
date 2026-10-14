@@ -29,7 +29,7 @@ pub struct SetHcuAppTrusted<'info> {
     #[account(
         init_if_needed,
         payer = payer,
-        space = 8 + HcuTrustedAppRecord::SPACE,
+        space = 8 + HcuTrustedAppRecord::INIT_SPACE,
         seeds = [HCU_TRUSTED_APP_SEED, app_program.as_ref(), scope.as_ref()],
         bump,
     )]

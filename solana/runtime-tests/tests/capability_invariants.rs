@@ -18,7 +18,7 @@
 //! instruction of the host IDL has a generator, and every admin and Store-authority role is also
 //! filled by keys that lack it, signing or not.
 //! `scripts/check-planted-bugs.sh` rebuilds the host with each patch in `planted-bugs/` and
-//! requires this suite to fail.
+//! requires the property test, or the deterministic test the patch names, to fail.
 //!
 //! The same sequences also run on the cleartext host build next to the production one: every
 //! transaction must end the same way, make the same calls other than to the System program, and

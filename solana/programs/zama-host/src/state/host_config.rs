@@ -10,6 +10,7 @@ use super::*;
 /// `HostConfig` is the runtime switchboard for this PoC. Each paused area rejects the
 /// instructions it covers (`PauseFlags`).
 #[account]
+#[derive(InitSpace)]
 pub struct HostConfig {
     /// Program administrator allowed to update config flags.
     pub admin: Pubkey,
@@ -61,22 +62,6 @@ pub struct HostConfig {
 
 impl HostConfig {
     pub const MAX_COPROCESSOR_SIGNERS: usize = crate::constants::MAX_COPROCESSOR_SIGNERS as usize;
-    pub const SPACE: usize = 32
-        + 8
-        + 8
-        + 20
-        + (Self::MAX_COPROCESSOR_SIGNERS * 20)
-        + 1
-        + 1
-        + 20
-        + 32
-        + 32
-        + PauseFlags::SPACE
-        + 1
-        + 8
-        + 8
-        + 8
-        + 1;
 
     /// Active coprocessor signer set: the first `coprocessor_signer_count` entries.
     /// `validate_and_pack_coprocessor_signers` bounds the count on every write.
@@ -104,7 +89,9 @@ pub fn pack_coprocessor_signers(
 
 /// The host areas a pauser can stop, each matching an area EVM pauses on its own (DD-058). As
 /// the argument of `pause` and `unpause`, a set field names an area to change.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Default, PartialEq, Eq, InitSpace,
+)]
 pub struct PauseFlags {
     /// `fhe_execute`, with the allows, transient grants and public releases it writes (EVM ACL
     /// pause, which stops execution through `allowTransient`).
@@ -118,9 +105,6 @@ pub struct PauseFlags {
 }
 
 impl PauseFlags {
-    /// Serialized size.
-    pub const SPACE: usize = 3;
-
     /// Every area.
     pub const ALL: Self = Self {
         execution: true,
@@ -181,7 +165,7 @@ mod tests {
     // many signers are registered.
     #[test]
     fn host_config_space_matches_serialized_len() {
-        assert_eq!(HostConfig::SPACE, 343);
+        assert_eq!(HostConfig::INIT_SPACE, 343);
 
         let cfg = HostConfig {
             admin: Pubkey::new_unique(),
@@ -205,6 +189,6 @@ mod tests {
         };
         let mut buf = Vec::new();
         cfg.try_serialize(&mut buf).unwrap();
-        assert_eq!(buf.len(), 8 + HostConfig::SPACE);
+        assert_eq!(buf.len(), 8 + HostConfig::INIT_SPACE);
     }
 }

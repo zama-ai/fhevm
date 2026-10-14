@@ -11,14 +11,10 @@ use super::*;
 /// would serialize them all. Only rand executions take this account, so ordinary writes stay
 /// parallel and rand executions serialize on one account across applications.
 #[account]
+#[derive(InitSpace)]
 pub struct RandNonce {
     /// Value consumed by the next rand execution.
     pub nonce: u64,
     /// PDA bump for `PDA("rand-nonce")`.
     pub bump: u8,
-}
-
-impl RandNonce {
-    /// Serialized size of the account body, excluding the Anchor discriminator.
-    pub const SPACE: usize = 8 + 1;
 }

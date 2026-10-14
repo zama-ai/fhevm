@@ -13,6 +13,7 @@
 
 use anchor_lang::{
     prelude::system_program, AccountDeserialize, AnchorDeserialize, Discriminator, InstructionData,
+    Space,
 };
 use mollusk_svm::result::Check;
 use solana_sdk::{
@@ -4239,8 +4240,8 @@ fn mollusk_fhe_execute_malformed_trust_witness_is_rejected() {
 
 #[test]
 fn mollusk_fhe_execute_wrong_app_meter_is_rejected() {
-    // A meter that belongs to a different application (wrong PDA / record identity) cannot be
-    // charged for this application.
+    // A meter that belongs to a different application (wrong PDA) cannot be charged for this
+    // application.
     let fixture = FheExecutionFixture::with_block_cap(500_000);
     let slot = fixture.context.mollusk.sysvars.clock.slot;
     let (other_meter_pda, other_meter_account) = hcu_block_meter_account(unique_app(), slot, 0);
@@ -4315,7 +4316,7 @@ fn mollusk_fhe_execute_prefunded_empty_meter_is_created_not_griefed() {
     assert!(
         lamports
             >= anchor_lang::prelude::Rent::default()
-                .minimum_balance(8 + host::HcuBlockMeter::SPACE)
+                .minimum_balance(8 + host::HcuBlockMeter::INIT_SPACE)
     );
     read_encrypted_store(&fixture.context, fixture.output_value);
 }

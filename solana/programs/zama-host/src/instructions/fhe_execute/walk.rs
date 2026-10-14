@@ -26,50 +26,6 @@ pub(super) struct RandContext {
 // (op/operands/type + slot entropy, no salt), matching EVM `FHEVMExecutor`. Only
 // rand seeds carry uniqueness — the consumed host nonce.
 impl ExecutionHandleContext {
-    fn binary_result(
-        &self,
-        op: FheBinaryOpCode,
-        lhs: [u8; 32],
-        rhs: [u8; 32],
-        scalar: bool,
-        output_fhe_type: u8,
-        mask: [u8; 32],
-    ) -> [u8; 32] {
-        computed_eval_handle(
-            op,
-            lhs,
-            rhs,
-            scalar,
-            output_fhe_type,
-            mask,
-            &self.derivation,
-        )
-    }
-
-    fn ternary_result(
-        &self,
-        op: FheTernaryOpCode,
-        control: [u8; 32],
-        if_true: [u8; 32],
-        if_false: [u8; 32],
-        output_fhe_type: u8,
-        mask: [u8; 32],
-    ) -> [u8; 32] {
-        computed_eval_ternary_handle(
-            op,
-            control,
-            if_true,
-            if_false,
-            output_fhe_type,
-            mask,
-            &self.derivation,
-        )
-    }
-
-    fn trivial_result(&self, plaintext: [u8; 32], fhe_type: u8) -> [u8; 32] {
-        computed_eval_trivial_handle(plaintext, fhe_type, &self.derivation)
-    }
-
     /// `fhe_execute` refuses a rand step without the nonce account before the walk starts, so
     /// the anchor is present whenever a rand step asks for its seed.
     pub(super) fn rand_seed(&self, op_index: u16) -> Result<[u8; 16]> {
@@ -83,36 +39,6 @@ impl ExecutionHandleContext {
             op_index,
             &self.derivation,
         ))
-    }
-
-    fn unary_result(
-        &self,
-        op: FheUnaryOpCode,
-        operand: [u8; 32],
-        output_fhe_type: u8,
-        mask: [u8; 32],
-    ) -> [u8; 32] {
-        computed_eval_unary_handle(op, operand, output_fhe_type, mask, &self.derivation)
-    }
-
-    fn mul_div_result(
-        &self,
-        factor1: [u8; 32],
-        factor2: [u8; 32],
-        scalar: bool,
-        divisor: [u8; 32],
-        output_fhe_type: u8,
-        mask: [u8; 32],
-    ) -> [u8; 32] {
-        computed_eval_mul_div_handle(
-            factor1,
-            factor2,
-            divisor,
-            scalar,
-            output_fhe_type,
-            mask,
-            &self.derivation,
-        )
     }
 }
 
@@ -223,13 +149,14 @@ pub(super) fn walk_steps<'info>(
                     *output_fhe_type,
                 )?;
                 let operands = [lhs, rhs];
-                let result = handle_context.binary_result(
+                let result = computed_eval_handle(
                     *op,
                     lhs.handle,
                     rhs.handle,
                     rhs.scalar,
                     *output_fhe_type,
                     boundary_mask(&operands)?,
+                    &handle_context.derivation,
                 );
                 let pricing_type = if hcu::is_comparison(*op) {
                     handle_fhe_type(lhs.handle)
@@ -259,13 +186,14 @@ pub(super) fn walk_steps<'info>(
                     *output_fhe_type,
                 )?;
                 let operands = [control, if_true, if_false];
-                let result = handle_context.ternary_result(
+                let result = computed_eval_ternary_handle(
                     *op,
                     control.handle,
                     if_true.handle,
                     if_false.handle,
                     *output_fhe_type,
                     boundary_mask(&operands)?,
+                    &handle_context.derivation,
                 );
                 execution.accept_output(
                     result,
@@ -278,7 +206,8 @@ pub(super) fn walk_steps<'info>(
                 fhe_type,
             } => {
                 assert_scalar_in_range(*plaintext, *fhe_type)?;
-                let result = handle_context.trivial_result(*plaintext, *fhe_type);
+                let result =
+                    computed_eval_trivial_handle(*plaintext, *fhe_type, &handle_context.derivation);
                 execution.accept_output(result, hcu::trivial_encrypt_hcu(*fhe_type)?, &[])?;
             }
             FheExecuteStep::Rand { fhe_type } => {
@@ -300,11 +229,12 @@ pub(super) fn walk_steps<'info>(
                 let operand = execution.resolve_encrypted_operand(operand)?;
                 assert_unary_operand_type(*op, operand.handle, *output_fhe_type)?;
                 let operands = [operand];
-                let result = handle_context.unary_result(
+                let result = computed_eval_unary_handle(
                     *op,
                     operand.handle,
                     *output_fhe_type,
                     boundary_mask(&operands)?,
+                    &handle_context.derivation,
                 );
                 execution.accept_output(
                     result,
@@ -390,13 +320,14 @@ pub(super) fn walk_steps<'info>(
                     *output_fhe_type,
                 )?;
                 let operands = [factor1, factor2];
-                let result = handle_context.mul_div_result(
+                let result = computed_eval_mul_div_handle(
                     factor1.handle,
                     factor2.handle,
-                    factor2.scalar,
                     *divisor,
+                    factor2.scalar,
                     *output_fhe_type,
                     boundary_mask(&operands)?,
+                    &handle_context.derivation,
                 );
                 execution.accept_output(
                     result,

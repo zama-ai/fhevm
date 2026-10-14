@@ -24,7 +24,7 @@ pub struct SetDenyScope<'info> {
     #[account(
         init_if_needed,
         payer = payer,
-        space = 8 + DenyScopeRecord::SPACE,
+        space = 8 + DenyScopeRecord::INIT_SPACE,
         seeds = [DENY_SCOPE_SEED, app_program.as_ref(), scope.as_ref()],
         bump,
     )]

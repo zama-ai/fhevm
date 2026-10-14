@@ -8,7 +8,7 @@ import {
 } from '@solana/kit';
 import { getOrCreateUiWalletAccountForStandardWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
 import { solanaPermitWalletFromSecretKey } from '@fhevm/sdk/solana';
-import { ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
+import { ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 import {
@@ -256,8 +256,8 @@ describe('Wallet Standard boundary', () => {
         new Error(
           [
             `Program ${ZAMA_HOST_PROGRAM_ADDRESS} invoke [1]`,
-            'Program log: AnchorError caused by account: transient_store. Error Code: TransientStoreNotOpened. Error Number: 6076. Error Message: transient store must be opened for this transaction and closed last.',
-            `Program ${ZAMA_HOST_PROGRAM_ADDRESS} failed: custom program error: 0x17bc`,
+            `Program log: AnchorError caused by account: transient_store. Error Code: TransientStoreNotOpened. Error Number: ${ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED}. Error Message: transient store must be opened for this transaction and closed last.`,
+            `Program ${ZAMA_HOST_PROGRAM_ADDRESS} failed: custom program error: 0x${ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED.toString(16)}`,
           ].join('\n'),
         ),
         'transaction',
@@ -269,8 +269,8 @@ describe('Wallet Standard boundary', () => {
   test('decodes host logs carried by the cause of a failed signing', () => {
     const estimate = new SolanaError(SOLANA_ERROR__TRANSACTION__FAILED_WHEN_SIMULATING_TO_ESTIMATE_RESOURCE_LIMITS, {
       logs: [
-        'Program log: AnchorError caused by account: transient_store. Error Code: TransientStoreNotOpened. Error Number: 6076. Error Message: transient store must be opened for this transaction and closed last.',
-        `Program ${ZAMA_HOST_PROGRAM_ADDRESS} failed: custom program error: 0x17bc`,
+        `Program log: AnchorError caused by account: transient_store. Error Code: TransientStoreNotOpened. Error Number: ${ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED}. Error Message: transient store must be opened for this transaction and closed last.`,
+        `Program ${ZAMA_HOST_PROGRAM_ADDRESS} failed: custom program error: 0x${ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED.toString(16)}`,
       ],
     } as never);
     const signing = new SolanaError(SOLANA_ERROR__FAILED_TO_SIGN_TRANSACTION, { cause: estimate, causeMessage: '' } as never);

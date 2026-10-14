@@ -12,7 +12,7 @@
 
 use anchor_lang::prelude::*;
 
-use super::super::common::{create_pda_if_needed, is_uninitialized_pda_account, write_account};
+use super::super::common::{create_pda, is_uninitialized_pda_account, write_account};
 use super::FheExecute;
 use crate::constants::HCU_UNLIMITED;
 use crate::errors::ZamaHostError;
@@ -51,26 +51,29 @@ pub(super) fn charge<'info>(
         .ok_or(ZamaHostError::HcuBlockMeterMissing)?;
     let info = meter.to_account_info();
     let (expected, bump) = hcu_block_meter_address(app);
-    let used = meter_used_for_slot(&info, app, expected, bump, slot)?;
+    let used = meter_used_for_slot(&info, expected, slot)?;
     let projected = used
         .checked_add(execution_total)
         .ok_or(ZamaHostError::HcuBlockLimitExceeded)?;
     require!(projected <= cap, ZamaHostError::HcuBlockLimitExceeded);
 
-    // Lazy-create on the first metered execution (noop once program-owned). A pre-squatted, non-empty
-    // account at the meter PDA fails here rather than being adopted.
-    create_pda_if_needed(
-        &ctx.accounts.payer.to_account_info(),
-        &info,
-        &ctx.accounts.system_program.to_account_info(),
-        8 + HcuBlockMeter::SPACE,
-        &[
-            HCU_BLOCK_METER_SEED,
-            app.program.as_ref(),
-            app.scope.as_ref(),
-            &[bump],
-        ],
-    )?;
+    // Lazy-create on the first metered execution. A pre-squatted, non-empty account at the meter
+    // PDA fails here rather than being adopted.
+    if info.owner != &crate::ID {
+        create_pda(
+            &ctx.accounts.payer.to_account_info(),
+            &info,
+            &ctx.accounts.system_program.to_account_info(),
+            8 + HcuBlockMeter::INIT_SPACE,
+            &[
+                HCU_BLOCK_METER_SEED,
+                app.program.as_ref(),
+                app.scope.as_ref(),
+                &[bump],
+            ],
+            ZamaHostError::PdaCreationMismatch,
+        )?;
+    }
     write_account(
         &info,
         &HcuBlockMeter {
@@ -88,13 +91,13 @@ pub(super) fn charge<'info>(
 /// - `None` / absent (system-owned + empty) ⇒ untrusted (benign — fall through to the meter);
 /// - present, program-owned, canonical PDA, `trusted == true` ⇒ bypass;
 /// - present, program-owned, canonical PDA, `trusted == false` ⇒ untrusted (fall through);
-/// - present but wrong PDA / owner / layout ⇒ `HcuTrustedAppRecordMismatch`.
+/// - present but wrong PDA / owner ⇒ `HcuTrustedAppRecordMismatch`.
 fn resolve_trusted<'info>(ctx: &Context<'info, FheExecute<'info>>, app: AppScope) -> Result<bool> {
     let Some(witness) = ctx.accounts.hcu_trusted_app_record.as_ref() else {
         return Ok(false);
     };
     let info = witness.to_account_info();
-    let (expected, expected_bump) = hcu_trusted_app_address(app);
+    let (expected, _) = hcu_trusted_app_address(app);
     require_keys_eq!(
         info.key(),
         expected,
@@ -104,22 +107,16 @@ fn resolve_trusted<'info>(ctx: &Context<'info, FheExecute<'info>>, app: AppScope
     if is_uninitialized_pda_account(&info, ZamaHostError::HcuTrustedAppRecordMismatch)? {
         return Ok(false);
     }
+    // At the canonical address and program-owned, the record was created and written only by
+    // `set_hcu_app_trusted` for this application.
     require_keys_eq!(
         *info.owner,
         crate::ID,
         ZamaHostError::HcuTrustedAppRecordMismatch
     );
-    require!(
-        info.data_len() == 8 + HcuTrustedAppRecord::SPACE,
-        ZamaHostError::HcuTrustedAppRecordMismatch
-    );
     let data = info.try_borrow_data()?;
     let mut data_slice: &[u8] = &data;
     let record = HcuTrustedAppRecord::try_deserialize(&mut data_slice)?;
-    require!(
-        record.bump == expected_bump && record.program == app.program && record.scope == app.scope,
-        ZamaHostError::HcuTrustedAppRecordMismatch
-    );
     Ok(record.trusted)
 }
 
@@ -127,31 +124,17 @@ fn resolve_trusted<'info>(ctx: &Context<'info, FheExecute<'info>>, app: AppScope
 /// the canonical meter PDA — checked first, so a misaddressed meter is rejected cheaply before
 /// `charge` tries to create it. A non-program-owned account (uninitialized / system-owned /
 /// squatted) is then treated as `0` — `charge`'s lazy-create
-/// rejects a squatter. A program-owned meter is validated
-/// (owner / length / recorded application / bump) before any field is read, then lazy-reset: a
-/// `last_seen_slot` other than the current slot means `0` for this execution.
-fn meter_used_for_slot(
-    info: &AccountInfo,
-    app: AppScope,
-    expected: Pubkey,
-    bump: u8,
-    slot: u64,
-) -> Result<u64> {
+/// rejects a squatter. A program-owned meter at the canonical address was created and written
+/// only by `charge` for this application; it is lazy-reset: a `last_seen_slot` other than the
+/// current slot means `0` for this execution.
+fn meter_used_for_slot(info: &AccountInfo, expected: Pubkey, slot: u64) -> Result<u64> {
     require_keys_eq!(info.key(), expected, ZamaHostError::HcuBlockMeterMismatch);
     if info.owner != &crate::ID {
         return Ok(0);
     }
-    require!(
-        info.data_len() == 8 + HcuBlockMeter::SPACE,
-        ZamaHostError::HcuBlockMeterMismatch
-    );
     let data = info.try_borrow_data()?;
     let mut data_slice: &[u8] = &data;
     let record = HcuBlockMeter::try_deserialize(&mut data_slice)?;
-    require!(
-        record.program == app.program && record.scope == app.scope && record.bump == bump,
-        ZamaHostError::HcuBlockMeterMismatch
-    );
     Ok(if record.last_seen_slot != slot {
         0
     } else {

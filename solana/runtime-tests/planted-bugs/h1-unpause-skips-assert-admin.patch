@@ -1,4 +1,5 @@
-Expect: H1: Unpause
+Test: host_admin_mollusk mollusk_a_pauser_pauses_and_only_the_admin_unpauses
+Expect: Got: `Success`
 
 --- a/solana/programs/zama-host/src/instructions/unpause.rs
 +++ b/solana/programs/zama-host/src/instructions/unpause.rs

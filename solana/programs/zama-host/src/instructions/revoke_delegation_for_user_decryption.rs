@@ -43,10 +43,6 @@ pub fn revoke_delegation_for_user_decryption(
     );
     let record = &ctx.accounts.delegation_record;
     require!(
-        record.to_account_info().data_len() == 8 + UserDecryptionDelegation::SPACE,
-        ZamaHostError::InvalidDelegation
-    );
-    require!(
         record.last_update_slot < clock.slot,
         ZamaHostError::DelegationUpdatedInCurrentSlot
     );

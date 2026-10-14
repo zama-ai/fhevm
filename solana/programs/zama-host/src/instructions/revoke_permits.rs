@@ -30,7 +30,7 @@ pub struct RevokePermits<'info> {
     #[account(
         init_if_needed,
         payer = user,
-        space = 8 + PermitInvalidation::SPACE,
+        space = 8 + PermitInvalidation::INIT_SPACE,
         seeds = [PERMIT_INVALIDATION_SEED, user.key().as_ref()],
         bump,
     )]

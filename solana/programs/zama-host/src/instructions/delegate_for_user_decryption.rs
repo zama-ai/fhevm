@@ -25,7 +25,7 @@ pub struct DelegateForUserDecryption<'info> {
     #[account(
         init_if_needed,
         payer = payer,
-        space = 8 + UserDecryptionDelegation::SPACE,
+        space = 8 + UserDecryptionDelegation::INIT_SPACE,
         seeds = [DELEGATION_SEED, delegator.key().as_ref(), delegate.as_ref(), program.as_ref(), scope.key().as_ref()],
         bump,
     )]

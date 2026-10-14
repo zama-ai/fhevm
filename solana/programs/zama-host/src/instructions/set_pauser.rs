@@ -25,7 +25,7 @@ pub struct SetPauser<'info> {
     #[account(
         init_if_needed,
         payer = payer,
-        space = 8 + PauserRecord::SPACE,
+        space = 8 + PauserRecord::INIT_SPACE,
         seeds = [PAUSER_SEED, pauser.as_ref()],
         bump,
     )]
