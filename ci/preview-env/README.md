@@ -300,9 +300,9 @@ The two host chains are the real public testnets, so this is the only preview sh
     parameters (`params-type=0`), and each kms-worker reaches its core through
     `kms-test-keygen-proxy-<i>`, the docker stack's proxy, which switches keygen to
     the KMS insecure keygen (minutes, no DKG). The proxy also sits on every other
-    kms-worker call, decryptions included. The CRS ceremony is the real one, so
-    Anvil allows 15 m for keygen, 1 h for CRS and 90 m Helm; testnets 60 m / 60 m
-    and 130 m Helm.
+    kms-worker call, decryptions included. The CRS ceremony is the real one; key
+    and CRS took about 6 min on a 4-party Anvil preview, so the 15 m waits and
+    45 m Helm stay; testnets 60 m / 40 m and 110 m Helm.
   - `keygen=secure`: Default parameters from the real DKG. A four-party Default
     DKG is multi-hour work, so it allows 4 h for keygen and 1 h for CRS, with
     `KEYGEN_TIMEOUT=310m` giving Helm room for both in one pod. It deliberately

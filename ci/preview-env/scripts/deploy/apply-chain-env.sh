@@ -60,15 +60,14 @@ set_poller_flag() {
 # Workflow run-test env is nested; match by .name anywhere under a given file
 # would collide on DEPLOYER_PRIVATE_KEY. Keep file-specific helpers instead.
 
-# The values hold Default params with the insecure keygen: 15 min keygen wait,
-# 1 h for the Default CRS ceremony. The four-party Default DKG needs hours; Test
-# params need neither long wait.
+# The values hold Default params. The insecure keygen and Test params fit the
+# trigger script's 15 min waits; the four-party Default DKG needs hours.
 keygen="${root}/host-chain/values-host-trigger-keygen-e2e.yaml"
 if [[ "${FHE_PARAMS}" == "test" ]]; then
   set_named_env "${keygen}" ".scDeploy.env" KEYGEN_PARAMS_TYPE 1
-  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-900000}"
 elif [[ "${KEYGEN}" == "secure" ]]; then
   set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-14400000}"
+  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-3600000}"
 fi
 if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
   echo "Anvil: fhe_params=${FHE_PARAMS} keygen=${KEYGEN}."
@@ -127,13 +126,10 @@ if [[ "${CHAIN_MODE}" == "testnets" && ! ( "${FHE_PARAMS}" == "default" && "${KE
   # response tx -> KeygenRequest -> response tx); measured end to end on Sepolia:
   # PrepKeygenRequest 19:55:12 -> ActivateKey 20:38:24, i.e. 43 min. 60m leaves headroom
   # for finality degrading further. Crsgen is a single round trip, so ~25 min; 40m keeps
-  # a genuine failure there from burning the full keygen budget. The Default CRS
-  # ceremony keeps its 1 h.
+  # a genuine failure there from burning the full keygen budget.
   # KEYGEN_TIMEOUT (resolve-chain.sh) must exceed their sum - both waits share one pod.
   set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-3600000}"
-  if [[ "${FHE_PARAMS}" == "test" ]]; then
-    set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-2400000}"
-  fi
+  set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-2400000}"
 fi
 
 # --- listener ---

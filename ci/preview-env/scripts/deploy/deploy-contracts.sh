@@ -6,15 +6,12 @@
 set -euo pipefail
 
 deploy_timeout="${CONTRACTS_DEPLOY_TIMEOUT:-10m}"
-# One pod waits for keygen then CRS (waits in apply-chain-env.sh): the Default
-# DKG is multi-hour; the insecure keygen is 15 min + 1 h Default CRS ceremony;
-# Test params finish in tens of minutes.
-if [[ "${FHE_PARAMS:?}" == "test" ]]; then
-  keygen_timeout="${KEYGEN_TIMEOUT:-45m}"
-elif [[ "${KEYGEN:?}" == "secure" ]]; then
+# The Default DKG is multi-hour; Test params and the insecure keygen (key and
+# CRS in about 6 min) finish well within 45m.
+if [[ "${FHE_PARAMS:?}" == "default" && "${KEYGEN:?}" == "secure" ]]; then
   keygen_timeout="${KEYGEN_TIMEOUT:-310m}"
 else
-  keygen_timeout="${KEYGEN_TIMEOUT:-90m}"
+  keygen_timeout="${KEYGEN_TIMEOUT:-45m}"
 fi
 
 kind="${1:?kind}"

@@ -93,14 +93,9 @@ case "${CHAIN_MODE}" in
       echo "HARDHAT_NETWORK_TESTS=sepolia"
       # 12s blocks stretch hardhat deploys and the keygen ceremony.
       echo "CONTRACTS_DEPLOY_TIMEOUT=30m"
-      # Keygen + crsgen on Sepolia (~43 min + ~25 min, waits 60m + 40m) plus
-      # compile; the Default CRS ceremony waits 60m. The Default DKG overwrites
-      # KEYGEN_TIMEOUT to 310m after this case.
-      if [[ "${FHE_PARAMS:?}" == "test" ]]; then
-        echo "KEYGEN_TIMEOUT=110m"
-      else
-        echo "KEYGEN_TIMEOUT=130m"
-      fi
+      # Keygen + crsgen on Sepolia (~43 min + ~25 min) plus compile. The
+      # Default DKG overwrites KEYGEN_TIMEOUT to 310m after this case.
+      echo "KEYGEN_TIMEOUT=110m"
     } >> "${GITHUB_ENV}"
       echo "Chain mode: testnets (host 11155111 Sepolia, polygon 80002 Amoy from AWS Secrets Manager, gateway ${NITRO_CHAIN_ID} Nitro)"
     ;;

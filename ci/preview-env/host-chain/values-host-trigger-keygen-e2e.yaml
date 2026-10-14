@@ -45,9 +45,6 @@ scDeploy:
     # 1 (Test) in apply-chain-env.sh. GPU needs Default: Test parameters use
     # drift noise reduction, which TFHE 1.6.3 cannot convert to a GPU server key.
     - {name: KEYGEN_PARAMS_TYPE, value: "0"}
-    # 1 h for the Default CRS ceremony, which the insecure keygen does not skip;
-    # fhe_params=test shortens it.
-    - {name: CRSGEN_WAIT_TIMEOUT_MS, value: "3600000"}
     # Deployer AND final ACL owner: Hardhat account #9. Deploys the host contracts,
     # triggers keygen/crsgen (onlyACLOwner), and STAYS the owner - there is deliberately
     # no post-crsgen ownership transfer. Keep in sync with values-host-contracts-e2e.yaml's
@@ -74,7 +71,6 @@ scDeploy:
         exit 1
       fi
       echo "Resolved KMS_GENERATION_CONTRACT_ADDRESS=${KMS_GENERATION_CONTRACT_ADDRESS}"
-    # KEYGEN_PARAMS_TYPE: see its env entry above.
     - npx hardhat task:triggerKeygen --params-type "${KEYGEN_PARAMS_TYPE}" --use-internal-proxy-address true
     # (kms-keygen-wait) task:triggerKeygen only waits for its *request* tx to be mined
     # (keygenTx.wait()) - the actual 4-party enclave preprocessing + DKG consensus

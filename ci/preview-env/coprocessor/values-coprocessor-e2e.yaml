@@ -182,10 +182,10 @@ zkProofWorker:
     - --pg-listen-channel=event_zkpok_new_work
     - --pg-notify-channel=event_zkpok_computed
   # Chart default (512Mi) OOMs with Default FHE parameters, whose CRS is far larger than
-  # the test one. 8Gi was stable for the CRS, but each task also loads the Default server
-  # key, and 8Gi was OOM-killed there; about 4Gi once loaded.
+  # the test one. Each task also loads the Default server key: 8Gi was OOM-killed while
+  # loading, about 4Gi once loaded.
   resources:
-    requests: {cpu: "1", memory: 2Gi}
+    requests: {cpu: "1", memory: 8Gi}
     limits: {cpu: "4", memory: 32Gi}
   affinity:
     nodeAffinity:
