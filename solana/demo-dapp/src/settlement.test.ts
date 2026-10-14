@@ -20,7 +20,6 @@ vi.mock('./vault/index.js', () => ({
   getBatchByIndex: mocks.getBatchByIndex,
   getBatchJoinRecords: mocks.getBatchJoinRecords,
   readHostPolicy: () => Promise.resolve({}),
-  settleDeadline: () => 100n,
 }));
 vi.mock('@fhevm/sdk/solana', () => ({ prepareTransientStore: () => Promise.resolve({}) }));
 vi.mock('@solana/sysvars', () => ({ fetchSysvarClock: mocks.clock }));
@@ -34,7 +33,7 @@ const config = { rpcUrl: 'http://rpc', authorityFundingLamports: '0', programs: 
 const keeper = createNoopSigner(address('5bV6jUfhDHCQVA1WfKBUnXUsboJgoKgkzkKcxr3joew5'));
 const session = { relayerApiKey: 'key', config, keeper } as never;
 const position = { batch: 'batch-0', batchIndex: 0n } as never;
-const batchIn = (status: BatchStatus) => ({ index: 0n, addresses: { batch: 'batch-0' }, state: { status } });
+const batchIn = (status: BatchStatus) => ({ index: 0n, addresses: { batch: 'batch-0' }, state: { status, settleDeadline: 100n } });
 const sent = (): { kind: string; user?: string }[] =>
   mocks.sendFheTransaction.mock.calls.flatMap((call) => call[1] as { kind: string; user?: string }[]);
 

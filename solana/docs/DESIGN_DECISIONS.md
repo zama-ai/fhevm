@@ -1274,8 +1274,8 @@ certified underlying amount and closes the account. Cancel restores encrypted ba
 total supply, then closes it. The batcher exposes the same escape path, bounded by time rather than
 by a role. Each batch copies the batcher's `settle_deadline_secs` (at most
 `MAX_SETTLE_DEADLINE_SECS`, zero allowed) when it opens, so a later change cannot shorten it, and
-each dispatch records its `dispatched_at`. Settle runs only before `dispatched_at +
-settle_deadline_secs`; from then on anyone may cancel the dispatch. So a cancel never races a
+each dispatch records its `settle_deadline`, the dispatch time plus `settle_deadline_secs`. Settle
+runs only before `settle_deadline`; from then on anyone may cancel the dispatch. So a cancel never races a
 settle, and a stuck batch never waits on an operator: a paused batcher refuses a nonzero settle but
 not the cancel (DD-042). Cancellation enters the terminal, refund-only `Refunding` state: the batch
 cannot be reused, and anyone may run a participant's `quit`, which can only pay that participant's own

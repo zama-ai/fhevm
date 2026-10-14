@@ -189,7 +189,7 @@ pub fn settle<'info>(
         BatcherError::BatchNotDispatched
     );
     require!(
-        Clock::get()?.unix_timestamp < ctx.accounts.batch.settle_deadline(),
+        Clock::get()?.unix_timestamp < ctx.accounts.batch.settle_deadline,
         BatcherError::SettleDeadlinePassed
     );
     require_keys_eq!(

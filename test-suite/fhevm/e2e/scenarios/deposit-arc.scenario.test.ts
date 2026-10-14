@@ -277,11 +277,11 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       });
 
       // Step 9: wait until the batch is old enough to dispatch. dispatch.rs rejects with
-      // BatchTooYoung until the clock reaches openedAt + minBatchAgeSecs (the seeder sets 10s), so
+      // BatchTooYoung until the clock reaches dispatchableAt (the seeder sets 10s), so
       // wait for that age explicitly instead of catch-and-retrying an on-chain revert. The dispatch
       // transaction executes no earlier than the finalized clock observed here, so this condition
       // is sufficient, not merely close.
-      const dispatchableAt = vault.dispatchableAt(batchBeforeJoin.state);
+      const dispatchableAt = batchBeforeJoin.state.dispatchableAt;
       console.log(`deposit-arc dispatch: waiting for batch to reach min dispatch age (unix ${dispatchableAt})...`);
       await until(
         async () => (await fetchSysvarClock(rpc)).unixTimestamp >= dispatchableAt,
@@ -572,7 +572,7 @@ test.skipIf(!runsDemoScenarios)(
     const joinStore = await vault.joinStoreAddress(batch, alice.address);
     expect(await readAmount(joinStore, vault.JOINED_AMOUNT_KEY)).toBe(amount);
     const unixNow = async () => (await fetchSysvarClock(rpc)).unixTimestamp;
-    await until(async () => (await unixNow()) >= vault.dispatchableAt(current.state),
+    await until(async () => (await unixNow()) >= current.state.dispatchableAt,
       { description: 'refund batch dispatch age', timeoutMs: 120_000 });
     const session = async () => {
       await personas.fund(personas.roles.keeper!, 0.2);
@@ -592,7 +592,7 @@ test.skipIf(!runsDemoScenarios)(
     expect((await account()).value).toEqual(pendingBefore);
     // Nobody settles the batch before its settle deadline, so the keeper's settle pass cancels it and
     // then runs every participant's quit.
-    await until(async () => (await unixNow()) >= vault.settleDeadline(dispatched.state),
+    await until(async () => (await unixNow()) >= dispatched.state.settleDeadline,
       { description: 'refund batch settle deadline', timeoutMs: 300_000 });
     expect(await settleOrCancelVaultBatch(await session(), position, 'deposit')).not.toBeNull();
     expect((await vault.getBatchByIndex(rpc, roots, current.index)).state.status).toBe(vault.BatchStatus.Refunding);

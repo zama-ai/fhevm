@@ -614,7 +614,7 @@ Holds by construction: the token program checks only `ConfidentialMint.authority
 neither the Host upgrade authority nor `HostConfig.admin`.
 
 **60. [HOLDS]** A dispatched confidential batch settles only before its settle
-deadline (`dispatched_at + settle_deadline_secs`, with the deadline the batch opened with, so a
+deadline (`settle_deadline`, set at dispatch from the `settle_deadline_secs` the batch opened with, so a
 later policy change cannot shorten it) and can be cancelled by anyone only from that deadline on,
 so a cancel never races a settle. With a zero deadline, the batch cannot settle and anyone may
 cancel it once it is dispatched.

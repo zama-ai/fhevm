@@ -11,7 +11,6 @@ import {
   buildCancelDispatchInstruction,
   buildDispatchBatchInstruction,
   buildQuitInstruction,
-  dispatchableAt,
   getBatchJoinRecords,
   type VaultDemoRoots,
   findJoinRecordPda,
@@ -20,7 +19,6 @@ import {
   getCloseJoinRecordInstructionAsync,
   readHostPolicy,
   settleBatch,
-  settleDeadline,
 } from './vault/index.js';
 
 import {
@@ -74,7 +72,7 @@ export const readVaultLifecycle = async (
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
   if (batch.state.status === BatchStatus.Pending) {
     const { unixTimestamp } = await fetchSysvarClock(rpc);
-    const from = dispatchableAt(batch.state);
+    const from = batch.state.dispatchableAt;
     return {
       kind: 'awaiting-dispatch',
       remainingSecs: unixTimestamp >= from ? 0n : from - unixTimestamp,
@@ -108,7 +106,7 @@ export const dispatchVaultBatch = async (
   const roots = vaultRoots(session.config, direction);
   const { rpc, batch } = await currentPinnedBatch(session, position, direction);
   if (batch.state.status >= BatchStatus.Dispatched) return null;
-  if ((await fetchSysvarClock(rpc)).unixTimestamp < dispatchableAt(batch.state)) {
+  if ((await fetchSysvarClock(rpc)).unixTimestamp < batch.state.dispatchableAt) {
     throw new Error('The batch is not old enough to dispatch yet');
   }
   const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
@@ -184,7 +182,7 @@ export const settleOrCancelVaultBatch = async (
   let signature: Signature | null = null;
   if (status === BatchStatus.Dispatched) {
     const keeperClient = createDemoClient(session.config, session.keeper);
-    if ((await fetchSysvarClock(rpc)).unixTimestamp >= settleDeadline(batch.state)) {
+    if ((await fetchSysvarClock(rpc)).unixTimestamp >= batch.state.settleDeadline) {
       // Settle is refused from the deadline on; cancelling opens the participants' refunds instead.
       const transientStore = await prepareTransientStore({ payer: session.keeper, host: session.config.programs.host });
       const cancel = await buildCancelDispatchInstruction({
