@@ -277,7 +277,7 @@ describe.skipIf(!runsDemoScenarios)("solana deposit-arc scenario", () => {
       });
 
       // Step 9: wait until the batch is old enough to dispatch. dispatch.rs rejects with
-      // BatchTooYoung until the clock reaches dispatchableAt (the seeder sets 10s), so
+      // BatchTooYoung until the clock reaches dispatchableAt (open time + the seeder's 10s age), so
       // wait for that age explicitly instead of catch-and-retrying an on-chain revert. The dispatch
       // transaction executes no earlier than the finalized clock observed here, so this condition
       // is sufficient, not merely close.

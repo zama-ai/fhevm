@@ -22,7 +22,6 @@ import {
   getBatchJoinRecords,
   getJoinRecord,
   RECENT_BATCH_SCAN_LIMIT,
-  type BatchState,
 } from './reads.js';
 
 function addr(fill: number): Address {
