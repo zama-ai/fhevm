@@ -72,15 +72,15 @@ pub struct Batch {
     pub index: u64,
     /// Lifecycle status.
     pub status: BatchStatus,
-    /// Unix time the batch opened at; dispatch requires `min_batch_age_secs` past.
-    pub opened_at: i64,
-    /// Minimum seconds the batch stays open before dispatch, frozen when it opened.
-    pub min_batch_age_secs: u64,
+    /// Unix time from which the batch may be dispatched: when it opened plus the batcher's
+    /// minimum batch age at that time.
+    pub dispatchable_at: i64,
     /// Seconds after dispatch during which only `settle` may finish the batch, frozen when it
     /// opened; from then on only `cancel_dispatch` may, and anyone can call it.
     pub settle_deadline_secs: u64,
-    /// Unix time the batch was dispatched at (zero before dispatch).
-    pub dispatched_at: i64,
+    /// Unix time from which the dispatched batch can no longer settle: dispatch time plus
+    /// `settle_deadline_secs` (zero before dispatch).
+    pub settle_deadline: i64,
     /// Number of join calls routed into this batch.
     pub join_count: u64,
     /// Bump of the per-batch authority PDA.
@@ -91,22 +91,6 @@ pub struct Batch {
     pub total_joined: u64,
     /// Payout units the vault phase produced for the batch total (set at settle).
     pub payout_received: u64,
-}
-
-impl Batch {
-    /// Unix time from which a pending batch may be dispatched.
-    pub fn dispatchable_at(&self) -> i64 {
-        // Bounded by `MAX_MIN_BATCH_AGE_SECS` when set, so the cast cannot wrap.
-        self.opened_at
-            .saturating_add(self.min_batch_age_secs as i64)
-    }
-
-    /// Unix time from which a dispatched batch can no longer settle and anyone may cancel it.
-    pub fn settle_deadline(&self) -> i64 {
-        // Bounded by `MAX_SETTLE_DEADLINE_SECS` when set, so the cast cannot wrap.
-        self.dispatched_at
-            .saturating_add(self.settle_deadline_secs as i64)
-    }
 }
 
 /// Per-(batch, user) join record. The encrypted amount itself lives in the batcher-owned

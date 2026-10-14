@@ -51,7 +51,6 @@ export {
   type BatchAddresses,
 } from './derive.js';
 export {
-  dispatchableAt,
   findRecentJoin,
   getBatcher,
   getBatchByIndex,
@@ -60,7 +59,6 @@ export {
   getEncryptedStore,
   getJoinRecord,
   RECENT_BATCH_SCAN_LIMIT,
-  settleDeadline,
   type BatcherState,
   type BatchState,
   type JoinRecordState,

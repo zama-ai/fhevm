@@ -85,7 +85,7 @@ pub fn cancel_dispatch<'info>(
         BatcherError::ConfidentialMintMismatch
     );
     require!(
-        Clock::get()?.unix_timestamp >= ctx.accounts.batch.settle_deadline(),
+        Clock::get()?.unix_timestamp >= ctx.accounts.batch.settle_deadline,
         BatcherError::SettleDeadlineNotReached
     );
 

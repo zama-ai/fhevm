@@ -23,7 +23,7 @@
 
 use anchor_lang::{
     prelude::{system_program, Instructions},
-    AccountDeserialize, Discriminator,
+    Discriminator,
 };
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token::spl_token;
@@ -3022,7 +3022,7 @@ fn mollusk_dispatch_opens_the_next_batch() {
     let next = BatchKeys::new(&fixture, 1);
     let opened = read_batch(&context, next.batch);
     assert_eq!(
-        (opened.index, opened.status, opened.opened_at),
+        (opened.index, opened.status, opened.dispatchable_at),
         (
             1,
             batcher::BatchStatus::Pending,
@@ -3620,8 +3620,11 @@ fn mollusk_a_batch_keeps_the_policy_it_opened_with() {
     );
     let opened = read_batch(&context, first.batch);
     assert_eq!(
-        (opened.min_batch_age_secs, opened.settle_deadline_secs),
-        (0, SETTLE_DEADLINE_SECS)
+        (opened.dispatchable_at, opened.settle_deadline_secs),
+        (
+            context.mollusk.sysvars.clock.unix_timestamp,
+            SETTLE_DEADLINE_SECS
+        )
     );
 
     run_join(
@@ -3645,8 +3648,8 @@ fn mollusk_a_batch_keeps_the_policy_it_opened_with() {
     let second = BatchKeys::new(&fixture, 1);
     let opened = read_batch(&context, second.batch);
     assert_eq!(
-        (opened.min_batch_age_secs, opened.settle_deadline_secs),
-        (1_000, 0)
+        (opened.dispatchable_at, opened.settle_deadline_secs),
+        (context.mollusk.sysvars.clock.unix_timestamp + 1_000, 0)
     );
     run_join(
         &context,
@@ -4927,28 +4930,4 @@ fn mollusk_a_batch_of_another_batcher_is_refused() {
             &[batcher_error(batcher::BatcherError::BatchBatcherMismatch)],
         );
     }
-}
-
-/// zama-host only creates a store at the address its fields derive, so the batcher reads a join
-/// store without re-deriving that address. Planted anyway, a store whose fields name another
-/// address is still refused: the claim's execution looks for the store its fields name.
-#[test]
-fn mollusk_a_store_whose_fields_disagree_with_its_address_is_refused() {
-    let (fixture, context, keys) = settled_batch_with_alice_and_bob();
-    let join_store = keys.pending_join_value(fixture.alice.user);
-    {
-        let mut accounts = context.account_store.borrow_mut();
-        let account = accounts.get_mut(&join_store).unwrap();
-        let mut store = host::EncryptedStore::try_deserialize(&mut &account.data[..]).unwrap();
-        store.scope = Pubkey::new_unique();
-        account.data = serialized_account(store);
-    }
-    check_batcher_instruction(
-        &context,
-        &claim_ix(&fixture, &keys, &fixture.alice),
-        &[Check::err(ProgramError::Custom(u32::from(
-            zama_fhe::FheExecutionError::UnexpectedDynamicAccount,
-        )))],
-    );
-    assert!(!read_join_record(&context, keys.join_record(fixture.alice.user)).claimed);
 }

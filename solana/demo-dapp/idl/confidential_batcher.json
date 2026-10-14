@@ -3786,18 +3786,12 @@
             }
           },
           {
-            "name": "opened_at",
+            "name": "dispatchable_at",
             "docs": [
-              "Unix time the batch opened at; dispatch requires `min_batch_age_secs` past."
+              "Unix time from which the batch may be dispatched: when it opened plus the batcher's",
+              "minimum batch age at that time."
             ],
             "type": "i64"
-          },
-          {
-            "name": "min_batch_age_secs",
-            "docs": [
-              "Minimum seconds the batch stays open before dispatch, frozen when it opened."
-            ],
-            "type": "u64"
           },
           {
             "name": "settle_deadline_secs",
@@ -3808,9 +3802,10 @@
             "type": "u64"
           },
           {
-            "name": "dispatched_at",
+            "name": "settle_deadline",
             "docs": [
-              "Unix time the batch was dispatched at (zero before dispatch)."
+              "Unix time from which the dispatched batch can no longer settle: dispatch time plus",
+              "`settle_deadline_secs` (zero before dispatch)."
             ],
             "type": "i64"
           },

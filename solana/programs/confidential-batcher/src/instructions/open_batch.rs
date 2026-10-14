@@ -137,10 +137,10 @@ pub(crate) fn open_batch<'info>(
     batch.batcher = accounts.batcher.key();
     batch.index = index;
     batch.status = BatchStatus::Pending;
-    batch.opened_at = opened_at;
-    batch.min_batch_age_secs = accounts.batcher.min_batch_age_secs;
+    // Bounded by `MAX_MIN_BATCH_AGE_SECS`, so the cast cannot wrap.
+    batch.dispatchable_at = opened_at.saturating_add(accounts.batcher.min_batch_age_secs as i64);
     batch.settle_deadline_secs = accounts.batcher.settle_deadline_secs;
-    batch.dispatched_at = 0;
+    batch.settle_deadline = 0;
     batch.join_count = 0;
     batch.authority_bump = accounts.batch_authority_bump;
     batch.burned_total_handle = [0; 32];
@@ -158,7 +158,7 @@ pub(crate) fn open_batch<'info>(
         index,
         batch_authority: accounts.batch_authority.key(),
         opened_at,
-        min_batch_age_secs: batch.min_batch_age_secs,
+        min_batch_age_secs: batcher.min_batch_age_secs,
         settle_deadline_secs: batch.settle_deadline_secs,
     });
     Ok(())

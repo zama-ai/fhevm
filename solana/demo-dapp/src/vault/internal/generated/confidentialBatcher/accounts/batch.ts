@@ -61,17 +61,21 @@ export type Batch = {
   index: bigint;
   /** Lifecycle status. */
   status: BatchStatus;
-  /** Unix time the batch opened at; dispatch requires `min_batch_age_secs` past. */
-  openedAt: bigint;
-  /** Minimum seconds the batch stays open before dispatch, frozen when it opened. */
-  minBatchAgeSecs: bigint;
+  /**
+   * Unix time from which the batch may be dispatched: when it opened plus the batcher's
+   * minimum batch age at that time.
+   */
+  dispatchableAt: bigint;
   /**
    * Seconds after dispatch during which only `settle` may finish the batch, frozen when it
    * opened; from then on only `cancel_dispatch` may, and anyone can call it.
    */
   settleDeadlineSecs: bigint;
-  /** Unix time the batch was dispatched at (zero before dispatch). */
-  dispatchedAt: bigint;
+  /**
+   * Unix time from which the dispatched batch can no longer settle: dispatch time plus
+   * `settle_deadline_secs` (zero before dispatch).
+   */
+  settleDeadline: bigint;
   /** Number of join calls routed into this batch. */
   joinCount: bigint;
   /** Bump of the per-batch authority PDA. */
@@ -91,17 +95,21 @@ export type BatchArgs = {
   index: number | bigint;
   /** Lifecycle status. */
   status: BatchStatusArgs;
-  /** Unix time the batch opened at; dispatch requires `min_batch_age_secs` past. */
-  openedAt: number | bigint;
-  /** Minimum seconds the batch stays open before dispatch, frozen when it opened. */
-  minBatchAgeSecs: number | bigint;
+  /**
+   * Unix time from which the batch may be dispatched: when it opened plus the batcher's
+   * minimum batch age at that time.
+   */
+  dispatchableAt: number | bigint;
   /**
    * Seconds after dispatch during which only `settle` may finish the batch, frozen when it
    * opened; from then on only `cancel_dispatch` may, and anyone can call it.
    */
   settleDeadlineSecs: number | bigint;
-  /** Unix time the batch was dispatched at (zero before dispatch). */
-  dispatchedAt: number | bigint;
+  /**
+   * Unix time from which the dispatched batch can no longer settle: dispatch time plus
+   * `settle_deadline_secs` (zero before dispatch).
+   */
+  settleDeadline: number | bigint;
   /** Number of join calls routed into this batch. */
   joinCount: number | bigint;
   /** Bump of the per-batch authority PDA. */
@@ -122,10 +130,9 @@ export function getBatchEncoder(): FixedSizeEncoder<BatchArgs> {
       ['batcher', getAddressEncoder()],
       ['index', getU64Encoder()],
       ['status', getBatchStatusEncoder()],
-      ['openedAt', getI64Encoder()],
-      ['minBatchAgeSecs', getU64Encoder()],
+      ['dispatchableAt', getI64Encoder()],
       ['settleDeadlineSecs', getU64Encoder()],
-      ['dispatchedAt', getI64Encoder()],
+      ['settleDeadline', getI64Encoder()],
       ['joinCount', getU64Encoder()],
       ['authorityBump', getU8Encoder()],
       ['burnedTotalHandle', fixEncoderSize(getBytesEncoder(), 32)],
@@ -143,10 +150,9 @@ export function getBatchDecoder(): FixedSizeDecoder<Batch> {
     ['batcher', getAddressDecoder()],
     ['index', getU64Decoder()],
     ['status', getBatchStatusDecoder()],
-    ['openedAt', getI64Decoder()],
-    ['minBatchAgeSecs', getU64Decoder()],
+    ['dispatchableAt', getI64Decoder()],
     ['settleDeadlineSecs', getU64Decoder()],
-    ['dispatchedAt', getI64Decoder()],
+    ['settleDeadline', getI64Decoder()],
     ['joinCount', getU64Decoder()],
     ['authorityBump', getU8Decoder()],
     ['burnedTotalHandle', fixDecoderSize(getBytesDecoder(), 32)],
@@ -211,5 +217,5 @@ export async function fetchAllMaybeBatch(
 }
 
 export function getBatchSize(): number {
-  return 138;
+  return 130;
 }
