@@ -4825,11 +4825,17 @@ fn mollusk_join_refuses_another_destination() {
         fixture.alice.user,
         token::id(),
     );
+    let underlying_mint = fixture.join_mint().underlying_mint;
+    ensure_system_accounts(&context, &[owner_ata(fixture.bob.user, underlying_mint)]);
     let join = replace_accounts(
         &join_ix(&fixture, &keys, &fixture.alice, attestation),
         &[
             (keys.join_token_account, bob.token_account),
             (keys.join_balance_store, bob.balance_store),
+            (
+                owner_ata(keys.batch_authority, underlying_mint),
+                owner_ata(fixture.bob.user, underlying_mint),
+            ),
         ],
     );
     check_batcher_instruction(
@@ -4864,11 +4870,17 @@ fn mollusk_claim_refuses_another_destination() {
     );
     let alice = fixture.user_payout(&fixture.alice);
     let bob = fixture.user_payout(&fixture.bob);
+    let underlying_mint = fixture.payout_mint().underlying_mint;
+    ensure_system_accounts(&context, &[owner_ata(fixture.bob.user, underlying_mint)]);
     let claim = replace_accounts(
         &claim_ix(&fixture, &keys, &fixture.alice),
         &[
             (alice.token_account, bob.token_account),
             (alice.balance_store, bob.balance_store),
+            (
+                owner_ata(fixture.alice.user, underlying_mint),
+                owner_ata(fixture.bob.user, underlying_mint),
+            ),
         ],
     );
     check_batcher_instruction(
