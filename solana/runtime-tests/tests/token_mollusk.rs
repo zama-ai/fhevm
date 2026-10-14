@@ -24,7 +24,7 @@ use anchor_lang::{prelude::system_program, AccountDeserialize, AnchorDeserialize
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use confidential_token as token;
 use mollusk_svm::{
-    result::{Check, InstructionResult},
+    result::{Check, InstructionResult, ProgramResult},
     Mollusk,
 };
 use solana_sdk::{
@@ -2467,7 +2467,7 @@ fn mollusk_confidential_transfer_rejects_foreign_zama_event_authority_seeds() {
 /// derives, so the token-account seeds, which bind each account to its mint, refuse the pair
 /// (fhevm-internal#1994).
 #[test]
-fn mollusk_confidential_transfer_rejects_another_confidential_mint() {
+fn mollusk_transfers_reject_another_confidential_mint() {
     let fixture = TokenFixture::new();
     let other = TokenFixture::new();
     let mut accounts = fixture.base_accounts();
@@ -2487,26 +2487,48 @@ fn mollusk_confidential_transfer_rejects_another_confidential_mint() {
     };
     let alice_store = other_store(fixture.alice_token, fixture.alice_initial);
     let bob_store = other_store(fixture.bob_token, fixture.bob_initial);
-    let context = fixture_context(mollusk(), accounts);
-    let mut ix = confidential_transfer_ix(
+    let amount_store = seed_amount_store(
         &fixture,
+        &mut accounts,
         fixture.alice_token,
-        fixture.bob_token,
-        alice_store,
-        bob_store,
-        sender_attestation(&fixture, 36, 0),
+        token::transfer_input_key(),
+        handle_for_chain(41, BALANCE_FHE_TYPE),
     );
-    let mint = ix
-        .accounts
-        .iter_mut()
-        .find(|meta| meta.pubkey == fixture.mint)
-        .expect("mint account");
-    mint.pubkey = other.mint;
-    check_token_instruction(
-        &context,
-        &ix,
-        &[anchor_error(anchor_lang::error::ErrorCode::ConstraintSeeds)],
-    );
+    let context = fixture_context(mollusk(), accounts);
+    let rows = [
+        (
+            "confidential_transfer",
+            confidential_transfer_ix(
+                &fixture,
+                fixture.alice_token,
+                fixture.bob_token,
+                alice_store,
+                bob_store,
+                sender_attestation(&fixture, 36, 0),
+            ),
+        ),
+        (
+            "confidential_transfer_from_value",
+            confidential_transfer_from_value_ix(
+                &fixture,
+                fixture.owner,
+                fixture.alice_token,
+                fixture.bob_token,
+                alice_store,
+                bob_store,
+                amount_store,
+            ),
+        ),
+    ]
+    .map(|(name, mut ix)| {
+        for meta in &mut ix.accounts {
+            if meta.pubkey == fixture.mint {
+                meta.pubkey = other.mint;
+            }
+        }
+        (name, ix)
+    });
+    assert_eq!(not_refused_by_seeds(&context, &rows), []);
     assert_eq!(
         read_store_handle(&context, alice_store, token::balance_key()),
         fixture.alice_initial,
@@ -2515,6 +2537,20 @@ fn mollusk_confidential_transfer_rejects_another_confidential_mint() {
         read_store_handle(&context, bob_store, token::balance_key()),
         fixture.bob_initial,
     );
+}
+
+/// The rows that `ConstraintSeeds` did not refuse, with what each returned instead.
+fn not_refused_by_seeds<'a>(
+    context: &mollusk_svm::MolluskContext<HashMap<Pubkey, Account>>,
+    rows: &[(&'a str, Instruction)],
+) -> Vec<(&'a str, ProgramResult)> {
+    let seeds = ProgramResult::Failure(ProgramError::Custom(
+        anchor_lang::error::ErrorCode::ConstraintSeeds.into(),
+    ));
+    rows.iter()
+        .map(|(name, ix)| (*name, context.process_instruction(ix).program_result))
+        .filter(|(_, result)| *result != seeds)
+        .collect()
 }
 
 /// A balance stored under another token account names an authority this transfer does not sign
@@ -3274,6 +3310,92 @@ fn run_burn(
         fixture.burned_amount_store,
         token::burned_amount_key(),
     )
+}
+
+/// Mint A's token account under mint B, a second real `ConfidentialMint` over the same underlying
+/// mint, in every other instruction that takes a token account. Each other account is the one B
+/// derives for that token account, so the token-account seeds, which bind the account to its mint,
+/// are what refuse the pair.
+#[test]
+fn mollusk_token_account_instructions_reject_another_confidential_mint() {
+    let fixture = BurnRedeemFixture::new();
+    let mint = Pubkey::new_unique();
+    let other = BurnRedeemFixture {
+        token_account: fixture.token_account,
+        balance_store: token::balance_slot(mint, fixture.token_account).0.address(),
+        burned_amount_store: token::encrypted_store_address(mint, fixture.token_account).0,
+        ..BurnRedeemFixture::with_keys(fixture.owner, mint, fixture.underlying_mint)
+    };
+    let mut accounts = other.accounts(1_000);
+    accounts.insert(
+        fixture.token_account,
+        token_account_account(fixture.mint, fixture.owner, fixture.balance_store),
+    );
+    let user_usdc = fund_wrap_source(&mut accounts, &other, 100);
+    let amount_store = seed_burn_amount_store(
+        &other,
+        &mut accounts,
+        other.token_account,
+        token::transfer_input_key(),
+        handle_for_chain(41, BALANCE_FHE_TYPE),
+    );
+    let context = fixture_context(burn_redeem_mollusk(), accounts);
+    let empty_pending_burn = prepare_empty_pending_burn(&context, &other);
+    let burns = [
+        (
+            "confidential_burn",
+            confidential_burn_ix(&other, other.owner_attestation(41, 0), empty_pending_burn),
+        ),
+        (
+            "confidential_burn_from_value",
+            confidential_burn_from_value_auto(
+                &context,
+                &other,
+                other.owner,
+                other.owner,
+                amount_store,
+                token::transfer_input_key(),
+            ),
+        ),
+    ];
+    let mut admitted = not_refused_by_seeds(&context, &burns);
+    let burned_handle = handle_for_chain(42, BALANCE_FHE_TYPE);
+    let pending_burn = seed_pending_burn_in_context(&context, &other, burned_handle);
+    admitted.extend(not_refused_by_seeds(
+        &context,
+        &[
+            ("wrap_usdc", wrap_usdc_ix(&other, user_usdc, 100)),
+            (
+                "cancel_pending_burn",
+                cancel_pending_burn_ix(&other, pending_burn, None),
+            ),
+            (
+                "redeem_burned_amount",
+                redeem_burned_amount_ix(&other, burned_handle, 1, vec![], vec![0], pending_burn),
+            ),
+            (
+                "allow_balance_viewers",
+                allow_balance_viewers_ix(
+                    other.owner,
+                    other.mint,
+                    other.token_account,
+                    other.balance_store,
+                    other.host_config,
+                    vec![Pubkey::new_unique()],
+                ),
+            ),
+            (
+                "make_token_account_handle_public",
+                make_token_account_handle_public_ix(
+                    &other,
+                    token::DisclosedValueKind::Balance,
+                    other.balance_store,
+                    other.initial_balance,
+                ),
+            ),
+        ],
+    ));
+    assert_eq!(admitted, []);
 }
 
 #[test]
