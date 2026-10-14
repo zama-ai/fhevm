@@ -31,8 +31,8 @@ trap restore EXIT
 
 for patch in runtime-tests/planted-bugs/*.patch; do
   expected="$(sed -n 's/^Expect: //p' "$patch")"
-  read -r target name <<<"$(sed -n 's/^Test: //p' "$patch")"
-  if [[ -z "$expected" || -z "${name:-}" ]]; then
+  read -r target name extra <<<"$(sed -n 's/^Test: //p' "$patch")"
+  if [[ -z "$expected" || -z "${name:-}" || -n "${extra:-}" ]]; then
     echo "$patch: needs a Test: <target> <name> line and an Expect: line" >&2
     exit 1
   fi

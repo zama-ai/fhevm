@@ -819,15 +819,10 @@ fn read_foreign_value_case(
         },
         output_fhe_type: 5,
     }];
-    let foreign_authority = if foreign_signs {
-        readonly_signer(foreign.key())
-    } else {
-        readonly(foreign.key())
-    };
     let remaining = vec![
         writable(foreign_address),
         writable(output),
-        foreign_authority,
+        AccountMeta::new_readonly(foreign.key(), foreign_signs),
     ];
     let ix = fhe_execute_ix(
         payer,

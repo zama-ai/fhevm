@@ -377,7 +377,7 @@ pub fn host_admin_ix(
 
 /// The bytes an event-CPI inner instruction starts with: Anchor's event-CPI instruction tag, then
 /// the event's own discriminator.
-pub fn event_cpi_prefix<T: Discriminator>() -> Vec<u8> {
+fn event_cpi_prefix<T: Discriminator>() -> Vec<u8> {
     anchor_lang::event::EVENT_IX_TAG_LE
         .iter()
         .copied()
