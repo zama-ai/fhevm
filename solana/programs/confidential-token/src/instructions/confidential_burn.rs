@@ -110,7 +110,6 @@ pub fn confidential_burn<'info>(
         owner: outcome.owner,
         token_account: outcome.token_account,
         burned_handle: outcome.burned_handle,
-        burned_encrypted_store: outcome.burned_encrypted_store,
     });
     emit_cpi!(BalanceHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
@@ -273,7 +272,6 @@ pub fn confidential_burn_from_value<'info>(
         owner: outcome.owner,
         token_account: outcome.token_account,
         burned_handle: outcome.burned_handle,
-        burned_encrypted_store: outcome.burned_encrypted_store,
     });
     emit_cpi!(BalanceHandleUpdatedEvent {
         version: APP_EVENT_VERSION,
@@ -353,7 +351,6 @@ struct BurnOutcome {
     owner: Pubkey,
     token_account: Pubkey,
     burned_handle: [u8; 32],
-    burned_encrypted_store: Pubkey,
     old_balance_handle: [u8; 32],
     new_balance_handle: [u8; 32],
     balance_encrypted_store: Pubkey,
@@ -545,7 +542,6 @@ fn execute_burn<'info>(
         owner,
         token_account: token_account_key,
         burned_handle,
-        burned_encrypted_store: accounts.balance_store.key(),
         old_balance_handle,
         new_balance_handle: balance_output.handle()?,
         balance_encrypted_store: accounts.balance_store.key(),

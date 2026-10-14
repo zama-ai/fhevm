@@ -197,7 +197,6 @@ pub fn cancel_pending_burn<'info>(ctx: Context<'info, CancelPendingBurn<'info>>)
         owner,
         token_account: token_account_key,
         burned_handle: pending.burned_handle,
-        burned_encrypted_store: ctx.accounts.balance_store.key(),
     });
     Ok(())
 }

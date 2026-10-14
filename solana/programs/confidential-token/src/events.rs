@@ -143,8 +143,6 @@ pub struct PendingBurnCancelledEvent {
     pub token_account: Pubkey,
     /// Burned amount handle that was cancelled (must be the current handle).
     pub burned_handle: [u8; 32],
-    /// Shared `burned_amount` EncryptedStore account for the token account.
-    pub burned_encrypted_store: Pubkey,
 }
 
 /// Emitted when a confidential burn computes the all-or-zero burned amount.
@@ -160,8 +158,6 @@ pub struct ConfidentialBurnEvent {
     pub token_account: Pubkey,
     /// Encrypted amount actually burned.
     pub burned_handle: [u8; 32],
-    /// ZamaHost ACL record for `burned_handle`.
-    pub burned_encrypted_store: Pubkey,
 }
 
 /// Emitted when a confidential transfer computes the all-or-zero moved amount.
