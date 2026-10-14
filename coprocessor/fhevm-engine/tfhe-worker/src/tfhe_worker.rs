@@ -106,6 +106,7 @@ async fn tfhe_worker_cycle(
         Some(args.dcid_cleanup_interval_sec),
         Some(args.processed_dcid_ttl_sec),
     );
+    dcid_mngr.set_dependency_count_fallback_interval(args.dcid_ignore_dependency_count_threshold);
 
     // Release all owned locks on startup to avoid stale locks
     dcid_mngr.release_all_owned_locks().await?;
@@ -144,7 +145,7 @@ async fn tfhe_worker_cycle(
         let mut trx = conn.begin().instrument(txn_span).await?;
 
         // Query for transactions to execute
-        let (mut transactions, earliest_computation, has_more_work) = query_for_work(
+        let (mut transactions, _earliest_computation, has_more_work) = query_for_work(
             args,
             &health_check,
             &mut trx,
@@ -158,7 +159,7 @@ async fn tfhe_worker_cycle(
             // for a notification after this cycle.
             immediately_poll_more_work = true;
         } else {
-            dcid_mngr.release_current_lock(true, None).await?;
+            dcid_mngr.release_current_lock(true, false).await?;
             dcid_mngr.do_cleanup().await?;
             no_progress_cycles = 0;
 
@@ -214,22 +215,28 @@ async fn tfhe_worker_cycle(
             upload_transaction_graph_results(&mut tx_graph, &mut trx, &mut dcid_mngr)
                 .instrument(loop_span.clone())
                 .await?;
-        if has_progressed {
+        let defer_chain = if has_progressed {
             no_progress_cycles = 0;
+            false
         } else {
             no_progress_cycles += 1;
             if no_progress_cycles >= args.dcid_max_no_progress_cycles {
                 // If we're not making progress on this dependence
-                // chain, update the last_updated_at field and
-                // release the lock so we can try to execute
-                // another chain.
+                // chain, move it behind work already waiting. Reusing the
+                // earliest computation's timestamp would select the same
+                // blocked consumer again ahead of its repaired producer.
                 info!(target: "tfhe_worker", "no progress on dependence chain, releasing");
-                dcid_mngr
-                    .release_current_lock(false, Some(earliest_computation))
-                    .await?;
+                true
+            } else {
+                false
             }
-        }
+        };
+        dcid_mngr.flush_processing_error(&mut trx).await?;
         trx.commit().await?;
+        dcid_mngr.clear_processing_error();
+        if defer_chain {
+            dcid_mngr.release_current_lock(false, true).await?;
+        }
         drop(loop_span);
         #[cfg(feature = "bench")]
         {
@@ -292,7 +299,9 @@ async fn query_for_work<'a>(
             Some((id, reason)) => (Some(id), reason),
             None => {
                 if *no_progress_cycles
-                    < args.dcid_ignore_dependency_count_threshold * args.dcid_max_no_progress_cycles
+                    < args
+                        .dcid_ignore_dependency_count_threshold
+                        .saturating_mul(args.dcid_max_no_progress_cycles)
                 {
                     deps_chain_mngr.acquire_next_lock().await?
                 } else {
@@ -691,6 +700,6 @@ async fn set_computation_error<'a>(
     .execute(trx.as_mut())
     .await?;
 
-    deps_mngr.set_processing_error(Some(err_string)).await?;
+    deps_mngr.record_processing_error(err_string);
     Ok(())
 }

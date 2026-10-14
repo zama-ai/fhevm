@@ -2,7 +2,6 @@ use chrono::{DateTime, Utc};
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use sqlx::Postgres;
 use std::{fmt, sync::LazyLock, time::SystemTime};
-use time::PrimitiveDateTime;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -35,6 +34,7 @@ static EXTEND_DEPENDENCE_CHAIN_ID_QUERY_HISTOGRAM: LazyLock<Histogram> = LazyLoc
 const CLEANUP_INTERVAL_SECS: u32 = 300;
 const CLEANUP_BATCH_SIZE: i64 = 1000;
 const CLEANUP_AGE_THRESHOLD_SECONDS: u32 = 48 * 60 * 60; // 48 hours
+const DEPENDENCY_COUNT_FALLBACK_INTERVAL: u32 = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LockingReason {
@@ -62,6 +62,9 @@ pub struct LockMngr {
     pool: sqlx::Pool<Postgres>,
     worker_id: Uuid,
     lock: Option<(DatabaseChainLock, SystemTime)>,
+    pending_error: Option<String>,
+    normal_acquisitions_since_fallback: u32,
+    dependency_count_fallback_interval: u32,
 
     // Configurations
     lock_ttl_sec: i64,
@@ -114,6 +117,9 @@ impl LockMngr {
             worker_id,
             pool,
             lock: None,
+            pending_error: None,
+            normal_acquisitions_since_fallback: 0,
+            dependency_count_fallback_interval: DEPENDENCY_COUNT_FALLBACK_INTERVAL,
             lock_ttl_sec: 30,
             lock_timeslice_sec: None,
             disable_locking: false,
@@ -141,8 +147,14 @@ impl LockMngr {
         mgr
     }
 
+    pub fn set_dependency_count_fallback_interval(&mut self, acquisitions: u32) {
+        self.dependency_count_fallback_interval = acquisitions.max(1);
+    }
+
     /// Acquire the next available dependence-chain entry for processing
-    /// sorted by last_updated_at (FIFO).
+    /// sorted by lane and last_updated_at (FIFO). If no chain with satisfied
+    /// dependencies is available, try the oldest chain without trusting its
+    /// dependency count: reorgs and interrupted releases can leave stale counts.
     /// Returns the dependence_chain_id if a lock was acquired
     pub async fn acquire_next_lock(
         &mut self,
@@ -150,6 +162,12 @@ impl LockMngr {
         if self.disable_locking {
             debug!("Locking is disabled");
             return Ok((None, LockingReason::Missing));
+        }
+
+        // Rescue stale counters even while ordinary chains continue making
+        // progress. Successful work must not postpone this fallback forever.
+        if self.normal_acquisitions_since_fallback >= self.dependency_count_fallback_interval {
+            return self.acquire_early_lock().await;
         }
 
         let started_at = SystemTime::now();
@@ -200,10 +218,12 @@ impl LockMngr {
         let row = if let Some(row) = row {
             row
         } else {
-            return Ok((None, LockingReason::Missing));
+            return self.acquire_early_lock().await;
         };
 
         self.lock.replace((row.clone(), SystemTime::now()));
+        self.normal_acquisitions_since_fallback =
+            self.normal_acquisitions_since_fallback.saturating_add(1);
         ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc();
 
         let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
@@ -237,12 +257,14 @@ impl LockMngr {
         let row = sqlx::query_as::<_, DatabaseChainLock>(
             r#"
             WITH candidate AS (
-                SELECT dependence_chain_id, 'updated_unowned' AS match_reason, dependency_count
+                SELECT dependence_chain_id,
+                    CASE WHEN worker_id IS NULL THEN 'updated_unowned'
+                         ELSE 'expired_lock' END AS match_reason,
+                    dependency_count
                 FROM dependence_chain
                 WHERE
-                    status = 'updated'      -- Marked as updated by host-listener
-                    AND
-                    worker_id IS NULL       -- Ensure no other workers own it
+                    (status = 'updated' AND worker_id IS NULL)
+                    OR lock_expires_at < NOW()
                 ORDER BY last_updated_at ASC, schedule_priority ASC
                 FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
                 LIMIT 1
@@ -270,6 +292,7 @@ impl LockMngr {
         };
 
         self.lock.replace((row.clone(), SystemTime::now()));
+        self.normal_acquisitions_since_fallback = 0;
         ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc();
 
         let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
@@ -316,12 +339,14 @@ impl LockMngr {
     }
 
     /// Release the lock held by this worker on the current dependence chain
-    /// If host-listener has marked the dependence chain as 'updated' in the meantime,
-    /// we don't overwrite its status and last_updated_at
+    /// Preserve a host-listener wakeup, and notify dependents only when this
+    /// worker actually transitions an owned processing chain to processed.
+    /// The transition and dependency-count updates commit together so cleanup
+    /// or a connection failure cannot lose a dependent notification.
     pub async fn release_current_lock(
         &mut self,
         mark_as_processed: bool,
-        update_at: Option<PrimitiveDateTime>,
+        defer: bool,
     ) -> Result<u64, sqlx::Error> {
         if self.disable_locking {
             debug!("Locking is disabled, skipping release_current_lock");
@@ -336,71 +361,60 @@ impl LockMngr {
             }
         };
 
-        // Since UPDATE always acquire a row-level lock internally,
-        // this acts as atomic_exchange
-        let rows = if let Some(update_at) = update_at {
-            sqlx::query!(
+        let mut tx = self.pool.begin().await?;
+        let owned = sqlx::query_as::<_, (String, Vec<Vec<u8>>)>(
             r#"
-            UPDATE dependence_chain
-            SET
-                worker_id = NULL,
-                lock_acquired_at = NULL,
-                lock_expires_at = NULL,
-                last_updated_at = $4::timestamp,
-                status = CASE
-                    WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
-                    WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired
-                    ELSE status
-                END
-            WHERE worker_id = $1
-            AND dependence_chain_id = $2
+            SELECT status, dependents
+            FROM dependence_chain
+            WHERE worker_id = $1 AND dependence_chain_id = $2
+            FOR UPDATE
             "#,
-            self.worker_id,
-            dep_chain_id,
-            mark_as_processed,
-            update_at,
         )
-        .execute(&self.pool)
-        .await?
-        } else {
-            sqlx::query!(
-            r#"
-            UPDATE dependence_chain
-            SET
-                worker_id = NULL,
-                lock_acquired_at = NULL,
-                lock_expires_at = NULL,
-                status = CASE
-                    WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
-                    WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired
-                    ELSE status
-                END
-            WHERE worker_id = $1
-            AND dependence_chain_id = $2
-            "#,
-            self.worker_id,
-            dep_chain_id,
-            mark_as_processed,
-        )
-        .execute(&self.pool)
-        .await?
+        .bind(self.worker_id)
+        .bind(&dep_chain_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some((status, dependents)) = owned else {
+            tx.commit().await?;
+            self.take_lock();
+            return Ok(0);
         };
+        let completed = mark_as_processed && status == "processing";
+        let rows = sqlx::query(
+            r#"
+            UPDATE dependence_chain
+            SET
+                worker_id = NULL,
+                lock_acquired_at = NULL,
+                lock_expires_at = NULL,
+                last_updated_at = CASE WHEN $4 THEN clock_timestamp() ELSE last_updated_at END,
+                status = CASE
+                    WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
+                    WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired
+                    ELSE status
+                END
+            WHERE worker_id = $1
+            AND dependence_chain_id = $2
+            "#,
+        )
+        .bind(self.worker_id)
+        .bind(&dep_chain_id)
+        .bind(mark_as_processed)
+        .bind(defer)
+        .execute(&mut *tx)
+        .await?;
 
         let mut dependents_updated = 0;
-        if mark_as_processed {
+        if completed {
             // Get all dependents of a given dependence chain ID and decrement their dependency count
             // If any dependent's dependency count reaches zero, notify work_available
-            dependents_updated = sqlx::query!(
+            dependents_updated = sqlx::query(
                 r#"
                 WITH updated AS (
                     UPDATE dependence_chain
                     SET
                         dependency_count = GREATEST(dependency_count - 1, 0)
-                    WHERE dependence_chain_id = ANY (
-                        SELECT unnest(dependents)
-                        FROM dependence_chain
-                        WHERE dependence_chain_id = $1
-                    )
+                    WHERE dependence_chain_id = ANY ($1::bytea[])
                         RETURNING dependence_chain_id, dependency_count
                 ),
                 ready_dcid_available AS (
@@ -412,14 +426,15 @@ impl LockMngr {
                 SELECT
                     pg_notify('work_available', '')
                 FROM   ready_dcid_available;
-            "#,
-                dep_chain_id,
+                "#,
             )
-            .execute(&self.pool)
+            .bind(&dependents)
+            .execute(&mut *tx)
             .await?
             .rows_affected();
         }
 
+        tx.commit().await?;
         self.take_lock();
         info!(dcid = %hex::encode(&dep_chain_id), rows = rows.rows_affected(), mark_as_processed, dependents_updated,  "Released lock");
 
@@ -431,7 +446,11 @@ impl LockMngr {
     /// we don't overwrite its error
     ///
     /// The error is only informational and does not affect the processing status
-    pub async fn set_processing_error(&self, err: Option<String>) -> Result<u64, sqlx::Error> {
+    pub async fn set_processing_error(
+        &self,
+        tx: &mut sqlx::Transaction<'_, Postgres>,
+        err: Option<String>,
+    ) -> Result<u64, sqlx::Error> {
         if self.disable_locking {
             debug!("Locking is disabled");
             return Ok(0);
@@ -459,11 +478,32 @@ impl LockMngr {
             dep_chain_id,
             err
         )
-        .execute(&self.pool)
+        .execute(&mut **tx)
         .await?;
 
         info!(dcid = %hex::encode(&dep_chain_id), error = ?err, "Set error on lock");
         Ok(rows.rows_affected())
+    }
+
+    /// Delay informational chain writes until immediately before the computation
+    /// transaction commits. Holding this row during FHE execution would block
+    /// ingestion, and updating it through another connection can deadlock.
+    pub fn record_processing_error(&mut self, err: String) {
+        self.pending_error = Some(err);
+    }
+
+    pub async fn flush_processing_error(
+        &mut self,
+        tx: &mut sqlx::Transaction<'_, Postgres>,
+    ) -> Result<(), sqlx::Error> {
+        if let Some(err) = &self.pending_error {
+            self.set_processing_error(tx, Some(err.clone())).await?;
+        }
+        Ok(())
+    }
+
+    pub fn clear_processing_error(&mut self) {
+        self.pending_error.take();
     }
 
     /// Extend the lock expiration time on the current dependence chain
@@ -501,7 +541,7 @@ impl LockMngr {
 
                 // Release the lock instead of extending it as the timeslice's been consumed
                 // Do not mark as processed so it can be re-acquired
-                self.release_current_lock(false, None).await?;
+                self.release_current_lock(false, true).await?;
                 return Ok(None);
             }
         }
@@ -593,6 +633,7 @@ impl LockMngr {
     /// Clear the current lock without releasing it in the database
     fn take_lock(&mut self) {
         self.lock.take();
+        self.pending_error.take();
     }
 }
 

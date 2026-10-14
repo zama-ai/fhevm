@@ -1,7 +1,7 @@
 use crate::dependence_chain::{LockMngr, LockingReason};
-use crate::tests::utils::{setup_test_app, TestInstance};
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
+use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 use tokio::time::{sleep, Duration};
 use tracing::info;
 use uuid::Uuid;
@@ -413,7 +413,7 @@ async fn test_extend_or_release_lock_2() {
 
     info!(?second_id, "Testing extend_or_release_lock");
     let acquired = mgr.acquire_next_lock().await.unwrap().0;
-    assert_eq!(acquired, Some(first_id.clone()));
+    assert_eq!(acquired, Some(second_id.clone()));
 }
 
 #[tokio::test]
@@ -445,8 +445,10 @@ async fn test_cleanup() {
     assert_eq!(deleted, inserted as u64);
 }
 
-async fn setup() -> TestInstance {
-    let test_instance = setup_test_app().await.expect("valid db instance");
+async fn setup() -> DBInstance {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
     let pool = PgPoolOptions::new()
         .max_connections(2)
         .connect(test_instance.db_url())
