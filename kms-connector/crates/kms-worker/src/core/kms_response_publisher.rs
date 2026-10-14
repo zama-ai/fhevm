@@ -1,3 +1,4 @@
+use crate::monitoring::metrics::{inc_event_failed_counter, inc_event_retried_counter};
 use alloy::primitives::U256;
 use connector_utils::{
     monitoring::otlp::PropagationContext,
@@ -285,17 +286,23 @@ impl DbKmsResponsePublisher {
 
     /// Sets the `status` field of the event to `pending` in the database.
     pub async fn mark_event_as_pending(&self, event: &ProtocolEvent) -> anyhow::Result<()> {
-        event.mark_as_pending(&self.db_pool).await
+        event.mark_as_pending(&self.db_pool).await?;
+        inc_event_retried_counter(event);
+        Ok(())
     }
 
     /// Sets the `status` field of the event to `failed` in the database.
     pub async fn mark_event_as_failed(&self, event: &ProtocolEvent) -> anyhow::Result<()> {
-        event.mark_as_failed(&self.db_pool).await
+        event.mark_as_failed(&self.db_pool).await?;
+        inc_event_failed_counter(event, "failed");
+        Ok(())
     }
 
     /// Sets the `status` field of the event to `aborted` in the database.
     pub async fn mark_event_as_aborted(&self, event: &ProtocolEvent) -> anyhow::Result<()> {
-        event.mark_as_aborted(&self.db_pool).await
+        event.mark_as_aborted(&self.db_pool).await?;
+        inc_event_failed_counter(event, "aborted");
+        Ok(())
     }
 
     /// Stores the rejection of an HTTP-sourced public decryption request.
