@@ -485,7 +485,7 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-      - name: Check the capability property test catches its planted bugs
+      - name: Check the tests catch the planted bugs
         run: bash scripts/check-planted-bugs.sh
 
       - name: Run zama-host decode-feature tests
