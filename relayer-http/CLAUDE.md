@@ -35,7 +35,7 @@ relayer-http/
     │   ├── ops.rs             # GET /liveness, GET /healthz
     │   └── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per route: wire types, validation, handler (logs each step)
     └── kms_aggregator/        # fan-out to the KMS connectors and t-of-n aggregation; start with its docs.md
-        ├── mod.rs, config.rs, client.rs, call.rs, aggregator.rs
+        ├── mod.rs, config.rs, client.rs, call.rs, aggregator.rs, signer.rs   # signer: FhevmSig headers (RFC-038)
         ├── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per flow: checks, counting, output
         ├── mock.rs, scenarios.rs                       # test only: scripted connector, YAML scenario runner
         └── scenarios/*.yaml                            # behaviour scenarios, run by cargo test
@@ -50,8 +50,9 @@ configuration → behaviour). The implementation plans live outside the reposito
 One YAML file (`config/config.yaml` is the example), four sections: `name`, `log` (optional, defaults to JSON
 lines), `http` (bind address, body limit, body read timeout, supported chain ids) and `kms_aggregator` (deadline,
 retries, thresholds, optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
-unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`). API keys are never in the file: each endpoint names the env var
-holding its key. Local variants go to `config/*.local.yaml`, ignored by git.
+unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`). Every connector call carries an `FhevmSig` header (RFC-038)
+signed for that endpoint's `audience`; the signing key is never in the file: `kms_aggregator.auth.signer` names the env
+var holding it, or an AWS KMS key. Local variants go to `config/*.local.yaml`, ignored by git.
 
 ## Commands
 
@@ -62,7 +63,7 @@ cargo fmt -- --check      # not --all: cargo-fmt would follow the kms-connector-
 cargo clippy --workspace --all-targets -- -W clippy::perf -W clippy::suspicious -W clippy::style -D warnings
 cargo test --workspace
 cargo test -p relayer-http yaml_scenarios          # the aggregator scenarios only
-cargo run -p relayer-http -- config/config.yaml    # needs the KMS_<i>_API_KEY env vars named in the config
+cargo run -p relayer-http -- config/config.yaml    # needs the signing key env var named in auth.signer (RELAYER_SIGNER_KEY)
 ```
 
 Every change must pass the first three. Check exit codes strictly (a grep on the output hides a failing build).
@@ -83,7 +84,7 @@ siblings, which the Dockerfile copies at the same relative places.
 # from the repository root
 docker build -f relayer-http/Dockerfile --build-arg RUST_IMAGE_VERSION=1.97.1 -t relayer-http .
 docker run --rm -p 8080:8080 -v "$PWD/relayer-http/config/config.yaml:/app/config/config.yaml:ro" \
-  -e KMS_00_API_KEY=... relayer-http            # the config is mounted at /app/config/config.yaml
+  -e RELAYER_SIGNER_KEY=... relayer-http        # the config is mounted at /app/config/config.yaml
 ```
 
 CI publishes the image as `ghcr.io/zama-ai/fhevm/relayer-http` through `.github/workflows/relayer-http-docker-build.yml`
@@ -91,7 +92,7 @@ CI publishes the image as `ghcr.io/zama-ai/fhevm/relayer-http` through `.github/
 `relayer-http-tests.yml` and `relayer-http-dependency-analysis.yml`, run on pull requests: the three commands above,
 then `cargo update -w --locked`, `cargo-deny check license` against `deny.toml` (every allowed license must be used)
 and `cargo-audit audit` with `.cargo/audit.toml`. All three are gated on changes under `relayer-http/**`,
-`kms-connector/crates/api/**` and `kms-connector/Cargo.toml`.
+`kms-connector/crates/api/**` and `kms-connector/Cargo.toml` (`shared/fhevm-sig-auth/**` still to be added).
 
 ## Rules
 
