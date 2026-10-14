@@ -20,11 +20,6 @@ pub struct EncryptedStore {
 }
 
 impl EncryptedStore {
-    #[cfg(test)]
-    pub(crate) fn canonical_address(&self) -> (Pubkey, u8) {
-        encrypted_store_address(self.program, self.authority, self.scope)
-    }
-
     pub(crate) fn validate(&self, address: Pubkey) -> Result<()> {
         self.validate_shape()?;
         let expected = self.address()?;
@@ -121,7 +116,8 @@ mod tests {
     #[test]
     fn canonical_validation_rejects_wrong_bump_address_and_duplicate_slots() {
         let mut state = empty_state();
-        let (address, bump) = state.canonical_address();
+        let (address, bump) =
+            crate::encrypted_store_address(state.program, state.authority, state.scope);
         state.bump = bump;
         state.validate(address).unwrap();
         assert!(state.validate(Pubkey::new_unique()).is_err());
@@ -152,7 +148,8 @@ mod tests {
             peaks: vec![],
             bump: 0,
         };
-        let (address, bump) = state.canonical_address();
+        let (address, bump) =
+            crate::encrypted_store_address(state.program, state.authority, state.scope);
         state.bump = bump;
         let mut bytes = Vec::new();
         state.try_serialize(&mut bytes).unwrap();

@@ -4613,12 +4613,18 @@ fn mollusk_donations_to_batch_accounts_leave_claims_exact() {
 
 // The batch's own accounts: the token program pins the ones it debits, the batcher the rest
 
-/// A deposit batch with Alice (300) and Bob (500) joined.
-fn batch_with_alice_and_bob() -> (BatcherFixture, Ctx, BatchKeys) {
+/// An open deposit batch; Alice holds 1_000 and Bob 2_000 of the join mint.
+fn open_deposit_batch() -> (BatcherFixture, Ctx, BatchKeys) {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
     let keys = run_initialize_batcher(&context, &fixture, 0);
+    (fixture, context, keys)
+}
+
+/// A deposit batch with Alice (300) and Bob (500) joined.
+fn batch_with_alice_and_bob() -> (BatcherFixture, Ctx, BatchKeys) {
+    let (fixture, context, keys) = open_deposit_batch();
     run_join(
         &context,
         &fixture,
@@ -4638,6 +4644,20 @@ fn batch_with_alice_and_bob() -> (BatcherFixture, Ctx, BatchKeys) {
     (fixture, context, keys)
 }
 
+/// `batch_with_alice_and_bob`, settled at 800, with the payout ATAs a claim names.
+fn settled_batch_with_alice_and_bob() -> (BatcherFixture, Ctx, BatchKeys) {
+    let (fixture, context, keys) = batch_with_alice_and_bob();
+    let burned_handle = run_dispatch(&context, &fixture, &keys);
+    run_settle(&context, &fixture, &keys, burned_handle, 800);
+    let underlying_mint = fixture.payout_mint().underlying_mint;
+    ensure_system_accounts(
+        &context,
+        &[keys.batch_authority, fixture.alice.user, fixture.bob.user]
+            .map(|owner| owner_ata(owner, underlying_mint)),
+    );
+    (fixture, context, keys)
+}
+
 /// Copies the account at `address` to a new address, so a test can pass a well-formed account
 /// that is not the canonical one.
 fn copy_to_new_address(context: &Ctx, address: Pubkey) -> Pubkey {
@@ -4645,10 +4665,6 @@ fn copy_to_new_address(context: &Ctx, address: Pubkey) -> Pubkey {
     let copy = Pubkey::new_unique();
     context.account_store.borrow_mut().insert(copy, account);
     copy
-}
-
-fn token_error(error: token::errors::ConfidentialTokenError) -> Check<'static> {
-    anchor_error_check(error as u32)
 }
 
 /// Dispatch burns only this batch's join balance and opens only its own pending burn: the burn
@@ -4670,7 +4686,7 @@ fn mollusk_dispatch_burns_only_the_batch_join_account() {
                 (keys.join_balance_store, alice.balance_store),
                 (keys.pending_burn(mint), alice_burn),
             ],
-            token_error(token::errors::ConfidentialTokenError::OwnerMismatch),
+            anchor_error_check(token::errors::ConfidentialTokenError::OwnerMismatch as u32),
         ),
         (
             vec![(keys.pending_burn(mint), alice_burn)],
@@ -4759,8 +4775,8 @@ fn mollusk_quit_refunds_only_from_the_batch_join_account() {
     check_batcher_instruction(
         &context,
         &quit,
-        &[token_error(
-            token::errors::ConfidentialTokenError::OwnerMismatch,
+        &[anchor_error_check(
+            token::errors::ConfidentialTokenError::OwnerMismatch as u32,
         )],
     );
     assert_eq!(
@@ -4773,16 +4789,7 @@ fn mollusk_quit_refunds_only_from_the_batch_join_account() {
 /// account as the source, since its owner is not the signing batch authority.
 #[test]
 fn mollusk_claim_pays_only_from_the_batch_payout_account() {
-    let (fixture, context, keys) = batch_with_alice_and_bob();
-    let burned_handle = run_dispatch(&context, &fixture, &keys);
-    run_settle(&context, &fixture, &keys, burned_handle, 800);
-    ensure_system_accounts(
-        &context,
-        &[
-            owner_ata(keys.batch_authority, fixture.payout_mint().underlying_mint),
-            owner_ata(fixture.alice.user, fixture.payout_mint().underlying_mint),
-        ],
-    );
+    let (fixture, context, keys) = settled_batch_with_alice_and_bob();
     let bob = fixture.user_payout(&fixture.bob);
     let claim = replace_accounts(
         &claim_ix(&fixture, &keys, &fixture.alice),
@@ -4794,8 +4801,8 @@ fn mollusk_claim_pays_only_from_the_batch_payout_account() {
     check_batcher_instruction(
         &context,
         &claim,
-        &[token_error(
-            token::errors::ConfidentialTokenError::OwnerMismatch,
+        &[anchor_error_check(
+            token::errors::ConfidentialTokenError::OwnerMismatch as u32,
         )],
     );
     assert!(!read_join_record(&context, keys.join_record(fixture.alice.user)).claimed);
@@ -4805,17 +4812,16 @@ fn mollusk_claim_pays_only_from_the_batch_payout_account() {
 /// destination, so the batcher pins it: a join naming Bob's account is refused and nothing moves.
 #[test]
 fn mollusk_join_refuses_another_destination() {
-    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
-    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
-    fixture.seed_values(&context, (1_000, 0), (2_000, 0), (1_000_000, 0));
-    let keys = run_initialize_batcher(&context, &fixture, 0);
+    let (fixture, context, keys) = open_deposit_batch();
+    let underlying_mint = fixture.join_mint().underlying_mint;
     ensure_system_accounts(
         &context,
         &[
             keys.join_record(fixture.alice.user),
             keys.pending_join_value(fixture.alice.user),
-            owner_ata(fixture.alice.user, fixture.join_mint().underlying_mint),
-            owner_ata(keys.batch_authority, fixture.join_mint().underlying_mint),
+            owner_ata(fixture.alice.user, underlying_mint),
+            owner_ata(keys.batch_authority, underlying_mint),
+            owner_ata(fixture.bob.user, underlying_mint),
         ],
     );
     let bob = fixture.user_join(&fixture.bob);
@@ -4825,8 +4831,6 @@ fn mollusk_join_refuses_another_destination() {
         fixture.alice.user,
         token::id(),
     );
-    let underlying_mint = fixture.join_mint().underlying_mint;
-    ensure_system_accounts(&context, &[owner_ata(fixture.bob.user, underlying_mint)]);
     let join = replace_accounts(
         &join_ix(&fixture, &keys, &fixture.alice, attestation),
         &[
@@ -4858,20 +4862,10 @@ fn mollusk_join_refuses_another_destination() {
 /// so the batcher pins it: a claim for Alice naming Bob's account is refused.
 #[test]
 fn mollusk_claim_refuses_another_destination() {
-    let (fixture, context, keys) = batch_with_alice_and_bob();
-    let burned_handle = run_dispatch(&context, &fixture, &keys);
-    run_settle(&context, &fixture, &keys, burned_handle, 800);
-    ensure_system_accounts(
-        &context,
-        &[
-            owner_ata(keys.batch_authority, fixture.payout_mint().underlying_mint),
-            owner_ata(fixture.alice.user, fixture.payout_mint().underlying_mint),
-        ],
-    );
+    let (fixture, context, keys) = settled_batch_with_alice_and_bob();
     let alice = fixture.user_payout(&fixture.alice);
     let bob = fixture.user_payout(&fixture.bob);
     let underlying_mint = fixture.payout_mint().underlying_mint;
-    ensure_system_accounts(&context, &[owner_ata(fixture.bob.user, underlying_mint)]);
     let claim = replace_accounts(
         &claim_ix(&fixture, &keys, &fixture.alice),
         &[
@@ -4935,24 +4929,12 @@ fn mollusk_a_batch_of_another_batcher_is_refused() {
     }
 }
 
-/// The batcher reads a join store without re-deriving its address from the store's fields:
-/// zama-host only creates a store at the address its fields derive, and the host and the token
-/// program check that again. A host-owned store whose fields name another address cannot exist on
-/// chain. Planted under a claim, which reads the store before any CPI, it is still refused: the
-/// claim's execution names the store by the address its fields derive, so the planted account is
-/// not one the execution takes.
+/// zama-host only creates a store at the address its fields derive, so the batcher reads a join
+/// store without re-deriving that address. Planted anyway, a store whose fields name another
+/// address is still refused: the claim's execution looks for the store its fields name.
 #[test]
 fn mollusk_a_store_whose_fields_disagree_with_its_address_is_refused() {
-    let (fixture, context, keys) = batch_with_alice_and_bob();
-    let burned_handle = run_dispatch(&context, &fixture, &keys);
-    run_settle(&context, &fixture, &keys, burned_handle, 800);
-    ensure_system_accounts(
-        &context,
-        &[
-            owner_ata(keys.batch_authority, fixture.payout_mint().underlying_mint),
-            owner_ata(fixture.alice.user, fixture.payout_mint().underlying_mint),
-        ],
-    );
+    let (fixture, context, keys) = settled_batch_with_alice_and_bob();
     let join_store = keys.pending_join_value(fixture.alice.user);
     {
         let mut accounts = context.account_store.borrow_mut();
@@ -4968,4 +4950,5 @@ fn mollusk_a_store_whose_fields_disagree_with_its_address_is_refused() {
             zama_fhe::FheExecutionError::UnexpectedDynamicAccount,
         )))],
     );
+    assert!(!read_join_record(&context, keys.join_record(fixture.alice.user)).claimed);
 }

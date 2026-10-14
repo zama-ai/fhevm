@@ -300,7 +300,8 @@ mod tests {
             peaks: Vec::new(),
             bump: 0,
         };
-        let (address, bump) = state.canonical_address();
+        let (address, bump) =
+            crate::encrypted_store_address(state.program, state.authority, state.scope);
         state.bump = bump;
         let mut data = Vec::new();
         state.try_serialize(&mut data).unwrap();

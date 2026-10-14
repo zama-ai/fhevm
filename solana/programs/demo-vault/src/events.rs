@@ -1,7 +1,6 @@
 //! App-local events for demo-vault.
 //!
-//! Nothing off-chain reads these events. The generic coprocessor
-//! host-listener does not consume them: the vault is the public half of the
+//! Nothing off-chain reads these events. The vault is the public half of the
 //! confidential-vault design and emits no Zama host protocol events.
 
 use anchor_lang::prelude::*;
