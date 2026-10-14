@@ -2477,17 +2477,13 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
             .fetch_one(&mut *tx)
             .await?;
     if let Err(reason) = validate_cutover_release(&stack_version, &live_stack_version) {
-        warn!(reason, "proposal cannot cut over; failing the attempt");
-        sqlx::query(
-            "UPDATE upgrade_state
-                SET state = 'PAUSED', status = 'failed',
-                    last_error = $1, updated_at = NOW()
-              WHERE stack_role = 'GCS' AND state = 'UpgradeAuthorized'",
-        )
-        .bind(&reason)
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
+        // The fleet already authorized this cutover, and this operator's record
+        // says `prepared`. Failing the attempt here would end it on this operator
+        // alone, so refuse the run and keep the attempt for the right release.
+        error!(
+            reason,
+            "cutover refused: this controller cannot run the proposal's release"
+        );
         return Ok(());
     }
 
@@ -5717,7 +5713,9 @@ mod tests {
     /// stand-in for the transient fault is a missing GCS schema, which makes
     /// A replacement controller joins at whatever state it finds, so it never runs the
     /// activation check. Cutover must refuse a proposal for another release itself,
-    /// before promoting versions or merging its own schema.
+    /// before promoting versions or merging its own schema. It must also leave the
+    /// attempt open: the fleet authorized this cutover, so a controller with the
+    /// right release still has to finish it.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn cutover_rejects_a_proposal_for_another_release() {
         let (_instance, pool) = test_pool().await;
@@ -5731,8 +5729,8 @@ mod tests {
 
         assert_eq!(
             gcs_state(&pool).await,
-            ("PAUSED".into(), "failed".into()),
-            "a proposal for another release must not cut over"
+            ("UpgradeAuthorized".into(), "in_progress".into()),
+            "a proposal for another release must not cut over, and must stay open"
         );
         assert_eq!(
             live_stack_version(&pool).await,
