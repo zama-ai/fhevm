@@ -163,7 +163,6 @@ impl<'b> StepTables<'b> {
 pub(crate) fn lower_operand(
     tables: &mut StepTables<'_>,
     execution_authority: anchor_lang::prelude::Pubkey,
-    produced_count: usize,
     verified_inputs: &[CoprocessorInputAttestation],
     operand: Operand,
 ) -> Result<FheExecuteOperand> {
@@ -194,17 +193,13 @@ pub(crate) fn lower_operand(
         }
 
         OperandKind::Transient { producer_index } => {
-            if producer_index as usize >= produced_count {
-                return Err(FheExecutionError::InvalidTransientReference);
-            }
             Ok(FheExecuteOperand::EarlierStep { producer_index })
         }
-        OperandKind::VerifiedInput {
-            attestation_index, ..
-        } => {
-            let attestation = verified_inputs
-                .get(attestation_index as usize)
-                .ok_or(FheExecutionError::MissingVerifiedInput)?;
+        OperandKind::VerifiedInput { attestation_index } => {
+            // This builder's `verified_input` hands out only indices of attestations it
+            // registered, the registry never shrinks, and the `'id` brand keeps out every other
+            // builder's values.
+            let attestation = &verified_inputs[attestation_index as usize];
             // Admit from the borrowed tables, then clone. On the never-freeing bump a rejected
             // embed must not have already spent those bytes.
             tables.budget.admit(

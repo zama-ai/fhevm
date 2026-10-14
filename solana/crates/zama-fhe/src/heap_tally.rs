@@ -13,6 +13,8 @@
 //! Attestation embeds [`HeapBudget::admit`] then clone. [`TalliedVec::into_inner`] is the
 //! wire seam (`FheExecuteStep`, `FheExecuteArgs`).
 
+use zama_host::FHE_EXECUTE_FIXED_ACCOUNTS;
+
 use crate::{FheExecutionError, Result};
 
 /// `RawVec`'s first non-zero capacity for an element size — the other half of the growth model
@@ -166,11 +168,6 @@ fn pushes_from_empty(count: usize, elem_size: usize) -> (usize, usize) {
     (requested, capacity)
 }
 
-/// Fixed accounts on the host's `fhe_execute` CPI account struct (payer through the event CPI
-/// program). The invoke-measurement test in `heap_budget` pins this against the real Anchor
-/// struct, so it cannot drift silently when the host's account list changes.
-pub(crate) const FHE_EXECUTE_FIXED_CPI_ACCOUNTS: usize = zama_host::FHE_EXECUTE_FIXED_ACCOUNTS;
-
 /// Heap bytes the crate's own invoke path requests *after* `build()`: the CPI account-meta and
 /// account-info tables (`invoke`), and `resolve_accounts`'s three right-sized tables. An exact
 /// function of the account counts the builder already knows, charged against
@@ -195,8 +192,8 @@ pub(crate) fn invoke_table_heap_bytes(
     // capacity).
     let table = |elem_size: usize| {
         let (fixed_bytes, fixed_capacity) =
-            pushes_from_empty(FHE_EXECUTE_FIXED_CPI_ACCOUNTS, elem_size);
-        let final_length = FHE_EXECUTE_FIXED_CPI_ACCOUNTS + remaining_accounts;
+            pushes_from_empty(FHE_EXECUTE_FIXED_ACCOUNTS, elem_size);
+        let final_length = FHE_EXECUTE_FIXED_ACCOUNTS + remaining_accounts;
         let tail_bytes = if final_length > fixed_capacity {
             final_length * elem_size
         } else {
@@ -207,7 +204,7 @@ pub(crate) fn invoke_table_heap_bytes(
     // Anchor's generated `to_account_infos` builds each fixed account's contribution as a
     // one-element `vec![clone]` before extending the table with it — one exact-size temporary
     // per present field.
-    let fixed_info_temporaries = FHE_EXECUTE_FIXED_CPI_ACCOUNTS * account_info_size;
+    let fixed_info_temporaries = FHE_EXECUTE_FIXED_ACCOUNTS * account_info_size;
     // `resolve_accounts` sizes its dynamic-account and authority-witness tables from the counts
     // the execution itself requires, and its resolved table holds every remaining account.
     let resolve_bytes =

@@ -50,7 +50,7 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 /// Shapes of [`super::frontier_shapes`] the builder currently admits, asserted exactly by the
 /// keystone: a shape silently dropping out (a structural regression grew the tally) or joining
 /// (the budget widened) both fail until the change that moved the frontier updates this
-/// number and the documented tables with it.
+/// number.
 pub(crate) const ADMITTED_FRONTIER_SHAPES: usize = 70;
 
 /// A boxed shape constructor, so the frontier can hold shapes of different closure types.
@@ -64,14 +64,6 @@ pub(crate) struct MeasuredShape {
     pub(crate) build_bytes: usize,
     pub(crate) packet_bytes: usize,
     pub(crate) cost: crate::cost::FheExecutionCost,
-}
-
-impl MeasuredShape {
-    /// Everything the admission check charged: the measured build and packet plus the modeled
-    /// invoke-side account tables.
-    pub(crate) fn total(&self) -> usize {
-        self.build_bytes + self.packet_bytes + self.cost.invoke_heap_bytes
-    }
 }
 
 pub(crate) fn balance_handle(tag: u8) -> [u8; 32] {

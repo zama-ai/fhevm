@@ -718,8 +718,7 @@ Store/transient store creation, final transient store close and all other app CP
 
 Counting-allocator tests in `solana/crates/zama-fhe/src/heap_budget/` compare requested build/packet and invoke-table
 bytes with their tallies across the current shape frontier. `the_tally_never_crosses_the_budget_even_transiently` also
-checks rejection paths. `print_build_frontier_grid` prints the current measurements; those tests are the source of truth
-for the admission frontier.
+checks rejection paths. Those tests are the source of truth for the admission frontier.
 
 The host heap remains a separate limit (#61). Runtime sweeps cover wide audiences, reductions and mature history,
 and the solana-tests cost report shows how many steps each shape reaches. These shape measurements do not guarantee

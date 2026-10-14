@@ -1,8 +1,8 @@
-//! The 122-cell exploration grid and its printer.
+//! The 122-cell exploration grid.
 
 use zama_host::MAX_FHE_EXECUTION_STEPS;
 
-use super::harness::{try_measure, ShapeBuilder};
+use super::harness::ShapeBuilder;
 use super::shapes::*;
 
 /// Every shape on the exploration frontier, admitted or not: persist kind x output count x
@@ -52,24 +52,4 @@ pub(crate) fn frontier_shapes() -> Vec<(String, ShapeBuilder)> {
         Box::new(reused_attestation_shape()),
     ));
     shapes
-}
-
-/// The full app-side frontier, persist kind x output count x allow-list width, printed with the
-/// typed rejection where the builder refuses the shape. This is the exploration companion to
-/// the host-side boundary sweeps in `runtime-tests/tests/fhe_execute_boundary.rs`.
-#[test]
-#[ignore = "frontier grid, run explicitly with --nocapture"]
-fn print_build_frontier_grid() {
-    for (name, build) in frontier_shapes() {
-        match try_measure(name.clone(), build) {
-            Ok(shape) => println!(
-                "{name:36} build={:6} packet={:6} invoke={:6} total={:6} fits",
-                shape.build_bytes,
-                shape.packet_bytes,
-                shape.cost.invoke_heap_bytes,
-                shape.total(),
-            ),
-            Err(error) => println!("{name:36} rejected: {error:?}"),
-        }
-    }
 }

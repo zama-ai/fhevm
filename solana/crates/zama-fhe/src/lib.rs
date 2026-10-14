@@ -94,9 +94,6 @@ pub enum FheExecutionError {
     /// The execution's interned constant dictionary outgrew the host's `u8` wire indices.
     #[msg("More dictionary entries than fit in the host's u8 indices")]
     TooManyDictionaryEntries,
-    /// A transient operand referenced an operation that has not been produced.
-    #[msg("A transient operand references an operation not yet produced")]
-    InvalidTransientReference,
     /// Two effects write the same Store slot in one execution.
     #[msg("Two effects write the same store slot")]
     DuplicateSlotWrite,
@@ -134,13 +131,6 @@ pub enum FheExecutionError {
     /// program's own.
     #[msg("Persistent values of two applications under one authority")]
     MixedScopes,
-    /// A scalar was supplied as the left-hand operand. The host invariant is
-    /// scalar-RHS-only: the left operand must be an encrypted handle.
-    #[msg("A scalar was supplied as the left-hand operand")]
-    ScalarLhsOperand,
-    /// A scalar was supplied where the host requires an encrypted operand.
-    #[msg("A scalar was supplied where an encrypted operand is required")]
-    ScalarEncryptedOperand,
     /// The declared FHE type is not accepted by the host ABI.
     #[msg("The FHE type is not supported by the host")]
     UnsupportedFheType,
@@ -150,9 +140,6 @@ pub enum FheExecutionError {
     /// The fixed encrypted store authority is the default pubkey, so it can never sign.
     #[msg("The execution authority is the default pubkey")]
     InvalidExecutionAuthority,
-    /// A verified-input operand referenced an attestation not registered with the builder.
-    #[msg("A verified input references an unregistered attestation")]
-    MissingVerifiedInput,
     /// `sum`/`is_in` exceeded the coprocessor's max operand count for the type.
     #[msg("Too many operands for sum or is_in")]
     TooManyReductionOperands,

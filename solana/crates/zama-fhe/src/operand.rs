@@ -1,4 +1,4 @@
-//! Internal operand representation shared by the builder, validators, and lowering.
+//! Internal operand representation shared by the builder and lowering.
 
 use std::marker::PhantomData;
 
@@ -29,11 +29,9 @@ pub(crate) enum OperandKind {
         producer_index: u8,
     },
     /// External input verified in-execution via a coprocessor attestation (EVM `fromExternal`). The
-    /// `Vec`-bearing attestation is held by the [`FheExecutionBuilder`] and referenced by index; keeping
-    /// only the index + `input_handle` here leaves the operand `Copy`. `input_handle` carries the
-    /// FHE type for operand type-checks without touching the attestation.
+    /// `Vec`-bearing attestation is held by the [`FheExecutionBuilder`] and referenced by index, which
+    /// keeps the operand `Copy`.
     VerifiedInput {
-        input_handle: [u8; 32],
         attestation_index: u8,
     },
     Scalar([u8; 32]),
@@ -48,10 +46,7 @@ impl Operand {
         Self(OperandKind::Scalar(value))
     }
 
-    pub(crate) fn verified_input(input_handle: [u8; 32], attestation_index: u8) -> Self {
-        Self(OperandKind::VerifiedInput {
-            input_handle,
-            attestation_index,
-        })
+    pub(crate) fn verified_input(attestation_index: u8) -> Self {
+        Self(OperandKind::VerifiedInput { attestation_index })
     }
 }

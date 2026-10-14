@@ -13,9 +13,6 @@ pub struct BoundedU64UpperBound {
 
 impl BoundedU64UpperBound {
     pub fn power_of_two(value: u64) -> Result<Self> {
-        if value == 0 || !value.is_power_of_two() {
-            return Err(FheExecutionError::InvalidRandomUpperBound);
-        }
         let mut bytes = [0u8; 32];
         bytes[24..].copy_from_slice(&value.to_be_bytes());
         Self::from_be_bytes(bytes)

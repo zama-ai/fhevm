@@ -63,7 +63,6 @@ pub struct FheExecutionBuilder<'id> {
     pub(crate) store: crate::StoreId,
     pub(crate) steps: TalliedVec<FheExecuteStep>,
     pub(crate) effects: TalliedVec<FheExecuteEffect>,
-    pub(crate) produced_types: TalliedVec<u8>,
     pub(crate) remaining_accounts: TalliedVec<ExecutionAccountMeta>,
     /// Interned 32-byte constant dictionary the lowered steps reference by `u8` index (operand
     /// handles, scalars, programs, authorities, scopes, labels, seeds, allowed keys, previous
@@ -87,7 +86,6 @@ pub struct FheExecutionBuilder<'id> {
 
 /// One step's view of the builder — see [`FheExecutionBuilder::commit_step`].
 pub(crate) struct StepLowering<'b> {
-    steps_len: usize,
     authority: Pubkey,
     pub(crate) tables: StepTables<'b>,
     verified_inputs: &'b [CoprocessorInputAttestation],
@@ -108,7 +106,6 @@ impl StepLowering<'_> {
         lower_operand(
             &mut self.tables,
             self.authority,
-            self.steps_len,
             self.verified_inputs,
             operand,
         )
@@ -118,8 +115,8 @@ impl StepLowering<'_> {
         self.tables.budget()
     }
 
-    /// Lowers a reduction's operand iterator into one exact-size table. Scalar checks and the
-    /// operand cap live here so `sum` / `is_in` do not each carry a copy of the admission loop.
+    /// Lowers a reduction's operand iterator into one exact-size table. The operand cap lives
+    /// here so `sum` / `is_in` do not each carry a copy of the admission loop.
     /// `into_inner` happens at `FheExecuteStep` construction — the wire seam.
     pub(crate) fn reduction_operands(
         &mut self,
@@ -130,9 +127,6 @@ impl StepLowering<'_> {
         let reserved = hinted.min(max);
         let mut lowered = TalliedVec::try_with_capacity(self.budget(), reserved)?;
         for operand in operands {
-            if matches!(operand.0, OperandKind::Scalar(_)) {
-                return Err(FheExecutionError::ScalarEncryptedOperand);
-            }
             if lowered.len() == max {
                 return Err(FheExecutionError::TooManyReductionOperands);
             }
@@ -171,7 +165,6 @@ impl<'id> FheExecutionBuilder<'id> {
     ///
     pub(crate) fn commit_step(
         &mut self,
-        produced_type: u8,
         lower: impl FnOnce(&mut StepLowering<'_>) -> Result<FheExecuteStep>,
     ) -> Result<u8> {
         // Checked before the step interns anything, so a build stopped here leaves the tables
@@ -185,7 +178,6 @@ impl<'id> FheExecutionBuilder<'id> {
             store,
             steps,
             effects: _,
-            produced_types,
             remaining_accounts,
             dictionary,
             verified_inputs,
@@ -196,7 +188,6 @@ impl<'id> FheExecutionBuilder<'id> {
             identity: _,
         } = self;
         let mut lowering = StepLowering {
-            steps_len: steps.len(),
             authority: store.authority(),
             tables: StepTables::open(remaining_accounts, dictionary, budget),
             verified_inputs,
@@ -208,10 +199,9 @@ impl<'id> FheExecutionBuilder<'id> {
                     step,
                     FheExecuteStep::Rand { .. } | FheExecuteStep::RandBounded { .. }
                 );
-                // Push while Drop still rolls intern tables. `steps` / `produced_types` are
-                // not borrowed by lowering; the budget is.
+                // Push while Drop still rolls intern tables. `steps` is not borrowed by
+                // lowering; the budget is.
                 steps.try_push(lowering.budget(), step)?;
-                produced_types.try_push(lowering.budget(), produced_type)?;
                 *has_rand_step |= is_rand;
                 *app = lowering.app;
                 lowering.tables.commit();
@@ -231,14 +221,10 @@ impl<'id> FheExecutionBuilder<'id> {
         let OperandKind::Transient { producer_index } = value.operand().0 else {
             return Err(FheExecutionError::ResultNotProduced);
         };
-        if usize::from(producer_index) >= self.steps.len() {
-            return Err(FheExecutionError::InvalidTransientReference);
-        }
         if self.effects.len() == zama_host::MAX_FHE_EXECUTION_EFFECTS {
             return Err(FheExecutionError::TooManyEffects);
         }
         let mut lowering = StepLowering {
-            steps_len: self.steps.len(),
             authority: self.store.authority(),
             tables: StepTables::open(
                 &mut self.remaining_accounts,
@@ -291,7 +277,6 @@ impl<'id> FheExecutionBuilder<'id> {
             store,
             steps: reserved(&mut budget, MAX_FHE_EXECUTION_STEPS),
             effects: reserved(&mut budget, zama_host::MAX_FHE_EXECUTION_EFFECTS),
-            produced_types: reserved(&mut budget, MAX_FHE_EXECUTION_STEPS),
             remaining_accounts: reserved(&mut budget, MAX_FHE_EXECUTION_STEPS),
             dictionary: reserved(&mut budget, 2 * MAX_FHE_EXECUTION_STEPS),
             verified_inputs: TalliedVec::new(),

@@ -17,13 +17,11 @@ use zama_host::{
 
 use crate::acl::BoundedU64UpperBound;
 use crate::builder::FheExecutionBuilder;
-use crate::operand::{Operand, OperandKind};
+use crate::operand::Operand;
 use crate::types::{
     binary_rhs_operand, BinaryRhs, Bool, Encrypted, FheType, FheTyped, FheUint, Scalar, Uint,
 };
-use crate::validate::{
-    handle_fhe_type, operand_fhe_type, validate_supported_fhe_type, validate_uint_fhe_type,
-};
+use crate::validate::handle_fhe_type;
 use crate::{FheExecutionError, Result};
 
 // The `u8` attestation index cannot overflow: 256 registered attestations need more registry
@@ -50,14 +48,12 @@ impl<'id> FheExecutionBuilder<'id> {
         // (asserted at the top of this file).
         let attestation_index = u8::try_from(self.verified_inputs.len())
             .map_err(|_| FheExecutionError::ExceedsBuildHeapBudget)?;
-        let input_handle = attestation.input_handle;
         // The attestation moves in — its tables are the app's own bytes — but the registry
         // vector itself grows by doubling, and that growth is builder cost admitted against
         // the budget before the allocator serves it.
         self.verified_inputs
             .try_push(&mut self.budget, attestation)?;
         Ok(Encrypted::from_operand(Operand::verified_input(
-            input_handle,
             attestation_index,
         )))
     }
@@ -112,12 +108,7 @@ impl<'id> FheExecutionBuilder<'id> {
         output_fhe_type: FheType,
     ) -> Result<Operand> {
         let output_fhe_type = output_fhe_type.byte();
-        // The host requires the left operand to be an encrypted handle; only the
-        // RHS may be a plaintext scalar. Catch this before the CPI.
-        if matches!(lhs.0, OperandKind::Scalar(_)) {
-            return Err(FheExecutionError::ScalarLhsOperand);
-        }
-        let op_index = self.commit_step(output_fhe_type, |lowering| {
+        let op_index = self.commit_step(|lowering| {
             let lhs = lowering.operand(lhs)?;
             let rhs = lowering.operand(rhs)?;
 
@@ -140,10 +131,8 @@ impl<'id> FheExecutionBuilder<'id> {
         let control = control.into().operand();
         let if_true = if_true.into().operand();
         let if_false = if_false.into().operand();
-        let output_fhe_type =
-            self.encrypted_operand_type(&if_true, FheExecutionError::ScalarEncryptedOperand)?;
-        let output_fhe_type = output_fhe_type.byte();
-        let step_index = self.commit_step(output_fhe_type, |lowering| {
+        let output_fhe_type = T::FHE_TYPE.byte();
+        let step_index = self.commit_step(|lowering| {
             let control = lowering.operand(control)?;
             let if_true = lowering.operand(if_true)?;
             let if_false = lowering.operand(if_false)?;
@@ -163,19 +152,13 @@ impl<'id> FheExecutionBuilder<'id> {
         &mut self,
         plaintext: Scalar<T>,
     ) -> Result<Encrypted<'id, T>> {
-        self.trivial_encrypt_raw(plaintext.bytes(), T::FHE_TYPE.byte())
-            .map(Encrypted::from_operand)
-    }
-
-    fn trivial_encrypt_raw(&mut self, plaintext: [u8; 32], fhe_type: u8) -> Result<Operand> {
-        validate_supported_fhe_type(fhe_type)?;
-        let step_index = self.commit_step(fhe_type, |_lowering| {
+        let step_index = self.commit_step(|_lowering| {
             Ok(FheExecuteStep::TrivialEncrypt {
-                plaintext,
-                fhe_type,
+                plaintext: plaintext.bytes(),
+                fhe_type: T::FHE_TYPE.byte(),
             })
         })?;
-        Ok(Operand::transient(step_index))
+        Ok(Encrypted::from_operand(Operand::transient(step_index)))
     }
 
     pub fn trivial_encrypt_u64(&mut self, plaintext: u64) -> Result<Encrypted<'id, Uint<64>>> {
@@ -183,15 +166,9 @@ impl<'id> FheExecutionBuilder<'id> {
     }
 
     pub fn rand<T: FheTyped>(&mut self) -> Result<Encrypted<'id, T>> {
-        self.rand_raw(T::FHE_TYPE.byte())
-            .map(Encrypted::from_operand)
-    }
-
-    pub(crate) fn rand_raw(&mut self, fhe_type: u8) -> Result<Operand> {
-        validate_supported_fhe_type(fhe_type)?;
-        let step_index =
-            self.commit_step(fhe_type, |_lowering| Ok(FheExecuteStep::Rand { fhe_type }))?;
-        Ok(Operand::transient(step_index))
+        let fhe_type = T::FHE_TYPE.byte();
+        let step_index = self.commit_step(|_lowering| Ok(FheExecuteStep::Rand { fhe_type }))?;
+        Ok(Encrypted::from_operand(Operand::transient(step_index)))
     }
 
     pub fn rand_u64(&mut self) -> Result<Encrypted<'id, Uint<64>>> {
@@ -203,7 +180,7 @@ impl<'id> FheExecutionBuilder<'id> {
         upper_bound: BoundedU64UpperBound,
     ) -> Result<Encrypted<'id, Uint<64>>> {
         let fhe_type = FheType::UINT64.byte();
-        let step_index = self.commit_step(fhe_type, |_lowering| {
+        let step_index = self.commit_step(|_lowering| {
             Ok(FheExecuteStep::RandBounded {
                 upper_bound: upper_bound.bytes(),
                 fhe_type,
@@ -485,10 +462,9 @@ impl<'id> FheExecutionBuilder<'id> {
     ) -> Result<Encrypted<'id, T>> {
         // EVM `fheSum` and the coprocessor enforce no minimum: a zero/single-operand sum is valid.
         let fhe_type = T::FHE_TYPE.byte();
-        validate_uint_fhe_type(fhe_type)?;
         let max_operands = max_reduction_operands(fhe_type);
         let operands = operands.into_iter();
-        let step_index = self.commit_step(fhe_type, move |lowering| {
+        let step_index = self.commit_step(move |lowering| {
             let lowered = lowering.reduction_operands(
                 operands.map(|operand| operand.into().operand()),
                 max_operands,
@@ -509,15 +485,10 @@ impl<'id> FheExecutionBuilder<'id> {
     ) -> Result<Encrypted<'id, Bool>> {
         // EVM `fheIsIn` and the coprocessor enforce no minimum: an empty set is valid (false result).
         let fhe_type = T::FHE_TYPE.byte();
-        validate_uint_fhe_type(fhe_type)?;
         let value_op = value.into().operand();
-        if matches!(value_op.0, OperandKind::Scalar(_)) {
-            return Err(FheExecutionError::ScalarEncryptedOperand);
-        }
         let max_operands = max_reduction_operands(fhe_type);
         let set = set.into_iter();
-        let bool_type = FheType::BOOL.byte();
-        let step_index = self.commit_step(bool_type, move |lowering| {
+        let step_index = self.commit_step(move |lowering| {
             let value = lowering.operand(value_op)?;
             let set = lowering
                 .reduction_operands(set.map(|operand| operand.into().operand()), max_operands)?;
@@ -539,9 +510,6 @@ impl<'id> FheExecutionBuilder<'id> {
     ) -> Result<Encrypted<'id, T>> {
         let lhs = factor1.into().operand();
         let rhs = binary_rhs_operand(factor2);
-        if matches!(lhs.0, OperandKind::Scalar(_)) {
-            return Err(FheExecutionError::ScalarLhsOperand);
-        }
         let fhe_type = T::FHE_TYPE.byte();
         if !is_mul_div_fhe_type(fhe_type) {
             return Err(FheExecutionError::UnsupportedFheType);
@@ -551,7 +519,7 @@ impl<'id> FheExecutionBuilder<'id> {
         if divisor_bytes == [0; 32] {
             return Err(FheExecutionError::MulDivDivisorZero);
         }
-        let step_index = self.commit_step(fhe_type, |lowering| {
+        let step_index = self.commit_step(|lowering| {
             let factor1 = lowering.operand(lhs)?;
             let factor2 = lowering.operand(rhs)?;
 
@@ -572,10 +540,7 @@ impl<'id> FheExecutionBuilder<'id> {
         output_fhe_type: FheType,
     ) -> Result<Operand> {
         let output_fhe_type = output_fhe_type.byte();
-        if matches!(operand.0, OperandKind::Scalar(_)) {
-            return Err(FheExecutionError::ScalarEncryptedOperand);
-        }
-        let step_index = self.commit_step(output_fhe_type, |lowering| {
+        let step_index = self.commit_step(|lowering| {
             let operand = lowering.operand(operand)?;
 
             Ok(FheExecuteStep::Unary {
@@ -585,17 +550,5 @@ impl<'id> FheExecutionBuilder<'id> {
             })
         })?;
         Ok(Operand::transient(step_index))
-    }
-
-    fn encrypted_operand_type(
-        &self,
-        operand: &Operand,
-        scalar_error: FheExecutionError,
-    ) -> Result<FheType> {
-        let fhe_type = operand_fhe_type(operand, self.steps.len(), &|index| {
-            self.produced_types.get(index as usize).copied()
-        })?
-        .ok_or(scalar_error)?;
-        FheType::from_host_byte(fhe_type)
     }
 }

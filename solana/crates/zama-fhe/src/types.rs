@@ -3,7 +3,7 @@
 use std::marker::PhantomData;
 
 use crate::operand::{BuilderIdentity, Operand};
-use crate::validate::{handle_fhe_type, validate_supported_fhe_type};
+use crate::validate::handle_fhe_type;
 use crate::{FheExecutionError, Result};
 
 /// Typed FHE handle tag used by the host ABI.
@@ -20,11 +20,6 @@ impl FheType {
 
     pub const fn byte(self) -> u8 {
         self.0
-    }
-
-    pub(crate) fn from_host_byte(byte: u8) -> Result<Self> {
-        validate_supported_fhe_type(byte)?;
-        Ok(Self(byte))
     }
 }
 
@@ -126,9 +121,7 @@ pub struct FheHandle<T> {
 
 impl<T: FheTyped> FheHandle<T> {
     pub(crate) fn from_handle_operand(handle: [u8; 32], operand: Operand) -> Result<Self> {
-        let fhe_type = handle_fhe_type(handle);
-        validate_supported_fhe_type(fhe_type)?;
-        if fhe_type != T::FHE_TYPE.byte() {
+        if handle_fhe_type(handle) != T::FHE_TYPE.byte() {
             return Err(FheExecutionError::UnsupportedFheType);
         }
         Ok(Self {
@@ -223,6 +216,22 @@ impl Scalar<Bool> {
 
 /// Typed right-hand side accepted by binary execution ops. Carries the builder identity of the encrypted
 /// arm; a scalar belongs to no builder.
+///
+/// Only a right-hand side may be a plaintext: no scalar converts into an [`Encrypted`], so a scalar
+/// left operand does not compile:
+///
+/// ```compile_fail
+/// use anchor_lang::prelude::Pubkey;
+/// use zama_fhe::{FheExecution, Scalar, StoreId, Uint};
+///
+/// let store = StoreId::new(Pubkey::new_unique(), Pubkey::new_unique(), Pubkey::new_from_array([0xA5; 32]));
+/// FheExecution::build(store, |builder| {
+///     let value = builder.trivial_encrypt_u64(7)?;
+///     builder.add(Scalar::<Uint<64>>::u64(1), value)?;
+///     Ok(())
+/// })
+/// .unwrap();
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryRhs<'id, T> {
     Encrypted(Encrypted<'id, T>),
