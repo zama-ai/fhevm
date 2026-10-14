@@ -1506,10 +1506,19 @@ jobs:
             (see preview-env-destroy.yml), or on the next push to this PR.
 
       - name: Write connection info to summary
-        if: success() && github.event_name == 'workflow_dispatch'
+        # A dispatch run has no PR to comment on, so the run summary is the only
+        # report. Render it on failure too - a failed cutover or e2e is exactly
+        # when the namespace and topology are worth reading.
+        if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' }}
+        env:
+          JOB_STATUS: ${{ job.status }}
         run: |
           {
-            echo "### :rocket: e2e preview environment deployed"
+            if [[ "${JOB_STATUS}" == "success" ]]; then
+              echo "### :rocket: e2e preview environment deployed"
+            else
+              echo "### :x: e2e preview environment: deploy ${JOB_STATUS}"
+            fi
             echo
             echo "Namespace \`${NAMESPACE}\` on zws-dev."
             echo
