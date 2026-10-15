@@ -1191,6 +1191,8 @@ jobs:
           done
 
       - name: Deploy kms-connector
+        env:
+          WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
         run: bash ci/preview-env/scripts/deploy/deploy-kms-connector.sh
 
       ######################################################################
