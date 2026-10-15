@@ -432,14 +432,6 @@
     },
     {
       "category": "instruction_args",
-      "fixture_hex": "9f5dad14119885ea410000000000000002030405060708090a0b0c0d0e0f101112131415030405060708090a0b0c0d0e0f10111213141516",
-      "fixture_len": 56,
-      "name": "set_eip712_domain",
-      "program": "zama_host",
-      "schema_hash": "27093649cf7e2d4b5dec20a7d364df8f24e9aff7167cf4aca0328ca25daf06b7"
-    },
-    {
-      "category": "instruction_args",
       "fixture_hex": "d0cbb13345e10b1801",
       "fixture_len": 9,
       "name": "set_grant_deny_list_enabled",
