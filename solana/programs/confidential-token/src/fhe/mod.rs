@@ -13,9 +13,11 @@
 //! the producing output (`zama_fhe::StoreOutput::allow`); holder balance writes allow the owner.
 
 use anchor_lang::{prelude::*, AccountDeserialize};
-use zama_host::{program::ZamaHost, HostConfig};
+use zama_host::HostConfig;
 
-use crate::{token_app, ConfidentialTokenAccount, ConfidentialTokenError};
+use crate::{
+    instructions::ZamaHostCpi, token_app, ConfidentialTokenAccount, ConfidentialTokenError,
+};
 
 mod verify_public_decrypt;
 pub(crate) use verify_public_decrypt::*;
@@ -354,25 +356,12 @@ impl<'info> ExecutionAccountSet<'info> {
 pub(crate) struct ExecuteContext<'a, 'info> {
     /// Transaction payer and rent payer for any persistent output accounts.
     pub payer: &'a Signer<'info>,
-    /// Anchor event CPI authority for ZamaHost.
-    pub event_authority: &'a UncheckedAccount<'info>,
-    pub transient_store: &'a UncheckedAccount<'info>,
-    pub instructions: &'a UncheckedAccount<'info>,
-    /// ZamaHost program account.
-    pub zama_program: &'a Program<'info, ZamaHost>,
-    /// Host config used for chain-id-aware handle derivation.
-    pub host_config: &'a Account<'info, HostConfig>,
+    /// ZamaHost accounts forwarded into the `fhe_execute` CPI.
+    pub zama: &'a ZamaHostCpi<'info>,
     /// One deny record witness per application the execution touches, from [`deny_scope_records`].
     pub deny_scope_records: Vec<AccountInfo<'info>>,
     /// System program used for output account creation.
     pub system_program: &'a Program<'info, System>,
-    /// Per-mint HCU block meter forwarded into the host `fhe_execute` CPI (`None` unless the
-    /// caller threads it; behavior-neutral while the host cap is unrestricted). The host keys
-    /// the meter on the execution's application `(program, mint)`, so metering stays per-mint
-    /// automatically.
-    pub hcu_block_meter: Option<&'a UncheckedAccount<'info>>,
-    /// HCU trust witness forwarded into the host `fhe_execute` CPI (`None` unless threaded).
-    pub hcu_trusted_app_record: Option<&'a UncheckedAccount<'info>>,
 }
 
 /// Inputs for one instruction-local FHE execution.
@@ -431,18 +420,24 @@ fn invoke_with_authorities<'info, R>(
         zama_fhe::ExecutionCpiAccounts {
             payer: context.payer.to_account_info(),
             authority: primary.account_info(),
-            host_config: context.host_config.to_account_info(),
+            host_config: context.zama.host_config.to_account_info(),
             deny_scope_records: context.deny_scope_records,
             system_program: context.system_program.to_account_info(),
-            hcu_block_meter: context.hcu_block_meter.map(ToAccountInfo::to_account_info),
+            hcu_block_meter: context
+                .zama
+                .hcu_block_meter
+                .as_ref()
+                .map(ToAccountInfo::to_account_info),
             hcu_trusted_app_record: context
+                .zama
                 .hcu_trusted_app_record
+                .as_ref()
                 .map(ToAccountInfo::to_account_info),
             rand_nonce: None,
-            event_authority: context.event_authority.to_account_info(),
-            transient_store: context.transient_store.to_account_info(),
-            instructions: context.instructions.to_account_info(),
-            program: context.zama_program.to_account_info(),
+            event_authority: context.zama.zama_event_authority.to_account_info(),
+            transient_store: context.zama.transient_store.to_account_info(),
+            instructions: context.zama.instructions.to_account_info(),
+            program: context.zama.zama_program.to_account_info(),
         },
         &signer_seeds,
     )

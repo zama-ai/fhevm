@@ -65,12 +65,12 @@ export type AllowTotalSupplyViewersInstruction<
   TAccountMint extends string | AccountMeta<string> = string,
   TAccountTotalSupplyAuthority extends string | AccountMeta<string> = string,
   TAccountTotalSupplyStore extends string | AccountMeta<string> = string,
-  TAccountHostConfig extends string | AccountMeta<string> = string,
+  TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = 'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ',
-  TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
+  TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountHcuBlockMeter extends string | AccountMeta<string> = string,
   TAccountHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
@@ -91,14 +91,14 @@ export type AllowTotalSupplyViewersInstruction<
         ? ReadonlyAccount<TAccountTotalSupplyAuthority>
         : TAccountTotalSupplyAuthority,
       TAccountTotalSupplyStore extends string ? WritableAccount<TAccountTotalSupplyStore> : TAccountTotalSupplyStore,
-      TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
+      TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
       TAccountTransientStore extends string ? WritableAccount<TAccountTransientStore> : TAccountTransientStore,
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
-      TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
+      TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountHcuBlockMeter extends string ? WritableAccount<TAccountHcuBlockMeter> : TAccountHcuBlockMeter,
       TAccountHcuTrustedAppRecord extends string
         ? ReadonlyAccount<TAccountHcuTrustedAppRecord>
@@ -154,12 +154,12 @@ export type AllowTotalSupplyViewersAsyncInput<
   TAccountMint extends InstructionAccountInput = InstructionAccountInput,
   TAccountTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
-  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
@@ -173,12 +173,14 @@ export type AllowTotalSupplyViewersAsyncInput<
   totalSupplyAuthority?: TAccountTotalSupplyAuthority;
   /** Encrypted total-supply value; read for the current handle and replaced. */
   totalSupplyStore: TAccountTotalSupplyStore;
-  hostConfig?: TAccountHostConfig;
+  systemProgram?: TAccountSystemProgram;
   zamaEventAuthority?: TAccountZamaEventAuthority;
   transientStore: TAccountTransientStore;
   instructions: TAccountInstructions;
+  /** ZamaHost program used for FHE operations. */
   zamaProgram?: TAccountZamaProgram;
-  systemProgram?: TAccountSystemProgram;
+  /** ZamaHost config used for handle derivation and the deny policy. */
+  hostConfig?: TAccountHostConfig;
   /**
    * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
@@ -200,12 +202,12 @@ export async function getAllowTotalSupplyViewersInstructionAsync<
   TAccountMint extends InstructionAccountInput,
   TAccountTotalSupplyAuthority extends InstructionAccountInput,
   TAccountTotalSupplyStore extends InstructionAccountInput,
-  TAccountHostConfig extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
@@ -218,12 +220,12 @@ export async function getAllowTotalSupplyViewersInstructionAsync<
     TAccountMint,
     TAccountTotalSupplyAuthority,
     TAccountTotalSupplyStore,
-    TAccountHostConfig,
+    TAccountSystemProgram,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
-    TAccountSystemProgram,
+    TAccountHostConfig,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
     TAccountEventAuthority,
@@ -241,7 +243,7 @@ export async function getAllowTotalSupplyViewersInstructionAsync<
       InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
     >,
     ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
-    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -249,7 +251,7 @@ export async function getAllowTotalSupplyViewersInstructionAsync<
     ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
     ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
     ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
     ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
     ResolvedInstructionAccountMeta<
       TAccountHcuTrustedAppRecord,
@@ -284,8 +286,8 @@ export async function getAllowTotalSupplyViewersInstructionAsync<
       isSigner: false,
       isWritable: true,
     },
-    hostConfig: {
-      value: input.hostConfig ?? null,
+    systemProgram: {
+      value: input.systemProgram ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -309,8 +311,8 @@ export async function getAllowTotalSupplyViewersInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
-    systemProgram: {
-      value: input.systemProgram ?? null,
+    hostConfig: {
+      value: input.hostConfig ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -349,22 +351,22 @@ export async function getAllowTotalSupplyViewersInstructionAsync<
       { programAddress },
     );
   }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
       'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
-  }
-  if (!accounts.hostConfig.value) {
-    accounts.hostConfig.value = await findHostConfigPda({
-      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
-    });
   }
   if (!accounts.zamaEventAuthority.value) {
     accounts.zamaEventAuthority.value = await findEventAuthorityPda({
       programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
     });
   }
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  if (!accounts.hostConfig.value) {
+    accounts.hostConfig.value = await findHostConfigPda({
+      programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
+    });
   }
   if (!accounts.eventAuthority.value) {
     accounts.eventAuthority.value = await getProgramDerivedAddress({
@@ -388,12 +390,12 @@ export async function getAllowTotalSupplyViewersInstructionAsync<
       getAccountMeta('mint', accounts.mint),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('totalSupplyStore', accounts.totalSupplyStore),
-      getAccountMeta('hostConfig', accounts.hostConfig),
+      getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
-      getAccountMeta('systemProgram', accounts.systemProgram),
+      getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('hcuBlockMeter', accounts.hcuBlockMeter),
       getAccountMeta('hcuTrustedAppRecord', accounts.hcuTrustedAppRecord),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
@@ -411,7 +413,7 @@ export async function getAllowTotalSupplyViewersInstructionAsync<
       InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
     >,
     ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
-    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -419,7 +421,7 @@ export async function getAllowTotalSupplyViewersInstructionAsync<
     ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
     ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
     ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
     ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
     ResolvedInstructionAccountMeta<
       TAccountHcuTrustedAppRecord,
@@ -436,12 +438,12 @@ export type AllowTotalSupplyViewersInput<
   TAccountMint extends InstructionAccountInput = InstructionAccountInput,
   TAccountTotalSupplyAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountTotalSupplyStore extends InstructionAccountInput = InstructionAccountInput,
-  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput = InstructionAccountInput,
@@ -455,12 +457,14 @@ export type AllowTotalSupplyViewersInput<
   totalSupplyAuthority: TAccountTotalSupplyAuthority;
   /** Encrypted total-supply value; read for the current handle and replaced. */
   totalSupplyStore: TAccountTotalSupplyStore;
-  hostConfig: TAccountHostConfig;
+  systemProgram?: TAccountSystemProgram;
   zamaEventAuthority: TAccountZamaEventAuthority;
   transientStore: TAccountTransientStore;
   instructions: TAccountInstructions;
+  /** ZamaHost program used for FHE operations. */
   zamaProgram?: TAccountZamaProgram;
-  systemProgram?: TAccountSystemProgram;
+  /** ZamaHost config used for handle derivation and the deny policy. */
+  hostConfig: TAccountHostConfig;
   /**
    * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
    * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
@@ -482,12 +486,12 @@ export function getAllowTotalSupplyViewersInstruction<
   TAccountMint extends InstructionAccountInput,
   TAccountTotalSupplyAuthority extends InstructionAccountInput,
   TAccountTotalSupplyStore extends InstructionAccountInput,
-  TAccountHostConfig extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput,
+  TAccountHostConfig extends InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
@@ -500,12 +504,12 @@ export function getAllowTotalSupplyViewersInstruction<
     TAccountMint,
     TAccountTotalSupplyAuthority,
     TAccountTotalSupplyStore,
-    TAccountHostConfig,
+    TAccountSystemProgram,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
-    TAccountSystemProgram,
+    TAccountHostConfig,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
     TAccountEventAuthority,
@@ -522,7 +526,7 @@ export function getAllowTotalSupplyViewersInstruction<
     InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
   >,
   ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
-  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
   ResolvedInstructionAccountMeta<
     TAccountZamaEventAuthority,
     InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -530,7 +534,7 @@ export function getAllowTotalSupplyViewersInstruction<
   ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
   ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
   ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
-  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
   ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
   ResolvedInstructionAccountMeta<
     TAccountHcuTrustedAppRecord,
@@ -564,8 +568,8 @@ export function getAllowTotalSupplyViewersInstruction<
       isSigner: false,
       isWritable: true,
     },
-    hostConfig: {
-      value: input.hostConfig ?? null,
+    systemProgram: {
+      value: input.systemProgram ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -589,8 +593,8 @@ export function getAllowTotalSupplyViewersInstruction<
       isSigner: false,
       isWritable: false,
     },
-    systemProgram: {
-      value: input.systemProgram ?? null,
+    hostConfig: {
+      value: input.hostConfig ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -621,12 +625,12 @@ export function getAllowTotalSupplyViewersInstruction<
   const args = { ...input };
 
   // Resolve default values.
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
   if (!accounts.zamaProgram.value) {
     accounts.zamaProgram.value =
       'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ' as Address<'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ'>;
-  }
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
   if (!accounts.program.value) {
     accounts.program.value = programAddress;
@@ -640,12 +644,12 @@ export function getAllowTotalSupplyViewersInstruction<
       getAccountMeta('mint', accounts.mint),
       getAccountMeta('totalSupplyAuthority', accounts.totalSupplyAuthority),
       getAccountMeta('totalSupplyStore', accounts.totalSupplyStore),
-      getAccountMeta('hostConfig', accounts.hostConfig),
+      getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
-      getAccountMeta('systemProgram', accounts.systemProgram),
+      getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('hcuBlockMeter', accounts.hcuBlockMeter),
       getAccountMeta('hcuTrustedAppRecord', accounts.hcuTrustedAppRecord),
       getAccountMeta('eventAuthority', accounts.eventAuthority),
@@ -663,7 +667,7 @@ export function getAllowTotalSupplyViewersInstruction<
       InstructionAccountInputAddress<TAccountTotalSupplyAuthority>
     >,
     ResolvedInstructionAccountMeta<TAccountTotalSupplyStore, InstructionAccountInputAddress<TAccountTotalSupplyStore>>,
-    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -671,7 +675,7 @@ export function getAllowTotalSupplyViewersInstruction<
     ResolvedInstructionAccountMeta<TAccountTransientStore, InstructionAccountInputAddress<TAccountTransientStore>>,
     ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
     ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
+    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
     ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
     ResolvedInstructionAccountMeta<
       TAccountHcuTrustedAppRecord,
@@ -696,12 +700,14 @@ export type ParsedAllowTotalSupplyViewersInstruction<
     totalSupplyAuthority: TAccountMetas[3];
     /** Encrypted total-supply value; read for the current handle and replaced. */
     totalSupplyStore: TAccountMetas[4];
-    hostConfig: TAccountMetas[5];
+    systemProgram: TAccountMetas[5];
     zamaEventAuthority: TAccountMetas[6];
     transientStore: TAccountMetas[7];
     instructions: TAccountMetas[8];
+    /** ZamaHost program used for FHE operations. */
     zamaProgram: TAccountMetas[9];
-    systemProgram: TAccountMetas[10];
+    /** ZamaHost config used for handle derivation and the deny policy. */
+    hostConfig: TAccountMetas[10];
     /**
      * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
      * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
@@ -748,12 +754,12 @@ export function parseAllowTotalSupplyViewersInstruction<
       mint: getNextAccount(),
       totalSupplyAuthority: getNextAccount(),
       totalSupplyStore: getNextAccount(),
-      hostConfig: getNextAccount(),
+      systemProgram: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       transientStore: getNextAccount(),
       instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
-      systemProgram: getNextAccount(),
+      hostConfig: getNextAccount(),
       hcuBlockMeter: getNextOptionalAccount(),
       hcuTrustedAppRecord: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),

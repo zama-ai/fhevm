@@ -74,12 +74,12 @@ export type ConfidentialTransferInstruction<
   TAccountToAccount extends string | AccountMeta<string> = string,
   TAccountFromStore extends string | AccountMeta<string> = string,
   TAccountToStore extends string | AccountMeta<string> = string,
+  TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountZamaEventAuthority extends string | AccountMeta<string> = string,
   TAccountTransientStore extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountZamaProgram extends string | AccountMeta<string> = 'DPq5y89RDZPq9NcMh9X1NgjBWgYmSXg3QoipSBV3ZMzQ',
   TAccountHostConfig extends string | AccountMeta<string> = string,
-  TAccountSystemProgram extends string | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountHcuBlockMeter extends string | AccountMeta<string> = string,
   TAccountHcuTrustedAppRecord extends string | AccountMeta<string> = string,
   TAccountResultStore extends string | AccountMeta<string> = string,
@@ -104,6 +104,7 @@ export type ConfidentialTransferInstruction<
       TAccountToAccount extends string ? WritableAccount<TAccountToAccount> : TAccountToAccount,
       TAccountFromStore extends string ? WritableAccount<TAccountFromStore> : TAccountFromStore,
       TAccountToStore extends string ? WritableAccount<TAccountToStore> : TAccountToStore,
+      TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
       TAccountZamaEventAuthority extends string
         ? ReadonlyAccount<TAccountZamaEventAuthority>
         : TAccountZamaEventAuthority,
@@ -111,7 +112,6 @@ export type ConfidentialTransferInstruction<
       TAccountInstructions extends string ? ReadonlyAccount<TAccountInstructions> : TAccountInstructions,
       TAccountZamaProgram extends string ? ReadonlyAccount<TAccountZamaProgram> : TAccountZamaProgram,
       TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
-      TAccountSystemProgram extends string ? ReadonlyAccount<TAccountSystemProgram> : TAccountSystemProgram,
       TAccountHcuBlockMeter extends string ? WritableAccount<TAccountHcuBlockMeter> : TAccountHcuBlockMeter,
       TAccountHcuTrustedAppRecord extends string
         ? ReadonlyAccount<TAccountHcuTrustedAppRecord>
@@ -170,12 +170,12 @@ export type ConfidentialTransferAsyncInput<
   TAccountToAccount extends InstructionAccountInput = InstructionAccountInput,
   TAccountFromStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountToStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
   TAccountResultStore extends InstructionAccountInput = InstructionAccountInput,
@@ -198,21 +198,24 @@ export type ConfidentialTransferAsyncInput<
   fromStore?: TAccountFromStore;
   /** Recipient store: the host reads and updates its balance slot. */
   toStore?: TAccountToStore;
+  /** System program used for ACL account creation. */
+  systemProgram?: TAccountSystemProgram;
   zamaEventAuthority?: TAccountZamaEventAuthority;
   transientStore: TAccountTransientStore;
   instructions: TAccountInstructions;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: TAccountZamaProgram;
-  /** ZamaHost config used for handle derivation. */
+  /** ZamaHost config used for handle derivation and the deny policy. */
   hostConfig?: TAccountHostConfig;
-  /** System program used for ACL account creation. */
-  systemProgram?: TAccountSystemProgram;
   /**
-   * canonical `["hcu-block-meter", program, mint]` PDA. The per-mint HCU block meter — supplied
-   * by an untrusted mint under a metering-band cap, omitted otherwise.
+   * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
+   * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
    */
   hcuBlockMeter?: TAccountHcuBlockMeter;
-  /** trust witness — present + valid bypasses the cap; absent means untrusted (metered). */
+  /**
+   * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
+   * means the mint is metered.
+   */
   hcuTrustedAppRecord?: TAccountHcuTrustedAppRecord;
   resultStore?: TAccountResultStore;
   eventAuthority?: TAccountEventAuthority;
@@ -231,12 +234,12 @@ export async function getConfidentialTransferInstructionAsync<
   TAccountToAccount extends InstructionAccountInput,
   TAccountFromStore extends InstructionAccountInput,
   TAccountToStore extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput,
   TAccountHostConfig extends InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput,
   TAccountResultStore extends InstructionAccountInput,
@@ -255,12 +258,12 @@ export async function getConfidentialTransferInstructionAsync<
     TAccountToAccount,
     TAccountFromStore,
     TAccountToStore,
+    TAccountSystemProgram,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
-    TAccountSystemProgram,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
     TAccountResultStore,
@@ -281,6 +284,7 @@ export async function getConfidentialTransferInstructionAsync<
     ResolvedInstructionAccountMeta<TAccountToAccount, InstructionAccountInputAddress<TAccountToAccount>>,
     ResolvedInstructionAccountMeta<TAccountFromStore, InstructionAccountInputAddress<TAccountFromStore>>,
     ResolvedInstructionAccountMeta<TAccountToStore, InstructionAccountInputAddress<TAccountToStore>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -289,7 +293,6 @@ export async function getConfidentialTransferInstructionAsync<
     ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
     ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
     ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
     ResolvedInstructionAccountMeta<
       TAccountHcuTrustedAppRecord,
@@ -342,6 +345,11 @@ export async function getConfidentialTransferInstructionAsync<
       isSigner: false,
       isWritable: true,
     },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isSigner: false,
@@ -364,11 +372,6 @@ export async function getConfidentialTransferInstructionAsync<
     },
     hostConfig: {
       value: input.hostConfig ?? null,
-      isSigner: false,
-      isWritable: false,
-    },
-    systemProgram: {
-      value: input.systemProgram ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -432,6 +435,9 @@ export async function getConfidentialTransferInstructionAsync<
       },
     );
   }
+  if (!accounts.systemProgram.value) {
+    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
+  }
   if (!accounts.zamaEventAuthority.value) {
     accounts.zamaEventAuthority.value = await findEventAuthorityPda({
       programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
@@ -441,9 +447,6 @@ export async function getConfidentialTransferInstructionAsync<
     accounts.hostConfig.value = await findHostConfigPda({
       programAddress: getAddressFromResolvedInstructionAccount('zamaProgram', accounts.zamaProgram.value),
     });
-  }
-  if (!accounts.systemProgram.value) {
-    accounts.systemProgram.value = '11111111111111111111111111111111' as Address<'11111111111111111111111111111111'>;
   }
   if (!accounts.eventAuthority.value) {
     accounts.eventAuthority.value = await getProgramDerivedAddress({
@@ -472,12 +475,12 @@ export async function getConfidentialTransferInstructionAsync<
       getAccountMeta('toAccount', accounts.toAccount),
       getAccountMeta('fromStore', accounts.fromStore),
       getAccountMeta('toStore', accounts.toStore),
+      getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
-      getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('hcuBlockMeter', accounts.hcuBlockMeter),
       getAccountMeta('hcuTrustedAppRecord', accounts.hcuTrustedAppRecord),
       getAccountMeta('resultStore', accounts.resultStore),
@@ -498,6 +501,7 @@ export async function getConfidentialTransferInstructionAsync<
     ResolvedInstructionAccountMeta<TAccountToAccount, InstructionAccountInputAddress<TAccountToAccount>>,
     ResolvedInstructionAccountMeta<TAccountFromStore, InstructionAccountInputAddress<TAccountFromStore>>,
     ResolvedInstructionAccountMeta<TAccountToStore, InstructionAccountInputAddress<TAccountToStore>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -506,7 +510,6 @@ export async function getConfidentialTransferInstructionAsync<
     ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
     ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
     ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
     ResolvedInstructionAccountMeta<
       TAccountHcuTrustedAppRecord,
@@ -529,12 +532,12 @@ export type ConfidentialTransferInput<
   TAccountToAccount extends InstructionAccountInput = InstructionAccountInput,
   TAccountFromStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountToStore extends InstructionAccountInput = InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput = InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput = InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput = InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput = InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput = InstructionAccountInput,
   TAccountResultStore extends InstructionAccountInput = InstructionAccountInput,
@@ -557,21 +560,24 @@ export type ConfidentialTransferInput<
   fromStore: TAccountFromStore;
   /** Recipient store: the host reads and updates its balance slot. */
   toStore: TAccountToStore;
+  /** System program used for ACL account creation. */
+  systemProgram?: TAccountSystemProgram;
   zamaEventAuthority: TAccountZamaEventAuthority;
   transientStore: TAccountTransientStore;
   instructions: TAccountInstructions;
   /** ZamaHost program used for FHE operations. */
   zamaProgram?: TAccountZamaProgram;
-  /** ZamaHost config used for handle derivation. */
+  /** ZamaHost config used for handle derivation and the deny policy. */
   hostConfig: TAccountHostConfig;
-  /** System program used for ACL account creation. */
-  systemProgram?: TAccountSystemProgram;
   /**
-   * canonical `["hcu-block-meter", program, mint]` PDA. The per-mint HCU block meter — supplied
-   * by an untrusted mint under a metering-band cap, omitted otherwise.
+   * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
+   * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
    */
   hcuBlockMeter?: TAccountHcuBlockMeter;
-  /** trust witness — present + valid bypasses the cap; absent means untrusted (metered). */
+  /**
+   * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
+   * means the mint is metered.
+   */
   hcuTrustedAppRecord?: TAccountHcuTrustedAppRecord;
   resultStore?: TAccountResultStore;
   eventAuthority: TAccountEventAuthority;
@@ -590,12 +596,12 @@ export function getConfidentialTransferInstruction<
   TAccountToAccount extends InstructionAccountInput,
   TAccountFromStore extends InstructionAccountInput,
   TAccountToStore extends InstructionAccountInput,
+  TAccountSystemProgram extends InstructionAccountInput,
   TAccountZamaEventAuthority extends InstructionAccountInput,
   TAccountTransientStore extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
   TAccountZamaProgram extends InstructionAccountInput,
   TAccountHostConfig extends InstructionAccountInput,
-  TAccountSystemProgram extends InstructionAccountInput,
   TAccountHcuBlockMeter extends InstructionAccountInput,
   TAccountHcuTrustedAppRecord extends InstructionAccountInput,
   TAccountResultStore extends InstructionAccountInput,
@@ -614,12 +620,12 @@ export function getConfidentialTransferInstruction<
     TAccountToAccount,
     TAccountFromStore,
     TAccountToStore,
+    TAccountSystemProgram,
     TAccountZamaEventAuthority,
     TAccountTransientStore,
     TAccountInstructions,
     TAccountZamaProgram,
     TAccountHostConfig,
-    TAccountSystemProgram,
     TAccountHcuBlockMeter,
     TAccountHcuTrustedAppRecord,
     TAccountResultStore,
@@ -639,6 +645,7 @@ export function getConfidentialTransferInstruction<
   ResolvedInstructionAccountMeta<TAccountToAccount, InstructionAccountInputAddress<TAccountToAccount>>,
   ResolvedInstructionAccountMeta<TAccountFromStore, InstructionAccountInputAddress<TAccountFromStore>>,
   ResolvedInstructionAccountMeta<TAccountToStore, InstructionAccountInputAddress<TAccountToStore>>,
+  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
   ResolvedInstructionAccountMeta<
     TAccountZamaEventAuthority,
     InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -647,7 +654,6 @@ export function getConfidentialTransferInstruction<
   ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
   ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
   ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
-  ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
   ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
   ResolvedInstructionAccountMeta<
     TAccountHcuTrustedAppRecord,
@@ -699,6 +705,11 @@ export function getConfidentialTransferInstruction<
       isSigner: false,
       isWritable: true,
     },
+    systemProgram: {
+      value: input.systemProgram ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     zamaEventAuthority: {
       value: input.zamaEventAuthority ?? null,
       isSigner: false,
@@ -721,11 +732,6 @@ export function getConfidentialTransferInstruction<
     },
     hostConfig: {
       value: input.hostConfig ?? null,
-      isSigner: false,
-      isWritable: false,
-    },
-    systemProgram: {
-      value: input.systemProgram ?? null,
       isSigner: false,
       isWritable: false,
     },
@@ -785,12 +791,12 @@ export function getConfidentialTransferInstruction<
       getAccountMeta('toAccount', accounts.toAccount),
       getAccountMeta('fromStore', accounts.fromStore),
       getAccountMeta('toStore', accounts.toStore),
+      getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('zamaEventAuthority', accounts.zamaEventAuthority),
       getAccountMeta('transientStore', accounts.transientStore),
       getAccountMeta('instructions', accounts.instructions),
       getAccountMeta('zamaProgram', accounts.zamaProgram),
       getAccountMeta('hostConfig', accounts.hostConfig),
-      getAccountMeta('systemProgram', accounts.systemProgram),
       getAccountMeta('hcuBlockMeter', accounts.hcuBlockMeter),
       getAccountMeta('hcuTrustedAppRecord', accounts.hcuTrustedAppRecord),
       getAccountMeta('resultStore', accounts.resultStore),
@@ -811,6 +817,7 @@ export function getConfidentialTransferInstruction<
     ResolvedInstructionAccountMeta<TAccountToAccount, InstructionAccountInputAddress<TAccountToAccount>>,
     ResolvedInstructionAccountMeta<TAccountFromStore, InstructionAccountInputAddress<TAccountFromStore>>,
     ResolvedInstructionAccountMeta<TAccountToStore, InstructionAccountInputAddress<TAccountToStore>>,
+    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<
       TAccountZamaEventAuthority,
       InstructionAccountInputAddress<TAccountZamaEventAuthority>
@@ -819,7 +826,6 @@ export function getConfidentialTransferInstruction<
     ResolvedInstructionAccountMeta<TAccountInstructions, InstructionAccountInputAddress<TAccountInstructions>>,
     ResolvedInstructionAccountMeta<TAccountZamaProgram, InstructionAccountInputAddress<TAccountZamaProgram>>,
     ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
-    ResolvedInstructionAccountMeta<TAccountSystemProgram, InstructionAccountInputAddress<TAccountSystemProgram>>,
     ResolvedInstructionAccountMeta<TAccountHcuBlockMeter, InstructionAccountInputAddress<TAccountHcuBlockMeter>>,
     ResolvedInstructionAccountMeta<
       TAccountHcuTrustedAppRecord,
@@ -853,21 +859,24 @@ export type ParsedConfidentialTransferInstruction<
     fromStore: TAccountMetas[8];
     /** Recipient store: the host reads and updates its balance slot. */
     toStore: TAccountMetas[9];
-    zamaEventAuthority: TAccountMetas[10];
-    transientStore: TAccountMetas[11];
-    instructions: TAccountMetas[12];
-    /** ZamaHost program used for FHE operations. */
-    zamaProgram: TAccountMetas[13];
-    /** ZamaHost config used for handle derivation. */
-    hostConfig: TAccountMetas[14];
     /** System program used for ACL account creation. */
-    systemProgram: TAccountMetas[15];
+    systemProgram: TAccountMetas[10];
+    zamaEventAuthority: TAccountMetas[11];
+    transientStore: TAccountMetas[12];
+    instructions: TAccountMetas[13];
+    /** ZamaHost program used for FHE operations. */
+    zamaProgram: TAccountMetas[14];
+    /** ZamaHost config used for handle derivation and the deny policy. */
+    hostConfig: TAccountMetas[15];
     /**
-     * canonical `["hcu-block-meter", program, mint]` PDA. The per-mint HCU block meter — supplied
-     * by an untrusted mint under a metering-band cap, omitted otherwise.
+     * canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
+     * metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
      */
     hcuBlockMeter?: TAccountMetas[16] | undefined;
-    /** trust witness — present + valid bypasses the cap; absent means untrusted (metered). */
+    /**
+     * canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
+     * means the mint is metered.
+     */
     hcuTrustedAppRecord?: TAccountMetas[17] | undefined;
     resultStore?: TAccountMetas[18] | undefined;
     eventAuthority: TAccountMetas[19];
@@ -911,12 +920,12 @@ export function parseConfidentialTransferInstruction<
       toAccount: getNextAccount(),
       fromStore: getNextAccount(),
       toStore: getNextAccount(),
+      systemProgram: getNextAccount(),
       zamaEventAuthority: getNextAccount(),
       transientStore: getNextAccount(),
       instructions: getNextAccount(),
       zamaProgram: getNextAccount(),
       hostConfig: getNextAccount(),
-      systemProgram: getNextAccount(),
       hcuBlockMeter: getNextOptionalAccount(),
       hcuTrustedAppRecord: getNextOptionalAccount(),
       resultStore: getNextOptionalAccount(),

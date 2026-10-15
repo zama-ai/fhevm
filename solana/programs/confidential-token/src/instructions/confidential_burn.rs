@@ -32,30 +32,9 @@ pub struct ConfidentialBurn<'info> {
     /// A burn is rejected before execution while this account is already initialized.
     #[account(mut, seeds = [PENDING_BURN_SEED, mint.key().as_ref(), token_account.key().as_ref()], bump)]
     pub pending_burn: UncheckedAccount<'info>,
-    /// CHECK: Anchor event CPI authority for the Zama host program.
-    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
-    pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction transient store, validated by ZamaHost.
-    #[account(mut)]
-    pub transient_store: UncheckedAccount<'info>,
-    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
-    pub instructions: UncheckedAccount<'info>,
-    /// ZamaHost program used for FHE operations.
-    pub zama_program: Program<'info, ZamaHost>,
-    /// ZamaHost config used for handle derivation.
-    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
-    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation and the pending-burn PDA.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
-    /// metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
-    #[account(mut)]
-    pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
-    /// means the mint is metered.
-    pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+    pub zama: ZamaHostCpi<'info>,
 }
 
 impl<'info> ConfidentialBurn<'info> {
@@ -76,15 +55,9 @@ impl<'info> ConfidentialBurn<'info> {
             total_supply_store: self.total_supply_store.to_account_info(),
             pending_burn: self.pending_burn.to_account_info(),
             pending_burn_bump,
-            zama_event_authority: &self.zama_event_authority,
-            transient_store: &self.transient_store,
-            instructions: &self.instructions,
-            zama_program: &self.zama_program,
-            host_config: &self.host_config,
+            zama: &self.zama,
             remaining_accounts,
             system_program: &self.system_program,
-            hcu_block_meter: self.hcu_block_meter.as_ref(),
-            hcu_trusted_app_record: self.hcu_trusted_app_record.as_ref(),
             underlying_mint: self.underlying_mint.to_account_info(),
             owner_ata: self.owner_ata.to_account_info(),
         }
@@ -180,30 +153,9 @@ pub struct ConfidentialBurnFromValue<'info> {
     /// be passed here when that app's value authority is the signing `owner` (a program PDA
     /// authorizing through `invoke_signed`), or when it is one of the burner's own token values.
     pub amount_store: Box<Account<'info, zama_host::EncryptedStore>>,
-    /// CHECK: Anchor event CPI authority for the Zama host program.
-    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
-    pub zama_event_authority: UncheckedAccount<'info>,
-    /// CHECK: shared transaction transient store, validated by ZamaHost.
-    #[account(mut)]
-    pub transient_store: UncheckedAccount<'info>,
-    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
-    pub instructions: UncheckedAccount<'info>,
-    /// ZamaHost program used for FHE operations.
-    pub zama_program: Program<'info, ZamaHost>,
-    /// ZamaHost config used for handle derivation.
-    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
-    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
     /// System program used for ACL account creation and the pending-burn PDA.
     pub system_program: Program<'info, System>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
-    /// metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
-    #[account(mut)]
-    pub hcu_block_meter: Option<UncheckedAccount<'info>>,
-    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
-    /// canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
-    /// means the mint is metered.
-    pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+    pub zama: ZamaHostCpi<'info>,
 }
 
 impl<'info> ConfidentialBurnFromValue<'info> {
@@ -224,15 +176,9 @@ impl<'info> ConfidentialBurnFromValue<'info> {
             total_supply_store: self.total_supply_store.to_account_info(),
             pending_burn: self.pending_burn.to_account_info(),
             pending_burn_bump,
-            zama_event_authority: &self.zama_event_authority,
-            transient_store: &self.transient_store,
-            instructions: &self.instructions,
-            zama_program: &self.zama_program,
-            host_config: &self.host_config,
+            zama: &self.zama,
             remaining_accounts,
             system_program: &self.system_program,
-            hcu_block_meter: self.hcu_block_meter.as_ref(),
-            hcu_trusted_app_record: self.hcu_trusted_app_record.as_ref(),
             underlying_mint: self.underlying_mint.to_account_info(),
             owner_ata: self.owner_ata.to_account_info(),
         }
@@ -332,15 +278,9 @@ struct BurnAccounts<'a, 'info> {
     /// Single pending-burn PDA opened after the burned handle is known.
     pending_burn: AccountInfo<'info>,
     pending_burn_bump: u8,
-    zama_event_authority: &'a UncheckedAccount<'info>,
-    transient_store: &'a UncheckedAccount<'info>,
-    instructions: &'a UncheckedAccount<'info>,
-    zama_program: &'a Program<'info, ZamaHost>,
-    host_config: &'a Account<'info, zama_host::HostConfig>,
+    zama: &'a ZamaHostCpi<'info>,
     remaining_accounts: &'a [AccountInfo<'info>],
     system_program: &'a Program<'info, System>,
-    hcu_block_meter: Option<&'a UncheckedAccount<'info>>,
-    hcu_trusted_app_record: Option<&'a UncheckedAccount<'info>>,
     underlying_mint: AccountInfo<'info>,
     owner_ata: AccountInfo<'info>,
 }
@@ -500,13 +440,9 @@ fn execute_burn<'info>(
     fhe::execute(fhe::Execute {
         context: fhe::ExecuteContext {
             payer: accounts.payer,
-            event_authority: accounts.zama_event_authority,
-            transient_store: accounts.transient_store,
-            instructions: accounts.instructions,
-            zama_program: accounts.zama_program,
-            host_config: accounts.host_config,
+            zama: accounts.zama,
             deny_scope_records: fhe::deny_scope_records(
-                accounts.host_config,
+                &accounts.zama.host_config,
                 accounts.remaining_accounts,
                 std::iter::once(token_app(mint_key)).chain(stored_amount.as_ref().map(|value| {
                     zama_fhe::AppScope {
@@ -516,8 +452,6 @@ fn execute_burn<'info>(
                 })),
             )?,
             system_program: accounts.system_program,
-            hcu_block_meter: accounts.hcu_block_meter,
-            hcu_trusted_app_record: accounts.hcu_trusted_app_record,
         },
         accounts: &execution_accounts,
         execution,

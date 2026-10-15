@@ -13,6 +13,34 @@ pub(crate) fn assert_no_remaining_accounts(remaining_accounts: &[AccountInfo]) -
     Ok(())
 }
 
+/// ZamaHost accounts of the token's FHE instructions. They go to the host `fhe_execute` CPI, and in
+/// `initialize_mint` and `initialize_token_account` also to the encrypted-store creation CPI.
+#[derive(Accounts)]
+pub struct ZamaHostCpi<'info> {
+    /// CHECK: Anchor event CPI authority for the Zama host program.
+    #[account(seeds = [b"__event_authority"], bump = zama_host::EVENT_AUTHORITY_AND_BUMP.1, seeds::program = zama_host::ID)]
+    pub zama_event_authority: UncheckedAccount<'info>,
+    /// CHECK: shared transaction transient store, validated by ZamaHost.
+    #[account(mut)]
+    pub transient_store: UncheckedAccount<'info>,
+    /// CHECK: runtime Instructions sysvar, validated by ZamaHost.
+    pub instructions: UncheckedAccount<'info>,
+    /// ZamaHost program used for FHE operations.
+    pub zama_program: Program<'info, ZamaHost>,
+    /// ZamaHost config used for handle derivation and the deny policy.
+    #[account(seeds = [zama_host::HOST_CONFIG_SEED], bump = host_config.bump, seeds::program = zama_host::ID)]
+    pub host_config: Box<Account<'info, zama_host::HostConfig>>,
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
+    /// canonical `["hcu-block-meter", program, mint]` PDA. Supplied by an untrusted mint under a
+    /// metering-band cap; omitted when the mint is trusted or the cap is unrestricted.
+    #[account(mut)]
+    pub hcu_block_meter: Option<UncheckedAccount<'info>>,
+    /// CHECK: forwarded verbatim into the ZamaHost `fhe_execute` CPI, which validates it against the
+    /// canonical `["hcu-trusted", program, mint]` PDA. Present + valid bypasses the cap; absent
+    /// means the mint is metered.
+    pub hcu_trusted_app_record: Option<UncheckedAccount<'info>>,
+}
+
 pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) payer: &'a Signer<'info>,
     /// The sender's signing owner: the transfer authority, and the value authority of an
@@ -25,20 +53,11 @@ pub(crate) struct TransferAccounts<'a, 'info> {
     pub(crate) from_store: AccountInfo<'info>,
     /// Recipient state: read and update its balance slot.
     pub(crate) to_store: AccountInfo<'info>,
-    pub(crate) zama_event_authority: &'a UncheckedAccount<'info>,
-    pub(crate) transient_store: &'a UncheckedAccount<'info>,
-    pub(crate) instructions: &'a UncheckedAccount<'info>,
-    pub(crate) zama_program: &'a Program<'info, ZamaHost>,
-    pub(crate) host_config: &'a Account<'info, zama_host::HostConfig>,
+    pub(crate) zama: &'a ZamaHostCpi<'info>,
     /// Deny records for the token and input Store applications,
     /// omitting absent and duplicate applications.
     pub(crate) remaining_accounts: &'a [AccountInfo<'info>],
     pub(crate) system_program: &'a Program<'info, System>,
-    /// Per-mint HCU block meter forwarded into the host `fhe_execute` CPI (`None` = untrusted,
-    /// no meter). The host keys the meter on the application `(program, mint)`.
-    pub(crate) hcu_block_meter: Option<&'a UncheckedAccount<'info>>,
-    /// HCU trust witness forwarded into the host `fhe_execute` CPI (`None` = untrusted).
-    pub(crate) hcu_trusted_app_record: Option<&'a UncheckedAccount<'info>>,
     /// Underlying SPL mint whose owner is the token program. Freeze checks read this account.
     pub(crate) underlying_mint: AccountInfo<'info>,
     /// ATA of `from_account.owner` on `underlying_mint`.
@@ -294,13 +313,9 @@ fn compute_transfer_handles<'info>(
     let handle = fhe::execute_returning(fhe::Execute {
         context: fhe::ExecuteContext {
             payer: accounts.payer,
-            event_authority: accounts.zama_event_authority,
-            transient_store: accounts.transient_store,
-            instructions: accounts.instructions,
-            zama_program: accounts.zama_program,
-            host_config: accounts.host_config,
+            zama: accounts.zama,
             deny_scope_records: fhe::deny_scope_records(
-                accounts.host_config,
+                &accounts.zama.host_config,
                 accounts.remaining_accounts,
                 std::iter::once(token_app(mint_key)).chain(stored_amount.as_ref().map(|s| {
                     zama_fhe::AppScope {
@@ -310,8 +325,6 @@ fn compute_transfer_handles<'info>(
                 })),
             )?,
             system_program: accounts.system_program,
-            hcu_block_meter: accounts.hcu_block_meter,
-            hcu_trusted_app_record: accounts.hcu_trusted_app_record,
         },
         accounts: &resolved,
         execution,
