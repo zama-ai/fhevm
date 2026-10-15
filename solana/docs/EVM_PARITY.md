@@ -27,8 +27,8 @@ as EVM; threshold checks count distinct registered signers. Unknown signatures d
 the count (the accepted behavior tracked in #1888 differs from EVM's rejection).
 The gateway domain (`gateway_chain_id`, `input_verification_contract`, `decryption_contract`) is
 set once by `initialize_host_config`, as EVM's `InputVerifier` and `KMSVerifier` set it in their
-initializer. No instruction changes it. A preview deployment changes it by closing `HostConfig`
-with `close_owned_accounts` and initializing again.
+initializer. No instruction changes it. A preview deployment changes it by wiping the host
+(`host wipe`, DD-051) and initializing again.
 
 ## Confidential token and vault composition
 

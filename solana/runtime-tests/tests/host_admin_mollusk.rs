@@ -122,7 +122,6 @@ impl InitializeHostConfig {
     }
 }
 
-/// No instruction changes the gateway domain after this, as on EVM's verifiers.
 #[test]
 fn mollusk_initialize_host_config_stores_the_gateway_domain() {
     let init = InitializeHostConfig::new();
