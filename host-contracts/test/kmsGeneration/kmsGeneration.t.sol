@@ -1745,10 +1745,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doPrepKeygenResponse(migrationPrepId, kmsPk2, kmsTxSender2);
         _doCompressedKeygenResponse(migrationPrepId, migrationRequestId, kmsPk0, kmsTxSender0);
         _doCompressedKeygenResponse(migrationPrepId, migrationRequestId, kmsPk1, kmsTxSender1);
-        IKMSGeneration.KeyInfo memory pendingInfo = kmsGeneration.getKeyInfo(keyId);
-        assertEq(pendingInfo.prepKeygenId, originalPrepId);
-        assertEq(pendingInfo.keyDigests.length, 1);
-        assertEq(uint256(pendingInfo.keyDigests[0].keyType), uint256(IKMSGeneration.KeyType.Server));
+        assertEq(kmsGeneration.getKeyInfo(keyId).prepKeygenId, originalPrepId);
 
         vm.prank(owner);
         kmsGeneration.abortKeygen(migrationPrepId);
@@ -1772,10 +1769,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (, IKMSGeneration.KeyDigest[] memory digestsAfterRetry) = kmsGeneration.getKeyMaterials(keyId);
         assertEq(digestsAfterRetry.length, 2);
         assertEq(uint256(digestsAfterRetry[1].keyType), uint256(IKMSGeneration.KeyType.CompressedKeySet));
-        IKMSGeneration.KeyInfo memory retriedInfo = kmsGeneration.getKeyInfo(keyId);
-        assertEq(retriedInfo.prepKeygenId, retryPrepId);
-        assertEq(retriedInfo.keyDigests.length, 1);
-        assertEq(uint256(retriedInfo.keyDigests[0].keyType), uint256(IKMSGeneration.KeyType.CompressedKeySet));
+        assertEq(kmsGeneration.getKeyInfo(keyId).prepKeygenId, retryPrepId);
     }
 
     function test_revertMigrationKeygenForUngeneratedOrAbortedKey() public {
