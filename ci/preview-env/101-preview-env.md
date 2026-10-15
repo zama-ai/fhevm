@@ -268,12 +268,14 @@ kubectl port-forward -n <namespace> svc/jaeger 16686:16686    # http://localhost
 - **Without:** the stack is deployed with an idle test-suite Job — run tests
   yourself against the namespace, or re-label with `preview-env-e2e-tests`.
 
-To poke a party's connector proxy by hand (self-signed cert, so `-k`; the API
-key is the fixed test literal from `ci/preview-env/kms-connector/values-kms-connector-e2e.yaml`):
+To poke a party's connector proxy by hand (self-signed cert, so `-k`). Requests need an
+`Authorization: FhevmSig ...` header (RFC 038, see `fhevmSigHeader` in
+`test-suite/e2e/test/sdk/connector/connectorHttp.ts`), so an unsigned call only proves the
+proxy is up, answering `401` with `auth_missing`:
 
 ```bash
 kubectl port-forward -n <namespace> svc/kms-connector-1-kms-connector-proxy 8443:8443
-curl -sk -H "Authorization: Bearer fhevm-e2e-kms-connector-api-key" https://localhost:8443/v1/version
+curl -sk https://localhost:8443/version
 ```
 
 ## Destroy an environment
