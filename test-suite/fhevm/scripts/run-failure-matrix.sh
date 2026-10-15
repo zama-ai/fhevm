@@ -207,7 +207,7 @@ MATRIX=(
   "FM-TX-SENDER-CRASH|crash|%d-transaction-sender|kill|submission"
   "FM-CONSENSUS-DETECTOR|crash|%d-transaction-sender|pause|detector-drift"
   "FM-OBJECT-STORAGE-OUTAGE|data|fhevm-object-store|stop|storage"
-  "FM-HOST-LONG-OFFLINE|data|%d-host-listener-poller|stop|ingestion-backlog"
+  "FM-HOST-LONG-OFFLINE|data|%d-host-listener-consumer|stop|ingestion-backlog"
   "FM-DURABLE-BACKLOG|crash|%d-tfhe-worker|kill|compute-backlog"
   "FM-STORAGE-WORKER-RESTART|data|fhevm-object-store|stop|storage"
   "FM-BROKER-OUTAGE|data|listener-redis|stop|ingestion"
@@ -601,15 +601,31 @@ run_cell_body() {
 
   if [[ "$workload" == *-backlog ]]; then
     local role flag arguments
-    for role in tfhe-worker host-listener-poller; do
+    local ingestion_role=host-listener-poller
+    [[ "$case_id" != FM-HOST-LONG-OFFLINE ]] || ingestion_role=host-listener-consumer
+    for role in tfhe-worker "$ingestion_role"; do
       flag=--work-items-batch-size=4
       [[ "$role" != host-listener-poller ]] || flag=--batch-size=4
+      [[ "$role" != host-listener-consumer ]] || flag=--catchup-from-block=-1024
       arguments="$(docker inspect --format '{{range .Config.Cmd}}{{println .}}{{end}}' "$(operator_prefix "$VICTIM")-$role")" || return 1
       grep -Fxq -- "$flag" <<<"$arguments" || {
         cr_record "$case_id" INVALID cleanup=not_required started_at="$started" detail="backlog case requires observed $role $flag"
         return 1
       }
     done
+    if [[ "$case_id" == FM-HOST-LONG-OFFLINE ]]; then
+      grep -Fxq -- '--catchup-unfinalized' <<<"$arguments" || {
+        cr_record "$case_id" INVALID cleanup=not_required started_at="$started" detail="offline replay requires non-finalized consumer catchup"
+        return 1
+      }
+      local publisher=listener-publisher-for-anvil page_size
+      [[ "$VICTIM" == 0 ]] || publisher="listener${VICTIM}-publisher-for-anvil"
+      page_size="$(docker exec "$publisher" cat /config.yaml | bun -e 'import YAML from "yaml"; const config=YAML.parse(await Bun.stdin.text()); console.log(config.blockchain.catchup?.catchup_max_sub_range);')" || return 1
+      [[ "$page_size" == 4 ]] || {
+        cr_record "$case_id" INVALID cleanup=not_required started_at="$started" detail="offline replay requires observed listener-core catchup sub-ranges of four blocks"
+        return 1
+      }
+    fi
   fi
 
   log "$case_id — $fault on $service (workload $workload)"
