@@ -3684,8 +3684,9 @@ fn mollusk_a_batch_keeps_the_policy_it_opened_with() {
     );
 }
 
-/// The admin role moves only when the nominee accepts, as on zama-host. The nominee here is batch
-/// 0, a PDA of the batcher, standing in for a Squads vault that signs through its program.
+/// The admin role moves only when the nominee accepts, as on zama-host, and both steps work while
+/// the batcher is paused. The nominee here is batch 0, a PDA of the batcher, standing in for a
+/// Squads vault that signs through its program.
 #[test]
 fn mollusk_the_admin_role_moves_when_the_nominee_accepts() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
@@ -3696,6 +3697,11 @@ fn mollusk_the_admin_role_moves_when_the_nominee_accepts() {
         let config = read_account::<batcher::Batcher>(&context, fixture.batcher);
         (config.admin, config.pending_admin)
     };
+    check_batcher_instruction(
+        &context,
+        &batcher_admin_ix(&fixture, fixture.admin, batcher::instruction::Pause {}),
+        &[Check::success()],
+    );
 
     check_batcher_instruction(
         &context,

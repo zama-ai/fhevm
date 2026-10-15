@@ -19,7 +19,7 @@ use zama_host::{self as host, errors::ZamaHostError, HostConfig};
 use zama_solana_test_kit::{
     account_is_system_owned_and_empty, anchor_framework_error_check, anchor_ix, event_authority,
     funded_system_account, host_error, paused_host_config, program_data_account, read_host_account,
-    system_account, writable, Ctx,
+    serialized_account, system_account, writable, Ctx,
 };
 
 mod host_fixtures;
@@ -293,20 +293,39 @@ fn accept_admin_ix(pending_admin: Pubkey, host_config: Pubkey) -> Instruction {
 }
 
 /// Only the seeds constraint refuses a program-owned `HostConfig` at another address, here one
-/// that names the caller as admin.
+/// that names the caller as admin and as nominee.
 #[test]
-fn mollusk_set_admin_rejects_a_host_config_at_another_address() {
+fn mollusk_the_handover_rejects_a_host_config_at_another_address() {
     let caller = Pubkey::new_unique();
     let (_, account) = host_config_account(caller);
+    let mut config = <HostConfig as anchor_lang::AccountDeserialize>::try_deserialize(
+        &mut account.data.as_slice(),
+    )
+    .expect("config decodes");
+    config.pending_admin = caller;
     let forged = Pubkey::new_unique();
-    let context = mollusk_execute_context(caller, vec![(forged, account)]);
-
-    context.process_and_validate_instruction(
-        &set_admin_ix(caller, forged, caller),
-        &[anchor_framework_error_check(
-            anchor_lang::error::ErrorCode::ConstraintSeeds,
+    let context = mollusk_execute_context(
+        caller,
+        vec![(
+            forged,
+            Account {
+                data: serialized_account(config),
+                ..account
+            },
         )],
     );
+
+    for ix in [
+        set_admin_ix(caller, forged, caller),
+        accept_admin_ix(caller, forged),
+    ] {
+        context.process_and_validate_instruction(
+            &ix,
+            &[anchor_framework_error_check(
+                anchor_lang::error::ErrorCode::ConstraintSeeds,
+            )],
+        );
+    }
 }
 
 // ---- pausers ----

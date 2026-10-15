@@ -16,9 +16,9 @@
 //! host-owned account, and fail on a host account type nobody classified. They read program
 //! layouts only for a Store's authority, a pauser record's grant, and `HostConfig`'s pause flags,
 //! admin and nominee. The only state they carry is who the admin and the nominee are, which move
-//! when a `set_admin` or an `accept_admin` succeeds. Every
-//! instruction of the host IDL has a generator, and every admin and Store-authority role is also
-//! filled by keys that lack it, signing or not.
+//! when a `set_admin` or an `accept_admin` succeeds. Every instruction of the host IDL has a
+//! generator, and every admin and Store-authority role is also filled by keys that lack it, signing
+//! or not.
 //!
 //! The same sequences also run on the cleartext host build next to the production one: every
 //! transaction must end the same way, make the same calls other than to the System program, and
@@ -546,7 +546,8 @@ impl World {
         new_admin.map_or(Pubkey::default(), |key| self.key(key, self.admin))
     }
 
-    /// The key that holds the right to accept: the nominee, or the admin when no one is nominated.
+    /// The key `Key::Holder` names for `accept_admin`: the nominee, or the admin when no one is
+    /// nominated.
     fn nominee_or_admin(&self) -> Pubkey {
         if self.nominee == Pubkey::default() {
             self.admin
@@ -1263,8 +1264,6 @@ fn inner_instructions(result: &TransactionResult) -> Vec<(Pubkey, Vec<u8>)> {
         .collect()
 }
 
-/// Whether the only change to `root` is a signer with an enabled pauser record adding pause
-/// flags to the config, the one trust-root change the admin need not sign.
 fn decode_config(accounts: &HostAccounts, root: &Pubkey) -> Option<host::HostConfig> {
     let data = accounts.trust_roots.get(root)?;
     host::HostConfig::try_deserialize(&mut data.as_slice()).ok()
@@ -1278,8 +1277,8 @@ fn serialize_config(config: &host::HostConfig) -> Vec<u8> {
     data
 }
 
-/// The nominee recorded before signed, became the admin and cleared the nomination, and nothing
-/// else in `HostConfig` changed.
+/// Whether the nominee recorded before signed, became the admin and cleared the nomination, and
+/// nothing else in `HostConfig` changed: the other trust-root change the admin need not sign.
 fn nominee_accepted(
     before: &HostAccounts,
     after: &HostAccounts,
@@ -1296,6 +1295,8 @@ fn nominee_accepted(
     signers.contains(&nominee) && serialize_config(&new) == serialize_config(&expected)
 }
 
+/// Whether the only change to `root` is a signer with an enabled pauser record adding pause
+/// flags to the config, one of the two trust-root changes the admin need not sign.
 fn pauser_added_flags(
     before: &HostAccounts,
     after: &HostAccounts,
