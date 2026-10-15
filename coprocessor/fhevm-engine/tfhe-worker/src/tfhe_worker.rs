@@ -221,10 +221,9 @@ async fn tfhe_worker_cycle(
         } else {
             no_progress_cycles += 1;
             if no_progress_cycles >= args.dcid_max_no_progress_cycles {
-                // If we're not making progress on this dependence
-                // chain, move it behind work already waiting. Reusing the
-                // earliest computation's timestamp would select the same
-                // blocked consumer again ahead of its repaired producer.
+                // Briefly defer retries across all workers so a blocked
+                // consumer gives its producer a chance to run. Preserve its
+                // original queue position once the cooldown expires.
                 info!(target: "tfhe_worker", "no progress on dependence chain, releasing");
                 true
             } else {

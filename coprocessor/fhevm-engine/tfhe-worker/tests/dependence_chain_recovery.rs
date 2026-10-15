@@ -52,7 +52,7 @@ async fn dependent_count(pool: &PgPool, id: u8) -> Result<i32> {
 
 #[tokio::test]
 #[serial(db)]
-async fn blocked_consumer_rotates_behind_its_producer_in_both_schedulers() -> Result {
+async fn retry_cooldown_is_shared_and_preserves_queue_position_in_both_schedulers() -> Result {
     let (_instance, pool) = setup().await?;
     for fallback in [false, true] {
         sqlx::query("TRUNCATE dependence_chain")
@@ -67,14 +67,133 @@ async fn blocked_consumer_rotates_behind_its_producer_in_both_schedulers() -> Re
             worker.acquire_next_lock().await?
         };
         assert_eq!(first.0, Some(vec![1]));
+        let original_queue_position = worker.get_current_lock().unwrap().last_updated_at;
         worker.release_current_lock(false, true).await?;
+        let state: (String, bool, bool, bool, bool) = sqlx::query_as(
+            "SELECT status, worker_id IS NULL, lock_acquired_at IS NULL,
+                    lock_expires_at > clock_timestamp(),
+                    lock_expires_at <= clock_timestamp() + INTERVAL '1 second'
+             FROM dependence_chain WHERE dependence_chain_id = $1",
+        )
+        .bind(vec![1_u8])
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(state, ("updated".into(), true, true, true, true));
+        // Another pod observes the same cooldown, regardless of which
+        // acquisition path it uses. The repaired producer can run meanwhile.
+        let mut other_worker = manager(&pool);
         let second = if fallback {
-            worker.acquire_early_lock().await?
+            other_worker.acquire_early_lock().await?
         } else {
-            worker.acquire_next_lock().await?
+            other_worker.acquire_next_lock().await?
         };
         assert_eq!(second.0, Some(vec![2]), "fallback={fallback}");
+        assert_eq!(worker.acquire_next_lock().await?.0, None);
+        assert_eq!(worker.acquire_early_lock().await?.0, None);
+        other_worker.release_current_lock(true, false).await?;
+        // Add unrelated, newer backlog. Expire the deadline deterministically;
+        // real idle expiry is tested separately. The blocked consumer retains
+        // precedence over this backlog in normal scheduling.
+        chain(&pool, 3, 5, 0, 0).await?;
+        sqlx::query("UPDATE dependence_chain SET lock_expires_at = NOW() - INTERVAL '1 second' WHERE dependence_chain_id = $1")
+            .bind(vec![1_u8]).execute(&pool).await?;
+        // Normal scheduling restores the old queue position. Rescue scheduling
+        // separately rotates by retry deadlines so stale dependency counters
+        // cannot leave a newer producer behind repeatedly retried consumers.
+        let retried = worker.acquire_next_lock().await?;
+        assert_eq!(retried, (Some(vec![1]), LockingReason::UpdatedUnowned));
+        assert_eq!(
+            worker.get_current_lock().unwrap().last_updated_at,
+            original_queue_position
+        );
     }
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn fallback_rotates_expired_retries_until_a_newer_stale_count_producer_runs() -> Result {
+    let (_instance, pool) = setup().await?;
+    chain(&pool, 1, 50, 0, 0).await?; // oldest blocked consumer
+    chain(&pool, 2, 40, 0, 0).await?; // another blocked consumer
+    chain(&pool, 3, 30, 1, 1).await?; // newer repaired producer with a stale count
+    chain(&pool, 4, 20, 0, 0).await?; // unrelated productive backlog
+    let mut worker = manager(&pool);
+    for expected in 1..=3 {
+        assert_eq!(worker.acquire_early_lock().await?.0, Some(vec![expected]));
+        worker.release_current_lock(false, true).await?;
+        // Model productive work between rescues lasting longer than the
+        // cooldown. Eligibility alone must not keep selecting chain 1 again.
+        sqlx::query("UPDATE dependence_chain SET lock_expires_at = NOW() - INTERVAL '1 second' WHERE dependence_chain_id = $1")
+            .bind(vec![expected]).execute(&pool).await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn periodic_rescue_does_not_repeat_an_expired_old_consumer() -> Result {
+    let (_instance, pool) = setup().await?;
+    chain(&pool, 1, 30, 0, 0).await?;
+    chain(&pool, 2, 20, 1, 1).await?;
+    chain(&pool, 3, 10, 0, 0).await?;
+    let mut worker = manager(&pool);
+    worker.set_dependency_count_fallback_interval(1);
+    assert_eq!(worker.acquire_next_lock().await?.0, Some(vec![1]));
+    worker.release_current_lock(false, true).await?;
+    sqlx::query("UPDATE dependence_chain SET lock_expires_at = NOW() - INTERVAL '1 second' WHERE dependence_chain_id = $1")
+        .bind(vec![1_u8]).execute(&pool).await?;
+    // The periodic fallback must choose the producer despite the consumer
+    // already being eligible again and ordinary count-zero backlog remaining.
+    assert_eq!(worker.acquire_next_lock().await?.0, Some(vec![2]));
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn idle_retry_becomes_eligible_when_shared_cooldown_expires() -> Result {
+    let (_instance, pool) = setup().await?;
+    chain(&pool, 1, 20, 0, 0).await?;
+    let mut first_pod = manager(&pool);
+    assert_eq!(first_pod.acquire_next_lock().await?.0, Some(vec![1]));
+    first_pod.release_current_lock(false, true).await?;
+    let mut second_pod = manager(&pool);
+    assert_eq!(second_pod.acquire_next_lock().await?.0, None);
+    assert_eq!(second_pod.acquire_early_lock().await?.0, None);
+    // No ingestion or notification clears the deadline. Ordinary polling
+    // recovers the only chain after the fixed one-second database cooldown.
+    let retried = timeout(Duration::from_secs(5), async {
+        loop {
+            let candidate = second_pod.acquire_next_lock().await?;
+            if candidate.0.is_some() {
+                return Ok::<_, sqlx::Error>(candidate);
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await??;
+    assert_eq!(retried, (Some(vec![1]), LockingReason::UpdatedUnowned));
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn completed_chain_has_no_cooldown_and_cannot_be_stolen_without_an_owner() -> Result {
+    let (_instance, pool) = setup().await?;
+    chain(&pool, 1, 20, 0, 0).await?;
+    let mut worker = manager(&pool);
+    assert_eq!(worker.acquire_next_lock().await?.0, Some(vec![1]));
+    worker.release_current_lock(true, true).await?;
+    let state: (String, bool) = sqlx::query_as(
+        "SELECT status, lock_expires_at IS NULL FROM dependence_chain WHERE dependence_chain_id = $1",
+    ).bind(vec![1_u8]).fetch_one(&pool).await?;
+    assert_eq!(state, ("processed".into(), true));
+    // An old ownerless deadline is not an expired worker lease. In particular,
+    // it must not make a processed chain eligible through the stealing branch.
+    sqlx::query("UPDATE dependence_chain SET lock_expires_at = NOW() - INTERVAL '1 second' WHERE dependence_chain_id = $1")
+        .bind(vec![1_u8]).execute(&pool).await?;
+    assert_eq!(worker.acquire_next_lock().await?.0, None);
+    assert_eq!(worker.acquire_early_lock().await?.0, None);
     Ok(())
 }
 

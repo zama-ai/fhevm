@@ -178,7 +178,7 @@ impl LockMngr {
                     CASE
                         WHEN status = 'updated' AND worker_id IS NULL
                             THEN 'updated_unowned'
-                        WHEN lock_expires_at < NOW()
+                        WHEN worker_id IS NOT NULL AND lock_expires_at < NOW()
                             THEN 'expired_lock'
                         END AS match_reason
                 FROM dependence_chain
@@ -188,10 +188,14 @@ impl LockMngr {
                             AND
                             worker_id IS NULL       -- Ensure no other workers own it
                             AND
+                            (lock_expires_at IS NULL OR lock_expires_at <= NOW()) -- Retry cooldown elapsed
+                            AND
                             dependency_count = 0    -- No pending dependencies
                         )                              
                     OR  (
-                            lock_expires_at < NOW()  -- Work-stealing of expired locks
+                            worker_id IS NOT NULL
+                            AND
+                            lock_expires_at < NOW()  -- Work-stealing of expired leases
                             AND
                             dependency_count = 0     -- No pending dependencies
                         )
@@ -239,11 +243,11 @@ impl LockMngr {
         ))
     }
 
-    /// Acquire the earliest dependence-chain entry for processing
-    /// sorted by last_updated_at (FIFO), ignoring lane priority. Here we ignore
-    /// dependency_count as reorgs can lead to incorrect counts and
-    /// set of dependents until we add block hashes to transaction
-    /// hashes to uniquely identify transactions.
+    /// Rescue work without trusting dependency counts or preferring a lane.
+    /// Reorgs can leave incorrect counts and dependents. Order deferred chains
+    /// by their retry deadline, even after it expires, so a repeatedly blocked
+    /// old consumer cannot monopolize rescues ahead of its newer producer.
+    /// Untouched chains retain their original queue time in this ordering.
     /// Returns the dependence_chain_id if a lock was acquired
     pub async fn acquire_early_lock(
         &mut self,
@@ -263,9 +267,10 @@ impl LockMngr {
                     dependency_count
                 FROM dependence_chain
                 WHERE
-                    (status = 'updated' AND worker_id IS NULL)
-                    OR lock_expires_at < NOW()
-                ORDER BY last_updated_at ASC, schedule_priority ASC
+                    (status = 'updated' AND worker_id IS NULL
+                     AND (lock_expires_at IS NULL OR lock_expires_at <= NOW()))
+                    OR (worker_id IS NOT NULL AND lock_expires_at < NOW())
+                ORDER BY COALESCE(lock_expires_at, last_updated_at) ASC, schedule_priority ASC
                 FOR UPDATE SKIP LOCKED              -- Ensure no other worker is currently trying to lock it
                 LIMIT 1
             )
@@ -343,6 +348,9 @@ impl LockMngr {
     /// worker actually transitions an owned processing chain to processed.
     /// The transition and dependency-count updates commit together so cleanup
     /// or a connection failure cannot lose a dependent notification.
+    /// Deferred retries keep their original position in normal scheduling.
+    /// With no owner, lock_expires_at is a short shared cooldown and rescue
+    /// ordering timestamp rather than a worker lease.
     pub async fn release_current_lock(
         &mut self,
         mark_as_processed: bool,
@@ -386,8 +394,10 @@ impl LockMngr {
             SET
                 worker_id = NULL,
                 lock_acquired_at = NULL,
-                lock_expires_at = NULL,
-                last_updated_at = CASE WHEN $4 THEN clock_timestamp() ELSE last_updated_at END,
+                lock_expires_at = CASE
+                    WHEN $4 AND NOT $3::bool THEN clock_timestamp() + INTERVAL '1 second'
+                    ELSE NULL
+                END,
                 status = CASE
                     WHEN status = 'processing' AND $3::bool THEN 'processed'       -- mark as processed
                     WHEN status = 'processing' AND NOT $3::bool THEN 'updated'     -- revert to updated so it can be re-acquired
