@@ -1,5 +1,5 @@
 import { emitAssertions } from './assertionEvidence';
-import { requireDriftBaseline, requireIngestionTarget, requireBacklogTargets } from './failureEvidence';
+import { requireDriftBaseline, requireIngestionTarget, requireBacklogTargets, requireCompletedConsumerCatchup } from './failureEvidence';
 /**
  * Service-specific failure cases: the workload half.
  *
@@ -169,11 +169,13 @@ async function driftSignals(databaseUrl: string): Promise<number> {
   });
 }
 
-/** The poller's cursor, used as an ingestion watermark. */
-async function pollerCursor(databaseUrl: string, chainId: string): Promise<number | null> {
+/** Watermark of the ingestion path selected by this case. */
+async function ingestionCursor(databaseUrl: string, chainId: string): Promise<number | null> {
   return withPool(databaseUrl, async (pool) => {
     const result = await pool.query<{ block: string | null }>(
-      'SELECT MAX(last_caught_up_block)::text AS block FROM host_listener_poller_state WHERE chain_id = $1',
+      CASE_ID === 'FM-HOST-LONG-OFFLINE'
+        ? 'SELECT MAX(block_number)::text AS block FROM host_chain_blocks_valid WHERE chain_id = $1'
+        : 'SELECT MAX(last_caught_up_block)::text AS block FROM host_listener_poller_state WHERE chain_id = $1',
       [chainId],
     );
     const value = result.rows[0]?.block;
@@ -435,7 +437,18 @@ describe('Service failure case', function () {
         // the blocks the workload lands in are then pending delivery to it.
         const { ethers } = await import('hardhat');
         const chainId = (await ethers.provider.getNetwork()).chainId.toString();
-        const watermark = await pollerCursor(databaseUrls[VICTIM], chainId);
+        const watermark = await ingestionCursor(databaseUrls[VICTIM], chainId);
+        let catchupIdBefore: string | undefined;
+        if (CASE_ID === 'FM-HOST-LONG-OFFLINE') {
+          const previous = await withPool(databaseUrls[VICTIM], pool => pool.query<{ id: string; status: string }>(
+            `SELECT id::text, status FROM host_consumer_catchups
+             WHERE chain_id = $1 AND consumer_id = $2 AND NOT finalized
+               AND requested_from = -1024 AND requested_to = -1
+             ORDER BY created_at DESC LIMIT 1`, [chainId, `host-listener-consumer.${chainId}`]));
+          expect(previous.rows, 'initial consumer replay must exist').to.have.length(1);
+          expect(previous.rows[0].status, 'initial replay must finish before taking the consumer offline').to.eq('DONE');
+          catchupIdBefore = previous.rows[0].id;
+        }
         const blocks: number[] = [];
         let blockHash = "";
         const targets = WORKLOAD === 'ingestion-backlog' ? 12 : 1;
@@ -449,7 +462,7 @@ describe('Service failure case', function () {
         expect(new Set(armed.handles).size).to.eq(targets);
         const blockNumber = blocks[blocks.length - 1];
         if (targets > 1) expect(blockNumber - blocks[0], 'backlog spans at least nine host blocks').to.be.at.least(8);
-        armed.detail = { watermarkWhenArmed: watermark, blockNumber, blockHash, chainId, blocks };
+        armed.detail = { watermarkWhenArmed: watermark, blockNumber, blockHash, chainId, blocks, catchupIdBefore };
         expect(
           watermark === null || watermark < blockNumber,
           `operator ${VICTIM}'s ingestion watermark (${watermark}) is already past the workload's block ` +
@@ -797,9 +810,40 @@ describe('Service failure case', function () {
         // The path under test must have caught up past the workload's block,
         // and nothing may have been duplicated by the catch-up.
         const { blockNumber, chainId } = requireIngestionTarget(record.detail);
+        if (CASE_ID === 'FM-HOST-LONG-OFFLINE') {
+          const listenerDatabaseUrl = new URL(databaseUrls[record.victim]);
+          listenerDatabaseUrl.pathname = record.victim === 0 ? '/listener' : `/listener${record.victim}`;
+          const replayDeadline = Date.now() + 8 * 60_000;
+          for (;;) {
+            const replay = await withPool(databaseUrls[record.victim], pool => pool.query(
+              `SELECT id::text, status, finalized, block_start::integer AS "blockStart", block_end::integer AS "blockEnd"
+               FROM host_consumer_catchups
+               WHERE chain_id = $1 AND consumer_id = $2 AND NOT finalized
+                 AND requested_from = -1024 AND requested_to = -1
+                 AND id <> $3::uuid ORDER BY created_at DESC LIMIT 1`,
+              [chainId, `host-listener-consumer.${chainId}`, record.detail?.catchupIdBefore]));
+            const row = replay.rows[0];
+            if (row?.status === 'DONE') {
+              requireCompletedConsumerCatchup(row, record.detail?.catchupIdBefore, record.detail?.blocks);
+              const core = await withPool(listenerDatabaseUrl.toString(), pool => pool.query(
+                `SELECT status, sub_ranges, fanned_end::integer AS "fannedEnd" FROM catchup_requests
+                 WHERE catchup_id = $1 AND chain_id = $2 AND consumer_id = $3 AND flow = 'CATCHUP'`,
+                [row.id, chainId, `host-listener-consumer.${chainId}`]));
+              if (core.rows[0]?.status === 'COMPLETED') {
+                expect(core.rows[0].sub_ranges, 'offline replay must span at least three core sub-ranges').to.be.at.least(3);
+                expect(core.rows[0].fannedEnd, 'core publication must cover the last workload receipt').to.be.at.least(blockNumber);
+                console.info(`[failure-case/${CASE_ID}] consumer catchup ${row.id} completed [${row.blockStart}, ${row.blockEnd}]`);
+                emitAssertions(CASE_ID, ['scope'], 'A new non-finalized consumer catchup covered every workload block, completed at least three listener-core sub-ranges and reached DONE while legacy ingestion stayed stopped.');
+                break;
+              }
+            }
+            if (Date.now() >= replayDeadline) throw new Error('consumer did not complete a new catchup covering the offline workload');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
         const deadline = Date.now() + 8 * 60_000;
         for (;;) {
-          const cursor = await pollerCursor(databaseUrls[record.victim], chainId);
+          const cursor = await ingestionCursor(databaseUrls[record.victim], chainId);
           if (cursor !== null && cursor >= blockNumber) {
             console.info(
               `[failure-case/${CASE_ID}] operator ${record.victim}'s ingestion path caught up to ${cursor} ` +

@@ -154,6 +154,8 @@ test("backlog cases require the small observed batch/page topology", () => {
   expect(blockTimeMs).toBeGreaterThan(0);
   for (const instance of scenario.instances) {
     expect(instance.args["tfhe-worker"]).toContain("--work-items-batch-size=4");
+    expect(instance.args["host-listener-consumer"]).toContain("--catchup-from-block=-1024");
+    expect(instance.args["host-listener-consumer"]).toContain("--catchup-unfinalized");
     const pollerArgs = instance.args["host-listener-poller"] as string[];
     expect(pollerArgs).toContain("--batch-size=4");
     const pageSize = Number(pollerArgs.find(arg => arg.startsWith("--batch-size="))?.split("=")[1]);
