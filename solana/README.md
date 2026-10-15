@@ -27,8 +27,8 @@ flowchart LR
     LISTENER --> WORKERS[FHE workers]
     INDEXER[Merkle indexer] -.->|reads tx bytes| HOST
     INDEXER --> LEAVES[leaf record]
-    CLIENT[client / js-sdk] --> RELAYER[relayer] --> GATEWAY[gateway contracts]
-    GATEWAY --> CONNECTOR[KMS connectors, one per party]
+    CLIENT[client / js-sdk] -->|input proofs| RELAYER[relayer] --> GATEWAY[gateway contracts]
+    CLIENT -->|decryption| RHTTP[relayer-http] --> CONNECTOR[KMS connectors, one per party]
     CONNECTOR -.->|reads encrypted stores| HOST
     CONNECTOR -.->|fetches Merkle proofs| LEAVES
     CONNECTOR --> KMS[KMS core]
@@ -43,7 +43,8 @@ Each component owns exactly one kind of trust decision:
 | ------------------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `zama-host` program            | `solana/programs/zama-host`      | All on-chain authorization: who may execute on which values, input attestations (threshold secp256k1, verified on-chain), public-decrypt certificates, HCU caps.                                                                                                                                                     |
 | Coprocessor listener + workers | `coprocessor/fhevm-engine`       | Nothing. The listener reconstructs executions from transaction bytes and schedules the FHE compute of the outputs a transaction stores; the Merkle proof service records the MMR leaves from the same bytes and serves their proofs; a wrong fork wastes compute but cannot release plaintext, and every proof is verified against live on-chain peaks by the connector (INVARIANTS #30, #31).          |
-| Gateway + relayer              | `gateway-contracts/`, `relayer/` | Routing, fees, and request-shape conformance only. User requests are signed; neither can alter who asks or for what (INVARIANTS #42).                                                                                                                                                                                |
+| Gateway + relayer              | `gateway-contracts/`, `relayer/` | Input proofs: routing, fees and request-shape conformance only.                                                                                                                                                                                                                                                      |
+| relayer-http                   | `relayer-http/`                  | Decryption routing: checks a request's form, forwards it to every KMS connector and aggregates the answers. User requests are signed; it cannot alter who asks or for what (INVARIANTS #42).                                                                                                                         |
 | KMS connector                  | `kms-connector/`                 | Decrypt authorization. Each KMS party's connector independently re-verifies the user's ed25519 signature, reads the encrypted store from the host chain, fetches the allow leaf's proof from the coprocessors, and verifies it with the same compiled `zama_solana_acl` code the program runs (INVARIANTS #42, #45). |
 | KMS core                       | `zama-ai/kms` repo               | Chain-blind threshold decryption; binds each response to the requester's typed pubkey and encryption key.                                                                                                                                                                                                            |
 
@@ -147,10 +148,12 @@ coprocessor/fhevm-engine/host-listener   Solana ingestion: solana_listener.rs (t
 coprocessor/fhevm-engine/solana-merkle-proof-service
                                          The leaf record in its own database: the Merkle indexer
                                          (indexer.rs, store.rs) and the proof server (server.rs).
-gateway-contracts/                       Gateway (EVM) contracts, incl. the typed Solana
-                                         decryption entrypoint.
+gateway-contracts/                       Gateway (EVM) contracts, incl. the Solana input-proof
+                                         entrypoint (verifyProofRequestSolana).
 relayer/                                 Gateway relayer: Solana input proofs
                                          (verifyProofRequestSolana), fee handling.
+relayer-http/                            Decryption relayer: forwards Solana and EVM decryption
+                                         requests to the KMS connectors and aggregates the answers.
 kms-connector/                           Per-party decrypt authorization (imports zama_solana_acl).
 sdk/js-sdk/src/solana                    Client SDK: encrypt, user/public decrypt, proofs.
 test-suite/fhevm/src/solana              The typed Solana side-stack: validator + program deploy,

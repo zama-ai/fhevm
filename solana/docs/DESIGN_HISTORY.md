@@ -19,6 +19,7 @@ later decision replaced only part of a live entry, the replaced wording is under
 | DD-018 Transfer-And-Call Refund Prepare/Finalize (replaced)                                                | DD-011                       |
 | DD-019 Confidential Transfer Persists Only Final Balance And Transferred-Amount ACL Records                | DD-049                       |
 | DD-022 Witness PDAs Created Before The secp Consume (request → consume-once)                               | DD-040, DD-045               |
+| DD-027 Chain-Aware V2 User-Decrypt Validation                                                              | DD-074                       |
 | DD-032 `EncryptedValue` + MMR Replaces Keyed-Nonce `AclRecord` (RFC-024)                                   | DD-049                       |
 | DD-034 Eager Compute Scheduling For Solana (Q11 Option A)                                                  | DD-069                       |
 | DD-035 Standalone Untrusted Solana MMR Proof Service                                                       | DD-048                       |
@@ -27,7 +28,7 @@ later decision replaced only part of a live entry, the replaced wording is under
 | DD-038 One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events                            | removed; fhevm-internal#2079 |
 | DD-039 HCU Block Cap Meters The Signed `compute_subject`, Not A Separate Authority                         | DD-047                       |
 | Committed Cost Snapshots Gate CI On Exact Costs                                                            | the cost report              |
-| Solana decryption through the Gateway                                                                      | HTTP (relayer-http)          |
+| Solana decryption through the Gateway                                                                      | DD-074 (HTTP, relayer-http)  |
 | Bash e2e scripts and the Rust live client                                                                  | the bun:test suite (#3477)   |
 
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds
@@ -351,6 +352,34 @@ context N could be consumed after rotation to N+1.
 Open for debate:
 
 Expiry slot policy and request-PDA rent reclamation cadence are not yet designed for production.
+
+## DD-027: Chain-Aware V2 User-Decrypt Validation
+
+Status: superseded by DD-074. A Solana user decryption goes over HTTP through relayer-http, and the
+gateway relayer submits none (zama-ai/fhevm#4408). The relayer's user-decrypt validation has no
+Solana branch: its v2 and v3 endpoints are main's. What follows is decision history.
+
+Context:
+
+Admitting Solana over the unified V2 user-decrypt path (DD-012) required relaxing EVM input validation
+(empty `contractAddresses`, 128-or-130-char signature).
+
+Decision:
+
+A **cross-field validator branches on `contracts_chain_id`** via `is_solana_host_chain_id` (type byte
+`0x01`; the predicate’s meaning is DD-052): EVM-strict (non-empty contracts, exact EIP-712 130-hex
+signature) vs Solana-relaxed (empty contracts allowed, 128-or-130-char signature). Per-field
+validators stay permissive; strictness is enforced in the cross-field branch.
+
+Why / what worked:
+
+Branching on the chain type keeps EVM strictness intact while admitting Solana. The CI integration
+test covers both chains.
+
+Open for debate:
+
+The Solana-relaxed signature acceptance (128 ed25519 vs 130) is the seam most likely to need tightening
+once the input-identity encoding (DD-026) is frozen.
 
 ## DD-032: `EncryptedValue` + MMR Replaces Keyed-Nonce `AclRecord` (RFC-024)
 
@@ -786,8 +815,8 @@ limits with the upstream symbol that defines each.
 
 ## Solana decryption through the Gateway, replaced by HTTP (relayer-http)
 
-**Status:** replaced by HTTP decryption through relayer-http. A Solana decryption reaches the KMS
-connector only as `POST /v1/user-decrypt` or `POST /v1/public-decrypt`.
+**Status:** replaced by DD-074, HTTP decryption through relayer-http. A Solana decryption reaches
+the KMS connector only as `POST /v1/user-decrypt` or `POST /v1/public-decrypt`.
 
 **Gateway relayer** (zama-ai/fhevm#4408). The gateway relayer (`relayer/`) submitted Solana user
 decryptions to the Gateway's `solanaUserDecryptionRequest` and Solana public decryptions to
@@ -964,6 +993,44 @@ DD-060:
 > `every_blob_field_reaches_the_canonical_bytes` (every blob field changes the request bytes),
 > `every_field_lands_in_its_place_and_the_chain_comes_from_the_handles` (assembly puts each Gateway
 > and blob field in its permit role)
+
+**DD-012 and DD-052** (DD-074). Both still described the Gateway path or DD-027's relayer
+validation, and named no decryption relayer but the gateway relayer. The replaced wording, as
+written:
+
+DD-012 title:
+
+> Solana User Decrypt Reuses The Gateway Stack
+
+DD-012:
+
+> Treat Solana as a **gateway-compatible host chain**: its decrypt flows reach the same KMS connectors,
+
+> A chain-aware validator branches on `contracts_chain_id` (see DD-027) so EVM stays strict and
+> Solana is relaxed. The bytes32 handle surface still admits both EVM and Solana.
+
+> - Solana is registered as a host chain (bytes32 ACL = the `zama_host` program id, type-byte `0x01` chain id;
+>   added to the relayer `host_chains`).
+
+> same shapes lets the existing Gateway/coprocessor/KMS pods serve Solana with chain-aware validation
+> instead of a second pipeline.
+
+> real gateway/coprocessor/KMS/relayer side-stack reusing the shared coprocessor Postgres.
+
+> What didn't / had to change:
+>
+> The reconciliation initially relaxed EVM input validation unconditionally to admit Solana over V2,
+> which weakened EVM (CI caught empty-contracts / wrong-sig being accepted). Fixed with the chain-aware
+> cross-field validator (DD-027).
+
+> Open for debate: is unifying on the EVM/Gateway stack the right long-term call
+
+DD-052:
+
+> DD-027 still owns EVM-strict vs Solana-relaxed validation. Both keep calling
+> `is_solana_host_chain_id`;
+
+> The listener, connector and relayer must use that same value.
 
 ## Bash e2e scripts and the Rust live client, replaced by the bun:test suite
 

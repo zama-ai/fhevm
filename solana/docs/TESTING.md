@@ -161,9 +161,10 @@ cargo clippy --workspace --all-targets -- -D warnings
 `cargo test --workspace` here covers exactly one Cargo workspace root. The
 repository has more than a dozen, so the number is not the useful fact — what
 matters is which ones can see a Solana change, and the criterion is a path
-dependency on a crate under `solana/`. Three do: `coprocessor/fhevm-engine`
-(host-listener, solana-host-follower, solana-merkle-proof-service), `kms-connector`, and `relayer` (it reads the Solana
-host chain id's type byte through `zama-solana-acl`). Everything else in the repo — `shared/*`,
+dependency on a crate under `solana/`. Four do: `coprocessor/fhevm-engine`
+(host-listener, solana-host-follower, solana-merkle-proof-service), `kms-connector`, `relayer` (it reads the Solana
+host chain id's type byte through `zama-solana-acl`), and `relayer-http` (it checks a Solana request's form
+through `zama-solana-request`). Everything else in the repo — `shared/*`,
 `test-suite/gateway-stress`, the generated `*_bindings` — depends on no Solana
 crate and cannot break from one.
 
@@ -173,15 +174,16 @@ cargo treats it as its own). Ask cargo instead:
 `cargo metadata --no-deps --format-version 1 | jq -r .workspace_root`.
 
 A rename that reaches a shared crate compiles cleanly here and still breaks the
-build in those three, because they are invisible to this workspace:
+build in those four, because they are invisible to this workspace:
 
 ```bash
-# Path-depend on zama-host / zama-solana-acl. `--all-targets`
+# Path-depend on zama-host / zama-solana-acl / zama-solana-request. `--all-targets`
 # matters: the sites that break are usually `#[cfg(test)]`, so a plain
 # `cargo check` or `cargo build` passes while `cargo test -p …` does not compile.
 (cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo check --workspace --all-targets)
 (cd ../kms-connector && SQLX_OFFLINE=true cargo check --workspace --all-targets)
 (cd ../relayer && cargo check --workspace --all-targets --all-features)
+(cd ../relayer-http && cargo check --workspace --all-targets)
 ```
 
 Each of those roots hid a real break at least once. The grep sweeps in
@@ -443,7 +445,7 @@ and a record that is behind is a retry.
   seed to one raw literal in the program, in `constants.rs`.
   The user-decrypt side of the mirror is pinned by committed vectors that both sides assert
   against. The permit's canonical text and offchain-message envelope come from `zama-solana-permit`
-  (used by the connector and relayer-http) and the SDK's TypeScript, pinned by
+  (used by the connector) and the SDK's TypeScript, pinned by
   `solana/test-fixtures/permit/permit_v1.json`. The decryption request bodies are the
   `kms-connector-api` Solana DTOs, which the decryption relayer forwards unchanged; the SDK's
   `decryption/connectorVectors.test.ts` holds both bodies to the Connector's vectors in
