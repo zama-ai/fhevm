@@ -13,7 +13,7 @@ async fn setup(from: u64) -> Result<(DBInstance, Database, InfiniteLogIter)> {
     let db = Database::new(&instance.db_url, ChainId::try_from(42_u64)?, 128)
         .await?;
     let mut iter = new_test_iter(50);
-    let recovery = RecoveryCheckpoint::new(db.clone(), [None; 5], false, false);
+    let recovery = RecoveryCheckpoint::new(db.clone(), [None; 5], false);
     recovery.start(from, 0).await?;
     iter.recovery = Some(recovery);
     iter.recovery_started = true;
@@ -103,7 +103,7 @@ async fn restart_keeps_failed_gap_after_realtime_advances_far_beyond_it(
             )
         });
     restarted.recovery =
-        Some(RecoveryCheckpoint::new(db.clone(), [None; 5], false, false));
+        Some(RecoveryCheckpoint::new(db.clone(), [None; 5], false));
     restarted.new_log_stream_no_retry().await?;
     assert_eq!(restarted.catchup_blocks.unwrap().0, 89, "restart includes overlap before the durable frontier, not MAX(block) - margin");
     assert_eq!(
@@ -139,7 +139,7 @@ async fn failure_preserves_queued_ancestors_even_when_their_hashes_are_known(
     assert_eq!(iter.block_history.size(), 0);
     assert_eq!(iter.catchup_blocks.unwrap().0, 95);
     drop(iter);
-    let restarted = RecoveryCheckpoint::new(db, [None; 5], false, false);
+    let restarted = RecoveryCheckpoint::new(db, [None; 5], false);
     assert_eq!(restarted.start(1_000, 5).await?.next_block, 90);
     Ok(())
 }
@@ -158,7 +158,7 @@ async fn restart_replays_a_partially_committed_page() -> Result<()> {
     iter.acknowledge_catchup_block().await?;
     assert_eq!(iter.recovery.as_ref().unwrap().read().await?.next_block, 40);
     drop(iter);
-    let restarted = RecoveryCheckpoint::new(db, [None; 5], false, false);
+    let restarted = RecoveryCheckpoint::new(db, [None; 5], false);
     assert_eq!(restarted.start(200, 5).await?.next_block, 35);
     Ok(())
 }
@@ -169,7 +169,7 @@ async fn stale_page_cannot_clear_another_listeners_recovery_request(
 ) -> Result<()> {
     let (_instance, db, iter) = setup(40).await?;
     let first = iter.recovery.as_ref().unwrap();
-    let second = RecoveryCheckpoint::new(db, [None; 5], false, false);
+    let second = RecoveryCheckpoint::new(db, [None; 5], false);
     let old = first.read().await?;
     second.require(50).await?; // a new gap inside an already fetched page
     assert_eq!(first.complete(40, 60, old.revision).await?.next_block, 40);
@@ -228,8 +228,8 @@ async fn checkpoint_write_failure_leaves_the_page_retryable() -> Result<()> {
 
 #[tokio::test]
 #[serial(db)]
-async fn checkpoint_is_scoped_to_contract_roles_listener_role_and_stack(
-) -> Result<()> {
+async fn checkpoint_is_scoped_to_contract_roles_and_listener_role() -> Result<()>
+{
     let (_instance, db, _iter) = setup(40).await?;
     let a = Address::with_last_byte(1);
     let b = Address::with_last_byte(2);
@@ -237,30 +237,140 @@ async fn checkpoint_is_scoped_to_contract_roles_listener_role_and_stack(
         db.clone(),
         [Some(a), Some(b), None, None, None],
         false,
-        false,
     );
-    assert_eq!(filtered.start(80, 0).await?.next_block, 80);
+    let initial = filtered.start(80, 0).await?;
+    assert_eq!(initial.next_block, 40);
+    filtered.complete(40, 80, initial.revision).await?;
     let swapped_roles = RecoveryCheckpoint::new(
         db.clone(),
         [Some(b), Some(a), None, None, None],
         false,
-        false,
     );
-    assert_eq!(swapped_roles.start(100, 0).await?.next_block, 100);
-    let protocol = RecoveryCheckpoint::new(
-        db.clone(),
-        [Some(a), Some(b), None, None, None],
-        true,
-        false,
+    assert_eq!(swapped_roles.start(100, 0).await?.next_block, 40);
+    let protocol =
+        RecoveryCheckpoint::new(db, [Some(a), Some(b), None, None, None], true);
+    assert_eq!(protocol.start(100, 0).await?.next_block, 40);
+    assert_eq!(filtered.read().await?.next_block, 80);
+    Ok(())
+}
+
+/// Reproduce the pre-fix scope encoding used by both v0.13 and v0.14. In
+/// particular, a pre-existing blue row must not hide the older green gap.
+async fn legacy_checkpoint(
+    db: &Database,
+    gcs: bool,
+    next_block: i64,
+) -> Result<()> {
+    let mut scope = vec![0, u8::from(gcs)];
+    scope.extend_from_slice(&[0; 5 * 21]); // five absent contract roles
+    sqlx::query(
+        "INSERT INTO public.host_listener_catchup_state
+                 (chain_id, scope_hash, next_block) VALUES ($1, $2, $3)",
+    )
+    .bind(db.chain_id.as_i64())
+    .bind(alloy::primitives::keccak256(scope).to_vec())
+    .bind(next_block)
+    .execute(&db.pool().await)
+    .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn legacy_green_gap_is_adopted_even_when_blue_scope_already_exists(
+) -> Result<()> {
+    let (_instance, db, _iter) = setup(40).await?;
+    sqlx::query("DELETE FROM host_listener_catchup_state")
+        .execute(&db.pool().await)
+        .await?;
+    legacy_checkpoint(&db, true, 40).await?;
+    legacy_checkpoint(&db, false, 900).await?;
+    let restarted = RecoveryCheckpoint::new(db, [None; 5], false);
+    let initial = restarted.start(975, 5).await?;
+    assert_eq!(initial.next_block, 35);
+    restarted.complete(35, 1_000, initial.revision).await?;
+    // The legacy green row stays at 40, but it is only a bootstrap seed.
+    assert_eq!(restarted.start(1_500, 5).await?.next_block, 995);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn green_promotion_preserves_scope_and_invalidates_pre_restart_pages(
+) -> Result<()> {
+    let (instance, db, _iter) = setup(40).await?;
+    let pool = db.pool().await;
+    sqlx::query("DELETE FROM host_listener_catchup_state")
+        .execute(&pool)
+        .await?;
+    legacy_checkpoint(&db, false, 900).await?;
+    sqlx::query("UPDATE versioning SET stack_version = 'v0.13'")
+        .execute(&pool)
+        .await?;
+    let gcs =
+        fhevm_engine_common::versioning::resolve_gcs_mode(instance.db_url())
+            .await?;
+    assert!(gcs);
+    let green_db =
+        Database::new_with_gcs_mode(&instance.db_url, db.chain_id, 128, gcs)
+            .await?;
+    let green = RecoveryCheckpoint::new(green_db, [None; 5], false);
+    green.start(40, 0).await?;
+    let pending = green.require(20).await?;
+
+    sqlx::query("UPDATE versioning SET stack_version = $1")
+        .bind(fhevm_engine_common::STACK_VERSION)
+        .execute(&pool)
+        .await?;
+    let gcs =
+        fhevm_engine_common::versioning::resolve_gcs_mode(instance.db_url())
+            .await?;
+    assert!(!gcs);
+    let live_db =
+        Database::new_with_gcs_mode(&instance.db_url, db.chain_id, 128, gcs)
+            .await?;
+    let live = RecoveryCheckpoint::new(live_db, [None; 5], false);
+    let restarted = live.start(975, 5).await?;
+    assert_eq!(restarted.next_block, 15);
+    assert!(restarted.revision > pending.revision);
+    assert_eq!(
+        green.complete(20, 60, pending.revision).await?.next_block,
+        15
     );
-    assert_eq!(protocol.start(100, 0).await?.next_block, 100);
-    let gcs = RecoveryCheckpoint::new(
+    assert_eq!(
+        live.complete(15, 100, restarted.revision).await?.next_block,
+        100
+    );
+    assert_eq!(green.read().await?.next_block, 100);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn changed_filter_inherits_gap_once_without_sharing_completion(
+) -> Result<()> {
+    let (_instance, db, iter) = setup(40).await?;
+    let changed = RecoveryCheckpoint::new(
         db,
-        [Some(a), Some(b), None, None, None],
+        [Some(Address::with_last_byte(1)), None, None, None, None],
         false,
-        true,
     );
-    assert_eq!(gcs.start(120, 0).await?.next_block, 120);
+    let initial = changed.start(1_000, 5).await?;
+    assert_eq!(initial.next_block, 35);
+    changed.complete(35, 500, initial.revision).await?;
+    assert_eq!(iter.recovery.as_ref().unwrap().read().await?.next_block, 40);
+    assert_eq!(changed.start(1_000, 5).await?.next_block, 495);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn new_checkpoint_does_not_inherit_another_chains_frontier() -> Result<()>
+{
+    let (_instance, mut db, _iter) = setup(40).await?;
+    db.chain_id = ChainId::try_from(43_u64)?;
+    let other_chain = RecoveryCheckpoint::new(db, [None; 5], false);
+    assert_eq!(other_chain.start(1_000, 5).await?.next_block, 1_000);
     Ok(())
 }
 

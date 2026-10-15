@@ -83,7 +83,7 @@ pub struct Args {
     )]
     pub database_url: DatabaseURL,
 
-    #[arg(long, default_value = None, help = "Can be negative from last block", allow_hyphen_values = true)]
+    #[arg(long, default_value = None, help = "Replay start; can be negative from last block. An earlier saved recovery frontier takes precedence", allow_hyphen_values = true)]
     pub start_at_block: Option<i64>,
 
     #[arg(
@@ -1402,7 +1402,6 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             confidential_bridge_address,
         ],
         is_protocol_config_listener,
-        gcs_mode,
     ));
 
     let ingest_result: Result<()> = async {

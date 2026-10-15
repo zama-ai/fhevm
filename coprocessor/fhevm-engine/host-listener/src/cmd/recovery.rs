@@ -1,6 +1,7 @@
 use alloy::primitives::{keccak256, Address};
 use anyhow::Result;
 use fhevm_engine_common::versioning::StaleStackError;
+use fhevm_engine_common::STACK_VERSION;
 
 use crate::database::tfhe_event_propagate::Database;
 
@@ -52,12 +53,16 @@ impl RecoveryCheckpoint {
         db: Database,
         addresses: [Option<Address>; 5],
         protocol_only: bool,
-        gcs: bool,
     ) -> Self {
         // ACL, TFHE, KMS generation, protocol config, confidential bridge.
         // Preserve roles and absent slots: swapping roles must not reuse a
         // checkpoint even when the eth_getLogs address filter is unchanged.
-        let mut scope = vec![u8::from(protocol_only), u8::from(gcs)];
+        // A stack keeps its frontier when green becomes live. Runtime gcs_mode
+        // changes on the first post-cutover restart and is not a stable identity.
+        // The version also separates this stack from the retired blue binary.
+        let mut scope = b"host-listener-catchup-v2\0".to_vec();
+        scope.extend_from_slice(STACK_VERSION.as_bytes());
+        scope.extend_from_slice(&[0, u8::from(protocol_only)]);
         for address in addresses {
             scope.push(u8::from(address.is_some()));
             scope.extend_from_slice(address.unwrap_or_default().as_slice());
@@ -70,13 +75,18 @@ impl RecoveryCheckpoint {
 
     /// Register the range before accepting any new block. On process restart,
     /// replay the overlap before the saved frontier, even with a newer seed.
+    /// New scopes inherit the earliest frontier on this chain, including legacy
+    /// blue/green scopes and previous contract filters. Existing scopes use only
+    /// their own progress: obsolete scopes must not pin every restart in the past.
     pub async fn start(&self, from: u64, overlap: u64) -> Result<Checkpoint> {
         let mut tx = self.new_transaction().await?;
         let state = sqlx::query_as(
             "INSERT INTO public.host_listener_catchup_state
-                 (chain_id, scope_hash, next_block) VALUES ($1, $2, $3)
+                 (chain_id, scope_hash, next_block)
+             SELECT $1, $2, LEAST($3, GREATEST(COALESCE(MIN(next_block) - $4, $3), 0))
+             FROM public.host_listener_catchup_state WHERE chain_id = $1
              ON CONFLICT (chain_id, scope_hash) DO UPDATE
-             SET next_block = LEAST(GREATEST(host_listener_catchup_state.next_block - $4, 0), EXCLUDED.next_block),
+             SET next_block = LEAST(GREATEST(host_listener_catchup_state.next_block - $4, 0), $3),
                  revision = host_listener_catchup_state.revision + 1
              RETURNING next_block, revision",
         )
