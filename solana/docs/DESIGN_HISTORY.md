@@ -1448,6 +1448,21 @@ a version 1 transaction holds the combined dispatch. The replaced wording:
 > no longer being pending, rather than being folded into `dispatch` (keeps each instruction inside
 > one transaction envelope)
 
+### DD-042 and INVARIANTS #38, replaced in part by the two-step admin handover
+
+zama-host and the batcher now hand the admin role on in two steps: the admin nominates a key with
+`set_admin`, and the role moves when that key signs `accept_admin`. The one-step rule below let the
+admin hand the role to a PDA that no program signs for, which strands it.
+
+> `set_admin` rotates in one instruction: the current admin signs; a new keypair must co-sign; a
+> new PDA skips co-sign only when it is off-curve and already owned by a program (not the System
+> Program), so a mistyped empty key cannot become admin.
+
+> A keypair admin must co-sign, which proves it can sign, so a mistyped key cannot take the role. A
+> new admin that is off the curve and owned by a program skips the co-sign, so a program PDA, such
+> as a governance PDA, can hold the role. Handing the role to a PDA that no program signs for
+> strands it, as on zama-host; there is no separate renounce.
+
 ### DD-045, replaced in part by the per-batch policy
 
 zama-ai/fhevm#4395 (the batcher admin, pause and per-batch policy, as on EVM) moved the settle
