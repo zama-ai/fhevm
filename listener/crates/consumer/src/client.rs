@@ -62,6 +62,31 @@ fn predecessor_group<'a>(
         .map(|(_, candidate)| candidate)
 }
 
+/// The groups on `stream` that a client with `suffix` releases once its own
+/// version is no longer ahead of the live one: every versioned rung strictly
+/// below its own.
+///
+/// Rung 0 is left alone. The unsuffixed group belongs to a build that predates
+/// versioning and cannot see a cutover, so being behind the live version does
+/// not mean it has stopped reading. Its own group, newer ones, unranked names
+/// and an unrankable `suffix` are never returned either.
+fn superseded_groups<'a>(
+    stream: &str,
+    suffix: Option<&str>,
+    existing: &'a [GroupStatus],
+) -> Vec<&'a GroupStatus> {
+    let Some(mine) = suffix.and_then(|suffix| rung(stream, &format!("{stream}.{suffix}"))) else {
+        return Vec::new();
+    };
+
+    existing
+        .iter()
+        .filter(|candidate| {
+            rung(stream, &candidate.name).is_some_and(|rung| 0 < rung && rung < mine)
+        })
+        .collect()
+}
+
 /// Chain & Consumer-scoped client for the consumer library.
 ///
 /// Downstream services instantiate this once with their broker connection and
@@ -923,6 +948,47 @@ impl ListenerConsumer {
         Ok(destroyed)
     }
 
+    /// Destroy the groups older versions left on this identity's four
+    /// streams, returning how many were actually destroyed.
+    ///
+    /// This is the backstop for [`destroy_own_groups`](Self::destroy_own_groups),
+    /// which a retired stack only reaches if it is still running when it
+    /// notices the cutover. Whatever it left behind is released here by the
+    /// stack that replaced it. See `superseded_groups` for what counts: the
+    /// versioned rungs below this client's own, never the unsuffixed one.
+    ///
+    /// Call this only once this client's version is no longer ahead of the
+    /// live one. Before that, the rungs below it include the live stack's own
+    /// group, and destroying a group under a reader breaks that reader.
+    ///
+    /// Idempotent, and a client without a rankable suffix destroys nothing.
+    pub async fn destroy_superseded_groups(&self) -> Result<usize, ConsumerError> {
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(0),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let mut destroyed = 0;
+        for topic in self.owned_topics() {
+            let stream = topic.key();
+            let existing = manager
+                .list_groups(&stream)
+                .await
+                .map_err(BrokerError::from)?;
+            for group in superseded_groups(&stream, self.group_suffix.as_deref(), &existing) {
+                if manager
+                    .destroy_group(&stream, &group.name)
+                    .await
+                    .map_err(BrokerError::from)?
+                {
+                    destroyed += 1;
+                }
+            }
+        }
+        Ok(destroyed)
+    }
+
     /// Delete this identity's four streams and their dead-letter companions,
     /// returning how many keys were actually removed.
     ///
@@ -1184,6 +1250,49 @@ mod tests {
     #[test]
     fn nothing_on_the_stream_means_no_predecessor() {
         assert!(predecessor_group(STREAM, Some("v2"), &[]).is_none());
+    }
+
+    fn names(groups: Vec<&GroupStatus>) -> Vec<String> {
+        groups.into_iter().map(|group| group.name.clone()).collect()
+    }
+
+    #[test]
+    fn the_versions_below_mine_are_superseded() {
+        let existing = vec![
+            group(&format!("{STREAM}.v1")),
+            group(&format!("{STREAM}.v2")),
+            group(&format!("{STREAM}.v3")),
+        ];
+        assert_eq!(
+            names(superseded_groups(STREAM, Some("v3"), &existing)),
+            vec![format!("{STREAM}.v1"), format!("{STREAM}.v2")],
+            "an interrupted cutover leaves several behind and all of them go"
+        );
+    }
+
+    #[test]
+    fn the_unsuffixed_group_is_never_superseded() {
+        // It predates versioning and cannot see a cutover, so being below the
+        // live version says nothing about whether it is still reading.
+        let existing = vec![group(STREAM), group(&format!("{STREAM}.v2"))];
+        assert!(superseded_groups(STREAM, Some("v2"), &existing).is_empty());
+    }
+
+    #[test]
+    fn newer_and_unranked_groups_are_never_superseded() {
+        let existing = vec![
+            group(&format!("{STREAM}.v3")),
+            group(&format!("{STREAM}.beta")),
+            group("somewhere-else.new-event.v1"),
+        ];
+        assert!(superseded_groups(STREAM, Some("v2"), &existing).is_empty());
+    }
+
+    #[test]
+    fn an_unrankable_suffix_supersedes_nothing() {
+        let existing = vec![group(&format!("{STREAM}.v1"))];
+        assert!(superseded_groups(STREAM, Some("beta"), &existing).is_empty());
+        assert!(superseded_groups(STREAM, None, &existing).is_empty());
     }
 
     #[test]

@@ -95,11 +95,13 @@ use traits::publisher::DynPublisher;
 ///
 /// A stack that retires at a cutover releases its own groups on the way out
 /// (`ListenerConsumer::destroy_own_groups`), which unpins the trimmer in the
-/// ordinary case. That runs after the consume loop returns, so it is
-/// best-effort: a pod killed before it gets there leaves the group behind
-/// anyway.
+/// ordinary case. That runs after the consume loop returns, so a pod killed
+/// before it gets there leaves the group behind; the stack that replaced it
+/// then sweeps it (`ListenerConsumer::destroy_superseded_groups`). Both are
+/// best-effort: the sweep needs a live successor that calls it, and it never
+/// touches the unsuffixed group of a build that predates versioning.
 ///
-/// This ceiling is what covers that, and it is applied unconditionally, so an
+/// This ceiling is what covers the rest, and it is applied unconditionally, so an
 /// abandoned group costs a bounded amount of memory instead of an unbounded
 /// one. It is deliberately far above any healthy working set: at one block
 /// every twelve seconds a chain produces on the order of 300 entries an hour,

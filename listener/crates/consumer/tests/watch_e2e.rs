@@ -1418,3 +1418,76 @@ async fn a_retired_build_destroys_its_own_groups_and_leaves_the_rest() {
         "a client with no suffix must refuse: its own group is the legacy one"
     );
 }
+
+/// The live build sweeps the versioned groups below its own and nothing else.
+///
+/// This is the backstop for a retired build that never got to release its own
+/// groups. Every other group on the stream is someone it must not touch: the
+/// unsuffixed one belongs to a build that predates versioning and may still be
+/// reading, its own is in use, and a newer one is a shadow stack on its way in.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn the_live_build_sweeps_only_the_versions_below_it() {
+    let _guard = REDIS_TEST_LOCK.lock().await;
+    let url = consumer_redis_url().await;
+    reset_redis(&url).await;
+    let broker = Broker::redis(&url).await.unwrap();
+
+    let consumer_id = unique_name("sweep-consumer");
+    let legacy = ListenerConsumer::new(&broker, 1, &consumer_id);
+    let oldest = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v1");
+    let retired = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v2");
+    let live = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v3");
+    let shadow = ListenerConsumer::new(&broker, 1, &consumer_id).with_group_suffix("v4");
+    for client in [&legacy, &oldest, &retired, &live, &shadow] {
+        ensure_all_four(client).await;
+    }
+
+    let live_stream = live.consumer_topic().key();
+    publish_blocks(&broker, &live_stream, 3).await;
+
+    let topics = [
+        live.consumer_topic(),
+        live.catchup_consumer_topic(),
+        live.final_consumer_topic(),
+        live.final_catchup_consumer_topic(),
+    ];
+
+    let destroyed = live.destroy_superseded_groups().await.unwrap();
+    assert_eq!(destroyed, 8, "v1 and v2 hold one group per stream");
+
+    for topic in &topics {
+        let key = topic.key();
+        let mut names = redis_group_names(&url, &key).await;
+        names.sort();
+        assert_eq!(
+            names,
+            vec![key.clone(), format!("{key}.v3"), format!("{key}.v4")],
+            "only the versioned groups below v3 may go from {key}"
+        );
+        assert!(
+            broker.exists(topic).await.unwrap(),
+            "{key} is still read and must not be deleted"
+        );
+    }
+
+    let survivor = group_named(&live, &live_stream, &format!("{live_stream}.v3"))
+        .await
+        .expect("the live build's group is still there");
+    assert_eq!(
+        survivor.lag,
+        Some(3),
+        "the live build's backlog must be exactly where it was"
+    );
+
+    assert_eq!(
+        live.destroy_superseded_groups().await.unwrap(),
+        0,
+        "a second pass has nothing left to destroy"
+    );
+    assert_eq!(
+        legacy.destroy_superseded_groups().await.unwrap(),
+        0,
+        "a client with no suffix cannot rank anything below itself"
+    );
+}

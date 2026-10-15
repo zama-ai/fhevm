@@ -17,7 +17,9 @@ use fhevm_engine_common::drift_revert::SignalStatus as DriftStatus;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
-use fhevm_engine_common::versioning::{is_retired, StackMode};
+use fhevm_engine_common::versioning::{
+    is_retired, older_versions_are_retired, StackMode,
+};
 use fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION;
 use primitives::event::BlockFlow;
 
@@ -49,6 +51,8 @@ static SLOW_LANE_PROMOTION_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 const STATS_FINALIZATION_MARGIN: i64 = 5;
 /// How often the retirement watcher re-reads the paused flag.
 const RETIREMENT_POLL_INTERVAL: Duration = Duration::from_secs(10);
+/// How often the superseded group sweep re-reads the live consensus version.
+const SUPERSEDED_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 
 /// Data-plane identity of this listener on the broker.
 ///
@@ -492,6 +496,14 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         );
     }
 
+    // Backstop for the release a retired stack does on its way out, which a
+    // killed pod, a restarted one or a failed attempt never completes.
+    spawn_superseded_group_sweep(
+        db.clone(),
+        client.clone(),
+        client.cancel_token.clone(),
+    );
+
     let last_known_drift = Arc::new(RwLock::new(STARTING_DRIFT));
     let chain_id_str = config.chain_id.to_string();
     let stats_task = tokio::spawn(run_consumer_stats_observer(
@@ -610,9 +622,9 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     // Both read flows have returned, so nothing is on these groups any more
     // and they can go. A retired build's cursors never move again, and the broker's
     // trimmer will not reclaim past the furthest-behind group on a stream, so
-    // leaving them pins the backlog until the hard ceiling cuts it. Only this
-    // build's own groups are released: the streams, their entries and the
-    // incoming build's groups are shared with it and must survive.
+    // leaving them pins the backlog until the live stack's sweep releases them.
+    // Only this build's own groups are released: the streams, their entries
+    // and the incoming build's groups are shared with it and must survive.
     if retired || retirement_mode.is_paused() {
         match client.destroy_own_groups().await {
             Ok(0) => {}
@@ -621,8 +633,8 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             }
             Err(err) => warn!(
                 error = %err,
-                "Retired stack failed to release its consumer groups; they \
-                 will be released on the next shutdown"
+                "Retired stack failed to release its consumer groups; the \
+                 live stack will release them"
             ),
         }
     }
@@ -876,6 +888,79 @@ async fn awaiting_retirement(
     }
 }
 
+/// Release the consumer groups of retired consensus versions, for the life of
+/// the pod.
+///
+/// A retired stack releases its own groups once its read flows return, but
+/// only if it gets there: a pod killed or restarted after cutover, or a single
+/// failed attempt, leaves a frozen cursor that holds back the trimmer on the
+/// whole stream. The live stack is the one that outlives it, so it finishes
+/// the job. See [`ListenerConsumer::destroy_superseded_groups`] for which
+/// groups that covers.
+///
+/// The proof is read from `versioning` on every tick rather than taken from
+/// [`StackMode`]: this destroys groups another stack may still be reading, so
+/// it fails closed on an unseeded or unreadable row. It must hold on two ticks
+/// in a row before anything goes, which leaves the retiring stack time to
+/// release its own groups first. A reader still on a destroyed group fails its
+/// next read and restarts retired; that is noise, not loss, since a retired
+/// stack writes nothing.
+fn spawn_superseded_group_sweep(
+    db: Database,
+    client: ListenerConsumer,
+    cancel: CancellationToken,
+) {
+    tokio::spawn(async move {
+        let mut tick = interval_at(
+            Instant::now() + SUPERSEDED_SWEEP_INTERVAL,
+            SUPERSEDED_SWEEP_INTERVAL,
+        );
+        tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        let mut proven_last_tick = false;
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => break,
+                _ = tick.tick() => {}
+            }
+            let proven = async {
+                let mut conn = db.pool().await.acquire().await?;
+                older_versions_are_retired(&mut conn).await
+            }
+            .await
+            .unwrap_or_else(|err| {
+                warn!(
+                    error = %err,
+                    "Could not read the live consensus version; skipping the \
+                     superseded consumer group sweep"
+                );
+                false
+            });
+            if !sweep_is_armed(&mut proven_last_tick, proven) {
+                continue;
+            }
+            match client.destroy_superseded_groups().await {
+                Ok(0) => {}
+                Ok(released) => info!(
+                    released,
+                    "Released consumer groups left behind by retired \
+                     consensus versions"
+                ),
+                Err(err) => warn!(
+                    error = %err,
+                    "Failed to release consumer groups left behind by retired \
+                     consensus versions; retrying on the next tick"
+                ),
+            }
+        }
+    });
+}
+
+/// Record this tick's proof and report whether it also held on the previous
+/// one, which is when the sweep may act.
+fn sweep_is_armed(proven_last_tick: &mut bool, proven: bool) -> bool {
+    std::mem::replace(proven_last_tick, proven) && proven
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn ingest_with_retry(
     chain_id: ChainId,
@@ -987,6 +1072,22 @@ mod tests {
         cancel.cancel();
 
         assert!(!awaiting_retirement(|| false, &cancel, TICK).await);
+    }
+
+    /// The sweep acts only on a proof that has held for two ticks in a row.
+    ///
+    /// The first tick after cutover belongs to the retiring stack, which
+    /// releases its own groups; a lapse in between, including a failed read,
+    /// starts the wait over.
+    #[test]
+    fn the_sweep_waits_for_a_second_tick_of_proof() {
+        let mut proven_last_tick = false;
+        assert!(!sweep_is_armed(&mut proven_last_tick, true));
+        assert!(sweep_is_armed(&mut proven_last_tick, true));
+        assert!(sweep_is_armed(&mut proven_last_tick, true));
+        assert!(!sweep_is_armed(&mut proven_last_tick, false));
+        assert!(!sweep_is_armed(&mut proven_last_tick, true));
+        assert!(sweep_is_armed(&mut proven_last_tick, true));
     }
 
     /// A read flow that is still unwinding when its sibling returns is waited
