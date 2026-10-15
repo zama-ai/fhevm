@@ -538,6 +538,9 @@ impl InfiniteLogIter {
                 return;
             }
         };
+        // Historical pages are blockchain progress too, including empty ones.
+        // Draining catchup can bypass the realtime heartbeat for a long time.
+        self.tick_block.update();
         let remaining_blocks = by_blocks.len();
         self.next_blocklogs.extend(by_blocks);
         self.pending_catchup_page = Some(CatchupPage {
@@ -973,7 +976,15 @@ impl InfiniteLogIter {
 
     /// Reset state for the next catchup loop iteration.
     fn reset_for_catchup_loop(&mut self) {
-        self.catchup_blocks = None;
+        // Keep the next unread height even when the previous range was empty
+        // or complete. Finality waits and slow iterations must not let the new
+        // relative start skip work. Reconnection can still widen this range to
+        // include the configured lookback.
+        let next_block =
+            self.catchup_blocks.map(|(from, _)| from).or_else(|| {
+                self.absolute_end_at_block.map(|end| end.saturating_add(1))
+            });
+        self.catchup_blocks = next_block.map(|from| (from, None));
         self.pending_catchup_page = None;
         self.next_blocklogs.clear();
         self.last_valid_block = None;
@@ -1485,6 +1496,105 @@ mod tests {
         assert_eq!(iter.catchup_blocks.unwrap().0, 60);
         iter.acknowledge_catchup_block();
         assert!(iter.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn catchup_pages_refresh_liveness_only_after_success() {
+        use alloy::transports::mock::Asserter;
+        use fhevm_engine_common::healthz_server::HealthCheckService;
+
+        for (empty, valid) in [(true, true), (false, true), (false, false)] {
+            let asserter = Asserter::new();
+            let mut block = rpc_block(1);
+            block.header.inner.number = 40;
+            let logs: Vec<Log> = if empty {
+                vec![]
+            } else {
+                vec![Log {
+                    block_hash: Some(if valid {
+                        block.header.hash
+                    } else {
+                        BlockHash::with_last_byte(2)
+                    }),
+                    block_number: Some(40),
+                    transaction_hash: Some(BlockHash::with_last_byte(3)),
+                    log_index: Some(0),
+                    ..Default::default()
+                }]
+            };
+            asserter.push_success(&logs);
+            if !empty {
+                asserter.push_success(&block);
+            }
+            let provider =
+                ProviderBuilder::new().connect_mocked_client(asserter);
+            let mut iter = new_test_iter(50);
+            iter.catchup_provider = Some(provider.clone());
+            *iter.provider.write().await = Some(provider);
+            iter.catchup_blocks = Some((40, Some(40)));
+            iter.absolute_end_at_block = Some(40);
+            block.header.inner.number = 60;
+            iter.block_history.add_block(block.into());
+            iter.tick_block = HeartBeat::with_elapsed_secs(30);
+            iter.tick_timeout = HeartBeat::with_elapsed_secs(30);
+            let health = HealthCheck {
+                blockchain_tick: iter.tick_block.clone(),
+                blockchain_timeout_tick: iter.tick_timeout.clone(),
+                blockchain_provider: iter.provider.clone(),
+                database_pool: Arc::new(RwLock::new(
+                    PgPoolOptions::new()
+                        .connect_lazy("postgres://test:test@localhost/test")
+                        .unwrap(),
+                )),
+                database_tick: HeartBeat::with_elapsed_secs(30),
+            };
+            assert!(!health.is_alive().await);
+
+            iter.consume_catchup_blocks().await;
+
+            assert_eq!(health.is_alive().await, valid, "empty={empty}");
+            assert!(!iter.tick_timeout.is_recent(&Duration::from_secs(20)));
+        }
+    }
+
+    #[tokio::test]
+    async fn catchup_loop_reset_preserves_unread_blocks_and_lookback() {
+        let anvil = Anvil::new().spawn();
+        let provider = ProviderBuilder::new()
+            .connect_ws(WsConnect::new(anvil.ws_endpoint()))
+            .await
+            .unwrap();
+        provider.anvil_mine(Some(100), None).await.unwrap();
+
+        // Pending pages survive reset; completed (including empty) ranges
+        // retain their next height if the moving window has skipped ahead.
+        // An overlapping lookback can still replay earlier committed blocks.
+        for (pending_from, previous_end, lookback, expected_from) in [
+            (Some(40), Some(95), -10, 40),
+            (None, Some(50), -10, 51),
+            (Some(96), Some(95), -40, 60),
+            (None, None, -10, 90),
+        ] {
+            let mut iter = new_test_iter(50);
+            iter.url = anvil.ws_endpoint();
+            iter.start_at_block = Some(lookback);
+            iter.end_at_block = Some(-5);
+            iter.absolute_end_at_block = previous_end;
+            iter.catchup_blocks = pending_from.map(|from| (from, previous_end));
+            iter.pending_catchup_page = pending_from.map(|from| CatchupPage {
+                from_block: from,
+                next_page: from + 20,
+                remaining_blocks: 1,
+            });
+            iter.last_valid_block = Some(100);
+
+            iter.reset_for_catchup_loop();
+            iter.new_log_stream_no_retry().await.unwrap();
+
+            assert_eq!(iter.catchup_blocks, Some((expected_from, Some(95))));
+            assert!(iter.pending_catchup_page.is_none());
+            assert!(iter.last_valid_block.is_none());
+        }
     }
 
     async fn setup_iter_with_chain(

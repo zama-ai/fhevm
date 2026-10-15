@@ -1408,6 +1408,48 @@ async fn test_catchup_only() -> Result<(), anyhow::Error> {
 
 #[tokio::test]
 #[serial(db)]
+async fn test_catchup_loop_preserves_work_until_finalized(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 0.25).await?;
+    let provider = ProviderBuilder::new()
+        .connect_ws(WsConnect::new(setup.args.url.clone()))
+        .await?;
+    provider.anvil_mine(Some(100), None).await?;
+    emit_events(
+        &setup.wallets[..1],
+        &setup.args.url,
+        setup.tfhe_contract.clone(),
+        setup.acl_contract.clone(),
+        None,
+        1,
+    )
+    .await;
+
+    // Every fresh relative window is newer than the finality boundary. The
+    // loop must retain its unread range until these events become eligible.
+    let mut args = setup.args.clone();
+    args.start_at_block = Some(-10);
+    args.end_at_block = Some(-5);
+    args.catchup_finalization_in_blocks = 20;
+    args.only_catchup_loop = true;
+    args.catchup_loop_sleep_secs = 1;
+    args.catchup_paging = 100;
+    let listener = tokio::spawn(main(args));
+    let counts = wait_for_event_counts(
+        &setup.db_pool,
+        tokio::time::Duration::from_secs(30),
+        "catchup loop waiting for finality beyond its lookback",
+        |tfhe, acl| tfhe >= 1 && acl >= 1,
+    )
+    .await;
+    listener.abort();
+    let _ = listener.await;
+    assert_eq!(counts?, (1, 1));
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_restart_lookback_before_genesis() -> Result<(), anyhow::Error> {
     let setup = setup(None).await?;
     let provider = ProviderBuilder::new()
