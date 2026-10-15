@@ -156,7 +156,7 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-#### Renaming anything shared: the three other roots that can see it
+#### Renaming anything shared: the four other roots that can see it
 
 `cargo test --workspace` here covers exactly one Cargo workspace root. The
 repository has more than a dozen, so the number is not the useful fact — what
@@ -164,7 +164,7 @@ matters is which ones can see a Solana change, and the criterion is a path
 dependency on a crate under `solana/`. Four do: `coprocessor/fhevm-engine`
 (host-listener, solana-host-follower, solana-merkle-proof-service), `kms-connector`, `relayer` (it reads the Solana
 host chain id's type byte through `zama-solana-acl`), and `relayer-http` (it checks a Solana request's form
-through `zama-solana-request`). Everything else in the repo — `shared/*`,
+through `zama-solana-request` and `zama-solana-acl`). Everything else in the repo — `shared/*`,
 `test-suite/gateway-stress`, the generated `*_bindings` — depends on no Solana
 crate and cannot break from one.
 
@@ -177,7 +177,7 @@ A rename that reaches a shared crate compiles cleanly here and still breaks the
 build in those four, because they are invisible to this workspace:
 
 ```bash
-# Path-depend on zama-host / zama-solana-acl / zama-solana-request. `--all-targets`
+# Path-depend on zama-host / zama-solana-acl / zama-solana-permit / zama-solana-request. `--all-targets`
 # matters: the sites that break are usually `#[cfg(test)]`, so a plain
 # `cargo check` or `cargo build` passes while `cargo test -p …` does not compile.
 (cd ../coprocessor/fhevm-engine && SQLX_OFFLINE=true cargo check --workspace --all-targets)
@@ -186,7 +186,7 @@ build in those four, because they are invisible to this workspace:
 (cd ../relayer-http && cargo check --workspace --all-targets)
 ```
 
-Each of those roots hid a real break at least once. The grep sweeps in
+Each of the first three roots hid a real break at least once. The grep sweeps in
 `scripts/dead-surface-check.sh` cover some of the same trees, but grep does not
 typecheck — a root can be swept and still never compiled.
 
@@ -196,7 +196,8 @@ root links, directly or through another `solana/` crate, and, for a workflow tha
 compiles the root's tests (clippy `--all-targets` included), `solana/test-fixtures/**`
 when those tests load a shared fixture. `scripts/check-path-filters.sh` (job
 `solana-tests/path-filters`) reads the crates from `cargo metadata` and fails, naming
-the workflow and the path, when a filter misses one. The SDK's `js-sdk-tests` is held
+the workflow and the path, when a filter misses one. It does not check relayer-http's
+workflows, whose filters name the Solana crates by hand. The SDK's `js-sdk-tests` is held
 to the same fixture rule. The script checks crates and fixtures only: a `solana/` file
 that a build script reads, such as `solana/environments/`, must be named by hand.
 
@@ -445,7 +446,7 @@ and a record that is behind is a retry.
   seed to one raw literal in the program, in `constants.rs`.
   The user-decrypt side of the mirror is pinned by committed vectors that both sides assert
   against. The permit's canonical text and offchain-message envelope come from `zama-solana-permit`
-  (used by the connector) and the SDK's TypeScript, pinned by
+  (used by the connector, and by relayer-http through `assemble`) and the SDK's TypeScript, pinned by
   `solana/test-fixtures/permit/permit_v1.json`. The decryption request bodies are the
   `kms-connector-api` Solana DTOs, which the decryption relayer forwards unchanged; the SDK's
   `decryption/connectorVectors.test.ts` holds both bodies to the Connector's vectors in

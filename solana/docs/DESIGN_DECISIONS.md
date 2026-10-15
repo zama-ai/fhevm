@@ -297,14 +297,11 @@ produced a large, separately-maintained native-v0 admission/store/response subsy
 Decision:
 
 Treat Solana as a host chain of the EVM KMS stack: its decrypt flows reach the same KMS connectors,
-in the same EIP-712 shapes (the Unified EIP-712 Decryption Request RFC), as EVM's, rather than a
-parallel native stack:
+and the KMS answers them in the same EIP-712 response and certificate shapes (the Unified EIP-712
+Decryption Request RFC) as EVM's, rather than through a parallel native stack:
 
-- **User-decrypt** goes over HTTP (DD-074): relayer-http forwards the request to each KMS connector's
-  `POST /v1/user-decrypt`, whose body types the handles, validity, transport key and `extraData`
-  next to the Solana permit fields, rather than smuggling Solana auth through `extraData`.
-  `extraData` is only the KMS routing (v0, v1 or v2, DD-060). (See DD-026 for the
-  typed-vs-extraData boundary.)
+- **User-decrypt** goes over HTTP to each KMS connector (DD-074), with typed fields next to the
+  Solana permit fields rather than auth smuggled through `extraData` (DD-026).
 - **Public-decrypt** certificates are verified **on-chain** via secp256k1: `zama_host` recovers EVM
   KMS signers from the cert and threshold-checks them, mirroring the EVM `KMSVerifier`
   (`verifyDecryptionEIP712KMSSignatures`). See DD-021.
@@ -313,8 +310,8 @@ parallel native stack:
   `supported_chain_ids` for decryption.
 
 One decrypt trust model and one routing path is far less surface to keep in sync than a parallel
-native subsystem. The coprocessor/KMS already verify EIP-712 over bytes32; making Solana speak the
-same shapes lets the existing coprocessor and KMS pods serve Solana instead of a second pipeline.
+native subsystem. The KMS already signs EIP-712 over bytes32; answering Solana in the same shapes
+lets the existing coprocessor and KMS pods serve Solana instead of a second pipeline.
 
 What worked:
 
@@ -1717,9 +1714,8 @@ the numbers down. It rejects deriving localnet from RPC at boot, and it rejects 
 
 This entry supersedes the chain-type marker in DD-026, the bit-63 detector in DD-027,
 the chain-agnostic address RFC’s high-bit reservation as the long-term marker, and the open-product #1635
-sentinel. DD-026 still owns bytes32 input identity and typed user-decrypt. The gateway relayer,
-relayer-http and the KMS connector tell a Solana request from an EVM one with
-`is_solana_host_chain_id`; this entry is that predicate: high byte `0x01`.
+sentinel. DD-026 still owns bytes32 input identity and typed user-decrypt.
+`is_solana_host_chain_id` (`zama-solana-acl`) is this entry's predicate: high byte `0x01`.
 
 ## DD-053: A program id is environment config, not a cargo feature
 
@@ -3018,14 +3014,11 @@ Status: adopted
 
 Context:
 
-Solana first decrypted through the Gateway: two Solana entries on its `Decryption` contract, the
-gateway relayer submitting them, and the KMS connector's gw-listener reading their events. The KMS
-connector's HTTP endpoint (RFC 033) and relayer-http carry the same requests to the connectors
-without a Gateway transaction, and relayer-http serves EVM and Solana bodies on the same routes.
-Keeping both paths for Solana meant two transports to keep in step for one flow. Nothing on Solana
-is deployed, so no client depends on the Gateway path. The replaced design is in
+Solana first decrypted through the Gateway; that design is in
 [`DESIGN_HISTORY.md`](DESIGN_HISTORY.md), "Solana decryption through the Gateway, replaced by HTTP
-(relayer-http)".
+(relayer-http)". The KMS connector's HTTP endpoint (RFC 033) and relayer-http carry the same
+requests without a Gateway transaction, on the routes relayer-http already serves for EVM. Keeping
+both meant two transports to keep in step for one flow.
 
 Decision:
 
@@ -3035,13 +3028,15 @@ A Solana user or public decryption has one path:
    (`sdk/js-sdk/src/solana/decryption/relayerHttp.ts`).
 2. relayer-http recognizes the Solana body: on user decrypt by its `attestationType`
    (`solana-srfc38-user-decrypt-v1`), on public decrypt by the chain of its first handle. It checks
-   only the request's form, with the code the connector runs (`SolanaUserDecryptionRequest::assemble`
-   in `kms-connector-api`, `zama_solana_request::public_request_chain_id`), reads no chain, and
-   forwards the body unchanged to every KMS connector's `POST /v1/user-decrypt` or
-   `/v1/public-decrypt`. It aggregates the answers as it does an EVM request's, and refuses an EVM
+   the request's form and validity window, with its own handle, window and `extraData` rules
+   (`endpoint/validate.rs`), then `SolanaUserDecryptionRequest::assemble` (`kms-connector-api`) or
+   `zama_solana_request::public_request_chain_id`. It reads no chain. It forwards the body as
+   parsed, equal field by field, to every KMS connector's `POST /v1/user-decrypt` or
+   `/v1/public-decrypt`, and aggregates the answers as it does an EVM request's. It refuses an EVM
    body whose handles name a Solana chain.
-3. Each connector's endpoint stores the request as an HTTP request, and its worker decides
-   authorization from the host chain before the KMS decrypts (DD-048, DD-061, DD-070, DD-073).
+3. Each connector's endpoint checks the form again and stores the request in the decryption-request
+   table; its worker authorizes it from the host chain (DD-048, DD-061, DD-070) and checks its KMS
+   context (DD-073) before the KMS decrypts.
 
 The Gateway's `Decryption` contract has no Solana entry, the gw-listener subscribes to no Solana
 event, and the gateway relayer submits no Solana decryption (INVARIANTS #50). Solana inputs still go
@@ -3049,20 +3044,17 @@ through the Gateway's `InputVerification.verifyProofRequestSolana` (DD-026, DD-0
 
 Rationale:
 
-- One transport. The SDK, relayer-http and the connector share the connector's Solana DTOs, and the
-  form rules live once, in `zama-solana-request` (DD-072).
-- Authorization stays with the connectors, which read the host chain at `finalized`. relayer-http
-  reads no chain, as for an EVM request.
-- No code is kept for a second transport: the Gateway's Solana entries, the gateway relayer's Solana
-  pre-check and the gw-listener's Solana events are deleted.
+relayer-http and the connector share the connector's Solana DTOs, the SDK's bodies are held to
+their vectors (`kms-connector/crates/api/tests/vectors.json`), and the Solana form rules come from
+one crate, `zama-solana-request` (DD-072).
 
 Consequences:
 
-- No Gateway fee and no Gateway pause applies to a Solana decryption. HTTP decryption has no pause
-  on either chain (INVARIANTS, pause flags).
-- A request of the wrong form is refused by relayer-http with `400 malformed` and reaches no
-  connector. A request refused on authorization is refused by the connectors, with their error
-  code, as for an EVM request.
+- No Gateway fee applies to a Solana decryption, and no pause stops it (INVARIANTS #36).
+- A request of the wrong form, or outside its validity window, is refused by relayer-http with
+  `400 malformed` and reaches no connector. When the connectors refuse a request, relayer-http
+  answers with their most frequent error code, or `504 timeout` if its deadline passes first, as for
+  an EVM request.
 - Pinned by relayer-http's `solana_user_decrypt_forwards_the_body_equal_field_by_field`,
   `solana_public_decrypt_forwards_the_body_and_answers_the_envelope`,
   `an_evm_body_with_solana_handles_is_refused_before_any_connector_call` and

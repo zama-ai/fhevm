@@ -42,7 +42,7 @@ privileged receiver logic). It is not a receiver callback and must not be docume
 
 The Solana input path uses the gateway `InputVerification.verifyProofRequestSolana` +
 `VerifyProofRequestSolana` bytes32 entrypoint (kept, not renamed to V2 — DD-030). Solana decryption
-does not use the gateway: it goes over HTTP to the KMS connectors (DD-074).
+does not use the gateway: it goes over HTTP, through relayer-http, to the KMS connectors (DD-074).
 
 **Requirement:** keep the port and the chain-agnostic address RFC (zama-ai/tech-spec#419) in sync as the gateway evolves. The Solana
 host-listener reconstructs from finalized Yellowstone instructions and records each block in

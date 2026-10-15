@@ -28,7 +28,7 @@ later decision replaced only part of a live entry, the replaced wording is under
 | DD-038 One Host-Owned Born-Public Lifecycle Batch Replaces Per-Operation Events                            | removed; fhevm-internal#2079 |
 | DD-039 HCU Block Cap Meters The Signed `compute_subject`, Not A Separate Authority                         | DD-047                       |
 | Committed Cost Snapshots Gate CI On Exact Costs                                                            | the cost report              |
-| Solana decryption through the Gateway                                                                      | DD-074 (HTTP, relayer-http)  |
+| Solana decryption through the Gateway                                                                      | DD-074                       |
 | Bash e2e scripts and the Rust live client                                                                  | the bun:test suite (#3477)   |
 
 ## DD-001: Store Handles In ACL Records, Not PDA Seeds
@@ -355,9 +355,8 @@ Expiry slot policy and request-PDA rent reclamation cadence are not yet designed
 
 ## DD-027: Chain-Aware V2 User-Decrypt Validation
 
-Status: superseded by DD-074. A Solana user decryption goes over HTTP through relayer-http, and the
-gateway relayer submits none (zama-ai/fhevm#4408). The relayer's user-decrypt validation has no
-Solana branch: its v2 and v3 endpoints are main's. What follows is decision history.
+Status: replaced by DD-074. The gateway relayer's user-decrypt validation lost its Solana branch in
+zama-ai/fhevm#4408 and matches `main`. What follows is decision history.
 
 Context:
 
@@ -380,6 +379,16 @@ Open for debate:
 
 The Solana-relaxed signature acceptance (128 ed25519 vs 130) is the seam most likely to need tightening
 once the input-identity encoding (DD-026) is frozen.
+
+Earlier text, replaced in part by DD-052 (the chain-type detector):
+
+What didn't work:
+
+The reconciliation first relaxed this **unconditionally**, which weakened EVM — a CI integration test
+caught empty-contracts / wrong-sig being accepted on the EVM path.
+
+Branching on the chain type keeps EVM strictness intact while admitting Solana. The CI integration
+test that caught the regression now passes for both. This entry only keeps that split.
 
 ## DD-032: `EncryptedValue` + MMR Replaces Keyed-Nonce `AclRecord` (RFC-024)
 
@@ -823,7 +832,7 @@ decryptions to the Gateway's `solanaUserDecryptionRequest` and Solana public dec
 `solanaPublicDecryptionRequest`, and pre-checked permit scopes and delegation rows before the
 Gateway fee (`relayer/src/host/solana_user_decrypt_precheck.rs`). It now submits no Solana
 decryption. A Solana host chain stays in its `host_chains` for input proofs, which the Gateway's
-`verifyProofRequestSolana` serves until transciphering replaces it; the ACL preflight and the
+`verifyProofRequestSolana` serves; the ACL preflight and the
 EIP-712 signature pre-check skip that chain. The replaced statements, as written:
 
 DD-026:
@@ -994,9 +1003,8 @@ DD-060:
 > `every_field_lands_in_its_place_and_the_chain_comes_from_the_handles` (assembly puts each Gateway
 > and blob field in its permit role)
 
-**DD-012 and DD-052** (DD-074). Both still described the Gateway path or DD-027's relayer
-validation, and named no decryption relayer but the gateway relayer. The replaced wording, as
-written:
+**DD-012 and DD-052** (zama-ai/fhevm#4490). Both still described the Gateway path or DD-027's
+validation, and named only the gateway relayer. The replaced wording, as written:
 
 DD-012 title:
 
@@ -1005,6 +1013,8 @@ DD-012 title:
 DD-012:
 
 > Treat Solana as a **gateway-compatible host chain**: its decrypt flows reach the same KMS connectors,
+> in the same EIP-712 shapes (the Unified EIP-712 Decryption Request RFC), as EVM's, rather than a
+> parallel native stack:
 
 > A chain-aware validator branches on `contracts_chain_id` (see DD-027) so EVM stays strict and
 > Solana is relaxed. The bytes32 handle surface still admits both EVM and Solana.
@@ -1012,10 +1022,9 @@ DD-012:
 > - Solana is registered as a host chain (bytes32 ACL = the `zama_host` program id, type-byte `0x01` chain id;
 >   added to the relayer `host_chains`).
 
+> The coprocessor/KMS already verify EIP-712 over bytes32; making Solana speak the
 > same shapes lets the existing Gateway/coprocessor/KMS pods serve Solana with chain-aware validation
 > instead of a second pipeline.
-
-> real gateway/coprocessor/KMS/relayer side-stack reusing the shared coprocessor Postgres.
 
 > What didn't / had to change:
 >
@@ -1029,8 +1038,6 @@ DD-052:
 
 > DD-027 still owns EVM-strict vs Solana-relaxed validation. Both keep calling
 > `is_solana_host_chain_id`;
-
-> The listener, connector and relayer must use that same value.
 
 ## Bash e2e scripts and the Rust live client, replaced by the bun:test suite
 
@@ -1257,18 +1264,6 @@ entrypoint (`userDecryptionRequestSolana`) resolved that first. `solanaUserDecry
 its versioned blob replaced it, and `extraData` carries no Solana identity, scope or proof data. It
 is a named entry rather than an overload of `userDecryptionRequest`, so the EVM entries keep their
 generated binding names.
-
-### DD-027, replaced in part by DD-052
-
-The chain-type detector is superseded by DD-052.
-
-What didn't work:
-
-The reconciliation first relaxed this **unconditionally**, which weakened EVM — a CI integration test
-caught empty-contracts / wrong-sig being accepted on the EVM path.
-
-Branching on the chain type keeps EVM strictness intact while admitting Solana. The CI integration
-test that caught the regression now passes for both. This entry only keeps that split.
 
 ### DD-028, replaced in part by DD-070
 
