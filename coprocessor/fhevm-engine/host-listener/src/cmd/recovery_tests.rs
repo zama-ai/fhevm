@@ -2,6 +2,7 @@ use super::{tests::new_test_iter, *};
 use alloy::node_bindings::Anvil;
 use alloy::providers::ext::AnvilApi;
 use alloy::transports::mock::Asserter;
+use fhevm_engine_common::versioning::CUTOVER_LOCK_ID;
 use serial_test::serial;
 use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 
@@ -270,5 +271,230 @@ async fn bootstrap_database_failure_is_not_treated_as_empty_history(
     let (_instance, db, _iter) = setup(40).await?;
     db.pool().await.close().await;
     assert!(db.read_last_valid_block_checked().await.is_err());
+    Ok(())
+}
+
+async fn retire(pool: &sqlx::PgPool) -> Result<()> {
+    sqlx::query("UPDATE versioning SET stack_version = 'v0.15'")
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+#[tracing_test::traced_test]
+async fn retired_listener_startup_without_checkpoint_stays_alive() -> Result<()>
+{
+    let (instance, db, _iter) = setup(40).await?;
+    let pool = db.pool().await;
+    sqlx::query("DELETE FROM host_listener_catchup_state")
+        .execute(&pool)
+        .await?;
+    retire(&pool).await?;
+    let anvil = Anvil::new().spawn();
+    let args = Args::parse_from([
+        "host-listener",
+        "--url",
+        &anvil.ws_endpoint(),
+        "--database-url",
+        instance.db_url(),
+        "--acl-contract-address",
+        "0x0000000000000000000000000000000000000001",
+        "--tfhe-contract-address",
+        "0x0000000000000000000000000000000000000002",
+        "--health-port",
+        "0",
+        "--start-at-block",
+        "0",
+    ]);
+    let listener = main(args);
+    tokio::pin!(listener);
+    tokio::select! {
+        result = &mut listener => panic!("retired listener exited: {result:?}"),
+        result = tokio::time::timeout(Duration::from_secs(10), async {
+            while !logs_contain("Listener stack retired; pausing ingestion") {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }) => result?,
+    }
+    // Keep polling the actual entrypoint after it has reached the paused state.
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut listener)
+            .await
+            .is_err()
+    );
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM host_listener_catchup_state")
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(count, 0, "retirement must not create a checkpoint");
+    assert!(!logs_contain("Error creating new log stream, retrying"));
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn retired_checkpoint_writes_preserve_existing_frontier() -> Result<()> {
+    let (_instance, db, iter) = setup(40).await?;
+    let recovery = iter.recovery.as_ref().unwrap();
+    let before = recovery.read().await?;
+    retire(&db.pool().await).await?;
+    for result in [
+        recovery.start(100, 5).await,
+        recovery.require(10).await,
+        recovery.complete(40, 60, before.revision).await,
+    ] {
+        assert!(result.err().unwrap().is::<ListenerRetired>());
+    }
+    let after = recovery.read().await?;
+    assert_eq!(
+        (after.next_block, after.revision),
+        (before.next_block, before.revision)
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+#[tracing_test::traced_test]
+async fn retired_listener_reconnect_exits_retry_loop_without_advancing(
+) -> Result<()> {
+    let (_instance, db, mut iter) = setup(40).await?;
+    let anvil = Anvil::new().spawn();
+    iter.url = anvil.ws_endpoint();
+    iter.start_at_block = Some(40);
+    iter.new_log_stream_no_retry().await?;
+    let before = iter.recovery.as_ref().unwrap().read().await?;
+    retire(&db.pool().await).await?;
+    iter.stream = None;
+    let result =
+        tokio::time::timeout(Duration::from_secs(2), iter.next()).await?;
+    assert!(result.err().unwrap().is::<ListenerRetired>());
+    assert_eq!(iter.catchup_blocks.unwrap().0, 40);
+    let after = iter.recovery.as_ref().unwrap().read().await?;
+    assert_eq!(
+        (after.next_block, after.revision),
+        (before.next_block, before.revision)
+    );
+    assert!(!logs_contain("Error creating new log stream, retrying"));
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn cutover_while_checkpoint_waits_for_guard_preserves_pending_page(
+) -> Result<()> {
+    let (_instance, db, mut iter) = setup(40).await?;
+    let before = iter.recovery.as_ref().unwrap().read().await?;
+    iter.pending_catchup_page = Some(CatchupPage {
+        from_block: 40,
+        next_page: 60,
+        remaining_blocks: 1,
+        revision: before.revision,
+    });
+    let pool = db.pool().await;
+    let mut cutover = pool.begin().await?;
+    let cutover_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *cutover)
+        .await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(CUTOVER_LOCK_ID)
+        .execute(&mut *cutover)
+        .await?;
+    let completion = async {
+        let result = iter.acknowledge_catchup_block().await;
+        (iter, result)
+    };
+    let commit_cutover = async {
+        // Wait for the checkpoint's BEGIN check to pass and its shared lock to
+        // block. This exercises Ok(None), rather than the already-retired error.
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+                     WHERE datname = current_database()
+                       AND $1 = ANY(pg_blocking_pids(pid)))",
+                )
+                .bind(cutover_pid)
+                .fetch_one(&pool)
+                .await?;
+                if waiting {
+                    return Ok::<_, sqlx::Error>(());
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await??;
+        sqlx::query("UPDATE versioning SET stack_version = 'v0.15'")
+            .execute(&mut *cutover)
+            .await?;
+        cutover.commit().await?;
+        Ok::<_, anyhow::Error>(())
+    };
+    let ((iter, result), committed) = tokio::join!(completion, commit_cutover);
+    committed?;
+    assert!(result.unwrap_err().is::<ListenerRetired>());
+    assert_eq!(iter.catchup_blocks.unwrap().0, 40);
+    assert!(iter.pending_catchup_page.is_some());
+    let after = iter.recovery.as_ref().unwrap().read().await?;
+    assert_eq!(
+        (after.next_block, after.revision),
+        (before.next_block, before.revision)
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn retired_pause_keeps_heartbeat_alive_and_honors_cancellation(
+) -> Result<()> {
+    let heartbeat = HeartBeat::with_elapsed_secs(30);
+    let cancel = CancellationToken::new();
+    let paused = pause_retired_listener(
+        Err(ListenerRetired.into()),
+        &heartbeat,
+        &cancel,
+    );
+    tokio::pin!(paused);
+    assert!(tokio::time::timeout(Duration::from_millis(20), &mut paused)
+        .await
+        .is_err());
+    assert!(heartbeat.is_recent(&Duration::from_secs(1)));
+    cancel.cancel();
+    tokio::time::timeout(Duration::from_secs(1), paused).await??;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn checkpoint_database_errors_are_not_treated_as_retirement() -> Result<()>
+{
+    let (_instance, db, iter) = setup(40).await?;
+    db.pool().await.close().await;
+    let error = iter
+        .recovery
+        .as_ref()
+        .unwrap()
+        .start(40, 0)
+        .await
+        .err()
+        .unwrap();
+    assert!(matches!(
+        error.downcast_ref::<sqlx::Error>(),
+        Some(sqlx::Error::PoolClosed)
+    ));
+    let result = tokio::time::timeout(
+        Duration::from_secs(1),
+        pause_retired_listener(
+            Err(error),
+            &HeartBeat::default(),
+            &CancellationToken::new(),
+        ),
+    )
+    .await?;
+    assert!(matches!(
+        result.unwrap_err().downcast_ref::<sqlx::Error>(),
+        Some(sqlx::Error::PoolClosed)
+    ));
     Ok(())
 }

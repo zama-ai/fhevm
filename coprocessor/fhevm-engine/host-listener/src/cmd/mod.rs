@@ -42,7 +42,7 @@ mod recovery;
 #[cfg(test)]
 mod recovery_tests;
 use block_history::{BlockHash, BlockHistory, BlockSummary};
-use recovery::RecoveryCheckpoint;
+use recovery::{ListenerRetired, RecoveryCheckpoint};
 
 const REORG_RETRY_GET_LOGS: u64 = 10; // retry 10 times to get logs for a block
 const RETRY_GET_LOGS_DELAY_IN_MS: u64 = 100;
@@ -896,11 +896,15 @@ impl InfiniteLogIter {
         Ok(())
     }
 
-    async fn new_log_stream(&mut self) {
+    async fn new_log_stream(&mut self) -> Result<()> {
         while let Err(err) = self.new_log_stream_no_retry().await {
+            if err.is::<ListenerRetired>() {
+                return Err(err);
+            }
             warn!(error = %err, "Error creating new log stream, retrying");
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
+        Ok(())
     }
 
     pub async fn init_provider_for_rpc(&mut self) -> Result<()> {
@@ -974,7 +978,7 @@ impl InfiniteLogIter {
     async fn next(&mut self) -> Result<Option<BlockLogs<Log>>> {
         let block_logs = loop {
             if self.stream.is_none() {
-                self.new_log_stream().await;
+                self.new_log_stream().await?;
                 continue;
             };
             if self.next_blocklogs.is_empty() {
@@ -1160,6 +1164,28 @@ async fn db_insert_block(
         retries -= 1;
         db.reconnect().await;
         tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+/// Keep a retired service alive without fetching, acknowledging, or advancing
+/// checkpoints. The heartbeat prevents a deliberate pause from failing liveness.
+async fn pause_retired_listener(
+    result: Result<()>,
+    heartbeat: &HeartBeat,
+    cancel: &CancellationToken,
+) -> Result<()> {
+    match result {
+        Err(err) if err.is::<ListenerRetired>() => {
+            info!("Listener stack retired; pausing ingestion");
+            let mut interval = tokio::time::interval(Duration::from_secs(5));
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => return Ok(()),
+                    _ = interval.tick() => heartbeat.update(),
+                }
+            }
+        }
+        other => other,
     }
 }
 
@@ -1379,88 +1405,102 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         gcs_mode,
     ));
 
-    // Check connection works
-    log_iter.new_log_stream_no_retry().await?;
+    let ingest_result: Result<()> = async {
+        // Check connection works
+        log_iter.new_log_stream_no_retry().await?;
 
-    loop {
-        log_iter.stream = None; // force new connection each iteration
+        loop {
+            log_iter.stream = None; // force new connection each iteration
 
-        while let Some(block_logs) = log_iter.next().await? {
-            // Paused (retired blue stack after cutover): no-op — drop the block
-            // without writing anything to the DB.
-            if stack_mode.is_paused() {
-                continue;
-            }
+            while let Some(block_logs) = log_iter.next().await? {
+                // Retirement notifications and checkpoint fences share the same
+                // permanent pause; neither should acknowledge uncommitted work.
+                if stack_mode.is_paused() {
+                    return Err(ListenerRetired.into());
+                }
 
-            if args.only_catchup_loop && !block_logs.catchup {
-                break;
-            }
-            if !block_logs.catchup
-                && log_iter
-                    .absolute_end_at_block
-                    .is_some_and(|end| block_logs.summary.number > end)
-            {
-                // Keep observing the tip so pending catchup can reach finality,
-                // without ingesting realtime blocks beyond a requested range.
-                continue;
-            }
-            let status = db_insert_block(
-                chain_id,
-                &mut db,
-                &block_logs,
-                &acl_contract_address,
-                &tfhe_contract_address,
-                &kms_generation_address,
-                &protocol_config_address,
-                &confidential_bridge_address,
-                &args,
-                is_protocol_config_listener,
-            )
-            .await;
-            if status.is_err() {
-                // logging & retry on error is already done in db_insert_block
-                log_iter.retry_from_block(block_logs.summary.number).await?;
-                continue;
-            };
-            // Advance the page only after its block transactions commit.
-            log_iter.acknowledge_catchup_block().await?;
-            log_iter.last_valid_block = Some(
-                block_logs
-                    .summary
-                    .number
-                    .max(log_iter.last_valid_block.unwrap_or(0)),
-            );
-            if !block_logs.catchup {
-                update_finalized_blocks(
+                if args.only_catchup_loop && !block_logs.catchup {
+                    break;
+                }
+                if !block_logs.catchup
+                    && log_iter
+                        .absolute_end_at_block
+                        .is_some_and(|end| block_logs.summary.number > end)
+                {
+                    // Keep observing the tip so pending catchup can reach finality,
+                    // without ingesting realtime blocks beyond a requested range.
+                    continue;
+                }
+                let status = db_insert_block(
+                    chain_id,
                     &mut db,
-                    &mut log_iter,
-                    block_logs.summary.number,
-                    args.catchup_finalization_in_blocks,
+                    &block_logs,
+                    &acl_contract_address,
+                    &tfhe_contract_address,
+                    &kms_generation_address,
+                    &protocol_config_address,
+                    &confidential_bridge_address,
+                    &args,
+                    is_protocol_config_listener,
                 )
                 .await;
+                if status.is_err() {
+                    // logging & retry on error is already done in db_insert_block
+                    log_iter
+                        .retry_from_block(block_logs.summary.number)
+                        .await?;
+                    continue;
+                };
+                // Advance the page only after its block transactions commit.
+                log_iter.acknowledge_catchup_block().await?;
+                log_iter.last_valid_block = Some(
+                    block_logs
+                        .summary
+                        .number
+                        .max(log_iter.last_valid_block.unwrap_or(0)),
+                );
+                if !block_logs.catchup {
+                    update_finalized_blocks(
+                        &mut db,
+                        &mut log_iter,
+                        block_logs.summary.number,
+                        args.catchup_finalization_in_blocks,
+                    )
+                    .await;
+                }
+                if kms_generation_address.is_some() {
+                    background_tasks.spawn(process_kms_generation_activations(
+                        db.pool.read().await.clone(),
+                        aws_s3_client,
+                    ));
+                }
             }
-            if kms_generation_address.is_some() {
-                background_tasks.spawn(process_kms_generation_activations(
-                    db.pool.read().await.clone(),
-                    aws_s3_client,
-                ));
+
+            if !args.only_catchup_loop {
+                break;
             }
-        }
 
-        if !args.only_catchup_loop {
-            break;
-        }
-
-        info!(
-            sleep_secs = args.catchup_loop_sleep_secs,
-            "Catchup loop iteration complete, sleeping"
-        );
-        tokio::time::sleep(Duration::from_secs(args.catchup_loop_sleep_secs))
+            info!(
+                sleep_secs = args.catchup_loop_sleep_secs,
+                "Catchup loop iteration complete, sleeping"
+            );
+            tokio::time::sleep(Duration::from_secs(
+                args.catchup_loop_sleep_secs,
+            ))
             .await;
 
-        // Reset state for next iteration
-        log_iter.reset_for_catchup_loop();
+            // Reset state for next iteration
+            log_iter.reset_for_catchup_loop();
+        }
+        Ok(())
     }
+    .await;
+    pause_retired_listener(
+        ingest_result,
+        &log_iter.tick_timeout,
+        &cancel_token,
+    )
+    .await?;
     cancel_token.cancel();
     for t in background_tasks.join_all().await.iter() {
         if let Err(err) = t {
