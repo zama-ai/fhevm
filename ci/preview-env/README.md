@@ -437,14 +437,18 @@ The two out-of-chart inputs the proxy needs are produced at deploy time by
   rotate the cert under proxies that only read it at startup. The compose path's
   checked-in `test-suite/fhevm/static/config/kms-connector-proxy/tls.crt` is *not*
   reusable here: its SANs are the compose hostnames, and Node rejects a SAN mismatch.
-- **API key**: the fixed test literal `fhevm-e2e-kms-connector-api-key` (same as
-  `.env.test-suite`); its digest is inline in `values-kms-connector-e2e.yaml`
-  (`kmsConnectorProxy.apiKeyDigest.value`), no Secret.
+- **FhevmSig auth**: the e2e suite signs with a fixed test key
+  (`KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY` in the test-suite overlays, same as
+  `.env.test-suite`) whose address is `kmsConnectorProxy.allowedSenders` in
+  `values-kms-connector-e2e.yaml`, no Secret. Each party's
+  `kmsConnectorProxy.txSenderAddress` (the request `audience`) is set by the
+  script from the derived KMS tx-sender wallets (`WALLETS_JSON`).
 - **Test-suite wiring**: the script publishes ConfigMap **`kms-connector-http`**
-  (`endpoint-urls` = one https URL per party, `kms-threshold` = MPC `t` from
-  `lib.sh`'s `kms_t`, `ca.crt` = the proxies' cert). The idle Job and the
-  `@fhevm/sdk` + Polygon Argo Workflow overlays `configMapKeyRef` it into
-  `KMS_CONNECTOR_ENDPOINT_URLS`, `KMS_THRESHOLD` and `KMS_CONNECTOR_PROXY_CA`, and
+  (`endpoint-urls` = one https URL per party, `tx-sender-addresses` = each party's
+  audience in the same order, `kms-threshold` = MPC `t` from `lib.sh`'s `kms_t`,
+  `ca.crt` = the proxies' cert). The idle Job and the `@fhevm/sdk` + Polygon Argo
+  Workflow overlays `configMapKeyRef` it into `KMS_CONNECTOR_ENDPOINT_URLS`,
+  `KMS_CONNECTOR_TX_SENDER_ADDRESSES`, `KMS_THRESHOLD` and `KMS_CONNECTOR_PROXY_CA`, and
   their startup script writes the PEM to `NODE_EXTRA_CA_CERTS` (Node only trusts
   extra CAs from a file, and the generic `common` chart gives a one-shot Job no
   ConfigMap volume). Their DAG's last task, `connector-http`, runs the
