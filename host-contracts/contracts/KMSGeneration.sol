@@ -653,7 +653,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
         _checkGeneratedKeyId(keyId);
 
-        uint256 materialRequestId = _materialRequestId(keyId);
+        uint256 materialRequestId = _migrationOrKeygenRequestId(keyId);
         bytes32 digest = $.consensusDigest[materialRequestId];
         address[] memory consensusTxSenders = $.consensusTxSenderAddresses[materialRequestId][digest];
         uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[materialRequestId]);
@@ -668,10 +668,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     function getKeyInfo(uint256 keyId) external view virtual returns (KeyInfo memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         _checkGeneratedKeyId(keyId);
-        uint256 materialRequestId = _materialRequestId(keyId);
-        uint256 prepKeygenId = $.keygenIdPairs[materialRequestId];
+        uint256 requestId = _migrationOrKeygenRequestId(keyId);
+        uint256 prepKeygenId = $.keygenIdPairs[requestId];
         KeyDigest[] memory keyDigests = $.keyDigests[keyId];
-        if (materialRequestId != keyId) {
+        if (requestId != keyId) {
             keyDigests = _withoutServerDigests(keyDigests);
         }
         return
@@ -832,12 +832,12 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
-     * @notice Returns the request whose consensus describes a key: its completed compressed key
-     * migration if any, otherwise the key's own keygen request.
+     * @notice Returns the key's compressed key migration request if it reached consensus, otherwise
+     * the key ID itself, which is also its keygen request ID.
      * @param keyId The ID of the key.
-     * @return The ID of the request whose consensus describes the key.
+     * @return The migration request ID or the key ID.
      */
-    function _materialRequestId(uint256 keyId) internal view virtual returns (uint256) {
+    function _migrationOrKeygenRequestId(uint256 keyId) internal view virtual returns (uint256) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         uint256 migrationRequestId = $.requestIdByExistingKeyId[keyId];
         if (migrationRequestId == 0 || $.consensusDigest[migrationRequestId] == bytes32(0)) {
