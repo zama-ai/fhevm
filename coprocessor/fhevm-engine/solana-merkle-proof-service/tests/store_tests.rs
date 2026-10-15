@@ -711,7 +711,7 @@ fn host_store() -> ([u8; 32], EncryptedStore) {
     (address.to_bytes(), store)
 }
 
-/// Records `writes` at `slot` and returns the store's cursor after them.
+/// Records `writes` as one block and returns the store's cursor after them.
 async fn record(
     pool: &sqlx::PgPool,
     writes: Vec<EncryptedStoreWrite>,
