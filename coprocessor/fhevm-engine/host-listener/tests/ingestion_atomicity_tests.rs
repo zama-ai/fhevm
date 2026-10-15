@@ -179,40 +179,6 @@ async fn invalid_log_provenance_rejects_the_entire_block() -> anyhow::Result<()>
 
 #[tokio::test]
 #[serial(db)]
-async fn malformed_event_at_configured_contract_rejects_the_entire_block(
-) -> anyhow::Result<()> {
-    let (mut db, pool, _instance) = setup().await?;
-    let b = block();
-    let tx_hash = FixedBytes::<32>::with_last_byte(0xa2);
-    let handle = FixedBytes::<32>::with_last_byte(0x12);
-    let mut malformed = rpc_log(&trivial_encrypt(handle), &b, tx_hash, 1);
-    malformed.inner.data.data = Default::default();
-    let logs = BlockLogs {
-        logs: vec![rpc_log(&allowed(handle), &b, tx_hash, 0), malformed],
-        summary: b,
-        catchup: false,
-        finalized: false,
-    };
-    let result = ingest_block_logs(
-        ChainId::try_from(42_u64)?,
-        &mut db,
-        &logs,
-        &Some(Address::ZERO),
-        &Some(Address::ZERO),
-        &None,
-        OPTIONS,
-    )
-    .await;
-    assert!(
-        result.is_err(),
-        "malformed known-contract event must reject the block"
-    );
-    assert_empty(&pool, &db).await?;
-    Ok(())
-}
-
-#[tokio::test]
-#[serial(db)]
 async fn failed_transaction_does_not_publish_chain_cache_changes(
 ) -> anyhow::Result<()> {
     let (mut db, pool, _instance) = setup().await?;

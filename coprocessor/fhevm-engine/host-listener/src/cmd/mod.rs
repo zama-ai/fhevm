@@ -190,7 +190,6 @@ pub struct InfiniteLogIter {
                       * events data */
     contract_addresses: Vec<Address>,
     catchup_blocks: Option<(u64, Option<u64>)>, // to do catchup blocks by chunks
-    catchup_state: Option<(Database, String)>,
     pending_catchup_page: Option<CatchupPage>,
     // Option<(from_block, optional to_block)>
     next_blocklogs: VecDeque<BlockLogs<Log>>, // logs already fetched but not yet processed
@@ -216,7 +215,6 @@ struct CatchupPage {
     from_block: u64,
     next_page: u64,
     remaining_blocks: usize,
-    generation: i64,
 }
 
 enum BlockOrTimeoutOrNone {
@@ -267,7 +265,6 @@ impl InfiniteLogIter {
             block_time: args.initial_block_time,
             contract_addresses,
             catchup_blocks: None,
-            catchup_state: None,
             pending_catchup_page: None,
             next_blocklogs: VecDeque::new(),
             stream: None,
@@ -455,26 +452,10 @@ impl InfiniteLogIter {
     }
 
     async fn consume_catchup_blocks(&mut self) {
-        let Some((mut from_block, to_block)) = self.catchup_blocks else {
+        let Some((from_block, to_block)) = self.catchup_blocks else {
             // nothing to consume
             return;
         };
-        let mut generation = 0;
-        // Persist an in-memory rewind before fetching it, and honor any
-        // earlier gap registered by another instance with the same identity.
-        if let Some((db, listener_id)) = &self.catchup_state {
-            match db.initialize_catchup_cursor(listener_id, from_block).await {
-                Ok(cursor) => {
-                    from_block = cursor.next_block_number;
-                    generation = cursor.generation;
-                    self.catchup_blocks = Some((from_block, to_block));
-                }
-                Err(err) => {
-                    warn!(error = %err, "Cannot persist catchup cursor before fetch");
-                    return;
-                }
-            }
-        }
         let to_block_or_max = to_block.unwrap_or(u64::MAX);
         if from_block > to_block_or_max {
             self.catchup_blocks = None;
@@ -561,45 +542,29 @@ impl InfiniteLogIter {
             from_block,
             next_page: paging_to_block + 1,
             remaining_blocks,
-            generation,
         });
         if remaining_blocks == 0 {
-            if let Err(err) = self.finish_pending_catchup_page().await {
-                warn!(error = %err, "Cannot checkpoint empty catchup page; retaining cursor");
-            }
+            self.finish_pending_catchup_page();
         }
     }
 
-    async fn finish_pending_catchup_page(&mut self) -> Result<()> {
+    fn finish_pending_catchup_page(&mut self) {
         let Some(page) = &self.pending_catchup_page else {
-            return Ok(());
+            return;
         };
         if page.remaining_blocks != 0 {
-            return Ok(());
+            return;
         }
-        let next_page = if let Some((db, listener_id)) = &self.catchup_state {
-            db.finish_catchup_page(
-                listener_id,
-                page.from_block,
-                page.next_page,
-                page.generation,
-            )
-            .await?
-            .next_block_number
-            .min(page.next_page)
-        } else {
-            page.next_page
-        };
-        self.catchup_blocks = Some((next_page, self.absolute_end_at_block));
+        self.catchup_blocks =
+            Some((page.next_page, self.absolute_end_at_block));
         self.pending_catchup_page = None;
-        Ok(())
     }
 
-    async fn acknowledge_catchup_block(&mut self) -> Result<()> {
+    fn acknowledge_catchup_block(&mut self) {
         if let Some(page) = &mut self.pending_catchup_page {
             page.remaining_blocks = page.remaining_blocks.saturating_sub(1);
         }
-        self.finish_pending_catchup_page().await
+        self.finish_pending_catchup_page();
     }
 
     pub async fn get_block_by_number(&self, number: u64) -> Result<Block> {
@@ -844,14 +809,6 @@ impl InfiniteLogIter {
             .catchup_blocks
             .map(|(from, _)| from.min(catch_up_from))
             .unwrap_or(catch_up_from);
-        let catch_up_from = if let Some((db, listener_id)) = &self.catchup_state
-        {
-            db.initialize_catchup_cursor(listener_id, catch_up_from)
-                .await?
-                .next_block_number
-        } else {
-            catch_up_from
-        };
         self.absolute_end_at_block =
             self.resolve_end_at_block(&provider).await?;
         self.catchup_blocks = Some((catch_up_from, self.absolute_end_at_block));
@@ -1024,8 +981,9 @@ impl InfiniteLogIter {
     }
 
     /// Refetch the entire uncommitted page after a failed database insertion.
-    /// Its durable cursor remains at the page start. Do not reuse a batch
-    /// that may have become invalid during a reorg.
+    /// Keep the in-memory cursor at the page start. Do not reuse a batch that
+    /// may have become invalid during a reorg. Restart recovery still needs
+    /// an explicit replay when realtime ingestion has advanced past this gap.
     fn retry_from_block(&mut self, block_number: u64) {
         let block_number = self
             .pending_catchup_page
@@ -1180,19 +1138,6 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let mut db =
         Database::new(&args.database_url, chain_id, args.dependence_cache_size)
             .await?;
-    // Separate differently configured manual replay jobs from the ordinary
-    // listener, while retaining a stable identity across process restarts.
-    let listener_id = format!(
-        "{}:start={:?}:end={:?}:catchup={}:acl={}:tfhe={}:kms={}",
-        args.service_name,
-        args.start_at_block,
-        args.end_at_block,
-        args.only_catchup_loop,
-        args.acl_contract_address,
-        args.tfhe_contract_address,
-        args.kms_generation_address,
-    );
-    log_iter.catchup_state = Some((db.clone(), listener_id));
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: log_iter.tick_timeout.clone(),
@@ -1286,9 +1231,8 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                 log_iter.retry_from_block(block_logs.summary.number);
                 continue;
             };
-            // The block transaction has committed. A checkpoint failure exits
-            // with the old durable cursor intact, so restart replays the page.
-            log_iter.acknowledge_catchup_block().await?;
+            // Advance the page only after its block transactions commit.
+            log_iter.acknowledge_catchup_block();
             log_iter.last_valid_block = Some(
                 block_logs
                     .summary
@@ -1355,7 +1299,6 @@ mod tests {
             block_time: 12,
             contract_addresses: vec![],
             catchup_blocks: None,
-            catchup_state: None,
             pending_catchup_page: None,
             next_blocklogs: VecDeque::new(),
             stream: None,
@@ -1412,8 +1355,8 @@ mod tests {
         assert!(iter.split_by_block(vec![orphan_log]).await.is_err());
     }
 
-    #[tokio::test]
-    async fn catchup_checkpoint_waits_for_whole_page_and_rewinds_on_failure() {
+    #[test]
+    fn catchup_progress_waits_for_whole_page_and_rewinds_on_failure() {
         let mut iter = new_test_iter(50);
         iter.catchup_blocks = Some((40, Some(100)));
         iter.absolute_end_at_block = Some(100);
@@ -1422,9 +1365,8 @@ mod tests {
             from_block: 40,
             next_page: 60,
             remaining_blocks: 2,
-            generation: 0,
         });
-        iter.acknowledge_catchup_block().await.unwrap();
+        iter.acknowledge_catchup_block();
         assert_eq!(iter.catchup_blocks.unwrap().0, 40);
 
         iter.retry_from_block(50);
@@ -1436,11 +1378,10 @@ mod tests {
             from_block: 40,
             next_page: 60,
             remaining_blocks: 2,
-            generation: 0,
         });
-        iter.acknowledge_catchup_block().await.unwrap();
+        iter.acknowledge_catchup_block();
         assert_eq!(iter.catchup_blocks.unwrap().0, 40);
-        iter.acknowledge_catchup_block().await.unwrap();
+        iter.acknowledge_catchup_block();
         assert_eq!(iter.catchup_blocks.unwrap().0, 60);
     }
 
@@ -1504,7 +1445,7 @@ mod tests {
             .expect("the second page has a computation");
         assert_eq!(next.summary.number, 60);
         assert_eq!(iter.catchup_blocks.unwrap().0, 60);
-        iter.acknowledge_catchup_block().await.unwrap();
+        iter.acknowledge_catchup_block();
         assert!(iter.next().await.is_none());
     }
 

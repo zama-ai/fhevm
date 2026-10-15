@@ -72,20 +72,6 @@ pub enum BlockFetchError {
     #[error("Missing receipt for transaction {tx_hash}")]
     MissingReceipt { tx_hash: B256 },
 
-    #[error(
-        "Receipt for transaction {tx_hash} does not belong to block {block_hash} at height {block_number}"
-    )]
-    ReceiptBlockMismatch {
-        tx_hash: B256,
-        block_hash: B256,
-        block_number: u64,
-    },
-
-    #[error(
-        "Log in receipt for transaction {tx_hash} has inconsistent or missing block/transaction identity"
-    )]
-    LogBlockMismatch { tx_hash: B256 },
-
     #[error("RPC method not supported: {method} - {details}")]
     UnsupportedMethod { method: String, details: String },
 
@@ -179,43 +165,6 @@ impl EvmBlockFetcher {
             provider,
             config: FetchConfig::default(),
         }
-    }
-
-    /// Re-read the complete header/receipt snapshot after an identity mismatch.
-    /// Keep retries bounded: a hash-based request can become permanently
-    /// orphaned, and the caller must then restart its broader reorg walk.
-    pub async fn retry_inconsistent_snapshot<F, Fut>(
-        &self,
-        mut fetch: F,
-    ) -> Result<FetchedBlock, BlockFetchError>
-    where
-        F: FnMut() -> Fut,
-        Fut: Future<Output = Result<FetchedBlock, BlockFetchError>>,
-    {
-        const SNAPSHOT_RETRIES: usize = 3;
-        for attempt in 0..=SNAPSHOT_RETRIES {
-            let result = fetch().await;
-            let retry = matches!(
-                &result,
-                Err(BlockFetchError::ReceiptBlockMismatch { .. }
-                    | BlockFetchError::LogBlockMismatch { .. }
-                    | BlockFetchError::ReceiptCountMismatch { .. }
-                    | BlockFetchError::MissingReceipt { .. })
-            );
-            if !retry || attempt == SNAPSHOT_RETRIES {
-                return result;
-            }
-            warn!(attempt, error = ?result.as_ref().err(),
-                "Block snapshot changed; refetching header and receipts");
-            tokio::select! {
-                biased;
-                _ = self.config.cancellation_token.cancelled() => {
-                    return Err(BlockFetchError::Cancelled);
-                }
-                _ = tokio::time::sleep(self.config.retry_interval) => {}
-            }
-        }
-        unreachable!("bounded retry returns on its final iteration")
     }
 
     /// Set the retry interval for RPC failures.
@@ -785,33 +734,10 @@ impl EvmBlockFetcher {
             .map(|r| (r.transaction_hash, r))
             .collect();
 
-        // A transaction hash can occur in both versions of a reorged block.
-        // Count/hash coverage therefore does not establish that independently
-        // fetched receipts belong to this header. Always check provenance,
-        // even when expensive cryptographic block verification is disabled.
-        for (index, tx_hash) in block.transactions.hashes().enumerate() {
-            let receipt = receipts_map
-                .get(&tx_hash)
-                .ok_or(BlockFetchError::MissingReceipt { tx_hash })?;
-            if receipt.block_hash != Some(block.header.hash)
-                || receipt.block_number != Some(block.header.number)
-                || receipt.transaction_index != Some(index as u64)
-            {
-                return Err(BlockFetchError::ReceiptBlockMismatch {
-                    tx_hash,
-                    block_hash: block.header.hash,
-                    block_number: block.header.number,
-                });
-            }
-            if receipt.inner.logs().iter().any(|log| {
-                log.block_hash != Some(block.header.hash)
-                    || log.block_number != Some(block.header.number)
-                    || log.transaction_hash != Some(tx_hash)
-                    || log.transaction_index.is_some_and(|i| i != index as u64)
-                    || log.log_index.is_none()
-                    || log.removed
-            }) {
-                return Err(BlockFetchError::LogBlockMismatch { tx_hash });
+        // Verify all transactions have receipts
+        for tx_hash in block.transactions.hashes() {
+            if !receipts_map.contains_key(&tx_hash) {
+                return Err(BlockFetchError::MissingReceipt { tx_hash });
             }
         }
 

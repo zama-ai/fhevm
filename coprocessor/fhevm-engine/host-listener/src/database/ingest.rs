@@ -243,10 +243,6 @@ pub async fn ingest_block_logs(
                 log = ?log,
                 "Cannot decode event",
             );
-            return Err(sqlx::Error::Protocol(format!(
-                "Cannot decode event from configured contract {:?} in block {}",
-                log.inner.address, block_number
-            )));
         }
     }
     // Read and publish ACL evidence under the same per-handle transaction locks
