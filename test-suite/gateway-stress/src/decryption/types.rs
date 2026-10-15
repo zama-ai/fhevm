@@ -2,9 +2,8 @@ use std::str::FromStr;
 
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest_1 as PublicDecryptionRequest,
-    UserDecryptionRequest_2 as UserDecryptionRequest,
-    UserDecryptionRequest_3 as UserDecryptionRequestV2,
+    PublicDecryptionRequest, UserDecryptionRequest_0 as UserDecryptionRequest,
+    UserDecryptionRequest_1 as UserDecryptionRequestV2,
 };
 use serde::{Deserialize, Deserializer, Serializer};
 use std::fmt;
@@ -16,7 +15,7 @@ pub enum DecryptionRequest {
     UserV2(UserDecryptionRequestV2),
 }
 
-// `UserDecryptionRequest_3` (the RFC-016 event) doesn't derive `Debug` in the generated bindings,
+// `UserDecryptionRequest_1` (the RFC-016 event) doesn't derive `Debug` in the generated bindings,
 // so we can't `#[derive(Debug)]` the enum — a compact manual impl keyed on the variant is enough
 // for the tool's tracing needs.
 impl fmt::Debug for DecryptionRequest {
