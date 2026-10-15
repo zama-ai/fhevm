@@ -54,6 +54,8 @@ export type HostConfig = {
   discriminator: ReadonlyUint8Array;
   /** Program administrator allowed to update config flags. */
   admin: Address;
+  /** Nominee who becomes `admin` by calling `accept_admin`; `Pubkey::default()` when none. */
+  pendingAdmin: Address;
   /** Host-chain id included in handle derivation. */
   chainId: bigint;
   /** EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators. */
@@ -121,6 +123,8 @@ export type HostConfig = {
 export type HostConfigArgs = {
   /** Program administrator allowed to update config flags. */
   admin: Address;
+  /** Nominee who becomes `admin` by calling `accept_admin`; `Pubkey::default()` when none. */
+  pendingAdmin: Address;
   /** Host-chain id included in handle derivation. */
   chainId: number | bigint;
   /** EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators. */
@@ -191,6 +195,7 @@ export function getHostConfigEncoder(): FixedSizeEncoder<HostConfigArgs> {
     getStructEncoder([
       ['discriminator', fixEncoderSize(getBytesEncoder(), 8)],
       ['admin', getAddressEncoder()],
+      ['pendingAdmin', getAddressEncoder()],
       ['chainId', getU64Encoder()],
       ['gatewayChainId', getU64Encoder()],
       ['inputVerificationContract', fixEncoderSize(getBytesEncoder(), 20)],
@@ -216,6 +221,7 @@ export function getHostConfigDecoder(): FixedSizeDecoder<HostConfig> {
   return getStructDecoder([
     ['discriminator', fixDecoderSize(getBytesDecoder(), 8)],
     ['admin', getAddressDecoder()],
+    ['pendingAdmin', getAddressDecoder()],
     ['chainId', getU64Decoder()],
     ['gatewayChainId', getU64Decoder()],
     ['inputVerificationContract', fixDecoderSize(getBytesDecoder(), 20)],
@@ -290,5 +296,5 @@ export async function fetchAllMaybeHostConfig(
 }
 
 export function getHostConfigSize(): number {
-  return 351;
+  return 383;
 }
