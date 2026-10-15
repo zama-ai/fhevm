@@ -1,7 +1,11 @@
 use chrono::{DateTime, Utc};
 use prometheus::{register_histogram, register_int_counter, Histogram, IntCounter};
 use sqlx::Postgres;
-use std::{fmt, sync::LazyLock, time::SystemTime};
+use std::{
+    fmt,
+    sync::LazyLock,
+    time::{Duration, SystemTime},
+};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -348,6 +352,8 @@ impl LockMngr {
     /// worker actually transitions an owned processing chain to processed.
     /// The transition and dependency-count updates commit together so cleanup
     /// or a connection failure cannot lose a dependent notification.
+    /// Busy dependent rows cause a rollback and local retry, preventing lock
+    /// order cycles with ingestion without restarting the worker cycle.
     /// Deferred retries keep their original position in normal scheduling.
     /// With no owner, lock_expires_at is a short shared cooldown and rescue
     /// ordering timestamp rather than a worker lease.
@@ -369,26 +375,63 @@ impl LockMngr {
             }
         };
 
-        let mut tx = self.pool.begin().await?;
-        let owned = sqlx::query_as::<_, (String, Vec<Vec<u8>>)>(
+        loop {
+            let mut tx = self.pool.begin().await?;
+            match self
+                .release_current_lock_in_tx(&mut tx, &dep_chain_id, mark_as_processed, defer)
+                .await
+            {
+                Ok((rows, dependents_updated)) => {
+                    tx.commit().await?;
+                    self.take_lock();
+                    info!(dcid = %hex::encode(&dep_chain_id), rows, mark_as_processed, dependents_updated, "Released lock");
+                    return Ok(rows);
+                }
+                Err(err)
+                    if err
+                        .as_database_error()
+                        .and_then(|err| err.code())
+                        .as_deref()
+                        == Some("55P03") =>
+                {
+                    // NOWAIT reports lock_not_available (55P03).
+                    // A listener may hold a dependent while waiting for our
+                    // parent row. Drop every row lock before retrying, so it can
+                    // finish. Re-read ownership, status and dependents on retry.
+                    tx.rollback().await?;
+                    debug!(dcid = %hex::encode(&dep_chain_id), "Dependent row busy, retrying chain release");
+                    // Jitter keeps competing releases from retrying in lockstep.
+                    tokio::time::sleep(Duration::from_millis(rand::random_range(25..50))).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    async fn release_current_lock_in_tx(
+        &self,
+        tx: &mut sqlx::Transaction<'_, Postgres>,
+        dep_chain_id: &[u8],
+        mark_as_processed: bool,
+        defer: bool,
+    ) -> Result<(u64, u64), sqlx::Error> {
+        let owned = sqlx::query!(
             r#"
             SELECT status, dependents
             FROM dependence_chain
             WHERE worker_id = $1 AND dependence_chain_id = $2
             FOR UPDATE
             "#,
+            self.worker_id,
+            dep_chain_id,
         )
-        .bind(self.worker_id)
-        .bind(&dep_chain_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await?;
-        let Some((status, dependents)) = owned else {
-            tx.commit().await?;
-            self.take_lock();
-            return Ok(0);
+        let Some(owned) = owned else {
+            return Ok((0, 0));
         };
-        let completed = mark_as_processed && status == "processing";
-        let rows = sqlx::query(
+        let completed = mark_as_processed && owned.status == "processing";
+        let rows = sqlx::query!(
             r#"
             UPDATE dependence_chain
             SET
@@ -406,26 +449,36 @@ impl LockMngr {
             WHERE worker_id = $1
             AND dependence_chain_id = $2
             "#,
+            self.worker_id,
+            dep_chain_id,
+            mark_as_processed,
+            defer,
         )
-        .bind(self.worker_id)
-        .bind(&dep_chain_id)
-        .bind(mark_as_processed)
-        .bind(defer)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
 
         let mut dependents_updated = 0;
         if completed {
-            // Get all dependents of a given dependence chain ID and decrement their dependency count
-            // If any dependent's dependency count reaches zero, notify work_available
-            dependents_updated = sqlx::query(
+            // Never wait for another chain row while holding the parent: the
+            // listener can acquire these rows in the opposite order. Keeping
+            // selection and UPDATE in one statement also excludes newly inserted
+            // rows that were not locked by this statement's snapshot.
+            dependents_updated = sqlx::query!(
                 r#"
-                WITH updated AS (
-                    UPDATE dependence_chain
-                    SET
-                        dependency_count = GREATEST(dependency_count - 1, 0)
+                WITH locked_dependents AS MATERIALIZED (
+                    SELECT dependence_chain_id
+                    FROM dependence_chain
                     WHERE dependence_chain_id = ANY ($1::bytea[])
-                        RETURNING dependence_chain_id, dependency_count
+                    ORDER BY dependence_chain_id
+                    FOR UPDATE NOWAIT
+                ),
+                updated AS (
+                    UPDATE dependence_chain AS dc
+                    SET
+                        dependency_count = GREATEST(dc.dependency_count - 1, 0)
+                    FROM locked_dependents
+                    WHERE dc.dependence_chain_id = locked_dependents.dependence_chain_id
+                    RETURNING dc.dependence_chain_id, dc.dependency_count
                 ),
                 ready_dcid_available AS (
                     SELECT 1
@@ -437,18 +490,14 @@ impl LockMngr {
                     pg_notify('work_available', '')
                 FROM   ready_dcid_available;
                 "#,
+                &owned.dependents,
             )
-            .bind(&dependents)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await?
             .rows_affected();
         }
 
-        tx.commit().await?;
-        self.take_lock();
-        info!(dcid = %hex::encode(&dep_chain_id), rows = rows.rows_affected(), mark_as_processed, dependents_updated,  "Released lock");
-
-        Ok(rows.rows_affected())
+        Ok((rows.rows_affected(), dependents_updated))
     }
 
     /// Set error on the current dependence chain
@@ -684,7 +733,7 @@ async fn delete_old_processed_dependence_chains(
     .await?;
 
     let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
-    info!(rows_deleted = result.rows_affected(), query_elapsed = %elapsed, threshold_sec, 
+    info!(rows_deleted = result.rows_affected(), query_elapsed = %elapsed, threshold_sec,
         "Deleted old processed dependence chains");
 
     Ok(result.rows_affected())

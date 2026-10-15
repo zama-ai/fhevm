@@ -50,6 +50,28 @@ async fn dependent_count(pool: &PgPool, id: u8) -> Result<i32> {
     .await?)
 }
 
+async fn wait_for_lock(pool: &PgPool, query_pattern: &str, pid: Option<i32>) -> Result {
+    timeout(Duration::from_secs(5), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
+                 AND wait_event_type = 'Lock' AND query LIKE $1
+                 AND ($2::int IS NULL OR pid = $2))",
+            )
+            .bind(query_pattern)
+            .bind(pid)
+            .fetch_one(pool)
+            .await?;
+            if waiting {
+                return Ok::<_, sqlx::Error>(());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await??;
+    Ok(())
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn retry_cooldown_is_shared_and_preserves_queue_position_in_both_schedulers() -> Result {
@@ -304,27 +326,147 @@ async fn dependent_update_failure_rolls_back_release_and_retry_decrements_once()
 
 #[tokio::test]
 #[serial(db)]
+async fn release_retries_without_deadlocking_with_listener_chain_locks() -> Result {
+    let (_instance, pool) = setup().await?;
+    // Cover both hash orders: the listener can first upsert an inferred chain
+    // and then repair a different stored chain. Also check that a listener
+    // wakeup or a new owner during the retry is not overwritten.
+    for (parent, child, wakeup, steal) in [
+        (2_u8, 1_u8, false, false),
+        (1, 2, false, false),
+        (2, 1, true, false),
+        (2, 1, false, true),
+    ] {
+        sqlx::query("TRUNCATE dependence_chain")
+            .execute(&pool)
+            .await?;
+        chain(&pool, parent, 20, 0, 0).await?;
+        // An unlocked dependent sorts before the busy one. Starting counts at
+        // two makes an accidental double decrement observable despite GREATEST.
+        chain(&pool, 0, 10, 2, 0).await?;
+        chain(&pool, child, 10, 2, 0).await?;
+        sqlx::query("UPDATE dependence_chain SET dependents = ARRAY['\\x00'::bytea, $1::bytea] WHERE dependence_chain_id = $2")
+            .bind(vec![child]).bind(vec![parent]).execute(&pool).await?;
+        let mut worker = manager(&pool);
+        assert_eq!(worker.acquire_next_lock().await?.0, Some(vec![parent]));
+
+        let mut gate = pool.begin().await?;
+        sqlx::query("SELECT 1 FROM dependence_chain WHERE dependence_chain_id = $1 FOR UPDATE")
+            .bind(vec![parent])
+            .execute(&mut *gate)
+            .await?;
+        let mut ingestion = pool.begin().await?;
+        let listener_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&mut *ingestion)
+            .await?;
+        sqlx::query("SELECT 1 FROM dependence_chain WHERE dependence_chain_id = $1 FOR UPDATE")
+            .bind(vec![child])
+            .execute(&mut *ingestion)
+            .await?;
+
+        let release = tokio::spawn(async move {
+            let result = worker.release_current_lock(true, false).await;
+            (result, worker)
+        });
+        // Queue the worker on the parent first, followed by the listener that
+        // already holds the child. Releasing the gate forces parent -> child
+        // versus child -> parent without timing sleeps or production hooks.
+        wait_for_lock(&pool, "%SELECT status, dependents%", None).await?;
+        let new_owner = Uuid::new_v4();
+        let listener = tokio::spawn(async move {
+            sqlx::query("SELECT 1 FROM dependence_chain WHERE dependence_chain_id = $1 FOR UPDATE")
+                .bind(vec![parent])
+                .execute(&mut *ingestion)
+                .await?;
+            if wakeup {
+                sqlx::query(
+                    "UPDATE dependence_chain SET status = 'updated' WHERE dependence_chain_id = $1",
+                )
+                .bind(vec![parent])
+                .execute(&mut *ingestion)
+                .await?;
+            }
+            if steal {
+                sqlx::query(
+                    "UPDATE dependence_chain SET worker_id = $1 WHERE dependence_chain_id = $2",
+                )
+                .bind(new_owner)
+                .bind(vec![parent])
+                .execute(&mut *ingestion)
+                .await?;
+            }
+            ingestion.commit().await
+        });
+        wait_for_lock(&pool, "%FOR UPDATE%", Some(listener_pid)).await?;
+        gate.rollback().await?;
+
+        timeout(Duration::from_secs(5), listener).await???;
+        let (released, mut worker) = timeout(Duration::from_secs(5), release).await??;
+        assert_eq!(released?, u64::from(!steal));
+        let row: (String, Option<Uuid>) = sqlx::query_as(
+            "SELECT status, worker_id FROM dependence_chain WHERE dependence_chain_id = $1",
+        )
+        .bind(vec![parent])
+        .fetch_one(&pool)
+        .await?;
+        let expected_status = if steal {
+            "processing"
+        } else if wakeup {
+            "updated"
+        } else {
+            "processed"
+        };
+        assert_eq!(row, (expected_status.into(), steal.then_some(new_owner)));
+        assert_eq!(
+            dependent_count(&pool, child).await?,
+            1 + i32::from(wakeup || steal)
+        );
+        assert_eq!(
+            dependent_count(&pool, 0).await?,
+            1 + i32::from(wakeup || steal)
+        );
+        assert_eq!(worker.release_current_lock(true, false).await?, 0);
+        assert_eq!(
+            dependent_count(&pool, child).await?,
+            1 + i32::from(wakeup || steal)
+        );
+        assert_eq!(
+            dependent_count(&pool, 0).await?,
+            1 + i32::from(wakeup || steal)
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn cleanup_cannot_remove_parent_before_dependent_notification_commits() -> Result {
     let (_instance, pool) = setup().await?;
     let mut worker = parent_and_child(&pool).await?;
+    // Pause inside the dependent UPDATE, after the parent has been changed but
+    // before either change commits. A row-lock blocker is unsuitable here now
+    // that release deliberately retries instead of waiting on dependent rows.
+    sqlx::raw_sql(
+        "CREATE FUNCTION pause_test_dependent_update() RETURNS trigger LANGUAGE plpgsql AS $$
+         BEGIN
+             PERFORM pg_advisory_xact_lock(4278, 1);
+             RETURN NEW;
+         END;
+         $$;
+         CREATE TRIGGER pause_test_dependent_update BEFORE UPDATE OF dependency_count ON dependence_chain
+         FOR EACH ROW EXECUTE FUNCTION pause_test_dependent_update();",
+    ).execute(&pool).await?;
     let mut blocker = pool.begin().await?;
-    sqlx::query("SELECT 1 FROM dependence_chain WHERE dependence_chain_id = $1 FOR UPDATE")
-        .bind(vec![2_u8])
+    sqlx::query("SELECT pg_advisory_xact_lock(4278, 1)")
         .execute(&mut *blocker)
         .await?;
     let release = tokio::spawn(async move { worker.release_current_lock(true, false).await });
-    // Hold the child row so release pauses at the dependent update. Observe the
-    // actual lock wait before running cleanup rather than relying on timing.
-    timeout(Duration::from_secs(5), async {
-        loop {
-            let waiting: bool = sqlx::query_scalar(
-                "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
-                 AND wait_event_type = 'Lock' AND query LIKE '%WHERE dependence_chain_id = ANY ($1::bytea[])%')",
-            ).fetch_one(&pool).await.unwrap();
-            if waiting { break; }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    }).await?;
+    wait_for_lock(
+        &pool,
+        "%WHERE dependence_chain_id = ANY ($1::bytea[])%",
+        None,
+    )
+    .await?;
     let mut cleaner = LockMngr::new_with_conf(
         Uuid::new_v4(),
         pool.clone(),

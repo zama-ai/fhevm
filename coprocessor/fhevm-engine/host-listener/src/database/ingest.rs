@@ -274,6 +274,10 @@ pub async fn ingest_block_logs(
             info!(acl_event = ?event, ?transaction_hash, block_number, "ACL event");
         }
     }
+    // An ACL may already be stored from an earlier delivery or another block,
+    // even if this batch has no ACL event for the computation. Resolve that
+    // evidence before grouping chains, which also uses is_allowed; checking
+    // allowed_handles only in the computation INSERT would be too late.
     is_allowed.extend(
         db.allowed_computation_handles(&mut tx, &touched_handles)
             .await?,
