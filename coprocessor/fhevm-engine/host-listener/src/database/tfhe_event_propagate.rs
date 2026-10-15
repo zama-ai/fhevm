@@ -936,6 +936,13 @@ impl Database {
     }
 
     pub async fn read_last_valid_block(&self) -> Option<i64> {
+        self.read_last_valid_block_checked().await.ok().flatten()
+    }
+
+    /// Recovery bootstrap must distinguish an empty history from a DB failure.
+    pub(crate) async fn read_last_valid_block_checked(
+        &self,
+    ) -> Result<Option<i64>, SqlxError> {
         let query = sqlx::query!(
             r#"
             SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id = $1;
@@ -943,10 +950,7 @@ impl Database {
             self.chain_id.as_i64(),
         );
         let pool = self.pool.read().await.clone();
-        match query.fetch_one(&pool).await {
-            Ok(record) => record.max,
-            Err(_err) => None, // table could be empty
-        }
+        Ok(query.fetch_one(&pool).await?.max)
     }
 
     /// Handles all types of ACL events
