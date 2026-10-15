@@ -34,13 +34,6 @@ use solana_host_follower::BlockCheckpoint;
 
 type Transaction<'c> = sqlx::Transaction<'c, sqlx::Postgres>;
 
-/// The leaf sources of one finalized transaction.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TransactionStoreWrites {
-    pub transaction_index: u64,
-    pub sources: Vec<EncryptedStoreWrite>,
-}
-
 /// The persisted MMR cursor of one encrypted store.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EncryptedStoreCursor {
@@ -72,7 +65,6 @@ pub struct StagedLeaf {
     pub handle: [u8; 32],
     /// The allowed key of a historical-access leaf; `None` for public-decrypt.
     pub key: Option<[u8; 32]>,
-    pub transaction_index: u64,
 }
 
 /// An MMR node of height 1 or more, over leaves `[index << height, (index + 1) << height)`.
@@ -117,33 +109,25 @@ pub enum LeafReduceError {
     },
 }
 
-/// Reduces the leaf sources of a block the record has not applied over the stores' recorded
-/// cursors.
+/// Reduces the store writes of a block the record has not applied, in block order, over the
+/// stores' recorded cursors.
 ///
 /// `existing` holds the recorded cursor of each store the block writes, and of no other. A store
 /// first seen above leaf zero fails with [`LeafReduceError::UnrecordedHistory`].
 pub fn reduce_block_leaves(
-    transactions: &[TransactionStoreWrites],
+    writes: &[EncryptedStoreWrite],
     mut existing: BTreeMap<[u8; 32], EncryptedStoreCursor>,
 ) -> Result<BlockLeafReduction, LeafReduceError> {
     let mut reduction = BlockLeafReduction::default();
-    for transaction in transactions {
-        for write in &transaction.sources {
-            let store = write.encrypted_store;
-            if !existing.contains_key(&store) && write.previous_leaf_count != 0
-            {
-                return Err(LeafReduceError::UnrecordedHistory {
-                    encrypted_store: store,
-                    previous_leaf_count: write.previous_leaf_count,
-                });
-            }
-            apply_write(
-                existing.entry(store).or_default(),
-                &mut reduction,
-                write,
-                transaction.transaction_index,
-            )?;
+    for write in writes {
+        let store = write.encrypted_store;
+        if !existing.contains_key(&store) && write.previous_leaf_count != 0 {
+            return Err(LeafReduceError::UnrecordedHistory {
+                encrypted_store: store,
+                previous_leaf_count: write.previous_leaf_count,
+            });
         }
+        apply_write(existing.entry(store).or_default(), &mut reduction, write)?;
     }
     reduction.stores = existing;
     Ok(reduction)
@@ -162,7 +146,6 @@ fn apply_write(
     state: &mut EncryptedStoreCursor,
     reduction: &mut BlockLeafReduction,
     write: &EncryptedStoreWrite,
-    transaction_index: u64,
 ) -> Result<(), LeafReduceError> {
     let account = write.encrypted_store;
     if state.leaf_count != write.previous_leaf_count {
@@ -179,13 +162,7 @@ fn apply_write(
         });
     }
     for key in leaf_keys(write) {
-        let leaf = staged(
-            account,
-            state.leaf_count,
-            write.handle,
-            key,
-            transaction_index,
-        );
+        let leaf = staged(account, state.leaf_count, write.handle, key);
         reduction.nodes.extend(completed_nodes(
             account,
             &state.peaks,
@@ -281,7 +258,6 @@ fn staged(
     leaf_index: u64,
     handle: [u8; 32],
     key: Option<[u8; 32]>,
-    transaction_index: u64,
 ) -> StagedLeaf {
     let kind = match key {
         Some(_) => LeafKind::HistoricalAccess,
@@ -294,7 +270,6 @@ fn staged(
         kind,
         handle,
         key,
-        transaction_index,
     }
 }
 
@@ -323,8 +298,7 @@ fn sql_u64(value: i64, field: &str) -> Result<u64, SqlxError> {
         .map_err(|_| SqlxError::Decode(format!("{field} is negative").into()))
 }
 
-/// Locks and loads the recorded cursor of `stores`; stores without a row are absent from the
-/// result.
+/// Loads the recorded cursor of `stores`; stores without a row are absent from the result.
 pub async fn load_store_cursors(
     tx: &mut Transaction<'_>,
     stores: &[[u8; 32]],
@@ -339,7 +313,6 @@ pub async fn load_store_cursors(
         SELECT encrypted_store, leaf_count, peaks
         FROM encrypted_stores
         WHERE encrypted_store = ANY($1)
-        FOR UPDATE
         "#,
         &keys,
     )
@@ -361,7 +334,6 @@ pub async fn load_store_cursors(
 /// Persists a block's reduction: advanced store cursors upserted, leaves and nodes appended.
 pub async fn store_block_leaves(
     tx: &mut Transaction<'_>,
-    slot: u64,
     reduction: &BlockLeafReduction,
 ) -> Result<(), SqlxError> {
     for (store, cursor) in &reduction.stores {
@@ -388,14 +360,9 @@ pub async fn store_block_leaves(
         sqlx::query!(
             r#"
             INSERT INTO leaves
-                (encrypted_store, leaf_index, commitment, leaf_kind, handle,
-                 allowed_key, block_slot, transaction_index)
-            SELECT encrypted_store, leaf_index, commitment, leaf_kind, handle,
-                   allowed_key, $7, transaction_index
-            FROM UNNEST($1::BYTEA[], $2::BIGINT[], $3::BYTEA[], $4::SMALLINT[],
-                        $5::BYTEA[], $6::BYTEA[], $8::BIGINT[])
-                AS leaf(encrypted_store, leaf_index, commitment, leaf_kind, handle,
-                        allowed_key, transaction_index)
+                (encrypted_store, leaf_index, commitment, leaf_kind, handle, allowed_key)
+            SELECT * FROM UNNEST($1::BYTEA[], $2::BIGINT[], $3::BYTEA[], $4::SMALLINT[],
+                                 $5::BYTEA[], $6::BYTEA[])
             "#,
             &leaves
                 .iter()
@@ -421,14 +388,6 @@ pub async fn store_block_leaves(
                 .iter()
                 .map(|leaf| leaf.key.map(|key| key.to_vec()))
                 .collect::<Vec<_>>() as &[Option<Vec<u8>>],
-            sql_i64(slot, "block_slot")?,
-            &leaves
-                .iter()
-                .map(|leaf| sql_i64(
-                    leaf.transaction_index,
-                    "transaction_index"
-                ))
-                .collect::<Result<Vec<_>, _>>()?,
         )
         .execute(tx.as_mut())
         .await?;
@@ -483,12 +442,12 @@ pub async fn store_checkpoint(
     Ok(())
 }
 
-/// Loads and locks the checkpoint until the executor's transaction ends.
+/// Loads the record's checkpoint.
 pub async fn load_checkpoint<'e>(
     executor: impl sqlx::PgExecutor<'e>,
 ) -> Result<Option<BlockCheckpoint>, SqlxError> {
     let row = sqlx::query!(
-        "SELECT slot, block_hash FROM checkpoint WHERE singleton = 1 FOR UPDATE"
+        "SELECT slot, block_hash FROM checkpoint WHERE singleton = 1"
     )
     .fetch_optional(executor)
     .await?;
@@ -795,22 +754,13 @@ mod tests {
         }
     }
 
-    fn transaction(
-        sources: Vec<EncryptedStoreWrite>,
-    ) -> TransactionStoreWrites {
-        TransactionStoreWrites {
-            transaction_index: 3,
-            sources,
-        }
-    }
-
     #[test]
     fn appends_allows_then_public_and_advances_across_outputs() {
         let reduction = reduce_block_leaves(
-            &[transaction(vec![
+            &[
                 write(0, [1; 32], vec![OWNER], false),
                 write(1, [2; 32], vec![[0xB2; 32]], true),
-            ])],
+            ],
             BTreeMap::new(),
         )
         .unwrap();
@@ -829,7 +779,7 @@ mod tests {
     #[test]
     fn a_store_first_seen_above_leaf_zero_is_fatal() {
         let error = reduce_block_leaves(
-            &[transaction(vec![write(7, [1; 32], vec![OWNER], true)])],
+            &[write(7, [1; 32], vec![OWNER], true)],
             BTreeMap::new(),
         )
         .unwrap_err();
@@ -846,7 +796,7 @@ mod tests {
     #[test]
     fn rejects_a_count_gap() {
         let error = reduce_block_leaves(
-            &[transaction(vec![write(3, [2; 32], vec![], false)])],
+            &[write(3, [2; 32], vec![], false)],
             BTreeMap::from([(
                 STORE,
                 EncryptedStoreCursor {
@@ -869,7 +819,7 @@ mod tests {
     #[test]
     fn zero_leaf_output_still_checks_continuity() {
         let reduction = reduce_block_leaves(
-            &[transaction(vec![write(0, [1; 32], vec![], false)])],
+            &[write(0, [1; 32], vec![], false)],
             BTreeMap::new(),
         )
         .unwrap();
@@ -880,7 +830,7 @@ mod tests {
     #[test]
     fn zero_leaf_output_rejects_malformed_history() {
         let error = reduce_block_leaves(
-            &[transaction(vec![write(0, [1; 32], vec![], false)])],
+            &[write(0, [1; 32], vec![], false)],
             BTreeMap::from([(
                 STORE,
                 EncryptedStoreCursor {
@@ -909,12 +859,12 @@ mod tests {
         let mut nodes = BTreeMap::new();
         for leaf_count in 1u64..=33 {
             let reduction = reduce_block_leaves(
-                &[transaction(vec![write(
+                &[write(
                     leaf_count - 1,
                     [leaf_count as u8; 32],
                     vec![OWNER],
                     false,
-                )])],
+                )],
                 stores,
             )
             .unwrap();

@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO leaves\n                (encrypted_store, leaf_index, commitment, leaf_kind, handle, allowed_key)\n            SELECT * FROM UNNEST($1::BYTEA[], $2::BIGINT[], $3::BYTEA[], $4::SMALLINT[],\n                                 $5::BYTEA[], $6::BYTEA[])\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray",
+        "Int8Array",
+        "ByteaArray",
+        "Int2Array",
+        "ByteaArray",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "71fed1279e900da4de115bb9a032b4d0ba2040a8ef62365003e809f0d6cf774f"
+}
