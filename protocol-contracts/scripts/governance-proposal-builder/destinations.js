@@ -69,7 +69,7 @@ const DESTINATIONS = {
     // Amoy multisig.
     destinationExecutor: '0xF0b1FE5DecfFe400fb141BBEAF9B181bCF76E3Cb',
     rpcEnvVar: 'RPC_POLYGON_AMOY_TESTNET',
-    defaultRpc: 'https://rpc-amoy.polygon.technology',
+    defaultRpc: 'https://polygon-amoy-bor-rpc.publicnode.com',
   },
   'polygon-amoy-devnet': {
     displayName: 'Polygon Amoy (devnet)',
@@ -78,7 +78,7 @@ const DESTINATIONS = {
     // Amoy devnet multisig.
     destinationExecutor: '0xb8E03De46F3539aEA7FEb072eEAE6A8f4A14913B',
     rpcEnvVar: 'RPC_POLYGON_AMOY_DEVNET',
-    defaultRpc: 'https://rpc-amoy.polygon.technology',
+    defaultRpc: 'https://polygon-amoy-bor-rpc.publicnode.com',
   },
   'polygon-mainnet': {
     displayName: 'Polygon Mainnet',
