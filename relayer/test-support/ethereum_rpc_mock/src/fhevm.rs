@@ -158,15 +158,11 @@ fn assert_readiness_calldata(
     let (handles, extra_data) = if selector == Decryption::isPublicDecryptionReadyCall::SELECTOR {
         let decoded = Decryption::isPublicDecryptionReadyCall::abi_decode_raw(payload)
             .expect("calldata: failed to decode isPublicDecryptionReadyCall");
-        (decoded.ctHandles, decoded._1)
+        (decoded._0, decoded._1)
     } else {
         let decoded = Decryption::isUserDecryptionReady_1Call::abi_decode_raw(payload)
             .expect("calldata: failed to decode isUserDecryptionReady_1Call");
-        let handles = decoded
-            .ctHandleContractPairs
-            .iter()
-            .map(|pair| pair.ctHandle)
-            .collect();
+        let handles = decoded._0.iter().map(|pair| pair.ctHandle).collect();
         (handles, decoded._1)
     };
 
@@ -1137,7 +1133,7 @@ fn build_legacy_user_decrypt_request(
 ) -> Log {
     let request = Decryption::UserDecryptionRequest_0 {
         decryptionId: decryption_id,
-        snsCtMaterials: create_sns_materials(handles),
+        ctHandles: handles,
         userAddress: user_address,
         publicKey: Bytes::from(vec![0x00; MOCK_PUBLIC_KEY_SIZE]),
         extraData: Bytes::from(vec![0x00]),
@@ -1196,7 +1192,6 @@ fn build_unified_user_decrypt_request(
 
     let request = Decryption::UserDecryptionRequest_1 {
         decryptionId: decryption_id,
-        snsCtMaterials: create_sns_materials(handles),
         handles: handle_entries,
         payload,
     };
@@ -1238,9 +1233,9 @@ fn build_user_decrypt_response(
 }
 
 fn build_public_decrypt_request(contract: Address, decryption_id: U256, handles: Vec<B256>) -> Log {
-    let request = Decryption::PublicDecryptionRequest_0 {
+    let request = Decryption::PublicDecryptionRequest {
         decryptionId: decryption_id,
-        snsCtMaterials: create_sns_materials(handles),
+        ctHandles: handles,
         extraData: Bytes::from(vec![0x00]),
     };
 
@@ -1248,7 +1243,7 @@ fn build_public_decrypt_request(contract: Address, decryption_id: U256, handles:
         contract,
         &request,
         vec![
-            Decryption::PublicDecryptionRequest_0::SIGNATURE_HASH,
+            Decryption::PublicDecryptionRequest::SIGNATURE_HASH,
             B256::from(decryption_id),
         ],
     )
@@ -1417,19 +1412,6 @@ fn generate_mock_signatures(count: usize) -> Vec<Bytes> {
             // Make each signature slightly different by setting the first byte to the index
             sig_data[0] = i as u8;
             Bytes::from(sig_data)
-        })
-        .collect()
-}
-
-/// Helper to create SnsCiphertextMaterial structs from handles
-fn create_sns_materials(handles: Vec<B256>) -> Vec<Decryption::SnsCiphertextMaterial> {
-    handles
-        .iter()
-        .map(|h| Decryption::SnsCiphertextMaterial {
-            ctHandle: *h,
-            keyId: U256::from(1),
-            snsCiphertextDigest: *h,
-            coprocessorTxSenderAddresses: vec![],
         })
         .collect()
 }
