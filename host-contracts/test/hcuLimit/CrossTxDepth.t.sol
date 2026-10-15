@@ -88,13 +88,16 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
 
     function test_SmallChainedTransactionsAccumulateUntilTheLimit() public {
         (uint48 start, uint48 step) = _startAndMeasure(alice);
+        vm.prank(owner);
+        hcu.setMaxHCUDepthPerTx(step);
         _setLimit(start + 3 * step, 1);
 
         alice.addOne(alice.value());
         assertEq(_storedDepth(alice), start + 2 * step);
         alice.addOne(alice.value());
         bytes32 last = alice.value();
-        vm.expectRevert(HCULimit.HCUCrossTxDepthLimitExceeded.selector);
+        // One step over the limit, at one HCU of decay per block.
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUCrossTxDepthLimitExceeded.selector, uint256(step)));
         alice.addOne(last);
 
         // An independent chain is unaffected.
@@ -104,10 +107,12 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
 
     function test_CarriedDepthDecaysWithBlocks() public {
         (uint48 start, uint48 step) = _startAndMeasure(alice);
+        vm.prank(owner);
+        hcu.setMaxHCUDepthPerTx(step);
         _setLimit(start + 2 * step, step);
         alice.addOne(alice.value());
         bytes32 last = alice.value();
-        vm.expectRevert(HCULimit.HCUCrossTxDepthLimitExceeded.selector);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUCrossTxDepthLimitExceeded.selector, uint256(1)));
         alice.addOne(last);
 
         vm.roll(block.number + 1);
@@ -221,6 +226,17 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         hcu.setCrossTxDepthLimit(1_000_000, 0);
         vm.expectRevert(HCULimit.InvalidCrossTxDepthLimit.selector);
         hcu.setCrossTxDepthLimit(0, 1);
+        vm.stopPrank();
+    }
+
+    function test_LimitCoversTransactionDepthLimitFromBothSetters() public {
+        uint48 maxDepthPerTx = hcu.getMaxHCUDepthPerTx();
+        vm.startPrank(owner);
+        vm.expectRevert(HCULimit.CrossTxDepthBelowMaxDepthPerTx.selector);
+        hcu.setCrossTxDepthLimit(maxDepthPerTx - 1, 1);
+        hcu.setCrossTxDepthLimit(maxDepthPerTx, 1);
+        vm.expectRevert(HCULimit.CrossTxDepthBelowMaxDepthPerTx.selector);
+        hcu.setMaxHCUDepthPerTx(maxDepthPerTx + 1);
         vm.stopPrank();
     }
 

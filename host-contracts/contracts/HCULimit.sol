@@ -61,8 +61,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned when only one of the cross-transaction depth limit and its decay is zero.
     error InvalidCrossTxDepthLimit();
 
+    /// @notice Returned if a nonzero cross-transaction depth limit is below maxHCUDepthPerTx.
+    error CrossTxDepthBelowMaxDepthPerTx();
+
     /// @notice Returned when an operation's depth carried across transactions exceeds the limit.
-    error HCUCrossTxDepthLimitExceeded();
+    /// @param retryAfterBlocks Blocks of decay after which the same operation fits, if nothing else extends its chain.
+    error HCUCrossTxDepthLimitExceeded(uint256 retryAfterBlocks);
 
     /// @notice Emitted when the cross-transaction depth limit is updated.
     event CrossTxDepthLimitSet(uint48 maxDepth, uint48 decayPerBlock);
@@ -1713,11 +1717,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Sets the cross-transaction depth limit and how much carried depth decays per block.
      * @dev (0, 0) disables it. Decay must be nonzero when enabled, or a chain that reaches the limit stays
-     *      blocked forever. Permissions granted while disabled carry no depth.
+     *      blocked forever. The limit must be at least maxHCUDepthPerTx, so a transaction whose inputs carry no
+     *      depth is never refused. Permissions granted while disabled carry no depth.
      */
     function setCrossTxDepthLimit(uint48 maxDepth, uint48 decayPerBlock) external onlyACLOwner {
         if ((maxDepth == 0) != (decayPerBlock == 0)) revert InvalidCrossTxDepthLimit();
         HCULimitStorage storage $ = _getHCULimitStorage();
+        if (maxDepth != 0 && maxDepth < $.maxHCUDepthPerTx) revert CrossTxDepthBelowMaxDepthPerTx();
         $.maxCrossTxDepth = maxDepth;
         $.crossTxDepthDecayPerBlock = decayPerBlock;
         emit CrossTxDepthLimitSet(maxDepth, decayPerBlock);
@@ -1743,7 +1749,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 depths = (opHCU | (opHCU << 128)) + inputDepths;
         HCULimitStorage storage $ = _getHCULimitStorage();
         if (uint128(depths) > $.maxHCUDepthPerTx) revert HCUTransactionDepthLimitExceeded();
-        if ($.maxCrossTxDepth != 0 && depths >> 128 > $.maxCrossTxDepth) revert HCUCrossTxDepthLimitExceeded();
+        uint256 maxDepth = $.maxCrossTxDepth;
+        uint256 carried = depths >> 128;
+        if (maxDepth != 0 && carried > maxDepth) {
+            uint256 decay = $.crossTxDepthDecayPerBlock;
+            revert HCUCrossTxDepthLimitExceeded((carried - maxDepth + decay - 1) / decay);
+        }
         _setHCUForHandle(result, depths | DEPTH_KNOWN);
     }
 
@@ -1910,11 +1921,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Sets the per-transaction HCU depth limit.
      * @param maxHCUDepthPerTx New depth limit.
-     * @dev Enforces maxHCUPerTx >= maxHCUDepthPerTx.
+     * @dev Enforces maxHCUPerTx >= maxHCUDepthPerTx, and a nonzero maxCrossTxDepth >= maxHCUDepthPerTx.
      */
     function _setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if ($.maxHCUPerTx < maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
+        if ($.maxCrossTxDepth != 0 && $.maxCrossTxDepth < maxHCUDepthPerTx) revert CrossTxDepthBelowMaxDepthPerTx();
         $.maxHCUDepthPerTx = maxHCUDepthPerTx;
         emit MaxHCUDepthPerTxSet(maxHCUDepthPerTx);
     }

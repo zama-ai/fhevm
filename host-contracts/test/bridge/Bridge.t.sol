@@ -885,7 +885,7 @@ contract BridgeTest is TestHelperOz5, HostContractsDeployerTestUtils, BridgeEven
     function test_LzCompose_BridgedHandleStartsNewChain() public {
         ConfidentialBridge bridge = _deployBridgeAtCanonical(confidentialBridgeAdd, endpoints[DST_EID]);
         vm.prank(owner);
-        HCULimit(hcuLimitAdd).setCrossTxDepthLimit(1_000_000, 1);
+        HCULimit(hcuLimitAdd).setCrossTxDepthLimit(5_000_000, 1);
 
         bytes32 dstHandle = _makeHandle(100);
         bytes32[] memory srcHandleList = new bytes32[](1);
