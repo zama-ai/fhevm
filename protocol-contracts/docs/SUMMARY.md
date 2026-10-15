@@ -1,5 +1,6 @@
 # Zama Protocol
 
+* [Apps](./apps.md)
 * [Zama Token](./zama-token.md)
 * [Staking](./staking.md)
 * Governance
