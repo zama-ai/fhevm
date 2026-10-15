@@ -4,8 +4,9 @@ pragma solidity ^0.8.24;
 import {ProtocolConfigBase} from "./ProtocolConfigBase.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
+import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {KmsContextAnchor, KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "./shared/Structs.sol";
-import {EPOCH_COUNTER_BASE, EXTRA_DATA_V2, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
+import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -40,27 +41,15 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     // -----------------------------------------------------------------------------------------
     // EIP-712 type hashes
     //
-    // Used to recover the KMS signer from the keygen/CRS attestations supplied to
-    // `confirmEpochActivation`, and from the four KMS lifecycle confirmations.
+    // Used to recover the KMS signer from the four KMS lifecycle confirmations.
     // -----------------------------------------------------------------------------------------
 
     /// @dev Hash of the EIP-712 domain separator type.
     bytes32 private constant EIP712_DOMAIN_TYPE_HASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
-    /// @dev Hash of the KeyDigest type, the nested struct referenced by KeygenVerification.
+    /// @dev Hash of the KeyDigest type, used to hash the key digests into `epochMaterialHash`.
     bytes32 private constant EIP712_KEY_DIGEST_TYPE_HASH = keccak256("KeyDigest(uint8 keyType,bytes digest)");
-
-    /// @dev Hash of the KeygenVerification type. The nested KeyDigest type is appended as
-    ///      EIP-712 requires nested struct types to be declared inline with the primary type.
-    bytes32 private constant EIP712_KEYGEN_TYPE_HASH =
-        keccak256(
-            "KeygenVerification(uint256 prepKeygenId,uint256 keyId,KeyDigest[] keyDigests,bytes extraData)KeyDigest(uint8 keyType,bytes digest)"
-        );
-
-    /// @dev Hash of the CrsgenVerification type.
-    bytes32 private constant EIP712_CRSGEN_TYPE_HASH =
-        keccak256("CrsgenVerification(uint256 crsId,uint256 maxBitLength,bytes crsDigest,bytes extraData)");
 
     /// @dev Hash of the ContextCreationConfirmation type.
     bytes32 private constant EIP712_CONTEXT_CREATION_TYPE_HASH =
@@ -573,8 +562,9 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /**
      * @dev Verifies one signer's activation submission for `epochId` under `contextId` and returns
-     *      its signer, `epochMaterialHash`, and EpochActivationConfirmation digest. Every key and CRS
-     *      signature and the aggregate signature must recover to one signer of the context's committee.
+     *      its signer, `epochMaterialHash`, and EpochActivationConfirmation digest. The aggregate
+     *      signature binds the key and CRS results through `epochMaterialHash` and must recover to
+     *      a signer of the context's committee.
      */
     function _verifyEpochActivation(
         uint256 contextId,
@@ -584,7 +574,10 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         bytes calldata signature,
         bytes calldata extraData
     ) internal view virtual returns (address signer, bytes32 epochMaterialHash, bytes32 digest) {
-        (signer, epochMaterialHash) = _verifyEpochResults(contextId, epochId, keys, crsList);
+        if (keys.length == 0 || crsList.length == 0) {
+            revert EmptyEpochActivationAttestation(epochId);
+        }
+        epochMaterialHash = _hashEpochMaterial(keys, crsList);
         digest = _hashTypedData(
             keccak256(
                 abi.encode(
@@ -597,70 +590,39 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
                 )
             )
         );
-        _requireSigner(signer, digest, signature);
+        signer = ECDSA.recover(digest, signature);
         if (!_getProtocolConfigStorage().isKmsSignerForContext[contextId][signer]) {
             revert EpochActivationUnauthorized(signer, epochId);
         }
     }
 
     /**
-     * @dev Verifies the key and CRS results of one signer and returns that signer and `epochMaterialHash`.
-     *      The first key result gives the signer. Every other result signature must recover to it.
+     * @dev Returns the `epochMaterialHash` of the key and CRS results.
      */
-    function _verifyEpochResults(
-        uint256 contextId,
-        uint256 epochId,
+    function _hashEpochMaterial(
         EpochKeyResult[] calldata keys,
         EpochCrsResult[] calldata crsList
-    ) internal view virtual returns (address signer, bytes32 epochMaterialHash) {
-        // Activation needs a key result and a CRS result. The signer comes from keys[0].
-        // An empty crsList would skip the CRS check below.
-        if (keys.length == 0 || crsList.length == 0) {
-            revert EmptyEpochActivationAttestation(epochId);
-        }
-
-        bytes memory resultExtraData = abi.encodePacked(EXTRA_DATA_V2, contextId, epochId);
-
+    ) internal pure virtual returns (bytes32) {
         bytes32[] memory keyHashes = new bytes32[](keys.length);
-        bytes32 resultDigest;
-        (resultDigest, keyHashes[0]) = _hashEpochKeyResult(keys[0], resultExtraData);
-        signer = ECDSA.recover(resultDigest, keys[0].signature);
-        for (uint256 i = 1; i < keys.length; i++) {
-            (resultDigest, keyHashes[i]) = _hashEpochKeyResult(keys[i], resultExtraData);
-            _requireSigner(signer, resultDigest, keys[i].signature);
+        for (uint256 i = 0; i < keys.length; i++) {
+            IKMSGeneration.KeyDigest[] calldata keyDigests = keys[i].keyDigests;
+            bytes32[] memory keyDigestHashes = new bytes32[](keyDigests.length);
+            for (uint256 j = 0; j < keyDigests.length; j++) {
+                keyDigestHashes[j] = keccak256(
+                    abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, keyDigests[j].keyType, keccak256(keyDigests[j].digest))
+                );
+            }
+            keyHashes[i] = keccak256(
+                abi.encode(keys[i].prepKeygenId, keys[i].keyId, keccak256(abi.encodePacked(keyDigestHashes)))
+            );
         }
 
         bytes32[] memory crsHashes = new bytes32[](crsList.length);
         for (uint256 i = 0; i < crsList.length; i++) {
-            resultDigest = _hashCrsgenVerification(
-                crsList[i].crsId,
-                crsList[i].maxBitLength,
-                crsList[i].crsDigest,
-                resultExtraData
-            );
-            _requireSigner(signer, resultDigest, crsList[i].signature);
             crsHashes[i] = keccak256(abi.encode(crsList[i].crsId, crsList[i].maxBitLength, crsList[i].crsDigest));
         }
 
-        epochMaterialHash = keccak256(abi.encode(keyHashes, crsHashes));
-    }
-
-    /**
-     * @dev Returns the KeygenVerification digest of `key` and its entry in `epochMaterialHash`.
-     */
-    function _hashEpochKeyResult(
-        EpochKeyResult calldata key,
-        bytes memory resultExtraData
-    ) internal view virtual returns (bytes32 resultDigest, bytes32 keyHash) {
-        bytes32[] memory keyDigestHashes = new bytes32[](key.keyDigests.length);
-        for (uint256 i = 0; i < key.keyDigests.length; i++) {
-            keyDigestHashes[i] = keccak256(
-                abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, key.keyDigests[i].keyType, keccak256(key.keyDigests[i].digest))
-            );
-        }
-        bytes32 keyDigestsHash = keccak256(abi.encodePacked(keyDigestHashes));
-        resultDigest = _hashKeygenVerification(key.prepKeygenId, key.keyId, keyDigestsHash, resultExtraData);
-        keyHash = keccak256(abi.encode(key.prepKeygenId, key.keyId, keyDigestsHash));
+        return keccak256(abi.encode(keyHashes, crsHashes));
     }
 
     /**
@@ -683,50 +645,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         canonical$.epochActivationVotedBySigner[epochId][signer] = true;
         uint256 digestCount = ++canonical$.epochActivationVoteCountForDigest[epochId][digest];
         complete = digestCount == _getProtocolConfigStorage().kmsSignerAddressesForContext[contextId].length;
-    }
-
-    /**
-     * @dev Recovers the signer of `digest` and requires it to equal `expectedSigner`.
-     */
-    function _requireSigner(address expectedSigner, bytes32 digest, bytes calldata signature) internal pure virtual {
-        address recoveredSigner = ECDSA.recover(digest, signature);
-        if (recoveredSigner != expectedSigner) {
-            revert EpochResultSignerMismatch(expectedSigner, recoveredSigner);
-        }
-    }
-
-    function _hashKeygenVerification(
-        uint256 prepKeygenId,
-        uint256 keyId,
-        bytes32 keyDigestsHash,
-        bytes memory extraData
-    ) internal view virtual returns (bytes32) {
-        return
-            _hashTypedData(
-                keccak256(
-                    abi.encode(EIP712_KEYGEN_TYPE_HASH, prepKeygenId, keyId, keyDigestsHash, keccak256(extraData))
-                )
-            );
-    }
-
-    function _hashCrsgenVerification(
-        uint256 crsId,
-        uint256 maxBitLength,
-        bytes calldata crsDigest,
-        bytes memory extraData
-    ) internal view virtual returns (bytes32) {
-        return
-            _hashTypedData(
-                keccak256(
-                    abi.encode(
-                        EIP712_CRSGEN_TYPE_HASH,
-                        crsId,
-                        maxBitLength,
-                        keccak256(abi.encodePacked(crsDigest)),
-                        keccak256(extraData)
-                    )
-                )
-            );
     }
 
     function _hashTypedData(bytes32 structHash) internal view virtual returns (bytes32) {

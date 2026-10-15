@@ -52,31 +52,8 @@ contract ProtocolConfigEpochMaterialTest is ProtocolConfigTestBase {
         );
     }
 
-    function _expectSignerMismatch(
-        IProtocolConfig.EpochKeyResult[] memory keys,
-        IProtocolConfig.EpochCrsResult[] memory crsList
-    ) internal {
-        bytes memory signature = _signEpochActivation(contextId, epochId, kmsPk0, keys, crsList, "");
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.EpochResultSignerMismatch.selector, vm.addr(kmsPk0), vm.addr(kmsPk1))
-        );
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, "");
-    }
-
     function _activeEpochId() internal view returns (uint256 activeEpochId) {
         (, activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
-    }
-
-    function test_revertConfirmEpochActivationSecondKeyFromOtherSigner() public {
-        (IProtocolConfig.EpochKeyResult[] memory keys, ) = _buildTwoEpochResults(kmsPk0, kmsPk1);
-        (, IProtocolConfig.EpochCrsResult[] memory crsList) = _buildTwoEpochResults(kmsPk0, kmsPk0);
-        _expectSignerMismatch(keys, crsList);
-    }
-
-    function test_revertConfirmEpochActivationSecondCrsFromOtherSigner() public {
-        (IProtocolConfig.EpochKeyResult[] memory keys, ) = _buildTwoEpochResults(kmsPk0, kmsPk0);
-        (, IProtocolConfig.EpochCrsResult[] memory crsList) = _buildTwoEpochResults(kmsPk0, kmsPk1);
-        _expectSignerMismatch(keys, crsList);
     }
 
     /// @dev Both signers submit the same order. Each confirmation event carries the epochMaterialHash

@@ -1607,27 +1607,6 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         _confirmEpochActivation(KMS_CONTEXT_COUNTER_BASE + 1, epochId, kmsPk0, keyIds[0], crsIds[0]);
     }
 
-    /// @dev The aggregate EpochActivationConfirmation must come from the signer of the key and CRS results.
-    function test_revertStructuredConfirmEpochActivationSignerMismatch() public {
-        _setupEpochLifecycle();
-        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-
-        (
-            IProtocolConfig.EpochKeyResult[] memory keys,
-            IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildEpochResults(contextId, epochId, kmsPk1, completedKeyId, completedCrsId);
-        bytes memory signature = _signEpochActivation(contextId, epochId, kmsPk0, keys, crsList, "");
-
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.EpochResultSignerMismatch.selector, vm.addr(kmsPk1), vm.addr(kmsPk0))
-        );
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, "");
-    }
-
     function test_activateEpochEventCarriesMaterialIds() public {
         _setupEpochLifecycle();
         uint256 epochId = EPOCH_COUNTER_BASE + 2;
@@ -2387,25 +2366,6 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
     // EIP-712 epoch activation confirmations
     // -----------------------------------------------------------------------
 
-    function test_revertConfirmEpochActivationResultsFromTwoSigners() public {
-        _setupEpochLifecycle();
-        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-
-        IProtocolConfig.EpochKeyResult[] memory keys;
-        IProtocolConfig.EpochCrsResult[] memory crsList;
-        (keys, ) = _buildEpochResults(contextId, epochId, kmsPk0, KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
-        (, crsList) = _buildEpochResults(contextId, epochId, kmsPk1, KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
-        bytes memory signature = _signEpochActivation(contextId, epochId, kmsPk0, keys, crsList, "");
-
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.EpochResultSignerMismatch.selector, vm.addr(kmsPk0), vm.addr(kmsPk1))
-        );
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, "");
-    }
-
     /// @dev Activation needs every signer on one digest. The same material with different extraData
     ///      splits the vote.
     function test_confirmEpochActivationDivergentExtraDataDoesNotActivate() public {
@@ -2451,12 +2411,12 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         ) = _buildEpochResults(contextId, epochId, kmsPk0, KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
         bytes32 epochMaterialHash = _epochMaterialHash(keys, crsList);
 
-        // Over `epochId - 1`, the aggregate signature recovers an address other than the result signer.
+        // Over `epochId - 1`, the aggregate signature recovers an address outside the committee.
         bytes memory signature = _computeSignature(
             kmsPk0,
             _hashEpochActivation(contextId, EPOCH_COUNTER_BASE + 2, epochId, epochMaterialHash, "")
         );
-        vm.expectPartialRevert(IProtocolConfig.EpochResultSignerMismatch.selector);
+        vm.expectPartialRevert(IProtocolConfig.EpochActivationUnauthorized.selector);
         protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, "");
 
         signature = _computeSignature(

@@ -556,7 +556,6 @@ interface IProtocolConfig {
     error EmptySoftwareVersion();
     error EpochActivationAlreadyConfirmed(address signer, uint256 epochId);
     error EpochActivationUnauthorized(address signer, uint256 epochId);
-    error EpochResultSignerMismatch(address expectedSigner, address recoveredSigner);
     error InvalidBlockWindow(uint64 chainId, uint64 startBlock, uint64 endBlock);
     error InvalidHighThreshold(string thresholdName, uint256 threshold, uint256 nodeCount);
     error InvalidKmsContext(uint256 kmsContextId);
@@ -1990,22 +1989,6 @@ interface IProtocolConfig {
         "name": "epochId",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "EpochResultSignerMismatch",
-    "inputs": [
-      {
-        "name": "expectedSigner",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "recoveredSigner",
-        "type": "address",
-        "internalType": "address"
       }
     ]
   },
@@ -4852,103 +4835,6 @@ error EpochActivationUnauthorized(address signer, uint256 epochId);
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.epochId),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `EpochResultSignerMismatch(address,address)` and selector `0x6c3cd92a`.
-```solidity
-error EpochResultSignerMismatch(address expectedSigner, address recoveredSigner);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct EpochResultSignerMismatch {
-        #[allow(missing_docs)]
-        pub expectedSigner: alloy::sol_types::private::Address,
-        #[allow(missing_docs)]
-        pub recoveredSigner: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::Address,
-            alloy::sol_types::sol_data::Address,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::Address,
-            alloy::sol_types::private::Address,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<EpochResultSignerMismatch>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: EpochResultSignerMismatch) -> Self {
-                (value.expectedSigner, value.recoveredSigner)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for EpochResultSignerMismatch {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    expectedSigner: tuple.0,
-                    recoveredSigner: tuple.1,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for EpochResultSignerMismatch {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "EpochResultSignerMismatch(address,address)";
-            const SELECTOR: [u8; 4] = [108u8, 60u8, 217u8, 42u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.expectedSigner,
-                    ),
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.recoveredSigner,
-                    ),
                 )
             }
             #[inline]
@@ -15536,8 +15422,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         EpochActivationUnauthorized(EpochActivationUnauthorized),
         #[allow(missing_docs)]
-        EpochResultSignerMismatch(EpochResultSignerMismatch),
-        #[allow(missing_docs)]
         InvalidBlockWindow(InvalidBlockWindow),
         #[allow(missing_docs)]
         InvalidHighThreshold(InvalidHighThreshold),
@@ -15614,7 +15498,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [55u8, 147u8, 228u8, 113u8],
             [73u8, 65u8, 118u8, 54u8],
             [98u8, 88u8, 92u8, 200u8],
-            [108u8, 60u8, 217u8, 42u8],
             [108u8, 103u8, 228u8, 112u8],
             [119u8, 221u8, 190u8, 129u8],
             [121u8, 149u8, 187u8, 207u8],
@@ -15651,7 +15534,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             ::core::stringify!(KmsContextDestructionUnauthorized),
             ::core::stringify!(EpochActivationAlreadyConfirmed),
             ::core::stringify!(KmsContextCreationAlreadyConfirmed),
-            ::core::stringify!(EpochResultSignerMismatch),
             ::core::stringify!(DuplicateChainId),
             ::core::stringify!(InvalidKmsContext),
             ::core::stringify!(InvalidKmsEpoch),
@@ -15688,7 +15570,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             <KmsContextDestructionUnauthorized as alloy_sol_types::SolError>::SIGNATURE,
             <EpochActivationAlreadyConfirmed as alloy_sol_types::SolError>::SIGNATURE,
             <KmsContextCreationAlreadyConfirmed as alloy_sol_types::SolError>::SIGNATURE,
-            <EpochResultSignerMismatch as alloy_sol_types::SolError>::SIGNATURE,
             <DuplicateChainId as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidKmsContext as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidKmsEpoch as alloy_sol_types::SolError>::SIGNATURE,
@@ -15732,7 +15613,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     impl alloy_sol_types::SolInterface for IProtocolConfigErrors {
         const NAME: &'static str = "IProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 34usize;
+        const COUNT: usize = 33usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -15756,9 +15637,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::EpochActivationUnauthorized(_) => {
                     <EpochActivationUnauthorized as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::EpochResultSignerMismatch(_) => {
-                    <EpochResultSignerMismatch as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidBlockWindow(_) => {
                     <InvalidBlockWindow as alloy_sol_types::SolError>::SELECTOR
@@ -16042,17 +15920,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             )
                     }
                     KmsContextCreationAlreadyConfirmed
-                },
-                {
-                    fn EpochResultSignerMismatch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <EpochResultSignerMismatch as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::EpochResultSignerMismatch)
-                    }
-                    EpochResultSignerMismatch
                 },
                 {
                     fn DuplicateChainId(
@@ -16450,17 +16317,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     KmsContextCreationAlreadyConfirmed
                 },
                 {
-                    fn EpochResultSignerMismatch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <EpochResultSignerMismatch as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::EpochResultSignerMismatch)
-                    }
-                    EpochResultSignerMismatch
-                },
-                {
                     fn DuplicateChainId(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -16698,11 +16554,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         inner,
                     )
                 }
-                Self::EpochResultSignerMismatch(inner) => {
-                    <EpochResultSignerMismatch as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::InvalidBlockWindow(inner) => {
                     <InvalidBlockWindow as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -16874,12 +16725,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::EpochActivationUnauthorized(inner) => {
                     <EpochActivationUnauthorized as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::EpochResultSignerMismatch(inner) => {
-                    <EpochResultSignerMismatch as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

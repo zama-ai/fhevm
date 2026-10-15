@@ -227,14 +227,9 @@ interface IProtocolConfig is IProtocolConfigBase {
     /// @param epochId The epoch ID.
     error EpochActivationAlreadyConfirmed(address signer, uint256 epochId);
 
-    /// @notice The epoch activation payload has no keys or no CRS, so a required attestation cannot be verified.
+    /// @notice The epoch activation payload has no keys or no CRS.
     /// @param epochId The epoch ID.
     error EmptyEpochActivationAttestation(uint256 epochId);
-
-    /// @notice An epoch activation signature recovers to a different signer than the first key result.
-    /// @param expectedSigner The signer recovered from the first key result.
-    /// @param recoveredSigner The signer recovered from the mismatching signature.
-    error EpochResultSignerMismatch(address expectedSigner, address recoveredSigner);
 
     /// @notice The KMS context was not destroyed with destroyKmsContext.
     /// @param kmsContextId The context ID.
@@ -352,8 +347,8 @@ interface IProtocolConfig is IProtocolConfigBase {
 
     /**
      * @notice Submit a KMS signer's epoch results and EpochActivationConfirmation signature.
-     * @dev Anyone may call. Every key and CRS signature and the EpochActivationConfirmation
-     *      signature must recover to the same signer of the epoch's committee.
+     * @dev Anyone may call. The EpochActivationConfirmation signature binds the key and CRS
+     *      results through `epochMaterialHash` and must recover to a signer of the epoch's committee.
      * @param epochId The pending epoch ID.
      * @param keys The key results to associate with the epoch.
      * @param crsList The CRS results to associate with the epoch.
