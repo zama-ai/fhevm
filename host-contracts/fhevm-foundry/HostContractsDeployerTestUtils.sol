@@ -438,26 +438,6 @@ abstract contract HostContractsDeployerTestUtils is Test {
         return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
     }
 
-    function _hashProtocolConfigKeygen(
-        uint256 prepKeygenId,
-        uint256 keyId,
-        IKMSGeneration.KeyDigest[] memory keyDigests,
-        bytes memory extraData
-    ) internal view returns (bytes32) {
-        return
-            _hashKeygenWithDomain(_computeProtocolConfigDomainSeparator(), prepKeygenId, keyId, keyDigests, extraData);
-    }
-
-    function _hashProtocolConfigCrsgen(
-        uint256 crsId,
-        uint256 maxBitLength,
-        bytes memory crsDigest,
-        bytes memory extraData
-    ) internal view returns (bytes32) {
-        return
-            _hashCrsgenWithDomain(_computeProtocolConfigDomainSeparator(), crsId, maxBitLength, crsDigest, extraData);
-    }
-
     function _hashContextCreation(
         uint256 previousContextId,
         uint256 newContextId,
@@ -592,37 +572,24 @@ abstract contract HostContractsDeployerTestUtils is Test {
         protocolConfig.confirmKmsContextCreation(contextId, _signContextCreation(contextId, pk, extraData), extraData);
     }
 
-    /// @dev One key result and one CRS result signed by `pk` with the epoch's per-result extraData.
+    /// @dev One key result `keyId` and one CRS result `crsId`.
     function _buildEpochResults(
-        uint256 contextId,
-        uint256 epochId,
-        uint256 pk,
         uint256 keyId,
         uint256 crsId
     )
         internal
-        view
+        pure
         returns (IProtocolConfig.EpochKeyResult[] memory keys, IProtocolConfig.EpochCrsResult[] memory crsList)
     {
-        bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
-        IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
-        uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
-
         keys = new IProtocolConfig.EpochKeyResult[](1);
         keys[0] = IProtocolConfig.EpochKeyResult({
-            prepKeygenId: prepKeygenId,
+            prepKeygenId: _prepKeygenIdForKeyId(keyId),
             keyId: keyId,
-            keyDigests: keyDigests,
-            signature: _computeSignature(pk, _hashProtocolConfigKeygen(prepKeygenId, keyId, keyDigests, extraData))
+            keyDigests: _mockKeyDigests()
         });
 
         crsList = new IProtocolConfig.EpochCrsResult[](1);
-        crsList[0] = IProtocolConfig.EpochCrsResult({
-            crsId: crsId,
-            maxBitLength: 4096,
-            crsDigest: hex"deadbeef",
-            signature: _computeSignature(pk, _hashProtocolConfigCrsgen(crsId, 4096, hex"deadbeef", extraData))
-        });
+        crsList[0] = IProtocolConfig.EpochCrsResult({crsId: crsId, maxBitLength: 4096, crsDigest: hex"deadbeef"});
     }
 
     /// @dev Signs EpochActivationConfirmation with the latest active epoch as previousEpochId.
@@ -646,7 +613,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
     ///      Callers need only the active epoch, not a specific payload, so this submits constant material.
     function _confirmEpochActivation(uint256 contextId, uint256 epochId, uint256 pk) internal {
         // An empty `keys` or `crsList` reverts with EmptyEpochActivationAttestation, so supply one deterministic
-        // self-signed attestation of each kind with constant ids. Every signer produces the same epochMaterialHash.
+        // result of each kind with constant ids. Every signer produces the same epochMaterialHash.
         // The ids need not exist in KMSGeneration because confirmEpochActivation checks only signer recovery.
         _confirmEpochActivation(contextId, epochId, pk, KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
     }
@@ -662,7 +629,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildEpochResults(contextId, epochId, pk, keyId, crsId);
+        ) = _buildEpochResults(keyId, crsId);
         protocolConfig.confirmEpochActivation(
             epochId,
             keys,

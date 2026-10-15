@@ -13,8 +13,6 @@ import {
   solidityPacked,
 } from 'ethers';
 
-const EXTRA_DATA_V2 = 2;
-
 export const CONFIRMATION_TYPES = {
   ContextCreationConfirmation: {
     ContextCreationConfirmation: [
@@ -50,25 +48,10 @@ export const CONFIRMATION_TYPES = {
 
 export type ConfirmationType = keyof typeof CONFIRMATION_TYPES;
 
-export const KEYGEN_TYPES: Record<string, TypedDataField[]> = {
-  KeygenVerification: [
-    { name: 'prepKeygenId', type: 'uint256' },
-    { name: 'keyId', type: 'uint256' },
-    { name: 'keyDigests', type: 'KeyDigest[]' },
-    { name: 'extraData', type: 'bytes' },
-  ],
+const KEY_DIGEST_TYPES: Record<string, TypedDataField[]> = {
   KeyDigest: [
     { name: 'keyType', type: 'uint8' },
     { name: 'digest', type: 'bytes' },
-  ],
-};
-
-export const CRSGEN_TYPES: Record<string, TypedDataField[]> = {
-  CrsgenVerification: [
-    { name: 'crsId', type: 'uint256' },
-    { name: 'maxBitLength', type: 'uint256' },
-    { name: 'crsDigest', type: 'bytes' },
-    { name: 'extraData', type: 'bytes' },
   ],
 };
 
@@ -131,7 +114,7 @@ export function nodeConfigHash(params: KmsNodeParams[], thresholds: KmsThreshold
 // keccak256(abi.encode(prepKeygenId, keyId, keyDigestsHash)), where keyDigestsHash is the EIP-712 hash of
 // the KeyDigest[] array.
 export function keyHash(key: KeyResult): string {
-  const keyDigestHashes = key.keyDigests.map((d) => TypedDataEncoder.hashStruct('KeyDigest', KEYGEN_TYPES, d));
+  const keyDigestHashes = key.keyDigests.map((d) => TypedDataEncoder.hashStruct('KeyDigest', KEY_DIGEST_TYPES, d));
   const keyDigestsHash = keccak256(solidityPacked(['bytes32[]'], [keyDigestHashes]));
   return keccak256(abi.encode(['uint256', 'uint256', 'bytes32'], [key.prepKeygenId, key.keyId, keyDigestsHash]));
 }
@@ -146,13 +129,7 @@ export function epochMaterialHash(keys: KeyResult[], crsList: CrsResult[]): stri
   return keccak256(abi.encode(['bytes32[]', 'bytes32[]'], [keys.map(keyHash), crsList.map(crsHash)]));
 }
 
-// Per-result extraData: abi.encodePacked(EXTRA_DATA_V2, contextId, epochId).
-export function resultExtraData(contextId: bigint, epochId: bigint): string {
-  return solidityPacked(['uint8', 'uint256', 'uint256'], [EXTRA_DATA_V2, contextId, epochId]);
-}
-
-// Signs each key and CRS result with the per-result extraData of (contextId, epochId), then signs the
-// EpochActivationConfirmation over their epochMaterialHash. Returns the payload for confirmEpochActivation.
+// Signs the EpochActivationConfirmation over the epochMaterialHash of the key and CRS results.
 export async function signEpochActivation(
   signer: Signer,
   domain: TypedDataDomain,
@@ -164,26 +141,12 @@ export async function signEpochActivation(
     crsList: CrsResult[];
     extraData: string;
   },
-) {
-  const perResultExtraData = resultExtraData(a.contextId, a.epochId);
-  const keys = await Promise.all(
-    a.keys.map(async (k) => ({
-      ...k,
-      signature: await signer.signTypedData(domain, KEYGEN_TYPES, { ...k, extraData: perResultExtraData }),
-    })),
-  );
-  const crsList = await Promise.all(
-    a.crsList.map(async (c) => ({
-      ...c,
-      signature: await signer.signTypedData(domain, CRSGEN_TYPES, { ...c, extraData: perResultExtraData }),
-    })),
-  );
-  const signature = await signer.signTypedData(domain, CONFIRMATION_TYPES.EpochActivationConfirmation, {
+): Promise<string> {
+  return signer.signTypedData(domain, CONFIRMATION_TYPES.EpochActivationConfirmation, {
     contextId: a.contextId,
     previousEpochId: a.previousEpochId,
     epochId: a.epochId,
     epochMaterialHash: epochMaterialHash(a.keys, a.crsList),
     extraData: a.extraData,
   });
-  return { keys, crsList, signature };
 }

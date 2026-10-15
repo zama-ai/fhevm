@@ -17,23 +17,19 @@ contract ProtocolConfigEpochMaterialTest is ProtocolConfigTestBase {
     }
 
     /// @dev Entry i has key id KEY_COUNTER_BASE + 1 + i and CRS id CRS_COUNTER_BASE + 1 + i.
-    ///      `pk0` signs entry 0 and `pk1` signs entry 1.
-    function _buildTwoEpochResults(
-        uint256 pk0,
-        uint256 pk1
-    )
+    function _buildTwoEpochResults()
         internal
-        view
+        pure
         returns (IProtocolConfig.EpochKeyResult[] memory keys, IProtocolConfig.EpochCrsResult[] memory crsList)
     {
         keys = new IProtocolConfig.EpochKeyResult[](2);
         crsList = new IProtocolConfig.EpochCrsResult[](2);
         IProtocolConfig.EpochKeyResult[] memory oneKey;
         IProtocolConfig.EpochCrsResult[] memory oneCrs;
-        (oneKey, oneCrs) = _buildEpochResults(contextId, epochId, pk0, KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
+        (oneKey, oneCrs) = _buildEpochResults(KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
         keys[0] = oneKey[0];
         crsList[0] = oneCrs[0];
-        (oneKey, oneCrs) = _buildEpochResults(contextId, epochId, pk1, KEY_COUNTER_BASE + 2, CRS_COUNTER_BASE + 2);
+        (oneKey, oneCrs) = _buildEpochResults(KEY_COUNTER_BASE + 2, CRS_COUNTER_BASE + 2);
         keys[1] = oneKey[0];
         crsList[1] = oneCrs[0];
     }
@@ -62,7 +58,7 @@ contract ProtocolConfigEpochMaterialTest is ProtocolConfigTestBase {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildTwoEpochResults(kmsPk0, kmsPk0);
+        ) = _buildTwoEpochResults();
         bytes memory signature = _signEpochActivation(contextId, epochId, kmsPk0, keys, crsList, "");
         vm.expectEmit(true, true, false, true, address(protocolConfig));
         emit IProtocolConfig.EpochActivationConfirmation(
@@ -74,7 +70,7 @@ contract ProtocolConfigEpochMaterialTest is ProtocolConfigTestBase {
         );
         protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, "");
 
-        (keys, crsList) = _buildTwoEpochResults(kmsPk1, kmsPk1);
+        (keys, crsList) = _buildTwoEpochResults();
         _submit(kmsPk1, keys, crsList);
         assertEq(_activeEpochId(), epochId);
     }
@@ -84,10 +80,10 @@ contract ProtocolConfigEpochMaterialTest is ProtocolConfigTestBase {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildTwoEpochResults(kmsPk0, kmsPk0);
+        ) = _buildTwoEpochResults();
         _submit(kmsPk0, keys, crsList);
 
-        (keys, crsList) = _buildTwoEpochResults(kmsPk1, kmsPk1);
+        (keys, crsList) = _buildTwoEpochResults();
         (keys[0], keys[1]) = (keys[1], keys[0]);
         _submit(kmsPk1, keys, crsList);
         assertEq(_activeEpochId(), EPOCH_COUNTER_BASE + 1);
@@ -98,10 +94,10 @@ contract ProtocolConfigEpochMaterialTest is ProtocolConfigTestBase {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildTwoEpochResults(kmsPk0, kmsPk0);
+        ) = _buildTwoEpochResults();
         _submit(kmsPk0, keys, crsList);
 
-        (keys, crsList) = _buildTwoEpochResults(kmsPk1, kmsPk1);
+        (keys, crsList) = _buildTwoEpochResults();
         (crsList[0], crsList[1]) = (crsList[1], crsList[0]);
         _submit(kmsPk1, keys, crsList);
         assertEq(_activeEpochId(), EPOCH_COUNTER_BASE + 1);

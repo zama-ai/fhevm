@@ -14,31 +14,27 @@ import {IProtocolConfigBase} from "./IProtocolConfigBase.sol";
  */
 interface IProtocolConfig is IProtocolConfigBase {
     /**
-     * @notice A signed keygen result attested by a KMS signer during epoch activation.
+     * @notice A keygen result attested by a KMS signer during epoch activation.
      * @param prepKeygenId The preprocessing keygen ID the key derives from.
      * @param keyId The generated key ID.
      * @param keyDigests The per-type digests of the generated key.
-     * @param signature The signer's EIP-712 KeygenVerification signature.
      */
     struct EpochKeyResult {
         uint256 prepKeygenId;
         uint256 keyId;
         IKMSGeneration.KeyDigest[] keyDigests;
-        bytes signature;
     }
 
     /**
-     * @notice A signed CRS result attested by a KMS signer during epoch activation.
+     * @notice A CRS result attested by a KMS signer during epoch activation.
      * @param crsId The generated CRS ID.
      * @param maxBitLength The maximum bit length the CRS supports.
      * @param crsDigest The digest of the generated CRS.
-     * @param signature The signer's EIP-712 CrsgenVerification signature.
      */
     struct EpochCrsResult {
         uint256 crsId;
         uint256 maxBitLength;
         bytes crsDigest;
-        bytes signature;
     }
 
     // -----------------------------------------------------------------------------------------

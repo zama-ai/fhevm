@@ -192,10 +192,9 @@ async function activateNewKmsContext(
       epochId = createdEvent.epochId;
     }
   }
-  // An empty `keys` or `crsList` reverts with EmptyEpochActivationAttestation, so supply one self-signed
-  // attestation of each. confirmEpochActivation checks only that the signatures recover to the node signer, so
-  // the constant ids need not exist in KMSGeneration, and every signer produces the same epochMaterialHash for
-  // quorum.
+  // An empty `keys` or `crsList` reverts with EmptyEpochActivationAttestation, so supply one result of each.
+  // confirmEpochActivation checks only that the signature recovers to the node signer, so the constant ids need
+  // not exist in KMSGeneration, and every signer produces the same epochMaterialHash for quorum.
   const keyMaterial = {
     prepKeygenId: (3n << 248n) + 1n, // PREP_KEYGEN_COUNTER_BASE + 1
     keyId: (4n << 248n) + 1n, // KEY_COUNTER_BASE + 1
@@ -203,7 +202,7 @@ async function activateNewKmsContext(
   };
   const crsMaterial = { crsId: (5n << 248n) + 1n, maxBitLength: 4096n, crsDigest: '0x01020304' }; // CRS_COUNTER_BASE + 1
   for (const signer of signerAccounts) {
-    const { keys, crsList, signature } = await signEpochActivation(signer, domain, {
+    const signature = await signEpochActivation(signer, domain, {
       contextId,
       previousEpochId,
       epochId,
@@ -213,7 +212,7 @@ async function activateNewKmsContext(
     });
     const txConfirmEpoch = await protocolConfig
       .connect(signer)
-      .confirmEpochActivation(epochId, keys, crsList, signature, '0x');
+      .confirmEpochActivation(epochId, [keyMaterial], [crsMaterial], signature, '0x');
     await txConfirmEpoch.wait();
   }
 }

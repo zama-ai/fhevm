@@ -131,8 +131,6 @@ contract ProtocolConfigVectorsTest is HostContractsDeployerTestUtils {
         bytes32 epochMaterialHash = vm.parseJsonBytes32(vectors, ".epochMaterialHash[0].hash");
         for (uint256 i = first; i < first + 4; i++) {
             string memory path = string.concat(".messages.epochActivation[", vm.toString(i), "]");
-            keys[0].signature = vm.parseJsonBytes(vectors, string.concat(path, ".keySignatures[0]"));
-            crsList[0].signature = vm.parseJsonBytes(vectors, string.concat(path, ".crsSignatures[0]"));
             (address signer, bytes memory signature, bytes memory extraData) = _message(path);
             vm.expectEmit(address(protocolConfig));
             emit IProtocolConfig.EpochActivationConfirmation(epochId, signer, epochMaterialHash, signature, extraData);
@@ -175,7 +173,7 @@ contract ProtocolConfigVectorsTest is HostContractsDeployerTestUtils {
         }
     }
 
-    /// @dev The one key (two digests) and one CRS result of the vectors, without signatures.
+    /// @dev The one key (two digests) and one CRS result of the vectors.
     function _material()
         internal
         view
@@ -193,15 +191,13 @@ contract ProtocolConfigVectorsTest is HostContractsDeployerTestUtils {
         keys[0] = IProtocolConfig.EpochKeyResult({
             prepKeygenId: vm.parseJsonUint(vectors, ".epochMaterialHash[0].keys[0].prepKeygenId"),
             keyId: vm.parseJsonUint(vectors, ".epochMaterialHash[0].keys[0].keyId"),
-            keyDigests: keyDigests,
-            signature: ""
+            keyDigests: keyDigests
         });
         crsList = new IProtocolConfig.EpochCrsResult[](1);
         crsList[0] = IProtocolConfig.EpochCrsResult({
             crsId: vm.parseJsonUint(vectors, ".epochMaterialHash[0].crs[0].crsId"),
             maxBitLength: vm.parseJsonUint(vectors, ".epochMaterialHash[0].crs[0].maxBitLength"),
-            crsDigest: vm.parseJsonBytes(vectors, ".epochMaterialHash[0].crs[0].crsDigest"),
-            signature: ""
+            crsDigest: vm.parseJsonBytes(vectors, ".epochMaterialHash[0].crs[0].crsDigest")
         });
     }
 }

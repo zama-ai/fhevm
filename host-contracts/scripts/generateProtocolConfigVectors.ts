@@ -10,10 +10,8 @@ import path from 'path';
 
 import {
   CONFIRMATION_TYPES,
-  CRSGEN_TYPES,
   ConfirmationType,
   CrsResult,
-  KEYGEN_TYPES,
   KeyResult,
   KmsNodeParams,
   KmsThresholds,
@@ -23,7 +21,6 @@ import {
   keyHash,
   nodeConfigHash,
   protocolConfigDomain,
-  resultExtraData,
 } from './protocolConfigEip712';
 
 export const VECTORS_PATH = path.join(__dirname, '..', 'test-vectors', 'protocol-config-eip712.json');
@@ -105,42 +102,14 @@ function generateVectors(): unknown {
     };
   };
 
-  const perResult: unknown[] = [];
-  const epochActivation = (wallet: Wallet, contextId: bigint, previousEpochId: bigint, epochId: bigint) => {
-    const extraData = resultExtraData(contextId, epochId);
-    const signResults = (
-      type: 'KeygenVerification' | 'CrsgenVerification',
-      types: typeof KEYGEN_TYPES,
-      items: object[],
-    ) =>
-      items.map((item) => {
-        const fields = { ...item, extraData };
-        const digest = TypedDataEncoder.hash(domain, types, fields);
-        const signature = sign(wallet, digest);
-        perResult.push({
-          type,
-          fields,
-          structHash: TypedDataEncoder.hashStruct(type, types, fields),
-          digest,
-          signer: wallet.address,
-          signature,
-        });
-        return signature;
-      });
-    const keySignatures = signResults('KeygenVerification', KEYGEN_TYPES, keys);
-    const crsSignatures = signResults('CrsgenVerification', CRSGEN_TYPES, crsList);
-    return {
-      ...message('EpochActivationConfirmation', wallet, {
-        contextId,
-        previousEpochId,
-        epochId,
-        epochMaterialHash: epochMaterialHash(keys, crsList),
-        extraData: '0x',
-      }),
-      keySignatures,
-      crsSignatures,
-    };
-  };
+  const epochActivation = (wallet: Wallet, contextId: bigint, previousEpochId: bigint, epochId: bigint) =>
+    message('EpochActivationConfirmation', wallet, {
+      contextId,
+      previousEpochId,
+      epochId,
+      epochMaterialHash: epochMaterialHash(keys, crsList),
+      extraData: '0x',
+    });
 
   const switchBNodeConfigHash = nodeConfigHash(switchBNodes, thresholds);
 
@@ -224,7 +193,6 @@ function generateVectors(): unknown {
         }),
       ],
     },
-    perResult,
   });
 }
 

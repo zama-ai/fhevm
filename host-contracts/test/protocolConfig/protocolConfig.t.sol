@@ -954,7 +954,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildEpochResults(contextId, pendingEpochId, kmsPk0, completedKeyId + 1, completedCrsId);
+        ) = _buildEpochResults(completedKeyId + 1, completedCrsId);
         bytes memory signature = _signEpochActivation(contextId, pendingEpochId, kmsPk0, keys, crsList, "");
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -1463,28 +1463,19 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
 
         _confirmEpochActivation(KMS_CONTEXT_COUNTER_BASE + 1, epochId, kmsPk0, completedKeyId, completedCrsId);
 
-        bytes memory extraData = abi.encodePacked(uint8(0x02), KMS_CONTEXT_COUNTER_BASE + 1, epochId);
         IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
         keyDigests[0].digest = hex"01020304";
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](1);
         keys[0] = IProtocolConfig.EpochKeyResult({
             prepKeygenId: PREP_KEYGEN_COUNTER_BASE + 1,
             keyId: completedKeyId,
-            keyDigests: keyDigests,
-            signature: _computeSignature(
-                kmsPk1,
-                _hashProtocolConfigKeygen(PREP_KEYGEN_COUNTER_BASE + 1, completedKeyId, keyDigests, extraData)
-            )
+            keyDigests: keyDigests
         });
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](1);
         crsList[0] = IProtocolConfig.EpochCrsResult({
             crsId: completedCrsId,
             maxBitLength: 4096,
-            crsDigest: hex"deadbeef",
-            signature: _computeSignature(
-                kmsPk1,
-                _hashProtocolConfigCrsgen(completedCrsId, 4096, hex"deadbeef", extraData)
-            )
+            crsDigest: hex"deadbeef"
         });
 
         protocolConfig.confirmEpochActivation(
@@ -1511,7 +1502,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildEpochResults(contextId, epochId, 0x999, completedKeyId, completedCrsId);
+        ) = _buildEpochResults(completedKeyId, completedCrsId);
         bytes memory signature = _signEpochActivation(contextId, epochId, 0x999, keys, crsList, "");
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfig.EpochActivationUnauthorized.selector, vm.addr(0x999), epochId)
@@ -1522,7 +1513,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
 
         // Replay with the same material the first confirm used. The signer check passes, so the call reaches
         // the already-confirmed check. An empty array would revert earlier with EmptyEpochActivationAttestation.
-        (keys, crsList) = _buildEpochResults(contextId, epochId, kmsPk0, completedKeyId, completedCrsId);
+        (keys, crsList) = _buildEpochResults(completedKeyId, completedCrsId);
         signature = _signEpochActivation(contextId, epochId, kmsPk0, keys, crsList, "");
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfig.EpochActivationAlreadyConfirmed.selector, vm.addr(kmsPk0), epochId)
@@ -1550,17 +1541,12 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
 
-        bytes memory extraData = abi.encodePacked(uint8(0x02), KMS_CONTEXT_COUNTER_BASE + 1, epochId);
         IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](1);
         keys[0] = IProtocolConfig.EpochKeyResult({
             prepKeygenId: PREP_KEYGEN_COUNTER_BASE + 1,
             keyId: completedKeyId,
-            keyDigests: keyDigests,
-            signature: _computeSignature(
-                kmsPk0,
-                _hashProtocolConfigKeygen(PREP_KEYGEN_COUNTER_BASE + 1, completedKeyId, keyDigests, extraData)
-            )
+            keyDigests: keyDigests
         });
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
 
@@ -1575,17 +1561,12 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
 
-        bytes memory extraData = abi.encodePacked(uint8(0x02), KMS_CONTEXT_COUNTER_BASE + 1, epochId);
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](0);
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](1);
         crsList[0] = IProtocolConfig.EpochCrsResult({
             crsId: completedCrsId,
             maxBitLength: 4096,
-            crsDigest: hex"deadbeef",
-            signature: _computeSignature(
-                kmsPk0,
-                _hashProtocolConfigCrsgen(completedCrsId, 4096, hex"deadbeef", extraData)
-            )
+            crsDigest: hex"deadbeef"
         });
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationAttestation.selector, epochId));
@@ -2063,24 +2044,13 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         _confirmEpochActivation(contextId, epochId, kmsPk1, keyId, crsId);
 
         // Third signer diverges (different key digest) — accumulates under a separate hash.
-        bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
         IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
         keyDigests[0].digest = hex"99887766";
         uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](1);
-        keys[0] = IProtocolConfig.EpochKeyResult({
-            prepKeygenId: prepKeygenId,
-            keyId: keyId,
-            keyDigests: keyDigests,
-            signature: _computeSignature(kmsPk2, _hashProtocolConfigKeygen(prepKeygenId, keyId, keyDigests, extraData))
-        });
+        keys[0] = IProtocolConfig.EpochKeyResult({prepKeygenId: prepKeygenId, keyId: keyId, keyDigests: keyDigests});
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](1);
-        crsList[0] = IProtocolConfig.EpochCrsResult({
-            crsId: crsId,
-            maxBitLength: 4096,
-            crsDigest: hex"deadbeef",
-            signature: _computeSignature(kmsPk2, _hashProtocolConfigCrsgen(crsId, 4096, hex"deadbeef", extraData))
-        });
+        crsList[0] = IProtocolConfig.EpochCrsResult({crsId: crsId, maxBitLength: 4096, crsDigest: hex"deadbeef"});
         protocolConfig.confirmEpochActivation(
             epochId,
             keys,
@@ -2149,7 +2119,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildEpochResults(contextId, epochId, kmsPk0, completedKeyId, completedCrsId);
+        ) = _buildEpochResults(completedKeyId, completedCrsId);
         bytes memory extraData = hex"01ab";
         bytes memory signature = _signEpochActivation(contextId, epochId, kmsPk0, keys, crsList, extraData);
         vm.expectEmit(true, true, false, true, address(protocolConfig));
@@ -2163,8 +2133,8 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, extraData);
     }
 
-    /// @dev Distinct from the signer-mismatch test: a malformed (too-short) signature must hit
-    ///      ECDSA.recover's length validation, with real key material in the payload.
+    /// @dev A malformed (too-short) aggregate signature must hit ECDSA.recover's length validation,
+    ///      with real key material in the payload.
     function test_revertConfirmEpochActivationMalformedSignature() public {
         _setupEpochLifecycle();
         (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
@@ -2172,30 +2142,14 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
 
-        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](1);
-        IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
-        keys[0] = IProtocolConfig.EpochKeyResult({
-            prepKeygenId: _prepKeygenIdForKeyId(completedKeyId),
-            keyId: completedKeyId,
-            keyDigests: keyDigests,
-            // 65 bytes is the only valid ECDSA length; a 10-byte blob is rejected by ECDSA.recover.
-            signature: hex"00112233445566778899"
-        });
-        // The CRS entry only keeps the payload past the non-empty check, so the keys loop reaches ECDSA.recover.
-        bytes memory extraData = abi.encodePacked(uint8(0x02), KMS_CONTEXT_COUNTER_BASE + 1, epochId);
-        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](1);
-        crsList[0] = IProtocolConfig.EpochCrsResult({
-            crsId: completedCrsId,
-            maxBitLength: 4096,
-            crsDigest: hex"deadbeef",
-            signature: _computeSignature(
-                kmsPk0,
-                _hashProtocolConfigCrsgen(completedCrsId, 4096, hex"deadbeef", extraData)
-            )
-        });
+        (
+            IProtocolConfig.EpochKeyResult[] memory keys,
+            IProtocolConfig.EpochCrsResult[] memory crsList
+        ) = _buildEpochResults(completedKeyId, completedCrsId);
 
+        // 65 bytes is the only valid ECDSA length; a 10-byte blob is rejected by ECDSA.recover.
         vm.expectRevert();
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, "", "");
+        protocolConfig.confirmEpochActivation(epochId, keys, crsList, hex"00112233445566778899", "");
     }
 
     // -----------------------------------------------------------------------
@@ -2379,7 +2333,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildEpochResults(contextId, epochId, kmsPk1, KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
+        ) = _buildEpochResults(KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
         protocolConfig.confirmEpochActivation(
             epochId,
             keys,
@@ -2408,7 +2362,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildEpochResults(contextId, epochId, kmsPk0, KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
+        ) = _buildEpochResults(KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
         bytes32 epochMaterialHash = _epochMaterialHash(keys, crsList);
 
         // Over `epochId - 1`, the aggregate signature recovers an address outside the committee.
@@ -2442,7 +2396,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildEpochResults(contextId, epochId, kmsPk0, KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
+        ) = _buildEpochResults(KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
         bytes memory signature = _signEpochActivation(contextId, epochId, kmsPk0, keys, crsList, "");
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsEpoch.selector, epochId));
         protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, "");

@@ -513,13 +513,11 @@ interface IProtocolConfig {
         uint256 crsId;
         uint256 maxBitLength;
         bytes crsDigest;
-        bytes signature;
     }
     struct EpochKeyResult {
         uint256 prepKeygenId;
         uint256 keyId;
         IKMSGeneration.KeyDigest[] keyDigests;
-        bytes signature;
     }
     struct KmsNode {
         address txSenderAddress;
@@ -673,11 +671,6 @@ interface IProtocolConfig {
                 "internalType": "bytes"
               }
             ]
-          },
-          {
-            "name": "signature",
-            "type": "bytes",
-            "internalType": "bytes"
           }
         ]
       },
@@ -698,11 +691,6 @@ interface IProtocolConfig {
           },
           {
             "name": "crsDigest",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "signature",
             "type": "bytes",
             "internalType": "bytes"
           }
@@ -1507,11 +1495,6 @@ interface IProtocolConfig {
                 "internalType": "bytes"
               }
             ]
-          },
-          {
-            "name": "signature",
-            "type": "bytes",
-            "internalType": "bytes"
           }
         ]
       },
@@ -1533,11 +1516,6 @@ interface IProtocolConfig {
           },
           {
             "name": "crsDigest",
-            "type": "bytes",
-            "internalType": "bytes"
-          },
-          {
-            "name": "signature",
             "type": "bytes",
             "internalType": "bytes"
           }
@@ -2596,7 +2574,7 @@ struct ChainUpgradeWindow { uint64 chainId; uint64 startBlock; uint64 endBlock; 
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct EpochCrsResult { uint256 crsId; uint256 maxBitLength; bytes crsDigest; bytes signature; }
+struct EpochCrsResult { uint256 crsId; uint256 maxBitLength; bytes crsDigest; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -2607,8 +2585,6 @@ struct EpochCrsResult { uint256 crsId; uint256 maxBitLength; bytes crsDigest; by
         pub maxBitLength: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub crsDigest: alloy::sol_types::private::Bytes,
-        #[allow(missing_docs)]
-        pub signature: alloy::sol_types::private::Bytes,
     }
     #[allow(
         non_camel_case_types,
@@ -2624,13 +2600,11 @@ struct EpochCrsResult { uint256 crsId; uint256 maxBitLength; bytes crsDigest; by
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Bytes,
-            alloy::sol_types::sol_data::Bytes,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
             alloy::sol_types::private::primitives::aliases::U256,
             alloy::sol_types::private::primitives::aliases::U256,
-            alloy::sol_types::private::Bytes,
             alloy::sol_types::private::Bytes,
         );
         #[cfg(test)]
@@ -2648,7 +2622,7 @@ struct EpochCrsResult { uint256 crsId; uint256 maxBitLength; bytes crsDigest; by
         #[doc(hidden)]
         impl ::core::convert::From<EpochCrsResult> for UnderlyingRustTuple<'_> {
             fn from(value: EpochCrsResult) -> Self {
-                (value.crsId, value.maxBitLength, value.crsDigest, value.signature)
+                (value.crsId, value.maxBitLength, value.crsDigest)
             }
         }
         #[automatically_derived]
@@ -2659,7 +2633,6 @@ struct EpochCrsResult { uint256 crsId; uint256 maxBitLength; bytes crsDigest; by
                     crsId: tuple.0,
                     maxBitLength: tuple.1,
                     crsDigest: tuple.2,
-                    signature: tuple.3,
                 }
             }
         }
@@ -2680,9 +2653,6 @@ struct EpochCrsResult { uint256 crsId; uint256 maxBitLength; bytes crsDigest; by
                     > as alloy_sol_types::SolType>::tokenize(&self.maxBitLength),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.crsDigest,
-                    ),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.signature,
                     ),
                 )
             }
@@ -2758,7 +2728,7 @@ struct EpochCrsResult { uint256 crsId; uint256 maxBitLength; bytes crsDigest; by
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "EpochCrsResult(uint256 crsId,uint256 maxBitLength,bytes crsDigest,bytes signature)",
+                    "EpochCrsResult(uint256 crsId,uint256 maxBitLength,bytes crsDigest)",
                 )
             }
             #[inline]
@@ -2786,10 +2756,6 @@ struct EpochCrsResult { uint256 crsId; uint256 maxBitLength; bytes crsDigest; by
                             &self.crsDigest,
                         )
                         .0,
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.signature,
-                        )
-                        .0,
                 ]
                     .concat()
             }
@@ -2809,9 +2775,6 @@ struct EpochCrsResult { uint256 crsId; uint256 maxBitLength; bytes crsDigest; by
                     )
                     + <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.crsDigest,
-                    )
-                    + <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.signature,
                     )
             }
             #[inline]
@@ -2838,10 +2801,6 @@ struct EpochCrsResult { uint256 crsId; uint256 maxBitLength; bytes crsDigest; by
                     &rust.crsDigest,
                     out,
                 );
-                <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.signature,
-                    out,
-                );
             }
             #[inline]
             fn encode_topic(
@@ -2861,7 +2820,7 @@ struct EpochCrsResult { uint256 crsId; uint256 maxBitLength; bytes crsDigest; by
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
     /**```solidity
-struct EpochKeyResult { uint256 prepKeygenId; uint256 keyId; IKMSGeneration.KeyDigest[] keyDigests; bytes signature; }
+struct EpochKeyResult { uint256 prepKeygenId; uint256 keyId; IKMSGeneration.KeyDigest[] keyDigests; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -2874,8 +2833,6 @@ struct EpochKeyResult { uint256 prepKeygenId; uint256 keyId; IKMSGeneration.KeyD
         pub keyDigests: alloy::sol_types::private::Vec<
             <IKMSGeneration::KeyDigest as alloy::sol_types::SolType>::RustType,
         >,
-        #[allow(missing_docs)]
-        pub signature: alloy::sol_types::private::Bytes,
     }
     #[allow(
         non_camel_case_types,
@@ -2891,7 +2848,6 @@ struct EpochKeyResult { uint256 prepKeygenId; uint256 keyId; IKMSGeneration.KeyD
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Array<IKMSGeneration::KeyDigest>,
-            alloy::sol_types::sol_data::Bytes,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -2900,7 +2856,6 @@ struct EpochKeyResult { uint256 prepKeygenId; uint256 keyId; IKMSGeneration.KeyD
             alloy::sol_types::private::Vec<
                 <IKMSGeneration::KeyDigest as alloy::sol_types::SolType>::RustType,
             >,
-            alloy::sol_types::private::Bytes,
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
@@ -2917,7 +2872,7 @@ struct EpochKeyResult { uint256 prepKeygenId; uint256 keyId; IKMSGeneration.KeyD
         #[doc(hidden)]
         impl ::core::convert::From<EpochKeyResult> for UnderlyingRustTuple<'_> {
             fn from(value: EpochKeyResult) -> Self {
-                (value.prepKeygenId, value.keyId, value.keyDigests, value.signature)
+                (value.prepKeygenId, value.keyId, value.keyDigests)
             }
         }
         #[automatically_derived]
@@ -2928,7 +2883,6 @@ struct EpochKeyResult { uint256 prepKeygenId; uint256 keyId; IKMSGeneration.KeyD
                     prepKeygenId: tuple.0,
                     keyId: tuple.1,
                     keyDigests: tuple.2,
-                    signature: tuple.3,
                 }
             }
         }
@@ -2950,9 +2904,6 @@ struct EpochKeyResult { uint256 prepKeygenId; uint256 keyId; IKMSGeneration.KeyD
                     <alloy::sol_types::sol_data::Array<
                         IKMSGeneration::KeyDigest,
                     > as alloy_sol_types::SolType>::tokenize(&self.keyDigests),
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.signature,
-                    ),
                 )
             }
             #[inline]
@@ -3027,7 +2978,7 @@ struct EpochKeyResult { uint256 prepKeygenId; uint256 keyId; IKMSGeneration.KeyD
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "EpochKeyResult(uint256 prepKeygenId,uint256 keyId,IKMSGeneration.KeyDigest[] keyDigests,bytes signature)",
+                    "EpochKeyResult(uint256 prepKeygenId,uint256 keyId,IKMSGeneration.KeyDigest[] keyDigests)",
                 )
             }
             #[inline]
@@ -3060,10 +3011,6 @@ struct EpochKeyResult { uint256 prepKeygenId; uint256 keyId; IKMSGeneration.KeyD
                         IKMSGeneration::KeyDigest,
                     > as alloy_sol_types::SolType>::eip712_data_word(&self.keyDigests)
                         .0,
-                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.signature,
-                        )
-                        .0,
                 ]
                     .concat()
             }
@@ -3085,9 +3032,6 @@ struct EpochKeyResult { uint256 prepKeygenId; uint256 keyId; IKMSGeneration.KeyD
                         IKMSGeneration::KeyDigest,
                     > as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.keyDigests,
-                    )
-                    + <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.signature,
                     )
             }
             #[inline]
@@ -3114,10 +3058,6 @@ struct EpochKeyResult { uint256 prepKeygenId; uint256 keyId; IKMSGeneration.KeyD
                     IKMSGeneration::KeyDigest,
                 > as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.keyDigests,
-                    out,
-                );
-                <alloy::sol_types::sol_data::Bytes as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.signature,
                     out,
                 );
             }
@@ -7127,7 +7067,7 @@ error ZeroGwStartBlock();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
-    /**Event with signature `ActivateEpoch(uint256,uint256,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[],string[])` and selector `0x1a547b42e72cd3dda04e6adccd2200276cfef01fe2138d07f3a7440f416d38bc`.
+    /**Event with signature `ActivateEpoch(uint256,uint256,(uint256,uint256,(uint8,bytes)[])[],(uint256,uint256,bytes)[],string[])` and selector `0x6c6eb35881f805f284be59b840b4ea990f96b13dd9e7192c4581e1bc81c0af98`.
 ```solidity
 event ActivateEpoch(uint256 indexed kmsContextId, uint256 indexed epochId, EpochKeyResult[] keys, EpochCrsResult[] crsList, string[] kmsNodeStorageUrls);
 ```*/
@@ -7179,11 +7119,11 @@ event ActivateEpoch(uint256 indexed kmsContextId, uint256 indexed epochId, Epoch
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "ActivateEpoch(uint256,uint256,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[],string[])";
+            const SIGNATURE: &'static str = "ActivateEpoch(uint256,uint256,(uint256,uint256,(uint8,bytes)[])[],(uint256,uint256,bytes)[],string[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                26u8, 84u8, 123u8, 66u8, 231u8, 44u8, 211u8, 221u8, 160u8, 78u8, 106u8,
-                220u8, 205u8, 34u8, 0u8, 39u8, 108u8, 254u8, 240u8, 31u8, 226u8, 19u8,
-                141u8, 7u8, 243u8, 167u8, 68u8, 15u8, 65u8, 109u8, 56u8, 188u8,
+                108u8, 110u8, 179u8, 88u8, 129u8, 248u8, 5u8, 242u8, 132u8, 190u8, 89u8,
+                184u8, 64u8, 180u8, 234u8, 153u8, 15u8, 150u8, 177u8, 61u8, 217u8, 231u8,
+                25u8, 44u8, 69u8, 129u8, 225u8, 188u8, 129u8, 192u8, 175u8, 152u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -8493,7 +8433,7 @@ event NewKmsEpoch(uint256 indexed kmsContextId, uint256 indexed epochId, uint256
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
-    /**Function with signature `confirmEpochActivation(uint256,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[],bytes,bytes)` and selector `0xb3c12824`.
+    /**Function with signature `confirmEpochActivation(uint256,(uint256,uint256,(uint8,bytes)[])[],(uint256,uint256,bytes)[],bytes,bytes)` and selector `0x71d76dae`.
 ```solidity
 function confirmEpochActivation(uint256 epochId, EpochKeyResult[] memory keys, EpochCrsResult[] memory crsList, bytes memory signature, bytes memory extraData) external;
 ```*/
@@ -8515,7 +8455,7 @@ function confirmEpochActivation(uint256 epochId, EpochKeyResult[] memory keys, E
         #[allow(missing_docs)]
         pub extraData: alloy::sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the [`confirmEpochActivation(uint256,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[],bytes,bytes)`](confirmEpochActivationCall) function.
+    ///Container type for the return parameters of the [`confirmEpochActivation(uint256,(uint256,uint256,(uint8,bytes)[])[],(uint256,uint256,bytes)[],bytes,bytes)`](confirmEpochActivationCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct confirmEpochActivationReturn {}
@@ -8649,8 +8589,8 @@ function confirmEpochActivation(uint256 epochId, EpochKeyResult[] memory keys, E
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "confirmEpochActivation(uint256,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[],bytes,bytes)";
-            const SELECTOR: [u8; 4] = [179u8, 193u8, 40u8, 36u8];
+            const SIGNATURE: &'static str = "confirmEpochActivation(uint256,(uint256,uint256,(uint8,bytes)[])[],(uint256,uint256,bytes)[],bytes,bytes)";
+            const SELECTOR: [u8; 4] = [113u8, 215u8, 109u8, 174u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -14018,6 +13958,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [91u8, 255u8, 118u8, 217u8],
             [101u8, 179u8, 148u8, 175u8],
             [110u8, 192u8, 242u8, 63u8],
+            [113u8, 215u8, 109u8, 174u8],
             [117u8, 110u8, 134u8, 82u8],
             [126u8, 170u8, 200u8, 242u8],
             [148u8, 71u8, 207u8, 212u8],
@@ -14025,7 +13966,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [151u8, 111u8, 62u8, 185u8],
             [157u8, 27u8, 27u8, 225u8],
             [166u8, 66u8, 186u8, 15u8],
-            [179u8, 193u8, 40u8, 36u8],
             [180u8, 114u8, 43u8, 196u8],
             [191u8, 155u8, 22u8, 200u8],
             [192u8, 174u8, 100u8, 247u8],
@@ -14054,6 +13994,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             ::core::stringify!(getKmsSignersForContext),
             ::core::stringify!(getCurrentKmsContextAndEpoch),
             ::core::stringify!(confirmKmsContextCreation),
+            ::core::stringify!(confirmEpochActivation),
             ::core::stringify!(confirmKmsContextDestruction),
             ::core::stringify!(getKmsSigners),
             ::core::stringify!(isKmsSignerForContext),
@@ -14061,7 +14002,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             ::core::stringify!(getCurrentKmsContextId),
             ::core::stringify!(getCurrentKmsContextIdCounter),
             ::core::stringify!(confirmKmsEpochDestruction),
-            ::core::stringify!(confirmEpochActivation),
             ::core::stringify!(getKmsGenThreshold),
             ::core::stringify!(isValidKmsContext),
             ::core::stringify!(destroyKmsContext),
@@ -14090,6 +14030,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             <getKmsSignersForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCurrentKmsContextAndEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
             <confirmKmsContextCreationCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <confirmEpochActivationCall as alloy_sol_types::SolCall>::SIGNATURE,
             <confirmKmsContextDestructionCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsSignersCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isKmsSignerForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -14097,7 +14038,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             <getCurrentKmsContextIdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCurrentKmsContextIdCounterCall as alloy_sol_types::SolCall>::SIGNATURE,
             <confirmKmsEpochDestructionCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <confirmEpochActivationCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsGenThresholdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isValidKmsContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <destroyKmsContextCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -14418,6 +14358,17 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     confirmKmsContextCreation
                 },
                 {
+                    fn confirmEpochActivation(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <confirmEpochActivationCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::confirmEpochActivation)
+                    }
+                    confirmEpochActivation
+                },
+                {
                     fn confirmKmsContextDestruction(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -14493,17 +14444,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             .map(IProtocolConfigCalls::confirmKmsEpochDestruction)
                     }
                     confirmKmsEpochDestruction
-                },
-                {
-                    fn confirmEpochActivation(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <confirmEpochActivationCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::confirmEpochActivation)
-                    }
-                    confirmEpochActivation
                 },
                 {
                     fn getKmsGenThreshold(
@@ -14809,6 +14749,17 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     confirmKmsContextCreation
                 },
                 {
+                    fn confirmEpochActivation(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <confirmEpochActivationCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::confirmEpochActivation)
+                    }
+                    confirmEpochActivation
+                },
+                {
                     fn confirmKmsContextDestruction(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -14884,17 +14835,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             .map(IProtocolConfigCalls::confirmKmsEpochDestruction)
                     }
                     confirmKmsEpochDestruction
-                },
-                {
-                    fn confirmEpochActivation(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <confirmEpochActivationCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::confirmEpochActivation)
-                    }
-                    confirmEpochActivation
                 },
                 {
                     fn getKmsGenThreshold(
@@ -16933,11 +16873,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 119u8, 202u8, 9u8, 239u8, 196u8, 69u8, 186u8, 64u8, 238u8, 247u8,
             ],
             [
-                26u8, 84u8, 123u8, 66u8, 231u8, 44u8, 211u8, 221u8, 160u8, 78u8, 106u8,
-                220u8, 205u8, 34u8, 0u8, 39u8, 108u8, 254u8, 240u8, 31u8, 226u8, 19u8,
-                141u8, 7u8, 243u8, 167u8, 68u8, 15u8, 65u8, 109u8, 56u8, 188u8,
-            ],
-            [
                 32u8, 77u8, 107u8, 128u8, 18u8, 17u8, 84u8, 205u8, 135u8, 217u8, 156u8,
                 245u8, 76u8, 99u8, 154u8, 61u8, 208u8, 165u8, 59u8, 48u8, 132u8, 39u8,
                 112u8, 152u8, 222u8, 151u8, 46u8, 189u8, 211u8, 76u8, 107u8, 233u8,
@@ -16946,6 +16881,11 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 66u8, 84u8, 217u8, 72u8, 64u8, 43u8, 160u8, 89u8, 192u8, 47u8, 159u8,
                 238u8, 207u8, 202u8, 9u8, 180u8, 12u8, 11u8, 57u8, 2u8, 106u8, 52u8,
                 74u8, 21u8, 158u8, 58u8, 118u8, 121u8, 128u8, 122u8, 131u8, 210u8,
+            ],
+            [
+                108u8, 110u8, 179u8, 88u8, 129u8, 248u8, 5u8, 242u8, 132u8, 190u8, 89u8,
+                184u8, 64u8, 180u8, 234u8, 153u8, 15u8, 150u8, 177u8, 61u8, 217u8, 231u8,
+                25u8, 44u8, 69u8, 129u8, 225u8, 188u8, 129u8, 192u8, 175u8, 152u8,
             ],
             [
                 127u8, 174u8, 247u8, 69u8, 175u8, 121u8, 163u8, 175u8, 35u8, 212u8, 25u8,
@@ -16977,9 +16917,9 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(KmsEpochDestroyed),
             ::core::stringify!(NewKmsEpoch),
-            ::core::stringify!(ActivateEpoch),
             ::core::stringify!(NewKmsContext),
             ::core::stringify!(KmsContextCreationConfirmation),
+            ::core::stringify!(ActivateEpoch),
             ::core::stringify!(EpochActivationConfirmation),
             ::core::stringify!(CoprocessorUpgradeProposed),
             ::core::stringify!(KmsContextDestroyed),
@@ -16990,9 +16930,9 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         pub const SIGNATURES: &'static [&'static str] = &[
             <KmsEpochDestroyed as alloy_sol_types::SolEvent>::SIGNATURE,
             <NewKmsEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
-            <ActivateEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
             <NewKmsContext as alloy_sol_types::SolEvent>::SIGNATURE,
             <KmsContextCreationConfirmation as alloy_sol_types::SolEvent>::SIGNATURE,
+            <ActivateEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
             <EpochActivationConfirmation as alloy_sol_types::SolEvent>::SIGNATURE,
             <CoprocessorUpgradeProposed as alloy_sol_types::SolEvent>::SIGNATURE,
             <KmsContextDestroyed as alloy_sol_types::SolEvent>::SIGNATURE,

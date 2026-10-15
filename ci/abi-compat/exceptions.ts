@@ -52,6 +52,7 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "error EpochActivationSignerDoesNotMatchTxSender(address,address)",
       "event EpochActivationConfirmation(uint256 indexed,address indexed,bytes32)",
       "event KmsContextCreationConfirmation(uint256 indexed,address indexed,bool,bool)",
+      "event ActivateEpoch(uint256 indexed,uint256 indexed,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[],string[])",
       "function confirmEpochActivation(uint256,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[]) returns ()",
       "function confirmKmsContextCreation(uint256) returns ()",
     ],

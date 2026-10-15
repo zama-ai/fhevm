@@ -49,14 +49,12 @@ contract ProtocolConfigMock {
         uint256 prepKeygenId;
         uint256 keyId;
         KeyDigest[] keyDigests;
-        bytes signature;
     }
 
     struct EpochCrsResult {
         uint256 crsId;
         uint256 maxBitLength;
         bytes crsDigest;
-        bytes signature;
     }
 
     event NewKmsContext(

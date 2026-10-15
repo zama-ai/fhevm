@@ -244,8 +244,7 @@ export async function confirmContextCreationBySigner(
 // EpochActivationConfirmation over them, and submits it from the signer account.
 // Both arrays must be non-empty, so a key-only payload is rejected. The material is identical across
 // signers, so every signer produces the same epochMaterialHash and quorum is reachable.
-// `contextId`/`epochId` are the pair being activated and must match the values the contract packs into
-// the per-result extraData. The previous epoch is the active one.
+// `contextId`/`epochId` are the pair being activated. The previous epoch is the active one.
 export async function confirmEpochActivationBySigner(
   proxyAddress: string,
   signerSigner: Signer,
@@ -255,17 +254,12 @@ export async function confirmEpochActivationBySigner(
 ): Promise<ContractTransactionReceipt> {
   const pc = await ethers.getContractAt('ProtocolConfig', proxyAddress, signerSigner);
   const [, previousEpochId] = await pc.getCurrentKmsContextAndEpoch();
-  const { keys, crsList, signature } = await signEpochActivation(
+  const keys = [{ prepKeygenId: 1n, keyId: 1n, keyDigests: [{ keyType: 0, digest: '0x01020304' }] }];
+  const crsList = [{ crsId: 1n, maxBitLength: 4096n, crsDigest: '0x01020304' }];
+  const signature = await signEpochActivation(
     signerSigner,
     await protocolConfigDomainFor(ethers.provider, proxyAddress),
-    {
-      contextId,
-      previousEpochId,
-      epochId,
-      keys: [{ prepKeygenId: 1n, keyId: 1n, keyDigests: [{ keyType: 0, digest: '0x01020304' }] }],
-      crsList: [{ crsId: 1n, maxBitLength: 4096n, crsDigest: '0x01020304' }],
-      extraData,
-    },
+    { contextId, previousEpochId, epochId, keys, crsList, extraData },
   );
   return (await (await pc.confirmEpochActivation(epochId, keys, crsList, signature, extraData)).wait())!;
 }
