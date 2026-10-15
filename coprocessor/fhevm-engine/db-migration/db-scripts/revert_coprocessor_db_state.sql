@@ -349,13 +349,6 @@ UPDATE host_listener_poller_state
  WHERE chain_id = :'chain_id'
    AND last_caught_up_block > :'to_block_number';
 
--- Reset every WebSocket ingestion scope as well. The revision invalidates
--- any page fetched before the rewind.
-UPDATE public.host_listener_catchup_state
-   SET next_block = LEAST(next_block, :'to_block_number'::bigint + 1),
-       revision = revision + 1
- WHERE chain_id = :'chain_id';
-
 -- ===========================================================================
 -- Clamp settlement so restarted workers may legally recompute reverted blocks.
 -- ===========================================================================

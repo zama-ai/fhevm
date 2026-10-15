@@ -209,17 +209,6 @@ async fn setup_block(pool: &PgPool, chain_id: i64, block_number: i64, key_id_gw:
     .execute(pool)
     .await
     .expect("upsert host_listener_poller_state");
-    sqlx::query(
-        "INSERT INTO host_listener_catchup_state (chain_id, scope_hash, next_block)
-         VALUES ($1, '\\x01', $2)
-         ON CONFLICT (chain_id, scope_hash) DO UPDATE
-         SET next_block = GREATEST(host_listener_catchup_state.next_block, $2)",
-    )
-    .bind(chain_id)
-    .bind(block_number + 1)
-    .execute(pool)
-    .await
-    .expect("upsert host_listener_catchup_state");
 }
 
 /// Setup blocks from `from_block` to `up_to_block` (inclusive).
@@ -268,15 +257,6 @@ async fn test_revert_deletes_data_after_block_n() {
 
     // Setup blocks 1..20 for chain A
     setup_block_range(&pool, CHAIN_A, 1, 20, &KEY_ID_GW).await;
-
-    // A page may straddle the revert boundary even when its frontier is older.
-    sqlx::query(
-        "INSERT INTO host_listener_catchup_state (chain_id, scope_hash, next_block) VALUES ($1, '\\x02', 10)",
-    )
-    .bind(CHAIN_A)
-    .execute(&pool)
-    .await
-    .unwrap();
 
     // Revert chain A to block 15
     let sql = revert_coprocessor_db_state_sql(CHAIN_A, 15);
@@ -403,30 +383,6 @@ async fn test_revert_deletes_data_after_block_n() {
     .await
     .unwrap();
     assert_eq!(poller_block, 15, "poller should be reset to block 15");
-    let checkpoint: (i64, i64) = sqlx::query_as(
-        "SELECT next_block, revision FROM host_listener_catchup_state WHERE chain_id = $1 AND scope_hash = '\\x01'",
-    )
-    .bind(CHAIN_A)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(
-        checkpoint,
-        (16, 1),
-        "WebSocket recovery must replay reverted blocks and invalidate old pages"
-    );
-    let earlier_checkpoint: (i64, i64) = sqlx::query_as(
-        "SELECT next_block, revision FROM host_listener_catchup_state WHERE chain_id = $1 AND scope_hash = '\\x02'",
-    )
-    .bind(CHAIN_A)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(
-        earlier_checkpoint,
-        (10, 1),
-        "rewind preserves an older gap but invalidates its in-flight page"
-    );
 }
 
 #[tokio::test]

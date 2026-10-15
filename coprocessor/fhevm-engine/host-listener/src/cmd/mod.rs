@@ -23,7 +23,9 @@ use fhevm_engine_common::drift_revert;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
-use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
+use fhevm_engine_common::versioning::{
+    reconcile_stack_mode, run_stack_version_listener, StackMode,
+};
 use sqlx::postgres::PgPoolOptions;
 
 use crate::database::ingest::{
@@ -38,11 +40,7 @@ use crate::kms_generation::process_kms_generation_activations;
 use fhevm_engine_common::chain_id::ChainId;
 
 pub mod block_history;
-mod recovery;
-#[cfg(test)]
-mod recovery_tests;
 use block_history::{BlockHash, BlockHistory, BlockSummary};
-use recovery::{ListenerRetired, RecoveryCheckpoint};
 
 const REORG_RETRY_GET_LOGS: u64 = 10; // retry 10 times to get logs for a block
 const RETRY_GET_LOGS_DELAY_IN_MS: u64 = 100;
@@ -83,7 +81,7 @@ pub struct Args {
     )]
     pub database_url: DatabaseURL,
 
-    #[arg(long, default_value = None, help = "Replay start; can be negative from last block. An earlier saved recovery frontier takes precedence", allow_hyphen_values = true)]
+    #[arg(long, default_value = None, help = "Can be negative from last block", allow_hyphen_values = true)]
     pub start_at_block: Option<i64>,
 
     #[arg(
@@ -208,8 +206,6 @@ pub struct InfiniteLogIter {
     contract_addresses: Vec<Address>,
     catchup_blocks: Option<(u64, Option<u64>)>, // to do catchup blocks by chunks
     pending_catchup_page: Option<CatchupPage>,
-    recovery: Option<RecoveryCheckpoint>,
-    recovery_started: bool,
     // Option<(from_block, optional to_block)>
     next_blocklogs: VecDeque<BlockLogs<Log>>, // logs already fetched but not yet processed
     stream: Option<SubscriptionStream<Header>>,
@@ -234,7 +230,6 @@ struct CatchupPage {
     from_block: u64,
     next_page: u64,
     remaining_blocks: usize,
-    revision: i64,
 }
 
 enum BlockOrTimeoutOrNone {
@@ -298,8 +293,6 @@ impl InfiniteLogIter {
             contract_addresses,
             catchup_blocks: None,
             pending_catchup_page: None,
-            recovery: None,
-            recovery_started: false,
             next_blocklogs: VecDeque::new(),
             stream: None,
             #[cfg(test)]
@@ -486,24 +479,16 @@ impl InfiniteLogIter {
         Ok(blocks_logs)
     }
 
-    async fn consume_catchup_blocks(&mut self) -> Result<()> {
-        self.finish_pending_catchup_page().await?;
-        let Some((mut from_block, to_block)) = self.catchup_blocks else {
+    async fn consume_catchup_blocks(&mut self) {
+        let Some((from_block, to_block)) = self.catchup_blocks else {
             // nothing to consume
-            return Ok(());
+            return;
         };
-        let mut revision = 0;
-        if let Some(recovery) = &self.recovery {
-            let checkpoint = recovery.read().await?;
-            from_block = checkpoint.next_block as u64;
-            revision = checkpoint.revision;
-            self.catchup_blocks = Some((from_block, to_block));
-        }
         let to_block_or_max = to_block.unwrap_or(u64::MAX);
         if from_block > to_block_or_max {
             self.catchup_blocks = None;
             info!("Catchup no next get_logs step");
-            return Ok(());
+            return;
         }
         let finalized_block = if let Some(current_block) =
             self.block_history.tip()
@@ -522,14 +507,14 @@ impl InfiniteLogIter {
                     .saturating_sub(self.catchup_finalization_in_blocks),
                 Err(err) => {
                     warn!(error = %err, "Cannot determine catchup finality boundary");
-                    return Ok(());
+                    return;
                 }
             }
         };
         if from_block > finalized_block {
             // non finalized blocks are post-poned
             info!("Post-pone catchup");
-            return Ok(());
+            return;
         }
         let mut paging_size = self.catchup_paging;
         let mut remain_retry = 3;
@@ -552,7 +537,7 @@ impl InfiniteLogIter {
                         continue;
                     }
                     error!(block=from_block, error=?err, "Catchup of block impossible. Will be retried later after handling a real-time message.");
-                    return Ok(());
+                    return;
                 }
                 Err(err) => {
                     // too big paging size detection cannot be done reliably for all provider
@@ -576,7 +561,7 @@ impl InfiniteLogIter {
             Err(err) => {
                 warn!(error = %err, from_block, paging_to_block,
                     "Catchup snapshot changed, retaining cursor for refetch");
-                return Ok(());
+                return;
             }
         };
         // Historical pages are blockchain progress too, including empty ones.
@@ -588,39 +573,29 @@ impl InfiniteLogIter {
             from_block,
             next_page: paging_to_block + 1,
             remaining_blocks,
-            revision,
         });
         if remaining_blocks == 0 {
-            self.finish_pending_catchup_page().await?;
+            self.finish_pending_catchup_page();
         }
-        Ok(())
     }
 
-    async fn finish_pending_catchup_page(&mut self) -> Result<()> {
+    fn finish_pending_catchup_page(&mut self) {
         let Some(page) = &self.pending_catchup_page else {
-            return Ok(());
+            return;
         };
         if page.remaining_blocks != 0 {
-            return Ok(());
+            return;
         }
-        let next = if let Some(recovery) = &self.recovery {
-            recovery
-                .complete(page.from_block, page.next_page, page.revision)
-                .await?
-                .next_block as u64
-        } else {
-            page.next_page
-        };
-        self.catchup_blocks = Some((next, self.absolute_end_at_block));
+        self.catchup_blocks =
+            Some((page.next_page, self.absolute_end_at_block));
         self.pending_catchup_page = None;
-        Ok(())
     }
 
-    async fn acknowledge_catchup_block(&mut self) -> Result<()> {
+    fn acknowledge_catchup_block(&mut self) {
         if let Some(page) = &mut self.pending_catchup_page {
             page.remaining_blocks = page.remaining_blocks.saturating_sub(1);
         }
-        self.finish_pending_catchup_page().await
+        self.finish_pending_catchup_page();
     }
 
     pub async fn get_block_by_number(&self, number: u64) -> Result<Block> {
@@ -761,7 +736,7 @@ impl InfiniteLogIter {
     async fn get_missing_ancestors(
         &mut self,
         mut current_block: BlockSummary,
-    ) -> Result<Vec<BlockSummary>> {
+    ) -> Vec<BlockSummary> {
         // iter on current block ancestors to collect missing blocks
         let mut missing_blocks: Vec<BlockSummary> = Vec::new();
         for i in 1..=self.reorg_maximum_duration_in_blocks {
@@ -773,10 +748,9 @@ impl InfiniteLogIter {
                 // can happen in tests
                 break;
             }
-            // A fetched ancestor is not committed coverage. Record the gap
-            // before fetching it, including when the RPC ultimately fails.
-            self.require_recovery_from(current_block.number.saturating_sub(1))
-                .await?;
+            // Fetched ancestors are not committed coverage. Retain the gap
+            // in memory even if fetching the parent fails.
+            self.extend_catchup_from(current_block.number.saturating_sub(1));
             let Ok(parent_block) = self.get_block(parent_block_hash).await
             else {
                 error!(
@@ -795,7 +769,7 @@ impl InfiniteLogIter {
             }
         }
         missing_blocks.reverse();
-        Ok(missing_blocks)
+        missing_blocks
     }
 
     async fn populate_catchup_logs_from_missing_blocks(
@@ -829,20 +803,20 @@ impl InfiniteLogIter {
     async fn check_missing_ancestors(
         &mut self,
         current_block_summary: BlockSummary,
-    ) -> Result<()> {
+    ) {
         if !self.block_history.is_ready_to_detect_reorg() {
             // at fresh restart no ancestor are known
             self.block_history.add_block(current_block_summary);
-            return Ok(());
+            return;
         }
 
         let missing_blocks =
-            self.get_missing_ancestors(current_block_summary).await?;
+            self.get_missing_ancestors(current_block_summary).await;
         if missing_blocks.is_empty() {
             // we don't add to history from which we have no event
             // e.g. at timeout, because empty blocks are not get_logs
             self.block_history.add_block(current_block_summary);
-            return Ok(()); // no reorg
+            return; // no reorg
         }
         warn!(
             nb_missing_blocks = missing_blocks.len(),
@@ -854,7 +828,6 @@ impl InfiniteLogIter {
         // e.g. at timeout, because empty blocks are not get_logs
         self.block_history.add_block(current_block_summary);
         warn!("Missing ancestors catchup done.");
-        Ok(())
     }
 
     async fn new_log_stream_no_retry(&mut self) -> Result<()> {
@@ -872,17 +845,6 @@ impl InfiniteLogIter {
             .unwrap_or(catch_up_from);
         self.absolute_end_at_block =
             self.resolve_end_at_block(&provider).await?;
-        let catch_up_from = if let Some(recovery) = &self.recovery {
-            let checkpoint = if self.recovery_started {
-                recovery.require(catch_up_from).await?
-            } else {
-                recovery.start(catch_up_from, self.catchup_margin).await?
-            };
-            self.recovery_started = true;
-            checkpoint.next_block as u64
-        } else {
-            catch_up_from
-        };
         self.catchup_blocks = Some((catch_up_from, self.absolute_end_at_block));
         // note subscribing to real-time before reading catchup
         // events to have the minimal gap between the two
@@ -896,15 +858,11 @@ impl InfiniteLogIter {
         Ok(())
     }
 
-    async fn new_log_stream(&mut self) -> Result<()> {
+    async fn new_log_stream(&mut self) {
         while let Err(err) = self.new_log_stream_no_retry().await {
-            if err.is::<ListenerRetired>() {
-                return Err(err);
-            }
             warn!(error = %err, "Error creating new log stream, retrying");
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
-        Ok(())
     }
 
     pub async fn init_provider_for_rpc(&mut self) -> Result<()> {
@@ -975,15 +933,15 @@ impl InfiniteLogIter {
         current_block_number > end_at_block
     }
 
-    async fn next(&mut self) -> Result<Option<BlockLogs<Log>>> {
+    async fn next(&mut self) -> Option<BlockLogs<Log>> {
         let block_logs = loop {
             if self.stream.is_none() {
-                self.new_log_stream().await?;
+                self.new_log_stream().await;
                 continue;
             };
             if self.next_blocklogs.is_empty() {
                 let before = self.catchup_blocks;
-                self.consume_catchup_blocks().await?;
+                self.consume_catchup_blocks().await;
                 // An empty page is still successful progress. Keep draining
                 // historical pages before considering the realtime stream or
                 // --end-at-block, which may already be behind the chain tip.
@@ -994,7 +952,7 @@ impl InfiniteLogIter {
                 }
             };
             if !self.next_blocklogs.is_empty() {
-                return Ok(self.next_blocklogs.pop_front());
+                return self.next_blocklogs.pop_front();
             };
             if self.end_at_block_reached().await {
                 match self.end_at_block {
@@ -1008,7 +966,7 @@ impl InfiniteLogIter {
                     ),
                 }
                 warn!("Stopping due to --end-at-block");
-                return Ok(None);
+                return None;
             }
             match self.next_block().await {
                 Err(err) => {
@@ -1048,9 +1006,9 @@ impl InfiniteLogIter {
                 }
             }
         };
-        self.check_missing_ancestors(block_logs.summary).await?;
+        self.check_missing_ancestors(block_logs.summary).await;
         self.next_blocklogs.push_back(block_logs);
-        Ok(self.next_blocklogs.pop_front())
+        self.next_blocklogs.pop_front()
     }
 
     /// Reset state for the next catchup loop iteration.
@@ -1072,20 +1030,17 @@ impl InfiniteLogIter {
             BlockHistory::new(self.reorg_maximum_duration_in_blocks as usize);
     }
 
-    /// Persist a recovery request before attempting or discarding its work.
-    async fn require_recovery_from(&mut self, from: u64) -> Result<()> {
-        let mut from =
-            self.catchup_blocks.map_or(from, |(next, _)| next.min(from));
-        if let Some(recovery) = &self.recovery {
-            from = recovery.require(from).await?.next_block as u64;
-        }
+    /// Retain an earlier gap until catchup has successfully ingested it.
+    fn extend_catchup_from(&mut self, from: u64) {
+        let from = self.catchup_blocks.map_or(from, |(next, _)| next.min(from));
         self.catchup_blocks = Some((from, self.absolute_end_at_block));
-        Ok(())
     }
 
     /// Refetch all uncommitted work, including queued ancestors older than the
     /// failed block. History contains fetched hashes, not successful DB commits.
-    async fn retry_from_block(&mut self, block_number: u64) -> Result<()> {
+    /// This cursor is in memory: gaps older than the startup lookback still
+    /// require the HTTP poller or an explicit replay after a process restart.
+    fn retry_from_block(&mut self, block_number: u64) {
         let mut from = self
             .pending_catchup_page
             .as_ref()
@@ -1093,7 +1048,7 @@ impl InfiniteLogIter {
         for queued in &self.next_blocklogs {
             from = from.min(queued.summary.number);
         }
-        self.require_recovery_from(from).await?;
+        self.extend_catchup_from(from);
         self.next_blocklogs.clear();
         self.pending_catchup_page = None;
         self.last_valid_block = Some(
@@ -1103,7 +1058,6 @@ impl InfiniteLogIter {
         );
         self.block_history =
             BlockHistory::new(self.reorg_maximum_duration_in_blocks as usize);
-        Ok(())
     }
 }
 
@@ -1167,25 +1121,21 @@ async fn db_insert_block(
     }
 }
 
-/// Keep a retired service alive without fetching, acknowledging, or advancing
-/// checkpoints. The heartbeat prevents a deliberate pause from failing liveness.
-async fn pause_retired_listener(
-    result: Result<()>,
+/// Pause without consuming catchup pages or failing the liveness check.
+async fn wait_while_paused(
+    stack_mode: &StackMode,
     heartbeat: &HeartBeat,
     cancel: &CancellationToken,
-) -> Result<()> {
-    match result {
-        Err(err) if err.is::<ListenerRetired>() => {
-            info!("Listener stack retired; pausing ingestion");
-            let mut interval = tokio::time::interval(Duration::from_secs(5));
-            loop {
-                tokio::select! {
-                    _ = cancel.cancelled() => return Ok(()),
-                    _ = interval.tick() => heartbeat.update(),
-                }
-            }
+) {
+    if stack_mode.is_paused() {
+        info!("Listener stack retired; pausing ingestion");
+    }
+    let mut interval = tokio::time::interval(Duration::from_secs(5));
+    while stack_mode.is_paused() {
+        tokio::select! {
+            _ = cancel.cancelled() => return,
+            _ = interval.tick() => heartbeat.update(),
         }
-        other => other,
     }
 }
 
@@ -1371,6 +1321,11 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     )
     .await?;
 
+    // Notifications cover a running listener; reconcile explicitly when a
+    // retired stack starts after the cutover notification has already passed.
+    reconcile_stack_mode(&db.pool().await, &stack_mode).await?;
+    wait_while_paused(&stack_mode, &log_iter.tick_block, &cancel_token).await;
+
     if args.dependent_ops_max_per_chain == 0 {
         let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
         if promoted > 0 {
@@ -1392,114 +1347,86 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             });
     }
 
-    log_iter.recovery = Some(RecoveryCheckpoint::new(
-        db.clone(),
-        [
-            acl_contract_address,
-            tfhe_contract_address,
-            kms_generation_address,
-            protocol_config_address,
-            confidential_bridge_address,
-        ],
-        is_protocol_config_listener,
-    ));
+    // Check connection works
+    log_iter.new_log_stream_no_retry().await?;
 
-    let ingest_result: Result<()> = async {
-        // Check connection works
-        log_iter.new_log_stream_no_retry().await?;
+    loop {
+        log_iter.stream = None; // force new connection each iteration
 
-        loop {
-            log_iter.stream = None; // force new connection each iteration
-
-            while let Some(block_logs) = log_iter.next().await? {
-                // Retirement notifications and checkpoint fences share the same
-                // permanent pause; neither should acknowledge uncommitted work.
-                if stack_mode.is_paused() {
-                    return Err(ListenerRetired.into());
-                }
-
-                if args.only_catchup_loop && !block_logs.catchup {
-                    break;
-                }
-                if !block_logs.catchup
-                    && log_iter
-                        .absolute_end_at_block
-                        .is_some_and(|end| block_logs.summary.number > end)
-                {
-                    // Keep observing the tip so pending catchup can reach finality,
-                    // without ingesting realtime blocks beyond a requested range.
-                    continue;
-                }
-                let status = db_insert_block(
-                    chain_id,
-                    &mut db,
-                    &block_logs,
-                    &acl_contract_address,
-                    &tfhe_contract_address,
-                    &kms_generation_address,
-                    &protocol_config_address,
-                    &confidential_bridge_address,
-                    &args,
-                    is_protocol_config_listener,
-                )
+        while let Some(block_logs) = log_iter.next().await {
+            // Keep the pending page intact while retired. Dropping its blocks
+            // without acknowledgement would repeatedly refetch the same page.
+            wait_while_paused(&stack_mode, &log_iter.tick_block, &cancel_token)
                 .await;
-                if status.is_err() {
-                    // logging & retry on error is already done in db_insert_block
-                    log_iter
-                        .retry_from_block(block_logs.summary.number)
-                        .await?;
-                    continue;
-                };
-                // Advance the page only after its block transactions commit.
-                log_iter.acknowledge_catchup_block().await?;
-                log_iter.last_valid_block = Some(
-                    block_logs
-                        .summary
-                        .number
-                        .max(log_iter.last_valid_block.unwrap_or(0)),
-                );
-                if !block_logs.catchup {
-                    update_finalized_blocks(
-                        &mut db,
-                        &mut log_iter,
-                        block_logs.summary.number,
-                        args.catchup_finalization_in_blocks,
-                    )
-                    .await;
-                }
-                if kms_generation_address.is_some() {
-                    background_tasks.spawn(process_kms_generation_activations(
-                        db.pool.read().await.clone(),
-                        aws_s3_client,
-                    ));
-                }
-            }
-
-            if !args.only_catchup_loop {
+            if args.only_catchup_loop && !block_logs.catchup {
                 break;
             }
-
-            info!(
-                sleep_secs = args.catchup_loop_sleep_secs,
-                "Catchup loop iteration complete, sleeping"
+            if !block_logs.catchup
+                && log_iter
+                    .absolute_end_at_block
+                    .is_some_and(|end| block_logs.summary.number > end)
+            {
+                // Keep observing the tip so pending catchup can reach finality,
+                // without ingesting realtime blocks beyond a requested range.
+                continue;
+            }
+            let status = db_insert_block(
+                chain_id,
+                &mut db,
+                &block_logs,
+                &acl_contract_address,
+                &tfhe_contract_address,
+                &kms_generation_address,
+                &protocol_config_address,
+                &confidential_bridge_address,
+                &args,
+                is_protocol_config_listener,
+            )
+            .await;
+            if status.is_err() {
+                // logging & retry on error is already done in db_insert_block
+                log_iter.retry_from_block(block_logs.summary.number);
+                continue;
+            };
+            // Advance the page only after its block transactions commit.
+            log_iter.acknowledge_catchup_block();
+            log_iter.last_valid_block = Some(
+                block_logs
+                    .summary
+                    .number
+                    .max(log_iter.last_valid_block.unwrap_or(0)),
             );
-            tokio::time::sleep(Duration::from_secs(
-                args.catchup_loop_sleep_secs,
-            ))
+            if !block_logs.catchup {
+                update_finalized_blocks(
+                    &mut db,
+                    &mut log_iter,
+                    block_logs.summary.number,
+                    args.catchup_finalization_in_blocks,
+                )
+                .await;
+            }
+            if kms_generation_address.is_some() {
+                background_tasks.spawn(process_kms_generation_activations(
+                    db.pool.read().await.clone(),
+                    aws_s3_client,
+                ));
+            }
+        }
+
+        if !args.only_catchup_loop {
+            break;
+        }
+
+        info!(
+            sleep_secs = args.catchup_loop_sleep_secs,
+            "Catchup loop iteration complete, sleeping"
+        );
+        tokio::time::sleep(Duration::from_secs(args.catchup_loop_sleep_secs))
             .await;
 
-            // Reset state for next iteration
-            log_iter.reset_for_catchup_loop();
-        }
-        Ok(())
+        // Reset state for next iteration
+        log_iter.reset_for_catchup_loop();
     }
-    .await;
-    pause_retired_listener(
-        ingest_result,
-        &log_iter.tick_timeout,
-        &cancel_token,
-    )
-    .await?;
     cancel_token.cancel();
     for t in background_tasks.join_all().await.iter() {
         if let Err(err) = t {
@@ -1523,15 +1450,13 @@ mod tests {
 
     use super::*;
 
-    pub(super) fn new_test_iter(reorg_max: u64) -> InfiniteLogIter {
+    fn new_test_iter(reorg_max: u64) -> InfiniteLogIter {
         InfiniteLogIter {
             url: String::new(),
             block_time: 12,
             contract_addresses: vec![],
             catchup_blocks: None,
             pending_catchup_page: None,
-            recovery: None,
-            recovery_started: false,
             next_blocklogs: VecDeque::new(),
             stream: None,
             catchup_provider: None,
@@ -1587,8 +1512,8 @@ mod tests {
         assert!(iter.split_by_block(vec![orphan_log]).await.is_err());
     }
 
-    #[tokio::test]
-    async fn catchup_progress_waits_for_whole_page_and_rewinds_on_failure() {
+    #[test]
+    fn catchup_progress_waits_for_whole_page_and_rewinds_on_failure() {
         let mut iter = new_test_iter(50);
         iter.catchup_blocks = Some((40, Some(100)));
         iter.absolute_end_at_block = Some(100);
@@ -1597,12 +1522,11 @@ mod tests {
             from_block: 40,
             next_page: 60,
             remaining_blocks: 2,
-            revision: 0,
         });
-        iter.acknowledge_catchup_block().await.unwrap();
+        iter.acknowledge_catchup_block();
         assert_eq!(iter.catchup_blocks.unwrap().0, 40);
 
-        iter.retry_from_block(50).await.unwrap();
+        iter.retry_from_block(50);
         assert_eq!(iter.catchup_blocks.unwrap().0, 40);
         assert_eq!(iter.last_valid_block, Some(39));
         assert!(iter.pending_catchup_page.is_none());
@@ -1611,11 +1535,10 @@ mod tests {
             from_block: 40,
             next_page: 60,
             remaining_blocks: 2,
-            revision: 0,
         });
-        iter.acknowledge_catchup_block().await.unwrap();
+        iter.acknowledge_catchup_block();
         assert_eq!(iter.catchup_blocks.unwrap().0, 40);
-        iter.acknowledge_catchup_block().await.unwrap();
+        iter.acknowledge_catchup_block();
         assert_eq!(iter.catchup_blocks.unwrap().0, 60);
     }
 
@@ -1659,14 +1582,14 @@ mod tests {
         block.header.inner.number = 60; // finality lag is 20
         iter.block_history.add_block(block.into());
 
-        iter.consume_catchup_blocks().await.unwrap();
+        iter.consume_catchup_blocks().await;
         let block = iter
             .next_blocklogs
             .pop_front()
             .expect("the block exactly at head minus finality lag is eligible");
         assert_eq!(block.summary.number, 40);
         assert!(block.finalized);
-        iter.acknowledge_catchup_block().await.unwrap();
+        iter.acknowledge_catchup_block();
         assert!(iter.end_at_block_reached().await);
     }
 
@@ -1712,12 +1635,11 @@ mod tests {
         let next = tokio::time::timeout(Duration::from_secs(1), iter.next())
             .await
             .expect("catchup must continue without reading realtime")
-            .expect("catchup succeeded")
             .expect("the second page has a computation");
         assert_eq!(next.summary.number, 60);
         assert_eq!(iter.catchup_blocks.unwrap().0, 60);
-        iter.acknowledge_catchup_block().await.unwrap();
-        assert!(iter.next().await.unwrap().is_none());
+        iter.acknowledge_catchup_block();
+        assert!(iter.next().await.is_none());
     }
 
     #[tokio::test]
@@ -1772,7 +1694,7 @@ mod tests {
             };
             assert!(!health.is_alive().await);
 
-            iter.consume_catchup_blocks().await.unwrap();
+            iter.consume_catchup_blocks().await;
 
             assert_eq!(health.is_alive().await, valid, "empty={empty}");
             assert!(!iter.tick_timeout.is_recent(&Duration::from_secs(20)));
@@ -1807,7 +1729,6 @@ mod tests {
                 from_block: from,
                 next_page: from + 20,
                 remaining_blocks: 1,
-                revision: 0,
             });
             iter.last_valid_block = Some(100);
 
@@ -1857,7 +1778,7 @@ mod tests {
         let (_anvil, mut iter, blocks) =
             setup_iter_with_chain(5, 50, 0..=2).await;
 
-        let missing = iter.get_missing_ancestors(blocks[5]).await.unwrap();
+        let missing = iter.get_missing_ancestors(blocks[5]).await;
 
         assert_eq!(missing.len(), 2);
         assert_eq!(missing[0].number, 3);
@@ -1872,7 +1793,7 @@ mod tests {
         let (_anvil, mut iter, blocks) =
             setup_iter_with_chain(15, 50, 0..=1).await;
 
-        let missing = iter.get_missing_ancestors(blocks[15]).await.unwrap();
+        let missing = iter.get_missing_ancestors(blocks[15]).await;
 
         assert_eq!(missing.len(), 13);
         assert_eq!(missing[0].number, 2);
@@ -1886,7 +1807,7 @@ mod tests {
         let (_anvil, mut iter, blocks) =
             setup_iter_with_chain(10, 3, 0..=0).await;
 
-        let missing = iter.get_missing_ancestors(blocks[10]).await.unwrap();
+        let missing = iter.get_missing_ancestors(blocks[10]).await;
 
         assert_eq!(missing.len(), 3);
         assert_eq!(missing[0].number, 7);
@@ -1907,7 +1828,7 @@ mod tests {
             parent_hash: BlockHash::with_last_byte(0x99),
             timestamp: 1000,
         };
-        iter.check_missing_ancestors(block_a).await.unwrap();
+        iter.check_missing_ancestors(block_a).await;
         assert!(iter.block_history.is_known(&block_a.hash));
         assert!(!iter.block_history.is_ready_to_detect_reorg());
 
@@ -1917,7 +1838,7 @@ mod tests {
             parent_hash: BlockHash::with_last_byte(0xAA),
             timestamp: 1012,
         };
-        iter.check_missing_ancestors(block_b).await.unwrap();
+        iter.check_missing_ancestors(block_b).await;
         assert!(iter.block_history.is_known(&block_b.hash));
         assert!(iter.block_history.is_ready_to_detect_reorg());
     }
@@ -1947,5 +1868,139 @@ mod tests {
             ..Default::default()
         };
         assert!(iter.split_by_block(vec![log]).await.is_err());
+    }
+    #[tokio::test]
+    async fn first_start_covers_finality_and_overlap() -> Result<()> {
+        use alloy::transports::mock::Asserter;
+        let asserter = Asserter::new();
+        asserter.push_success(&alloy::primitives::U64::from(113));
+        let provider = ProviderBuilder::new().connect_mocked_client(asserter);
+        let mut iter = new_test_iter(50);
+        assert_eq!(iter.catchup_block_from(&provider).await?, 88);
+        // An explicit replay start is not constrained by saved listener state.
+        iter.start_at_block = Some(100);
+        assert_eq!(iter.catchup_block_from(&provider).await?, 100);
+        Ok(())
+    }
+
+    #[test]
+    fn failure_preserves_queued_ancestors_even_when_their_hashes_are_known() {
+        let mut iter = new_test_iter(50);
+        iter.catchup_blocks = Some((100, None));
+        for number in [95, 96] {
+            let mut ancestor = rpc_block(number as u8);
+            ancestor.header.inner.number = number;
+            let summary = ancestor.into();
+            iter.block_history.add_block(summary);
+            iter.next_blocklogs.push_back(BlockLogs {
+                summary,
+                logs: vec![],
+                catchup: true,
+                finalized: false,
+            });
+        }
+        iter.last_valid_block = Some(200);
+        iter.retry_from_block(99);
+        assert!(iter.next_blocklogs.is_empty());
+        assert_eq!(iter.block_history.size(), 0);
+        assert_eq!(iter.catchup_blocks.unwrap().0, 95);
+        assert_eq!(iter.last_valid_block, Some(94));
+    }
+
+    #[tokio::test]
+    async fn missing_ancestor_fetch_failure_retains_the_gap() {
+        let mut iter = new_test_iter(50);
+        iter.catchup_blocks = Some((100, None));
+        let current = BlockSummary {
+            number: 96,
+            hash: BlockHash::with_last_byte(96),
+            parent_hash: BlockHash::with_last_byte(95),
+            timestamp: 96,
+        };
+        assert!(iter.get_missing_ancestors(current).await.is_empty());
+        assert_eq!(iter.catchup_blocks.unwrap().0, 95);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn bootstrap_database_failure_is_not_treated_as_empty_history(
+    ) -> Result<()> {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow!("{err}"))?;
+        let db =
+            Database::new(&instance.db_url, ChainId::try_from(42_u64)?, 128)
+                .await?;
+        db.pool().await.close().await;
+        assert!(db.read_last_valid_block_checked().await.is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    #[tracing_test::traced_test]
+    async fn retired_listener_startup_stays_alive() -> Result<()> {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow!("{err}"))?;
+        let db =
+            Database::new(&instance.db_url, ChainId::try_from(42_u64)?, 128)
+                .await?;
+        let pool = db.pool().await;
+        sqlx::query("UPDATE versioning SET stack_version = 'v0.15'")
+            .execute(&pool)
+            .await?;
+        let anvil = Anvil::new().spawn();
+        let args = Args::parse_from([
+            "host-listener",
+            "--url",
+            &anvil.ws_endpoint(),
+            "--database-url",
+            instance.db_url(),
+            "--acl-contract-address",
+            "0x0000000000000000000000000000000000000001",
+            "--tfhe-contract-address",
+            "0x0000000000000000000000000000000000000002",
+            "--health-port",
+            "0",
+            "--start-at-block",
+            "0",
+        ]);
+        let listener = main(args);
+        tokio::pin!(listener);
+        tokio::select! {
+            result = &mut listener => panic!("retired listener exited: {result:?}"),
+            result = tokio::time::timeout(Duration::from_secs(10), async {
+                while !logs_contain("Listener stack retired; pausing ingestion") {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }) => result?,
+        }
+        assert!(tokio::time::timeout(
+            Duration::from_millis(100),
+            &mut listener
+        )
+        .await
+        .is_err());
+        assert!(!logs_contain("Error creating new log stream, retrying"));
+
+        // The same pause used during ingestion keeps liveness healthy and can
+        // be cancelled, without dropping or acknowledging queued work.
+        let mode = StackMode::new(false);
+        reconcile_stack_mode(&pool, &mode).await?;
+        assert!(mode.is_paused());
+        let heartbeat = HeartBeat::with_elapsed_secs(30);
+        let cancel = CancellationToken::new();
+        let paused = wait_while_paused(&mode, &heartbeat, &cancel);
+        tokio::pin!(paused);
+        assert!(tokio::time::timeout(Duration::from_millis(20), &mut paused)
+            .await
+            .is_err());
+        assert!(heartbeat.is_recent(&Duration::from_secs(1)));
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(1), paused).await?;
+        Ok(())
     }
 }
