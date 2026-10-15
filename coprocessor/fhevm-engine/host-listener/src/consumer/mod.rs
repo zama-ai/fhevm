@@ -487,6 +487,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             client.clone(),
             old_consumer_id,
             contracts.clone(),
+            stack_mode.clone(),
             client.cancel_token.clone(),
         );
     }

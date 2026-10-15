@@ -56,10 +56,12 @@
 //!   unsuffixed group is removed.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use std::time::Duration;
 
 use alloy::primitives::Address;
 use consumer::{Broker, GroupStatus, ListenerConsumer};
+use fhevm_engine_common::versioning::StackMode;
 use tokio::task::JoinHandle;
 use tokio::time::{interval, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
@@ -122,11 +124,27 @@ pub fn spawn_id_migration(
     client: ListenerConsumer,
     old_consumer_id: String,
     contracts: Vec<Address>,
+    stack_mode: Arc<StackMode>,
     cancel: CancellationToken,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        run(broker, client, old_consumer_id, contracts, cancel).await;
+        run(
+            broker,
+            client,
+            old_consumer_id,
+            contracts,
+            stack_mode,
+            cancel,
+        )
+        .await;
     })
+}
+
+/// Only the live stack may judge its predecessor. Before cutover the
+/// predecessor *is* the live fleet, and a stalled live reader looks exactly
+/// like a retired one; a stack that is itself retired must not act either.
+fn may_retire_predecessor(stack_mode: &StackMode) -> bool {
+    !stack_mode.gcs_mode() && !stack_mode.is_paused()
 }
 
 async fn run(
@@ -134,6 +152,7 @@ async fn run(
     client: ListenerConsumer,
     old_consumer_id: String,
     contracts: Vec<Address>,
+    stack_mode: Arc<StackMode>,
     cancel: CancellationToken,
 ) {
     let branch = if old_consumer_id == client.consumer_id() {
@@ -181,6 +200,11 @@ async fn run(
 
         match &mut phase {
             Phase::Watching => {
+                // Samples from before cutover must not count towards the window.
+                if !may_retire_predecessor(&stack_mode) {
+                    stillness.clear();
+                    continue;
+                }
                 let statuses = match subject.group_status().await {
                     Ok(statuses) => statuses,
                     Err(err) => {
@@ -568,5 +592,11 @@ mod tests {
     fn nothing_reading_at_all_is_the_end_state() {
         let mut stillness = HashMap::new();
         assert!(is_abandoned(&[], &mut stillness));
+    }
+
+    #[test]
+    fn a_shadow_stack_never_retires_its_live_predecessor() {
+        assert!(!may_retire_predecessor(&StackMode::new(true)));
+        assert!(may_retire_predecessor(&StackMode::new(false)));
     }
 }
