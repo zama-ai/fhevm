@@ -39,7 +39,7 @@ are written as one narrative instead.
 | DD-009                                                                                                                                    | replaced by removed; fhevm-internal#1692 | Operator Transfer Model Removed, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                                                      |
 | DD-010                                                                                                                                    | replaced by DD-040                       | Token Disclosure Paths Are Label-Scoped, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                                              |
 | DD-011                                                                                                                                    | replaced by DD-042 composition           | Transfer-And-Call Removed In Favor Of App-Driven CPI Composition, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                     |
-| [DD-012](#dd-012-solana-user-decrypt-reuses-the-gateway-stack)                                                                            | adopted                                  | Solana User Decrypt Reuses The Gateway Stack                                                                                    |
+| [DD-012](#dd-012-solana-decryption-reuses-the-evm-kms-stack)                                                                              | adopted                                  | Solana Decryption Reuses The EVM KMS Stack                                                                                      |
 | [DD-013](#dd-013-prefer-fail-closed-chain-boundaries)                                                                                     | adopted                                  | Prefer Fail-Closed Chain Boundaries                                                                                             |
 | [DD-014](#dd-014-host-handle-creation-has-no-local-test-relaxation)                                                                       | adopted                                  | Host Handle Creation Has No Local Test Relaxation                                                                               |
 | [DD-015](#dd-015-handle-creation-keeps-per-block-entropy)                                                                                 | adopted                                  | Handle Creation Keeps Per-Block Entropy                                                                                         |
@@ -54,7 +54,7 @@ are written as one narrative instead.
 | [DD-024](#dd-024-eager-ciphertext-material-preparation-coprocessor-side)                                                                  | adopted                                  | Eager Ciphertext-Material Preparation (coprocessor side)                                                                        |
 | [DD-025](#dd-025-where-the-release-gate-sits)                                                                                             | adopted                                  | Where The Release Gate Sits                                                                                                     |
 | [DD-026](#dd-026-input-and-identity-encoding-is-bytes32-user-decrypt-is-typed)                                                            | adopted                                  | Input And Identity Encoding Is bytes32, User Decrypt Is Typed                                                                   |
-| [DD-027](#dd-027-chain-aware-v2-user-decrypt-validation)                                                                                  | adopted                                  | Chain-Aware V2 User-Decrypt Validation                                                                                          |
+| DD-027                                                                                                                                    | replaced by DD-074                       | Chain-Aware V2 User-Decrypt Validation, in [DESIGN_HISTORY.md](DESIGN_HISTORY.md)                                               |
 | [DD-028](#dd-028-what-the-port-does-not-do)                                                                                               | adopted                                  | What The Port Does Not Do                                                                                                       |
 | [DD-029](#dd-029-drift_revert--on-chain-reorg-disambiguation)                                                                             | adopted                                  | `drift_revert` ≠ On-Chain Reorg (disambiguation)                                                                                |
 | [DD-030](#dd-030-keep-verifyproofrequestsolana-not-a-v2-rename)                                                                           | adopted                                  | Keep `verifyProofRequestSolana`, Not A V2 Rename                                                                                |
@@ -100,6 +100,8 @@ are written as one narrative instead.
 | [DD-070](#dd-070-solana-is-read-at-finalized-commitment)                                                                                  | adopted                                  | Solana is read at finalized commitment                                                                                         |
 | [DD-071](#dd-071-the-listener-records-each-solana-block-as-a-finalized-host-block-numbered-by-height)                                     | adopted                                  | The listener records each Solana block as a finalized host block, numbered by height                                           |
 | [DD-072](#dd-072-one-source-for-everything-that-can-change)                                                                               | adopted                                  | One source for everything that can change                                                                                      |
+| [DD-073](#dd-073-the-sdk-reads-decryption-trust-from-zama-host)                                                                           | adopted                                  | The SDK reads decryption trust from zama-host                                                                                   |
+| [DD-074](#dd-074-solana-decryption-goes-only-over-http)                                                                                   | adopted                                  | Solana decryption goes only over HTTP                                                                                           |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -279,7 +281,7 @@ Consequences:
 A Store output derived from transient inputs still passes its authority check and declares its own
 allows; nothing is public unless the output says so.
 
-## DD-012: Solana User Decrypt Reuses The Gateway Stack
+## DD-012: Solana Decryption Reuses The EVM KMS Stack
 
 Status: adopted
 
@@ -294,44 +296,35 @@ produced a large, separately-maintained native-v0 admission/store/response subsy
 
 Decision:
 
-Treat Solana as a **gateway-compatible host chain**: its decrypt flows reach the same KMS connectors,
-in the same EIP-712 shapes (the Unified EIP-712 Decryption Request RFC), as EVM's, rather than a
-parallel native stack:
+Treat Solana as a host chain of the EVM KMS stack: its decrypt flows reach the same KMS connectors,
+and the KMS answers them in the same EIP-712 response and certificate shapes (the Unified EIP-712
+Decryption Request RFC) as EVM's, rather than through a parallel native stack:
 
-- **User-decrypt** goes over HTTP: relayer-http forwards the request to each KMS connector's
-  `POST /v1/user-decrypt`, whose body types the handles, validity, transport key and `extraData`
-  next to the Solana permit fields, rather than smuggling Solana auth through `extraData`. `extraData` is only the KMS routing (v0, v1 or v2, DD-060). A chain-aware validator
-  branches on `contracts_chain_id` (see DD-027) so EVM stays strict and Solana is relaxed. The
-  bytes32 handle surface still admits both EVM and Solana. (See DD-026 for the typed-vs-extraData
-  boundary.)
+- **User-decrypt** goes over HTTP to each KMS connector (DD-074), with typed fields next to the
+  Solana permit fields rather than auth smuggled through `extraData` (DD-026).
 - **Public-decrypt** certificates are verified **on-chain** via secp256k1: `zama_host` recovers EVM
   KMS signers from the cert and threshold-checks them, mirroring the EVM `KMSVerifier`
   (`verifyDecryptionEIP712KMSSignatures`). See DD-021.
-- Solana is registered as a host chain (bytes32 ACL = the `zama_host` program id, type-byte `0x01` chain id;
-  added to the relayer `host_chains`).
+- Solana is registered as a host chain (bytes32 ACL = the `zama_host` program id, type-byte `0x01`
+  chain id): in the gateway relayer's `host_chains` for input proofs, and in relayer-http's
+  `supported_chain_ids` for decryption.
 
 One decrypt trust model and one routing path is far less surface to keep in sync than a parallel
-native subsystem. The coprocessor/KMS already verify EIP-712 over bytes32; making Solana speak the
-same shapes lets the existing Gateway/coprocessor/KMS pods serve Solana with chain-aware validation
-instead of a second pipeline.
+native subsystem. The KMS already signs EIP-712 over bytes32; answering Solana in the same shapes
+lets the existing coprocessor and KMS pods serve Solana instead of a second pipeline.
 
 What worked:
 
 The full vertical (input → eval → compute → user-decrypt → public-decrypt/disclose) runs against the
-real gateway/coprocessor/KMS/relayer side-stack reusing the shared coprocessor Postgres.
-
-What didn't / had to change:
-
-The reconciliation initially relaxed EVM input validation unconditionally to admit Solana over V2,
-which weakened EVM (CI caught empty-contracts / wrong-sig being accepted). Fixed with the chain-aware
-cross-field validator (DD-027).
+real gateway, coprocessor, KMS, relayer and relayer-http side-stack reusing the shared coprocessor
+Postgres.
 
 Replaced design (stub): the earlier decision kept a Solana-native KMS request/response subsystem
 (`native-v0`) out of EVM Gateway routing, on the theory the data models were too different to share.
 Reversed to reuse one decrypt trust model and routing path. The branch has no native-v0 tables, no
 typed-column detour and no connector subsystem that reads them.
 
-Open for debate: is unifying on the EVM/Gateway stack the right long-term call, or does a second
+Open for debate: is unifying on the EVM KMS stack the right long-term call, or does a second
 non-EVM chain eventually justify a native path? The KMS-connector decrypt is exercised in the harness,
 not full production KMS wiring (DD-028).
 
@@ -670,32 +663,6 @@ Decision:
 A bytes32 identity plus a Solana chain id (DD-052) keeps one input ABI for EVM and non-EVM hosts. For user-decrypt,
 typed request fields make the Solana identity and auth request self-describing, and `extraData` stays
 the KMS routing field it is on EVM.
-
-## DD-027: Chain-Aware V2 User-Decrypt Validation
-
-Status: adopted
-
-Context:
-
-Admitting Solana over the unified V2 user-decrypt path (DD-012) required relaxing EVM input validation
-(empty `contractAddresses`, 128-or-130-char signature).
-
-Decision:
-
-A **cross-field validator branches on `contracts_chain_id`** via `is_solana_host_chain_id` (type byte
-`0x01`; the predicate’s meaning is DD-052): EVM-strict (non-empty contracts, exact EIP-712 130-hex
-signature) vs Solana-relaxed (empty contracts allowed, 128-or-130-char signature). Per-field
-validators stay permissive; strictness is enforced in the cross-field branch.
-
-Why / what worked:
-
-Branching on the chain type keeps EVM strictness intact while admitting Solana. The CI integration
-test covers both chains.
-
-Open for debate:
-
-The Solana-relaxed signature acceptance (128 ed25519 vs 130) is the seam most likely to need tightening
-once the input-identity encoding (DD-026) is frozen.
 
 ## DD-028: What The Port Does Not Do
 
@@ -1736,8 +1703,8 @@ the connector. Nothing invents a second integer.
 
 `initialize_host_config` requires type byte `0x01` on the host `chain_id` and `0x00` on
 `gateway_chain_id`.
-HostConfig then holds the chosen row. The listener, connector and relayer must use that
-same value. The listener reads `chain_id` from HostConfig rather than from its own config. A
+HostConfig then holds the chosen row. The listener, the connectors, the gateway relayer and
+relayer-http must use that same value. The listener reads `chain_id` from HostConfig rather than from its own config. A
 deployment on a named public row may also compare RPC `getGenesisHash` with the hash above to
 confirm it is on the intended cluster, without that comparison defining the id.
 
@@ -1747,9 +1714,8 @@ the numbers down. It rejects deriving localnet from RPC at boot, and it rejects 
 
 This entry supersedes the chain-type marker in DD-026, the bit-63 detector in DD-027,
 the chain-agnostic address RFC’s high-bit reservation as the long-term marker, and the open-product #1635
-sentinel. DD-026 still owns bytes32 input identity and typed user-decrypt. DD-027 still
-owns EVM-strict vs Solana-relaxed validation. Both keep calling `is_solana_host_chain_id`;
-this entry is that predicate: high byte `0x01`.
+sentinel. DD-026 still owns bytes32 input identity and typed user-decrypt.
+`is_solana_host_chain_id` (`zama-solana-acl`) is this entry's predicate: high byte `0x01`.
 
 ## DD-053: A program id is environment config, not a cargo feature
 
@@ -3041,3 +3007,57 @@ Consequences:
   while a request waits is still refused.
 - Callers no longer pass signers, routing or a domain; the demo dapp and the test suite drop those
   values from their configuration.
+
+## DD-074: Solana decryption goes only over HTTP
+
+Status: adopted
+
+Context:
+
+Solana first decrypted through the Gateway; that design is in
+[`DESIGN_HISTORY.md`](DESIGN_HISTORY.md), "Solana decryption through the Gateway, replaced by HTTP
+(relayer-http)". The KMS connector's HTTP endpoint (RFC 033) and relayer-http carry the same
+requests without a Gateway transaction, on the routes relayer-http already serves for EVM. Keeping
+both meant two transports to keep in step for one flow.
+
+Decision:
+
+A Solana user or public decryption has one path:
+
+1. The SDK posts the request to relayer-http's `/v4/user-decrypt` or `/v4/public-decrypt`
+   (`sdk/js-sdk/src/solana/decryption/relayerHttp.ts`).
+2. relayer-http recognizes the Solana body: on user decrypt by its `attestationType`
+   (`solana-srfc38-user-decrypt-v1`), on public decrypt by the chain of its first handle. It checks
+   the request's form and validity window, with its own handle, window and `extraData` rules
+   (`endpoint/validate.rs`), then `SolanaUserDecryptionRequest::assemble` (`kms-connector-api`) or
+   `zama_solana_request::public_request_chain_id`. It reads no chain. It forwards the body as
+   parsed, equal field by field, to every KMS connector's `POST /v1/user-decrypt` or
+   `/v1/public-decrypt`, and aggregates the answers as it does an EVM request's. It refuses an EVM
+   body whose handles name a Solana chain.
+3. Each connector's endpoint checks the form again and stores the request in the decryption-request
+   table; its worker authorizes it from the host chain (DD-048, DD-061, DD-070) and checks its KMS
+   context (DD-073) before the KMS decrypts.
+
+The Gateway's `Decryption` contract has no Solana entry, the gw-listener subscribes to no Solana
+event, and the gateway relayer submits no Solana decryption (INVARIANTS #50). Solana inputs still go
+through the Gateway's `InputVerification.verifyProofRequestSolana` (DD-026, DD-030).
+
+Rationale:
+
+relayer-http and the connector share the connector's Solana DTOs, the SDK's bodies are held to
+their vectors (`kms-connector/crates/api/tests/vectors.json`), and the Solana form rules come from
+one crate, `zama-solana-request` (DD-072).
+
+Consequences:
+
+- No Gateway fee applies to a Solana decryption, and no pause stops it (INVARIANTS #36).
+- A request of the wrong form, or outside its validity window, is refused by relayer-http with
+  `400 malformed` and reaches no connector. When the connectors refuse a request, relayer-http
+  answers with their most frequent error code, or `504 timeout` if its deadline passes first, as for
+  an EVM request.
+- Pinned by relayer-http's `solana_user_decrypt_forwards_the_body_equal_field_by_field`,
+  `solana_public_decrypt_forwards_the_body_and_answers_the_envelope`,
+  `an_evm_body_with_solana_handles_is_refused_before_any_connector_call` and
+  `a_solana_request_over_the_handle_cap_is_refused_before_any_connector_call`; the connector
+  endpoint's `a_solana_http_request_is_stored_as_its_typed_request`; and the e2e scenarios
+  `decrypt-refusals` and `delegated-user-decrypt`, which send their requests through relayer-http.

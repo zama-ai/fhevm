@@ -527,13 +527,13 @@ Pinned by `mollusk_fhe_execute_trusted_witness_bypasses_and_creates_no_meter`,
 `mollusk_fhe_execute_squatted_meter_with_data_is_rejected`, `mollusk_fhe_execute_wrong_pda_trust_witness_is_rejected`
 and `mollusk_fhe_execute_malformed_trust_witness_is_rejected`.
 
-## G. Decrypt authorization (relayer, KMS)
+## G. Decrypt authorization (relayer-http, KMS)
 
 **42. [HOLDS]** Every KMS party's connector independently re-verifies the
 user's ed25519 signature over the permit's eight fields: user address, transport key, allowed scopes, start
 timestamp, duration, verifying program, chain id and KMS routing (`extra_data`). The handles are not signed, as in
 EVM's EIP-712 permit: the permit grants the scopes and window, and each handle is authorized separately against the
-signer's or delegator's allow leaf. The relayer is transport; it cannot change who asks, the key the
+signer's or delegator's allow leaf. relayer-http is transport; it cannot change who asks, the key the
 shares are encrypted to, or which applications the permit opens.
 Pinned by `every_vector_behaves_as_declared`,
 `every_field_lands_in_its_place_and_the_chain_comes_from_the_handles` (assembly puts each request field in its

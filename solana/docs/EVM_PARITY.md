@@ -65,7 +65,11 @@ soon as it is dispatched.
 ## Gateway, coprocessor and KMS
 
 Solana decryption requests go through relayer-http, which forwards them to each KMS connector's
-`POST /v1/user-decrypt` or `/v1/public-decrypt`; the Gateway has no Solana decryption entry. Each connector independently verifies the signed permit, scope,
+`POST /v1/user-decrypt` or `/v1/public-decrypt`; the Gateway has no Solana decryption entry
+(DD-074). EVM's SDK sends its decryptions to the gateway relayer, which submits them to the
+Gateway's `Decryption` contract, and relayer-http serves EVM requests on the same `/v4/user-decrypt`
+and `/v4/public-decrypt` routes as Solana's. Both
+chains reach the same KMS connectors and KMS. Each connector independently verifies the signed permit, scope,
 window, revocation watermark, deployment identity, KMS context and each Store's canonical
 address/owner/shape. Delegation uses a PDA that expires on the host's Unix clock and a fresh
 deciding snapshot. The Store's app `(program, scope)` scopes both the delegation, as EVM's
