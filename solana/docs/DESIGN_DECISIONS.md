@@ -1060,12 +1060,12 @@ the default key, as OZ `Ownable` refuses `address(0)`. It is called `admin` beca
 account's owner is the program that owns it, and zama-host names the same role `HostConfig.admin`.
 The admin `pause`s and `unpause`s the batcher, sets the minimum batch age and settle deadline that
 batches opened from then on copy (`set_min_batch_age`, `set_settle_deadline`: at most 7 and 30 days,
-a zero deadline allowed, working while paused), and hands the role on with `set_admin`, as with
-zama-host's `set_admin`. EVM's `Ownable` transfers in one step and keeps a renounce; the batcher
-follows zama-host instead. A keypair admin must co-sign, which proves it can sign, so a mistyped key
-cannot take the role. A new admin that is off the curve and owned by a program skips the co-sign, so
-a program PDA, such as a governance PDA, can hold the role. Handing the role to a PDA that no
-program signs for strands it, as on zama-host; there is no separate renounce. Each batch freezes the
+a zero deadline allowed, working while paused), and hands the role on in two steps, as zama-host
+does: `set_admin` nominates a key and `accept_admin`, signed by that key, moves the role. EVM's
+`Ownable` transfers in one step and keeps a renounce; the batcher follows zama-host instead, because
+the admin is expected to rotate between Squads vaults (fhevm-internal#1634). The nominee proves it
+can sign before it holds the role, so a mistyped key, or a PDA no program signs for, cannot take it,
+while a vault PDA accepts through its program. There is no separate renounce. Each batch freezes the
 policy it opened with, as EVM's per-batch `Policy` does, so a setter cannot shorten the age its
 joiners saw nor force-cancel a dispatched batch. While paused, `join` and `dispatch` are refused,
 and `settle` is refused unless the certified total is zero, which cancels the batch, as EVM cancels
@@ -1210,8 +1210,8 @@ have to be able to query directly. The admin and config events are `HostConfigUp
 `DenyScopeUpdatedEvent`, `HcuAppTrustUpdatedEvent`, `NewKmsContextEvent`, `NewKmsEpochEvent`,
 `KmsContextDestroyedEvent` and `PauserUpdatedEvent`. Their instructions (`initialize_host_config`,
 `define_kms_context`, `define_kms_epoch`, `destroy_kms_context`, `set_deny_scope`,
-`set_hcu_app_trusted`, `set_admin`, the `HostAdmin` config setters, `pause`, `unpause` and
-`set_pauser`) carry Anchor's `#[event_cpi]` accounts (`event_authority`, `program`).
+`set_hcu_app_trusted`, `accept_admin`, the `HostAdmin` config setters (`set_admin` among them),
+`pause`, `unpause` and `set_pauser`) carry Anchor's `#[event_cpi]` accounts (`event_authority`, `program`).
 
 `fhe_execute` emits one `FheExecutedEvent` per execution with what the host decided: the block
 context, the random seeds and each step's result handle (DD-056). An indexer cannot recompute the

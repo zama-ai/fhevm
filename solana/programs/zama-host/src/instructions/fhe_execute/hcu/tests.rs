@@ -686,6 +686,7 @@ fn run_walk(
     let signer: [u8; 20] = hash[12..].try_into().unwrap();
     let config = HostConfig {
         admin: authority,
+        pending_admin: Pubkey::default(),
         chain_id: crate::SOLANA_POC_CHAIN_ID,
         gateway_chain_id: 31337,
         input_verification_contract: [0xCD; 20],

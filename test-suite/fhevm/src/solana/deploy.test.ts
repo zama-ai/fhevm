@@ -81,6 +81,7 @@ const fakeContext = async (
                       ? Buffer.from(
                           getHostConfigEncoder().encode({
                             admin: payer,
+                            pendingAdmin: '11111111111111111111111111111111' as Address,
                             chainId,
                             gatewayChainId: gateway.gatewayChainId,
                             inputVerificationContract: gateway.inputVerificationContract,

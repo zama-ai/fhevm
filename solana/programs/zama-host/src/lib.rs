@@ -138,9 +138,14 @@ pub mod zama_host {
         instructions::set_grant_deny_list_enabled(ctx, enabled)
     }
 
-    /// Transfers the host admin. Current admin signs; a new keypair co-signs; a new PDA does not.
-    pub fn set_admin(ctx: Context<SetAdmin>, new_admin: Pubkey) -> Result<()> {
+    /// Nominates the next host admin; `Pubkey::default()` withdraws the nomination.
+    pub fn set_admin(ctx: Context<HostAdmin>, new_admin: Pubkey) -> Result<()> {
         instructions::set_admin(ctx, new_admin)
+    }
+
+    /// The nominee takes the host admin role.
+    pub fn accept_admin(ctx: Context<AcceptAdmin>) -> Result<()> {
+        instructions::accept_admin(ctx)
     }
 
     /// Replaces the registered coprocessor signer set + threshold for input attestations

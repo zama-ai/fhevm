@@ -138,6 +138,8 @@ pub(super) fn emit_config_updated(
             version: EVENT_VERSION,
             config: crate::state::host_config_address().0,
             signer,
+            admin: config.admin,
+            pending_admin: config.pending_admin,
             paused: config.paused,
             grant_deny_list_enabled: config.grant_deny_list_enabled,
             max_hcu_per_tx: config.max_hcu_per_tx,

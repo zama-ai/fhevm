@@ -417,7 +417,8 @@ after the check (its own unit tests pin that mapping).
 ## F. Admin, config & custody
 
 **35. [HOLDS]** Only the configured admin can change HostConfig, except that an enabled pauser can set pause flags
-(#36). Every change emits a host event (`HostConfigUpdatedEvent`, or `NewKmsContextEvent` when `define_kms_context`
+(#36) and the nominee `set_admin` named can take the admin role (#38).
+Every change emits a host event (`HostConfigUpdatedEvent`, or `NewKmsContextEvent` when `define_kms_context`
 moves the current context, or `NewKmsEpochEvent` when `define_kms_epoch` moves the current epoch). The event always goes out through the event CPI, so it lands in the transaction's inner
 instructions, which an RPC provider cannot truncate the way it can truncate logs. A reader therefore sees an admin
 change without replaying instruction data to find one (DD-044). The event only makes the change visible: readers and
@@ -426,8 +427,9 @@ last-modified slot; a client detects a new KMS context or epoch by reading `curr
 `current_kms_epoch_id`.
 Pinned by `only_the_admin_changes_trust_roots_and_only_an_authority_changes_its_store`, which checks over random
 instruction sequences that `HostConfig`, the KMS contexts and the deny, HCU trust and pauser records change only in a
-transaction the admin signed, apart from a signer holding an enabled pauser record adding pause flags,
-and that every `HostConfig` change emits its event CPI (`NewKmsContextEvent` from `define_kms_context`,
+transaction the admin signed, apart from a signer holding an enabled pauser record adding pause flags
+and the nominee making itself the admin and clearing the nomination, and that
+every `HostConfig` change emits its event CPI (`NewKmsContextEvent` from `define_kms_context`,
 `NewKmsEpochEvent` from `define_kms_epoch`, `HostConfigUpdatedEvent` from the rest). Every host instruction is drawn,
 with its admin or Store-authority role also filled by keys that lack it, signing or not, and a host account type the
 property does not classify fails it. Each planted bug must make a deterministic test fail (`scripts/check-planted-bugs.sh`):
@@ -471,14 +473,24 @@ Pinned by `mollusk_initialize_host_config_defaults_block_cap_to_unrestricted`, `
 by the `bootstrapZamaHost` tests in `test-suite/fhevm/src/solana/deploy.test.ts`.
 
 **38. [ASSUMPTION]** The host admin key is a single trusted key. There is no
-multisig and no timelock yet (fhevm-internal#1634). The initial admin must be the BPF
-upgrade authority (`ProgramData.upgrade_authority_address`). After init,
-`set_admin` rotates in one instruction: the current admin signs; a new
-keypair must co-sign; a new PDA skips co-sign only when it is off-curve
-and already owned by a program (not the System Program), so a mistyped
-empty key cannot become admin. A program whose upgrade authority has been
-burned (`upgrade_authority_address == None`) cannot initialize. Production
-governance is tracked separately (fhevm-internal#1634).
+multisig and no timelock in the program; production governance is tracked separately
+(fhevm-internal#1634). The initial admin must be the BPF upgrade authority
+(`ProgramData.upgrade_authority_address`). A program whose upgrade authority has been
+burned (`upgrade_authority_address == None`) cannot initialize. After init the role
+moves in two steps, as with EVM's `Ownable2Step`. The admin signs `set_admin` to
+nominate a key, which replaces any earlier nomination; `Pubkey::default()` withdraws
+it. The role moves only when the nominee signs `accept_admin`, which also clears the
+nomination, and the nominee holds no admin right before then. A key nobody signs for
+therefore never becomes admin, while a PDA, such as a Squads vault, accepts by signing
+through its program. Each step that changes the config emits `HostConfigUpdatedEvent`,
+which carries the admin and the nominee. Pinned by
+`mollusk_the_admin_role_moves_when_the_nominee_accepts`,
+`mollusk_the_handover_rejects_a_host_config_at_another_address`,
+`mollusk_set_admin_refuses_a_signer_that_is_not_the_admin`,
+`mollusk_accept_admin_refuses_a_key_that_is_not_the_nominee`,
+`mollusk_accept_admin_refuses_every_key_when_no_one_is_nominated`,
+`mollusk_accept_admin_refuses_a_replaced_or_withdrawn_nominee` and
+`mollusk_a_nominee_is_not_the_admin_before_accepting`.
 
 **40. [HOLDS]** An application cannot self-trust: HCU trust records are
 written only by the admin, live at `["hcu-trusted", program, scope]`, and
@@ -647,11 +659,13 @@ tokens into a batch and nothing reaches the vault. Quits of a pending or refundi
 join-record closes, authority reclaims and the deadline cancel stay open, so no participant depends
 on the admin to get tokens back; past the deadline, settle is refused for the deadline whether or
 not the batcher is paused. Only the batcher's admin, signing, pauses, unpauses, sets the policy that
-batches opened from then on copy, or hands the role on, and a new admin keypair co-signs. Pinned by
+batches opened from then on copy, or nominates the next admin, and the role moves only when the
+nominee signs `accept_admin`, as on zama-host (#38). Pinned by
 `mollusk_pause_blocks_join_dispatch_and_settle_only`,
 `mollusk_a_paused_batcher_still_cancels_a_zero_total_batch`,
-`mollusk_admin_instructions_need_the_admin_to_sign` and
-`mollusk_set_admin_needs_the_new_admin_to_cosign`.
+`mollusk_admin_instructions_need_the_admin_to_sign`,
+`mollusk_the_admin_role_moves_when_the_nominee_accepts` and
+`mollusk_accept_admin_refuses_anyone_but_the_current_nominee`.
 
 ---
 

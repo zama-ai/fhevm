@@ -74,6 +74,7 @@ const hostConfigAccountFor = (currentKmsContextId: Uint8Array) =>
     new Uint8Array(
       getHostConfigEncoder().encode({
         admin: HOST_PROGRAM,
+        pendingAdmin: '11111111111111111111111111111111' as Address,
         chainId: chain.id,
         gatewayChainId: 31337n,
         inputVerificationContract: new Uint8Array(20),

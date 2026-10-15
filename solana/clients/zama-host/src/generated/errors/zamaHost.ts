@@ -186,6 +186,8 @@ export const ZAMA_HOST_ERROR__SCALAR_OUT_OF_RANGE = 0x17c3; // 6083
 export const ZAMA_HOST_ERROR__NON_INCREASING_KMS_EPOCH_ID = 0x17c4; // 6084
 /** WalletRevokeThroughCpi: a wallet must revoke in a top-level instruction */
 export const ZAMA_HOST_ERROR__WALLET_REVOKE_THROUGH_CPI = 0x17c5; // 6085
+/** PendingAdminMismatch: signer is not the pending host admin */
+export const ZAMA_HOST_ERROR__PENDING_ADMIN_MISMATCH = 0x17c6; // 6086
 
 export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__ACL_WRITES_PAUSED
@@ -256,6 +258,7 @@ export type ZamaHostError =
   | typeof ZAMA_HOST_ERROR__NOT_DELEGATED_YET
   | typeof ZAMA_HOST_ERROR__NOT_PAUSER
   | typeof ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH
+  | typeof ZAMA_HOST_ERROR__PENDING_ADMIN_MISMATCH
   | typeof ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE
   | typeof ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH
   | typeof ZAMA_HOST_ERROR__SCALAR_OUT_OF_RANGE
@@ -346,6 +349,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__NOT_DELEGATED_YET]: `delegation is not granted`,
     [ZAMA_HOST_ERROR__NOT_PAUSER]: `signer is not an enabled pauser`,
     [ZAMA_HOST_ERROR__PDA_CREATION_MISMATCH]: `PDA creation target is invalid`,
+    [ZAMA_HOST_ERROR__PENDING_ADMIN_MISMATCH]: `signer is not the pending host admin`,
     [ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE]: `previous bank hash is not available`,
     [ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH]: `encrypted value previous handle does not match the account`,
     [ZAMA_HOST_ERROR__SCALAR_OUT_OF_RANGE]: `scalar exceeds the maximum of its FHE type`,

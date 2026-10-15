@@ -34,8 +34,10 @@ pub struct Batcher {
     pub payout_confidential_mint: Pubkey,
     /// Public `demo_vault::Vault` the batcher fronts.
     pub vault: Pubkey,
-    /// Key that may pause the batcher, set its policy and hand the role on.
+    /// Key that may pause the batcher, set its policy and nominate the next admin.
     pub admin: Pubkey,
+    /// Nominee who becomes `admin` by calling `accept_admin`; `Pubkey::default()` when none.
+    pub pending_admin: Pubkey,
     /// While paused, joins, dispatches and settles of a nonzero total are refused.
     pub paused: bool,
     /// Minimum batch age copied into each batch when it opens.

@@ -193,6 +193,7 @@ PINNED_SCHEMAS = [
     # produced instead: `zama-solana-acl`'s codec tests and
     # `shared_crate_decoder_reads_what_the_program_serializes`.
     ("zama_host", "account", "RandNonce", True),
+    ("zama_host", "instruction_args", "accept_admin", True),
     ("zama_host", "instruction_args", "define_kms_context", True),
     ("zama_host", "instruction_args", "define_kms_epoch", True),
     ("zama_host", "instruction_args", "delegate_for_user_decryption", True),

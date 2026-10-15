@@ -11,6 +11,7 @@ pub use transient::*;
 pub mod close_owned_accounts;
 #[cfg(feature = "admin-sweep")]
 pub use close_owned_accounts::*;
+pub mod accept_admin;
 pub mod create_encrypted_store;
 pub use create_encrypted_store::*;
 pub mod define_kms_context;
@@ -37,6 +38,7 @@ pub mod set_pauser;
 pub mod unpause;
 pub mod verify_public_decrypt;
 
+pub use accept_admin::*;
 pub use define_kms_context::*;
 pub use define_kms_epoch::*;
 pub use delegate_for_user_decryption::*;

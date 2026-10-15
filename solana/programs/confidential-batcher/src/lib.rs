@@ -52,7 +52,8 @@ pub use errors::*;
 use instructions::*;
 /// Re-export instruction account contexts for tests.
 pub use instructions::{
-    BatcherAdmin, CancelDispatch, Claim, Dispatch, InitializeBatcher, Join, Quit, SetAdmin, Settle,
+    AcceptAdmin, BatcherAdmin, CancelDispatch, Claim, Dispatch, InitializeBatcher, Join, Quit,
+    Settle,
 };
 /// Re-export account layouts, PDA helpers, and payout math.
 pub use state::*;
@@ -149,10 +150,16 @@ pub mod confidential_batcher {
         instructions::set_settle_deadline(ctx, settle_deadline_secs)
     }
 
-    /// Hands the admin role to `new_admin`. The current admin signs; a new keypair co-signs; a
-    /// new PDA does not, provided it already exists as a program-owned account.
-    pub fn set_admin(ctx: Context<SetAdmin>) -> Result<()> {
-        instructions::set_admin(ctx)
+    /// Nominates the next admin (admin-only), replacing any earlier nomination;
+    /// `Pubkey::default()` withdraws it. The admin changes only when the nominee calls
+    /// `accept_admin`. Works while paused.
+    pub fn set_admin(ctx: Context<BatcherAdmin>, new_admin: Pubkey) -> Result<()> {
+        instructions::set_admin(ctx, new_admin)
+    }
+
+    /// The nominee takes the admin role. Works while paused.
+    pub fn accept_admin(ctx: Context<AcceptAdmin>) -> Result<()> {
+        instructions::accept_admin(ctx)
     }
 
     /// Joins the pending batch with the batcher's join token (refused while paused): one user-signed
