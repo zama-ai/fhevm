@@ -406,10 +406,12 @@ async fn reingest_after(
     match prepare {
         "processed" => set_chain_status(&pool, tx_hash, "processed").await?,
         "missing" => {
-            sqlx::query("DELETE FROM dependence_chain WHERE dependence_chain_id = $1")
-                .bind(tx_hash.to_vec())
-                .execute(&pool)
-                .await?;
+            sqlx::query(
+                "DELETE FROM dependence_chain WHERE dependence_chain_id = $1",
+            )
+            .bind(tx_hash.to_vec())
+            .execute(&pool)
+            .await?;
         }
         "processing" => {
             sqlx::query(
@@ -440,12 +442,9 @@ async fn reingest_after(
     }
     // A fresh process re-ingests the same block (e.g. catch-up from an earlier
     // block after the fix is deployed).
-    let mut replay_db = Database::new(
-        &_instance.db_url,
-        ChainId::try_from(42_u64)?,
-        128,
-    )
-    .await?;
+    let mut replay_db =
+        Database::new(&_instance.db_url, ChainId::try_from(42_u64)?, 128)
+            .await?;
     ingest(&mut replay_db, &block, logs(), true).await?;
     let status: Option<String> = sqlx::query_scalar(
         "SELECT status FROM dependence_chain WHERE dependence_chain_id = $1",
@@ -459,7 +458,11 @@ async fn reingest_after(
     .bind(tx_hash.to_vec())
     .fetch_optional(&pool)
     .await?;
-    Ok((status, schedulable(&pool, tx_hash).await?, locked.unwrap_or(false)))
+    Ok((
+        status,
+        schedulable(&pool, tx_hash).await?,
+        locked.unwrap_or(false),
+    ))
 }
 
 #[tokio::test]
@@ -542,10 +545,12 @@ async fn canonical_version_after_orphan_chain_processed() -> anyhow::Result<()>
     .bind(orphan_out.to_vec())
     .execute(&pool)
     .await?;
-    sqlx::query("UPDATE computations SET is_completed = TRUE WHERE output_handle = $1")
-        .bind(orphan_out.to_vec())
-        .execute(&pool)
-        .await?;
+    sqlx::query(
+        "UPDATE computations SET is_completed = TRUE WHERE output_handle = $1",
+    )
+    .bind(orphan_out.to_vec())
+    .execute(&pool)
+    .await?;
     set_chain_status(&pool, producer_tx, "processed").await?;
 
     // The canonical version of the block arrives.
@@ -553,13 +558,21 @@ async fn canonical_version_after_orphan_chain_processed() -> anyhow::Result<()>
         &mut db,
         &canonical,
         vec![
-            rpc_log(&trivial_encrypt(canonical_out), &canonical, producer_tx, 0),
+            rpc_log(
+                &trivial_encrypt(canonical_out),
+                &canonical,
+                producer_tx,
+                0,
+            ),
             rpc_log(&allowed(canonical_out), &canonical, producer_tx, 1),
         ],
         false,
     )
     .await?;
-    assert_eq!(computation_flags(&pool, canonical_out).await?, (true, false));
+    assert_eq!(
+        computation_flags(&pool, canonical_out).await?,
+        (true, false)
+    );
     let reachable = |out: FixedBytes<32>| {
         let pool = pool.clone();
         async move {
@@ -586,7 +599,12 @@ async fn canonical_version_after_orphan_chain_processed() -> anyhow::Result<()>
         &mut replay_db,
         &canonical,
         vec![
-            rpc_log(&trivial_encrypt(canonical_out), &canonical, producer_tx, 0),
+            rpc_log(
+                &trivial_encrypt(canonical_out),
+                &canonical,
+                producer_tx,
+                0,
+            ),
             rpc_log(&allowed(canonical_out), &canonical, producer_tx, 1),
         ],
         true,
