@@ -1,13 +1,15 @@
 use std::time::Duration;
 
 use alloy::eips::BlockId;
-use alloy::primitives::Address;
+use alloy::primitives::{Address, B256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::client::RpcClient;
 use alloy::rpc::types::{Filter, Header, Log};
 use alloy::transports::http::reqwest::Url;
 use alloy::transports::layers::RetryBackoffLayer;
 use anyhow::{anyhow, Context, Result};
+
+use crate::database::ingest::{validate_block_logs, BlockLogs};
 
 /// HTTP client with built-in retry via Alloy's RetryBackoffLayer.
 ///
@@ -87,12 +89,48 @@ impl HttpChainClient {
             .context("Failed to get latest block number")
     }
 
-    pub async fn logs_for_block(&self, block: u64) -> Result<Vec<Log>> {
-        let filter = Self::build_filter(block, &self.addresses);
-        self.provider
-            .get_logs(&filter)
-            .await
-            .with_context(|| format!("Failed to get logs for block {}", block))
+    async fn logs_for_hash(&self, block_hash: B256) -> Result<Vec<Log>> {
+        let filter = Self::build_filter(block_hash, &self.addresses);
+        self.provider.get_logs(&filter).await.with_context(|| {
+            format!("Failed to get logs for block {block_hash}")
+        })
+    }
+
+    /// Read a coherent snapshot and verify that it is still canonical before
+    /// advancing the finalized catchup cursor. A reorg retries the entire
+    /// block on the next poll, rather than reusing a stale logs/header pair.
+    pub async fn block_logs_for_number(
+        &self,
+        number: u64,
+    ) -> Result<BlockLogs<Log>> {
+        let header = self.header_for_block(number).await?;
+        let logs = self.logs_for_hash(header.hash).await?;
+        if header.number != number
+            || logs.iter().any(|log| {
+                log.block_hash != Some(header.hash)
+                    || log.block_number != Some(number)
+                    || log.removed
+            })
+        {
+            return Err(anyhow!(
+                "Logs do not match block {number} ({})",
+                header.hash
+            ));
+        }
+        let current = self.header_for_block(number).await?;
+        if current.hash != header.hash {
+            return Err(anyhow!(
+                "Canonical block {number} changed while fetching logs"
+            ));
+        }
+        let block_logs = BlockLogs {
+            logs,
+            summary: header.into(),
+            catchup: true,
+            finalized: true,
+        };
+        validate_block_logs(&block_logs)?;
+        Ok(block_logs)
     }
 
     pub async fn header_for_block(&self, block_number: u64) -> Result<Header> {
@@ -107,8 +145,8 @@ impl HttpChainClient {
         }
     }
 
-    fn build_filter(block: u64, addresses: &[Address]) -> Filter {
-        let mut filter = Filter::new().from_block(block).to_block(block);
+    fn build_filter(block_hash: B256, addresses: &[Address]) -> Filter {
+        let mut filter = Filter::new().at_block_hash(block_hash);
         if !addresses.is_empty() {
             filter = filter.address(addresses.to_vec());
         }
@@ -135,32 +173,24 @@ impl HttpChainClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::Value;
+    use alloy::rpc::types::Block;
+    use alloy::transports::mock::Asserter;
 
     #[test]
-    fn filter_builder_sets_addresses_and_block_bounds() {
+    fn filter_builder_sets_addresses_and_block_hash() {
         let addr1 = Address::from([1u8; 20]);
         let addr2 = Address::from([2u8; 20]);
 
-        let filter = HttpChainClient::build_filter(42, &[addr1, addr2]);
+        let hash = B256::with_last_byte(42);
+        let filter = HttpChainClient::build_filter(hash, &[addr1, addr2]);
         let serialized = serde_json::to_value(filter).unwrap();
 
-        let from_block = serialized
-            .get("fromBlock")
-            .and_then(Value::as_str)
-            .expect("fromBlock missing");
-        let to_block = serialized
-            .get("toBlock")
-            .and_then(Value::as_str)
-            .expect("toBlock missing");
-
-        let from_block_num =
-            u64::from_str_radix(from_block.trim_start_matches("0x"), 16)
-                .unwrap();
-        let to_block_num =
-            u64::from_str_radix(to_block.trim_start_matches("0x"), 16).unwrap();
-        assert_eq!(from_block_num, 42);
-        assert_eq!(to_block_num, 42);
+        assert_eq!(
+            serialized["blockHash"],
+            serde_json::to_value(hash).unwrap()
+        );
+        assert!(serialized.get("fromBlock").is_none());
+        assert!(serialized.get("toBlock").is_none());
 
         let mut addresses: Vec<Address> =
             serde_json::from_value(serialized.get("address").cloned().unwrap())
@@ -173,7 +203,8 @@ mod tests {
 
     #[test]
     fn filter_builder_skips_addresses_when_empty() {
-        let filter = HttpChainClient::build_filter(1, &[]);
+        let filter =
+            HttpChainClient::build_filter(B256::with_last_byte(1), &[]);
         let serialized = serde_json::to_value(filter).unwrap();
         assert!(serialized.get("address").is_none());
     }
@@ -189,7 +220,8 @@ mod tests {
             None,
         );
 
-        let filter = HttpChainClient::build_filter(7, &addresses);
+        let filter =
+            HttpChainClient::build_filter(B256::with_last_byte(7), &addresses);
         let serialized = serde_json::to_value(filter).unwrap();
         let mut actual: Vec<Address> =
             serde_json::from_value(serialized.get("address").cloned().unwrap())
@@ -217,5 +249,54 @@ mod tests {
         let mut expected = vec![acl_address, tfhe_address, bridge_address];
         expected.sort();
         assert_eq!(actual, expected);
+    }
+
+    fn block(hash: u8) -> Block {
+        let mut block: Block = Block::default();
+        block.header.hash = B256::with_last_byte(hash);
+        block.header.inner.number = 42;
+        block
+    }
+
+    fn mocked_client(asserter: Asserter) -> HttpChainClient {
+        HttpChainClient {
+            provider: Box::new(
+                ProviderBuilder::new().connect_mocked_client(asserter),
+            ),
+            addresses: vec![],
+        }
+    }
+
+    #[tokio::test]
+    async fn coherent_snapshot_retries_after_canonical_header_changes() {
+        let asserter = Asserter::new();
+        let old = block(1);
+        let new = block(2);
+        asserter.push_success(&old);
+        asserter.push_success(&Vec::<Log>::new());
+        asserter.push_success(&new);
+        asserter.push_success(&new);
+        asserter.push_success(&Vec::<Log>::new());
+        asserter.push_success(&new);
+        let client = mocked_client(asserter);
+
+        assert!(client.block_logs_for_number(42).await.is_err());
+        let retried = client.block_logs_for_number(42).await.unwrap();
+        assert_eq!(retried.summary.hash, new.header.hash);
+        assert!(retried.finalized);
+    }
+
+    #[tokio::test]
+    async fn coherent_snapshot_rejects_wrong_hash_logs() {
+        let asserter = Asserter::new();
+        asserter.push_success(&block(1));
+        let log: Log = Log {
+            block_hash: Some(block(2).header.hash),
+            block_number: Some(42),
+            ..Default::default()
+        };
+        asserter.push_success(&vec![log]);
+        let client = mocked_client(asserter);
+        assert!(client.block_logs_for_number(42).await.is_err());
     }
 }

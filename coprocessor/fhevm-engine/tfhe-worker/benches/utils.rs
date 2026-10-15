@@ -221,6 +221,7 @@ pub async fn insert_tfhe_event(
         event: log.inner,
         transaction_hash: Some(tx_hash),
         is_allowed,
+        is_allowed_on_branch: is_allowed,
         block_number: log.block_number.unwrap_or(0),
         block_hash: log.block_hash.unwrap_or_default(),
         block_timestamp: PrimitiveDateTime::MAX,

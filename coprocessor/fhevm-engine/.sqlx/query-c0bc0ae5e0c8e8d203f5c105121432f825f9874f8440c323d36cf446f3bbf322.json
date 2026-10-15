@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT status, dependents\n            FROM dependence_chain\n            WHERE worker_id = $1 AND dependence_chain_id = $2\n            FOR UPDATE\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "dependents",
+        "type_info": "ByteaArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "c0bc0ae5e0c8e8d203f5c105121432f825f9874f8440c323d36cf446f3bbf322"
+}

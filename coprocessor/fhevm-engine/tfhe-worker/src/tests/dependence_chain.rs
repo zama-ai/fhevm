@@ -1,7 +1,7 @@
 use crate::dependence_chain::{LockMngr, LockingReason};
-use crate::tests::utils::{setup_test_app, TestInstance};
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
+use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 use tokio::time::{sleep, Duration};
 use tracing::info;
 use uuid::Uuid;
@@ -171,7 +171,7 @@ async fn test_parked_chain_yields_until_lock_expiry() {
     let (acquired, reason) = mgr.acquire_next_lock().await.unwrap();
     assert_eq!(acquired, Some(ready_id));
     assert_eq!(reason, LockingReason::UpdatedUnowned);
-    mgr.release_current_lock(true, None).await.unwrap();
+    mgr.release_current_lock(true, false).await.unwrap();
 
     assert_eq!(
         mgr.acquire_next_lock().await.unwrap(),
@@ -402,7 +402,7 @@ async fn test_extend_or_release_lock() {
         .cloned()
         .unwrap();
 
-    let lock_timeslice_sec: u32 = 1;
+    let lock_timeslice_sec: u32 = 0;
 
     // Ensure the only available lock can be re-acquired after releasing
     // where mark_as_processed is false
@@ -421,13 +421,14 @@ async fn test_extend_or_release_lock() {
 
         assert_eq!(acquired, Some(dependence_chain_id.clone()));
 
-        // Try to extend the lock after timeslice has been consumed
-        // where enable_timeslice_check is TRUE
-        sleep(Duration::from_secs(lock_timeslice_sec as u64 + 2)).await;
+        // A zero timeslice exercises release immediately, without timing sleeps.
         let dcid = mgr.extend_or_release_current_lock(true).await.unwrap();
 
         assert!(dcid.is_none());
         assert!(mgr.get_current_lock().is_none());
+        assert_eq!(mgr.acquire_next_lock().await.unwrap().0, None);
+        sqlx::query("UPDATE dependence_chain SET lock_expires_at = NOW() - INTERVAL '1 second' WHERE dependence_chain_id = $1")
+            .bind(&dependence_chain_id).execute(&pool).await.unwrap();
     }
 
     let mut mgr = LockMngr::new_with_conf(
@@ -444,7 +445,6 @@ async fn test_extend_or_release_lock() {
 
     // Try to extend the lock after timeslice has been consumed
     // where enable_timeslice_check is FALSE
-    sleep(Duration::from_secs(2)).await;
     let dcid = mgr.extend_or_release_current_lock(false).await.unwrap();
     assert!(dcid.is_some());
     assert!(mgr.get_current_lock().is_some());
@@ -468,7 +468,7 @@ async fn test_extend_or_release_lock_2() {
     let first_id: Vec<u8> = ids.first().cloned().unwrap();
     let second_id: Vec<u8> = ids.get(1).cloned().unwrap();
 
-    let lock_timeslice_sec: u32 = 1;
+    let lock_timeslice_sec: u32 = 0;
 
     info!(?first_id, "Testing extend_or_release_lock");
     let mut mgr = LockMngr::new_with_conf(
@@ -485,7 +485,6 @@ async fn test_extend_or_release_lock_2() {
 
     // Try to extend the lock after timeslice has been consumed
     // where enable_timeslice_check is TRUE
-    sleep(Duration::from_secs(lock_timeslice_sec as u64 + 2)).await;
     let dcid = mgr.extend_or_release_current_lock(true).await.unwrap();
 
     assert!(dcid.is_none());
@@ -493,7 +492,7 @@ async fn test_extend_or_release_lock_2() {
 
     info!(?second_id, "Testing extend_or_release_lock");
     let acquired = mgr.acquire_next_lock().await.unwrap().0;
-    assert_eq!(acquired, Some(first_id.clone()));
+    assert_eq!(acquired, Some(second_id.clone()));
 }
 
 #[tokio::test]
@@ -525,8 +524,10 @@ async fn test_cleanup() {
     assert_eq!(deleted, inserted as u64);
 }
 
-async fn setup() -> TestInstance {
-    let test_instance = setup_test_app().await.expect("valid db instance");
+async fn setup() -> DBInstance {
+    let test_instance = setup_test_db(ImportMode::None)
+        .await
+        .expect("valid db instance");
     let pool = PgPoolOptions::new()
         .max_connections(2)
         .connect(test_instance.db_url())

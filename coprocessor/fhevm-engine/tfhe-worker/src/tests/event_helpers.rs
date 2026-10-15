@@ -123,6 +123,7 @@ pub async fn insert_event(
         event: log.inner,
         transaction_hash: Some(tx_id),
         is_allowed,
+        is_allowed_on_branch: is_allowed,
         block_number: 0,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
