@@ -1,7 +1,7 @@
 // Minimal client for the kms-connector HTTP decryption endpoint (RFC 033):
 // `GET /version`, `POST /v1/public-decrypt`, `POST /v1/user-decrypt`.
 import type { Signer } from 'ethers';
-import { getBytes, hexlify } from 'ethers';
+import { Wallet, getBytes, hexlify, keccak256, toUtf8Bytes } from 'ethers';
 
 import type { SignMode, UnifiedDecryptRequest } from '../unified/unifiedUserDecrypt';
 import { UNIFIED_ATTESTATION_TYPE, backdatedStartTimestamp, signRequest } from '../unified/unifiedUserDecrypt';
@@ -21,17 +21,65 @@ export const endpointUrls = (): string[] =>
     .map((url) => url.trim().replace(/\/$/, ''))
     .filter(Boolean);
 
-/** Pre-shared API key the proxies check. */
-export const apiKey = (): string => (process.env.KMS_CONNECTOR_API_KEY ?? '').trim();
+/** Each party's KMS tx-sender address, aligned with `endpointUrls()`: the `audience` its proxy accepts. */
+export const txSenderAddresses = (): string[] =>
+  (process.env.KMS_CONNECTOR_TX_SENDER_ADDRESSES ?? '')
+    .split(',')
+    .map((address) => address.trim())
+    .filter(Boolean);
 
-/** Request headers common to every call: the bearer credential the proxy requires. */
-const authHeaders = (): Record<string, string> => {
-  const key = apiKey();
-  if (!key) {
-    throw new Error('KMS_CONNECTOR_API_KEY is empty while KMS_CONNECTOR_ENDPOINT_URLS is set');
+/** The `audience` of the party served at `url`. */
+export const audienceOf = (url: string): string => {
+  const audience = txSenderAddresses()[endpointUrls().indexOf(url)];
+  if (!audience) {
+    throw new Error(`no KMS_CONNECTOR_TX_SENDER_ADDRESSES entry for ${url}`);
   }
-  return { authorization: `Bearer ${key}` };
+  return audience;
 };
+
+////////////////////////////////////////////////////////////////////////////////
+// FhevmSig request authentication (RFC 038, mirror of shared/fhevm-sig-auth)
+////////////////////////////////////////////////////////////////////////////////
+
+/** Key of the HTTP client standing in for the relayer: its address is in the proxies' allowed senders. */
+const senderWallet = (): Wallet => {
+  const key = (process.env.KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY ?? '').trim();
+  if (!key) {
+    throw new Error('KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY is empty while KMS_CONNECTOR_ENDPOINT_URLS is set');
+  }
+  return new Wallet(key);
+};
+
+/** Field order is authoritative: it determines the EIP-712 type hash. */
+const FHEVM_SIG_TYPES = {
+  Request: [
+    { name: 'path', type: 'string' },
+    { name: 'bodyDigest', type: 'bytes32' },
+    { name: 'expires', type: 'uint64' },
+    { name: 'audience', type: 'address' },
+  ],
+};
+
+/** Bound to the host chain the connectors read and to its `ProtocolConfig`. */
+const fhevmSigDomain = () => ({
+  name: 'fhevm-http-auth',
+  version: '1',
+  chainId: Number(process.env.CHAIN_ID_HOST),
+  verifyingContract: process.env.PROTOCOL_CONFIG_CONTRACT_ADDRESS!,
+});
+
+/** `Authorization` value for `path` and `body`, signed for `audience` and valid for one minute. */
+export async function fhevmSigHeader(path: string, body: string, audience: string): Promise<string> {
+  const bodyDigest = keccak256(toUtf8Bytes(body));
+  const expires = Math.floor(Date.now() / 1000) + 60;
+  const sig = await senderWallet().signTypedData(fhevmSigDomain(), FHEVM_SIG_TYPES, {
+    path,
+    bodyDigest,
+    expires,
+    audience,
+  });
+  return `FhevmSig expires=${expires}, digest=${bodyDigest}, sig=${sig}`;
+}
 
 /** MPC threshold `t` of the KMS cluster (defaults to 1, the 4-party cluster); the decryption quorum is `2t+1`. */
 export const kmsThreshold = (): number => {
@@ -113,6 +161,7 @@ export const RETRYABLE_BY_CODE: Record<string, boolean> = {
   malformed: false,
   unsupported_attestation_type: false,
   sender_authentication_failed: false,
+  auth_expired: true,
   kms_context_destroyed: false,
   unprocessable: false,
   rate_limited: true,
@@ -144,6 +193,8 @@ export interface PostResult<T> {
 export interface PostOptions {
   /** Per-request timeout; defaults to 120s (the endpoint's own decryption timeout is 30s). */
   readonly timeoutMs?: number;
+  /** `audience` to sign for; defaults to the party served at the target URL. */
+  readonly audience?: string;
 }
 
 const readJson = async (resp: Response): Promise<Record<string, unknown>> => {
@@ -157,10 +208,12 @@ const readJson = async (resp: Response): Promise<Record<string, unknown>> => {
 /** POST a JSON `body` to `url + route`. Never throws on a non-2xx status. */
 export async function post<T>(url: string, route: string, body: unknown, opts?: PostOptions): Promise<PostResult<T>> {
   const started = Date.now();
+  const json = JSON.stringify(body);
+  const authorization = await fhevmSigHeader(route, json, opts?.audience ?? audienceOf(url));
   const resp = await fetch(`${url}${route}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...authHeaders() },
-    body: JSON.stringify(body),
+    headers: { 'content-type': 'application/json', authorization },
+    body: json,
     signal: AbortSignal.timeout(opts?.timeoutMs ?? 120_000),
   });
   return {
@@ -172,7 +225,8 @@ export async function post<T>(url: string, route: string, body: unknown, opts?: 
 }
 
 export async function getVersion(url: string): Promise<{ httpStatus: number; body: Record<string, unknown> }> {
-  const resp = await fetch(`${url}${VERSION_ROUTE}`, { headers: authHeaders(), signal: AbortSignal.timeout(10_000) });
+  const authorization = await fhevmSigHeader(VERSION_ROUTE, '', audienceOf(url));
+  const resp = await fetch(`${url}${VERSION_ROUTE}`, { headers: { authorization }, signal: AbortSignal.timeout(10_000) });
   return { httpStatus: resp.status, body: await readJson(resp) };
 }
 

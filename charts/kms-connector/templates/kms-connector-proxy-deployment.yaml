@@ -1,5 +1,7 @@
 {{- if .Values.kmsConnectorProxy.enabled -}}
 {{- if not .Values.kmsConnectorEndpoint.enabled }}{{ fail "kmsConnectorProxy requires kmsConnectorEndpoint.enabled" }}{{ end -}}
+{{- $contracts := include "kmsConnector.contracts" . | fromYaml -}}
+{{- $ethereum := include "kmsConnector.ethereumHostChain" . | fromYaml -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -77,16 +79,14 @@ spec:
               value: /etc/kms-connector/proxy/tls.key
             - name: KMS_CONNECTOR_ENDPOINT_ADDRESSES
               value: {{ printf "%s:%v" (include "kmsConnectorEndpointName" .) .Values.kmsConnectorEndpoint.ports.http | quote }}
-            {{- if .Values.kmsConnectorProxy.apiKeyDigest.value }}
-            - name: KMS_CONNECTOR_API_KEY_DIGEST
-              value: {{ .Values.kmsConnectorProxy.apiKeyDigest.value | quote }}
-            {{- else }}
-            - name: KMS_CONNECTOR_API_KEY_DIGEST
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.kmsConnectorProxy.apiKeyDigest.secret.name | quote }}
-                  key: {{ .Values.kmsConnectorProxy.apiKeyDigest.secret.key | quote }}
-            {{- end }}
+            - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
+              value: {{ $ethereum.chainId | quote }}
+            - name: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS
+              value: {{ $contracts.ethereumProtocolConfig | quote }}
+            - name: KMS_CONNECTOR_ALLOWED_SENDERS
+              value: {{ .Values.kmsConnectorProxy.allowedSenders | join "," | required "kmsConnectorProxy.allowedSenders must list at least one address" | quote }}
+            - name: KMS_CONNECTOR_TX_SENDER_ADDRESS
+              value: {{ required "kmsConnectorProxy.txSenderAddress must be set" .Values.kmsConnectorProxy.txSenderAddress | quote }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.kmsConnectorProxy.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint }}
