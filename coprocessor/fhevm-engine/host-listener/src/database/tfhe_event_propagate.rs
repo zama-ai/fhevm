@@ -522,22 +522,17 @@ impl Database {
         Ok(upgraded)
     }
 
-    /// Repair the persisted chain identity, which can differ from the grouping
-    /// inferred on replay. Only upgrades wake an active owner; ordinary pending
-    /// duplicates repair processed/missing chains without changing a valid lease.
-    /// This must run after every computation write in the transaction.
-    pub async fn repair_pending_computation_chains(
+    /// Read repair candidates before any chain writes so ingestion can order
+    /// them together with newly inferred chains. This must run after every
+    /// computation write, while the batch's handle locks are still held.
+    pub async fn pending_computation_chains(
         &self,
         tx: &mut Transaction<'_>,
         handles: &[Vec<u8>],
-        upgraded_chains: &[Vec<u8>],
-        slow_chains: &[Vec<u8>],
-    ) -> Result<(), SqlxError> {
-        let repaired: Vec<Vec<u8>> = sqlx::query_scalar(
+    ) -> Result<Vec<(Vec<u8>, PrimitiveDateTime)>, SqlxError> {
+        sqlx::query_as(
             r#"
-            INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at, schedule_priority)
-            SELECT c.dependence_chain_id, 'updated', MIN(c.schedule_order),
-                   CASE WHEN c.dependence_chain_id = ANY($4::bytea[]) THEN 1 ELSE 0 END
+            SELECT c.dependence_chain_id, MIN(c.schedule_order)
             FROM computations c
             WHERE c.output_handle = ANY($1::bytea[])
               AND c.host_chain_id = $2
@@ -545,27 +540,45 @@ impl Database {
               AND c.is_allowed AND NOT c.is_completed AND NOT c.is_error
               AND NOT EXISTS (SELECT 1 FROM ciphertexts ct WHERE ct.handle = c.output_handle)
             GROUP BY c.dependence_chain_id
-            ORDER BY c.dependence_chain_id
+            "#,
+        )
+        .bind(handles)
+        .bind(self.chain_id.as_i64())
+        .fetch_all(tx.as_mut())
+        .await
+    }
+
+    /// Repair one persisted chain in the same order as inferred-chain writes.
+    /// Only upgrades wake an active owner; ordinary pending duplicates repair
+    /// processed/missing chains without changing a valid lease.
+    pub async fn repair_pending_computation_chain(
+        &self,
+        tx: &mut Transaction<'_>,
+        chain_id: &[u8],
+        schedule_order: PrimitiveDateTime,
+        upgraded: bool,
+        slow: bool,
+    ) -> Result<bool, SqlxError> {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at, schedule_priority)
+            VALUES ($1, 'updated', $2, $3)
             ON CONFLICT (dependence_chain_id) DO UPDATE
             SET status = CASE
-                    WHEN dependence_chain.status = 'processed'
-                      OR dependence_chain.dependence_chain_id = ANY($3::bytea[])
+                    WHEN dependence_chain.status = 'processed' OR $4
                     THEN 'updated' ELSE dependence_chain.status END,
                 schedule_priority = GREATEST(dependence_chain.schedule_priority, EXCLUDED.schedule_priority)
-            WHERE dependence_chain.status = 'processed'
-               OR dependence_chain.dependence_chain_id = ANY($3::bytea[])
+            WHERE dependence_chain.status = 'processed' OR $4
                OR dependence_chain.schedule_priority < EXCLUDED.schedule_priority
-            RETURNING dependence_chain_id
-            "#
-        ).bind(handles).bind(self.chain_id.as_i64()).bind(upgraded_chains).bind(slow_chains)
-            .fetch_all(tx.as_mut()).await?;
-        if !repaired.is_empty() {
-            warn!(
-                count = repaired.len(),
-                "Pending computation dependence chains re-armed"
-            );
-        }
-        Ok(())
+            "#,
+        )
+        .bind(chain_id)
+        .bind(schedule_order)
+        .bind(i16::from(slow))
+        .bind(upgraded)
+        .execute(tx.as_mut())
+        .await?;
+        Ok(result.rows_affected() > 0)
     }
 
     /// Publish committed identities, not a replay's newly inferred grouping.
@@ -1224,28 +1237,25 @@ impl Database {
     pub async fn update_dependence_chain(
         &self,
         tx: &mut Transaction<'_>,
-        mut chains: OrderedChains,
+        chain: &Chain,
         block_timestamp: PrimitiveDateTime,
         block_summary: &BlockSummary,
         slow_dep_chain_ids: &HashSet<ChainHash>,
     ) -> Result<(), SqlxError> {
-        chains.sort_by_key(|chain| chain.hash);
-        for chain in chains {
-            let schedule_priority = if slow_dep_chain_ids.contains(&chain.hash)
-            {
-                SchedulePriority::Slow
-            } else {
-                SchedulePriority::Fast
-            };
-            let last_updated_at = block_timestamp.saturating_add(
-                TimeDuration::microseconds(chain.before_size as i64),
-            );
-            let dependents = chain
-                .dependents
-                .iter()
-                .map(|h| h.to_vec())
-                .collect::<Vec<_>>();
-            sqlx::query!(
+        let schedule_priority = if slow_dep_chain_ids.contains(&chain.hash) {
+            SchedulePriority::Slow
+        } else {
+            SchedulePriority::Fast
+        };
+        let last_updated_at = block_timestamp.saturating_add(
+            TimeDuration::microseconds(chain.before_size as i64),
+        );
+        let dependents = chain
+            .dependents
+            .iter()
+            .map(|h| h.to_vec())
+            .collect::<Vec<_>>();
+        sqlx::query!(
                 r#"
                 INSERT INTO dependence_chain(
                     dependence_chain_id,
@@ -1287,7 +1297,6 @@ impl Database {
             )
             .execute(tx.deref_mut())
             .await?;
-        }
         Ok(())
     }
 }

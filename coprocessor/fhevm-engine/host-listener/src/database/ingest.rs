@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -9,7 +9,7 @@ use alloy::sol_types::SolEventInterface;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::types::Handle;
 use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::cmd::block_history::{BlockHash, BlockSummary};
 use crate::cmd::InfiniteLogIter;
@@ -428,26 +428,59 @@ pub async fn ingest_block_logs(
     .await?;
     db.mark_block_as_valid(&mut tx, &block_logs.summary, block_logs.finalized)
         .await?;
+    // A replay's inferred grouping can differ from the persisted computation's
+    // chain. Order the union before taking any chain row locks: two separately
+    // sorted passes can still deadlock (inferred B -> stored A vs A -> B).
+    // Write missing rows in this order too; SELECT FOR UPDATE alone misses them.
+    let mut chain_updates = BTreeMap::new();
     if at_least_one_insertion {
-        db.update_dependence_chain(
-            &mut tx,
-            chains,
-            block_timestamp,
-            &block_logs.summary,
-            &slow_dep_chain_ids,
-        )
-        .await?;
+        for chain in chains {
+            chain_updates.insert(chain.hash.to_vec(), (Some(chain), None));
+        }
     }
-    db.repair_pending_computation_chains(
-        &mut tx,
-        &touched_handles,
-        &upgraded_chains,
-        &slow_dep_chain_ids
-            .iter()
-            .map(|id| id.to_vec())
-            .collect::<Vec<_>>(),
-    )
-    .await?;
+    for (id, schedule_order) in db
+        .pending_computation_chains(&mut tx, &touched_handles)
+        .await?
+    {
+        chain_updates.entry(id).or_default().1 = Some(schedule_order);
+    }
+    let upgraded_chains = upgraded_chains.into_iter().collect::<HashSet<_>>();
+    let slow_chains = slow_dep_chain_ids
+        .iter()
+        .map(|id| id.to_vec())
+        .collect::<HashSet<_>>();
+    let mut repaired = 0;
+    for (id, (inferred, pending)) in chain_updates {
+        if let Some(chain) = inferred {
+            db.update_dependence_chain(
+                &mut tx,
+                &chain,
+                block_timestamp,
+                &block_logs.summary,
+                &slow_dep_chain_ids,
+            )
+            .await?;
+            // This upsert already wakes/recreates the chain and preserves its
+            // slow priority, so it also covers any pending repair for this ID.
+        } else if let Some(schedule_order) = pending {
+            repaired += usize::from(
+                db.repair_pending_computation_chain(
+                    &mut tx,
+                    &id,
+                    schedule_order,
+                    upgraded_chains.contains(&id),
+                    slow_chains.contains(&id),
+                )
+                .await?,
+            );
+        }
+    }
+    if repaired > 0 {
+        warn!(
+            count = repaired,
+            "Pending computation dependence chains re-armed"
+        );
+    }
     let cache_updates = if options.dependence_cross_block {
         db.computation_chain_cache_entries(&mut tx, &touched_handles)
             .await?
