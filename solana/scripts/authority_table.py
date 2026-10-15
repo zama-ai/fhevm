@@ -36,7 +36,7 @@ CAPABILITIES = {
         "consumers": "host listener (`HostConfig.chain_id`, read at startup)",
     },
     "Trust roots": {
-        "owns": "KMS contexts, coprocessor signers, EIP-712 domain, `verify_public_decrypt`",
+        "owns": "KMS contexts, coprocessor signers, `verify_public_decrypt`",
         "changed_by": "admin",
         "consumers": "confidential-token redemption, KMS connector",
     },
@@ -100,7 +100,6 @@ DECLARATIONS: dict[str, dict[str, Any]] = {
     "define_kms_epoch": {"capability": "Trust roots", "signers": {"admin": ADMIN}},
     "destroy_kms_context": {"capability": "Trust roots", "signers": {"admin": ADMIN}},
     "set_coprocessor_signers": {"capability": "Trust roots", "signers": {"admin": ADMIN}},
-    "set_eip712_domain": {"capability": "Trust roots", "signers": {"admin": ADMIN}},
     "verify_public_decrypt": {"capability": "Trust roots", "signers": {}},
     "open_transient_store": {"capability": "Execution", "signers": {"payer": PAYER}},
     "close_transient_store": {"capability": "Execution", "signers": {}},

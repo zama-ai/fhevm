@@ -117,10 +117,6 @@ enum Action {
         admin: Role,
         enabled: bool,
     },
-    SetEip712Domain {
-        admin: Role,
-        gateway_chain_id: u64,
-    },
     SetCoprocessorSigners {
         admin: Role,
         signer: u8,
@@ -210,7 +206,6 @@ impl Action {
             Action::Unpause { .. } => "unpause",
             Action::SetPauser { .. } => "set_pauser",
             Action::SetGrantDenyListEnabled { .. } => "set_grant_deny_list_enabled",
-            Action::SetEip712Domain { .. } => "set_eip712_domain",
             Action::SetCoprocessorSigners { .. } => "set_coprocessor_signers",
             Action::SetMaxHcuPerTx { .. } => "set_max_hcu_per_tx",
             Action::SetMaxHcuDepthPerTx { .. } => "set_max_hcu_depth_per_tx",
@@ -287,8 +282,6 @@ fn action() -> impl Strategy<Value = Action> {
             .prop_map(|(payer, admin, pauser, enabled)| Action::SetPauser { payer, admin, pauser, enabled }),
         2 => (role(), any::<bool>())
             .prop_map(|(admin, enabled)| Action::SetGrantDenyListEnabled { admin, enabled }),
-        1 => (role(), 1..4u64)
-            .prop_map(|(admin, gateway_chain_id)| Action::SetEip712Domain { admin, gateway_chain_id }),
         1 => (role(), 1..4u8).prop_map(|(admin, signer)| Action::SetCoprocessorSigners { admin, signer }),
         1 => (role(), hcu_limit()).prop_map(|(admin, value)| Action::SetMaxHcuPerTx { admin, value }),
         1 => (role(), hcu_limit()).prop_map(|(admin, value)| Action::SetMaxHcuDepthPerTx { admin, value }),
@@ -760,18 +753,6 @@ impl World {
             Action::SetGrantDenyListEnabled { admin, enabled } => host_admin(
                 admin,
                 host::instruction::SetGrantDenyListEnabled { enabled: *enabled }.data(),
-            ),
-            Action::SetEip712Domain {
-                admin,
-                gateway_chain_id,
-            } => host_admin(
-                admin,
-                host::instruction::SetEip712Domain {
-                    gateway_chain_id: *gateway_chain_id,
-                    input_verification_contract: [0x77; 20],
-                    decryption_contract: [0x88; 20],
-                }
-                .data(),
             ),
             Action::SetCoprocessorSigners { admin, signer } => host_admin(
                 admin,

@@ -1,5 +1,5 @@
 //! Host admin surface: `initialize_host_config`, pausers and pause flags, the `HostAdmin` setters (unpause,
-//! grant-deny, admin transfer, EIP-712 domain) and the preview-only `close_owned_accounts`.
+//! grant-deny, admin transfer) and the preview-only `close_owned_accounts`.
 //!
 //! Split out of `host_mollusk.rs` so that file does not keep growing. These tests only
 //! touch `HostConfig` through the admin account contexts; they do not share the
@@ -799,30 +799,6 @@ fn mollusk_set_admin_rejects_unallocated_off_curve_key() {
             .admin,
         admin
     );
-}
-
-#[test]
-fn mollusk_set_eip712_domain_persists_zeros() {
-    let admin = Pubkey::new_unique();
-    let (host_config, account) = host_config_account(admin);
-    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
-
-    context.process_and_validate_instruction(
-        &host_admin_ix(
-            admin,
-            host_config,
-            host::instruction::SetEip712Domain {
-                gateway_chain_id: 0,
-                input_verification_contract: [0u8; 20],
-                decryption_contract: [0u8; 20],
-            },
-        ),
-        &[Check::success()],
-    );
-    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
-    assert_eq!(config.gateway_chain_id, 0);
-    assert_eq!(config.input_verification_contract, [0u8; 20]);
-    assert_eq!(config.decryption_contract, [0u8; 20]);
 }
 
 // ---- close_owned_accounts (admin-sweep) ----

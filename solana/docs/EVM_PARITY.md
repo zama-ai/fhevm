@@ -25,6 +25,10 @@ Supported FHE types cover Bool and Uint8 through Uint128. Signed, larger and str
 are outside the port today. Coprocessor and KMS signature checks use the same EIP-712 trust roots
 as EVM; threshold checks count distinct registered signers. Unknown signatures do not raise
 the count (the accepted behavior tracked in #1888 differs from EVM's rejection).
+The gateway domain (`gateway_chain_id`, `input_verification_contract`, `decryption_contract`) is
+set once by `initialize_host_config`, as EVM's `InputVerifier` and `KMSVerifier` set it in their
+initializer. No instruction changes it. A preview deployment changes it by closing `HostConfig`
+with `close_owned_accounts` and initializing again.
 
 ## Confidential token and vault composition
 

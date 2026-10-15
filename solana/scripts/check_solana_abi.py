@@ -202,7 +202,6 @@ PINNED_SCHEMAS = [
     ("zama_host", "instruction_args", "revoke_permits", True),
     ("zama_host", "instruction_args", "set_admin", True),
     ("zama_host", "instruction_args", "set_coprocessor_signers", True),
-    ("zama_host", "instruction_args", "set_eip712_domain", True),
     ("zama_host", "instruction_args", "set_deny_scope", True),
     ("zama_host", "instruction_args", "set_grant_deny_list_enabled", True),
     ("zama_host", "instruction_args", "set_hcu_app_trusted", True),

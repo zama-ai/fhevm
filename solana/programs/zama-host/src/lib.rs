@@ -143,21 +143,6 @@ pub mod zama_host {
         instructions::set_admin(ctx, new_admin)
     }
 
-    /// Writes the gateway EIP-712 domain fields together. Zeros are legal.
-    pub fn set_eip712_domain(
-        ctx: Context<HostAdmin>,
-        gateway_chain_id: u64,
-        input_verification_contract: [u8; 20],
-        decryption_contract: [u8; 20],
-    ) -> Result<()> {
-        instructions::set_eip712_domain(
-            ctx,
-            gateway_chain_id,
-            input_verification_contract,
-            decryption_contract,
-        )
-    }
-
     /// Replaces the registered coprocessor signer set + threshold for input attestations
     /// (EVM `InputVerifier` parity).
     pub fn set_coprocessor_signers(
