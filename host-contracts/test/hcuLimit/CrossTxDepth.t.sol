@@ -215,9 +215,9 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         assertEq(_storedDepth(alice), step);
     }
 
-    function test_LoadDepthRejectsOtherCallers() public {
+    function test_CacheDepthRejectsOtherCallers() public {
         vm.expectRevert(HCULimit.CallerMustBeACLContract.selector);
-        hcu.loadDepth(keccak256("handle"), address(this));
+        hcu.cacheDepth(keccak256("handle"), address(this));
     }
 
     function test_LimitAndDecayMustBeBothSetOrBothZero() public {
