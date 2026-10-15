@@ -226,9 +226,11 @@ async fn idle_scheduler_recovers_stale_counts_after_ready_work() -> Result {
     chain(&pool, 1, 20, 1, 0).await?;
     chain(&pool, 2, 10, 0, 1).await?;
     let mut worker = manager(&pool);
+    worker.set_dependency_count_fallback_interval(2);
     // Ready slow-lane work still precedes stale fast-lane counters.
     assert_eq!(worker.acquire_next_lock().await?.0, Some(vec![2]));
     worker.release_current_lock(true, false).await?;
+    assert_eq!(worker.acquire_next_lock().await?.0, None);
     assert_eq!(worker.acquire_next_lock().await?.0, Some(vec![1]));
     Ok(())
 }
@@ -266,6 +268,7 @@ async fn expired_positive_count_owner_is_recoverable_but_live_owner_is_preserved
     sqlx::query("UPDATE dependence_chain SET status = 'processing', worker_id = $1, lock_expires_at = NOW() + INTERVAL '1 hour'")
         .bind(old_owner).execute(&pool).await?;
     let mut worker = manager(&pool);
+    worker.set_dependency_count_fallback_interval(1);
     assert_eq!(worker.acquire_next_lock().await?.0, None);
     sqlx::query("UPDATE dependence_chain SET lock_expires_at = NOW() - INTERVAL '1 second' WHERE dependence_chain_id = $1")
         .bind(vec![2_u8]).execute(&pool).await?;
@@ -278,6 +281,63 @@ async fn expired_positive_count_owner_is_recoverable_but_live_owner_is_preserved
             .fetch_one(&pool)
             .await?;
     assert_eq!(owner, old_owner);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn idle_rescues_are_bounded_with_a_blocked_backlog() -> Result {
+    let (_instance, pool) = setup().await?;
+    for id in 1..=20 {
+        chain(&pool, id, 100 - i32::from(id), 1, 0).await?;
+    }
+    let mut worker = manager(&pool);
+    for expected in [1, 2] {
+        // The default cadence also applies with no ready work. It survives
+        // worker-level no-progress resets and successful blocked acquisitions.
+        for _ in 0..100 {
+            assert_eq!(worker.acquire_next_lock().await?.0, None);
+        }
+        assert_eq!(worker.acquire_next_lock().await?.0, Some(vec![expected]));
+        worker.release_current_lock(false, true).await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn ready_work_does_not_wait_for_the_idle_rescue_interval() -> Result {
+    let (_instance, pool) = setup().await?;
+    chain(&pool, 1, 20, 1, 0).await?;
+    let mut worker = manager(&pool);
+    worker.set_dependency_count_fallback_interval(4);
+    assert_eq!(worker.acquire_next_lock().await?.0, None);
+    chain(&pool, 2, 10, 0, 1).await?;
+    assert_eq!(worker.acquire_next_lock().await?.0, Some(vec![2]));
+    worker.release_current_lock(true, false).await?;
+    for _ in 0..2 {
+        assert_eq!(worker.acquire_next_lock().await?.0, None);
+    }
+    assert_eq!(worker.acquire_next_lock().await?.0, Some(vec![1]));
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn empty_rescue_attempt_resets_the_cadence() -> Result {
+    let (_instance, pool) = setup().await?;
+    let mut worker = manager(&pool);
+    worker.set_dependency_count_fallback_interval(2);
+    for _ in 0..3 {
+        assert_eq!(worker.acquire_next_lock().await?.0, None);
+    }
+    // The third poll attempted a rescue with no candidate. A newly arriving
+    // positive-count chain must not trigger another rescue on the next poll.
+    chain(&pool, 1, 10, 1, 0).await?;
+    for _ in 0..2 {
+        assert_eq!(worker.acquire_next_lock().await?.0, None);
+    }
+    assert_eq!(worker.acquire_next_lock().await?.0, Some(vec![1]));
     Ok(())
 }
 
@@ -671,6 +731,7 @@ async fn replayed_fork_makes_progress(missing_acl_only: bool, cold_replay: bool)
     sqlx::query("UPDATE dependence_chain SET last_updated_at = last_updated_at - INTERVAL '1 second' WHERE dependence_chain_id = $1")
         .bind(a.to_vec()).execute(&pool).await?;
     let mut worker = manager(&pool);
+    worker.set_dependency_count_fallback_interval(2);
     assert_eq!(worker.acquire_next_lock().await?.0, Some(a.to_vec()));
     finish_computations(&pool, a.as_slice()).await?;
     worker.release_current_lock(true, false).await?;
@@ -680,11 +741,10 @@ async fn replayed_fork_makes_progress(missing_acl_only: bool, cold_replay: bool)
     ingest(&mut db, block, logs).await?;
     let mut reached_b = false;
     for _ in 0..10 {
-        let next = worker
-            .acquire_next_lock()
-            .await?
-            .0
-            .expect("pending graph remains reachable");
+        let Some(next) = worker.acquire_next_lock().await?.0 else {
+            // An idle acquisition can defer rescue until the next cadence.
+            continue;
+        };
         if next == b.to_vec() {
             reached_b = true;
             finish_computations(&pool, &next).await?;

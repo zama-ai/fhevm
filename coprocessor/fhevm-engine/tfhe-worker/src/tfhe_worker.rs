@@ -250,15 +250,10 @@ async fn tfhe_worker_cycle(
         };
 
         // Query for transactions to execute
-        let (mut transactions, _, has_more_work) = query_for_work(
-            args,
-            &health_check,
-            &mut trx,
-            &mut dcid_mngr,
-            &mut no_progress_cycles,
-        )
-        .instrument(loop_span.clone())
-        .await?;
+        let (mut transactions, _, has_more_work) =
+            query_for_work(args, &health_check, &mut trx, &mut dcid_mngr)
+                .instrument(loop_span.clone())
+                .await?;
         if has_more_work {
             // We've fetched work, so we'll poll again without waiting
             // for a notification after this cycle.
@@ -341,6 +336,9 @@ async fn tfhe_worker_cycle(
         dcid_mngr.clear_processing_error();
         if defer_chain {
             dcid_mngr.release_current_lock(false, true).await?;
+            // This counter only bounds retries of the current chain. Rescue
+            // cadence now lives entirely in the lock manager.
+            no_progress_cycles = 0;
         }
         drop(loop_span);
         #[cfg(feature = "bench")]
@@ -426,7 +424,6 @@ async fn query_for_work<'a>(
     health_check: &crate::health_check::HealthCheck,
     trx: &mut sqlx::Transaction<'a, Postgres>,
     deps_chain_mngr: &mut dependence_chain::LockMngr,
-    no_progress_cycles: &mut u32,
 ) -> Result<(Vec<ComponentNode>, PrimitiveDateTime, bool), CoprocessorError> {
     let s_dcid = tracing::info_span!(
         "query_dependence_chain",
@@ -437,18 +434,8 @@ async fn query_for_work<'a>(
         let result = match deps_chain_mngr.extend_or_release_current_lock(true).await? {
             // If there is a current lock, we extend it and use its dependence_chain_id
             Some((id, reason)) => (Some(id), reason),
-            None => {
-                if *no_progress_cycles
-                    < args
-                        .dcid_ignore_dependency_count_threshold
-                        .saturating_mul(args.dcid_max_no_progress_cycles)
-                {
-                    deps_chain_mngr.acquire_next_lock().await?
-                } else {
-                    *no_progress_cycles = 0;
-                    deps_chain_mngr.acquire_early_lock().await?
-                }
-            }
+            // Busy and idle rescues share the manager's acquisition cadence.
+            None => deps_chain_mngr.acquire_next_lock().await?,
         };
         Ok::<_, CoprocessorError>(result)
     }

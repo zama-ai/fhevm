@@ -67,7 +67,7 @@ pub struct LockMngr {
     worker_id: Uuid,
     lock: Option<(DatabaseChainLock, SystemTime)>,
     pending_error: Option<String>,
-    normal_acquisitions_since_fallback: u32,
+    normal_acquisition_attempts_since_fallback: u32,
     dependency_count_fallback_interval: u32,
 
     // Configurations
@@ -122,7 +122,7 @@ impl LockMngr {
             pool,
             lock: None,
             pending_error: None,
-            normal_acquisitions_since_fallback: 0,
+            normal_acquisition_attempts_since_fallback: 0,
             dependency_count_fallback_interval: DEPENDENCY_COUNT_FALLBACK_INTERVAL,
             lock_ttl_sec: 30,
             lock_timeslice_sec: None,
@@ -151,14 +151,14 @@ impl LockMngr {
         mgr
     }
 
-    pub fn set_dependency_count_fallback_interval(&mut self, acquisitions: u32) {
-        self.dependency_count_fallback_interval = acquisitions.max(1);
+    pub fn set_dependency_count_fallback_interval(&mut self, attempts: u32) {
+        self.dependency_count_fallback_interval = attempts.max(1);
     }
 
     /// Acquire the next available dependence-chain entry for processing
-    /// sorted by lane and last_updated_at (FIFO). If no chain with satisfied
-    /// dependencies is available, try the oldest chain without trusting its
-    /// dependency count: reorgs and interrupted releases can leave stale counts.
+    /// sorted by lane and last_updated_at (FIFO). Periodically ignore dependency
+    /// counts, including after empty polls: reorgs can leave stale counts, but
+    /// idle workers must not continuously execute blocked consumers.
     /// Returns the dependence_chain_id if a lock was acquired
     pub async fn acquire_next_lock(
         &mut self,
@@ -168,12 +168,18 @@ impl LockMngr {
             return Ok((None, LockingReason::Missing));
         }
 
-        // Rescue stale counters even while ordinary chains continue making
-        // progress. Successful work must not postpone this fallback forever.
-        if self.normal_acquisitions_since_fallback >= self.dependency_count_fallback_interval {
+        // One cadence covers busy and idle workers. Count empty acquisition
+        // attempts too, independently of the worker's per-chain progress count.
+        // Otherwise an idle worker either never rescues or rescues on every poll.
+        if self.normal_acquisition_attempts_since_fallback
+            >= self.dependency_count_fallback_interval
+        {
             return self.acquire_early_lock().await;
         }
 
+        self.normal_acquisition_attempts_since_fallback = self
+            .normal_acquisition_attempts_since_fallback
+            .saturating_add(1);
         let started_at = SystemTime::now();
         let row = sqlx::query_as::<_, DatabaseChainLock>(
             r#"
@@ -226,12 +232,10 @@ impl LockMngr {
         let row = if let Some(row) = row {
             row
         } else {
-            return self.acquire_early_lock().await;
+            return Ok((None, LockingReason::Missing));
         };
 
         self.lock.replace((row.clone(), SystemTime::now()));
-        self.normal_acquisitions_since_fallback =
-            self.normal_acquisitions_since_fallback.saturating_add(1);
         ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc();
 
         let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
@@ -252,6 +256,7 @@ impl LockMngr {
     /// by their retry deadline, even after it expires, so a repeatedly blocked
     /// old consumer cannot monopolize rescues ahead of its newer producer.
     /// Untouched chains retain their original queue time in this ordering.
+    /// Production scheduling calls this through acquire_next_lock's cadence.
     /// Returns the dependence_chain_id if a lock was acquired
     pub async fn acquire_early_lock(
         &mut self,
@@ -261,6 +266,9 @@ impl LockMngr {
             return Ok((None, LockingReason::Missing));
         }
 
+        // An empty or failed rescue is still an attempt. Do not scan again on
+        // every subsequent idle poll just because nothing was eligible this time.
+        self.normal_acquisition_attempts_since_fallback = 0;
         let started_at = SystemTime::now();
         let row = sqlx::query_as::<_, DatabaseChainLock>(
             r#"
@@ -301,7 +309,6 @@ impl LockMngr {
         };
 
         self.lock.replace((row.clone(), SystemTime::now()));
-        self.normal_acquisitions_since_fallback = 0;
         ACQUIRED_DEPENDENCE_CHAIN_ID_COUNTER.inc();
 
         let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);

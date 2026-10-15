@@ -103,7 +103,7 @@ pub struct Args {
     #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 2)]
     pub dcid_max_no_progress_cycles: u32,
 
-    /// Maximum normal chain acquisitions or no-progress releases before
+    /// Maximum normal chain acquisition attempts (including empty polls) before
     /// ignoring dependence counters and lane priority for one acquisition
     #[arg(long, value_parser = clap::value_parser!(u32), default_value_t = 100)]
     pub dcid_ignore_dependency_count_threshold: u32,
