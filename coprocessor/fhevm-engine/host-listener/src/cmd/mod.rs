@@ -485,7 +485,7 @@ impl InfiniteLogIter {
                 }
             }
         };
-        if from_block >= finalized_block {
+        if from_block > finalized_block {
             // non finalized blocks are post-poned
             info!("Post-pone catchup");
             return;
@@ -1196,7 +1196,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         log_iter.start_at_block = db
             .read_last_valid_block()
             .await
-            .map(|n| n - args.catchup_margin as i64);
+            .map(|n| n.saturating_sub_unsigned(args.catchup_margin).max(0));
     }
 
     // Check connection works
@@ -1399,6 +1399,42 @@ mod tests {
         iter.catchup_blocks = Some((60, Some(100)));
         assert!(!iter.end_at_block_reached().await);
         iter.catchup_blocks = Some((101, Some(100)));
+        assert!(iter.end_at_block_reached().await);
+    }
+
+    #[tokio::test]
+    async fn catchup_includes_the_finalized_boundary() {
+        use alloy::transports::mock::Asserter;
+
+        let asserter = Asserter::new();
+        let mut block = rpc_block(1);
+        block.header.inner.number = 40;
+        let log: Log = Log {
+            block_hash: Some(block.header.hash),
+            block_number: Some(40),
+            transaction_hash: Some(BlockHash::with_last_byte(3)),
+            log_index: Some(0),
+            ..Default::default()
+        };
+        asserter.push_success(&vec![log]);
+        asserter.push_success(&block);
+        let provider = ProviderBuilder::new().connect_mocked_client(asserter);
+        let mut iter = new_test_iter(50);
+        iter.catchup_provider = Some(provider.clone());
+        *iter.provider.write().await = Some(provider);
+        iter.catchup_blocks = Some((40, Some(40)));
+        iter.absolute_end_at_block = Some(40);
+        block.header.inner.number = 60; // finality lag is 20
+        iter.block_history.add_block(block.into());
+
+        iter.consume_catchup_blocks().await;
+        let block = iter
+            .next_blocklogs
+            .pop_front()
+            .expect("the block exactly at head minus finality lag is eligible");
+        assert_eq!(block.summary.number, 40);
+        assert!(block.finalized);
+        iter.acknowledge_catchup_block();
         assert!(iter.end_at_block_reached().await);
     }
 

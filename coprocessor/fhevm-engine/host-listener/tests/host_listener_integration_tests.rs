@@ -22,6 +22,7 @@ use std::collections::HashSet;
 use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicU32, AtomicU64};
+use std::sync::Arc;
 use test_harness::health_check;
 use test_harness::instance::ImportMode;
 use tracing::{info, warn, Level};
@@ -61,13 +62,14 @@ use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
 use crate::KMSGenerationTest::KMSGenerationTestInstance;
 
 const NB_EVENTS_PER_WALLET: i64 = 50;
+const REORG_DEPTH: u64 = 25;
 
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
     url: &str,
     tfhe_contract: FHEVMExecutorTestInstance<P, N>,
     acl_contract: ACLTestInstance<P, N>,
-    reorg: bool,
+    reorg_ingestion_pool: Option<sqlx::PgPool>,
     nb_events_per_wallet: i64,
 ) where
     P: Clone + alloy::providers::Provider<N> + 'static,
@@ -76,17 +78,21 @@ async fn emit_events<P, N>(
         + 'static,
 {
     static UNIQUE_INT: AtomicU32 = AtomicU32::new(1); // to counter avoid idempotency
+    let reorg_barrier = Arc::new(tokio::sync::Barrier::new(wallets.len()));
+    let nb_wallets = wallets.len() as i64;
     let mut threads = vec![];
     for (i_wallet, wallet) in wallets.iter().enumerate() {
         let wallet = wallet.clone();
         let tfhe_contract = tfhe_contract.clone();
         let acl_contract = acl_contract.clone();
         let url = url.to_string();
+        let reorg_ingestion_pool = reorg_ingestion_pool.clone();
+        let reorg_barrier = reorg_barrier.clone();
         let thread = tokio::spawn(async move {
             for i_message in 1..=nb_events_per_wallet {
                 eprintln!("Emitting event {i_message} for wallet {i_wallet}");
-                let reorg_point =
-                    reorg && i_message == (2 * nb_events_per_wallet) / 3;
+                let reorg_point = reorg_ingestion_pool.is_some()
+                    && i_message == (2 * nb_events_per_wallet) / 3;
                 let provider = ProviderBuilder::new()
                     .wallet(wallet.clone())
                     .connect_ws(WsConnect::new(url.to_string()))
@@ -108,9 +114,22 @@ async fn emit_events<P, N>(
                     .allow(pt.into(), add[0])
                     .into_transaction_request();
                 if reorg_point && i_wallet == 0 {
-                    // ensure no event is lost also on losing chain to facilitate the test assert
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5))
-                        .await;
+                    reorg_barrier.wait().await;
+                    // Exact totals below include orphan events. Confirm they
+                    // committed before removing the branch; a fixed sleep
+                    // cannot ensure this while the listener is restarting.
+                    let expected_tfhe = nb_wallets * i_message;
+                    let expected_acl = expected_tfhe - 1;
+                    wait_for_event_counts(
+                        reorg_ingestion_pool.as_ref().unwrap(),
+                        tokio::time::Duration::from_secs(60),
+                        "waiting for orphan events before reorg",
+                        |tfhe, acl| {
+                            tfhe == expected_tfhe && acl == expected_acl
+                        },
+                    )
+                    .await
+                    .unwrap();
                     // ACL event is only in the past of winning chain in reorg
                     let cur_block = receipt.block_number.unwrap();
                     warn!("Start reorg");
@@ -118,9 +137,12 @@ async fn emit_events<P, N>(
                         .anvil_reorg(ReorgOptions {
                             // Use a large reorg depth (25) to ensure Anvil triggers subscription events correctly;
                             // smaller depths may not reliably cause event notifications.
-                            depth: 25,
+                            depth: REORG_DEPTH,
                             tx_block_pairs: vec![
-                                (TransactionData::JSON(tfhe_txn_req), 24),
+                                (
+                                    TransactionData::JSON(tfhe_txn_req),
+                                    REORG_DEPTH - 1,
+                                ),
                                 // this event is only on winning chain
                                 (TransactionData::JSON(acl_txn_req), 0),
                             ],
@@ -128,6 +150,7 @@ async fn emit_events<P, N>(
                         .await
                         .unwrap();
                     warn!("Reorg happened at block {cur_block}");
+                    reorg_barrier.wait().await;
                 } else {
                     let pending_txn = provider
                         .send_transaction(acl_txn_req.clone())
@@ -136,9 +159,10 @@ async fn emit_events<P, N>(
                     let receipt = pending_txn.get_receipt().await.unwrap();
                     assert!(receipt.status());
                     if reorg_point {
-                        // ensure no event is lost also on losing chain to facilitate the test assert
-                        tokio::time::sleep(tokio::time::Duration::from_secs(5))
-                            .await;
+                        // Stop all wallets until their orphan events have
+                        // committed and wallet 0 has installed the new branch.
+                        reorg_barrier.wait().await;
+                        reorg_barrier.wait().await;
                     }
                 }
             }
@@ -1120,6 +1144,11 @@ async fn test_listener_no_event_loss(
     // Keep telemetry disabled here to avoid coupling event-loss assertions
     // with exporter/shutdown timing.
     args.service_name.clear();
+    if reorg {
+        // Cover the replaced branch plus blocks mined before the next
+        // restart if the reorg happens while startup history is incomplete.
+        args.catchup_margin = 2 * REORG_DEPTH;
+    }
 
     // Start listener in background task
     let listener_handle = tokio::spawn(main(args.clone()));
@@ -1130,13 +1159,14 @@ async fn test_listener_no_event_loss(
     let url_clone = setup.args.url.clone();
     let tfhe_contract_clone = setup.tfhe_contract.clone();
     let acl_contract_clone = setup.acl_contract.clone();
+    let reorg_ingestion_pool = reorg.then(|| setup.db_pool.clone());
     let event_source = tokio::spawn(async move {
         emit_events(
             &wallets_clone,
             &url_clone,
             tfhe_contract_clone,
             acl_contract_clone,
-            reorg,
+            reorg_ingestion_pool,
             NB_EVENTS_PER_WALLET,
         )
         .await;
@@ -1204,13 +1234,15 @@ async fn test_listener_no_event_loss(
         }
         eprintln!(
             "Kill {nb_kill} ongoing, event source ongoing: {}, {} {} (vs {})",
-            event_source.is_finished(),
+            !event_source.is_finished(),
             tfhe_events_count,
             acl_events_count,
             nb_wallets * NB_EVENTS_PER_WALLET,
         );
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
+    tokio::time::timeout(tokio::time::Duration::from_secs(30), event_source)
+        .await??;
     assert_eq!(tfhe_events_count, expected_tfhe_events);
     assert_eq!(acl_events_count, expected_acl_events);
 
@@ -1270,7 +1302,7 @@ async fn test_catchup_and_listen() -> Result<(), anyhow::Error> {
         &url_clone,
         tfhe_contract_clone,
         acl_contract_clone,
-        false, // no reorg
+        None, // no reorg
         nb_event_per_wallet,
     )
     .await;
@@ -1301,7 +1333,7 @@ async fn test_catchup_and_listen() -> Result<(), anyhow::Error> {
         &url_clone,
         tfhe_contract_clone,
         acl_contract_clone,
-        false, // no reorg
+        None, // no reorg
         nb_event_per_wallet,
     )
     .await;
@@ -1337,17 +1369,25 @@ async fn test_catchup_only() -> Result<(), anyhow::Error> {
         &url_clone,
         tfhe_contract_clone,
         acl_contract_clone,
-        false, // no reorg
+        None, // no reorg
         nb_event_per_wallet,
     )
     .await;
 
     // Start listener in background task
-    args.start_at_block = Some(-30 + 2 * nb_event_per_wallet);
-    args.end_at_block = Some(15 + 2 * nb_event_per_wallet);
+    let provider = ProviderBuilder::new()
+        .connect_ws(WsConnect::new(setup.args.url.clone()))
+        .await?;
+    let end_block = provider.get_block_number().await?;
+    args.start_at_block = Some(0);
+    args.end_at_block = Some(end_block as i64);
     args.catchup_paging = 2;
     let listener_handle = tokio::spawn(main(args.clone()));
-    assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
+    // Bounded replay waits for its last height to finalize. Advance the
+    // chain explicitly rather than tying completion to wall-clock mining.
+    provider
+        .anvil_mine(Some(args.catchup_finalization_in_blocks + 1), None)
+        .await?;
     let nb_wallets = setup.wallets.len() as i64;
     let expected = nb_wallets * nb_event_per_wallet;
     let (tfhe_events_count, acl_events_count) = wait_for_event_counts(
@@ -1360,16 +1400,88 @@ async fn test_catchup_only() -> Result<(), anyhow::Error> {
     eprintln!("End block {:?}", args.end_at_block);
     assert_eq!(tfhe_events_count, expected);
     assert_eq!(acl_events_count, expected);
-    // Allow the listener to finish after ingesting all events
-    let finish_deadline =
-        tokio::time::Instant::now() + tokio::time::Duration::from_secs(10);
-    while !listener_handle.is_finished() {
-        assert!(
-            tokio::time::Instant::now() < finish_deadline,
-            "Listener should stop"
-        );
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    }
+    tokio::time::timeout(tokio::time::Duration::from_secs(10), listener_handle)
+        .await
+        .expect("Listener should stop after its bounded replay")??;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_restart_lookback_before_genesis() -> Result<(), anyhow::Error> {
+    let setup = setup(None).await?;
+    let provider = ProviderBuilder::new()
+        .connect_ws(WsConnect::new(setup.args.url.clone()))
+        .await?;
+    provider.anvil_mine(Some(1), None).await?;
+    let watermark = provider.get_block_number().await?;
+    let block = provider
+        .get_block_by_number(watermark.into())
+        .await?
+        .expect("the watermark block exists");
+    let mut db = Database::new(
+        &setup.args.database_url,
+        setup.chain_id,
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+    ingest_block_logs(
+        setup.chain_id,
+        &mut db,
+        &BlockLogs {
+            logs: vec![],
+            summary: block.header.into(),
+            catchup: false,
+            finalized: false,
+        },
+        &Some(*setup.acl_contract.address()),
+        &Some(*setup.tfhe_contract.address()),
+        &Some(*setup.kms_generation_contract.address()),
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain: 0,
+        },
+    )
+    .await?;
+    assert_eq!(db.read_last_valid_block().await, Some(watermark as i64));
+
+    // New events arrive after the persisted watermark while the listener
+    // is offline. Its replay margin reaches before genesis.
+    emit_events(
+        &setup.wallets[..1],
+        &setup.args.url,
+        setup.tfhe_contract.clone(),
+        setup.acl_contract.clone(),
+        None,
+        1,
+    )
+    .await;
+    provider.anvil_mine(Some(5), None).await?;
+    let mut args = setup.args.clone();
+    args.service_name.clear();
+    args.health_port = 0;
+    args.catchup_margin = watermark + 1;
+    args.end_at_block = Some(provider.get_block_number().await? as i64);
+    provider
+        .anvil_mine(Some(args.catchup_finalization_in_blocks + 1), None)
+        .await?;
+    // start_at_block=None must resolve the DB watermark to absolute zero,
+    // not -1, which would mean one block behind the newer chain head.
+    assert!(args.start_at_block.is_none());
+    tokio::time::timeout(tokio::time::Duration::from_secs(30), main(args))
+        .await??;
+    let tfhe = sqlx::query!("SELECT COUNT(*) FROM computations")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    let acl = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    assert_eq!((tfhe, acl), (1, 1));
     Ok(())
 }
 
@@ -1402,7 +1514,7 @@ where
         &url_clone,
         tfhe_contract_clone,
         acl_contract_clone,
-        false,
+        None,
         nb_event_per_wallet,
     )
     .await;
@@ -1506,7 +1618,7 @@ async fn test_catchup_only_relative_end() -> Result<(), anyhow::Error> {
         &url_clone,
         tfhe_contract_clone,
         acl_contract_clone,
-        false,
+        None,
         nb_event_per_wallet,
     )
     .await;
@@ -1656,7 +1768,7 @@ async fn test_host_listener_recovers_after_revert() -> Result<(), anyhow::Error>
         &setup.args.url,
         setup.tfhe_contract.clone(),
         setup.acl_contract.clone(),
-        false,
+        None,
         nb_events_per_wallet,
     )
     .await;
