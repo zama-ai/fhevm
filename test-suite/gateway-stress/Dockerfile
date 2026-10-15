@@ -23,6 +23,10 @@ COPY gateway-contracts/rust_bindings gateway-contracts/rust_bindings
 COPY shared/user-decryption-signature shared/user-decryption-signature
 COPY kms-connector/Cargo.toml kms-connector/Cargo.toml
 COPY kms-connector/crates/api kms-connector/crates/api
+# kms-connector-api depends on these standalone Solana crates via `../solana/crates/*`.
+COPY solana/crates/zama-solana-acl solana/crates/zama-solana-acl
+COPY solana/crates/zama-solana-permit solana/crates/zama-solana-permit
+COPY solana/crates/zama-solana-request solana/crates/zama-solana-request
 COPY test-suite/gateway-stress test-suite/gateway-stress
 
 # Build with improved caching
