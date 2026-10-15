@@ -9,7 +9,8 @@
 pub use crate::consensus::CoprocessorEntry;
 
 use alloy::{
-    network::{Ethereum, Network},
+    eips::{BlockId, BlockNumberOrTag},
+    network::{BlockResponse, Ethereum, Network, primitives::HeaderResponse},
     primitives::Address,
     providers::Provider,
 };
@@ -79,11 +80,17 @@ impl CoprocessorRegistrySnapshot {
     }
 
     /// Loads a fresh snapshot from the `GatewayConfig` contract.
+    ///
+    /// Every read is pinned to the same canonical block, so the member list, the threshold and
+    /// the per-member metadata always come from one coherent on-chain configuration, even if
+    /// `updateCoprocessors` lands mid-load.
     pub async fn load<P: Provider<N>, N: Network>(
         contract: &GatewayConfigInstance<P, N>,
     ) -> Result<Self, RegistryError> {
-        let get_copro_tx_senders = contract.getCoprocessorTxSenders();
-        let get_copro_threshold = contract.getCoprocessorMajorityThreshold();
+        let block = pinned_block(contract.provider()).await?;
+
+        let get_copro_tx_senders = contract.getCoprocessorTxSenders().block(block);
+        let get_copro_threshold = contract.getCoprocessorMajorityThreshold().block(block);
 
         let (tx_senders, threshold_u256) = tokio::try_join!(
             biased;
@@ -104,7 +111,7 @@ impl CoprocessorRegistrySnapshot {
 
         let coprocessors: Vec<CoprocessorEntry> =
             try_join_all(tx_senders.into_iter().map(|tx_sender| async move {
-                fetch_coprocessor_entry(contract, tx_sender).await
+                fetch_coprocessor_entry(contract, tx_sender, block).await
             }))
             .await
             .map_err(RegistryError::Transient)?
@@ -127,6 +134,16 @@ impl CoprocessorRegistrySnapshot {
     }
 }
 
+/// Resolves the current head to its block hash, to pin every read of one [`load`] to it.
+async fn pinned_block<P: Provider<N>, N: Network>(provider: &P) -> Result<BlockId, RegistryError> {
+    let block = provider
+        .get_block_by_number(BlockNumberOrTag::Latest)
+        .await
+        .map_err(|e| RegistryError::Transient(anyhow::anyhow!("{}", redact_rpc_url(e))))?
+        .ok_or_else(|| RegistryError::Transient(anyhow::anyhow!("RPC returned no latest block")))?;
+    Ok(BlockId::hash_canonical(block.header().hash()))
+}
+
 /// Stringifies an RPC error, stripping the ` for url (…)` suffix that `reqwest::Error::Display`
 /// appends: Gateway RPC endpoints can carry embedded API keys.
 fn redact_rpc_url(err: impl std::fmt::Display) -> String {
@@ -142,9 +159,11 @@ fn redact_rpc_url(err: impl std::fmt::Display) -> String {
 async fn fetch_coprocessor_entry<P: Provider<N>, N: Network>(
     contract: &GatewayConfigInstance<P, N>,
     copro_tx_sender_addr: Address,
+    block: BlockId,
 ) -> anyhow::Result<Option<CoprocessorEntry>> {
     let copro = contract
         .getCoprocessor(copro_tx_sender_addr)
+        .block(block)
         .call()
         .await
         .map_err(|e| anyhow::anyhow!("{}", redact_rpc_url(e)))?;
@@ -331,8 +350,9 @@ where
 mod tests {
     use super::*;
     use alloy::{
-        primitives::{Bytes, U256},
+        primitives::{B256, Bytes, U256},
         providers::{ProviderBuilder, mock::Asserter},
+        rpc::types::{Block, Header},
         sol_types::SolValue,
     };
     use fhevm_gateway_bindings::gateway_config::GatewayConfig::Coprocessor;
@@ -365,7 +385,23 @@ mod tests {
         GatewayConfig::new(Address::ZERO, provider)
     }
 
-    /// Pushes the snapshot responses: tx-senders, threshold, then one `getCoprocessor` response
+    /// A hashes-only `eth_getBlockByNumber` response for the block `hash`.
+    fn pinned_block_response(hash: B256) -> Block {
+        Block {
+            header: Header {
+                hash,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    /// Pushes the `eth_getBlockByNumber("latest")` response `load` pins its reads to.
+    fn mock_pinned_block(asserter: &Asserter) {
+        asserter.push_success(&pinned_block_response(B256::repeat_byte(0xbb)));
+    }
+
+    /// Pushes the snapshot responses: pinned block, tx-senders, threshold, then one `getCoprocessor` response
     /// per bucket URL, each with a distinct `signerAddress` (`tx_senders[i]` is bound to
     /// `signer(i)`).
     fn mock_registry_load(asserter: &Asserter, tx_senders: &[Address], buckets: &[&str]) {
@@ -379,6 +415,7 @@ mod tests {
         buckets: &[&str],
         threshold: U256,
     ) {
+        mock_pinned_block(asserter);
         asserter.push_success(&tx_senders.to_vec().abi_encode());
         asserter.push_success(&threshold.abi_encode());
         for (index, bucket) in buckets.iter().enumerate() {
@@ -453,6 +490,7 @@ mod tests {
 
     /// Pushes a `load` that fails with [`RegistryError::Critical`] (zero on-chain threshold).
     fn mock_critical_load(asserter: &Asserter) {
+        mock_pinned_block(asserter);
         asserter.push_success(&vec![addr(0x07)].abi_encode());
         asserter.push_success(&U256::ZERO.abi_encode());
     }
@@ -580,6 +618,7 @@ mod tests {
     #[tokio::test]
     async fn load_rejects_zero_threshold_as_critical() {
         let asserter = Asserter::new();
+        mock_pinned_block(&asserter);
         asserter.push_success(&vec![addr(0x06)].abi_encode());
         asserter.push_success(&U256::ZERO.abi_encode());
 

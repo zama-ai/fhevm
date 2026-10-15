@@ -2,7 +2,7 @@ use alloy::{
     hex,
     primitives::{Address, FixedBytes, U256},
     providers::{Provider, mock::Asserter},
-    rpc::types::Transaction,
+    rpc::types::{Block, Transaction},
     sol_types::{SolCall, SolValue},
 };
 use connector_utils::tests::{
@@ -35,6 +35,8 @@ pub fn mock_copro_registry_load(asserter: &Asserter, s3_url: &str) -> Address {
     // `CoprocessorRegistry::connect` first checks the contract has code deployed; any non-empty
     // response satisfies that check.
     asserter.push_success(&vec![0xffu8]);
+    // The latest block, which the load pins every registry read to.
+    asserter.push_success(&Block::<Transaction>::default());
     asserter.push_success(&vec![copro_tx_sender].abi_encode());
     asserter.push_success(&U256::ONE.abi_encode());
     let coprocessor = Coprocessor {
