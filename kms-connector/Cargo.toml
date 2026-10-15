@@ -39,7 +39,7 @@ zama-solana-request = { path = "../solana/crates/zama-solana-request" }
 #                       External dependencies                       #
 #####################################################################
 actix-web = "=4.15.0"
-borsh = { version = "=1.5.7", default-features = false, features = ["derive"] }
+borsh = { version = "=1.6.1", default-features = false, features = ["derive"] }
 alloy = { version = "=2.2.0", default-features = false, features = [
     "essentials",
     "provider-debug-api",
@@ -80,7 +80,7 @@ pingora = { version = "=0.9.0", default-features = false, features = [
 ] }
 prometheus = { version = "=0.14.0", default-features = false, features = ["protobuf"] }
 base64 = "=0.22.1"
-reqwest = { version = "=0.12.24", default-features = false, features = [
+reqwest = { version = "=0.12.28", default-features = false, features = [
     "http2",
     "rustls-tls",
 ] }
