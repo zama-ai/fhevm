@@ -104,6 +104,7 @@ fn activation(number: u64, flow: BlockFlow, crs: bool) -> BlockPayload {
         .encode_log_data()
     };
     BlockPayload {
+        catchup_id: None,
         chain_id: CHAIN_ID,
         flow,
         block_number: number,
