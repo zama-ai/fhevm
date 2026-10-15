@@ -1,6 +1,7 @@
 import { runManifestHealingStressProfile } from "./manifest-healing-stress";
 import path from "node:path";
 import { createBlueGreenManifestChecks } from "./blue-green-manifests";
+import { runRollbackCases } from "./blue-green-rollback-cases";
 import { DRY_RUN_DRIFT_CLEANUP_SQL, GCS_SCHEMA_SQL, dryRunDriftInstallSql } from "./blue-green-dry-run-drift";
 import { runManifestLifecycleNoDriftProfile } from "./manifest-lifecycle-no-drift";
 import { runManifestLifecycleProfile } from "./manifest-lifecycle";
@@ -1295,8 +1296,14 @@ const runBlueGreenSteps = async (
     Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim());
   // gw_start_block is pinned to the Gateway tip at proposal time, so the Gateway gate opens
   // without any Gateway transaction.
-  const assertGatewayGateOpens = async (tipBeforeProposal: number, tipAfterProposal: number) => {
-    for (const db of operatorDatabases) {
+  const assertGatewayGateOpens = async (
+    tipBeforeProposal: number,
+    tipAfterProposal: number,
+    // The rollback cases take one operator out before the window opens, so
+    // they assert the gate on the operators that stay.
+    databases: string[] = operatorDatabases,
+  ) => {
+    for (const db of databases) {
       const gwStartBlock = Number(
         await psqlQuery(db, "SELECT MIN(gw_start_block) FROM upgrade_state WHERE stack_role='GCS';"),
       );
@@ -1493,6 +1500,80 @@ const runBlueGreenSteps = async (
   const reenabled = await setSyntheticOps(true);
   console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
 
+  // Rollback cases, before the cutover: the cutover moves `versioning` and
+  // merges the GCS schema away, so nothing can follow it. Each case leaves its
+  // rows at `failed`, which is what the listener needs for the next proposal.
+  //
+  // The plain profile only. Every other mode drives this same flow with its own
+  // perturbation — manifest checks that count attempts, a drifting operator 1,
+  // host-report faults, a controller interruption — and three more attempts
+  // would land in the middle of it.
+  const plainProfile =
+    !withManifests && !dryRunDrift && !faultHost && !interruptDetector && !quietSynthetic && interrupt === "none";
+  if (opCount >= 2 && plainProfile && process.env.BLUE_GREEN_ROLLBACK_CASES !== "0") {
+    await runRollbackCases({
+      operatorDatabases,
+      hostChainCount: hostChains.length,
+      gcsStackVersion,
+      psqlQuery,
+      waitUntil,
+      propose: async (proposalId: number, duration: string) => {
+        const startTime = new Date(Date.now() + 30_000).toISOString();
+        const tipBefore = await gatewayTip();
+        await runContractTask(
+          "host-sc",
+          "host-sc-deploy",
+          'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
+            '--environment local --start-time "$PROPOSE_START_TIME" --buffer 10s ' +
+            `--duration ${duration} --proposal-id ${proposalId} ` +
+            '--software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+          {
+            env: {
+              LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
+              LOCAL_HOST_CHAINS: localHostChains,
+              PROPOSE_START_TIME: startTime,
+              PROPOSE_SW_VERSION: gcsVersionLive,
+            },
+          },
+        );
+        const tipAfter = await gatewayTip();
+        for (const db of operatorDatabases) {
+          await waitUntil({
+            label: `${db}  GCS rows for proposal ${proposalId}`,
+            timeoutSecs: 120,
+            check: async () =>
+              (await psqlQuery(
+                db,
+                `SELECT CASE WHEN COUNT(*)=${hostChains.length} AND COUNT(DISTINCT proposal_block)=1
+                             THEN 'ready' ELSE 'waiting' END
+                   FROM upgrade_state WHERE stack_role='GCS' AND status='in_progress';`,
+              )) === "ready",
+          });
+        }
+        return { tipBefore, tipAfter };
+      },
+      waitDryRunStarted: async (databases, tips) => {
+        for (const db of databases) {
+          await waitUntil({
+            label: `${db}  GCS DryRunStarted`,
+            timeoutSecs: 300,
+            check: async () =>
+              (await psqlQuery(
+                db,
+                `SELECT CASE WHEN COUNT(*)=${hostChains.length}
+                                    AND BOOL_AND(state='DryRunStarted')
+                                    AND COUNT(DISTINCT proposal_id)=1
+                                    AND COUNT(DISTINCT proposal_block)=1
+                             THEN 'ready' ELSE 'waiting' END
+                   FROM upgrade_state WHERE stack_role='GCS';`,
+              )) === "ready",
+          });
+        }
+        await assertGatewayGateOpens(tips.tipBefore, tips.tipAfter, databases);
+      },
+    });
+  }
+
   // Deploy ERC20 + mint before the proposal so the balance handle lands in
   // public.ciphertexts with block_number < start_block. Transfers during the
   // dry-run window will force GCS's tfhe-worker to fall back to
@@ -1558,7 +1639,8 @@ const runBlueGreenSteps = async (
     "host-sc-deploy",
     'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
       '--environment local --start-time "$PROPOSE_START_TIME" --duration 5m --buffer 10s ' +
-      '--proposal-id 2 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+      // Ids 2 to 4 belong to the rollback cases above.
+      '--proposal-id 5 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
     {
       env: {
         LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
@@ -1569,7 +1651,7 @@ const runBlueGreenSteps = async (
     },
   );
   const proposeTipAfter = await gatewayTip();
-  console.log(`OK:   activation emitted via task (proposalId=2, version=${gcsVersionLive}, start=${proposeStartTime})`);
+  console.log(`OK:   activation emitted via task (proposalId=5, version=${gcsVersionLive}, start=${proposeStartTime})`);
   // The dry run must compute real application handles for the trigger to pick
   // one: run traffic from the proposal until DryRunStarted, while Green queues
   // every block from start_block for the dry run to compute.
