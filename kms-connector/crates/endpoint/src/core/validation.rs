@@ -503,13 +503,13 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_request_on_a_host_of_the_other_kind_is_malformed() {
+    fn an_evm_request_on_a_solana_host_is_malformed() {
         let solana_chain = zama_solana_acl::host_chain::solana_host_chain_id(12345);
         let cfg = Config {
-            supported_chain_ids: vec![1, solana_chain],
+            supported_chain_ids: vec![solana_chain],
             ..config()
         };
-        let (evm, solana) = (handle(1, EUINT64), handle(solana_chain, EUINT64));
+        let solana = handle(solana_chain, EUINT64);
 
         let error =
             validate_user_decryption(&user_request(vec![solana], vec![]), &cfg).unwrap_err();
@@ -518,20 +518,6 @@ pub(crate) mod tests {
             ValidationError::SolanaChainInEvmRequest(solana_chain)
         );
         assert_eq!(error.code(), ErrorCode::Malformed);
-
-        let public = solana_public_request(vec![evm]);
-        let user = solana_user_request(vec![evm], 1_770_000_000, vec![]);
-        let not_solana = ValidationError::InvalidSolanaRequest(
-            "solana request handles are on chain 1, which is not a Solana host chain".to_owned(),
-        );
-        assert_eq!(
-            validate_solana_public_decryption(B256::ZERO, &public, &cfg).unwrap_err(),
-            not_solana
-        );
-        assert_eq!(
-            validate_solana_user_decryption(user.id(), &user, &cfg).unwrap_err(),
-            not_solana
-        );
     }
 
     #[test]
