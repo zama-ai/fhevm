@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {ProtocolConfigBase} from "./ProtocolConfigBase.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
-import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {KmsContextAnchor, KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, EXTRA_DATA_V2, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
@@ -279,11 +278,14 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         // The signer must belong to the outgoing or incoming committee and confirm only once.
         uint256 previousContextId = $.latestActiveKmsContextId;
         bytes32 digest = _hashTypedData(
-            _contextCreationStructHash(
-                previousContextId,
-                kmsContextId,
-                canonical$.nodeConfigHashForContext[kmsContextId],
-                extraData
+            keccak256(
+                abi.encode(
+                    EIP712_CONTEXT_CREATION_TYPE_HASH,
+                    previousContextId,
+                    kmsContextId,
+                    canonical$.nodeConfigHashForContext[kmsContextId],
+                    keccak256(extraData)
+                )
             )
         );
         address signer = ECDSA.recover(digest, signature);
@@ -333,20 +335,38 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         bytes calldata signature,
         bytes calldata extraData
     ) external virtual {
-        uint256 contextId = _pendingEpochContext(epochId);
-        (address signer, bytes32 epochMaterialHash, bytes32 digest) = _verifyEpochActivation(
-            contextId,
-            epochId,
-            keys,
-            crsList,
-            signature,
-            extraData
-        );
-        bool allSignersAgreed = _recordEpochVote(epochId, contextId, signer, digest);
-        emit EpochActivationConfirmation(epochId, signer, epochMaterialHash, signature, extraData);
-        if (allSignersAgreed) {
-            _promoteEpochActivation(epochId, contextId, keys, crsList);
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        if ($.epochState[epochId] != EpochState.Pending) {
+            revert InvalidKmsEpoch(epochId);
         }
+        uint256 contextId = $.contextForEpoch[epochId];
+        {
+            (address signer, bytes32 epochMaterialHash, bytes32 digest) = _verifyEpochActivation(
+                contextId,
+                epochId,
+                keys,
+                crsList,
+                signature,
+                extraData
+            );
+            bool allSignersAgreed = _recordEpochVote(epochId, contextId, signer, digest);
+            emit EpochActivationConfirmation(epochId, signer, epochMaterialHash, signature, extraData);
+            if (!allSignersAgreed) {
+                return;
+            }
+        }
+
+        // All signers agreed on `epochId`: promote `contextId` and `epochId` to Active.
+        $.contextState[contextId] = ContextState.Active;
+        $.latestActiveKmsContextId = contextId;
+        _activateEpoch(epochId, contextId);
+
+        KmsNode[] storage nodes = $.kmsNodesForContext[contextId];
+        string[] memory urls = new string[](nodes.length);
+        for (uint256 i = 0; i < nodes.length; i++) {
+            urls[i] = nodes[i].storageUrl;
+        }
+        emit ActivateEpoch(contextId, epochId, keys, crsList, urls);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -422,7 +442,16 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
 
         address signer = ECDSA.recover(
-            _hashTypedData(_contextDestructionStructHash(destroyedContextId, destroyedEpochIds, extraData)),
+            _hashTypedData(
+                keccak256(
+                    abi.encode(
+                        EIP712_CONTEXT_DESTRUCTION_TYPE_HASH,
+                        destroyedContextId,
+                        keccak256(abi.encodePacked(destroyedEpochIds)),
+                        keccak256(extraData)
+                    )
+                )
+            ),
             signature
         );
         if (!$.isKmsSignerForContext[$.latestActiveKmsContextId][signer]) {
@@ -452,7 +481,9 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
 
         address signer = ECDSA.recover(
-            _hashTypedData(_epochDestructionStructHash(destroyedEpochId, extraData)),
+            _hashTypedData(
+                keccak256(abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData)))
+            ),
             signature
         );
         if (!$.isKmsSignerForContext[$.latestActiveKmsContextId][signer]) {
@@ -541,17 +572,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     // -----------------------------------------------------------------------------------------
 
     /**
-     * @dev Returns the context of `epochId`. Reverts if `epochId` is not Pending.
-     */
-    function _pendingEpochContext(uint256 epochId) internal view virtual returns (uint256) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        if ($.epochState[epochId] != EpochState.Pending) {
-            revert InvalidKmsEpoch(epochId);
-        }
-        return $.contextForEpoch[epochId];
-    }
-
-    /**
      * @dev Verifies one signer's activation submission for `epochId` under `contextId` and returns
      *      its signer, `epochMaterialHash`, and EpochActivationConfirmation digest. Every key and CRS
      *      signature and the aggregate signature must recover to one signer of the context's committee.
@@ -566,40 +586,21 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     ) internal view virtual returns (address signer, bytes32 epochMaterialHash, bytes32 digest) {
         (signer, epochMaterialHash) = _verifyEpochResults(contextId, epochId, keys, crsList);
         digest = _hashTypedData(
-            _epochActivationStructHash(
-                contextId,
-                _getProtocolConfigStorage().latestActiveEpochId,
-                epochId,
-                epochMaterialHash,
-                extraData
+            keccak256(
+                abi.encode(
+                    EIP712_EPOCH_ACTIVATION_TYPE_HASH,
+                    contextId,
+                    _getProtocolConfigStorage().latestActiveEpochId,
+                    epochId,
+                    epochMaterialHash,
+                    keccak256(extraData)
+                )
             )
         );
         _requireSigner(signer, digest, signature);
         if (!_getProtocolConfigStorage().isKmsSignerForContext[contextId][signer]) {
             revert EpochActivationUnauthorized(signer, epochId);
         }
-    }
-
-    /**
-     * @dev All signers agreed on `epochId`: promotes `contextId` and `epochId` to Active.
-     */
-    function _promoteEpochActivation(
-        uint256 epochId,
-        uint256 contextId,
-        EpochKeyResult[] calldata keys,
-        EpochCrsResult[] calldata crsList
-    ) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        $.contextState[contextId] = ContextState.Active;
-        $.latestActiveKmsContextId = contextId;
-        _activateEpoch(epochId, contextId);
-
-        KmsNode[] storage nodes = $.kmsNodesForContext[contextId];
-        string[] memory urls = new string[](nodes.length);
-        for (uint256 i = 0; i < nodes.length; i++) {
-            urls[i] = nodes[i].storageUrl;
-        }
-        emit ActivateEpoch(contextId, epochId, keys, crsList, urls);
     }
 
     /**
@@ -651,7 +652,13 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         EpochKeyResult calldata key,
         bytes memory resultExtraData
     ) internal view virtual returns (bytes32 resultDigest, bytes32 keyHash) {
-        bytes32 keyDigestsHash = _hashKeyDigests(key.keyDigests);
+        bytes32[] memory keyDigestHashes = new bytes32[](key.keyDigests.length);
+        for (uint256 i = 0; i < key.keyDigests.length; i++) {
+            keyDigestHashes[i] = keccak256(
+                abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, key.keyDigests[i].keyType, keccak256(key.keyDigests[i].digest))
+            );
+        }
+        bytes32 keyDigestsHash = keccak256(abi.encodePacked(keyDigestHashes));
         resultDigest = _hashKeygenVerification(key.prepKeygenId, key.keyId, keyDigestsHash, resultExtraData);
         keyHash = keccak256(abi.encode(key.prepKeygenId, key.keyId, keyDigestsHash));
     }
@@ -702,16 +709,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             );
     }
 
-    function _hashKeyDigests(IKMSGeneration.KeyDigest[] calldata keyDigests) internal pure virtual returns (bytes32) {
-        bytes32[] memory keyDigestHashes = new bytes32[](keyDigests.length);
-        for (uint256 i = 0; i < keyDigests.length; i++) {
-            keyDigestHashes[i] = keccak256(
-                abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, keyDigests[i].keyType, keccak256(keyDigests[i].digest))
-            );
-        }
-        return keccak256(abi.encodePacked(keyDigestHashes));
-    }
-
     function _hashCrsgenVerification(
         uint256 crsId,
         uint256 maxBitLength,
@@ -730,67 +727,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
                     )
                 )
             );
-    }
-
-    function _contextCreationStructHash(
-        uint256 previousContextId,
-        uint256 newContextId,
-        bytes32 nodeConfigHash,
-        bytes memory extraData
-    ) internal pure virtual returns (bytes32) {
-        return
-            keccak256(
-                abi.encode(
-                    EIP712_CONTEXT_CREATION_TYPE_HASH,
-                    previousContextId,
-                    newContextId,
-                    nodeConfigHash,
-                    keccak256(extraData)
-                )
-            );
-    }
-
-    function _epochActivationStructHash(
-        uint256 contextId,
-        uint256 previousEpochId,
-        uint256 epochId,
-        bytes32 epochMaterialHash,
-        bytes memory extraData
-    ) internal pure virtual returns (bytes32) {
-        return
-            keccak256(
-                abi.encode(
-                    EIP712_EPOCH_ACTIVATION_TYPE_HASH,
-                    contextId,
-                    previousEpochId,
-                    epochId,
-                    epochMaterialHash,
-                    keccak256(extraData)
-                )
-            );
-    }
-
-    function _contextDestructionStructHash(
-        uint256 destroyedContextId,
-        uint256[] memory destroyedEpochIds,
-        bytes memory extraData
-    ) internal pure virtual returns (bytes32) {
-        return
-            keccak256(
-                abi.encode(
-                    EIP712_CONTEXT_DESTRUCTION_TYPE_HASH,
-                    destroyedContextId,
-                    keccak256(abi.encodePacked(destroyedEpochIds)),
-                    keccak256(extraData)
-                )
-            );
-    }
-
-    function _epochDestructionStructHash(
-        uint256 destroyedEpochId,
-        bytes memory extraData
-    ) internal pure virtual returns (bytes32) {
-        return keccak256(abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData)));
     }
 
     function _hashTypedData(bytes32 structHash) internal view virtual returns (bytes32) {
