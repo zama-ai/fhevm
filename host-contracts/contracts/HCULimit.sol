@@ -1735,10 +1735,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Returns the depth that `handle` carries into later transactions, loading it from
-     *         `holder`'s permission if this transaction has not seen it yet. Returns 0 when disabled.
+     * @notice Caches `handle`'s carried depth for the rest of this transaction and returns it. If this
+     *         transaction has not seen the handle yet, the depth comes from `holder`'s permission.
+     *         Returns 0 when disabled.
      */
-    function loadDepth(bytes32 handle, address holder) external returns (uint48) {
+    function cacheDepth(bytes32 handle, address holder) external returns (uint48) {
         if (msg.sender != aclAdd) revert CallerMustBeACLContract();
         if (_getHCULimitStorage().maxCrossTxDepth == 0) return 0;
         return uint48(_handleDepths(handle, holder) >> 128);

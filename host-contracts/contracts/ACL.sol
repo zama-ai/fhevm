@@ -239,7 +239,7 @@ contract ACL is
         }
         if (!_getACLStorage().persistedAllowedPairs[handle][account]) {
             // A repeated grant keeps the first record, which decays the same way.
-            uint48 depth = HCULimit(hcuLimitAdd).loadDepth(handle, msg.sender);
+            uint48 depth = HCULimit(hcuLimitAdd).cacheDepth(handle, msg.sender);
             uint256 word = 1 | (uint256(depth) << 8) | (uint256(uint48(block.number)) << 56);
             bytes32 slot = _permissionSlot(handle, account);
             assembly ("memory-safe") {
@@ -314,7 +314,7 @@ contract ACL is
 
             // Caches the sender's depth: the recipient computes on the handle in this transaction
             // without a stored permission of its own to read the depth from.
-            HCULimit(hcuLimitAdd).loadDepth(handle, msg.sender);
+            HCULimit(hcuLimitAdd).cacheDepth(handle, msg.sender);
         }
 
         bytes32 key = keccak256(abi.encodePacked(handle, account));
