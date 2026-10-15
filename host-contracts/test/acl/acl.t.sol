@@ -99,7 +99,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
      * It checks that the version is correct, the owner/pauser are set to the expected addresses, and the fhevmExecutor address is correct.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.6.0")));
+        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.7.0")));
         assertEq(acl.owner(), owner);
         assertEq(acl.isPauser(pauser), true);
         assertEq(acl.getFHEVMExecutorAddress(), fhevmExecutorAdd);
