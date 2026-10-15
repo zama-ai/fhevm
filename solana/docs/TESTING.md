@@ -196,8 +196,7 @@ root links, directly or through another `solana/` crate, and, for a workflow tha
 compiles the root's tests (clippy `--all-targets` included), `solana/test-fixtures/**`
 when those tests load a shared fixture. `scripts/check-path-filters.sh` (job
 `solana-tests/path-filters`) reads the crates from `cargo metadata` and fails, naming
-the workflow and the path, when a filter misses one. It does not check relayer-http's
-workflows, whose filters name the Solana crates by hand. The SDK's `js-sdk-tests` is held
+the workflow and the path, when a filter misses one. The SDK's `js-sdk-tests` is held
 to the same fixture rule. The script checks crates and fixtures only: a `solana/` file
 that a build script reads, such as `solana/environments/`, must be named by hand.
 
