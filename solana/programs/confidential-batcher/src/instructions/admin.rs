@@ -1,8 +1,6 @@
 //! The batcher admin's instructions: pause and unpause (INVARIANTS #71), the policy that batches
 //! opened from now on copy, and handing the role on.
 
-use anchor_lang::solana_program::system_program;
-
 use super::*;
 
 /// Accounts for an admin-only change to the batcher config.
@@ -15,17 +13,14 @@ pub struct BatcherAdmin<'info> {
     pub batcher: Box<Account<'info, Batcher>>,
 }
 
-/// Accounts for handing the admin role to a new key.
+/// Accounts for taking the admin role.
 #[derive(Accounts)]
-pub struct SetAdmin<'info> {
-    /// The batcher's current admin.
-    pub admin: Signer<'info>,
+pub struct AcceptAdmin<'info> {
+    /// The nominee, `Batcher.pending_admin`.
+    pub pending_admin: Signer<'info>,
     /// Batcher config.
-    #[account(mut, has_one = admin @ BatcherError::AdminMismatch)]
+    #[account(mut, has_one = pending_admin @ BatcherError::PendingAdminMismatch)]
     pub batcher: Box<Account<'info, Batcher>>,
-    /// CHECK: the incoming admin. A keypair co-signs; a PDA skips the co-sign only when it is
-    /// off-curve and already owned by a program, so a mistyped key cannot become admin.
-    pub new_admin: UncheckedAccount<'info>,
 }
 
 /// Refuses an instruction the pause blocks.
@@ -81,14 +76,15 @@ pub fn set_settle_deadline(ctx: Context<BatcherAdmin>, settle_deadline_secs: u64
     Ok(())
 }
 
-pub fn set_admin(ctx: Context<SetAdmin>) -> Result<()> {
-    let new_admin = &ctx.accounts.new_admin;
-    require!(
-        new_admin.is_signer
-            || (!new_admin.key().is_on_curve() && new_admin.owner != &system_program::ID),
-        BatcherError::NewAdminNotAccepted
-    );
+pub fn set_admin(ctx: Context<BatcherAdmin>, new_admin: Pubkey) -> Result<()> {
+    ctx.accounts.batcher.pending_admin = new_admin;
+    Ok(())
+}
+
+/// No one signs for `Pubkey::default()`, so with no nomination every signer is refused.
+pub fn accept_admin(ctx: Context<AcceptAdmin>) -> Result<()> {
     let batcher = &mut ctx.accounts.batcher;
-    batcher.admin = new_admin.key();
+    batcher.admin = ctx.accounts.pending_admin.key();
+    batcher.pending_admin = Pubkey::default();
     Ok(())
 }

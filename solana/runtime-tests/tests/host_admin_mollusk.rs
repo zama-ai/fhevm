@@ -272,16 +272,23 @@ fn mollusk_initialize_host_config_rejects_wrong_program_data_address() {
 // ---- HostAdmin setters ----
 
 fn set_admin_ix(admin: Pubkey, host_config: Pubkey, new_admin: Pubkey) -> Instruction {
+    host_admin_ix(
+        admin,
+        host_config,
+        host::instruction::SetAdmin { new_admin },
+    )
+}
+
+fn accept_admin_ix(pending_admin: Pubkey, host_config: Pubkey) -> Instruction {
     anchor_ix(
         host::id(),
-        host::accounts::SetAdmin {
-            admin,
+        host::accounts::AcceptAdmin {
+            pending_admin,
             host_config,
-            new_admin,
             event_authority: event_authority(host::id()),
             program: host::id(),
         },
-        host::instruction::SetAdmin { new_admin },
+        host::instruction::AcceptAdmin {},
     )
 }
 
@@ -568,23 +575,21 @@ fn mollusk_a_pauser_pauses_an_area_while_the_others_are_paused() {
 fn mollusk_the_admin_sets_pausers_and_hands_over_while_every_area_is_paused() {
     let admin = Pubkey::new_unique();
     let pauser = Pubkey::new_unique();
-    let (new_admin, _) = Pubkey::find_program_address(&[b"new-admin"], &host::id());
+    let new_admin = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(
         admin,
-        vec![
-            (
-                host_config,
-                paused_host_config(&account, host::PauseFlags::ALL),
-            ),
-            (new_admin, program_owned_account()),
-        ],
+        vec![(
+            host_config,
+            paused_host_config(&account, host::PauseFlags::ALL),
+        )],
     );
 
     for setter in [
         set_pauser_ix(admin, host_config, pauser, true),
         set_pauser_ix(admin, host_config, pauser, false),
         set_admin_ix(admin, host_config, new_admin),
+        accept_admin_ix(new_admin, host_config),
     ] {
         context.process_and_validate_instruction(&setter, &[Check::success()]);
     }
@@ -725,90 +730,153 @@ fn mollusk_set_grant_deny_list_enabled_persists() {
     assert!(event.grant_deny_list_enabled);
 }
 
-#[test]
-fn mollusk_set_admin_transfers_to_cosigning_keypair() {
-    // The everyday rotation: a wallet key that co-signs the transfer.
-    let admin = Pubkey::new_unique();
-    let new_admin = Pubkey::new_unique();
-    let (host_config, account) = host_config_account(admin);
-    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
-    let mut ix = set_admin_ix(admin, host_config, new_admin);
-    for meta in ix.accounts.iter_mut() {
-        if meta.pubkey == new_admin {
-            meta.is_signer = true;
-        }
-    }
-
-    context.process_and_validate_instruction(&ix, &[Check::success()]);
-    assert_eq!(
-        read_host_account::<HostConfig>(&context, host_config)
-            .expect("config")
-            .admin,
-        new_admin
-    );
+fn admin_and_pending(context: &Ctx, host_config: Pubkey) -> (Pubkey, Pubkey) {
+    let config = read_host_account::<HostConfig>(context, host_config).expect("config");
+    (config.admin, config.pending_admin)
 }
 
+/// The nominee here is a PDA, as a Squads vault is: it signs `accept_admin` through its program.
 #[test]
-fn mollusk_set_admin_rejects_keypair_that_does_not_cosign() {
-    // An on-curve key can only become admin by signing; the current admin cannot hand the role
-    // to a wallet that never agreed to take it.
+fn mollusk_the_admin_role_moves_when_the_nominee_accepts() {
     let admin = Pubkey::new_unique();
-    let new_admin = Pubkey::new_unique();
+    let (nominee, _) = Pubkey::find_program_address(&[b"vault"], &Pubkey::new_unique());
     let (host_config, account) = host_config_account(admin);
     let context = mollusk_execute_context(admin, vec![(host_config, account)]);
 
-    context.process_and_validate_instruction(
-        &set_admin_ix(admin, host_config, new_admin),
-        &[host_error(ZamaHostError::HostConfigAdminMismatch)],
+    let result = context.process_and_validate_instruction(
+        &set_admin_ix(admin, host_config, nominee),
+        &[Check::success()],
     );
-    assert_eq!(
-        read_host_account::<HostConfig>(&context, host_config)
-            .expect("config")
-            .admin,
-        admin
-    );
-}
+    assert_eq!(admin_and_pending(&context, host_config), (admin, nominee));
+    let event = sole_emitted_event::<host::HostConfigUpdatedEvent>(&result);
+    assert_eq!((event.admin, event.pending_admin), (admin, nominee));
 
-#[test]
-fn mollusk_set_admin_transfers_to_pda_without_cosign() {
-    let admin = Pubkey::new_unique();
-    let (new_admin, _) = Pubkey::find_program_address(&[b"new-admin"], &host::id());
-    let (host_config, account) = host_config_account(admin);
-    let context = mollusk_execute_context(
-        admin,
-        vec![(host_config, account), (new_admin, program_owned_account())],
-    );
-
-    context.process_and_validate_instruction(
-        &set_admin_ix(admin, host_config, new_admin),
+    let result = context.process_and_validate_instruction(
+        &accept_admin_ix(nominee, host_config),
         &[Check::success()],
     );
     assert_eq!(
-        read_host_account::<HostConfig>(&context, host_config)
-            .expect("config")
-            .admin,
-        new_admin
+        admin_and_pending(&context, host_config),
+        (nominee, Pubkey::default())
+    );
+    let event = sole_emitted_event::<host::HostConfigUpdatedEvent>(&result);
+    assert_eq!(event.signer, nominee);
+    assert_eq!(
+        (event.admin, event.pending_admin),
+        (nominee, Pubkey::default())
     );
 }
 
 #[test]
-fn mollusk_set_admin_rejects_unallocated_off_curve_key() {
-    // An off-curve key that is still System-owned (never allocated) must not skip co-sign.
+fn mollusk_set_admin_refuses_a_signer_that_is_not_the_admin() {
     let admin = Pubkey::new_unique();
-    let (new_admin, _) = Pubkey::find_program_address(&[b"typo"], &host::id());
+    let caller = Pubkey::new_unique();
     let (host_config, account) = host_config_account(admin);
-    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+    let context = mollusk_execute_context(caller, vec![(host_config, account)]);
 
     context.process_and_validate_instruction(
-        &set_admin_ix(admin, host_config, new_admin),
+        &set_admin_ix(caller, host_config, caller),
         &[host_error(ZamaHostError::HostConfigAdminMismatch)],
     );
     assert_eq!(
-        read_host_account::<HostConfig>(&context, host_config)
-            .expect("config")
-            .admin,
-        admin
+        admin_and_pending(&context, host_config),
+        (admin, Pubkey::default())
     );
+}
+
+#[test]
+fn mollusk_accept_admin_refuses_a_key_that_is_not_the_nominee() {
+    let admin = Pubkey::new_unique();
+    let nominee = Pubkey::new_unique();
+    let caller = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+    context.process_and_validate_instruction(
+        &set_admin_ix(admin, host_config, nominee),
+        &[Check::success()],
+    );
+
+    context.process_and_validate_instruction(
+        &accept_admin_ix(caller, host_config),
+        &[host_error(ZamaHostError::PendingAdminMismatch)],
+    );
+    assert_eq!(admin_and_pending(&context, host_config), (admin, nominee));
+}
+
+#[test]
+fn mollusk_accept_admin_refuses_every_key_when_no_one_is_nominated() {
+    let admin = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+
+    for caller in [Pubkey::new_unique(), admin] {
+        context.process_and_validate_instruction(
+            &accept_admin_ix(caller, host_config),
+            &[host_error(ZamaHostError::PendingAdminMismatch)],
+        );
+    }
+    assert_eq!(
+        admin_and_pending(&context, host_config),
+        (admin, Pubkey::default())
+    );
+}
+
+/// A replaced or withdrawn nominee can no longer accept.
+#[test]
+fn mollusk_accept_admin_refuses_a_replaced_or_withdrawn_nominee() {
+    let admin = Pubkey::new_unique();
+    let first = Pubkey::new_unique();
+    let second = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+
+    for nominee in [first, second] {
+        context.process_and_validate_instruction(
+            &set_admin_ix(admin, host_config, nominee),
+            &[Check::success()],
+        );
+    }
+    context.process_and_validate_instruction(
+        &accept_admin_ix(first, host_config),
+        &[host_error(ZamaHostError::PendingAdminMismatch)],
+    );
+
+    context.process_and_validate_instruction(
+        &set_admin_ix(admin, host_config, Pubkey::default()),
+        &[Check::success()],
+    );
+    context.process_and_validate_instruction(
+        &accept_admin_ix(second, host_config),
+        &[host_error(ZamaHostError::PendingAdminMismatch)],
+    );
+    assert_eq!(
+        admin_and_pending(&context, host_config),
+        (admin, Pubkey::default())
+    );
+}
+
+#[test]
+fn mollusk_a_nominee_is_not_the_admin_before_accepting() {
+    let admin = Pubkey::new_unique();
+    let nominee = Pubkey::new_unique();
+    let (host_config, account) = host_config_account(admin);
+    let context = mollusk_execute_context(admin, vec![(host_config, account)]);
+    context.process_and_validate_instruction(
+        &set_admin_ix(admin, host_config, nominee),
+        &[Check::success()],
+    );
+
+    context.process_and_validate_instruction(
+        &host_admin_ix(
+            nominee,
+            host_config,
+            host::instruction::SetGrantDenyListEnabled { enabled: true },
+        ),
+        &[host_error(ZamaHostError::HostConfigAdminMismatch)],
+    );
+    let config = read_host_account::<HostConfig>(&context, host_config).expect("config");
+    assert!(!config.grant_deny_list_enabled);
+    assert_eq!(config.admin, admin);
 }
 
 // ---- close_owned_accounts (admin-sweep) ----

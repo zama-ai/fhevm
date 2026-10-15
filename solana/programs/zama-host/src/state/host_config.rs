@@ -14,6 +14,8 @@ use super::*;
 pub struct HostConfig {
     /// Program administrator allowed to update config flags.
     pub admin: Pubkey,
+    /// Nominee who becomes `admin` by calling `accept_admin`; `Pubkey::default()` when none.
+    pub pending_admin: Pubkey,
     /// Host-chain id included in handle derivation.
     pub chain_id: u64,
     /// EVM gateway chain id used in the coprocessor/KMS EIP-712 domain separators.
@@ -165,10 +167,11 @@ mod tests {
     // many signers are registered.
     #[test]
     fn host_config_space_matches_serialized_len() {
-        assert_eq!(HostConfig::INIT_SPACE, 343);
+        assert_eq!(HostConfig::INIT_SPACE, 375);
 
         let cfg = HostConfig {
             admin: Pubkey::new_unique(),
+            pending_admin: Pubkey::new_unique(),
             chain_id: 1,
             gateway_chain_id: 0,
             input_verification_contract: [0u8; 20],

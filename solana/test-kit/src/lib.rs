@@ -488,6 +488,7 @@ pub fn host_config_account(params: &HostConfigParams) -> (Pubkey, Account) {
             lamports: 1_000_000_000,
             data: serialized_account(host::HostConfig {
                 admin: params.admin,
+                pending_admin: Pubkey::default(),
                 chain_id: host::SOLANA_POC_CHAIN_ID,
                 gateway_chain_id: GATEWAY_CHAIN_ID,
                 input_verification_contract: INPUT_VERIFICATION_CONTRACT,

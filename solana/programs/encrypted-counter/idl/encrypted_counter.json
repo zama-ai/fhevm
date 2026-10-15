@@ -604,6 +604,13 @@
             "type": "pubkey"
           },
           {
+            "name": "pending_admin",
+            "docs": [
+              "Nominee who becomes `admin` by calling `accept_admin`; `Pubkey::default()` when none."
+            ],
+            "type": "pubkey"
+          },
+          {
             "name": "chain_id",
             "docs": [
               "Host-chain id included in handle derivation."

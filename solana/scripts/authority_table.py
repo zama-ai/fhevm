@@ -71,9 +71,10 @@ DECLARATIONS: dict[str, dict[str, Any]] = {
             "admin": "the program's upgrade authority (`ProgramData`); becomes `HostConfig.admin`",
         },
     },
-    "set_admin": {
+    "set_admin": {"capability": "Governance", "signers": {"admin": ADMIN}},
+    "accept_admin": {
         "capability": "Governance",
-        "signers": {"admin": f"{ADMIN}; `new_admin` co-signs unless it is a program-owned PDA"},
+        "signers": {"pending_admin": "`HostConfig.pending_admin`; becomes `HostConfig.admin`"},
     },
     "pause": {
         "capability": "Governance",

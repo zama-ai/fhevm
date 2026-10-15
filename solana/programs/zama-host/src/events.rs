@@ -55,8 +55,13 @@ pub struct HostConfigUpdatedEvent {
     pub version: u8,
     /// Host config PDA.
     pub config: Pubkey,
-    /// Signer that performed the update: the admin, or a pauser for `pause`.
+    /// Signer that performed the update: the admin, a pauser for `pause`, or the new admin for
+    /// `accept_admin`.
     pub signer: Pubkey,
+    /// Current host admin.
+    pub admin: Pubkey,
+    /// Current admin nominee (`Pubkey::default()` when none).
+    pub pending_admin: Pubkey,
     /// Host areas currently paused.
     pub paused: PauseFlags,
     /// Current deny-list gate.

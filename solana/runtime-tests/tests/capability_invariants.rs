@@ -4,8 +4,9 @@
 //! - **H1** (INVARIANTS #35, #36): a trust root changes only in a transaction the admin signed.
 //!   The trust roots are `HostConfig` (admin, coprocessor signers, EIP-712 domain, pause flags,
 //!   deny-list switch, HCU limits), every KMS context, the deny and HCU trust records, and the
-//!   pauser records. The one exception is a pause: a key whose pauser record was enabled may set
-//!   pause flags and nothing else. A `HostConfig` change also emits its event CPI:
+//!   pauser records. There are two exceptions. A key whose pauser record was enabled may set pause
+//!   flags and nothing else. The nominee `set_admin` named may make itself the admin and clear the
+//!   nomination, and nothing else. A `HostConfig` change also emits its event CPI:
 //!   `NewKmsContextEvent` from `define_kms_context`, `NewKmsEpochEvent` from `define_kms_epoch`,
 //!   `HostConfigUpdatedEvent` from the rest.
 //! - **H2** (INVARIANTS #11): a Store changes only in a transaction its authority signed.
@@ -13,8 +14,9 @@
 //! The oracles compare raw account bytes before and after each transaction against the
 //! transaction's signer flags. They find the guarded accounts by discriminator among every
 //! host-owned account, and fail on a host account type nobody classified. They read program
-//! layouts only for a Store's authority, a pauser record's grant, and `HostConfig`'s pause flags.
-//! The only state they carry is who the admin is, which moves when a `set_admin` succeeds. Every
+//! layouts only for a Store's authority, a pauser record's grant, and `HostConfig`'s pause flags,
+//! admin and nominee. The only state they carry is who the admin and the nominee are, which move
+//! when a `set_admin` or an `accept_admin` succeeds. Every
 //! instruction of the host IDL has a generator, and every admin and Store-authority role is also
 //! filled by keys that lack it, signing or not.
 //!
@@ -94,8 +96,11 @@ enum Action {
     },
     SetAdmin {
         admin: Role,
-        new_admin: Key,
-        cosign: bool,
+        /// `None` withdraws the nomination.
+        new_admin: Option<Key>,
+    },
+    AcceptAdmin {
+        nominee: Role,
     },
     Pause {
         pauser: Role,
@@ -202,6 +207,7 @@ impl Action {
         match self {
             Action::InitializeHostConfig { .. } => "initialize_host_config",
             Action::SetAdmin { .. } => "set_admin",
+            Action::AcceptAdmin { .. } => "accept_admin",
             Action::Pause { .. } => "pause",
             Action::Unpause { .. } => "unpause",
             Action::SetPauser { .. } => "set_pauser",
@@ -271,8 +277,9 @@ fn witness() -> impl Strategy<Value = Witness> {
 fn action() -> impl Strategy<Value = Action> {
     prop_oneof![
         1 => (wallet(), role()).prop_map(|(payer, admin)| Action::InitializeHostConfig { payer, admin }),
-        2 => (role(), key(), any::<bool>())
-            .prop_map(|(admin, new_admin, cosign)| Action::SetAdmin { admin, new_admin, cosign }),
+        2 => (role(), prop::option::weighted(0.85, key()))
+            .prop_map(|(admin, new_admin)| Action::SetAdmin { admin, new_admin }),
+        2 => role().prop_map(|nominee| Action::AcceptAdmin { nominee }),
         2 => (role(), prop::option::weighted(0.25, wallet()), areas())
             .prop_map(|(pauser, record_of, areas)| Action::Pause { pauser, record_of, areas }),
         2 => (role(), areas()).prop_map(|(admin, areas)| Action::Unpause { admin, areas }),
@@ -407,6 +414,8 @@ struct World {
     build: Build,
     context: Ctx,
     admin: Pubkey,
+    /// `Pubkey::default()` when no one is nominated.
+    nominee: Pubkey,
     wallets: [Pubkey; WALLETS],
     authorities: [StoreAuthority; AUTHORITIES],
 }
@@ -491,6 +500,7 @@ impl World {
             build,
             context: mollusk.with_context(HashMap::new()),
             admin,
+            nominee: Pubkey::default(),
             wallets,
             authorities,
         };
@@ -530,6 +540,19 @@ impl World {
 
     fn store_app(&self, store: usize) -> AppScope {
         self.store_authority(store).app(self.store_scope(store))
+    }
+
+    fn new_admin(&self, new_admin: Option<Key>) -> Pubkey {
+        new_admin.map_or(Pubkey::default(), |key| self.key(key, self.admin))
+    }
+
+    /// The key that holds the right to accept: the nominee, or the admin when no one is nominated.
+    fn nominee_or_admin(&self) -> Pubkey {
+        if self.nominee == Pubkey::default() {
+            self.admin
+        } else {
+            self.nominee
+        }
     }
 
     fn key(&self, key: Key, holder: Pubkey) -> Pubkey {
@@ -672,34 +695,26 @@ impl World {
                 );
                 unsign(ix, admin, signs)
             }
-            Action::SetAdmin {
+            Action::SetAdmin { admin, new_admin } => host_admin(
                 admin,
-                new_admin,
-                cosign,
-            } => {
-                let (admin, signs) = admin_role(admin);
-                let new_admin = self.key(*new_admin, self.admin);
-                let mut ix = anchor_ix(
+                host::instruction::SetAdmin {
+                    new_admin: self.new_admin(*new_admin),
+                }
+                .data(),
+            ),
+            Action::AcceptAdmin { nominee } => {
+                let key = self.key(nominee.key, self.nominee_or_admin());
+                let ix = anchor_ix(
                     host::id(),
-                    host::accounts::SetAdmin {
-                        admin,
+                    host::accounts::AcceptAdmin {
+                        pending_admin: key,
                         host_config,
-                        new_admin,
                         event_authority: event_authority(host::id()),
                         program: host::id(),
                     },
-                    host::instruction::SetAdmin { new_admin },
+                    host::instruction::AcceptAdmin {},
                 );
-                if *cosign {
-                    for meta in ix
-                        .accounts
-                        .iter_mut()
-                        .filter(|meta| meta.pubkey == new_admin)
-                    {
-                        meta.is_signer = true;
-                    }
-                }
-                unsign(ix, admin, signs)
+                unsign(ix, key, nominee.signs)
             }
             Action::Pause {
                 pauser: role,
@@ -1160,7 +1175,8 @@ impl World {
         for (root, versions) in changed(&before.trust_roots, &after.trust_roots) {
             prop_assert!(
                 signers.contains(&self.admin)
-                    || pauser_added_flags(&before, &after, &root, &signers),
+                    || pauser_added_flags(&before, &after, &root, &signers)
+                    || nominee_accepted(&before, &after, &root, &signers),
                 "H1: {action:?} changed trust root {root} without the admin {} signing",
                 self.admin
             );
@@ -1211,8 +1227,15 @@ impl World {
             }
         }
 
-        if let (Action::SetAdmin { new_admin, .. }, Ok(())) = (action, &result.raw_result) {
-            self.admin = self.key(*new_admin, self.admin);
+        if result.raw_result.is_ok() {
+            match action {
+                Action::SetAdmin { new_admin, .. } => self.nominee = self.new_admin(*new_admin),
+                Action::AcceptAdmin { .. } => {
+                    self.admin = self.nominee;
+                    self.nominee = Pubkey::default();
+                }
+                _ => {}
+            }
         }
         Ok(result)
     }
@@ -1242,28 +1265,49 @@ fn inner_instructions(result: &TransactionResult) -> Vec<(Pubkey, Vec<u8>)> {
 
 /// Whether the only change to `root` is a signer with an enabled pauser record adding pause
 /// flags to the config, the one trust-root change the admin need not sign.
+fn decode_config(accounts: &HostAccounts, root: &Pubkey) -> Option<host::HostConfig> {
+    let data = accounts.trust_roots.get(root)?;
+    host::HostConfig::try_deserialize(&mut data.as_slice()).ok()
+}
+
+fn serialize_config(config: &host::HostConfig) -> Vec<u8> {
+    let mut data = Vec::new();
+    config
+        .try_serialize(&mut data)
+        .expect("HostConfig serializes");
+    data
+}
+
+/// The nominee recorded before signed, became the admin and cleared the nomination, and nothing
+/// else in `HostConfig` changed.
+fn nominee_accepted(
+    before: &HostAccounts,
+    after: &HostAccounts,
+    root: &Pubkey,
+    signers: &BTreeSet<Pubkey>,
+) -> bool {
+    let (Some(mut expected), Some(new)) = (decode_config(before, root), decode_config(after, root))
+    else {
+        return false;
+    };
+    let nominee = expected.pending_admin;
+    expected.admin = nominee;
+    expected.pending_admin = Pubkey::default();
+    signers.contains(&nominee) && serialize_config(&new) == serialize_config(&expected)
+}
+
 fn pauser_added_flags(
     before: &HostAccounts,
     after: &HostAccounts,
     root: &Pubkey,
     signers: &BTreeSet<Pubkey>,
 ) -> bool {
-    let decode = |accounts: &HostAccounts| {
-        let data = accounts.trust_roots.get(root)?;
-        host::HostConfig::try_deserialize(&mut data.as_slice()).ok()
-    };
-    let (Some(old), Some(mut new)) = (decode(before), decode(after)) else {
+    let (Some(old), Some(mut new)) = (decode_config(before, root), decode_config(after, root))
+    else {
         return false;
     };
     let only_adds = new.paused == old.paused.with(new.paused);
     new.paused = old.paused;
-    let serialize = |config: &host::HostConfig| {
-        let mut data = Vec::new();
-        config
-            .try_serialize(&mut data)
-            .expect("HostConfig serializes");
-        data
-    };
     let enabled_pauser = signers.iter().any(|signer| {
         before
             .trust_roots
@@ -1271,7 +1315,7 @@ fn pauser_added_flags(
             .and_then(|data| host::PauserRecord::try_deserialize(&mut data.as_slice()).ok())
             .is_some_and(|record| record.enabled)
     });
-    only_adds && serialize(&new) == serialize(&old) && enabled_pauser
+    only_adds && serialize_config(&new) == serialize_config(&old) && enabled_pauser
 }
 
 fn config() -> Config {
@@ -1349,7 +1393,7 @@ fn generated_sequences_reach_every_state_change() {
     let mut runner = TestRunner::deterministic();
     let sequences = prop::collection::vec(action(), 1..48);
     let mut succeeded = BTreeSet::new();
-    for _ in 0..64 {
+    for _ in 0..128 {
         let mut world = World::new(Build::Production);
         for action in sequences.new_tree(&mut runner).expect("sequence").current() {
             if world
