@@ -67,8 +67,10 @@ export type Batcher = {
   payoutConfidentialMint: Address;
   /** Public `demo_vault::Vault` the batcher fronts. */
   vault: Address;
-  /** Key that may pause the batcher, set its policy and hand the role on. */
+  /** Key that may pause the batcher, set its policy and nominate the next admin. */
   admin: Address;
+  /** Nominee who becomes `admin` by calling `accept_admin`; `Pubkey::default()` when none. */
+  pendingAdmin: Address;
   /** While paused, joins, dispatches and settles of a nonzero total are refused. */
   paused: boolean;
   /** Minimum batch age copied into each batch when it opens. */
@@ -94,8 +96,10 @@ export type BatcherArgs = {
   payoutConfidentialMint: Address;
   /** Public `demo_vault::Vault` the batcher fronts. */
   vault: Address;
-  /** Key that may pause the batcher, set its policy and hand the role on. */
+  /** Key that may pause the batcher, set its policy and nominate the next admin. */
   admin: Address;
+  /** Nominee who becomes `admin` by calling `accept_admin`; `Pubkey::default()` when none. */
+  pendingAdmin: Address;
   /** While paused, joins, dispatches and settles of a nonzero total are refused. */
   paused: boolean;
   /** Minimum batch age copied into each batch when it opens. */
@@ -116,6 +120,7 @@ export function getBatcherEncoder(): FixedSizeEncoder<BatcherArgs> {
       ['payoutConfidentialMint', getAddressEncoder()],
       ['vault', getAddressEncoder()],
       ['admin', getAddressEncoder()],
+      ['pendingAdmin', getAddressEncoder()],
       ['paused', getBooleanEncoder()],
       ['minBatchAgeSecs', getU64Encoder()],
       ['settleDeadlineSecs', getU64Encoder()],
@@ -134,6 +139,7 @@ export function getBatcherDecoder(): FixedSizeDecoder<Batcher> {
     ['payoutConfidentialMint', getAddressDecoder()],
     ['vault', getAddressDecoder()],
     ['admin', getAddressDecoder()],
+    ['pendingAdmin', getAddressDecoder()],
     ['paused', getBooleanDecoder()],
     ['minBatchAgeSecs', getU64Decoder()],
     ['settleDeadlineSecs', getU64Decoder()],
@@ -197,5 +203,5 @@ export async function fetchAllMaybeBatcher(
 }
 
 export function getBatcherSize(): number {
-  return 162;
+  return 194;
 }

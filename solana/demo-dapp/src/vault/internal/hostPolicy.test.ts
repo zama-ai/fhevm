@@ -20,6 +20,7 @@ const app = { appProgram: addr(1), scope: addr(2) };
 const hostConfig = (grantDenyListEnabled: boolean, hcuBlockCapPerApp: bigint) =>
   getHostConfigEncoder().encode({
     admin: addr(3),
+    pendingAdmin: addr(0),
     chainId: 1n,
     gatewayChainId: 1n,
     inputVerificationContract: new Uint8Array(20),

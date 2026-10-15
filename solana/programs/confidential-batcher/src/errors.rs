@@ -83,9 +83,9 @@ pub enum BatcherError {
     /// The signer is not the batcher's admin.
     #[msg("signer is not the batcher admin")]
     AdminMismatch,
-    /// A new admin must co-sign, unless it is an existing program-owned PDA.
-    #[msg("the new admin must co-sign, or be an existing program-owned PDA")]
-    NewAdminNotAccepted,
+    /// `accept_admin` was signed by a key other than `Batcher.pending_admin`.
+    #[msg("signer is not the pending batcher admin")]
+    PendingAdminMismatch,
     /// Joins, dispatches and settles of a nonzero total are refused while the batcher is paused.
     #[msg("batcher is paused")]
     Paused,

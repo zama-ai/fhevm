@@ -154,6 +154,7 @@ pub fn initialize_batcher<'info>(
     batcher.payout_confidential_mint = ctx.accounts.payout_confidential_mint.key();
     batcher.vault = ctx.accounts.vault.key();
     batcher.admin = admin;
+    batcher.pending_admin = Pubkey::default();
     batcher.paused = false;
     batcher.min_batch_age_secs = min_batch_age_secs;
     batcher.settle_deadline_secs = settle_deadline_secs;

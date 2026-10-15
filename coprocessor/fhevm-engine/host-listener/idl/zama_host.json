@@ -11,6 +11,65 @@
   ],
   "instructions": [
     {
+      "name": "accept_admin",
+      "docs": [
+        "The nominee takes the host admin role."
+      ],
+      "discriminator": [
+        112,
+        42,
+        45,
+        90,
+        116,
+        181,
+        13,
+        170
+      ],
+      "accounts": [
+        {
+          "name": "pending_admin",
+          "docs": [
+            "The nominee, `HostConfig.pending_admin`."
+          ],
+          "signer": true
+        },
+        {
+          "name": "host_config",
+          "docs": [
+            "Singleton config PDA."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  111,
+                  115,
+                  116,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "close_transient_store",
       "discriminator": [
         107,
@@ -1345,7 +1404,7 @@
     {
       "name": "set_admin",
       "docs": [
-        "Transfers the host admin. Current admin signs; a new keypair co-signs; a new PDA does not."
+        "Nominates the next host admin; `Pubkey::default()` withdraws the nomination."
       ],
       "discriminator": [
         251,
@@ -1361,7 +1420,7 @@
         {
           "name": "admin",
           "docs": [
-            "Current configured host admin."
+            "Configured host admin."
           ],
           "signer": true
         },
@@ -1391,14 +1450,6 @@
               }
             ]
           }
-        },
-        {
-          "name": "new_admin",
-          "docs": [
-            "The incoming admin. A keypair must co-sign (`is_signer`); a PDA skips co-sign only when",
-            "it is off-curve and already owned by a program (not System), so a mistyped empty key",
-            "cannot become admin."
-          ]
         },
         {
           "name": "event_authority"
@@ -2915,6 +2966,11 @@
       "code": 6085,
       "name": "WalletRevokeThroughCpi",
       "msg": "a wallet must revoke in a top-level instruction"
+    },
+    {
+      "code": 6086,
+      "name": "PendingAdminMismatch",
+      "msg": "signer is not the pending host admin"
     }
   ],
   "types": [
@@ -4084,6 +4140,13 @@
             "type": "pubkey"
           },
           {
+            "name": "pending_admin",
+            "docs": [
+              "Nominee who becomes `admin` by calling `accept_admin`; `Pubkey::default()` when none."
+            ],
+            "type": "pubkey"
+          },
+          {
             "name": "chain_id",
             "docs": [
               "Host-chain id included in handle derivation."
@@ -4264,7 +4327,22 @@
           {
             "name": "signer",
             "docs": [
-              "Signer that performed the update: the admin, or a pauser for `pause`."
+              "Signer that performed the update: the admin, a pauser for `pause`, or the new admin for",
+              "`accept_admin`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "admin",
+            "docs": [
+              "Current host admin."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_admin",
+            "docs": [
+              "Current admin nominee (`Pubkey::default()` when none)."
             ],
             "type": "pubkey"
           },

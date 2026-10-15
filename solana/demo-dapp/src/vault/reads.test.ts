@@ -117,6 +117,7 @@ describe('findRecentJoin', () => {
       payoutConfidentialMint: addr(13),
       vault: addr(10),
       admin: addr(3),
+      pendingAdmin: addr(0),
       paused: false,
       minBatchAgeSecs: 0n,
       settleDeadlineSecs: 60n,

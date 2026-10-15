@@ -11,6 +11,42 @@
   ],
   "instructions": [
     {
+      "name": "accept_admin",
+      "docs": [
+        "The nominee takes the admin role. Works while paused."
+      ],
+      "discriminator": [
+        112,
+        42,
+        45,
+        90,
+        116,
+        181,
+        13,
+        170
+      ],
+      "accounts": [
+        {
+          "name": "pending_admin",
+          "docs": [
+            "The nominee, `Batcher.pending_admin`."
+          ],
+          "signer": true,
+          "relations": [
+            "batcher"
+          ]
+        },
+        {
+          "name": "batcher",
+          "docs": [
+            "Batcher config."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "cancel_dispatch",
       "docs": [
         "Cancels a dispatched burn when settlement cannot complete. Anyone may call it once the batch's",
@@ -2671,8 +2707,9 @@
     {
       "name": "set_admin",
       "docs": [
-        "Hands the admin role to `new_admin`. The current admin signs; a new keypair co-signs; a",
-        "new PDA does not, provided it already exists as a program-owned account."
+        "Nominates the next admin (admin-only), replacing any earlier nomination;",
+        "`Pubkey::default()` withdraws it. The admin changes only when the nominee calls",
+        "`accept_admin`. Works while paused."
       ],
       "discriminator": [
         251,
@@ -2688,7 +2725,7 @@
         {
           "name": "admin",
           "docs": [
-            "The batcher's current admin."
+            "The batcher's admin."
           ],
           "signer": true,
           "relations": [
@@ -2701,15 +2738,14 @@
             "Batcher config."
           ],
           "writable": true
-        },
-        {
-          "name": "new_admin",
-          "docs": [
-            "off-curve and already owned by a program, so a mistyped key cannot become admin."
-          ]
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "new_admin",
+          "type": "pubkey"
+        }
+      ]
     },
     {
       "name": "set_min_batch_age",
@@ -3515,8 +3551,8 @@
     },
     {
       "code": 6025,
-      "name": "NewAdminNotAccepted",
-      "msg": "the new admin must co-sign, or be an existing program-owned PDA"
+      "name": "PendingAdminMismatch",
+      "msg": "signer is not the pending batcher admin"
     },
     {
       "code": 6026,
@@ -3728,7 +3764,14 @@
           {
             "name": "admin",
             "docs": [
-              "Key that may pause the batcher, set its policy and hand the role on."
+              "Key that may pause the batcher, set its policy and nominate the next admin."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_admin",
+            "docs": [
+              "Nominee who becomes `admin` by calling `accept_admin`; `Pubkey::default()` when none."
             ],
             "type": "pubkey"
           },
@@ -3911,6 +3954,13 @@
             "name": "admin",
             "docs": [
               "Program administrator allowed to update config flags."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_admin",
+            "docs": [
+              "Nominee who becomes `admin` by calling `accept_admin`; `Pubkey::default()` when none."
             ],
             "type": "pubkey"
           },

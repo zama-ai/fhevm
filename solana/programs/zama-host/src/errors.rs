@@ -309,4 +309,7 @@ pub enum ZamaHostError {
     /// top level, as EVM keys a revocation on `msg.sender`.
     #[msg("a wallet must revoke in a top-level instruction")]
     WalletRevokeThroughCpi,
+    /// `accept_admin` was signed by a key other than `HostConfig.pending_admin`.
+    #[msg("signer is not the pending host admin")]
+    PendingAdminMismatch,
 }

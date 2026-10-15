@@ -39,7 +39,6 @@ use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     program_error::ProgramError,
     pubkey::Pubkey,
-    signature::{Keypair, Signer},
     sysvar::SysvarId,
 };
 use std::collections::HashMap;
@@ -54,10 +53,10 @@ use zama_solana_test_kit::{
     anchor_error_check, anchor_framework_error_check, anchor_ix, coprocessor_signer_address,
     cost_report, deny_scope_record_account, encrypted_store_account, ensure_system_accounts,
     event_authority, handle_for_chain, hcu_trusted_app_record_account, host_config_account,
-    host_error, kms_context_account, new_encrypted_store, paused_host_config,
-    program_owned_account, read_account, read_host_account, read_spl_amount, read_store_handle,
-    readonly, serialized_account, spl_mint_account, spl_token_account, system_account, Ctx,
-    HostConfigParams, BALANCE_FHE_TYPE, DECIMALS,
+    host_error, kms_context_account, new_encrypted_store, paused_host_config, read_account,
+    read_host_account, read_spl_amount, read_store_handle, readonly, serialized_account,
+    spl_mint_account, spl_token_account, system_account, Ctx, HostConfigParams, BALANCE_FHE_TYPE,
+    DECIMALS,
 };
 
 const KMS_CONTEXT_ID: [u8; 32] = {
@@ -843,25 +842,19 @@ fn batcher_admin_ix(
     )
 }
 
-/// `set_admin` signed by `admin`, with `new_admin` co-signing when `cosign`.
-fn set_admin_ix(
-    fixture: &BatcherFixture,
-    admin: Pubkey,
-    new_admin: Pubkey,
-    cosign: bool,
-) -> Instruction {
-    let mut ix = anchor_ix(
+fn set_admin_ix(fixture: &BatcherFixture, admin: Pubkey, new_admin: Pubkey) -> Instruction {
+    batcher_admin_ix(fixture, admin, batcher::instruction::SetAdmin { new_admin })
+}
+
+fn accept_admin_ix(fixture: &BatcherFixture, pending_admin: Pubkey) -> Instruction {
+    anchor_ix(
         batcher::id(),
-        batcher::accounts::SetAdmin {
-            admin,
+        batcher::accounts::AcceptAdmin {
+            pending_admin,
             batcher: fixture.batcher,
-            new_admin,
         },
-        batcher::instruction::SetAdmin {},
-    );
-    // Account 2 is `new_admin`.
-    ix.accounts[2].is_signer = cosign;
-    ix
+        batcher::instruction::AcceptAdmin {},
+    )
 }
 
 fn owner_ata(owner: Pubkey, underlying_mint: Pubkey) -> Pubkey {
@@ -3344,14 +3337,14 @@ fn mollusk_admin_instructions_need_the_admin_to_sign() {
                 settle_deadline_secs: 1,
             },
         ),
-        set_admin_ix(&fixture, stranger, stranger, true),
+        set_admin_ix(&fixture, stranger, stranger),
     ] {
         check_batcher_instruction(&context, &ix, &[mismatch()]);
     }
     // Mollusk checks no signatures, so the admin key without its signer flag must be refused.
     for mut ix in [
         batcher_admin_ix(&fixture, fixture.admin, batcher::instruction::Pause {}),
-        set_admin_ix(&fixture, fixture.admin, stranger, true),
+        set_admin_ix(&fixture, fixture.admin, stranger),
     ] {
         ix.accounts[0].is_signer = false;
         check_batcher_instruction(
@@ -3691,67 +3684,84 @@ fn mollusk_a_batch_keeps_the_policy_it_opened_with() {
     );
 }
 
-/// Handing the admin role on needs the new key's co-signature, as zama-host's `set_admin` does,
-/// unless the new admin is an off-curve PDA a program already owns. The old admin loses the role.
+/// The admin role moves only when the nominee accepts, as on zama-host, and both steps work while
+/// the batcher is paused. The nominee here is batch 0, a PDA of the batcher, standing in for a
+/// Squads vault that signs through its program.
 #[test]
-fn mollusk_set_admin_needs_the_new_admin_to_cosign() {
+fn mollusk_the_admin_role_moves_when_the_nominee_accepts() {
     let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
     let context = fixture_context(mollusk(), fixture.accounts(0, 0));
     let keys = run_initialize_batcher(&context, &fixture, 0);
-    let admin = || read_account::<batcher::Batcher>(&context, fixture.batcher).admin;
-    let not_accepted = || batcher_error(batcher::BatcherError::NewAdminNotAccepted);
-    let keypair = Pubkey::new_unique();
-    let system_owned_pda = Pubkey::find_program_address(&[b"nobody"], &batcher::id()).0;
-    ensure_system_accounts(&context, &[keypair, system_owned_pda]);
-    // An on-curve key is refused without its signature even when a program owns its account.
-    let program_owned_keypair = Keypair::new().pubkey();
-    context
-        .account_store
-        .borrow_mut()
-        .insert(program_owned_keypair, program_owned_account(batcher::id()));
-
+    let nominee = keys.batch;
+    let roles = || {
+        let config = read_account::<batcher::Batcher>(&context, fixture.batcher);
+        (config.admin, config.pending_admin)
+    };
     check_batcher_instruction(
         &context,
-        &set_admin_ix(&fixture, fixture.admin, keypair, false),
-        &[not_accepted()],
-    );
-    check_batcher_instruction(
-        &context,
-        &set_admin_ix(&fixture, fixture.admin, system_owned_pda, false),
-        &[not_accepted()],
-    );
-    check_batcher_instruction(
-        &context,
-        &set_admin_ix(&fixture, fixture.admin, program_owned_keypair, false),
-        &[not_accepted()],
-    );
-    // The default key is on the curve, so it would have to co-sign, which nobody can.
-    check_batcher_instruction(
-        &context,
-        &set_admin_ix(&fixture, fixture.admin, Pubkey::default(), false),
-        &[not_accepted()],
-    );
-    assert_eq!(admin(), fixture.admin);
-
-    check_batcher_instruction(
-        &context,
-        &set_admin_ix(&fixture, fixture.admin, keypair, true),
+        &batcher_admin_ix(&fixture, fixture.admin, batcher::instruction::Pause {}),
         &[Check::success()],
     );
-    assert_eq!(admin(), keypair);
+
+    check_batcher_instruction(
+        &context,
+        &set_admin_ix(&fixture, fixture.admin, nominee),
+        &[Check::success()],
+    );
+    assert_eq!(roles(), (fixture.admin, nominee));
+    check_batcher_instruction(
+        &context,
+        &batcher_admin_ix(&fixture, nominee, batcher::instruction::Pause {}),
+        &[batcher_error(batcher::BatcherError::AdminMismatch)],
+    );
+
+    check_batcher_instruction(
+        &context,
+        &accept_admin_ix(&fixture, nominee),
+        &[Check::success()],
+    );
+    assert_eq!(roles(), (nominee, Pubkey::default()));
     check_batcher_instruction(
         &context,
         &batcher_admin_ix(&fixture, fixture.admin, batcher::instruction::Pause {}),
         &[batcher_error(batcher::BatcherError::AdminMismatch)],
     );
+}
 
-    // Batch 0 is an off-curve account the batcher program owns.
+/// Only the current nominee accepts: no one while none is nominated, and not a nominee the admin
+/// replaced or withdrew.
+#[test]
+fn mollusk_accept_admin_refuses_anyone_but_the_current_nominee() {
+    let fixture = BatcherFixture::new(batcher::BatchDirection::Deposit);
+    let context = fixture_context(mollusk(), fixture.accounts(0, 0));
+    run_initialize_batcher(&context, &fixture, 0);
+    let refused = || batcher_error(batcher::BatcherError::PendingAdminMismatch);
+    let (first, second, stranger) = (Pubkey::new_unique(), Pubkey::new_unique(), fixture.payer);
+
+    for caller in [stranger, fixture.admin] {
+        check_batcher_instruction(&context, &accept_admin_ix(&fixture, caller), &[refused()]);
+    }
+    for nominee in [first, second] {
+        check_batcher_instruction(
+            &context,
+            &set_admin_ix(&fixture, fixture.admin, nominee),
+            &[Check::success()],
+        );
+    }
+    for caller in [stranger, first] {
+        check_batcher_instruction(&context, &accept_admin_ix(&fixture, caller), &[refused()]);
+    }
     check_batcher_instruction(
         &context,
-        &set_admin_ix(&fixture, keypair, keys.batch, false),
+        &set_admin_ix(&fixture, fixture.admin, Pubkey::default()),
         &[Check::success()],
     );
-    assert_eq!(admin(), keys.batch);
+    check_batcher_instruction(&context, &accept_admin_ix(&fixture, second), &[refused()]);
+    let config = read_account::<batcher::Batcher>(&context, fixture.batcher);
+    assert_eq!(
+        (config.admin, config.pending_admin),
+        (fixture.admin, Pubkey::default())
+    );
 }
 
 // Cost profiles

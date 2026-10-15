@@ -4871,6 +4871,7 @@ fn host_config_with_context(admin: Pubkey, context_id: [u8; 32]) -> (Pubkey, Acc
             lamports: 1_000_000_000,
             data: serialized_account(HostConfig {
                 admin,
+                pending_admin: Pubkey::default(),
                 chain_id: host::SOLANA_POC_CHAIN_ID,
                 gateway_chain_id: GATEWAY_CHAIN_ID,
                 input_verification_contract: INPUT_VERIFICATION_CONTRACT,

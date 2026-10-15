@@ -119,6 +119,7 @@ async function accountFixture() {
   const [contextAddress, contextBump] = await findKmsContextPda({ contextId });
   const config: HostConfigArgs = {
     admin: ZAMA_HOST_PROGRAM_ADDRESS,
+    pendingAdmin: '11111111111111111111111111111111' as HostConfigArgs['pendingAdmin'],
     chainId: chain.id,
     gatewayChainId: 31337n,
     inputVerificationContract: new Uint8Array(20),
