@@ -141,16 +141,7 @@ fn chain_peaks(
 }
 
 type StoreRow = (Vec<u8>, i64, Vec<Vec<u8>>);
-type LeafRow = (
-    Vec<u8>,
-    i64,
-    Vec<u8>,
-    i16,
-    Vec<u8>,
-    Option<Vec<u8>>,
-    i64,
-    i64,
-);
+type LeafRow = (Vec<u8>, i64, Vec<u8>, i16, Vec<u8>, Option<Vec<u8>>);
 type NodeRow = (Vec<u8>, i16, i64, Vec<u8>);
 
 /// Every row of the record, in key order.
@@ -173,8 +164,8 @@ impl Record {
             .await
             .unwrap(),
             leaves: sqlx::query_as(
-                "SELECT encrypted_store, leaf_index, commitment, leaf_kind, handle, allowed_key, \
-                 block_slot, transaction_index FROM leaves ORDER BY encrypted_store, leaf_index",
+                "SELECT encrypted_store, leaf_index, commitment, leaf_kind, handle, allowed_key \
+                 FROM leaves ORDER BY encrypted_store, leaf_index",
             )
             .fetch_all(pool)
             .await

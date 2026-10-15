@@ -19,8 +19,6 @@ CREATE TABLE leaves (
     leaf_kind SMALLINT NOT NULL CHECK (leaf_kind IN (0, 1)),
     handle BYTEA NOT NULL CHECK (octet_length(handle) = 32),
     allowed_key BYTEA CHECK (allowed_key IS NULL OR octet_length(allowed_key) = 32),
-    block_slot BIGINT NOT NULL CHECK (block_slot >= 0),
-    transaction_index BIGINT NOT NULL CHECK (transaction_index >= 0),
     PRIMARY KEY (encrypted_store, leaf_index)
 );
 
@@ -50,7 +48,7 @@ CREATE TABLE quarantined_stores (
 );
 
 -- The last finalized block the indexer applied, written in that block's transaction.
--- Re-handing this slot with the same hash writes nothing; a conflicting hash or older slot fails.
+-- A block at or below this slot writes nothing; a different hash at this slot stops the indexer.
 CREATE TABLE checkpoint (
     singleton SMALLINT PRIMARY KEY DEFAULT 1 CHECK (singleton = 1),
     slot BIGINT NOT NULL CHECK (slot >= 0),

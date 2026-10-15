@@ -23,7 +23,7 @@ use solana_merkle_proof_service::server::HttpServer;
 use solana_merkle_proof_service::store::{
     leaf_commitment, load_checkpoint, load_served_store, load_store_cursors,
     reduce_block_leaves, store_block_leaves, store_checkpoint,
-    EncryptedStoreCursor, TransactionStoreWrites,
+    EncryptedStoreCursor,
 };
 use solana_merkle_proof_service::store_check::{check_stores, StoreAccounts};
 use solana_sdk::{account::Account, pubkey::Pubkey};
@@ -183,13 +183,10 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     let existing = load_store_cursors(&mut tx, &[ACCOUNT]).await?;
     assert!(existing.is_empty());
     let first = reduce_block_leaves(
-        &[TransactionStoreWrites {
-            transaction_index: 0,
-            sources: vec![write(0, [0x10; 32], vec![OWNER], false)],
-        }],
+        &[write(0, [0x10; 32], vec![OWNER], false)],
         existing,
     )?;
-    store_block_leaves(&mut tx, 10, &first).await?;
+    store_block_leaves(&mut tx, &first).await?;
     store_checkpoint(
         &mut tx,
         &BlockCheckpoint {
@@ -205,13 +202,10 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     assert_eq!(existing.len(), 1);
     assert_eq!(existing[&ACCOUNT].leaf_count, 1);
     let second = reduce_block_leaves(
-        &[TransactionStoreWrites {
-            transaction_index: 2,
-            sources: vec![write(1, [0x11; 32], vec![OWNER], true)],
-        }],
+        &[write(1, [0x11; 32], vec![OWNER], true)],
         existing,
     )?;
-    store_block_leaves(&mut tx, 11, &second).await?;
+    store_block_leaves(&mut tx, &second).await?;
     store_checkpoint(
         &mut tx,
         &BlockCheckpoint {
@@ -308,10 +302,9 @@ async fn leaf_record_round_trips_and_serves_verifiable_proofs(
     // read the store row leaves it, is not proved against that count.
     sqlx::query(
         "INSERT INTO leaves
-             (encrypted_store, leaf_index, commitment, leaf_kind, handle, allowed_key,
-              block_slot, transaction_index)
+             (encrypted_store, leaf_index, commitment, leaf_kind, handle, allowed_key)
          SELECT encrypted_store, 3, commitment, leaf_kind, decode(repeat('13', 32), 'hex'),
-                allowed_key, 12, 0
+                allowed_key
          FROM leaves WHERE leaf_index = 0",
     )
     .execute(&pool)
@@ -413,23 +406,19 @@ async fn prove_leaves_of_a_store(
     let (_db, pool) = support::record_db().await;
     let mut stores = BTreeMap::new();
     for first in (0..leaves).step_by(leaves_per_block as usize) {
-        let slot = first / leaves_per_block;
         let block = reduce_block_leaves(
-            &[TransactionStoreWrites {
-                transaction_index: 0,
-                sources: vec![write(
-                    first,
-                    handle(first),
-                    (first..leaves.min(first + leaves_per_block))
-                        .map(key)
-                        .collect(),
-                    false,
-                )],
-            }],
+            &[write(
+                first,
+                handle(first),
+                (first..leaves.min(first + leaves_per_block))
+                    .map(key)
+                    .collect(),
+                false,
+            )],
             stores,
         )?;
         let mut tx = pool.begin().await?;
-        store_block_leaves(&mut tx, slot, &block).await?;
+        store_block_leaves(&mut tx, &block).await?;
         tx.commit().await?;
         stores = block.stores;
     }
@@ -543,13 +532,10 @@ async fn a_repeated_request_gets_its_first_answer_at_no_cost(
     let (_db, pool) = support::record_db().await;
     let mut tx = pool.begin().await?;
     let block = reduce_block_leaves(
-        &[TransactionStoreWrites {
-            transaction_index: 0,
-            sources: vec![write(0, [0x10; 32], vec![OWNER], false)],
-        }],
+        &[write(0, [0x10; 32], vec![OWNER], false)],
         load_store_cursors(&mut tx, &[ACCOUNT]).await?,
     )?;
-    store_block_leaves(&mut tx, 10, &block).await?;
+    store_block_leaves(&mut tx, &block).await?;
     tx.commit().await?;
 
     let cancel = CancellationToken::new();
@@ -625,7 +611,7 @@ impl StoreAccounts for ChainWritingDuringTheRead<'_> {
         stores: &[[u8; 32]],
     ) -> anyhow::Result<Vec<Option<Account>>> {
         let write = self.write.lock().unwrap().take().expect("read once");
-        let cursor = record(self.pool, 11, vec![write])
+        let cursor = record(self.pool, vec![write])
             .await
             .map_err(|err| anyhow::anyhow!("{err}"))?;
         let store = EncryptedStore {
@@ -661,7 +647,7 @@ impl StoreAccounts for ChainByPage<'_> {
         match step.expect("a scripted page") {
             BeforePage::Nothing => {}
             BeforePage::Record(write) => {
-                record(self.pool, 11, vec![write])
+                record(self.pool, vec![write])
                     .await
                     .map_err(|err| anyhow::anyhow!("{err}"))?;
             }
@@ -683,7 +669,6 @@ async fn record_a_second_page(
         assert!(address < store, "the store under test sorts first");
         record(
             pool,
-            10,
             vec![EncryptedStoreWrite {
                 encrypted_store: store,
                 previous_leaf_count: 0,
@@ -726,23 +711,16 @@ fn host_store() -> ([u8; 32], EncryptedStore) {
     (address.to_bytes(), store)
 }
 
-/// Records `writes` at `slot` and returns the store's cursor after them.
+/// Records `writes` as one block and returns the store's cursor after them.
 async fn record(
     pool: &sqlx::PgPool,
-    slot: u64,
     writes: Vec<EncryptedStoreWrite>,
 ) -> Result<EncryptedStoreCursor, Box<dyn std::error::Error>> {
     let address = writes[0].encrypted_store;
     let mut tx = pool.begin().await?;
     let existing = load_store_cursors(&mut tx, &[address]).await?;
-    let block = reduce_block_leaves(
-        &[TransactionStoreWrites {
-            transaction_index: 0,
-            sources: writes,
-        }],
-        existing,
-    )?;
-    store_block_leaves(&mut tx, slot, &block).await?;
+    let block = reduce_block_leaves(&writes, existing)?;
+    store_block_leaves(&mut tx, &block).await?;
     tx.commit().await?;
     Ok(block.stores[&address].clone())
 }
@@ -758,7 +736,6 @@ async fn a_store_that_disagrees_with_the_chain_is_quarantined_until_it_matches(
     let (address, mut chain_store) = host_store();
     let recorded = record(
         &pool,
-        10,
         vec![EncryptedStoreWrite {
             encrypted_store: address,
             previous_leaf_count: 0,
@@ -850,7 +827,7 @@ async fn the_store_check_compares_the_record_at_the_chain_leaf_count(
     let (_db, pool) = support::record_db().await;
     let (address, chain_store) = host_store();
     let mut cursors = Vec::new();
-    for (slot, handle) in [(10, 0x10), (11, 0x11), (12, 0x12)] {
+    for handle in [0x10, 0x11, 0x12] {
         let write = EncryptedStoreWrite {
             encrypted_store: address,
             previous_leaf_count: cursors.len() as u64,
@@ -858,7 +835,7 @@ async fn the_store_check_compares_the_record_at_the_chain_leaf_count(
             allowed_keys: vec![OWNER],
             make_public: false,
         };
-        cursors.push(record(&pool, slot, vec![write]).await?);
+        cursors.push(record(&pool, vec![write]).await?);
     }
     let chain = Chain::default();
     let host_program = Pubkey::new_from_array(HOST_PROGRAM);
@@ -904,7 +881,7 @@ async fn a_store_written_during_the_check_is_compared(
         allowed_keys: vec![OWNER],
         make_public: false,
     };
-    let first = record(&pool, 10, vec![key_write(0, 0x10)]).await?;
+    let first = record(&pool, vec![key_write(0, 0x10)]).await?;
     let host_program = Pubkey::new_from_array(HOST_PROGRAM);
     let quarantined = || async {
         load_served_store(&pool, address)
@@ -949,7 +926,7 @@ async fn a_store_written_after_its_page_is_compared_at_the_end_of_the_check(
         allowed_keys: vec![OWNER],
         make_public: false,
     };
-    let first = record(&pool, 10, vec![key_write(0, 0x10)]).await?;
+    let first = record(&pool, vec![key_write(0, 0x10)]).await?;
     record_a_second_page(&pool, address).await?;
     let host_program = Pubkey::new_from_array(HOST_PROGRAM);
     let quarantined = || async {
@@ -1006,7 +983,6 @@ async fn a_check_that_fails_partway_keeps_the_quarantine_it_found(
     let (address, chain_store) = host_store();
     let recorded = record(
         &pool,
-        10,
         vec![EncryptedStoreWrite {
             encrypted_store: address,
             previous_leaf_count: 0,

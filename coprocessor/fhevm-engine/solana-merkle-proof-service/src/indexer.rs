@@ -11,7 +11,7 @@ use tracing::info;
 
 use crate::store::{
     load_checkpoint, load_store_cursors, reduce_block_leaves,
-    store_block_leaves, store_checkpoint, TransactionStoreWrites,
+    store_block_leaves, store_checkpoint,
 };
 
 pub struct MerkleIndexerSink {
@@ -111,23 +111,15 @@ async fn apply_block(
             .map_err(|err| {
                 IngestFailure::fatal(err).context("decode host operations")
             })?;
-        let sources: Vec<_> = operations
-            .iter()
-            .flat_map(|operation| operation.store_writes().iter().cloned())
-            .collect();
-        if !sources.is_empty() {
-            writes.push(TransactionStoreWrites {
-                transaction_index: transaction.index,
-                sources,
-            });
-        }
+        writes.extend(
+            operations
+                .iter()
+                .flat_map(|operation| operation.store_writes().iter().cloned()),
+        );
     }
 
-    let mut written: Vec<[u8; 32]> = writes
-        .iter()
-        .flat_map(|transaction| transaction.sources.iter())
-        .map(|write| write.encrypted_store)
-        .collect();
+    let mut written: Vec<[u8; 32]> =
+        writes.iter().map(|write| write.encrypted_store).collect();
     written.sort_unstable();
     written.dedup();
     let existing =
@@ -138,7 +130,7 @@ async fn apply_block(
             })?;
     let reduction = reduce_block_leaves(&writes, existing)
         .map_err(|err| IngestFailure::fatal(err).context("reduce leaves"))?;
-    store_block_leaves(&mut db_tx, block.slot, &reduction)
+    store_block_leaves(&mut db_tx, &reduction)
         .await
         .map_err(|err| IngestFailure::retryable(err).context("store leaves"))?;
     let recorded_leaves = reduction.leaves.len();
