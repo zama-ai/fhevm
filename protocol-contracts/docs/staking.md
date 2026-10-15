@@ -108,7 +108,7 @@ The commission fee percentage is independently set (within the maximum allowed b
 
 {% hint style="info" %}
 
-Many common staking operations can be performed through the Zama staking dashboard. See the [Zama apps](./apps.md) page.
+Many common staking operations can be performed through the Zama staking dashboard. See the [Zama apps](https://docs.zama.org/protocol/protocol-apps/apps) page.
 
 {% endhint %}
 
