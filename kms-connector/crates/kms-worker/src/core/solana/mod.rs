@@ -15,6 +15,7 @@ pub use verifier::SolanaDecryptionVerifier;
 
 use crate::core::event_processor::UserDecryptionExtraData;
 use alloy::primitives::Bytes;
+use kms_grpc::rpc_types::ClientAddress;
 use proof::CoprocessorProofClient;
 use snapshot::SolanaRpcClient;
 use solana_pubkey::Pubkey;
@@ -29,10 +30,10 @@ pub struct SolanaHost {
 }
 
 impl UserDecryptionExtraData {
-    /// The permit's signer, as base58 of its public key, and the transport key it signed.
+    /// The permit's signer, as the KMS's Solana client address, and the transport key it signed.
     pub fn new_solana(permit: &PermitFields) -> Self {
         Self {
-            user_address: Pubkey::new_from_array(*permit.user_address().as_bytes()).to_string(),
+            user_address: ClientAddress::Solana(*permit.user_address().as_bytes()).to_string(),
             public_key: Bytes::copy_from_slice(permit.transport_key().as_bytes()),
         }
     }
@@ -44,7 +45,7 @@ mod tests {
     use alloy::primitives::U256;
 
     #[test]
-    fn a_solana_user_address_is_the_base58_permit_signer() {
+    fn a_solana_user_address_is_the_prefixed_base58_permit_signer() {
         // The fixture permit is signed by `[1; 32]`.
         let request = connector_utils::tests::rand::solana_user_decryption_request(
             U256::from(1),
@@ -54,7 +55,7 @@ mod tests {
 
         assert_eq!(
             extra_data.user_address,
-            Pubkey::new_from_array([1; 32]).to_string()
+            format!("solana:{}", Pubkey::new_from_array([1; 32]))
         );
     }
 }

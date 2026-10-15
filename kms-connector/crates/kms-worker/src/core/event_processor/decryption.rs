@@ -664,7 +664,8 @@ fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
 }
 
 pub struct UserDecryptionExtraData {
-    /// The KMS request's `client_address`: EIP-55 hex for an EVM user, base58 for a Solana user.
+    /// The KMS request's `client_address`: EIP-55 hex for an EVM user, `solana:` and base58 for a
+    /// Solana user.
     pub user_address: String,
     pub public_key: Bytes,
 }

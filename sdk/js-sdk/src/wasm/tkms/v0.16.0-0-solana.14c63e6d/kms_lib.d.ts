@@ -178,9 +178,12 @@ export class UserDecryptionRequest {
   free(): void;
   [Symbol.dispose](): void;
   /**
-   * The client's (blockchain wallet) address: EIP-55 with the `0x` prefix for an EVM user, or
-   * base58 of the 32-byte public key for a Solana user. Its format picks the linker. The KMS does
-   * not check that the handles come from the same kind of host chain as the user; the caller does.
+   * The client's (blockchain wallet) address. Its prefix picks the kind of user and the EIP-712
+   * link struct: `0x` and EIP-55 hex is an EVM address, linked with UserDecryptionLinker;
+   * `solana:` and base58 of a 32-byte public key is a Solana address, linked with
+   * SolanaUserDecryptionLinker. Any other string is refused. The prefix is only the string form:
+   * the link and signcryption use the address or the key alone. The KMS does not check that the
+   * handles come from the same kind of host chain as the user; the caller does.
    */
   client_address: string;
   /**
@@ -305,8 +308,8 @@ export class UserDecryptionResponsePayload {
   degree: number;
   /**
    * This is needed to ensure the response corresponds to the request.
-   * It is the digest of UserDecryptionLinker hashed using EIP712
-   * under the given domain in the request.
+   * It is the EIP712 hash, under the given domain in the request, of the
+   * EIP-712 link struct that the request's `client_address` picks.
    */
   digest: Uint8Array;
   /**
@@ -365,8 +368,7 @@ export function ml_kem_pke_sk_to_u8vec(sk: PrivateEncKeyMlKem512): Uint8Array;
  * * `server_addrs` - a list of KMS server ID with EIP-55 addresses,
  * the elements in the list can be created using [new_server_id_addr].
  *
- * * `client_address` - the client (wallet) address: an EVM address in EIP-55 hex prefixed
- * with "0x", or a Solana public key in base58.
+ * * `client_address` - the client (wallet) address, in a format that [ClientAddress] reads.
  *
  * * `fhe_parameter` - the parameter choice, which can be either `"test"` or `"default"`.
  * The "default" parameter choice is selected if no matching string is found.
@@ -391,8 +393,8 @@ export function private_sig_key_to_u8vec(sk: PrivateSigKey): Uint8Array;
  * * `request` - the initial user_decryption request JS object.
  * It can be set to null if `verify` is false.
  * Otherwise the caller needs to give the following JS object.
- * Note that `eip712_verifying_contract` follows EIP-55, and so does `client_address` for an EVM
- * user. For a Solana user, `client_address` is the user's base58 public key.
+ * Note that `eip712_verifying_contract` follows EIP-55, and `client_address` has a format that
+ * [ClientAddress] reads.
  * The signature field is not needed.
  * ```
  * {
@@ -473,6 +475,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
   readonly memory: WebAssembly.Memory;
+  readonly __wbg_client_free: (a: number, b: number) => void;
   readonly __wbg_privateenckeymlkem512_free: (a: number, b: number) => void;
   readonly __wbg_publicenckeymlkem512_free: (a: number, b: number) => void;
   readonly __wbg_serveridaddr_free: (a: number, b: number) => void;
@@ -509,7 +512,6 @@ export interface InitOutput {
   readonly __wbg_parseduserdecryptionrequest_free: (a: number, b: number) => void;
   readonly __wbg_privatesigkey_free: (a: number, b: number) => void;
   readonly __wbg_publicsigkey_free: (a: number, b: number) => void;
-  readonly __wbg_client_free: (a: number, b: number) => void;
   readonly __wbg_eip712domainmsg_free: (a: number, b: number) => void;
   readonly __wbg_get_eip712domainmsg_chain_id: (a: number) => [number, number];
   readonly __wbg_get_eip712domainmsg_name: (a: number) => [number, number];

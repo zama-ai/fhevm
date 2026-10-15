@@ -169,7 +169,8 @@ export async function verifySolanaUserDecryptResponse(response: {
   }
   const kmsLib = await initTkmsModule(response.runtime);
   const { request } = response;
-  const userAddress = getAddressDecoder().decode(request.userAddress);
+  // The KMS reads a Solana client address as `solana:` and the base58 key; EVM addresses are `0x`.
+  const kmsClientAddress = `solana:${getAddressDecoder().decode(request.userAddress)}`;
   const domain = request.gatewayEip712Domain;
 
   const scope = new WasmScope();
@@ -180,7 +181,7 @@ export async function verifySolanaUserDecryptResponse(response: {
     const client = scope.track(
       kmsLib.new_client(
         response.signers.map((signer) => kmsLib.new_server_id_addr(signer.partyId, eip55Normalized(signer.address))),
-        userAddress,
+        kmsClientAddress,
         response.fheParameter,
       ),
     );
@@ -188,7 +189,7 @@ export async function verifySolanaUserDecryptResponse(response: {
       client,
       {
         signature: undefined,
-        client_address: userAddress,
+        client_address: kmsClientAddress,
         enc_key: bytesToHexNo0x(request.transportKey),
         ciphertext_handles: request.handles.map((handle) => bytesToHexNo0x(handle)),
         eip712_verifying_contract: eip55Normalized(domain.verifyingContract),

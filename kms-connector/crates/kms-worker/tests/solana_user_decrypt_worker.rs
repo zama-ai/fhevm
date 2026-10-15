@@ -353,7 +353,7 @@ async fn a_solana_request_checks_its_signed_kms_context() {
 /// The identity a `UserDecrypt` call must carry for a Solana user.
 #[derive(Debug, PartialEq, PartialOrd)]
 struct SolanaIdentity {
-    /// Base58 of the signer's public key.
+    /// `solana:` and base58 of the signer's public key.
     client_address: String,
     transport_key: Vec<u8>,
 }
@@ -373,8 +373,8 @@ impl Matcher for SolanaIdentity {
     }
 }
 
-/// An authorized request reaches the KMS as its Solana signer: the signer's base58 public key as
-/// `client_address`, and the request's transport key. A poll of a request already sent
+/// An authorized request reaches the KMS as its Solana signer: `solana:` and the signer's base58
+/// public key as `client_address`, and the request's transport key. A poll of a request already sent
 /// authorizes it again and fetches the result without sending it twice.
 #[rstest]
 #[case::send(false)]
@@ -385,7 +385,7 @@ async fn an_authorized_request_reaches_the_kms_as_its_signer(#[case] already_sen
     let bucket = S3Instance::setup().await.unwrap();
     let scenario = Scenario::naming(B256::from_hex(S3_SOLANA_CT_HANDLE).unwrap().0).await;
     let identity = SolanaIdentity {
-        client_address: scenario.victim.pubkey().to_string(),
+        client_address: format!("solana:{}", scenario.victim.pubkey()),
         transport_key: scenario.fields.transport_key.clone(),
     };
     let mut kms = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");

@@ -676,9 +676,12 @@ export class UserDecryptionRequest {
         wasm.__wbg_userdecryptionrequest_free(ptr, 0);
     }
     /**
-     * The client's (blockchain wallet) address: EIP-55 with the `0x` prefix for an EVM user, or
-     * base58 of the 32-byte public key for a Solana user. Its format picks the linker. The KMS does
-     * not check that the handles come from the same kind of host chain as the user; the caller does.
+     * The client's (blockchain wallet) address. Its prefix picks the kind of user and the EIP-712
+     * link struct: `0x` and EIP-55 hex is an EVM address, linked with UserDecryptionLinker;
+     * `solana:` and base58 of a 32-byte public key is a Solana address, linked with
+     * SolanaUserDecryptionLinker. Any other string is refused. The prefix is only the string form:
+     * the link and signcryption use the address or the key alone. The KMS does not check that the
+     * handles come from the same kind of host chain as the user; the caller does.
      * @returns {string}
      */
     get client_address() {
@@ -781,9 +784,12 @@ export class UserDecryptionRequest {
         return v1;
     }
     /**
-     * The client's (blockchain wallet) address: EIP-55 with the `0x` prefix for an EVM user, or
-     * base58 of the 32-byte public key for a Solana user. Its format picks the linker. The KMS does
-     * not check that the handles come from the same kind of host chain as the user; the caller does.
+     * The client's (blockchain wallet) address. Its prefix picks the kind of user and the EIP-712
+     * link struct: `0x` and EIP-55 hex is an EVM address, linked with UserDecryptionLinker;
+     * `solana:` and base58 of a 32-byte public key is a Solana address, linked with
+     * SolanaUserDecryptionLinker. Any other string is refused. The prefix is only the string form:
+     * the link and signcryption use the address or the key alone. The KMS does not check that the
+     * handles come from the same kind of host chain as the user; the caller does.
      * @param {string} arg0
      */
     set client_address(arg0) {
@@ -1060,8 +1066,8 @@ export class UserDecryptionResponsePayload {
     }
     /**
      * This is needed to ensure the response corresponds to the request.
-     * It is the digest of UserDecryptionLinker hashed using EIP712
-     * under the given domain in the request.
+     * It is the EIP712 hash, under the given domain in the request, of the
+     * EIP-712 link struct that the request's `client_address` picks.
      * @returns {Uint8Array}
      */
     get digest() {
@@ -1112,8 +1118,8 @@ export class UserDecryptionResponsePayload {
     }
     /**
      * This is needed to ensure the response corresponds to the request.
-     * It is the digest of UserDecryptionLinker hashed using EIP712
-     * under the given domain in the request.
+     * It is the EIP712 hash, under the given domain in the request, of the
+     * EIP-712 link struct that the request's `client_address` picks.
      * @param {Uint8Array} arg0
      */
     set digest(arg0) {
@@ -1299,8 +1305,7 @@ export function ml_kem_pke_sk_to_u8vec(sk) {
  * * `server_addrs` - a list of KMS server ID with EIP-55 addresses,
  * the elements in the list can be created using [new_server_id_addr].
  *
- * * `client_address` - the client (wallet) address: an EVM address in EIP-55 hex prefixed
- * with "0x", or a Solana public key in base58.
+ * * `client_address` - the client (wallet) address, in a format that [ClientAddress] reads.
  *
  * * `fhe_parameter` - the parameter choice, which can be either `"test"` or `"default"`.
  * The "default" parameter choice is selected if no matching string is found.
@@ -1365,8 +1370,8 @@ export function private_sig_key_to_u8vec(sk) {
  * * `request` - the initial user_decryption request JS object.
  * It can be set to null if `verify` is false.
  * Otherwise the caller needs to give the following JS object.
- * Note that `eip712_verifying_contract` follows EIP-55, and so does `client_address` for an EVM
- * user. For a Solana user, `client_address` is the user's base58 public key.
+ * Note that `eip712_verifying_contract` follows EIP-55, and `client_address` has a format that
+ * [ClientAddress] reads.
  * The signature field is not needed.
  * ```
  * {
@@ -2205,11 +2210,11 @@ function getWasmInfo() {
   const memory = wasm?.memory;
   return {
     name: 'tkms',
-    version: '0.15.0-1-solana.97e46335',
+    version: '0.16.0-0-solana.14c63e6d',
     downloadFiles: [
       {
         filename: "kms_lib_bg.wasm",
-        sha256: "99b8b6eb0b0d063e19b4ef9314ca97d470f8e470266d363c8a918767a56b7576",
+        sha256: "37e92b77203dc0311a7b4434c4a00326b71516e6914f9959e558860e04542c03",
       }
     ],
     memory:

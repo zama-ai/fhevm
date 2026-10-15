@@ -54,8 +54,11 @@ const transcript = JSON.parse(
 
 const unhex = (hex: string): Uint8Array => hexToBytes(`0x${hex}`);
 
+// The transcript carries the KMS form of the user's address: `solana:` and the base58 key.
+const base58UserAddress = transcript.client_address.replace(/^solana:/, '') as Address;
+
 const request: SolanaUserDecryptRequestInputs = {
-  userAddress: Uint8Array.from(getAddressEncoder().encode(transcript.client_address as Address)),
+  userAddress: Uint8Array.from(getAddressEncoder().encode(base58UserAddress)),
   handles: transcript.request.ciphertext_handles.map(unhex),
   transportKey: unhex(transcript.request.enc_key),
   gatewayEip712Domain: {
@@ -111,7 +114,7 @@ const flippedAt = (bytes: Uint8Array, index: number): Uint8Array =>
   bytes.map((byte, at) => (at === index ? byte ^ 0x01 : byte));
 
 describe('the shared KMS client, on a Solana user', () => {
-  it('recovers the transcript plaintext from a base58 user address', async () => {
+  it('recovers the transcript plaintext from a `solana:` user address', async () => {
     const kmsLib = await initTkmsModule(getSolanaRuntime());
     const client = kmsLib.new_client(
       signers.map((signer) => kmsLib.new_server_id_addr(signer.partyId, signer.address)),
