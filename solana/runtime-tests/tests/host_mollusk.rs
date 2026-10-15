@@ -1683,15 +1683,6 @@ fn mollusk_admin_setters_run_while_every_area_is_paused() {
             host_config,
             host::instruction::SetGrantDenyListEnabled { enabled: true },
         ),
-        host_admin_ix(
-            admin,
-            host_config,
-            host::instruction::SetEip712Domain {
-                gateway_chain_id: GATEWAY_CHAIN_ID,
-                input_verification_contract: INPUT_VERIFICATION_CONTRACT,
-                decryption_contract: DECRYPTION_CONTRACT,
-            },
-        ),
     ];
     for setter in &setters {
         check_host_context(&context, setter, &[Check::success()]);

@@ -178,7 +178,7 @@ pub fn verify_threshold(
 }
 
 /// v0 verifier config: the EVM EIP-712 domain + signer set a Zama party signs under.
-/// Held on-chain (a config PDA) and set by the host admin.
+/// Held on-chain (a config PDA) and set at initialization.
 pub struct Eip712VerifierConfig<'a> {
     /// Gateway chain id used in the EIP-712 domain.
     pub gateway_chain_id: u64,

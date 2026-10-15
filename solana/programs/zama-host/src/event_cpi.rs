@@ -4,7 +4,7 @@
 //! This is a hand expansion of `anchor_lang::emit_cpi!`: same `EVENT_IX_TAG_LE`, same `Event::data`
 //! payload, same single readonly-signer event authority, same `invoke_signed` seeds. It is written out
 //! for two reasons. The macro hardcodes the identifier `ctx`, so it cannot be called from a shared
-//! helper like `emit_config_updated`, which six config-update instructions route through. And having
+//! helper like `emit_config_updated`, which the config-update instructions route through. And having
 //! the `Instruction` exist as a value is what lets a unit test assert on the emitted shape without a
 //! runtime — which is the only thing that checks that shape, so it matters more than it sounds.
 //!
