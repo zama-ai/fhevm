@@ -449,10 +449,16 @@ reservation pressure was exercised. It requires no second GPU.
 ## Bounded replay, backlog and combined recovery
 
 The CPU `backlog` leg boots `three-of-three-backlog`, where the live worker
-acquisition limit and poller page limit must both be four. FM-HOST-LONG-OFFLINE
-isolates all redundant victim ingestion paths, submits twelve receipt-identified
-transactions spanning at least three pages, then restores the poller from its
-durable cursor. FM-DURABLE-BACKLOG instead proves all twelve computations are
+acquisition limit, poller page limit and listener-core catchup sub-range size are
+four. FM-HOST-LONG-OFFLINE isolates all redundant victim ingestion paths, submits
+twelve receipt-identified transactions, then restarts only the host consumer.
+The scenario supplies `--catchup-from-block=-1024 --catchup-unfinalized`. The
+initial replay must be DONE before the fault; recovery requires a new ID whose
+resolved range covers every workload receipt, reaches consumer DONE and completes
+at least three listener-core sub-ranges. Legacy ingestion remains stopped through
+verification. Existing queued live delivery can overlap replay, so this verifies
+an explicit historical request and recovered outputs, not exclusive delivery
+attribution for each block. FM-DURABLE-BACKLOG instead proves all twelve computations are
 persisted and pending before killing the held worker and requiring supervisor
 replacement. Both require every original output to agree, remain unique,
 reach quorum and decrypt to 12; fresh work must also succeed. Neither case is
