@@ -242,7 +242,9 @@ mod eth_rpc_err {
 }
 
 fn websocket_config() -> WebSocketConfig {
-    WebSocketConfig::default().max_message_size(Some(256 * 1024 * 1024)) // 256MB
+    WebSocketConfig::default()
+        .max_message_size(Some(256 * 1024 * 1024))
+        .max_frame_size(Some(256 * 1024 * 1024))
 }
 
 impl InfiniteLogIter {
