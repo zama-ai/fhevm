@@ -1,4 +1,24 @@
 /** Required fault evidence must never turn absent observations into defaults. */
+export function requireCompletedConsumerCatchup(
+  row: { id?: unknown; status?: unknown; finalized?: unknown; blockStart?: unknown; blockEnd?: unknown },
+  previousId: unknown,
+  blocks: unknown,
+): void {
+  if (typeof previousId !== 'string' || !previousId || typeof row.id !== 'string' || !row.id || row.id === previousId) {
+    throw new Error('offline recovery requires a new catchup identity');
+  }
+  if (row.finalized !== false || row.status !== 'DONE') {
+    throw new Error('offline recovery requires a completed non-finalized catchup');
+  }
+  if (!Array.isArray(blocks) || blocks.length !== 12) throw new Error('offline recovery requires twelve receipt blocks');
+  const start = requiredEvidenceCount(row.blockStart, 'catchup start');
+  const end = requiredEvidenceCount(row.blockEnd, 'catchup end');
+  for (const block of blocks) {
+    const number = requiredEvidenceCount(block, 'receipt block', 1);
+    if (number < start || number > end) throw new Error('catchup does not cover every offline receipt block');
+  }
+}
+
 export function requiredEvidenceCount(value: unknown, label: string, minimum = 0): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum) {
     throw new Error(`${label} must be a recorded integer >= ${minimum}`);

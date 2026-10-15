@@ -686,6 +686,32 @@ impl ListenerConsumer {
         builder.build()
     }
 
+    /// Register the complete live and finalized contract sets in one database
+    /// transaction on core. Declare delivery queues before publishing this
+    /// command. Requires core with atomic WATCH support; success confirms broker
+    /// publication rather than database activation.
+    pub async fn register_live_and_final_contracts(
+        &self,
+        contracts: &[Address],
+    ) -> Result<(), ConsumerError> {
+        let mut command = WatchCommand::Atomic(
+            contracts
+                .iter()
+                .flat_map(|address| {
+                    [
+                        self.create_filter_on_log_address(*address),
+                        self.create_final_filter_on_log_address(*address),
+                    ]
+                })
+                .collect(),
+        );
+        command.validate()?;
+        let namespace = chain_id_to_namespace(self.chain_id);
+        let publisher = self.broker.publisher(&namespace).await?;
+        publisher.publish(routing::WATCH, &command).await?;
+        Ok(())
+    }
+
     /// Register the complete live contract set in one atomic WATCH command.
     ///
     /// Declare delivery queues before calling this method. Core validates all

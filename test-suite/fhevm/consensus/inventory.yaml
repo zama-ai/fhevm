@@ -1481,11 +1481,11 @@ cases:
 
   - id: FM-HOST-LONG-OFFLINE
     family: failure-matrix
-    property: One isolated host poller recovers twelve named transactions spanning more than two observed four-block pages, preserving every canonical value and accepting fresh work.
+    property: One isolated host consumer recovers twelve named transactions through a new persisted non-finalized catchup spanning multiple four-block core sub-ranges, preserving every canonical value and accepting fresh work.
     topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu, gpu] }
-    services: [host-listener-poller]
+    services: [host-listener-consumer, listener-core]
     capabilities: [docker-socket, service-control, anvil-control]
-    workload: Twelve receipt-identified persisted-operand computations, followed by fresh work; observed poller and worker bounds are four.
+    workload: Twelve receipt-identified persisted-operand computations, followed by fresh work; observed listener-core catchup and worker bounds are four.
     fault: { mechanism: listener-offline-multiple-pages, stage: identified work queued while the service is held, observation: service-control acknowledgment plus all named targets pending before recovery }
     participants: { compute: all, submit: all, quorum: required }
     assertions:
@@ -1493,7 +1493,8 @@ cases:
       - liveness: every original target completes after recovery and fresh work also progresses
       - bytes: every retained output has canonical byte and digest agreement with exactly one stored row per operator
       - quorum: every original output reaches authorized distinct-sender quorum
-      - safety: no target is lost or duplicated; live configuration matches the bounded batch/page profile
+      - scope: a new persisted non-finalized catchup covers every receipt, reaches DONE and has completed at least three listener-core sub-ranges
+      - safety: no target is lost or duplicated; legacy ingestion stays stopped and live configuration matches the bounded batch/page profile
       - correctness: every retained and fresh value decrypts to the independent fixture model
     timeout_s: 2400
     cleanup: [restore all held ingestion paths and original worker ownership]

@@ -4454,6 +4454,7 @@ dependencies = [
  "aws-sdk-s3",
  "aws-smithy-mocks",
  "bigdecimal",
+ "broker",
  "clap",
  "consumer",
  "fhevm-engine-common",
@@ -4479,6 +4480,7 @@ dependencies = [
  "tracing-test",
  "union-find",
  "url",
+ "uuid",
 ]
 
 [[package]]

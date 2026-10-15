@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -6,6 +7,7 @@ use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy_primitives::LogData;
 use anyhow::Result;
+use futures_util::future::join_all;
 use tokio::sync::RwLock;
 use tokio::task::{JoinError, JoinHandle};
 use tokio::time::{interval_at, sleep, Instant, MissedTickBehavior};
@@ -29,7 +31,9 @@ use crate::consumer::metrics::{
     inc_db_errors, observe_legacy_insert_delay_seconds, set_received_block,
 };
 use crate::consumer::migration::spawn_id_migration;
-use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
+use crate::database::ingest::{
+    ingest_block_logs_in_transaction, BlockLogs, IngestOptions,
+};
 use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
 };
@@ -40,6 +44,7 @@ use crate::kms_generation::process_kms_generation_activations;
 use consumer::{
     AckDecision, BlockPayload, Broker, HandlerError, ListenerConsumer,
 };
+pub mod catchup;
 #[cfg(test)]
 mod finalization_tests;
 mod metrics;
@@ -69,6 +74,10 @@ const DEFAULT_CONSUMER_ID: &str = "host-listener-consumer";
 
 #[derive(Clone, Debug)]
 pub struct ConsumerConfig {
+    pub catchup_from_block: Option<i64>,
+    pub catchup_up_to_block: Option<i64>,
+    pub catchup_unfinalized: bool,
+    pub no_override_catchup: bool,
     pub url: String,
     pub acl_address: Address,
     pub tfhe_address: Address,
@@ -367,6 +376,15 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let blockchain_timeout_tick = HeartBeat::new();
     let blockchain_provider = Arc::new(RwLock::new(None));
 
+    let manual_catchup = catchup::ManualCatchupArgs {
+        catchup_from_block: config.catchup_from_block,
+        catchup_up_to_block: config.catchup_up_to_block,
+        catchup_unfinalized: config.catchup_unfinalized,
+        no_override_catchup: config.no_override_catchup,
+    };
+    manual_catchup.validate()?;
+    let (live_reference, reference_rx) =
+        catchup::LiveReference::new(chain_id.as_u64());
     let broker_url = config.url.clone(); // e.g."amqp://user:pass@localhost:5672";
     let broker = Broker::from_url(&broker_url).await?;
     // Identity is a constant, not the telemetry name: see `DEFAULT_CONSUMER_ID`.
@@ -420,9 +438,10 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         info!("Consumer ensure queues");
         client.ensure_consumer().await?;
         client.ensure_final_consumer().await?;
+        client.ensure_final_catchup_consumer().await?;
+        client.ensure_catchup_consumer().await?;
         info!("Consumer registering contracts");
-        client.register_contracts(&contracts).await?;
-        client.register_final_contracts(&contracts).await?;
+        client.register_live_and_final_contracts(&contracts).await?;
     }
 
     let health_check = HealthCheck {
@@ -460,16 +479,16 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         client.cancel_token.clone(),
     );
 
-    // ...and when it does, stop reading. This watcher cancels only the two
+    // ...and when it does, stop reading. This watcher cancels only the
     // read flows, so the stats observer and the identity migration below are
     // untouched by retirement itself. They do not outlive it for long: once
-    // the first read flow returns, the loop below cancels the parent token and
+    // all read flows return, the loop below cancels the parent token and
     // takes every remaining child down with it. An interrupted migration is
     // safe to cut short — it is spawned again on the next start, before the
     // retirement check — but nothing here keeps it running to completion.
     //
     // A group cannot be released while something is still blocked in
-    // `XREADGROUP` on it, so the release happens after both flows have
+    // `XREADGROUP` on it, so the release happens after all flows have
     // returned, not here.
     spawn_retirement_watcher(
         stack_mode.clone(),
@@ -527,9 +546,33 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let retirement_mode = stack_mode.clone();
     let handler_config = config.clone();
     let kms_cancel = client.cancel_token.clone();
+    let catchup_client = client.clone();
+    let catchup_db = db.clone();
+    let catchup_mode = stack_mode.clone();
+    let catchup_task = if retired {
+        None
+    } else {
+        Some(tokio::spawn(async move {
+            if let Err(error) = catchup::run(
+                catchup_db,
+                catchup_client,
+                manual_catchup,
+                reference_rx,
+                catchup_mode,
+            )
+            .await
+            {
+                error!(%error, "Catchup request worker stopped");
+            }
+        }))
+    };
+    let catchup_ends = Arc::new(RwLock::new(HashMap::new()));
     let handle_block = move |payload: BlockPayload, _cancel| {
-        let finalized = payload.flow == BlockFlow::Final;
-        if !finalized {
+        let is_catchup = matches!(
+            payload.flow,
+            BlockFlow::Catchup | BlockFlow::FinalCatchup
+        );
+        if !is_catchup {
             blockchain_tick.update();
         }
         set_received_block(&chain_id_str, payload.flow, payload.block_number);
@@ -540,19 +583,48 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         let stack_mode = stack_mode.clone();
         let config = handler_config.clone();
         let kms_cancel = kms_cancel.clone();
+        let live_reference = live_reference.clone();
+        let consumer_id = consumer_id.clone();
+        let catchup_ends = catchup_ends.clone();
         async move {
             // Paused (retired blue stack after cutover): no-op — ack and drop
             // the block without writing anything to the DB.
             if stack_mode.is_paused() {
                 return Ok(AckDecision::Ack);
             }
-            let drift_revert_is_over = check_if_drift_revert_is_over(
-                &db,
-                chain_id.as_u64() as i64,
-                last_known_drift,
-                payload.block_number,
-            )
-            .await;
+            live_reference.observe(&payload).await;
+            let drift_revert_is_over = if is_catchup {
+                let pool = db.pool().await;
+                if !catchup::store::accepts(
+                    &pool,
+                    chain_id.as_u64() as i64,
+                    &consumer_id,
+                    payload.catchup_id,
+                    payload.flow == BlockFlow::FinalCatchup,
+                )
+                .await
+                .map_err(|error| HandlerError::Transient(error.into()))?
+                {
+                    return Ok(AckDecision::Ack);
+                }
+                fhevm_engine_common::drift_revert::latest_signal_for_chain(
+                    &pool,
+                    chain_id.as_u64() as i64,
+                )
+                .await
+                .map(|signal| {
+                    signal
+                        .is_none_or(|signal| signal.status == DriftStatus::Done)
+                })
+            } else {
+                check_if_drift_revert_is_over(
+                    &db,
+                    chain_id.as_u64() as i64,
+                    last_known_drift,
+                    payload.block_number,
+                )
+                .await
+            };
             match drift_revert_is_over {
                 Ok(false) => {
                     return Err(HandlerError::Transient(Box::from(
@@ -579,7 +651,29 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 );
                 return Ok(AckDecision::Ack);
             }
-            ingest_payload(
+            let catchup_id = payload.catchup_id.filter(|_| is_catchup);
+            let catchup_end = if let Some(id) = catchup_id {
+                let cached = catchup_ends.read().await.get(&id).copied();
+                if cached.is_some() {
+                    cached
+                } else {
+                    let end = catchup::store::block_end(
+                        &db.pool().await,
+                        chain_id.as_i64(),
+                        &consumer_id,
+                        id,
+                    )
+                    .await
+                    .map_err(|error| HandlerError::Transient(error.into()))?;
+                    if let Some(end) = end {
+                        catchup_ends.write().await.insert(id, end);
+                    }
+                    end
+                }
+            } else {
+                None
+            };
+            let decision = ingest_payload(
                 &mut db,
                 &config,
                 &ingest_options,
@@ -588,7 +682,25 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 AwsS3Client {},
                 &kms_cancel,
             )
-            .await
+            .await?;
+            if let Some(id) =
+                catchup_id.filter(|_| catchup_end == Some(payload.block_number))
+            {
+                if catchup::store::completed(
+                    &db.pool().await,
+                    chain_id.as_i64(),
+                    &consumer_id,
+                    id,
+                    config.gcs_mode,
+                )
+                .await
+                .map_err(|error| HandlerError::Transient(error.into()))?
+                {
+                    info!(catchup_id = %id, block_number = payload.block_number,
+                        "Catchup last block ingested");
+                }
+            }
+            Ok(decision)
         }
     };
 
@@ -603,23 +715,30 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         client.cancel_token.cancelled().await;
         Ok(Ok(()))
     } else {
-        first_flow_to_return(
-            &client.cancel_token,
+        wait_for_flows(vec![
             tokio::spawn(client.consume(handle_block.clone())),
-            tokio::spawn(client.consume_final(handle_block)),
-        )
+            tokio::spawn(client.consume_final(handle_block.clone())),
+            tokio::spawn(client.consume_catchup(handle_block.clone())),
+            tokio::spawn(client.consume_final_catchup(handle_block)),
+        ])
         .await
+        .map(|results| results.into_iter().collect::<Result<(), _>>())
     };
     info!(
         chain_id = %config.chain_id,
         "Host listener consumer graceful stop"
     );
     client.cancel();
+    if let Some(catchup_task) = catchup_task {
+        if let Err(error) = catchup_task.await {
+            error!(%error, "Catchup request worker panicked");
+        }
+    }
     if let Err(err) = stats_task.await {
         error!(error = %err, "Consumer stats background task failed");
     }
 
-    // Both read flows have returned, so nothing is on these groups any more
+    // All read flows have returned, so nothing is on these groups any more
     // and they can go. A retired build's cursors never move again, and the broker's
     // trimmer will not reclaim past the furthest-behind group on a stream, so
     // leaving them pins the backlog until the live stack's sweep releases them.
@@ -666,7 +785,8 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
     kms_cancel: &CancellationToken,
 ) -> Result<AckDecision, HandlerError> {
     let chain_id = db.chain_id;
-    let finalized = payload.flow == BlockFlow::Final;
+    let finalized =
+        matches!(payload.flow, BlockFlow::Final | BlockFlow::FinalCatchup);
     let block_summary = BlockSummary {
         number: payload.block_number,
         hash: payload.block_hash,
@@ -674,8 +794,8 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
         timestamp: payload.timestamp,
     };
     let catchup = payload.flow == BlockFlow::Catchup;
-    // Finalized deliveries do not measure live ingestion timing.
-    if !finalized {
+    // Historical and finalized deliveries do not measure live ingestion timing.
+    if !finalized && !catchup {
         observe_consumer_block_timing(
             db,
             chain_id_str,
@@ -693,16 +813,21 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
         nb_logs = logs.len(),
         "Received new block payload"
     );
+    let catchup_id =
+        matches!(payload.flow, BlockFlow::Catchup | BlockFlow::FinalCatchup)
+            .then_some(payload.catchup_id)
+            .flatten();
     let block_logs = BlockLogs {
         summary: block_summary,
         logs,
-        catchup: false,
+        catchup,
         finalized,
     };
     match ingest_with_retry(
         chain_id,
         db,
         &block_logs,
+        catchup_id,
         config.acl_address,
         config.tfhe_address,
         config.kms_generation_address,
@@ -804,9 +929,9 @@ fn spawn_kms_activations<A: AwsS3Interface + Clone + 'static>(
 /// the pods go that a frozen cursor starts holding the stream. Stopping the
 /// readers here is what lets the caller release the groups afterwards.
 ///
-/// Both flows are cancelled, not just the live one. They read different
-/// streams under the same identity and each holds a group of its own, so a
-/// release that only one of them has stopped for is a release racing a reader.
+/// Live, finalized and both catchup readers are cancelled together. Each
+/// holds a group on its own stream; releasing one while its reader is still
+/// unwinding would race that reader.
 ///
 /// Polled rather than signaled: `paused` is a plain flag, and a load every
 /// [`RETIREMENT_POLL_INTERVAL`] costs nothing next to reacting to it late.
@@ -828,40 +953,20 @@ fn spawn_retirement_watcher(
             warn!("Stack retired by cutover: stopping the consumer read loops");
             client.cancel_live();
             client.cancel_final();
+            client.cancel_final_catchup();
+            client.cancel_catchup();
         }
     });
 }
 
-/// Return as soon as one of the two read flows does, having stopped the other
-/// and waited for it to return too.
-///
-/// Both flows read under the same identity, each holding a consumer group of
-/// its own, and the caller releases those groups once this returns. A group
-/// cannot be released while a reader is still blocked in `XREADGROUP` on it,
-/// so the second flow has to be waited for and not merely cancelled: dropping
-/// its [`JoinHandle`] detaches the task rather than stopping it, which is what
-/// `tokio::select!` over two handles does on its own.
-///
-/// The result reported is the first flow's. Whichever returned first is the
-/// one that decided the shutdown; the other was told to stop and its result
-/// says nothing the caller did not already cause.
-async fn first_flow_to_return<T>(
-    cancel: &CancellationToken,
-    mut live: JoinHandle<T>,
-    mut finalized: JoinHandle<T>,
-) -> Result<T, JoinError> {
-    tokio::select! {
-        result = &mut live => {
-            cancel.cancel();
-            let _ = finalized.await;
-            result
-        }
-        result = &mut finalized => {
-            cancel.cancel();
-            let _ = live.await;
-            result
-        }
-    }
+/// Wait for every read flow without cancelling the remaining readers.
+/// Read flows share an identity but each holds its own group. The caller
+/// releases those groups once this returns. Every reader must finish unwinding
+/// first: merely dropping its JoinHandle would detach the still-running task.
+async fn wait_for_flows<T>(
+    flows: Vec<JoinHandle<T>>,
+) -> Result<Vec<T>, JoinError> {
+    join_all(flows).await.into_iter().collect()
 }
 
 /// Resolve to `true` once the stack is retired, or `false` if shutdown came
@@ -966,6 +1071,7 @@ async fn ingest_with_retry(
     chain_id: ChainId,
     db: &mut Database,
     block_logs: &BlockLogs<Log>,
+    catchup_id: Option<uuid::Uuid>,
     acl_address: Address,
     tfhe_address: Address,
     kms_generation_address: Option<Address>,
@@ -979,19 +1085,37 @@ async fn ingest_with_retry(
     let tfhe = Some(tfhe_address);
     let protocol_config = protocol_config_address;
     loop {
-        match ingest_block_logs(
-            chain_id,
-            db,
-            block_logs,
-            &acl,
-            &tfhe,
-            &kms_generation_address,
-            &protocol_config,
-            &confidential_bridge_address,
-            options.clone(),
-        )
-        .await
-        {
+        let result = async {
+            let Some(mut tx) = db.new_transaction().await? else {
+                return Ok(());
+            };
+            if let Some(id) = catchup_id {
+                if !catchup::store::lock_for_ingest(
+                    &mut tx,
+                    chain_id.as_i64(),
+                    id,
+                )
+                .await?
+                {
+                    return Ok(());
+                }
+            }
+            ingest_block_logs_in_transaction(
+                chain_id,
+                db,
+                tx,
+                block_logs,
+                &acl,
+                &tfhe,
+                &kms_generation_address,
+                &protocol_config,
+                &confidential_bridge_address,
+                options.clone(),
+            )
+            .await
+        }
+        .await;
+        match result {
             Ok(_) => return Ok(errors),
             Err(err) => {
                 errors += 1;
@@ -1093,18 +1217,23 @@ mod tests {
     /// A read flow that is still unwinding when its sibling returns is waited
     /// for, not left running.
     ///
-    /// The caller releases both consumer groups as soon as this returns. A
+    /// The caller releases the consumer groups as soon as this returns. A
     /// flow still inside `XREADGROUP` at that point would have its group
     /// destroyed underneath it — which is what happens if the losing
     /// `JoinHandle` is dropped instead of awaited, because dropping one
     /// detaches its task.
     #[tokio::test]
-    async fn the_flow_that_did_not_return_first_is_waited_for() {
-        for live_returns_first in [true, false] {
+    async fn all_flows_are_waited_for_without_cancelling_the_others() {
+        for (live_returns_first, first_result) in [
+            (true, Ok(())),
+            (false, Ok(())),
+            (true, Err("flow failed")),
+            (false, Err("flow failed")),
+        ] {
             let cancel = CancellationToken::new();
             let unwound = Arc::new(AtomicBool::new(false));
 
-            let returning = tokio::spawn(async {});
+            let returning = tokio::spawn(async move { first_result });
             let reading = {
                 let cancel = cancel.clone();
                 let unwound = Arc::clone(&unwound);
@@ -1113,24 +1242,48 @@ mod tests {
                     // The blocking read it is still sitting in.
                     sleep(TICK * 4).await;
                     unwound.store(true, Ordering::SeqCst);
+                    Ok(())
                 })
             };
 
+            let replay_unwound = Arc::new(AtomicBool::new(false));
+            let replay = {
+                let cancel = cancel.clone();
+                let unwound = replay_unwound.clone();
+                tokio::spawn(async move {
+                    cancel.cancelled().await;
+                    sleep(TICK * 8).await;
+                    unwound.store(true, Ordering::SeqCst);
+                    Ok(())
+                })
+            };
             let (live, finalized) = if live_returns_first {
                 (returning, reading)
             } else {
                 (reading, returning)
             };
-            tokio::time::timeout(
-                Duration::from_secs(5),
-                first_flow_to_return(&cancel, live, finalized),
-            )
-            .await
-            .expect("the other flow must be told to stop, not just waited on")
-            .expect("neither flow panics");
+            let mut flows =
+                Box::pin(wait_for_flows(vec![live, finalized, replay]));
+            assert!(tokio::time::timeout(TICK * 4, &mut flows).await.is_err());
+            assert!(
+                !cancel.is_cancelled(),
+                "a completed flow must not cancel its siblings"
+            );
+            assert!(!unwound.load(Ordering::SeqCst));
+            assert!(!replay_unwound.load(Ordering::SeqCst));
+            cancel.cancel();
+            let results = tokio::time::timeout(Duration::from_secs(5), flows)
+                .await
+                .expect("all cancelled flows must finish")
+                .expect("no flow panics");
+            assert_eq!(results.len(), 3);
+            assert_eq!(
+                results.iter().filter(|result| result.is_err()).count(),
+                usize::from(first_result.is_err())
+            );
 
             assert!(
-                unwound.load(Ordering::SeqCst),
+                unwound.load(Ordering::SeqCst) && replay_unwound.load(Ordering::SeqCst),
                 "the group release that follows must not begin while the \
                  other flow is still reading (live first: {live_returns_first})"
             );

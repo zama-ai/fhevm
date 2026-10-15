@@ -315,11 +315,41 @@ pub async fn ingest_block_logs(
     confidential_bridge_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<(), sqlx::Error> {
-    let Some(mut tx) = db.new_transaction().await? else {
+    let Some(tx) = db.new_transaction().await? else {
         info!("cutover completed — host-listener skipping block ingest (retired stack)");
         return Ok(());
     };
 
+    ingest_block_logs_in_transaction(
+        chain_id,
+        db,
+        tx,
+        block_logs,
+        acl_contract_address,
+        tfhe_contract_address,
+        kms_generation_contract_address,
+        protocol_config_contract_address,
+        confidential_bridge_address,
+        options,
+    )
+    .await
+}
+
+/// Ingest using the caller's transaction, preserving locks acquired before
+/// ingestion. Consumes and commits the transaction on success.
+#[allow(clippy::too_many_arguments)]
+pub async fn ingest_block_logs_in_transaction(
+    chain_id: ChainId,
+    db: &Database,
+    mut tx: sqlx::Transaction<'_, sqlx::Postgres>,
+    block_logs: &BlockLogs<Log>,
+    acl_contract_address: &Option<Address>,
+    tfhe_contract_address: &Option<Address>,
+    kms_generation_contract_address: &Option<Address>,
+    protocol_config_contract_address: &Option<Address>,
+    confidential_bridge_address: &Option<Address>,
+    options: IngestOptions,
+) -> Result<(), sqlx::Error> {
     // Queue `pg_notify('event_new_block', ...)` at the top of the transaction so
     // postgres defers delivery until `tx.commit()` below succeeds. Same
     // "after all events committed" guarantee as emitting post-commit, but
