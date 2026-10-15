@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install one kms-connector release per KMS party.
 # Env: NAMESPACE, NB_KMS_CORE, DEPLOY_POLYGON, OBSERVABILITY, OTLP_ENDPOINT,
-# KMS_CONNECTOR_CHART, TAGS_JSON.
+# KMS_CONNECTOR_CHART, TAGS_JSON, ROLES_JSON_PATH, WALLETS_JSON.
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -26,6 +26,20 @@ require_nonempty "${gateway_config}" "gw-sc-addresses[gateway_config.address] is
 require_nonempty "${kms_generation}" "host-sc-addresses[kms_generation.address] is empty"
 require_nonempty "${protocol_config}" "host-sc-addresses[protocol_config.address] is empty"
 require_nonempty "${acl}" "host-sc-addresses[acl.address] is empty"
+
+# The proxy only serves requests signed by one of kmsConnectorProxy.allowedSenders for its own
+# kmsConnectorProxy.txSenderAddress. Both are `required` in the chart, so leaving them unset fails
+# the install outright. Role #3 is the relayer's signer (the same wallet apply-chain-env.sh gives
+# the relayer and fund-wallets.sh funds on the gateway); the audience is this party's KMS tx-sender.
+: "${ROLES_JSON_PATH:?}"
+: "${WALLETS_JSON:?}"
+relayer_signer=$(python3 -c 'import json,os; print(json.load(open(os.environ["ROLES_JSON_PATH"]))["roles"]["3"]["address"])')
+require_nonempty "${relayer_signer}" "roles[3].address is empty in ${ROLES_JSON_PATH}"
+
+# <party> -> derived KMS tx-sender address, same wallets_json the tx-sender Secrets come from.
+kms_tx_sender_address() {
+  jq -er --argjson party "$1" '.[] | select(.party == $party) | .address' <<<"${WALLETS_JSON}"
+}
 
 # Sets host chain ACL contract address in commonConfig.hostChains.
 set_host_chain_acl() {
@@ -138,6 +152,8 @@ for i in $(seq 1 "${NB_KMS_CORE}"); do
     --set-string "kmsConnectorEndpoint.image.tag=$(jq -r .kms_connector_endpoint <<<"${TAGS_JSON}")" \
     --set-string "kmsConnectorProxy.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/proxy" \
     --set-string "kmsConnectorProxy.image.tag=$(jq -r .kms_connector_proxy <<<"${TAGS_JSON}")" \
+    --set-string "kmsConnectorProxy.allowedSenders[0]=${relayer_signer}" \
+    --set-string "kmsConnectorProxy.txSenderAddress=$(kms_tx_sender_address "${i}")" \
     "${tracing[@]}"
 done
 sleep 60
