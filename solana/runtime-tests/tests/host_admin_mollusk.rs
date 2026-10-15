@@ -46,11 +46,11 @@ fn program_owned_account() -> Account {
 fn init_args(signers: Vec<[u8; 20]>, threshold: u8) -> host::InitializeHostConfigArgs {
     host::InitializeHostConfigArgs {
         chain_id: host::SOLANA_POC_CHAIN_ID,
-        gateway_chain_id: 0,
+        gateway_chain_id: 55_555,
         input_verification_contract: [0xCDu8; 20],
         coprocessor_signers: signers,
         coprocessor_threshold: threshold,
-        decryption_contract: [0u8; 20],
+        decryption_contract: [0xDEu8; 20],
         grant_deny_list_enabled: false,
     }
 }
@@ -120,6 +120,17 @@ impl InitializeHostConfig {
     fn config(&self) -> host::HostConfig {
         read_host_account::<HostConfig>(&self.context, self.host_config).expect("config")
     }
+}
+
+/// No instruction changes the gateway domain after this, as on EVM's verifiers.
+#[test]
+fn mollusk_initialize_host_config_stores_the_gateway_domain() {
+    let init = InitializeHostConfig::new();
+    init.run(&init.ix(init_args(vec![[0x11u8; 20]], 1)), Check::success());
+    let config = init.config();
+    assert_eq!(config.gateway_chain_id, 55_555);
+    assert_eq!(config.input_verification_contract, [0xCDu8; 20]);
+    assert_eq!(config.decryption_contract, [0xDEu8; 20]);
 }
 
 #[test]
