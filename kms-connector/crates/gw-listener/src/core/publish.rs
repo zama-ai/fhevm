@@ -1,3 +1,4 @@
+use crate::monitoring::metrics::EVENT_RECEIVED_COUNTER;
 use alloy::{
     primitives::{FixedBytes, U256},
     sol_types::SolValue,
@@ -7,7 +8,7 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
         ProtocolEvent, ProtocolEventKind,
-        db::{ParamsTypeDb, invalidate_kms_context, invalidate_kms_epoch},
+        db::{EventType, ParamsTypeDb, invalidate_kms_context, invalidate_kms_epoch},
     },
 };
 // Handle-only overloaded decryption events (authoritative ct-commits verifier, v0.15).
@@ -57,6 +58,8 @@ pub async fn publish_batch(
     block_number: u64,
 ) -> anyhow::Result<()> {
     let mut tx = db_pool.begin().await?;
+    // Only events actually stored are counted, once the transaction is committed
+    let mut stored_events = Vec::with_capacity(events.len());
     for event in events {
         // Destruction events also invalidate the local validation cache
         match &event.kind {
@@ -69,17 +72,27 @@ pub async fn publish_batch(
             _ => {}
         }
 
-        publish_event_inner(&mut *tx, event).await?;
+        let event_type = EventType::from(&event.kind);
+        if publish_event_inner(&mut *tx, event).await? {
+            stored_events.push(event_type);
+        }
     }
     update_last_block_polled(&mut *tx, chain, Some(block_number)).await?;
     tx.commit().await?;
+
+    for event_type in stored_events {
+        EVENT_RECEIVED_COUNTER
+            .with_label_values(&[event_type.as_str()])
+            .inc();
+    }
     Ok(())
 }
 
+/// Returns `true` if the event was stored, `false` if it was already in DB.
 async fn publish_event_inner<'e>(
     executor: impl PgExecutor<'e>,
     event: ProtocolEvent,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     info!("Storing {:?} in DB...", event.kind);
 
     let otlp_ctx = event.otlp_context;
@@ -132,13 +145,14 @@ async fn publish_event_inner<'e>(
     }
     .map_err(|err| anyhow!("Failed to publish event: {err}"))?;
 
-    if query_result.rows_affected() == 1 {
+    let stored = query_result.rows_affected() == 1;
+    if stored {
         info!("Event successfully stored in DB!");
     } else {
-        warn!("Unexpected query result while publishing event: {query_result:?}");
+        info!("Event already stored in DB, skipping it");
     }
 
-    Ok(())
+    Ok(stored)
 }
 
 async fn publish_public_decryption<'e>(
@@ -423,7 +437,7 @@ pub async fn publish_context_and_epoch(
     context_id: U256,
     epoch_id: U256,
 ) -> anyhow::Result<()> {
-    info!("Publishing KMS context #{context_id} (epoch #{epoch_id}) in DB...");
+    info!("Publishing KMS context #{context_id:#066x} (epoch #{epoch_id:#066x}) in DB...");
     let now = Utc::now();
     let mut tx = db_pool.begin().await?;
     let context_result = sqlx::query!(
@@ -445,8 +459,8 @@ pub async fn publish_context_and_epoch(
     .await?;
     tx.commit().await?;
 
-    log_cache_insert_outcome(&context_result, &format!("KMS context #{context_id}"));
-    log_cache_insert_outcome(&epoch_result, &format!("KMS epoch #{epoch_id}"));
+    log_cache_insert_outcome(&context_result, &format!("KMS context #{context_id:#066x}"));
+    log_cache_insert_outcome(&epoch_result, &format!("KMS epoch #{epoch_id:#066x}"));
     Ok(())
 }
 

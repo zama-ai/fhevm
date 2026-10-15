@@ -35,9 +35,10 @@ export const WIDTHS = SHIFT_CASES.map(({ bits }) => bits);
 export const NARROW_CASES = SHIFT_CASES.filter(({ bits }) => bits <= 128n);
 
 // Deployed once per suite: every fixture entry point starts with `delete _resBatch`.
-export function useOperatorEdgeCaseFixture(): void {
+// Each suite passes its own signer: parallel workers sharing one would race on its nonce.
+export function useOperatorEdgeCaseFixture(signerIndex: number): void {
   before(async function () {
-    this.signer = await getSigner(119);
+    this.signer = await getSigner(signerIndex);
     this.instance = await createInstance();
     const factory = await ethers.getContractFactory('FHEVMOperatorEdgeCaseTestSuite');
     const contract = await factory.connect(this.signer).deploy();

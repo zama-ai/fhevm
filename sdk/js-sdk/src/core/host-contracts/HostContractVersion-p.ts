@@ -166,7 +166,8 @@ function parseVersion(version: string): HostContractVersion {
     contractName !== 'InputVerifier' &&
     contractName !== 'KMSVerifier' &&
     contractName !== 'HCULimit' &&
-    contractName !== 'ProtocolConfig'
+    contractName !== 'ProtocolConfig' &&
+    contractName !== 'ProtocolConfigReplica'
   ) {
     throw new Error(err);
   }
@@ -218,7 +219,10 @@ export function assertIsHostContractVersionOf<hostContractName extends HostContr
   v: HostContractVersion,
   hostContractName: hostContractName,
 ): asserts v is HostContractVersion<hostContractName> {
-  if (v.contractName !== hostContractName) {
+  if (
+    v.contractName !== hostContractName &&
+    !(hostContractName === 'ProtocolConfig' && v.contractName === 'ProtocolConfigReplica')
+  ) {
     throw new Error(`Invalid contract name. Expecting '${hostContractName}', got ${v.contractName}.`);
   }
 }

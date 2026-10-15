@@ -6,7 +6,7 @@
   value: {{ .value | quote }}
   {{- else if .valueFrom }}
   valueFrom:
-    {{- toYaml .valueFrom | nindent 4 }}
+    {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 4 }}
   {{- end }}
 {{- end }}
 {{- with .Values.commonConfig.databaseEndpoint }}
@@ -15,7 +15,7 @@
   value: {{ .value | quote }}
   {{- else if .valueFrom }}
   valueFrom:
-    {{- toYaml .valueFrom | nindent 4 }}
+    {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 4 }}
   {{- end }}
 {{- end }}
 {{- if eq (include "coprocessorDatabaseAuthMode" $) "password" }}
@@ -25,7 +25,7 @@
   value: {{ .value | quote }}
   {{- else if .valueFrom }}
   valueFrom:
-    {{- toYaml .valueFrom | nindent 4 }}
+    {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 4 }}
   {{- end }}
 {{- end }}
 {{- end }}
@@ -40,7 +40,7 @@
   value: {{ .value | quote }}
   {{- else if .valueFrom }}
   valueFrom:
-    {{- toYaml .valueFrom | nindent 4 }}
+    {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 4 }}
   {{- end }}
 {{- end }}
 {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" $) "true" }}
@@ -48,7 +48,7 @@
 {{- end }}
 {{- end }}
 {{- with .Values.commonConfig.env }}
-{{- toYaml . | nindent 0 }}
+{{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 0 }}
 {{- end }}
 {{- end }}
 {{- if .Values.solanaHostListener.enabled }}
@@ -138,7 +138,7 @@ spec:
               value: {{ $startSlot | quote }}
             {{- include "coprocessor.solanaMerkleDatabaseEnv" . | trim | nindent 12 }}
             {{- with $listener.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
             {{- end }}
           ports:
             - name: http
@@ -245,18 +245,18 @@ spec:
               value: {{ $canonical.httpUrl | quote }}
               {{- else }}
               valueFrom:
-                {{- toYaml $canonical.httpUrlValueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $canonical.httpUrlValueFrom) | nindent 16 }}
               {{- end }}
             - name: PROTOCOL_CONFIG_ADDRESS
               {{- if $canonical.protocolConfigContractAddress }}
               value: {{ $canonical.protocolConfigContractAddress | quote }}
               {{- else }}
               valueFrom:
-                {{- toYaml $canonical.protocolConfigContractAddressValueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $canonical.protocolConfigContractAddressValueFrom) | nindent 16 }}
               {{- end }}
             {{- include "coprocessor.solanaMerkleDatabaseEnv" . | trim | nindent 12 }}
             {{- with $server.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
             {{- end }}
           ports:
             - name: http

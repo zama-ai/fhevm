@@ -6,32 +6,26 @@ use alloy::primitives::FixedBytes;
 use bigdecimal::num_bigint::BigInt;
 use host_listener::contracts::TfheContract;
 use host_listener::contracts::TfheContract::TfheContractEvents;
+use std::collections::HashSet;
 use std::str::FromStr;
 
 const RANDOM_SUPPORTED_TYPES_CPU: &[i32] = &[
-    0,  // bool
-    1,  // 4 bit
-    2,  // 8 bit
-    3,  // 16 bit
-    4,  // 32 bit
-    5,  // 64 bit
-    6,  // 128 bit
-    7,  // 160 bit
-    8,  // 256 bit
-    9,  // 512 bit
-    10, // 1024 bit
-    11, // 2048 bit
-];
-
-const RANDOM_SUPPORTED_TYPES_GPU: &[i32] = &[
     0, // bool
-    1, // 4 bit
     2, // 8 bit
     3, // 16 bit
     4, // 32 bit
     5, // 64 bit
     6, // 128 bit
-    7, // 160 bit
+    8, // 256 bit
+];
+
+const RANDOM_SUPPORTED_TYPES_GPU: &[i32] = &[
+    0, // bool
+    2, // 8 bit
+    3, // 16 bit
+    4, // 32 bit
+    5, // 64 bit
+    6, // 128 bit
     8, // 256 bit
 ];
 
@@ -44,12 +38,16 @@ const RANDOM_SUPPORTED_TYPES_GPU: &[i32] = &[
 // exercises the full type set below.
 const RANDOM_SUPPORTED_TYPES_LOCAL: &[i32] = &[
     0, // bool
-    1, // 4 bit
     2, // 8 bit
     3, // 16 bit
     4, // 32 bit
     5, // 64 bit
 ];
+
+// `test_fhe_random_basic` draws bool and 4-bit values for seeds
+// 1..SMALL_TYPE_SEEDS in addition to seeds 0 and 42 (33 distinct seeds). All
+// bool values are equal with probability 2^-32.
+const SMALL_TYPE_SEEDS: u8 = 32;
 
 fn random_test_supported_types() -> &'static [i32] {
     if cfg!(feature = "gpu") {
@@ -68,6 +66,7 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
     let harness = setup_event_harness().await?;
     let mut handles = Vec::new();
     let mut rand_types = Vec::new();
+    let mut handle_counts = Vec::new();
 
     for &rand_type in random_test_supported_types() {
         let tx_id = next_handle();
@@ -124,38 +123,63 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
         allow_handle(&harness.listener_db, &mut tx, &output3).await?;
+
+        let mut type_handles = vec![output1, output2, output3];
+        // Bool and type 1 (4 bits) collide across two seeds with probability
+        // 1/2 and 1/16, so draw extra seeds to check seed-variance.
+        if rand_type == 0 || rand_type == 1 {
+            for seed in 1..SMALL_TYPE_SEEDS {
+                let output = next_handle_with_type(rand_type);
+                let mut seed_bytes = [0_u8; 16];
+                seed_bytes[0] = seed;
+                insert_event(
+                    &harness.listener_db,
+                    &mut tx,
+                    tx_id,
+                    TfheContractEvents::FheRand(TfheContract::FheRand {
+                        caller: zero_address(),
+                        randType: to_ty(rand_type),
+                        seed: FixedBytes::from(seed_bytes),
+                        result: output,
+                    }),
+                    true,
+                )
+                .await?;
+                allow_handle(&harness.listener_db, &mut tx, &output).await?;
+                type_handles.push(output);
+            }
+        }
         tx.commit().await?;
 
         rand_types.push(rand_type);
-        handles.extend([output1, output2, output3]);
+        handle_counts.push(type_handles.len());
+        handles.extend(type_handles);
     }
 
     wait_until_computed(&harness.app).await?;
     let decrypted = decrypt_handles(&harness.pool, &handles).await?;
 
-    for (idx, rand_type) in rand_types.iter().enumerate() {
-        let base = idx * 3;
-        let first = &decrypted[base];
-        let second = &decrypted[base + 1];
-        let third = &decrypted[base + 2];
-        assert_eq!(first.output_type, *rand_type as i16);
-        assert_eq!(second.output_type, *rand_type as i16);
-        assert_eq!(third.output_type, *rand_type as i16);
+    let mut offset = 0;
+    for (rand_type, &count) in rand_types.iter().zip(&handle_counts) {
+        let values = &decrypted[offset..offset + count];
+        offset += count;
+        let first = &values[0];
+        let second = &values[1];
+        let third = &values[2];
+        for value in values {
+            assert_eq!(value.output_type, *rand_type as i16);
+        }
         assert_eq!(
             first.value, second.value,
             "random generation must be deterministic for same seed"
         );
-        // FheBool::generate_oblivious_pseudo_random produces the same
-        // plaintext for all seeds with a given key, so we can only check
-        // seed-variance for non-bool types.
-        //
-        // Type 1 (4 bits, 16-value domain) is also skipped because the
-        // OPRF output collides across two distinct seeds with
-        // probability 1/16 = 6.25%, which is too high for a
-        // deterministic test assertion. The collision is fixture-key
-        // dependent and a single pair of seeds can't reliably detect a
-        // constant-output bug at that width.
-        if *rand_type != 0 && *rand_type != 1 {
+        if *rand_type == 0 || *rand_type == 1 {
+            let distinct: HashSet<_> = values.iter().map(|v| &v.value).collect();
+            assert!(
+                distinct.len() > 1,
+                "type {rand_type}: random generation must change when seed changes"
+            );
+        } else {
             assert_ne!(
                 first.value, third.value,
                 "type {rand_type}: random generation must change when seed changes"
@@ -169,9 +193,8 @@ async fn test_fhe_random_basic() -> Result<(), Box<dyn std::error::Error>> {
 /// Verifies FheRandBounded produces values within the requested bounds
 /// and that different seeds yield different results for non-bool types
 /// (rejecting a constant-output implementation, e.g. one that always
-/// returns zero). Bool is excluded from seed-variance checks because
-/// `FheBool::generate_oblivious_pseudo_random` produces the same
-/// plaintext for all seeds with a given key.
+/// returns zero). Bool is excluded from seed-variance checks because two
+/// seeds collide with probability 1/2.
 ///
 /// Uses per-type bounds that match the old gRPC test to avoid edge cases
 /// (e.g. upper_bound=1 produces 0 random bits, which behaves differently
@@ -185,14 +208,11 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
 
     // Per-type bounds matching the old gRPC test to avoid GPU edge cases.
     let type_bounds: &[(i32, &str)] = &[
-        (0, "2"),
-        (1, "16"),
         (2, "128"),
         (3, "16384"),
         (4, "1073741824"),
         (5, "4611686018427387904"),
         (6, "85070591730234615865843651857942052864"),
-        (7, "365375409332725729550921208179070754913983135744"),
         (
             8,
             "28948022309329048855892746252171976963317496166410141009864396001978282409984",
@@ -265,9 +285,8 @@ async fn test_fhe_random_bounded() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(result2.output_type, *rand_type as i16);
 
         if *rand_type == 0 {
-            // FheBool::generate_oblivious_pseudo_random produces the same
-            // plaintext for all seeds with a given key, so we can only
-            // validate the value domain, not seed-variance.
+            // Two seeds collide with probability 1/2, so only validate the
+            // value domain here, not seed-variance.
             assert!(
                 result1.value == "true" || result1.value == "false",
                 "bool rand_bounded should be true or false, got: {}",

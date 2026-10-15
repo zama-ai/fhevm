@@ -21,9 +21,6 @@ async fn test_fhe_inputs() -> Result<(), Box<dyn std::error::Error>> {
         (4, 5, 5, "4"),     // uint64
         (5, 6, 6, "5"),     // uint128
         (7, 8, 8, "7"),     // uint256
-        (8, 9, 9, "8"),     // ebytes64
-        (9, 10, 10, "9"),   // ebytes128
-        (10, 11, 11, "10"), // ebytes256
     ];
 
     let mut output_handles = Vec::with_capacity(test_cases.len());

@@ -4,7 +4,9 @@ use std::time::Duration;
 use alloy_primitives::{Address, B256, U256};
 use aws_sdk_s3::Client;
 use block_manifest::{LEGACY_CONSENSUS_EPOCH, S3_METADATA_CONSENSUS_EPOCH_KEY};
-use ciphertext_attestation::{s3_ct64_key, CiphertextAttestation, S3_METADATA_ATTESTATION_KEY};
+use ciphertext_attestation::{
+    s3_ct64_key, Attestation, CiphertextAttestation, CiphertextRef, S3_METADATA_ATTESTATION_KEY,
+};
 use tokio::time::timeout;
 
 use crate::manifest_consensus::verification::peer_manifest_source::s3_bucket_location;
@@ -13,20 +15,40 @@ use crate::manifest_consensus::ExecutionError;
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_CT64_BYTES: usize = 16 * 1024 * 1024;
 
-/// A peer's attested ct64 digest and the epoch whose stack uploaded it.
+/// A peer's attested ct64 digest and the epoch that computed its bytes.
 pub(super) struct AttestedCt64 {
     pub(super) digest: B256,
     pub(super) consensus_epoch: String,
 }
 
 impl AttestedCt64 {
-    /// An object without the epoch tag was uploaded by the `legacy` epoch.
+    /// An object without the epoch tag comes from the `legacy` epoch.
     pub(super) fn new(digest: B256, consensus_epoch: Option<&str>) -> Self {
         Self {
             digest,
-            consensus_epoch: consensus_epoch.unwrap_or(LEGACY_CONSENSUS_EPOCH).to_owned(),
+            consensus_epoch: tagged_epoch(consensus_epoch),
         }
     }
+}
+
+/// A peer's ct64 bytes and the epoch that computed them.
+pub(super) struct DownloadedCt64 {
+    pub(super) bytes: Vec<u8>,
+    pub(super) consensus_epoch: String,
+}
+
+impl DownloadedCt64 {
+    /// An object without the epoch tag comes from the `legacy` epoch.
+    pub(super) fn new(bytes: Vec<u8>, consensus_epoch: Option<&str>) -> Self {
+        Self {
+            bytes,
+            consensus_epoch: tagged_epoch(consensus_epoch),
+        }
+    }
+}
+
+fn tagged_epoch(consensus_epoch: Option<&str>) -> String {
+    consensus_epoch.unwrap_or(LEGACY_CONSENSUS_EPOCH).to_owned()
 }
 
 pub(super) trait Ct64Source: Clone + Send + Sync + 'static {
@@ -35,9 +57,9 @@ pub(super) trait Ct64Source: Clone + Send + Sync + 'static {
         bucket_url: &str,
         handle: &[u8],
         coprocessor_context_id: U256,
-    ) -> Result<Vec<u8>, ExecutionError>;
+    ) -> Result<DownloadedCt64, ExecutionError>;
 
-    /// Attested ct64 digest and uploading epoch from object metadata (HEAD).
+    /// Attested ct64 digest and computing epoch from object metadata (HEAD).
     /// `expected_signer` is the registry signer for this bucket when known.
     async fn head_ct64_digest(
         &self,
@@ -65,7 +87,7 @@ impl Ct64Source for S3Ct64Source {
         bucket_url: &str,
         handle: &[u8],
         coprocessor_context_id: U256,
-    ) -> Result<Vec<u8>, ExecutionError> {
+    ) -> Result<DownloadedCt64, ExecutionError> {
         let location = s3_bucket_location(bucket_url)?;
         let key = location.object_key(&s3_ct64_key(handle, coprocessor_context_id));
         let response = timeout(
@@ -105,6 +127,10 @@ impl Ct64Source for S3Ct64Source {
                 location.bucket
             )));
         }
+        let consensus_epoch = response
+            .metadata()
+            .and_then(|meta| meta.get(S3_METADATA_CONSENSUS_EPOCH_KEY))
+            .cloned();
         let collected = timeout(DOWNLOAD_TIMEOUT, response.body.collect())
             .await
             .map_err(|_| {
@@ -126,7 +152,10 @@ impl Ct64Source for S3Ct64Source {
                 location.bucket
             )));
         }
-        Ok(body.to_vec())
+        Ok(DownloadedCt64::new(
+            body.to_vec(),
+            consensus_epoch.as_deref(),
+        ))
     }
 
     async fn head_ct64_digest(
@@ -189,8 +218,7 @@ impl Ct64Source for S3Ct64Source {
         })?;
         attestation
             .verify(
-                handle,
-                coprocessor_context_id,
+                &CiphertextRef::new(handle, coprocessor_context_id),
                 expected_signer.unwrap_or(attestation.signer),
             )
             .map_err(|err| {

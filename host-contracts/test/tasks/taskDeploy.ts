@@ -22,7 +22,7 @@ import {
   snapshotProtocolConfigCanonicalEnv,
 } from '../../tasks/utils/protocolConfigCanonicalEnv';
 import { executeUpgradeProposal } from '../../tasks/utils/upgradeProposal';
-import type { KMSGeneration, ProtocolConfig } from '../../types';
+import type { KMSGeneration, ProtocolConfig, ProtocolConfigReplica } from '../../types';
 import {
   HOST_ADDRESSES_SOL_FILE,
   HOST_ENV_FILE,
@@ -117,7 +117,7 @@ describe('task:deployAllHostContracts', function () {
       readHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
     );
 
-    expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.3.0');
+    expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.4.0');
     expect(await protocolConfig.getCurrentKmsContextId()).to.equal(KMS_CONTEXT_COUNTER_BASE + 1n);
   });
 });
@@ -149,7 +149,7 @@ describe('task:assertNoPendingKeyManagementRequest', function () {
     await expect(
       run('task:assertNoPendingKeyManagementRequest', { address: protocolConfigAddress }),
     ).to.be.rejectedWith(
-      `Contract at ${protocolConfigAddress} reports version "ProtocolConfig v0.3.0"; expected "KMSGeneration v…".`,
+      `Contract at ${protocolConfigAddress} reports version "ProtocolConfig v0.4.0"; expected "KMSGeneration v…".`,
     );
   });
 
@@ -220,10 +220,12 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
     const blockAfterMirror = await ethers.provider.getBlockNumber();
 
     const secondary = (await ethers.getContractAt(
-      'ProtocolConfig',
+      'ProtocolConfigReplica',
       secondaryProxyAddress,
       deployer,
-    )) as unknown as ProtocolConfig;
+    )) as unknown as ProtocolConfigReplica;
+
+    expect(await secondary.getVersion()).to.match(/^ProtocolConfigReplica v/);
 
     const canonicalContextId = await canonical.getCurrentKmsContextId();
     const secondaryContextId = await secondary.getCurrentKmsContextId();

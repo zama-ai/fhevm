@@ -13,8 +13,8 @@ use aws_config::BehaviorVersion;
 #[cfg(not(feature = "gpu"))]
 use aws_sdk_s3::{error::SdkError, operation::head_object::HeadObjectError};
 use ciphertext_attestation::{
-    CiphertextAttestation, CiphertextFormat, S3_CT128_KEY_PREFIX, S3_CT64_KEY_PREFIX,
-    S3_METADATA_ATTESTATION_KEY,
+    Attestation, CiphertextAttestation, CiphertextFormat, CiphertextRef, S3_CT128_KEY_PREFIX,
+    S3_CT64_KEY_PREFIX, S3_METADATA_ATTESTATION_KEY,
 };
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::db_keys::DbKeyId;
@@ -725,6 +725,7 @@ async fn test_garbage_collect() {
             ct64_digest: None,
             ct128_digest: None,
             s3_format_version: None,
+            ct64_consensus_version: None,
             span: tracing::Span::none(),
             transaction_id: None,
         };
@@ -1255,8 +1256,10 @@ async fn assert_ciphertext_uploaded(
     let attestation: CiphertextAttestation = serde_json::from_str(attestation_json)?;
     let signer = PrivateKeySigner::from_str(&hex::encode(&test_env.private_key))?;
     attestation.verify(
-        B256::from_slice(handle),
-        crate::aws_upload::COPROCESSOR_CONTEXT_ID_1,
+        &CiphertextRef::new(
+            B256::from_slice(handle),
+            crate::aws_upload::COPROCESSOR_CONTEXT_ID_1,
+        ),
         signer.address(),
     )?;
     assert_eq!(
@@ -1264,7 +1267,7 @@ async fn assert_ciphertext_uploaded(
             .get(block_manifest::S3_METADATA_CONSENSUS_EPOCH_KEY)
             .map(String::as_str),
         Some(block_manifest::LEGACY_CONSENSUS_EPOCH),
-        "ciphertext object should name the uploading stack's epoch"
+        "ciphertext object should name the epoch that computed it"
     );
 
     assert_eq!(

@@ -9,10 +9,37 @@ use std::sync::LazyLock;
 pub static EVENT_RECEIVED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "kms_connector_worker_event_received_counter",
-        "Number of events received by the KmsWorker",
+        "Number of events picked from DB by the KmsWorker (retries included)",
         &["event_type"]
     )
     .expect("Failed to register kms_connector_worker_event_received_counter metric")
+});
+
+pub static EVENT_COMPLETED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "kms_connector_worker_event_completed_counter",
+        "Number of events successfully processed by the KmsWorker (response stored in DB)",
+        &["event_type"]
+    )
+    .expect("Failed to register kms_connector_worker_event_completed_counter metric")
+});
+
+pub static EVENT_FAILED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "kms_connector_worker_event_failed_counter",
+        "Number of events the KmsWorker gave up on, by terminal status (failed or aborted)",
+        &["event_type", "reason"]
+    )
+    .expect("Failed to register kms_connector_worker_event_failed_counter metric")
+});
+
+pub static EVENT_RETRIED_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "kms_connector_worker_event_retried_counter",
+        "Number of events put back to pending by the KmsWorker to be retried",
+        &["event_type"]
+    )
+    .expect("Failed to register kms_connector_worker_event_retried_counter metric")
 });
 
 pub static EVENT_RECEIVED_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -110,6 +137,24 @@ pub static DECRYPTION_LATENCY_HISTOGRAM: LazyLock<HistogramVec> = LazyLock::new(
     )
     .expect("Failed to register kms_connector_worker_decryption_latency_seconds metric")
 });
+
+pub fn inc_event_completed_counter(event: &ProtocolEvent) {
+    EVENT_COMPLETED_COUNTER
+        .with_label_values(&[EventType::from(&event.kind).as_str()])
+        .inc();
+}
+
+pub fn inc_event_failed_counter(event: &ProtocolEvent, reason: &str) {
+    EVENT_FAILED_COUNTER
+        .with_label_values(&[EventType::from(&event.kind).as_str(), reason])
+        .inc();
+}
+
+pub fn inc_event_retried_counter(event: &ProtocolEvent) {
+    EVENT_RETRIED_COUNTER
+        .with_label_values(&[EventType::from(&event.kind).as_str()])
+        .inc();
+}
 
 pub fn register_event_latency(event: &ProtocolEvent) {
     if matches!(

@@ -324,7 +324,7 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Type**: Counter
  - **Labels**:
    - `event_type`: can be used to filter by event type (public_decryption_request, user_decryption_request, crsgen_request, ...).
- - **Description**: Counts the number of events received by the GW listener.
+ - **Description**: Counts the number of events received by the GW listener and stored in DB. Events already in DB (e.g. re-fetched block range) are not counted.
  - **Alarm**: If the counter is a flat line over a period of time, only for `event_type` `public_decryption_request` and `user_decryption_request`.
    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter{event_type="..."}[1m]) == 0`.
 
@@ -342,9 +342,30 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Type**: Counter
  - **Labels**:
    - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
- - **Description**: Counts the number of events received by the KMS worker.
+ - **Description**: Counts the number of events picked from DB by the KMS worker. Retried events are counted each time they are picked.
  - **Alarm**: If the counter is a flat line over a period of time, only for `event_type` `public_decryption_request` and `user_decryption_request`.
    - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter{event_type="..."}[1m]) == 0`.
+
+#### Metric Name: `kms_connector_worker_event_completed_counter`
+ - **Type**: Counter
+ - **Labels**:
+   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
+ - **Description**: Counts the number of events successfully processed by the KMS worker (response stored in DB).
+
+#### Metric Name: `kms_connector_worker_event_failed_counter`
+ - **Type**: Counter
+ - **Labels**:
+   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
+   - `reason`: `failed` (irrecoverable error or max attempts reached) or `aborted` (aborted on the KMS Core).
+ - **Description**: Counts the number of events the KMS worker gave up on.
+ - **Alarm**: If the counter increases over a period of time.
+   - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
+
+#### Metric Name: `kms_connector_worker_event_retried_counter`
+ - **Type**: Counter
+ - **Labels**:
+   - `event_type`: see [description](#metric-name-kms_connector_gw_listener_event_received_counter)
+ - **Description**: Counts the number of events put back to `pending` by the KMS worker after a recoverable error, to be retried.
 
 #### Metric Name: `kms_connector_worker_event_received_errors`
  - **Type**: Counter

@@ -33,7 +33,7 @@ use crate::kms_generation::aws_s3::AwsS3Client;
 use crate::kms_generation::process_kms_generation_activations;
 use crate::poller::http_client::HttpChainClient;
 use crate::poller::metrics::{
-    inc_blocks_processed, inc_db_errors, inc_rpc_errors,
+    inc_blocks_processed, inc_db_errors, inc_rpc_errors, set_received_block,
 };
 
 const MAX_DB_RETRIES: u64 = 10;
@@ -414,6 +414,8 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                     break;
                 }
             };
+
+            set_received_block(&chain_id_str, block);
 
             let summary: BlockSummary = header.into();
             let block_logs = BlockLogs {

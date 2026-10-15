@@ -13,7 +13,7 @@ use crate::{
     },
     monitoring::{
         health::{KmsHealthClient, State},
-        metrics::register_event_latency,
+        metrics::{inc_event_completed_counter, inc_event_failed_counter, register_event_latency},
     },
 };
 use anyhow::anyhow;
@@ -128,7 +128,7 @@ where
         };
         info!("Event successfully processed!");
         let Some(response_kind) = response_kind else {
-            return;
+            return inc_event_completed_counter(&event);
         };
 
         let response = KmsResponse::new(response_kind, otlp_context, event.source);
@@ -143,6 +143,7 @@ where
             .await;
         } else {
             register_event_latency(&event);
+            inc_event_completed_counter(&event);
         }
     }
 
@@ -275,6 +276,8 @@ where
             if let Err(e) = response_publisher.mark_event_as_failed(event).await {
                 warn!("{e}");
             }
+        } else {
+            inc_event_failed_counter(event, "failed");
         }
     }
 }
