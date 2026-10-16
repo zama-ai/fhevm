@@ -1,0 +1,154 @@
+{{- if .Values.coprocessorProxy.enabled -}}
+{{- $proxy := .Values.coprocessorProxy -}}
+{{- /* The FhevmSig domain and the KMS tx-senders come from the chain hosting ProtocolConfig: the chains entry of the canonical chain id. */ -}}
+{{- $canonicalChainId := required "commonConfig.canonicalProtocolConfigChainId must be set for coprocessorProxy" .Values.commonConfig.canonicalProtocolConfigChainId | toString -}}
+{{- $protocolConfigChain := dict -}}
+{{- range .Values.chains }}
+{{- if eq (toString .chainId) $canonicalChainId }}
+{{- $protocolConfigChain = . }}
+{{- end }}
+{{- end }}
+{{- if not (or $protocolConfigChain.protocolConfigContractAddress $protocolConfigChain.protocolConfigContractAddressValueFrom) }}
+{{- fail (printf "coprocessorProxy needs the chains entry with chainId %s (commonConfig.canonicalProtocolConfigChainId), with protocolConfigContractAddress or protocolConfigContractAddressValueFrom" $canonicalChainId) }}
+{{- end }}
+{{- if not $proxy.endpointAddresses }}
+{{- fail "coprocessorProxy.endpointAddresses must list the endpoints" }}
+{{- end }}
+{{- if not (or $protocolConfigChain.httpUrl $protocolConfigChain.httpUrlValueFrom) }}
+{{- fail (printf "coprocessorProxy needs the chains entry with chainId %s (commonConfig.canonicalProtocolConfigChainId), with httpUrl or httpUrlValueFrom" $canonicalChainId) }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-proxy
+    app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
+  name: {{ include "coprocessorProxyName" . }}
+spec:
+  replicas: {{ $proxy.replicas }}
+  selector:
+    matchLabels:
+      app: coprocessor-proxy
+      {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
+  {{- if $proxy.updateStrategy }}
+  strategy:
+    {{- toYaml $proxy.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: coprocessor-proxy
+        app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
+        {{- include "coprocessor.extraSelectorLabels" . | nindent 8 }}
+        {{- with .Values.commonConfig.stackVersion }}
+        app.kubernetes.io/version: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $proxy.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      # The shutdown grace period, then Pingora's 5 s to close what is left, then 5 s margin.
+      terminationGracePeriodSeconds: {{ add (int $proxy.shutdownGracePeriodSeconds) 10 }}
+      {{- with $proxy.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $proxy.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $proxy.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if $proxy.serviceAccountName }}
+      serviceAccountName: {{ $proxy.serviceAccountName }}
+      {{- end }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ required "coprocessorProxy.tls.secretName must name a TLS Secret" $proxy.tls.secretName | quote }}
+      containers:
+        - name: coprocessor-proxy
+          image: {{ $proxy.image.name }}:{{ required "coprocessorProxy.image.tag must be set" $proxy.image.tag }}
+          command: ["coprocessor-proxy"]
+          {{- if .Values.commonConfig.stackVersionProbe.enabled }}
+          startupProbe:
+            exec:
+              command: ["coprocessor-proxy", "--stack-version"]
+            periodSeconds: {{ .Values.commonConfig.stackVersionProbe.periodSeconds | default 10 }}
+            failureThreshold: {{ .Values.commonConfig.stackVersionProbe.failureThreshold | default 30 }}
+          {{- end }}
+          args:
+            - start
+          env:
+            - name: COPROCESSOR_PROXY_BIND_ADDRESS
+              value: "0.0.0.0:{{ $proxy.ports.https }}"
+            - name: COPROCESSOR_PROXY_TLS_CONFIG__CERT_PATH
+              value: /etc/coprocessor-proxy/tls/tls.crt
+            - name: COPROCESSOR_PROXY_TLS_CONFIG__KEY_PATH
+              value: /etc/coprocessor-proxy/tls/tls.key
+            - name: COPROCESSOR_PROXY_HEALTHCHECK_PORT
+              value: {{ $proxy.ports.healthcheck | quote }}
+            - name: COPROCESSOR_PROXY_METRICS_ENDPOINT
+              value: "0.0.0.0:{{ $proxy.ports.metrics }}"
+            - name: COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD
+              value: "{{ int $proxy.shutdownGracePeriodSeconds }}s"
+            - name: COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID
+              value: {{ $canonicalChainId | quote }}
+            - name: COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS
+              {{- if $protocolConfigChain.protocolConfigContractAddress }}
+              value: {{ $protocolConfigChain.protocolConfigContractAddress | quote }}
+              {{- else }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $protocolConfigChain.protocolConfigContractAddressValueFrom) | nindent 16 }}
+              {{- end }}
+            - name: COPROCESSOR_PROXY_ETHEREUM_RPC_URL
+              {{- if $protocolConfigChain.httpUrl }}
+              value: {{ $protocolConfigChain.httpUrl | quote }}
+              {{- else }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $protocolConfigChain.httpUrlValueFrom) | nindent 16 }}
+              {{- end }}
+            - name: COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS
+              value: {{ required "coprocessorProxy.coprocessorSignerAddress must be set" $proxy.coprocessorSignerAddress | quote }}
+            - name: COPROCESSOR_PROXY_ENDPOINT_ADDRESSES
+              value: {{ $proxy.endpointAddresses | join "," | quote }}
+            - name: COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT
+              value: {{ $proxy.endpointResponseTimeout | quote }}
+            {{- with $proxy.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/coprocessor-proxy/tls
+              readOnly: true
+          ports:
+            {{- range $portName, $portValue := $proxy.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
+          {{- with $proxy.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if and $proxy.probes $proxy.probes.liveness.enabled }}
+          livenessProbe:
+            {{- toYaml (omit $proxy.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and $proxy.probes $proxy.probes.readiness.enabled }}
+          readinessProbe:
+            {{- toYaml (omit $proxy.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
+{{- end -}}
