@@ -119,7 +119,6 @@ pub mod delegator_vault {
             ctx.accounts.zama_host.key(),
             zama_host::cpi::accounts::RevokeDelegationForUserDecryption {
                 delegator: ctx.accounts.vault.to_account_info(),
-                host_config: ctx.accounts.host_config.to_account_info(),
                 delegation_record: ctx.accounts.delegation_record.to_account_info(),
             },
             &[seeds],
@@ -148,8 +147,8 @@ pub mod delegator_vault {
     }
 }
 
-/// One account set serves both instructions; the revoke simply ignores the scope and the system
-/// program.
+/// One account set serves both instructions; the revoke simply ignores the host config, the scope
+/// and the system program.
 #[derive(Accounts)]
 pub struct VaultDelegation<'info> {
     /// Executes the "proposal" and pays rent on a grant.

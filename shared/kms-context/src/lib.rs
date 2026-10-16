@@ -18,32 +18,34 @@ pub const KMS_CONTEXT_COUNTER_BASE: U256 = U256::from_limbs([0, 0, 0, 0x07 << 56
 
 #[derive(Debug, thiserror::Error)]
 pub enum KmsContextReadError {
-    #[error("getKmsContextAnchor({context_id})")]
+    #[error("getKmsContextAnchor({context_id:#066x})")]
     Anchor {
         context_id: U256,
         #[source]
         source: Box<alloy::contract::Error>,
     },
-    #[error("NewKmsContext({context_id}) logs at block {block}")]
+    #[error("NewKmsContext({context_id:#066x}) logs at block {block}")]
     Logs {
         context_id: U256,
         block: u64,
         #[source]
         source: TransportError,
     },
-    #[error("{count} NewKmsContext({context_id}) events at its anchor block {block}")]
+    #[error("{count} NewKmsContext({context_id:#066x}) events at its anchor block {block}")]
     EventCount {
         context_id: U256,
         block: u64,
         count: usize,
     },
-    #[error("decode NewKmsContext({context_id})")]
+    #[error("decode NewKmsContext({context_id:#066x})")]
     Decode {
         context_id: U256,
         #[source]
         source: alloy::sol_types::Error,
     },
-    #[error("NewKmsContext({context_id}) hashes to {computed}, its anchor commits to {anchored}")]
+    #[error(
+        "NewKmsContext({context_id:#066x}) hashes to {computed}, its anchor commits to {anchored}"
+    )]
     HashMismatch {
         context_id: U256,
         computed: B256,
@@ -227,6 +229,15 @@ mod tests {
         assert!(matches!(
             read(B256::ZERO, Vec::new()).await,
             Err(KmsContextReadError::EventCount { count: 0, .. })
+        ));
+    }
+
+    /// An error names the context id in hex, as the KMS connector does.
+    #[tokio::test]
+    async fn an_error_names_the_context_id_in_hex() {
+        let error = read(B256::ZERO, Vec::new()).await.unwrap_err();
+        assert!(error.to_string().contains(
+            "NewKmsContext(0x0000000000000000000000000000000000000000000000000000000000000007)"
         ));
     }
 

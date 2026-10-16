@@ -65,8 +65,8 @@ pub use cost::{
 pub use cpi::ExecutionCpiAccounts;
 pub use execution::{FheExecution, ReturningFheExecution};
 pub use types::{
-    BinaryRhs, Bool, BoolHandle, Encrypted, FheHandle, FheType, FheTyped, FheUint, Scalar, Uint,
-    Uint64Handle,
+    BinaryRhs, Bool, BoolHandle, Encrypted, FheHandle, FheType, FheTyped, FheUint, Scalar,
+    ShiftRhs, Uint, Uint64Handle,
 };
 
 /// Result type used by the builder helpers.

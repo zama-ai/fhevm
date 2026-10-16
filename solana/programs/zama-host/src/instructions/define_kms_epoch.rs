@@ -1,5 +1,5 @@
 //! Activates a new epoch of the active KMS context (Solana mirror of
-//! `ProtocolConfig.mirrorKmsEpoch`).
+//! `ProtocolConfigReplica.mirrorKmsEpoch`).
 //!
 //! A same-committee resharing keeps the context and its signer set and moves the KMS to new key
 //! material, so only `HostConfig.current_kms_epoch_id` changes. As on EVM, `context_id` must be the

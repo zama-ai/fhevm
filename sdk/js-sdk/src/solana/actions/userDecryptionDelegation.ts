@@ -15,7 +15,7 @@ import {
   type DelegationRecordSeeds,
   findDelegationRecordPda,
   getDelegateForUserDecryptionInstructionAsync,
-  getRevokeDelegationForUserDecryptionInstructionAsync,
+  getRevokeDelegationForUserDecryptionInstruction,
   getUserDecryptionDelegationDecoder,
   getUserDecryptionDelegationSize,
   USER_DECRYPTION_DELEGATION_DISCRIMINATOR,
@@ -153,7 +153,7 @@ export type SolanaRevokeDelegationForUserDecryptionParameters = Omit<
  * CPI-signing program passes its bare address (see [`SolanaSignerOrAddress`]). Revocation takes
  * effect on the Connector's next request against the record — there is no cached authorization
  * to outlive it. A wildcard row is a separate record: narrowing one application takes revoking
- * both. The host's `acl_writes` pause refuses a revocation, as EVM's `whenNotPaused` does.
+ * both. No host pause flag stops a revocation, as EVM's ACL lets one through its pause.
  */
 export async function buildRevokeDelegationForUserDecryptionInstruction(
   params: SolanaRevokeDelegationForUserDecryptionParameters,
@@ -162,7 +162,7 @@ export async function buildRevokeDelegationForUserDecryptionInstruction(
   // The host derives the record's seeds from the record's own fields and checks only the delegator,
   // so the record must come from the tuple: a record of another tuple would revoke that one.
   const tuple = { delegator: resolvedAddress(delegator), delegate, program, scope };
-  return getRevokeDelegationForUserDecryptionInstructionAsync(
+  return getRevokeDelegationForUserDecryptionInstruction(
     {
       delegator: resolvedSigner(delegator),
       delegationRecord: (await findDelegationRecordPda(tuple, { programAddress }))[0],

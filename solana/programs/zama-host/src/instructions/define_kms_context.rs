@@ -1,4 +1,4 @@
-//! Defines a new KMS context (Solana mirror of `ProtocolConfig.mirrorKmsContextAndEpoch`).
+//! Defines a new KMS context (Solana mirror of `ProtocolConfigReplica.mirrorKmsContextAndEpoch`).
 //!
 //! Creates the `KmsContext` PDA for `context_id`, records the KMS node signer set +
 //! thresholds, and makes `context_id` and `epoch_id` the active pair in `HostConfig`. As on EVM,

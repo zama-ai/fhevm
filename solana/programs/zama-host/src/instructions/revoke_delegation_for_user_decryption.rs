@@ -11,9 +11,6 @@ use zama_solana_acl::DELEGATION_SEED;
 pub struct RevokeDelegationForUserDecryption<'info> {
     /// Delegator that owns the delegation.
     pub delegator: Signer<'info>,
-    /// Singleton config PDA, whose `acl_writes` pause flag gates this instruction.
-    #[account(seeds = [HOST_CONFIG_SEED], bump = host_config.bump)]
-    pub host_config: Account<'info, HostConfig>,
     /// Delegation record to revoke.
     #[account(mut, seeds = [DELEGATION_SEED, delegation_record.delegator.as_ref(), delegation_record.delegate.as_ref(), delegation_record.program.as_ref(), delegation_record.scope.as_ref()], bump = delegation_record.bump)]
     pub delegation_record: Account<'info, UserDecryptionDelegation>,
@@ -22,15 +19,13 @@ pub struct RevokeDelegationForUserDecryption<'info> {
 /// Ends an existing user-decryption delegation by setting `expires_at` to 0, as EVM's
 /// `revokeDelegationForUserDecryption` does.
 ///
-/// Paused with the other ACL writes, as EVM's revocation is `whenNotPaused`. The pause does not
-/// reach decryption, so while `acl_writes` is set a delegate can still decrypt over HTTP and the
-/// delegator cannot revoke; EVM has the same gap. `revoke_permits` stays unpaused, as EVM's
-/// `invalidateDecryptionSignaturesBefore` is.
+/// Takes no config account, so it runs under every pause flag, as EVM's revocation does: the pause
+/// does not reach decryption, and revoking is the delegator's way to stop a delegate from
+/// decrypting during one. The one-update-per-slot rule still applies.
 pub fn revoke_delegation_for_user_decryption(
     ctx: Context<RevokeDelegationForUserDecryption>,
 ) -> Result<()> {
     assert_no_remaining_accounts(ctx.remaining_accounts)?;
-    assert_not_paused(&ctx.accounts.host_config, PauseArea::AclWrites)?;
     require_top_level_unless_pda(
         &ctx.accounts.delegator.key(),
         ZamaHostError::WalletRevokeThroughCpi,

@@ -435,6 +435,40 @@ fn assert_binary_rejects_scalars_above_the_operand_type() {
     );
 }
 
+/// A scalar shift or rotate amount fits in a byte, on every operand type (EVM
+/// `FHEVMExecutor._checkScalarShiftAmount`). The bound is on the scalar shift alone: other ops and
+/// encrypted shift amounts keep their own rules.
+#[test]
+fn a_scalar_shift_amount_fits_in_a_byte() {
+    use super::type_gate::fhe_type_max;
+    use FheBinaryOpCode::{Add, Rotl, Rotr, Shl, Shr};
+    for fhe_type in [3, 6] {
+        let lhs = typed_handle(1, fhe_type);
+        for op in [Shl, Shr, Rotl, Rotr] {
+            assert!(
+                assert_binary_operand_types(op, lhs, be_u128(0xff), true, fhe_type).is_ok(),
+                "{op:?} on type {fhe_type} by 255"
+            );
+            for amount in [0x100, 1 << 64, (1 << 64) + 1, u128::MAX] {
+                if fhe_type_max(fhe_type).unwrap() < amount {
+                    continue;
+                }
+                assert_error(
+                    assert_binary_operand_types(op, lhs, be_u128(amount), true, fhe_type),
+                    ZamaHostError::ScalarOutOfRange,
+                );
+            }
+        }
+        assert!(
+            assert_binary_operand_types(Add, lhs, be_u128(0x100), true, fhe_type).is_ok(),
+            "Add on type {fhe_type} by 256"
+        );
+    }
+    // An encrypted amount is a handle, whose bytes are not a value.
+    let euint16 = typed_handle(1, 3);
+    assert!(assert_binary_operand_types(Shl, euint16, typed_handle(0xff, 3), false, 3).is_ok());
+}
+
 #[test]
 fn scalar_range_follows_each_fhe_type_maximum() {
     for (fhe_type, max) in [

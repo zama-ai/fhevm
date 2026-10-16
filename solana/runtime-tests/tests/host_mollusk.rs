@@ -1971,8 +1971,19 @@ fn mollusk_fhe_execute_rejects_scalars_above_their_type() {
         divisor: u256_be(divisor),
         output_fhe_type: 2,
     };
+    let shl_euint16 = FheExecuteStep::Binary {
+        op: FheBinaryOpCode::Shl,
+        lhs: lhs.clone(),
+        rhs: scalar.clone(),
+        output_fhe_type: 3,
+    };
+    let euint16 = FheExecuteStep::TrivialEncrypt {
+        plaintext: u256_be(1),
+        fhe_type: 3,
+    };
     let out_of_range = || host_error(host::errors::ZamaHostError::ScalarOutOfRange);
-    // Each shape passes at the euint8 maximum and fails one above it: (dictionary scalar, steps).
+    // Each shape passes at its bound and fails one above it: (dictionary scalar, steps). The bound
+    // is the euint8 maximum, except a shift amount, which fits in a byte on every type.
     for (accepted, rejected) in [
         ((None, vec![euint8(0xff)]), (None, vec![euint8(0x100)])),
         (
@@ -1990,6 +2001,10 @@ fn mollusk_fhe_execute_rejects_scalars_above_their_type() {
         (
             (Some(1), vec![euint8(1), mul_div(0xff)]),
             (Some(1), vec![euint8(1), mul_div(0x100)]),
+        ),
+        (
+            (Some(0xff), vec![euint16.clone(), shl_euint16.clone()]),
+            (Some(0x100), vec![euint16, shl_euint16]),
         ),
     ] {
         for ((scalar, steps), expected) in

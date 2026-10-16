@@ -1024,7 +1024,6 @@ impl World {
                     host::id(),
                     host::accounts::RevokeDelegationForUserDecryption {
                         delegator,
-                        host_config,
                         delegation_record: host::user_decryption_delegation_address(
                             delegator,
                             delegate,

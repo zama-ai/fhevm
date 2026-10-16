@@ -228,7 +228,7 @@
     {
       "name": "define_kms_context",
       "docs": [
-        "Defines a new KMS context (mirror of `ProtocolConfig.mirrorKmsContextAndEpoch`)."
+        "Defines a new KMS context (mirror of `ProtocolConfigReplica.mirrorKmsContextAndEpoch`)."
       ],
       "discriminator": [
         102,
@@ -364,7 +364,7 @@
     {
       "name": "define_kms_epoch",
       "docs": [
-        "Activates a new epoch of the active KMS context (mirror of `ProtocolConfig.mirrorKmsEpoch`)."
+        "Activates a new epoch of the active KMS context (mirror of `ProtocolConfigReplica.mirrorKmsEpoch`)."
       ],
       "discriminator": [
         121,
@@ -1234,32 +1234,6 @@
             "Delegator that owns the delegation."
           ],
           "signer": true
-        },
-        {
-          "name": "host_config",
-          "docs": [
-            "Singleton config PDA, whose `acl_writes` pause flag gates this instruction."
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  104,
-                  111,
-                  115,
-                  116,
-                  45,
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
         },
         {
           "name": "delegation_record",
@@ -2955,7 +2929,7 @@
     {
       "code": 6083,
       "name": "ScalarOutOfRange",
-      "msg": "scalar exceeds the maximum of its FHE type"
+      "msg": "scalar exceeds the maximum of its FHE type, or a shift amount exceeds 255"
     },
     {
       "code": 6084,
@@ -4674,7 +4648,7 @@
       "name": "NewKmsEpochEvent",
       "docs": [
         "Emitted when a new epoch of the active KMS context is activated (mirrors",
-        "`ProtocolConfig.MirrorKmsEpoch`)."
+        "`ProtocolConfigReplica.MirrorKmsEpoch`)."
       ],
       "type": {
         "kind": "struct",
@@ -4741,8 +4715,8 @@
           {
             "name": "acl_writes",
             "docs": [
-              "ACL writes outside an execution: Store creation, `make_store_handle_public` and",
-              "user-decryption delegation (EVM ACL pause)."
+              "ACL writes outside an execution: Store creation, `make_store_handle_public` and granting a",
+              "user-decryption delegation; revoking one runs under every flag (EVM ACL pause)."
             ],
             "type": "bool"
           }

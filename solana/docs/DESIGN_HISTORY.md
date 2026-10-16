@@ -1767,6 +1767,23 @@ take the current values from account state and see each change through the event
 > A change stamps `updated_slot` and emits `HostConfigUpdatedEvent`, whose `signer` names the pauser
 > or the admin.
 
+### DD-058 and INVARIANTS #36, replaced in part by #4495
+
+`revoke_delegation_for_user_decryption` now takes no config account and runs under every pause
+flag, as EVM's `revokeDelegationForUserDecryption` has since its ACL let revocations through the
+pause. The rules below left a delegate able to decrypt during a pause while the delegator could not
+revoke.
+
+> `acl_writes` stops `create_encrypted_store`, `make_store_handle_public`,
+> `delegate_for_user_decryption` and `revoke_delegation_for_user_decryption`, as EVM's ACL pause
+> stops `revokeDelegationForUserDecryption`.
+
+> `revoke_delegation_for_user_decryption` is gated on `acl_writes`, as EVM's
+> `revokeDelegationForUserDecryption` is `whenNotPaused`.
+
+> While `acl_writes` is paused, a delegator cannot revoke a delegation until the admin resumes ACL
+> writes.
+
 ### DD-060, replaced in part by DD-065
 
 Superseded in part by DD-065: the host verifier no longer checks the public leaf; the KMS connectors
