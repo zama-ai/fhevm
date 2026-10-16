@@ -1294,8 +1294,7 @@ const runBlueGreenSteps = async (
 
   const gatewayTip = async () =>
     Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim());
-  // gw_start_block is pinned to the Gateway tip at proposal time, so the Gateway gate opens
-  // without any Gateway transaction.
+  // gw_start_block is pinned to the Gateway tip at proposal time, so the gate opens on a block already reached.
   const assertGatewayGateOpens = async (
     tipBeforeProposal: number,
     tipAfterProposal: number,
@@ -1313,7 +1312,7 @@ const runBlueGreenSteps = async (
         );
       }
       await waitUntil({
-        label: `${db}  gw_dry_run_started without a Gateway tx (gw_start_block=${gwStartBlock}, tip=${tipAfterProposal})`,
+        label: `${db}  gw_dry_run_started (gw_start_block=${gwStartBlock}, tip=${tipAfterProposal})`,
         timeoutSecs: 60,
         check: async () =>
           (await psqlQuery(
@@ -1570,6 +1569,19 @@ const runBlueGreenSteps = async (
           });
         }
         await assertGatewayGateOpens(tips.tipBefore, tips.tipAfter, databases);
+      },
+      withTraffic: async body => {
+        // A stopped operator can starve the proofs and end the traffic. The
+        // case continues, so nothing reads `stream.errored`.
+        const stream = startContinuousErc20Traffic(trafficTargets, blueGreenTrafficStreams);
+        try {
+          return await body();
+        } finally {
+          const stats = await stream.stop();
+          console.log(
+            `OK:   case traffic stopped (${stats.iterations} run(s), ${stats.failures} failure(s))`,
+          );
+        }
       },
     });
   }
