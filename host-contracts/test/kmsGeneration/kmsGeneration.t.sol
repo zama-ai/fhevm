@@ -203,37 +203,35 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function _activatePendingTwoNodeContext(uint256 contextId, uint256 epochId, uint256 pk0, uint256 pk1) internal {
-        _confirmContextCreation(contextId, kmsTxSender0);
-        _confirmContextCreation(contextId, kmsTxSender1);
-        _confirmEpochActivation(contextId, epochId, pk0, kmsTxSender0);
-        _confirmEpochActivation(contextId, epochId, pk1, kmsTxSender1);
+        _confirmContextCreation(contextId, pk0, "");
+        _confirmContextCreation(contextId, pk1, "");
+        _confirmEpochActivation(contextId, epochId, pk0);
+        _confirmEpochActivation(contextId, epochId, pk1);
     }
 
     function _activatePendingDisjointTwoNodeContext(
         uint256 contextId,
         uint256 epochId,
         uint256 pk0,
-        address txSender0,
-        uint256 pk1,
-        address txSender1
+        uint256 pk1
     ) internal {
-        _confirmContextCreation(contextId, kmsTxSender0);
-        _confirmContextCreation(contextId, kmsTxSender1);
-        _confirmContextCreation(contextId, txSender0);
-        _confirmContextCreation(contextId, txSender1);
-        _confirmEpochActivation(contextId, epochId, pk0, txSender0);
-        _confirmEpochActivation(contextId, epochId, pk1, txSender1);
+        _confirmContextCreation(contextId, kmsPk0, "");
+        _confirmContextCreation(contextId, kmsPk1, "");
+        _confirmContextCreation(contextId, pk0, "");
+        _confirmContextCreation(contextId, pk1, "");
+        _confirmEpochActivation(contextId, epochId, pk0);
+        _confirmEpochActivation(contextId, epochId, pk1);
     }
 
     function _activatePendingFourNodeContext(uint256 contextId, uint256 epochId) internal {
-        _confirmContextCreation(contextId, kmsTxSender0);
-        _confirmContextCreation(contextId, kmsTxSender1);
-        _confirmContextCreation(contextId, kmsTxSender2);
-        _confirmContextCreation(contextId, kmsTxSender3);
-        _confirmEpochActivation(contextId, epochId, kmsPk0, kmsTxSender0);
-        _confirmEpochActivation(contextId, epochId, kmsPk1, kmsTxSender1);
-        _confirmEpochActivation(contextId, epochId, kmsPk2, kmsTxSender2);
-        _confirmEpochActivation(contextId, epochId, kmsPk3, kmsTxSender3);
+        _confirmContextCreation(contextId, kmsPk0, "");
+        _confirmContextCreation(contextId, kmsPk1, "");
+        _confirmContextCreation(contextId, kmsPk2, "");
+        _confirmContextCreation(contextId, kmsPk3, "");
+        _confirmEpochActivation(contextId, epochId, kmsPk0);
+        _confirmEpochActivation(contextId, epochId, kmsPk1);
+        _confirmEpochActivation(contextId, epochId, kmsPk2);
+        _confirmEpochActivation(contextId, epochId, kmsPk3);
     }
 
     function _primaryStorageUrls() internal pure returns (string[] memory urls) {
@@ -637,14 +635,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(rotatedNodes, _defaultThresholds());
-        _activatePendingDisjointTwoNodeContext(
-            KMS_CONTEXT_COUNTER_BASE + 2,
-            EPOCH_COUNTER_BASE + 2,
-            kmsPk2,
-            address(0xB1),
-            kmsPk3,
-            address(0xB2)
-        );
+        _activatePendingDisjointTwoNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, kmsPk2, kmsPk3);
 
         // Sanity: kmsTxSender0 is no longer a tx sender under the live context.
         assertFalse(protocolConfig.isKmsTxSenderForContext(protocolConfig.getCurrentKmsContextId(), kmsTxSender0));
@@ -705,8 +696,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(rotatedNodes, _defaultThresholds());
-        _confirmContextCreation(KMS_CONTEXT_COUNTER_BASE + 2, kmsTxSender0);
-        _confirmContextCreation(KMS_CONTEXT_COUNTER_BASE + 2, kmsTxSender1);
+        _confirmContextCreation(KMS_CONTEXT_COUNTER_BASE + 2, kmsPk1, "");
+        _confirmContextCreation(KMS_CONTEXT_COUNTER_BASE + 2, kmsPk2, "");
 
         vm.prank(owner);
         kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);

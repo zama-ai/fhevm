@@ -277,7 +277,6 @@ fn encode_epoch_result(response: GrpcEpochResultResponse) -> anyhow::Result<(Vec
             prepKeygenId: preproc_id,
             keyId: key_id,
             keyDigests: key_digests,
-            signature: ecdsa_signature(key.signatures, key.external_signature)?.into(),
         });
     }
 
@@ -289,7 +288,6 @@ fn encode_epoch_result(response: GrpcEpochResultResponse) -> anyhow::Result<(Vec
             crsId: crs_id,
             maxBitLength: U256::from(crs.max_num_bits),
             crsDigest: crs.crs_digest.into(),
-            signature: ecdsa_signature(crs.signatures, crs.external_signature)?.into(),
         });
     }
 
