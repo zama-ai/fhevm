@@ -408,9 +408,9 @@ export async function inspectKmsContextSwitch(
 
   const [destroyedContextEvents, contextConfirmations, destroyedEpochEvents, epochConfirmations] = await Promise.all([
     pc.queryFilter(pc.filters.KmsContextDestroyed(), fromBlock, toBlock),
-    pc.queryFilter(pc.filters.KmsContextDestructionConfirmation(), fromBlock, toBlock),
+    pc.queryFilter(pc.filters.KmsContextDestructionConfirmed(), fromBlock, toBlock),
     pc.queryFilter(pc.filters.KmsEpochDestroyed(), fromBlock, toBlock),
-    pc.queryFilter(pc.filters.KmsEpochDestructionConfirmation(), fromBlock, toBlock),
+    pc.queryFilter(pc.filters.KmsEpochDestructionConfirmed(), fromBlock, toBlock),
   ]);
   const destroyedContextIds = new Set(destroyedContextEvents.map((event) => event.args.kmsContextId));
   // The task reads an aborted switch from state, so its context is reported even when the destruction

@@ -443,7 +443,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             signature
         );
 
-        emit KmsContextDestructionConfirmation(destroyedContextId, destroyedEpochIds, signer, signature, extraData);
+        emit KmsContextDestructionConfirmed(destroyedContextId, destroyedEpochIds, signer, signature, extraData);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -466,7 +466,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             signature
         );
 
-        emit KmsEpochDestructionConfirmation(destroyedEpochId, signer, signature, extraData);
+        emit KmsEpochDestructionConfirmed(destroyedEpochId, signer, signature, extraData);
     }
 
     /// @inheritdoc IProtocolConfig

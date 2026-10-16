@@ -55,7 +55,7 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         bytes memory extraData = hex"01ab";
         signature = _computeSignature(kmsPk0, _hashContextDestruction(contextId, destroyedEpochIds, extraData));
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextDestructionConfirmation(
+        emit IProtocolConfig.KmsContextDestructionConfirmed(
             contextId,
             destroyedEpochIds,
             vm.addr(kmsPk0),
@@ -125,7 +125,7 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         bytes memory extraData = hex"01ab";
         signature = _computeSignature(kmsPk2, _hashEpochDestruction(epochId, extraData));
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsEpochDestructionConfirmation(epochId, vm.addr(kmsPk2), signature, extraData);
+        emit IProtocolConfig.KmsEpochDestructionConfirmed(epochId, vm.addr(kmsPk2), signature, extraData);
         vm.prank(address(0x999));
         protocolConfig.confirmKmsEpochDestruction(epochId, signature, extraData);
 
@@ -179,7 +179,7 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
 
         signature = _computeSignature(kmsPk2, _hashContextDestruction(contextId, destroyedEpochIds, ""));
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextDestructionConfirmation(
+        emit IProtocolConfig.KmsContextDestructionConfirmed(
             contextId,
             destroyedEpochIds,
             vm.addr(kmsPk2),
@@ -216,7 +216,7 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
 
         signature = _computeSignature(kmsPk2, _hashEpochDestruction(epochId, ""));
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsEpochDestructionConfirmation(epochId, vm.addr(kmsPk2), signature, "");
+        emit IProtocolConfig.KmsEpochDestructionConfirmed(epochId, vm.addr(kmsPk2), signature, "");
         protocolConfig.confirmKmsEpochDestruction(epochId, signature, "");
     }
 }
