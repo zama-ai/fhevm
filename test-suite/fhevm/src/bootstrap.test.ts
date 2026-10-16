@@ -97,8 +97,8 @@ describe("blue-green bootstrap", () => {
     expect(CANONICAL_HOST_CONTRACT_UPGRADES.map(([, contract]) => contract)).toEqual(["KMSGeneration"]);
     expect(HOST_CONTRACT_UPGRADES.map(([, contract]) => contract)).toEqual([
       "FHEVMExecutor",
-      "ACL",
       "HCULimit",
+      "ACL",
       "InputVerifier",
       "KMSVerifier",
       "ProtocolConfig",

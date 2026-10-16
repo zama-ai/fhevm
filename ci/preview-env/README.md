@@ -172,11 +172,11 @@ controllable), but the suite's coverage is decided purely by the label.
 
 - **Non-live name (`staging`, what we use) → strongest coverage.** The
   "local deterministic coverage" blocks run: they call owner-only setters
-  (`setHCUPerBlock` / `setMaxHCUPerTx` / `setMaxHCUDepthPerTx`), assert **exact**
+  (`setQuotaCap` / `setMaxHCUPerTx` / `setMaxHCUDepthPerTx`), assert **exact**
   HCU numbers, use the anvil/hardhat cheats (`evm_setAutomine` /
   `evm_setIntervalMining` / `evm_mine`) to pack a block and watch the per-block cap
   get exhausted, restore state afterward, and check the negative case ("reject
-  `setHCUPerBlock` from a non-owner"). These assume the test EOA owns the privileged
+  `setQuotaCap` from a non-owner non-pauser"). These assume the test EOA owns the privileged
   contracts and that the chain is a resettable throwaway.
 - **Live name (`zwsDev` / `devnet` / `sepolia` / …) → reduced coverage.** Those
   deterministic blocks are `this.skip()`'d and only read-only checks run (e.g.

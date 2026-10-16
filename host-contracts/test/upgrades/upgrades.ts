@@ -28,12 +28,12 @@ describe('Upgrades', function () {
     });
     await acl.waitForDeployment();
     const ownerBef = await acl.owner();
-    expect(await acl.getVersion()).to.equal('ACL v0.6.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.7.0');
     const acl2 = await upgrades.upgradeProxy(acl, this.aclFactoryUpgraded);
     await acl2.waitForDeployment();
     const ownerAft = await acl2.owner();
     expect(ownerBef).to.equal(ownerAft);
-    expect(await acl2.getVersion()).to.equal('ACL v0.7.0');
+    expect(await acl2.getVersion()).to.equal('ACL v0.8.0');
     const aclAddress = ethers.getCreateAddress({
       from: this.signers.alice.address,
       nonce: nonceBef + 1,
@@ -171,21 +171,21 @@ describe('Upgrades', function () {
       },
     });
     await payment.waitForDeployment();
-    expect(await payment.getVersion()).to.equal('HCULimit v0.4.0');
+    expect(await payment.getVersion()).to.equal('HCULimit v0.5.0');
     const payment2 = await upgrades.upgradeProxy(payment, paymentFactoryUpgraded);
     await payment2.waitForDeployment();
-    expect(await payment2.getVersion()).to.equal('HCULimit v0.5.0');
+    expect(await payment2.getVersion()).to.equal('HCULimit v0.6.0');
   });
 
   it('original owner upgrades the original ACL and transfer ownership', async function () {
     const origACLAdd = readHostAddress('ACL_CONTRACT_ADDRESS');
     const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     const acl = (await this.aclFactory.attach(origACLAdd, deployer)) as ACL;
-    expect(await acl.getVersion()).to.equal('ACL v0.6.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.7.0');
     const newaclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample', deployer);
     const acl2 = (await upgrades.upgradeProxy(acl, newaclFactoryUpgraded)) as unknown as ACLUpgradedExample;
     await acl2.waitForDeployment();
-    expect(await acl2.getVersion()).to.equal('ACL v0.7.0');
+    expect(await acl2.getVersion()).to.equal('ACL v0.8.0');
     expect(await acl2.getAddress()).to.equal(origACLAdd);
     const newSigner = (await ethers.getSigners())[1];
     await acl2.transferOwnership(newSigner);
@@ -195,6 +195,6 @@ describe('Upgrades', function () {
     const newaclFactoryUpgraded3 = await ethers.getContractFactory('ACLUpgradedExample2', newSigner);
     const acl3 = await upgrades.upgradeProxy(acl2, newaclFactoryUpgraded3); // new owner can upgrade ACL
     await acl3.waitForDeployment();
-    expect(await acl3.getVersion()).to.equal('ACL v0.8.0');
+    expect(await acl3.getVersion()).to.equal('ACL v0.9.0');
   });
 });
