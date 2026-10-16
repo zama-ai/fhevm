@@ -438,6 +438,8 @@ describe('KMS context tasks', function () {
       expect(aborted.flow).to.equal('context-switch');
       expect(aborted.aborted).to.equal(true);
       expect(aborted.abortReason).to.equal('context-destroyed');
+      // The active committee is still the previous one, so the target stays n - t after the abort.
+      expect(aborted.previousSignerThreshold).to.equal(1);
     });
 
     it('reports partial destruction confirmations of an aborted switch against the active committee', async function () {
