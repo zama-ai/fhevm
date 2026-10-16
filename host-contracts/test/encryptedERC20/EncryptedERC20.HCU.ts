@@ -6,6 +6,8 @@ import { initializeHCULimit } from '../paymentUtils';
 import { getSigners, initSigners } from '../signers';
 import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 
+const MAX_UINT48 = 2n ** 48n - 1n;
+
 describe('EncryptedERC20:HCU', function () {
   before(async function () {
     await initSigners(2);
@@ -21,9 +23,10 @@ describe('EncryptedERC20:HCU', function () {
   });
 
   afterEach(async function () {
-    if (await this.hcuLimit.isBlockHCUWhitelisted(this.contractAddress)) {
-      const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
-      await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress);
+    const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
+    const [defaultCap] = await this.hcuLimit.getQuota(0);
+    if (defaultCap !== MAX_UINT48) {
+      await ownerHcuLimit.setQuotaCap(0, MAX_UINT48);
     }
   });
 
@@ -96,31 +99,12 @@ describe('EncryptedERC20:HCU', function () {
     expect(HCUMaxDepthTransferFrom).to.eq(391_000, 'HCU Depth incorrect');
   });
 
-  it('should account FHE operations in block HCU meter', async function () {
-    const transaction = await this.erc20.mint(10000);
-    await transaction.wait();
-
-    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
-    input.add64(1337);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.erc20['transfer(address,bytes32,bytes)'](
-      this.signers.bob.address,
-      encryptedAmount.handles[0],
-      encryptedAmount.inputProof,
-    );
-    const receipt = await tx.wait();
-    expect(receipt?.status).to.eq(1);
-
-    const [, usedHCU] = await this.hcuLimit.getBlockMeter();
-    expect(usedHCU).to.be.greaterThan(0n);
-  });
-
-  it('should bypass block HCU meter for whitelisted contract', async function () {
+  it('should charge FHE operations to the default quota when it has a cap', async function () {
     const transaction = await this.erc20.mint(10000);
     await transaction.wait();
 
     const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
-    await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress);
+    await ownerHcuLimit.setQuotaCap(0, 1_000_000_000);
 
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
@@ -133,7 +117,33 @@ describe('EncryptedERC20:HCU', function () {
     const receipt = await tx.wait();
     expect(receipt?.status).to.eq(1);
 
-    const [, usedHCU] = await this.hcuLimit.getBlockMeter();
-    expect(usedHCU).to.eq(0n);
+    const [, usedHCU] = await this.hcuLimit.getQuota(0);
+    expect(usedHCU).to.be.greaterThan(0n);
+  });
+
+  it('should not meter a contract in an uncapped quota', async function () {
+    const transaction = await this.erc20.mint(10000);
+    await transaction.wait();
+
+    const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
+    await ownerHcuLimit.setQuotaCap(0, 1_000_000_000);
+    await ownerHcuLimit.setQuotaCap(1, MAX_UINT48);
+    await ownerHcuLimit.assignQuota(this.contractAddress, 1);
+
+    const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+    input.add64(1337);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.erc20['transfer(address,bytes32,bytes)'](
+      this.signers.bob.address,
+      encryptedAmount.handles[0],
+      encryptedAmount.inputProof,
+    );
+    const receipt = await tx.wait();
+    expect(receipt?.status).to.eq(1);
+
+    const [, defaultUsedHCU] = await this.hcuLimit.getQuota(0);
+    const [, uncappedUsedHCU] = await this.hcuLimit.getQuota(1);
+    expect(defaultUsedHCU).to.eq(0n);
+    expect(uncappedUsedHCU).to.eq(0n);
   });
 });

@@ -3,9 +3,10 @@ pragma solidity ^0.8.24;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
-import {fhevmExecutorAdd, aclAdd} from "../addresses/FHEVMHostAddresses.sol";
+import {fhevmExecutorAdd, aclAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "./ACL.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
+import {IPauserSet} from "./interfaces/IPauserSet.sol";
 
 import {FheType} from "./shared/FheType.sol";
 
@@ -24,23 +25,25 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
 
-    /// @notice Returned if the block exceeds the maximum allowed homomorphic complexity units.
-    error HCUBlockLimitExceeded();
+    /// @notice Returned when an operation would take a quota over its cap for this block.
+    /// @param account Contract that ran the operation.
+    /// @param quotaId Quota the contract is assigned to.
+    error HCUQuotaExceeded(address account, uint16 quotaId);
 
-    /// @notice Returned if the address is already block HCU whitelisted.
-    error AlreadyBlockHCUWhitelisted(address account);
+    /// @notice Returned when the sender is neither the ACL owner nor a pauser.
+    error NotPauser(address sender);
 
-    /// @notice Returned if the address is not block HCU whitelisted.
-    error NotBlockHCUWhitelisted(address account);
+    /// @notice Returned when a pauser tries to raise a quota's cap or assign a contract to a quota other than the paused one.
+    error QuotaNotTighter(uint16 quotaId);
+
+    /// @notice Returned when setting the cap of the paused quota, which stays 0.
+    error InvalidQuota(uint16 quotaId);
 
     /// @notice Returned if the transaction exceeds the maximum allowed homomorphic complexity units.
     error HCUTransactionLimitExceeded();
 
     /// @notice Returned if the transaction exceeds the maximum allowed depth of homomorphic complexity units.
     error HCUTransactionDepthLimitExceeded();
-
-    /// @notice Returned if hcuPerBlock < maxHCUPerTx.
-    error HCUPerBlockBelowMaxPerTx();
 
     /// @notice Returned if maxHCUPerTx < maxHCUDepthPerTx.
     error MaxHCUPerTxBelowDepth();
@@ -71,9 +74,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Emitted when the cross-transaction depth limit is updated.
     event CrossTxDepthLimitSet(uint48 maxDepth, uint48 decayPerBlock);
 
-    /// @notice Emitted when the global block HCU cap is updated.
-    /// @param hcuPerBlock New global block HCU cap.
-    event HCUPerBlockSet(uint48 hcuPerBlock);
+    /// @notice Emitted when a quota's cap per block is set.
+    event QuotaCapSet(uint16 indexed quotaId, uint48 capPerBlock, address indexed setBy);
+
+    /// @notice Emitted when a contract is assigned to a quota.
+    event ContractQuotaAssigned(address indexed account, uint16 indexed quotaId, address indexed setBy);
 
     /// @notice Emitted when the per-transaction HCU depth limit is updated.
     /// @param maxHCUDepthPerTx New depth limit.
@@ -82,14 +87,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Emitted when the per-transaction HCU limit is updated.
     /// @param maxHCUPerTx New transaction limit.
     event MaxHCUPerTxSet(uint48 maxHCUPerTx);
-
-    /// @notice Emitted when a caller is added to the block-cap whitelist.
-    /// @param account Caller address that was whitelisted.
-    event BlockHCUWhitelistAdded(address indexed account);
-
-    /// @notice Emitted when a caller is removed from the block-cap whitelist.
-    /// @param account Caller address that was removed from the whitelist.
-    event BlockHCUWhitelistRemoved(address indexed account);
 
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "HCULimit";
@@ -106,6 +103,18 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice FHEVMExecutor address.
     address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
 
+    /// @notice PauserSet contract, the same set that can pause the ACL.
+    IPauserSet private constant PAUSER_SET = IPauserSet(pauserSetAdd);
+
+    /// @notice Quota of every contract that was never assigned.
+    uint16 private constant DEFAULT_QUOTA = 0;
+
+    /// @notice Quota with cap 0: contracts assigned to it cannot run FHE operations.
+    uint16 public constant PAUSED_QUOTA = type(uint16).max;
+
+    /// @notice A quota with this cap is not metered.
+    uint48 private constant NO_CAP = type(uint48).max;
+
     /// @dev Per-handle transient word: bit 255 marks the depths as known, bits 128-254 hold the
     ///      depth carried across transactions and bits 0-127 the depth within this transaction.
     uint256 private constant DEPTH_KNOWN = 1 << 255;
@@ -114,26 +123,37 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     bytes1 private constant FHE_MUL_DIV_FACTOR2_ENCRYPTED = 0x01;
     bytes1 private constant FHE_MUL_DIV_FACTOR2_SCALAR = 0x03;
 
+    /// @dev Cap and meter of one quota, in one slot. All contracts assigned to the quota share it.
+    struct Quota {
+        uint48 capPerBlock;
+        uint48 usedHCU;
+        uint48 lastBlock;
+    }
+
     /// @custom:storage-location erc7201:fhevm.storage.HCULimit
     /// @dev The first five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits). The
-    ///      cross-transaction fields are appended after the mapping to keep the existing layout.
+    ///      cross-transaction fields and the quotas are appended after the mapping to keep the existing layout.
     struct HCULimitStorage {
-        /// @notice Maximum homomorphic complexity units per block for non-whitelisted callers.
+        /// @notice Unused since quotas replaced the global block cap; reinitializeV5 copies it into the default quota.
         uint48 globalHCUCapPerBlock;
-        /// @notice Used HCU in the current block for non-whitelisted callers.
+        /// @notice Unused since quotas replaced the global block cap.
         uint48 usedBlockHCU;
-        /// @notice Last seen block number for the block meter.
+        /// @notice Unused since quotas replaced the global block cap.
         uint48 lastSeenBlockNumber;
         /// @notice Maximum sequential HCU depth per transaction.
         uint48 maxHCUDepthPerTx;
         /// @notice Maximum total HCU per transaction.
         uint48 maxHCUPerTx;
-        /// @notice Whitelisted callers bypass block-level cap.
+        /// @notice Unused since quotas replaced the block cap whitelist, which had no entries.
         mapping(address account => bool isWhitelisted) blockHCUWhitelist;
         /// @notice Maximum depth carried across transactions; 0 disables the check.
         uint48 maxCrossTxDepth;
         /// @notice Carried depth the coprocessors are assumed to drain per block.
         uint48 crossTxDepthDecayPerBlock;
+        /// @notice Cap and meter of each quota.
+        mapping(uint16 quotaId => Quota) quotas;
+        /// @notice Quota of each contract; the default quota when never assigned.
+        mapping(address account => uint16 quotaId) contractQuota;
     }
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
@@ -157,27 +177,30 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice  Initializes the contract.
-     * @param hcuCapPerBlock Initial global HCU cap per block.
+     * @param defaultQuotaCapPerBlock Cap per block of the default quota; type(uint48).max leaves it unmetered.
      * @param maxHCUDepthPerTx Maximum sequential HCU depth per transaction.
      * @param maxHCUPerTx Maximum total HCU per transaction.
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
-        uint48 hcuCapPerBlock,
+        uint48 defaultQuotaCapPerBlock,
         uint48 maxHCUDepthPerTx,
         uint48 maxHCUPerTx
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        _setHCUPerBlock(hcuCapPerBlock);
+        _setQuotaCap(DEFAULT_QUOTA, defaultQuotaCapPerBlock);
         _setMaxHCUPerTx(maxHCUPerTx);
         _setMaxHCUDepthPerTx(maxHCUDepthPerTx);
     }
 
     /**
      * @notice Re-initializes the contract from V4.
+     * @dev Quotas replace the global block cap, so its value becomes the default quota's cap.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {
+        _setQuotaCap(DEFAULT_QUOTA, _getHCULimitStorage().globalHCUCapPerBlock);
+    }
 
     /**
      * @notice Check the homomorphic complexity units limit for FheAdd.
@@ -1669,11 +1692,25 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Sets the block-level HCU limit for non-whitelisted callers.
-     * @param hcuPerBlock New block-level cap.
+     * @notice Sets a quota's cap per block; type(uint48).max leaves the quota unmetered.
+     * @dev The ACL owner sets any cap; a pauser can only lower one. The paused quota stays at 0.
      */
-    function setHCUPerBlock(uint48 hcuPerBlock) external onlyACLOwner {
-        _setHCUPerBlock(hcuPerBlock);
+    function setQuotaCap(uint16 quotaId, uint48 capPerBlock) external {
+        if (quotaId == PAUSED_QUOTA) revert InvalidQuota(quotaId);
+        if (!_isOwnerElseRequirePauser() && capPerBlock > _getHCULimitStorage().quotas[quotaId].capPerBlock) {
+            revert QuotaNotTighter(quotaId);
+        }
+        _setQuotaCap(quotaId, capPerBlock);
+    }
+
+    /**
+     * @notice Assigns a contract to a quota: its FHE operations then spend that quota's budget.
+     * @dev The ACL owner assigns to any quota; a pauser can only assign to the paused quota.
+     */
+    function assignQuota(address account, uint16 quotaId) external {
+        if (!_isOwnerElseRequirePauser() && quotaId != PAUSED_QUOTA) revert QuotaNotTighter(quotaId);
+        _getHCULimitStorage().contractQuota[account] = quotaId;
+        emit ContractQuotaAssigned(account, quotaId, msg.sender);
     }
 
     /**
@@ -1690,28 +1727,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      */
     function setMaxHCUPerTx(uint48 maxHCUPerTx) external onlyACLOwner {
         _setMaxHCUPerTx(maxHCUPerTx);
-    }
-
-    /**
-     * @notice Adds one caller to the block-cap whitelist.
-     * @param account Caller to whitelist.
-     */
-    function addToBlockHCUWhitelist(address account) external onlyACLOwner {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        if ($.blockHCUWhitelist[account]) revert AlreadyBlockHCUWhitelisted(account);
-        $.blockHCUWhitelist[account] = true;
-        emit BlockHCUWhitelistAdded(account);
-    }
-
-    /**
-     * @notice Removes one caller from the block-cap whitelist.
-     * @param account Caller to remove from whitelist.
-     */
-    function removeFromBlockHCUWhitelist(address account) external onlyACLOwner {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        if (!$.blockHCUWhitelist[account]) revert NotBlockHCUWhitelisted(account);
-        $.blockHCUWhitelist[account] = false;
-        emit BlockHCUWhitelistRemoved(account);
     }
 
     /**
@@ -1832,10 +1847,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Updates and verifies the HCU transaction limit.
      * @param opHCU The HCU for the operation.
-     * @param caller Original caller address for block-level checks.
+     * @param caller Contract that runs the operation, charged to its quota.
      */
     function _updateAndVerifyHCUTransactionLimit(uint256 opHCU, address caller) internal virtual {
-        _updateAndVerifyHCUBlockLimit(opHCU, caller);
+        _updateAndVerifyHCUQuota(opHCU, caller);
 
         uint256 transactionHCU = opHCU + _getHCUForTransaction();
         if (transactionHCU > uint256(_getHCULimitStorage().maxHCUPerTx)) {
@@ -1845,30 +1860,20 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Updates and enforces the public block HCU cap for one operation.
-     * @dev No-op if caller is whitelisted.
+     * @notice Charges one operation to the quota of the contract that runs it.
      * @param opHCU HCU cost of the current operation.
-     * @param caller Original dapp caller address from FHEVMExecutor.
+     * @param caller Contract that calls FHEVMExecutor.
      */
-    function _updateAndVerifyHCUBlockLimit(uint256 opHCU, address caller) internal virtual {
+    function _updateAndVerifyHCUQuota(uint256 opHCU, address caller) internal virtual {
         HCULimitStorage storage $ = _getHCULimitStorage();
-
-        if ($.blockHCUWhitelist[caller]) {
-            return;
-        }
-
-        uint48 currentBlock = uint48(block.number);
-        uint48 storedHCU = $.usedBlockHCU;
-        if ($.lastSeenBlockNumber != currentBlock) {
-            storedHCU = 0;
-        }
-
-        uint256 nextHCU = uint256(storedHCU) + opHCU;
-        if (nextHCU > uint256($.globalHCUCapPerBlock)) {
-            revert HCUBlockLimitExceeded();
-        }
-        $.usedBlockHCU = uint48(nextHCU);
-        $.lastSeenBlockNumber = currentBlock;
+        uint16 quotaId = $.contractQuota[caller];
+        Quota storage quota = $.quotas[quotaId];
+        uint48 cap = quota.capPerBlock;
+        if (cap == NO_CAP) return;
+        uint256 used = (quota.lastBlock == block.number ? quota.usedHCU : 0) + opHCU;
+        if (used > cap) revert HCUQuotaExceeded(caller, quotaId);
+        quota.usedHCU = uint48(used);
+        quota.lastBlock = uint48(block.number);
     }
 
     /**
@@ -1907,16 +1912,16 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         }
     }
 
-    /**
-     * @notice Sets the global HCU cap per block.
-     * @param hcuPerBlock New cap value.
-     * @dev Enforces hcuPerBlock >= maxHCUPerTx.
-     */
-    function _setHCUPerBlock(uint48 hcuPerBlock) private {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        if (hcuPerBlock < $.maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
-        $.globalHCUCapPerBlock = hcuPerBlock;
-        emit HCUPerBlockSet(hcuPerBlock);
+    function _setQuotaCap(uint16 quotaId, uint48 capPerBlock) private {
+        _getHCULimitStorage().quotas[quotaId].capPerBlock = capPerBlock;
+        emit QuotaCapSet(quotaId, capPerBlock, msg.sender);
+    }
+
+    /// @dev Returns whether the sender is the ACL owner; otherwise reverts unless it is a pauser.
+    function _isOwnerElseRequirePauser() private view returns (bool) {
+        if (msg.sender == ACL(aclAdd).owner()) return true;
+        if (!PAUSER_SET.isPauser(msg.sender)) revert NotPauser(msg.sender);
+        return false;
     }
 
     /**
@@ -1935,11 +1940,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Sets the per-transaction HCU limit.
      * @param maxHCUPerTx New transaction limit.
-     * @dev Enforces hcuPerBlock >= maxHCUPerTx and maxHCUPerTx >= maxHCUDepthPerTx.
+     * @dev Enforces maxHCUPerTx >= maxHCUDepthPerTx.
      */
     function _setMaxHCUPerTx(uint48 maxHCUPerTx) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        if ($.globalHCUCapPerBlock < maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
         if (maxHCUPerTx < $.maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
         $.maxHCUPerTx = maxHCUPerTx;
         emit MaxHCUPerTxSet(maxHCUPerTx);
@@ -1985,11 +1989,18 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Returns the global block HCU cap.
+     * @notice Returns a quota's cap per block and the HCU it has used in the current block.
      */
-    function getGlobalHCUCapPerBlock() public view virtual returns (uint48) {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        return $.globalHCUCapPerBlock;
+    function getQuota(uint16 quotaId) public view virtual returns (uint48 capPerBlock, uint48 usedThisBlock) {
+        Quota storage quota = _getHCULimitStorage().quotas[quotaId];
+        return (quota.capPerBlock, quota.lastBlock == block.number ? quota.usedHCU : 0);
+    }
+
+    /**
+     * @notice Returns the quota a contract is assigned to; 0 is the default quota.
+     */
+    function getContractQuota(address account) public view virtual returns (uint16) {
+        return _getHCULimitStorage().contractQuota[account];
     }
 
     /**
@@ -2004,27 +2015,5 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
      */
     function getMaxHCUPerTx() public view virtual returns (uint48) {
         return _getHCULimitStorage().maxHCUPerTx;
-    }
-
-    /**
-     * @notice Returns whether a caller bypasses the global block HCU cap.
-     * @param account Caller address.
-     */
-    function isBlockHCUWhitelisted(address account) public view virtual returns (bool) {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        return $.blockHCUWhitelist[account];
-    }
-
-    /**
-     * @notice Returns the effective public block HCU meter for the current block.
-     * @dev If storage still contains a previous block meter, returns `(block.number, 0)`.
-     */
-    function getBlockMeter() external view returns (uint48 blockNumber, uint48 usedHCU) {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        uint48 currentBlock = uint48(block.number);
-        if ($.lastSeenBlockNumber != currentBlock) {
-            return (currentBlock, 0);
-        }
-        return (currentBlock, $.usedBlockHCU);
     }
 }

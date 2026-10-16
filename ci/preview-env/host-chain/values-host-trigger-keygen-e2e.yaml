@@ -50,8 +50,8 @@ scDeploy:
     # no post-crsgen ownership transfer. Keep in sync with values-host-contracts-e2e.yaml's
     # DEPLOYER_PRIVATE_KEY and the test-suite workflow's DEPLOYER_PRIVATE_KEY, so
     # this.deployer == ACL owner == #9: the HCU owner-only setters (signed by #9) succeed,
-    # while the "reject setHCUPerBlock from non-owner" subtest - signed by alice (account
-    # #0) != owner - correctly reverts with NotHostOwner. (The final-owner choice does not
+    # while the "reject setQuotaCap from a non-owner non-pauser" subtest - signed by alice (account
+    # #0) != owner - correctly reverts with NotPauser. (The final-owner choice does not
     # affect keygen, which already ran under #9, so random-subset's keys are unchanged.)
     - {name: DEPLOYER_PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
   deployCommands:
