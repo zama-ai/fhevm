@@ -1,5 +1,5 @@
 use crate::{ErrorBody, ProxyError, Route};
-use alloy::primitives::Address;
+use alloy::{primitives::Address, transports::http::reqwest::Url};
 use http::uri::Authority;
 use std::{collections::HashSet, net::SocketAddr, path::PathBuf, time::Duration};
 
@@ -15,8 +15,8 @@ pub struct ProxyConfig {
     pub ethereum_chain_id: u64,
     /// The `ProtocolConfig` contract on Ethereum, the `verifyingContract` of the domain.
     pub protocol_config_address: Address,
-    /// The addresses allowed to sign requests.
-    pub allowed_senders: HashSet<Address>,
+    /// Where the addresses allowed to sign requests come from.
+    pub signers: SignerSource,
     /// The `audience` the accepted headers are signed for: this deployment's address.
     pub audience: Address,
     /// Renders the errors the proxy answers itself in the deployment's error body.
@@ -49,6 +49,20 @@ pub struct ProxyConfig {
     pub service_name: String,
     /// The timeout to perform each external service connection healthcheck.
     pub healthcheck_timeout: Duration,
+}
+
+/// Where the addresses allowed to sign requests come from.
+#[derive(Clone, Debug, PartialEq)]
+pub enum SignerSource {
+    /// A fixed set.
+    Static(HashSet<Address>),
+    /// The KMS tx-senders listed by the `ProtocolConfig` contract at
+    /// [`ProxyConfig::protocol_config_address`], read through `rpc_url` every `refresh_interval`.
+    /// The proxy refuses every request, and is not ready, until the first read succeeds.
+    ProtocolConfig {
+        rpc_url: Url,
+        refresh_interval: Duration,
+    },
 }
 
 /// The TLS material used by the proxy to terminate TLS.

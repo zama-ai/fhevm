@@ -8,6 +8,7 @@ description = "HTTPS reverse proxy on Pingora that authenticates each request's 
 
 [dependencies]
 alloy = { version = "2", default-features = false, features = [
+    "providers",
     "reqwest-rustls-tls",
     "std",
     "transport-http",
@@ -15,7 +16,7 @@ alloy = { version = "2", default-features = false, features = [
 anyhow = "1"
 async-trait = "0.1"
 bytes = "1"
-fhevm-sig-auth = { path = "../fhevm-sig-auth" }
+fhevm-sig-auth = { path = "../fhevm-sig-auth", features = ["protocol-config"] }
 http = "1"
 pingora = { version = "=0.9.0", default-features = false, features = [
     "openssl",
@@ -27,6 +28,7 @@ tracing = "0.1"
 
 [dev-dependencies]
 alloy = { version = "2", default-features = false, features = ["signer-local"] }
+fhevm_host_bindings = { path = "../../host-contracts/rust_bindings", default-features = false }
 futures-util = { version = "0.3", default-features = false }
 http-body-util = "0.1"
 hyper = { version = "1", default-features = false, features = ["http1", "server"] }
@@ -38,6 +40,7 @@ rcgen = { version = "0.14", default-features = false, features = [
 ] }
 reqwest = { version = "0.13", default-features = false, features = ["stream"] }
 rstest = "0.26"
+serde_json = "1"
 tokio = { version = "1", default-features = false, features = [
     "macros",
     "net",

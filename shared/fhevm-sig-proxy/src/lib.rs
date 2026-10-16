@@ -11,7 +11,7 @@ mod http_proxy;
 mod proxy;
 mod routing;
 
-pub use config::{ProxyConfig, TlsConfig, Upstream};
+pub use config::{ProxyConfig, SignerSource, TlsConfig, Upstream};
 pub use error::{ErrorBody, ProxyError};
 pub use proxy::Proxy;
 pub use routing::Route;

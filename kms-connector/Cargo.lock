@@ -3333,8 +3333,13 @@ name = "fhevm-sig-auth"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "anyhow",
+ "fhevm_host_bindings",
  "http 1.4.0",
+ "prometheus",
  "thiserror 2.0.20",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

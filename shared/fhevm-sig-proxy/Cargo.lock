@@ -53,6 +53,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f5a08ebfa51fdc243e0c6a662f5cf3428f04d1ad858e3fe77238cc78063eb86d"
 dependencies = [
  "alloy-consensus",
+ "alloy-contract",
  "alloy-core",
  "alloy-eips",
  "alloy-ens",
@@ -585,6 +586,7 @@ version = "1.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9edb8520f2f94275e1caa73c85207dcc78ec402a9a4c429240f9a0783a8f16c0"
 dependencies = [
+ "alloy-json-abi",
  "alloy-sol-macro-input",
  "const-hex",
  "heck",
@@ -603,12 +605,14 @@ version = "1.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66af2d9344882172993be5f5cbfd349fdfa52cb548f7af8715b446fb35ef6001"
 dependencies = [
+ "alloy-json-abi",
  "const-hex",
  "dunce",
  "heck",
  "macro-string",
  "proc-macro2",
  "quote",
+ "serde_json",
  "syn 2.0.119",
  "syn-solidity",
 ]
@@ -2141,8 +2145,13 @@ name = "fhevm-sig-auth"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "anyhow",
+ "fhevm_host_bindings",
  "http",
+ "prometheus",
  "thiserror",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -2154,6 +2163,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "fhevm-sig-auth",
+ "fhevm_host_bindings",
  "futures-util",
  "http",
  "http-body-util",
@@ -2163,8 +2173,17 @@ dependencies = [
  "rcgen",
  "reqwest",
  "rstest",
+ "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "fhevm_host_bindings"
+version = "0.15.0"
+dependencies = [
+ "alloy",
+ "serde",
 ]
 
 [[package]]
@@ -3843,6 +3862,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "prometheus"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ca5326d8d0b950a9acd87e6a3f94745394f62e4dae1b1ee22b2bc0c394af43a"
+dependencies = [
+ "cfg-if",
+ "fnv",
+ "lazy_static",
+ "memchr",
+ "parking_lot",
+ "thiserror",
 ]
 
 [[package]]

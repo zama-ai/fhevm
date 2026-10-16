@@ -207,6 +207,7 @@ jobs:
           - kms-connector/crates/api/**
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
+          - host-contracts/rust_bindings/**
           - shared/fhevm-sig-auth/**
           - shared/fhevm-sig-proxy/**
 

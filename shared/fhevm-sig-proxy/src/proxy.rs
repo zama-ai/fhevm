@@ -1,18 +1,20 @@
 use crate::{
-    ProxyConfig,
+    ProxyConfig, SignerSource,
     health::{self, endpoint_health_check},
     routing::RouteTable,
 };
+use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use anyhow::{Context, anyhow, ensure};
-use fhevm_sig_auth::FhevmSigVerifier;
+use async_trait::async_trait;
+use fhevm_sig_auth::{FhevmSigVerifier, RefreshableSigners, protocol_config::Follower};
 use http::{Method, uri::Authority};
 use pingora::{
     lb::{LoadBalancer, selection::RoundRobin},
     listeners::tls::TlsSettings,
     prelude::Server,
     proxy::http_proxy_service_with_name,
-    server::{RunArgs, UnixShutdownSignalWatch, configuration::ServerConf},
-    services::background::GenBackgroundService,
+    server::{RunArgs, ShutdownWatch, UnixShutdownSignalWatch, configuration::ServerConf},
+    services::background::{BackgroundService, GenBackgroundService},
 };
 use std::sync::Arc;
 use tracing::info;
@@ -20,7 +22,10 @@ use tracing::info;
 /// The `Proxy` service: sender authentication and load-balancing in front of the endpoints.
 pub struct Proxy {
     pub(crate) config: ProxyConfig,
-    pub(crate) verifier: FhevmSigVerifier,
+    pub(crate) verifier: FhevmSigVerifier<RefreshableSigners>,
+    /// Keeps the verifier's signers equal to `ProtocolConfig`'s, for
+    /// [`SignerSource::ProtocolConfig`].
+    signer_refresh: Option<Arc<SignerRefresh>>,
     pub(crate) routes: RouteTable,
     /// The load-balancer of each of [`ProxyConfig::upstreams`], in the same order.
     pub(crate) balancers: Vec<Arc<LoadBalancer<RoundRobin>>>,
@@ -41,6 +46,34 @@ impl Proxy {
             "TLS self-check path {} matches no GET route",
             config.tls_self_check_path
         );
+
+        let (signers, signer_refresh) = match &config.signers {
+            SignerSource::Static(signers) => {
+                ensure!(!signers.is_empty(), "no signer configured");
+                (RefreshableSigners::new(signers.iter().copied()), None)
+            }
+            SignerSource::ProtocolConfig {
+                rpc_url,
+                refresh_interval,
+            } => {
+                ensure!(
+                    !refresh_interval.is_zero(),
+                    "signer refresh interval is zero"
+                );
+                let signers = RefreshableSigners::default();
+                let provider = ProviderBuilder::new()
+                    .disable_recommended_fillers()
+                    .connect_http(rpc_url.clone())
+                    .erased();
+                let follower = Follower::new(
+                    provider,
+                    config.protocol_config_address,
+                    signers.clone(),
+                    *refresh_interval,
+                );
+                (signers, Some(Arc::new(SignerRefresh(follower))))
+            }
+        };
 
         let mut balancers = Vec::with_capacity(config.upstreams.len());
         for upstream in &config.upstreams {
@@ -76,14 +109,15 @@ impl Proxy {
                 .map(|upstream| upstream.name.clone())
                 .zip(balancers.iter().cloned())
                 .collect(),
+            signer_refresh.as_ref().map(|refresh| refresh.0.loaded()),
             config.healthcheck_timeout,
         )?;
         let domain =
             fhevm_sig_auth::domain(config.ethereum_chain_id, config.protocol_config_address);
-        let verifier =
-            FhevmSigVerifier::new(domain, config.audience, config.allowed_senders.clone());
+        let verifier = FhevmSigVerifier::new(domain, config.audience, signers);
         let proxy = Self {
             verifier,
+            signer_refresh,
             config,
             routes,
             balancers,
@@ -129,6 +163,12 @@ impl Proxy {
                 Arc::clone(balancer),
             ));
         }
+        if let Some(signer_refresh) = &self.signer_refresh {
+            server.add_service(GenBackgroundService::new(
+                "BG signer refresh".to_string(),
+                Arc::clone(signer_refresh),
+            ));
+        }
 
         let service_name = self.config.service_name.clone();
         let mut proxy_service =
@@ -138,6 +178,20 @@ impl Proxy {
         info!("Proxy will listen at: https://{listen_addr}");
 
         Ok(server)
+    }
+}
+
+/// Reads the signers from `ProtocolConfig` until the server shuts down.
+struct SignerRefresh(Follower<DynProvider>);
+
+#[async_trait]
+impl BackgroundService for SignerRefresh {
+    async fn start(&self, mut shutdown: ShutdownWatch) {
+        self.0
+            .run(async move {
+                let _ = shutdown.changed().await;
+            })
+            .await;
     }
 }
 
@@ -164,7 +218,7 @@ mod tests {
             },
             ethereum_chain_id: 1,
             protocol_config_address: Address::ZERO,
-            allowed_senders: HashSet::from([Address::ZERO]),
+            signers: SignerSource::Static(HashSet::from([Address::ZERO])),
             audience: Address::ZERO,
             error_body: |_| crate::ErrorBody {
                 status: http::StatusCode::INTERNAL_SERVER_ERROR,

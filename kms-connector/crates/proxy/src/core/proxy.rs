@@ -1,6 +1,8 @@
 use crate::{core::Config, monitoring::health};
 use fhevm_sig_auth::AuthError;
-use fhevm_sig_proxy::{ErrorBody, ProxyConfig, ProxyError, Route, TlsConfig, Upstream};
+use fhevm_sig_proxy::{
+    ErrorBody, ProxyConfig, ProxyError, Route, SignerSource, TlsConfig, Upstream,
+};
 use http::{Method, StatusCode};
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
@@ -48,7 +50,7 @@ fn proxy_config(config: Config) -> ProxyConfig {
         },
         ethereum_chain_id: config.ethereum_chain_id,
         protocol_config_address: config.protocol_config_contract.address,
-        allowed_senders: config.allowed_senders,
+        signers: SignerSource::Static(config.allowed_senders),
         audience: config.tx_sender_address,
         error_body,
         forward_authorization: false,

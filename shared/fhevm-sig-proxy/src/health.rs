@@ -4,6 +4,7 @@
 use crate::ProxyConfig;
 use alloy::transports::http::reqwest::{self, Url};
 use anyhow::{Context, anyhow};
+use fhevm_sig_auth::protocol_config::Loaded;
 use pingora::lb::{Backend, LoadBalancer, health_check::HttpHealthCheck, selection::RoundRobin};
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
@@ -17,6 +18,8 @@ pub struct State {
     self_check_url: Url,
     /// Each upstream's name and load-balancer.
     upstreams: Vec<(String, Arc<LoadBalancer<RoundRobin>>)>,
+    /// Whether the signers were read, for [`crate::SignerSource::ProtocolConfig`].
+    signers_loaded: Option<Loaded>,
     healthcheck_timeout: Duration,
     /// The client used to reach the proxy's own TLS listener through the loopback interface.
     loopback_client: reqwest::Client,
@@ -27,6 +30,7 @@ impl State {
         bind_address: SocketAddr,
         self_check_path: &str,
         upstreams: Vec<(String, Arc<LoadBalancer<RoundRobin>>)>,
+        signers_loaded: Option<Loaded>,
         healthcheck_timeout: Duration,
     ) -> anyhow::Result<Self> {
         // The proxy's certificate is issued for its public hostname, not for the loopback
@@ -39,9 +43,16 @@ impl State {
         Ok(Self {
             self_check_url: self_check_url(bind_address, self_check_path),
             upstreams,
+            signers_loaded,
             healthcheck_timeout,
             loopback_client,
         })
+    }
+
+    /// Whether the signers are known: always for a static set, after the first successful read
+    /// for `ProtocolConfig`. Until then every request is refused.
+    pub fn signers_loaded(&self) -> bool {
+        self.signers_loaded.as_ref().is_none_or(Loaded::is_loaded)
     }
 
     /// Splits each upstream's endpoints into the healthy and unhealthy ones, as last observed by

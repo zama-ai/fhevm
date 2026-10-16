@@ -3,13 +3,18 @@
 #![allow(dead_code)]
 
 use alloy::{
-    primitives::Address,
+    primitives::{Address, U256, hex},
     signers::local::PrivateKeySigner,
-    transports::http::reqwest::{self, Client},
+    sol_types::{SolCall, SolInterface},
+    transports::http::reqwest::{self, Client, Url},
 };
 use bytes::Bytes;
+use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::{
+    IProtocolConfigBaseCalls, KmsNode, getCurrentKmsContextIdCounterCall,
+    getKmsNodesForContextCall, isValidKmsContextCall,
+};
 use fhevm_sig_proxy::{
-    ErrorBody, Proxy, ProxyConfig, ProxyError, Route, TlsConfig, Upstream, health,
+    ErrorBody, Proxy, ProxyConfig, ProxyError, Route, SignerSource, TlsConfig, Upstream, health,
 };
 use http::{HeaderMap, Method, Request, Response, StatusCode};
 use http_body_util::{BodyExt, Full};
@@ -105,38 +110,30 @@ impl Stub {
         let log = Arc::new(Mutex::new(Log::default()));
         let hold = Arc::new(Mutex::new(Duration::ZERO));
         let (recorder, delay) = (log.clone(), hold.clone());
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            loop {
-                let (stream, _) = listener.accept().await.unwrap();
-                let (recorder, delay) = (recorder.clone(), delay.clone());
-                let service = service_fn(move |request: Request<Incoming>| {
-                    let (recorder, delay) = (recorder.clone(), delay.clone());
-                    async move {
-                        let (parts, body) = request.into_parts();
-                        let target = parts.uri.to_string();
-                        if target == HEALTHCHECK_PATH {
-                            return Ok(Response::new(Full::<Bytes>::default()));
-                        }
-                        recorder.lock().unwrap().heads.push(target);
-                        // A request cut short is not recorded.
-                        if let Ok(body) = body.collect().await {
-                            recorder.lock().unwrap().requests.push(Recorded {
-                                method: parts.method,
-                                target: parts.uri.to_string(),
-                                headers: parts.headers,
-                                body: body.to_bytes(),
-                            });
-                        }
-                        let hold = *delay.lock().unwrap();
-                        tokio::time::sleep(hold).await;
-                        Ok::<_, Infallible>(Response::new(Full::<Bytes>::default()))
-                    }
-                });
-                tokio::spawn(http1::Builder::new().serve_connection(TokioIo::new(stream), service));
+        let addr = serve(move |request| {
+            let (recorder, delay) = (recorder.clone(), delay.clone());
+            async move {
+                let (parts, body) = request.into_parts();
+                let target = parts.uri.to_string();
+                if target == HEALTHCHECK_PATH {
+                    return Response::new(Full::default());
+                }
+                recorder.lock().unwrap().heads.push(target.clone());
+                // A request cut short is not recorded.
+                if let Ok(body) = body.collect().await {
+                    recorder.lock().unwrap().requests.push(Recorded {
+                        method: parts.method,
+                        target,
+                        headers: parts.headers,
+                        body: body.to_bytes(),
+                    });
+                }
+                let hold = *delay.lock().unwrap();
+                tokio::time::sleep(hold).await;
+                Response::new(Full::default())
             }
-        });
+        })
+        .await;
         Self { addr, log, hold }
     }
 
@@ -156,6 +153,145 @@ impl Stub {
 }
 
 pub const HEALTHCHECK_PATH: &str = "/healthz";
+
+/// Serves `handler` over plain HTTP/1.1 on a free local port.
+async fn serve<F, Fut>(handler: F) -> SocketAddr
+where
+    F: Fn(Request<Incoming>) -> Fut + Clone + Send + Sync + 'static,
+    Fut: Future<Output = Response<Full<Bytes>>> + Send,
+{
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            let handler = handler.clone();
+            let service = service_fn(move |request| {
+                let handler = handler.clone();
+                async move { Ok::<_, Infallible>(handler(request).await) }
+            });
+            tokio::spawn(http1::Builder::new().serve_connection(TokioIo::new(stream), service));
+        }
+    });
+    addr
+}
+
+/// One KMS context in the fake `ProtocolConfig`: Active or not, and its tx-senders.
+#[derive(Clone)]
+pub struct KmsContext {
+    pub active: bool,
+    pub tx_senders: Vec<Address>,
+}
+
+#[derive(Default)]
+struct RpcState {
+    contexts: Vec<KmsContext>,
+    failing: bool,
+}
+
+/// An Ethereum JSON-RPC answering the `ProtocolConfig` calls of the signer reader from a list of
+/// KMS contexts, or failing every call.
+pub struct FakeRpc {
+    pub url: Url,
+    state: Arc<Mutex<RpcState>>,
+}
+
+impl FakeRpc {
+    pub async fn start(contexts: Vec<KmsContext>) -> Self {
+        let state = Arc::new(Mutex::new(RpcState {
+            contexts,
+            failing: false,
+        }));
+        let handler_state = state.clone();
+        let addr = serve(move |request| {
+            let state = handler_state.clone();
+            async move { rpc(&state, request).await }
+        })
+        .await;
+        Self {
+            url: format!("http://{addr}").parse().unwrap(),
+            state,
+        }
+    }
+
+    pub fn set_contexts(&self, contexts: Vec<KmsContext>) {
+        self.state.lock().unwrap().contexts = contexts;
+    }
+
+    pub fn set_failing(&self, failing: bool) {
+        self.state.lock().unwrap().failing = failing;
+    }
+}
+
+/// Context ids as `ProtocolConfig` allocates them: the type tag 0x07 in the top byte.
+fn context_id(index: usize) -> U256 {
+    (U256::from(7) << 248) + U256::from(index + 1)
+}
+
+async fn rpc(state: &Mutex<RpcState>, request: Request<Incoming>) -> Response<Full<Bytes>> {
+    let body = request.into_body().collect().await.unwrap().to_bytes();
+    let call: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let state = state.lock().unwrap();
+    if state.failing {
+        let mut response = Response::new(Full::default());
+        *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+        return response;
+    }
+    assert_eq!(call["method"], "eth_call", "unexpected RPC {call}");
+    let tx = &call["params"][0];
+    let to: Option<Address> = tx["to"].as_str().and_then(|to| to.parse().ok());
+    // Only `ProtocolConfig` at the finalized block knows the contexts.
+    if to != Some(PROTOCOL_CONFIG) || call["params"][1] != "finalized" {
+        let error = serde_json::json!({"jsonrpc": "2.0", "id": call["id"],
+            "error": {"code": -32000, "message": format!("unexpected call {call}")}});
+        return Response::new(Full::new(Bytes::from(error.to_string())));
+    }
+    let data = tx["input"].as_str().or(tx["data"].as_str()).unwrap();
+    let context = |id: U256| {
+        (0..state.contexts.len())
+            .find(|&index| context_id(index) == id)
+            .map(|index| &state.contexts[index])
+    };
+    let result = match IProtocolConfigBaseCalls::abi_decode(&hex::decode(data).unwrap()).unwrap() {
+        IProtocolConfigBaseCalls::getCurrentKmsContextIdCounter(_) => {
+            let counter = match state.contexts.len() {
+                0 => U256::ZERO,
+                n => context_id(n - 1),
+            };
+            Some(getCurrentKmsContextIdCounterCall::abi_encode_returns(
+                &counter,
+            ))
+        }
+        IProtocolConfigBaseCalls::isValidKmsContext(call) => {
+            let active = context(call.kmsContextId).is_some_and(|c| c.active);
+            Some(isValidKmsContextCall::abi_encode_returns(&active))
+        }
+        // As the contract: reverts unless the context is Active.
+        IProtocolConfigBaseCalls::getKmsNodesForContext(call) => {
+            context(call.kmsContextId).filter(|c| c.active).map(|c| {
+                let nodes: Vec<KmsNode> = c
+                    .tx_senders
+                    .iter()
+                    .map(|&tx_sender| KmsNode {
+                        txSenderAddress: tx_sender,
+                        ..Default::default()
+                    })
+                    .collect();
+                getKmsNodesForContextCall::abi_encode_returns(&nodes)
+            })
+        }
+        _ => panic!("unexpected ProtocolConfig call"),
+    };
+    let id = &call["id"];
+    let reply = match result {
+        Some(result) => {
+            serde_json::json!({"jsonrpc": "2.0", "id": id, "result": hex::encode_prefixed(result)})
+        }
+        None => serde_json::json!({"jsonrpc": "2.0", "id": id,
+            "error": {"code": 3, "message": "execution reverted: InvalidKmsContext"}}),
+    };
+    Response::new(Full::new(Bytes::from(reply.to_string())))
+}
 
 /// Two upstreams `a` and `b`, with routes differing in methods, template, body cap and timeout:
 /// - `POST /small` to `a`, no body, 300 ms;
@@ -183,7 +319,7 @@ pub fn config(addr: SocketAddr, tls: &TestTls, a: &Stub, b: &Stub) -> ProxyConfi
         },
         ethereum_chain_id: CHAIN_ID,
         protocol_config_address: PROTOCOL_CONFIG,
-        allowed_senders: HashSet::from([sender().address()]),
+        signers: SignerSource::Static(HashSet::from([sender().address()])),
         audience: AUDIENCE,
         error_body,
         forward_authorization: false,
