@@ -425,32 +425,23 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         bytes calldata signature,
         bytes calldata extraData
     ) external virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        if (!$.destroyedContexts[destroyedContextId]) {
+        if (!_getProtocolConfigStorage().destroyedContexts[destroyedContextId]) {
             revert KmsContextNotDestroyed(destroyedContextId);
         }
 
-        address signer = ECDSA.recover(
-            _hashTypedData(
-                keccak256(
-                    abi.encode(
-                        EIP712_CONTEXT_DESTRUCTION_TYPE_HASH,
-                        destroyedContextId,
-                        keccak256(abi.encodePacked(destroyedEpochIds)),
-                        keccak256(extraData)
-                    )
+        address signer = _confirmDestruction(
+            _getProtocolConfigCanonicalStorage().contextDestructionConfirmedBySigner[destroyedContextId],
+            destroyedContextId,
+            keccak256(
+                abi.encode(
+                    EIP712_CONTEXT_DESTRUCTION_TYPE_HASH,
+                    destroyedContextId,
+                    keccak256(abi.encodePacked(destroyedEpochIds)),
+                    keccak256(extraData)
                 )
             ),
             signature
         );
-        if (!$.isKmsSignerForContext[$.latestActiveKmsContextId][signer]) {
-            revert KmsContextDestructionUnauthorized(signer, destroyedContextId);
-        }
-        ProtocolConfigCanonicalStorage storage canonical$ = _getProtocolConfigCanonicalStorage();
-        if (canonical$.contextDestructionConfirmedBySigner[destroyedContextId][signer]) {
-            revert KmsContextDestructionAlreadyConfirmed(signer, destroyedContextId);
-        }
-        canonical$.contextDestructionConfirmedBySigner[destroyedContextId][signer] = true;
 
         emit KmsContextDestructionConfirmation(destroyedContextId, destroyedEpochIds, signer, signature, extraData);
     }
@@ -463,25 +454,17 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         bytes calldata signature,
         bytes calldata extraData
     ) external virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         ProtocolConfigCanonicalStorage storage canonical$ = _getProtocolConfigCanonicalStorage();
         if (!canonical$.destroyedEpochs[destroyedEpochId]) {
             revert KmsEpochNotDestroyed(destroyedEpochId);
         }
 
-        address signer = ECDSA.recover(
-            _hashTypedData(
-                keccak256(abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData)))
-            ),
+        address signer = _confirmDestruction(
+            canonical$.epochDestructionConfirmedBySigner[destroyedEpochId],
+            destroyedEpochId,
+            keccak256(abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData))),
             signature
         );
-        if (!$.isKmsSignerForContext[$.latestActiveKmsContextId][signer]) {
-            revert KmsEpochDestructionUnauthorized(signer, destroyedEpochId);
-        }
-        if (canonical$.epochDestructionConfirmedBySigner[destroyedEpochId][signer]) {
-            revert KmsEpochDestructionAlreadyConfirmed(signer, destroyedEpochId);
-        }
-        canonical$.epochDestructionConfirmedBySigner[destroyedEpochId][signer] = true;
 
         emit KmsEpochDestructionConfirmation(destroyedEpochId, signer, signature, extraData);
     }
@@ -645,6 +628,27 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         canonical$.epochActivationVotedBySigner[epochId][signer] = true;
         uint256 digestCount = ++canonical$.epochActivationVoteCountForDigest[epochId][digest];
         complete = digestCount == _getProtocolConfigStorage().kmsSignerAddressesForContext[contextId].length;
+    }
+
+    /**
+     * @dev Recovers the signer of a destruction confirmation, requires it in the active committee,
+     *      and records its one confirmation in `confirmedBySigner`.
+     */
+    function _confirmDestruction(
+        mapping(address signer => bool confirmed) storage confirmedBySigner,
+        uint256 destroyedId,
+        bytes32 structHash,
+        bytes calldata signature
+    ) internal virtual returns (address signer) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        signer = ECDSA.recover(_hashTypedData(structHash), signature);
+        if (!$.isKmsSignerForContext[$.latestActiveKmsContextId][signer]) {
+            revert KmsDestructionUnauthorized(signer, destroyedId);
+        }
+        if (confirmedBySigner[signer]) {
+            revert KmsDestructionAlreadyConfirmed(signer, destroyedId);
+        }
+        confirmedBySigner[signer] = true;
     }
 
     function _hashTypedData(bytes32 structHash) internal view virtual returns (bytes32) {

@@ -237,23 +237,13 @@ interface IProtocolConfig is IProtocolConfigBase {
 
     /// @notice The recovered signer is not in the active committee.
     /// @param signer The recovered signer.
-    /// @param kmsContextId The destroyed context ID.
-    error KmsContextDestructionUnauthorized(address signer, uint256 kmsContextId);
+    /// @param destroyedId The destroyed context or epoch ID.
+    error KmsDestructionUnauthorized(address signer, uint256 destroyedId);
 
-    /// @notice The recovered signer is not in the active committee.
-    /// @param signer The recovered signer.
-    /// @param epochId The destroyed epoch ID.
-    error KmsEpochDestructionUnauthorized(address signer, uint256 epochId);
-
-    /// @notice The signer has already confirmed destruction of the KMS context.
+    /// @notice The signer has already confirmed this destruction.
     /// @param signer The signer address.
-    /// @param kmsContextId The destroyed context ID.
-    error KmsContextDestructionAlreadyConfirmed(address signer, uint256 kmsContextId);
-
-    /// @notice The signer has already confirmed destruction of the epoch.
-    /// @param signer The signer address.
-    /// @param epochId The destroyed epoch ID.
-    error KmsEpochDestructionAlreadyConfirmed(address signer, uint256 epochId);
+    /// @param destroyedId The destroyed context or epoch ID.
+    error KmsDestructionAlreadyConfirmed(address signer, uint256 destroyedId);
 
     /// @notice The coprocessor `softwareVersion` argument is the empty string.
     error EmptySoftwareVersion();

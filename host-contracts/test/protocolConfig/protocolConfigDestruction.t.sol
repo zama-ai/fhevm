@@ -48,11 +48,7 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         // signer2 belongs to the destroyed committee only.
         bytes memory signature = _computeSignature(kmsPk2, _hashContextDestruction(contextId, destroyedEpochIds, ""));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IProtocolConfig.KmsContextDestructionUnauthorized.selector,
-                vm.addr(kmsPk2),
-                contextId
-            )
+            abi.encodeWithSelector(IProtocolConfig.KmsDestructionUnauthorized.selector, vm.addr(kmsPk2), contextId)
         );
         protocolConfig.confirmKmsContextDestruction(contextId, destroyedEpochIds, signature, "");
 
@@ -70,11 +66,7 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         protocolConfig.confirmKmsContextDestruction(contextId, destroyedEpochIds, signature, extraData);
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IProtocolConfig.KmsContextDestructionAlreadyConfirmed.selector,
-                vm.addr(kmsPk0),
-                contextId
-            )
+            abi.encodeWithSelector(IProtocolConfig.KmsDestructionAlreadyConfirmed.selector, vm.addr(kmsPk0), contextId)
         );
         protocolConfig.confirmKmsContextDestruction(contextId, destroyedEpochIds, signature, extraData);
 
@@ -126,7 +118,7 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
 
         bytes memory signature = _computeSignature(kmsPk0, _hashEpochDestruction(epochId, ""));
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.KmsEpochDestructionUnauthorized.selector, vm.addr(kmsPk0), epochId)
+            abi.encodeWithSelector(IProtocolConfig.KmsDestructionUnauthorized.selector, vm.addr(kmsPk0), epochId)
         );
         protocolConfig.confirmKmsEpochDestruction(epochId, signature, "");
 
@@ -138,11 +130,7 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         protocolConfig.confirmKmsEpochDestruction(epochId, signature, extraData);
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IProtocolConfig.KmsEpochDestructionAlreadyConfirmed.selector,
-                vm.addr(kmsPk2),
-                epochId
-            )
+            abi.encodeWithSelector(IProtocolConfig.KmsDestructionAlreadyConfirmed.selector, vm.addr(kmsPk2), epochId)
         );
         protocolConfig.confirmKmsEpochDestruction(epochId, signature, extraData);
     }
@@ -180,20 +168,12 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
 
         bytes memory signature = _computeSignature(kmsPk0, _hashContextDestruction(contextId, destroyedEpochIds, ""));
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IProtocolConfig.KmsContextDestructionUnauthorized.selector,
-                vm.addr(kmsPk0),
-                contextId
-            )
+            abi.encodeWithSelector(IProtocolConfig.KmsDestructionUnauthorized.selector, vm.addr(kmsPk0), contextId)
         );
         protocolConfig.confirmKmsContextDestruction(contextId, destroyedEpochIds, signature, "");
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IProtocolConfig.KmsContextDestructionAlreadyConfirmed.selector,
-                vm.addr(kmsPk1),
-                contextId
-            )
+            abi.encodeWithSelector(IProtocolConfig.KmsDestructionAlreadyConfirmed.selector, vm.addr(kmsPk1), contextId)
         );
         protocolConfig.confirmKmsContextDestruction(contextId, destroyedEpochIds, signature1, "");
 
@@ -225,16 +205,12 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
 
         bytes memory signature = _computeSignature(kmsPk0, _hashEpochDestruction(epochId, ""));
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.KmsEpochDestructionUnauthorized.selector, vm.addr(kmsPk0), epochId)
+            abi.encodeWithSelector(IProtocolConfig.KmsDestructionUnauthorized.selector, vm.addr(kmsPk0), epochId)
         );
         protocolConfig.confirmKmsEpochDestruction(epochId, signature, "");
 
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IProtocolConfig.KmsEpochDestructionAlreadyConfirmed.selector,
-                vm.addr(kmsPk1),
-                epochId
-            )
+            abi.encodeWithSelector(IProtocolConfig.KmsDestructionAlreadyConfirmed.selector, vm.addr(kmsPk1), epochId)
         );
         protocolConfig.confirmKmsEpochDestruction(epochId, signature1, "");
 
