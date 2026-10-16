@@ -73,9 +73,8 @@ pub use types::{
 pub type Result<T> = std::result::Result<T, FheExecutionError>;
 
 /// Every failure this crate reports, from building an execution through invoking the host. Codes
-/// start at 10_000, clear of Anchor's own (below 6000) and of every program's error
-/// range (6000 up), so an app program can return them with `?` and its clients still tell them
-/// apart from its own.
+/// start at 10_000, clear of Anchor's own, the app programs' and zama-host's (DD-075), so an app
+/// program can return them with `?` and its clients still tell them apart from its own.
 #[error_code(offset = 10_000)]
 #[derive(PartialEq, Eq)]
 pub enum FheExecutionError {

@@ -102,6 +102,7 @@ are written as one narrative instead.
 | [DD-072](#dd-072-one-source-for-everything-that-can-change)                                                                               | adopted                                  | One source for everything that can change                                                                                      |
 | [DD-073](#dd-073-the-sdk-reads-decryption-trust-from-zama-host)                                                                           | adopted                                  | The SDK reads decryption trust from zama-host                                                                                   |
 | [DD-074](#dd-074-solana-decryption-goes-only-over-http)                                                                                   | adopted                                  | Solana decryption goes only over HTTP                                                                                           |
+| [DD-075](#dd-075-shared-callees-have-their-own-error-code-range)                                                                          | adopted                                  | Shared callees have their own error-code range                                                                                  |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -3060,3 +3061,50 @@ Consequences:
   `a_solana_request_over_the_handle_cap_is_refused_before_any_connector_call`; the connector
   endpoint's `a_solana_http_request_is_stored_as_its_typed_request`; and the e2e scenarios
   `decrypt-refusals` and `delegated-user-decrypt`, which send their requests through relayer-http.
+
+## DD-075: Shared callees have their own error-code range
+
+Status: adopted
+
+Context:
+
+Anchor numbers a program's `#[error_code]` from 6000 unless an offset is given. An app program
+that calls zama-host returns the host's error from its own instruction, so when zama-host also
+started at 6000, the same code meant a host error or an app error. A client could not tell them
+apart from the code: a host `ExecutionPaused` (6001) inside a confidential transfer read as the
+token's `MintAuthorityMismatch`.
+
+Decision:
+
+The callee every app shares gets a reserved range, and app programs keep Anchor's default.
+
+| Codes | Raised by |
+|---|---|
+| below 6000 | the Anchor framework, and native programs an app calls (SPL Token's custom errors) |
+| 6000 to 6999 | each app program (confidential-token, the batcher, demo-vault, the specimens and third-party programs), from Anchor's default |
+| 7000 to 7999 | zama-host's cleartext build (`CleartextError`), never the production build |
+| 8000 to 9999 | zama-host (`ZamaHostError`, `#[error_code(offset = 8000)]`) |
+| 10000 to 10999 | the zama-fhe crate (`FheExecutionError`), returned by whichever app program links it |
+
+Rationale:
+
+The code is the one part of a failure every client sees. With its own range, a zama-host or
+zama-fhe code can be told apart from an app code wherever it was raised, including when an app
+instruction returns it from a CPI. A client compares the code with the generated constants
+(`ZAMA_HOST_ERROR__*` and `ZAMA_FHE_ERROR__*` in `@fhevm/solana-zama-host`, each app client's own).
+App codes still overlap with each other: when one app calls another (the batcher calls
+confidential-token), the code alone does not say which app raised it.
+
+Consequences:
+
+- Codama's `is<Program>Error(error, transactionMessage, code?)` helpers match the program of the
+  failing top-level instruction, and the code only when one is passed. So `isZamaHostError` does
+  not claim a host error an app instruction returned, and `isConfidentialTokenError` without a code
+  does. A client that needs the program compares the code.
+- Codama's `get<Program>ErrorMessage` returns the message only outside production bundles. The
+  zama-fhe table (`zamaFheErrors.ts`, from the repository's own generator) always returns it, and
+  `isZamaFheError` matches by code.
+- `scripts/check_solana_abi.py` pins the app, zama-host and zama-fhe rows: it checks every code of
+  every committed IDL and of the zama-fhe error table when `check-zama-host-idl.sh` runs and before
+  `sync-zama-host-idl.sh` copies a build. The cleartext row is `CleartextError`'s
+  `#[error_code(offset = 7000)]`.

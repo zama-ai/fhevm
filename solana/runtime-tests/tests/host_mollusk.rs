@@ -2176,10 +2176,9 @@ fn mollusk_transaction_later_failure_rolls_back_created_public_output() {
         transaction.raw_result,
         Err(solana_sdk::transaction::TransactionError::InstructionError(
             2,
-            solana_sdk::instruction::InstructionError::Custom(
-                host::errors::ZamaHostError::PreviousStoreMismatch as u32
-                    + anchor_lang::error::ERROR_CODE_OFFSET
-            )
+            solana_sdk::instruction::InstructionError::Custom(u32::from(
+                host::errors::ZamaHostError::PreviousStoreMismatch
+            ))
         ))
     );
     let output = transaction.get_account(&execution.outputs[0].1).unwrap();

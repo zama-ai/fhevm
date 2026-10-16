@@ -58,12 +58,8 @@ describe('generated host error helpers', () => {
     ).toBe(false);
   });
 
-  it('does not classify a custom 6000 without a program-address match', () => {
-    expect(
-      isZamaHostError(new SolanaError(SOLANA_ERROR__INSTRUCTION_ERROR__CUSTOM, { code: 6000, index: 0 }), {
-        instructions: {},
-      }),
-    ).toBe(false);
+  it('does not classify a host code without a program-address match', () => {
+    expect(isZamaHostError(missingJournal, { instructions: {} })).toBe(false);
   });
 });
 

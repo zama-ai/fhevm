@@ -133,9 +133,9 @@ pub fn anchor_error_check(error_code: u32) -> Check<'static> {
     ))
 }
 
-/// `Check::err` for a `zama-host` error.
+/// `Check::err` for a `zama-host` error, at its code in zama-host's own range.
 pub fn host_error(error: host::errors::ZamaHostError) -> Check<'static> {
-    anchor_error_check(error as u32)
+    Check::err(ProgramError::Custom(error.into()))
 }
 
 /// `Check::err` for an `anchor_lang::error::ErrorCode` (framework-level, no offset).

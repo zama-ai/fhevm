@@ -140,7 +140,7 @@ fn missing_close_and_unsigned_open_leave_all_accounts_unchanged() {
         result.program_result,
         TransactionProgramResult::Failure(
             0,
-            ProgramError::Custom(6000 + host::ZamaHostError::TransientCloseMissing as u32)
+            ProgramError::Custom(u32::from(host::ZamaHostError::TransientCloseMissing))
         )
     );
     assert_eq!(result.resulting_accounts, fixture.accounts);
@@ -169,7 +169,7 @@ fn transient_store_cannot_close_before_the_final_instruction() {
         result.program_result,
         TransactionProgramResult::Failure(
             1,
-            ProgramError::Custom(6000 + host::ZamaHostError::TransientCloseMissing as u32)
+            ProgramError::Custom(u32::from(host::ZamaHostError::TransientCloseMissing))
         )
     );
     assert_eq!(result.resulting_accounts, fixture.accounts);
@@ -199,7 +199,7 @@ fn nested_transient_store_close_rolls_back_the_whole_transaction() {
         result.program_result,
         TransactionProgramResult::Failure(
             1,
-            ProgramError::Custom(6000 + host::ZamaHostError::TransientCloseMissing as u32)
+            ProgramError::Custom(u32::from(host::ZamaHostError::TransientCloseMissing))
         )
     );
     assert_eq!(result.resulting_accounts, fixture.accounts);
@@ -216,9 +216,9 @@ fn active_transient_store_cannot_be_reopened() {
         result.program_result,
         TransactionProgramResult::Failure(
             1,
-            ProgramError::Custom(
-                6000 + host::ZamaHostError::FheExecuteOutputAlreadyInitialized as u32
-            )
+            ProgramError::Custom(u32::from(
+                host::ZamaHostError::FheExecuteOutputAlreadyInitialized
+            ))
         )
     );
     assert_eq!(result.resulting_accounts, fixture.accounts);
@@ -235,7 +235,7 @@ fn refund_substitution_and_duplicate_close_are_rejected() {
         result.program_result,
         TransactionProgramResult::Failure(
             0,
-            ProgramError::Custom(6000 + host::ZamaHostError::TransientCloseMissing as u32)
+            ProgramError::Custom(u32::from(host::ZamaHostError::TransientCloseMissing))
         )
     );
     assert_eq!(result.resulting_accounts, fixture.accounts);
@@ -247,7 +247,7 @@ fn refund_substitution_and_duplicate_close_are_rejected() {
         result.program_result,
         TransactionProgramResult::Failure(
             0,
-            ProgramError::Custom(6000 + host::ZamaHostError::TransientCloseMissing as u32)
+            ProgramError::Custom(u32::from(host::ZamaHostError::TransientCloseMissing))
         )
     );
     assert_eq!(result.resulting_accounts, fixture.accounts);
@@ -271,7 +271,7 @@ fn one_transaction_cannot_open_two_transient_store_accounts() {
         result.program_result,
         TransactionProgramResult::Failure(
             1,
-            ProgramError::Custom(6000 + host::ZamaHostError::TransientCloseMissing as u32)
+            ProgramError::Custom(u32::from(host::ZamaHostError::TransientCloseMissing))
         )
     );
     assert_eq!(result.resulting_accounts, accounts);
@@ -459,7 +459,7 @@ fn two_slots_share_history_and_stale_slot_writes_roll_back() {
             invalid_result.program_result,
             TransactionProgramResult::Failure(
                 1,
-                ProgramError::Custom(6000 + host::ZamaHostError::InvalidReturnSelection as u32)
+                ProgramError::Custom(u32::from(host::ZamaHostError::InvalidReturnSelection))
             )
         );
         assert_eq!(invalid_result.resulting_accounts, accounts);
@@ -473,7 +473,7 @@ fn two_slots_share_history_and_stale_slot_writes_roll_back() {
         stale.program_result,
         TransactionProgramResult::Failure(
             1,
-            ProgramError::Custom(6000 + host::ZamaHostError::PreviousStoreMismatch as u32)
+            ProgramError::Custom(u32::from(host::ZamaHostError::PreviousStoreMismatch))
         )
     );
     assert_eq!(stale.resulting_accounts, result.resulting_accounts);
@@ -612,9 +612,7 @@ fn maximum_result_grants_fit(svm: &mollusk_svm::Mollusk) {
                 next_result.program_result,
                 TransactionProgramResult::Failure(
                     2,
-                    ProgramError::Custom(
-                        6000 + host::ZamaHostError::TransientCapacityExceeded as u32
-                    ),
+                    ProgramError::Custom(u32::from(host::ZamaHostError::TransientCapacityExceeded)),
                 )
             );
             assert_eq!(next_result.resulting_accounts, accounts);
@@ -862,7 +860,7 @@ fn transient_result_rejects_missing_grants_and_wrong_handle_or_consumer() {
             grant_then_consume(case).program_result,
             TransactionProgramResult::Failure(
                 2,
-                ProgramError::Custom(6000 + host::ZamaHostError::TransientAccountInvalid as u32)
+                ProgramError::Custom(u32::from(host::ZamaHostError::TransientAccountInvalid))
             )
         );
     }
@@ -874,7 +872,7 @@ fn execution_cannot_substitute_an_unopened_transient_store_account() {
         grant_then_consume(GrantConsumptionCase::WrongTransientStore).program_result,
         TransactionProgramResult::Failure(
             2,
-            ProgramError::Custom(6000 + host::ZamaHostError::TransientStoreNotOpened as u32)
+            ProgramError::Custom(u32::from(host::ZamaHostError::TransientStoreNotOpened))
         )
     );
 }
@@ -904,7 +902,7 @@ fn cross_application_transaction_limits_accumulate_and_block_meters_remain_per_a
     ] {
         assert_eq!(
             grant_then_consume(case).program_result,
-            TransactionProgramResult::Failure(2, ProgramError::Custom(6000 + error as u32))
+            TransactionProgramResult::Failure(2, ProgramError::Custom(error.into()))
         );
     }
     let result = grant_then_consume(GrantConsumptionCase::BlockMeter);
@@ -929,7 +927,7 @@ fn grant_creation_checks_producer_scope_and_consumption_checks_consumer_scope() 
         grant_then_consume(GrantConsumptionCase::MissingConsumerDeny).program_result,
         TransactionProgramResult::Failure(
             2,
-            ProgramError::Custom(6000 + host::ZamaHostError::DenyRecordMissing as u32)
+            ProgramError::Custom(u32::from(host::ZamaHostError::DenyRecordMissing))
         )
     );
 }
@@ -994,9 +992,7 @@ fn result_journal_capacity_is_shared_across_calls_and_fails_atomically() {
                 result.program_result,
                 TransactionProgramResult::Failure(
                     4,
-                    ProgramError::Custom(
-                        6000 + host::ZamaHostError::TransientCapacityExceeded as u32
-                    )
+                    ProgramError::Custom(u32::from(host::ZamaHostError::TransientCapacityExceeded))
                 )
             );
             assert_eq!(result.resulting_accounts, accounts);
@@ -1117,9 +1113,9 @@ fn producer_reuses_its_result_across_calls_with_transaction_origin_and_depth() {
                     result.program_result,
                     TransactionProgramResult::Failure(
                         2,
-                        ProgramError::Custom(
-                            6000 + host::ZamaHostError::HcuTransactionDepthLimitExceeded as u32
-                        )
+                        ProgramError::Custom(u32::from(
+                            host::ZamaHostError::HcuTransactionDepthLimitExceeded
+                        ))
                     )
                 );
                 continue;

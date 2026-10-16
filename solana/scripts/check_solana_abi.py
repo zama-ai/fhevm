@@ -94,6 +94,31 @@ ERROR_TABLES = {
     },
 }
 
+# DD-075. Every program not named here is an app and keeps Anchor's default range.
+ERROR_CODE_RANGES = {
+    "zama_host": range(8000, 10_000),
+    "zama_fhe_errors": range(10_000, 11_000),
+}
+APP_ERROR_CODES = range(6000, 7000)
+
+
+def error_range_errors(root: pathlib.Path, which: str) -> list[str]:
+    """Check every error code of every IDL and error table against its program's range."""
+    errors = []
+    for program, spec in vendored_build_outputs().items():
+        path = (root / spec[which]).resolve()
+        if not path.exists():
+            continue
+        table = load_json(path)
+        allowed = ERROR_CODE_RANGES.get(program, APP_ERROR_CODES)
+        for error in table if isinstance(table, list) else table.get("errors", []):
+            if error["code"] not in allowed:
+                errors.append(
+                    f"{program}: error {error['name']} is {error['code']}, outside "
+                    f"{allowed.start}..{allowed.stop - 1} (DD-075)"
+                )
+    return errors
+
 
 def idl_spec_errors(root: pathlib.Path, which: str) -> list[str]:
     """Check the IDL format version of every IDL, on whichever side `which` names."""
@@ -259,7 +284,11 @@ def main() -> int:
         # Before copying anything: a sync is the one moment an IDL format bump can pass
         # through unnoticed, and refusing it here leaves the tree untouched rather than
         # half-updated.
-        spec_errors = idl_spec_errors(root, "target_idl") + idl_account_errors(root, "target_idl")
+        spec_errors = (
+            idl_spec_errors(root, "target_idl")
+            + idl_account_errors(root, "target_idl")
+            + error_range_errors(root, "target_idl")
+        )
         if spec_errors:
             for error in spec_errors:
                 print(f"error: {error}", file=sys.stderr)
@@ -279,7 +308,11 @@ def main() -> int:
         print(f"wrote {manifest_path}")
         return 0
 
-    errors: list[str] = idl_spec_errors(root, "vendored_idl") + idl_account_errors(root, "vendored_idl")
+    errors: list[str] = (
+        idl_spec_errors(root, "vendored_idl")
+        + idl_account_errors(root, "vendored_idl")
+        + error_range_errors(root, "vendored_idl")
+    )
     for program, spec in vendored_build_outputs().items():
         target = root / spec["target_idl"]
         vendored = (root / spec["vendored_idl"]).resolve()

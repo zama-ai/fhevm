@@ -8,7 +8,11 @@ import {
 } from '@solana/kit';
 import { getOrCreateUiWalletAccountForStandardWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
 import { solanaPermitWalletFromSecretKey } from '@fhevm/sdk/solana';
-import { ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
+import {
+  ZAMA_HOST_ERROR__EXECUTION_PAUSED,
+  ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED,
+  ZAMA_HOST_PROGRAM_ADDRESS,
+} from '@fhevm/solana-zama-host';
 import { CONFIDENTIAL_TOKEN_ERROR__OWNER_MISMATCH, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 import {
@@ -288,8 +292,8 @@ describe('Wallet Standard boundary', () => {
     expect(describeWalletError(new Error(original), 'transaction')).toBe(original);
   });
 
-  test('leaves a numeric 6000 without program identity unclassified', () => {
-    const original = 'InstructionError: [1, {"Custom":6000}]';
+  test('leaves a numeric host code without program identity unclassified', () => {
+    const original = `InstructionError: [1, {"Custom":${ZAMA_HOST_ERROR__EXECUTION_PAUSED}}]`;
     expect(describeWalletError(new Error(original), 'transaction')).toBe(original);
   });
 

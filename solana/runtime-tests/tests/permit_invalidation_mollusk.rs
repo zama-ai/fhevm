@@ -425,8 +425,8 @@ fn a_wallet_revoke_forwarded_through_another_program_is_rejected() {
     mollusk.process_and_validate_instruction(
         &forwarded,
         &accounts,
-        &[zama_solana_test_kit::anchor_error_check(
-            host::errors::ZamaHostError::WalletRevokeThroughCpi as u32,
+        &[zama_solana_test_kit::host_error(
+            host::errors::ZamaHostError::WalletRevokeThroughCpi,
         )],
     );
 }

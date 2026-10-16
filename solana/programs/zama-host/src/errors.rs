@@ -6,8 +6,10 @@
 
 use anchor_lang::prelude::*;
 
-/// Errors returned by ZamaHost instruction handlers.
-#[error_code]
+/// Errors returned by ZamaHost instruction handlers. Codes start at 8000, clear of the 6000 range
+/// every app program uses (DD-075): an app returns a host error it met through CPI under its own
+/// instruction, and the code still names zama-host.
+#[error_code(offset = 8000)]
 pub enum ZamaHostError {
     /// The signer is not the configured host admin.
     #[msg("host config admin does not match signer")]
