@@ -10,9 +10,8 @@ use std::{
     time::Duration,
 };
 
-/// A path of a forwarded route, requested without credentials by the TLS listener healthcheck.
-const SELF_CHECK_PATH: &str =
-    "/v1/prf/0/labels/0000000000000000000000000000000000000000000000000000000000000000/1";
+/// A path no route matches, requested by the TLS listener healthcheck.
+const SELF_CHECK_PATH: &str = "/";
 /// The route each endpoint answers `200` on while it can serve requests.
 const ENDPOINT_HEALTH_PATH: &str = "/healthz";
 
@@ -61,18 +60,18 @@ impl State {
         (addresses(healthy), addresses(unhealthy))
     }
 
-    /// Performs the healthcheck of the proxy's TLS listener by querying a forwarded route through
-    /// the loopback interface.
+    /// Performs the healthcheck of the proxy's TLS listener by querying [`SELF_CHECK_PATH`]
+    /// through the loopback interface.
     ///
-    /// No credentials are sent, so the proxy is expected to answer `401`: what is checked here is
-    /// that the listener accepts TLS connections and answers HTTP requests, not the routing.
+    /// The proxy is expected to answer `404`: what is checked here is that the listener accepts
+    /// TLS connections and answers HTTP requests, not the routing.
     async fn tls_listener_healthcheck(&self) -> Result<(), String> {
         let url = &self.self_check_url;
         let request = self.loopback_client.get(url.clone()).send();
         match tokio::time::timeout(self.healthcheck_timeout, request).await {
-            Ok(Ok(response)) if response.status() == reqwest::StatusCode::UNAUTHORIZED => Ok(()),
+            Ok(Ok(response)) if response.status() == reqwest::StatusCode::NOT_FOUND => Ok(()),
             Ok(Ok(response)) => Err(format!(
-                "TLS listener answered {} to unauthenticated {url}",
+                "TLS listener answered {} to {url}",
                 response.status()
             )),
             Ok(Err(e)) => Err(format!("TLS listener connection failed: {e}")),
@@ -82,8 +81,9 @@ impl State {
 }
 
 impl HealthCheckService for State {
-    /// Healthy when the TLS listener answers, the KMS tx-senders have been read once and at
-    /// least one endpoint is healthy.
+    /// Ready when the proxy can serve: the TLS listener answers and the KMS tx-senders have been
+    /// read once. The endpoints' health is reported but not required: without a healthy endpoint
+    /// the proxy itself answers `502 upstream_transient`, retryable.
     async fn health_check(&self) -> HealthStatus {
         let tls_listener_result = self.tls_listener_healthcheck().await;
         let (healthy_endpoints, unhealthy_endpoints) = self.endpoints_health();
@@ -92,7 +92,6 @@ impl HealthCheckService for State {
         let mut status = HealthStatus::default();
         status.set_custom_check("tls_listener", tls_listener_result.is_ok(), true);
         status.set_custom_check("kms_tx_senders", kms_tx_senders_loaded, true);
-        status.set_custom_check("endpoints", !healthy_endpoints.is_empty(), true);
         if let Err(e) = tls_listener_result {
             status.add_error_details(e);
         }
@@ -163,8 +162,6 @@ fn self_check_url(bind_address: SocketAddr) -> Url {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::{Route, match_route};
-    use http::Method;
 
     #[test]
     fn test_self_check_url_uses_loopback_for_unspecified_ip() {
@@ -180,10 +177,5 @@ mod tests {
             self_check_url("10.0.0.3:9443".parse().unwrap()).as_str(),
             format!("https://10.0.0.3:9443{SELF_CHECK_PATH}")
         );
-    }
-
-    #[test]
-    fn the_self_check_path_reaches_the_authentication() {
-        assert_eq!(match_route(&Method::GET, SELF_CHECK_PATH), Ok(Route::Prf));
     }
 }

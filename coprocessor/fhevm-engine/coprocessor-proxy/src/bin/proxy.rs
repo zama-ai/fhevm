@@ -27,13 +27,6 @@ enum Subcommands {
         #[arg(short, long, value_name = "FILE")]
         config: PathBuf,
     },
-
-    /// Check the health of a running proxy
-    Health {
-        /// Healthcheck endpoint to query, e.g. `http://127.0.0.1:8080/healthz`
-        #[arg(short, long, value_name = "URL")]
-        endpoint: reqwest::Url,
-    },
 }
 
 fn main() -> ExitCode {
@@ -53,15 +46,6 @@ fn run() -> anyhow::Result<()> {
         Subcommands::Validate { config } => {
             Config::from_env_and_file(Some(config))?;
         }
-        Subcommands::Health { endpoint } => {
-            let runtime = tokio::runtime::Runtime::new()?;
-            let response = runtime.block_on(reqwest::get(endpoint))?;
-            anyhow::ensure!(
-                response.status().is_success(),
-                "Healthcheck failed: {}",
-                response.status()
-            );
-        }
         Subcommands::Start { config } => {
             let config = Config::from_env_and_file(config.as_ref())?;
 
@@ -72,14 +56,13 @@ fn run() -> anyhow::Result<()> {
                 .worker_threads(1)
                 .enable_all()
                 .build()?;
-            let _otel_guard = {
-                let _runtime = runtime.enter();
+            let _guard = runtime.enter();
+            let _otel_guard =
                 fhevm_engine_common::telemetry::init_tracing_otel_with_logs_only_fallback(
                     config.log_level,
                     &config.service_name,
                     "otlp-layer",
-                )
-            };
+                );
 
             // The monitoring servers run on the tokio runtime, next to Pingora's own.
             let healthcheck_port = config.healthcheck_port;
@@ -91,10 +74,13 @@ fn run() -> anyhow::Result<()> {
                 healthcheck_port,
                 cancel_token.child_token(),
             );
-            let health_server_task = runtime.spawn(async move { health_server.start().await });
-            let metrics_server_task = runtime.block_on(async {
-                metrics_server::spawn(Some(metrics_endpoint), cancel_token.child_token())
+            let health_server_task = tokio::spawn(async move {
+                if let Err(e) = health_server.start().await {
+                    error!(error = %e, "Health check server failed");
+                }
             });
+            let metrics_server_task =
+                metrics_server::spawn(Some(metrics_endpoint), cancel_token.child_token());
 
             proxy.run()?;
 

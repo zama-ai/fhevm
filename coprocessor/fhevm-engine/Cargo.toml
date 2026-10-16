@@ -105,7 +105,7 @@ time = "0.3.47"
 tokio = { version = "1.45.0", features = ["full"] }
 tokio-util = "0.7.15"
 tokio-rustls = { version = "0.26", default-features = false, features = ["aws-lc-rs"] }
-tonic ={ version = "0.12.3", features = ["server"] }
+tonic = { version = "0.12.3", features = ["server"] }
 tonic-build = "0.12.3"
 tracing = "0.1.41"
 tracing-opentelemetry = "0.30.0"

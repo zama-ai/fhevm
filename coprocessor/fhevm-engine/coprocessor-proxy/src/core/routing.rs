@@ -4,7 +4,7 @@
 //! The proxy checks the shape of a path only. The service behind a route checks the encoding of
 //! its path parameters.
 
-use http::{Method, StatusCode};
+use http::Method;
 
 /// The routes the proxy forwards.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,14 +25,14 @@ struct RouteEntry {
     route: Route,
     /// The path, where a `{name}` segment matches exactly one non-empty segment.
     pattern: &'static str,
-    /// The accepted methods, as the `Allow` header of a `405` lists them.
-    methods: &'static str,
+    /// The accepted methods.
+    methods: &'static [Method],
 }
 
 const ROUTES: [RouteEntry; 1] = [RouteEntry {
     route: Route::Prf,
     pattern: "/v1/prf/{prf}/labels/{label}/{padLength}",
-    methods: "GET, HEAD",
+    methods: &[Method::GET, Method::HEAD],
 }];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -40,22 +40,21 @@ pub enum RouteError {
     /// Unknown path: `404`.
     NotFound,
     /// Known path, wrong method: `405`, with the methods the route accepts.
-    MethodNotAllowed(&'static str),
+    MethodNotAllowed(&'static [Method]),
 }
 
 impl RouteError {
-    pub fn http_status(&self) -> StatusCode {
-        match self {
-            Self::NotFound => StatusCode::NOT_FOUND,
-            Self::MethodNotAllowed(_) => StatusCode::METHOD_NOT_ALLOWED,
-        }
-    }
-
     /// The value of the `Allow` header RFC 9110 §15.5.6 requires on a `405` response.
-    pub fn allow_header(&self) -> Option<&'static str> {
+    pub fn allow_header(&self) -> Option<String> {
         match self {
             Self::NotFound => None,
-            Self::MethodNotAllowed(methods) => Some(methods),
+            Self::MethodNotAllowed(methods) => Some(
+                methods
+                    .iter()
+                    .map(Method::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
         }
     }
 }
@@ -66,7 +65,7 @@ pub fn match_route(method: &Method, path: &str) -> Result<Route, RouteError> {
         .iter()
         .find(|entry| matches_pattern(entry.pattern, path))
         .ok_or(RouteError::NotFound)?;
-    if entry.methods.split(", ").any(|m| m == method.as_str()) {
+    if entry.methods.contains(method) {
         Ok(entry.route)
     } else {
         Err(RouteError::MethodNotAllowed(entry.methods))
@@ -129,7 +128,7 @@ mod tests {
         for method in [Method::POST, Method::PUT, Method::DELETE, Method::OPTIONS] {
             assert_eq!(
                 match_route(&method, PRF_PATH),
-                Err(RouteError::MethodNotAllowed("GET, HEAD"))
+                Err(RouteError::MethodNotAllowed(&[Method::GET, Method::HEAD]))
             );
         }
     }

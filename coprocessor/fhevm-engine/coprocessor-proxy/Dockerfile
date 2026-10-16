@@ -59,7 +59,4 @@ USER fhevm:fhevm
 
 ENTRYPOINT ["/usr/local/bin/coprocessor-proxy", "start"]
 
-HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
-    CMD ["/usr/local/bin/coprocessor-proxy", "health", "--endpoint", "http://127.0.0.1:8080/healthz"]
-
 FROM prod AS dev

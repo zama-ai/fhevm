@@ -9,7 +9,7 @@ use alloy::{
 };
 use axum::http::Version;
 use common::{
-    FakeRpc, KmsContext, StubEndpoint, TestProxy, auth_header, auth_header_expiring,
+    ACCEPTED, FakeRpc, KmsContext, StubEndpoint, TestProxy, auth_header, auth_header_expiring,
     auth_header_for, free_addr, now, prf_path, rate_limited_path, sender, stub_attestation,
     stub_output,
 };
@@ -79,7 +79,6 @@ async fn test_forwards_authenticated_requests_untouched() {
 #[tokio::test]
 async fn test_rejects_unauthenticated_requests() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
-    let hits = t.endpoints[0].hits();
     let path = prf_path(1);
     let stranger = PrivateKeySigner::random();
     let other_coprocessor = Address::repeat_byte(0xa2);
@@ -136,17 +135,12 @@ async fn test_rejects_unauthenticated_requests() {
         assert_eq!(response.headers()["www-authenticate"], "FhevmSig");
         assert_proxy_error(response, StatusCode::UNAUTHORIZED, auth_code, false).await;
     }
-    assert_eq!(
-        t.endpoints[0].hits(),
-        hits,
-        "nothing must reach the endpoint"
-    );
+    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 }
 
 #[tokio::test]
 async fn test_rejects_targets_the_uri_does_not_reproduce() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
-    let hits = t.endpoints[0].hits();
     let path = prf_path(1);
     let addr = t.addr;
     let auth = auth_header(&sender(), &path, b"").await;
@@ -174,11 +168,7 @@ async fn test_rejects_targets_the_uri_does_not_reproduce() {
         send_raw(&t, &request(&lossy)).await,
         StatusCode::BAD_REQUEST
     );
-    assert_eq!(
-        t.endpoints[0].hits(),
-        hits,
-        "nothing must reach the endpoint"
-    );
+    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 
     // The same request in origin-form goes through.
     assert_eq!(
@@ -190,7 +180,6 @@ async fn test_rejects_targets_the_uri_does_not_reproduce() {
 #[tokio::test]
 async fn test_rejects_expired_headers_as_retryable() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
-    let hits = t.endpoints[0].hits();
     let path = prf_path(1);
     let expired = auth_header_expiring(&sender(), &path, b"", now() - 120).await;
 
@@ -202,17 +191,12 @@ async fn test_rejects_expired_headers_as_retryable() {
         .await
         .unwrap();
     assert_proxy_error(response, StatusCode::UNAUTHORIZED, "auth_expired", true).await;
-    assert_eq!(
-        t.endpoints[0].hits(),
-        hits,
-        "nothing must reach the endpoint"
-    );
+    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 }
 
 #[tokio::test]
 async fn test_default_deny_routing() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
-    let hits = t.endpoints[0].hits();
     let label = "01".repeat(32);
 
     for (method, path, expected, code) in [
@@ -286,11 +270,7 @@ async fn test_default_deny_routing() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(response.headers()["cache-control"], "no-store");
     assert!(response.bytes().await.unwrap().is_empty());
-    assert_eq!(
-        t.endpoints[0].hits(),
-        hits,
-        "nothing must reach the endpoint"
-    );
+    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 
     // The encoding of the parameters is prf-service's to check.
     let response = t
@@ -300,13 +280,12 @@ async fn test_default_deny_routing() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(t.endpoints[0].hits(), hits + 1);
+    assert_eq!(t.endpoints[0].hits(), 1);
 }
 
 #[tokio::test]
 async fn test_rejects_request_bodies() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
-    let hits = t.endpoints[0].hits();
     let path = prf_path(1);
 
     let auth = auth_header(&sender(), &path, b"x").await;
@@ -329,11 +308,7 @@ async fn test_rejects_request_bodies() {
         StatusCode::BAD_REQUEST
     );
     assert!(started.elapsed() < Duration::from_secs(5));
-    assert_eq!(
-        t.endpoints[0].hits(),
-        hits,
-        "nothing must reach the endpoint"
-    );
+    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 }
 
 #[tokio::test]
@@ -463,13 +438,12 @@ async fn test_held_requests_share_one_endpoint_connection() {
 async fn test_load_balances_across_endpoints() {
     let endpoints = vec![StubEndpoint::start().await, StubEndpoint::start().await];
     let t = TestProxy::start(endpoints).await;
-    let hits = t.endpoints[0].hits() + t.endpoints[1].hits();
 
     for _ in 0..10 {
         let response = t.get(&prf_path(1)).await.send().await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
     }
-    assert_eq!(t.endpoints[0].hits() + t.endpoints[1].hits(), hits + 10);
+    assert_eq!(t.endpoints[0].hits() + t.endpoints[1].hits(), 10);
     assert!(t.endpoints[0].hits() > 0 && t.endpoints[1].hits() > 0);
 }
 
@@ -524,7 +498,7 @@ async fn test_accepted_signers_follow_protocol_config() {
         KmsContext::active(&[next.address()]),
     ]);
     t.wait_until_accepted(&next).await;
-    assert_eq!(t.auth_rejection(&sender()).await, None);
+    assert_eq!(t.auth_code(&sender()).await, ACCEPTED);
 
     // The old context is destroyed.
     t.rpc.set_contexts(vec![
@@ -536,11 +510,8 @@ async fn test_accepted_signers_follow_protocol_config() {
     // A failed read keeps the last set.
     t.rpc.set_failing(true);
     tokio::time::sleep(5 * common::REFRESH_INTERVAL).await;
-    assert_eq!(t.auth_rejection(&next).await, None);
-    assert_eq!(
-        t.auth_rejection(&sender()).await.as_deref(),
-        Some("auth_unknown_signer")
-    );
+    assert_eq!(t.auth_code(&next).await, ACCEPTED);
+    assert_eq!(t.auth_code(&sender()).await, "auth_unknown_signer");
 }
 
 #[tokio::test]
@@ -552,10 +523,7 @@ async fn test_refuses_everything_before_the_first_read() {
     let t = TestProxy::launch(rpc, addresses, vec![endpoint], |_| {}).await;
 
     tokio::time::sleep(3 * common::REFRESH_INTERVAL).await;
-    assert_eq!(
-        t.auth_rejection(&sender()).await.as_deref(),
-        Some("auth_unknown_signer")
-    );
+    assert_eq!(t.auth_code(&sender()).await, "auth_unknown_signer");
     assert_eq!(t.endpoints[0].hits(), 0);
 
     t.rpc.set_failing(false);

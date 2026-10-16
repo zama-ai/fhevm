@@ -3031,7 +3031,6 @@ dependencies = [
  "pingora",
  "prometheus",
  "rcgen",
- "reqwest 0.12.23",
  "rstest",
  "rustls",
  "serde",

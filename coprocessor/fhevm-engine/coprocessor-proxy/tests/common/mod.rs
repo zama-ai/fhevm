@@ -40,6 +40,10 @@ use tokio::task::AbortHandle;
 
 /// The private key of the KMS tx-sender in the first KMS context.
 pub const SENDER_KEY: &str = "0x0101010101010101010101010101010101010101010101010101010101010101";
+/// [`TestProxy::auth_code`] for a signer the proxy accepts: the signature checks out, then the
+/// signed digest does not match the empty body.
+pub const ACCEPTED: &str = "auth_body_mismatch";
+
 /// The test proxy's own coprocessor signer address, the audience of the headers it accepts.
 pub const AUDIENCE: Address = Address::repeat_byte(0xa1);
 pub const CHAIN_ID: u64 = 12345;
@@ -493,42 +497,43 @@ impl TestProxy {
             .header("authorization", auth)
     }
 
-    /// The `auth_*` code of the proxy's answer to a request signed by `signer`, `None` when
-    /// the request got through.
-    pub async fn auth_rejection(&self, signer: &PrivateKeySigner) -> Option<String> {
+    /// The `auth_*` code of the proxy's answer to a request signed by `signer` for a body it does
+    /// not send: [`ACCEPTED`] once the proxy accepts `signer`. The request never reaches an
+    /// endpoint.
+    pub async fn auth_code(&self, signer: &PrivateKeySigner) -> String {
+        let path = prf_path(1);
         let response = self
-            .get_signed_by(signer, &prf_path(1))
-            .await
+            .client
+            .get(self.url(&path))
+            .header("authorization", auth_header(signer, &path, b"x").await)
             .send()
             .await
             .unwrap();
-        if response.status() != StatusCode::UNAUTHORIZED {
-            return None;
-        }
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         let error: Value = response.json().await.unwrap();
-        Some(error["code"].as_str().unwrap().to_string())
+        error["code"].as_str().unwrap().to_string()
     }
 
-    /// Waits until a request signed by `signer` gets through the authentication.
+    /// Waits until the proxy accepts requests signed by `signer`.
     pub async fn wait_until_accepted(&self, signer: &PrivateKeySigner) {
-        let deadline = Instant::now() + 50 * REFRESH_INTERVAL;
-        while let Some(code) = self.auth_rejection(signer).await {
-            assert!(
-                Instant::now() < deadline,
-                "{} still refused: {code}",
-                signer.address()
-            );
-            tokio::time::sleep(REFRESH_INTERVAL / 2).await;
-        }
+        self.wait_for_auth_code(signer, ACCEPTED).await;
     }
 
     /// Waits until a request signed by `signer` is refused as `auth_unknown_signer`.
     pub async fn wait_until_refused(&self, signer: &PrivateKeySigner) {
+        self.wait_for_auth_code(signer, "auth_unknown_signer").await;
+    }
+
+    async fn wait_for_auth_code(&self, signer: &PrivateKeySigner, expected: &str) {
         let deadline = Instant::now() + 50 * REFRESH_INTERVAL;
-        while self.auth_rejection(signer).await.as_deref() != Some("auth_unknown_signer") {
+        loop {
+            let code = self.auth_code(signer).await;
+            if code == expected {
+                return;
+            }
             assert!(
                 Instant::now() < deadline,
-                "{} still accepted",
+                "{}: {code}, not {expected}",
                 signer.address()
             );
             tokio::time::sleep(REFRESH_INTERVAL / 2).await;

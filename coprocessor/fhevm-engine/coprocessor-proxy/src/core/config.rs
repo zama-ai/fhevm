@@ -33,6 +33,7 @@ pub struct Config {
     /// source of the accepted signers, the KMS tx-senders.
     pub protocol_config_address: Address,
     /// The Ethereum RPC the KMS tx-senders are read through. Never logged.
+    #[serde(deserialize_with = "deserialize_secret_url")]
     pub ethereum_rpc_url: Url,
     /// How often the KMS tx-senders are read again (RFC-038 `KMS_REGISTRY_REFRESH_INTERVAL`).
     #[serde(
@@ -181,6 +182,17 @@ where
         return Err(serde::de::Error::custom("duration must be greater than 0"));
     }
     Ok(duration)
+}
+
+/// Parses a URL that can carry an API key: unlike `Url`'s own deserializer, the error leaves the
+/// value out.
+fn deserialize_secret_url<'de, D>(d: D) -> Result<Url, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    String::deserialize(d)?
+        .parse()
+        .map_err(|e| serde::de::Error::custom(format!("invalid URL: {e}")))
 }
 
 fn deserialize_level<'de, D>(d: D) -> Result<Level, D::Error>
@@ -456,5 +468,25 @@ mod tests {
         std::fs::write(&tmp, toml).unwrap();
         assert!(Config::from_env_and_file(Some(&tmp)).is_err());
         std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    #[serial(config_tests)]
+    fn test_invalid_rpc_url_error_leaves_the_url_out() {
+        cleanup_env_vars();
+        unsafe {
+            // No scheme: a relative URL, refused.
+            env::set_var(
+                "COPROCESSOR_PROXY_ETHEREUM_RPC_URL",
+                "eth.example/v2/SECRET-KEY",
+            );
+        }
+        let Err(err) = Config::from_env_and_file(Some(example_config_path())) else {
+            panic!("a relative RPC URL must be refused");
+        };
+        let message = format!("{err:#}");
+        assert!(message.contains("invalid URL"), "{message}");
+        assert!(!message.contains("SECRET-KEY"), "{message}");
+        cleanup_env_vars();
     }
 }

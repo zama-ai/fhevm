@@ -42,6 +42,8 @@ const X_FORWARDED_HOST: HeaderName = HeaderName::from_static("x-forwarded-host")
 const KEEP_ALIVE: HeaderName = HeaderName::from_static("keep-alive");
 const PROXY_CONNECTION: HeaderName = HeaderName::from_static("proxy-connection");
 
+// Set on every answer the proxy writes. Pingora answers a few requests before any hook runs, and
+// those lack it: an unparsable request head (`400`) and `CONNECT` (`405`).
 const NO_STORE: &str = "no-store";
 
 /// Error message for oversized request bodies.
@@ -147,8 +149,12 @@ impl ProxyHttp for Proxy {
         let route = match match_route(&req.method, target.path()) {
             Ok(route) => route,
             Err(e) => {
-                self.respond_with_error(session, route_error_response(&e), e.allow_header())
-                    .await?;
+                self.respond_with_error(
+                    session,
+                    route_error_response(&e),
+                    e.allow_header().as_deref(),
+                )
+                .await?;
                 return Ok(true);
             }
         };
@@ -360,9 +366,12 @@ fn auth_error_response(error: &AuthError) -> ErrorResponse {
 fn route_error_response(error: &RouteError) -> ErrorResponse {
     match error {
         RouteError::NotFound => ErrorResponse::new(ErrorCode::NotFound, "unknown route"),
-        RouteError::MethodNotAllowed(methods) => ErrorResponse::new(
+        RouteError::MethodNotAllowed(_) => ErrorResponse::new(
             ErrorCode::MethodNotAllowed,
-            format!("method not allowed, expected {methods}"),
+            format!(
+                "method not allowed, expected {}",
+                error.allow_header().unwrap_or_default()
+            ),
         ),
     }
 }

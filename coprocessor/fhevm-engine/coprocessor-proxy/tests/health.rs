@@ -67,9 +67,11 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     let (status_code, status) = fetch_status(&base_url).await?;
     assert_eq!(status_code, StatusCode::OK, "{status:?}");
     assert_eq!(status.status, "healthy");
-    for check in ["tls_listener", "kms_tx_senders", "endpoints"] {
+    for check in ["tls_listener", "kms_tx_senders"] {
         assert_eq!(status.check(check), "ok", "{status:?}");
     }
+    // The endpoints' health is reported, not a readiness condition.
+    assert_eq!(status.dependencies.len(), 2, "{status:?}");
     assert!(status.details.is_empty(), "{status:?}");
     // The endpoints are probed over HTTP/2, the protocol of the proxied requests.
     for endpoint in &t.endpoints {
@@ -84,8 +86,8 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     let (stopped, live) = (&t.endpoints[0], &t.endpoints[1]);
     stopped.stop().await;
     let (status_code, status) = wait_for_details(&base_url, &stopped.addr.to_string()).await?;
-    assert_eq!(status_code, StatusCode::OK);
-    assert_eq!(status.check("endpoints"), "ok");
+    assert_eq!(status_code, StatusCode::OK, "{status:?}");
+    assert_eq!(status.status, "healthy");
 
     // The proxy stops selecting the unhealthy endpoint
     let (live_hits, stopped_hits) = (live.hits(), stopped.hits());
@@ -96,16 +98,13 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     assert_eq!(live.hits(), live_hits + 10);
     assert_eq!(stopped.hits(), stopped_hits);
 
-    // Stop the last endpoint and verify healthcheck failure
+    // Stop the last endpoint: the proxy stays ready, it reports the endpoints in the details and
+    // answers the requests itself.
     live.stop().await;
     let (status_code, status) =
         wait_for_details(&base_url, "No healthy endpoint available").await?;
-    assert_eq!(status_code, StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(status.status, "unhealthy");
-    assert_eq!(status.check("endpoints"), "fail");
-    assert_eq!(status.check("tls_listener"), "ok");
-
-    // The proxy has no endpoint left to select
+    assert_eq!(status_code, StatusCode::OK, "{status:?}");
+    assert_eq!(status.status, "healthy");
     let response = t.get(&prf_path(1)).await.send().await?;
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
     let error: Value = response.json().await?;
