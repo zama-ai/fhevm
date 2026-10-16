@@ -501,6 +501,7 @@ mod tests {
         logs.push(LogTfhe {
             event: tfhe_event(e),
             is_allowed,
+            is_allowed_on_branch: is_allowed,
             block_number: 0,
             block_hash: TransactionHash::ZERO,
             block_timestamp: sqlx::types::time::PrimitiveDateTime::MIN,
