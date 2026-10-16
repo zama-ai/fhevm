@@ -4,9 +4,8 @@ use crate::{
 };
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest_1 as PublicDecryptionRequest,
-    UserDecryptionRequest_2 as UserDecryptionRequest,
-    UserDecryptionRequest_3 as UserDecryptionRequestV2,
+    PublicDecryptionRequest, UserDecryptionRequest_0 as UserDecryptionRequest,
+    UserDecryptionRequest_1 as UserDecryptionRequestV2,
 };
 use sqlx::{
     Executor, Pool, Postgres, QueryBuilder, postgres::PgPoolOptions, types::time::OffsetDateTime,
