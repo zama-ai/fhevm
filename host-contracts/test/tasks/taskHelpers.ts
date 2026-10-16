@@ -231,8 +231,8 @@ export async function confirmContextCreationBySigner(
   return (await (await pc.confirmKmsContextCreation(contextId, signature, extraData)).wait())!;
 }
 
-// Builds one self-signed key attestation and one self-signed CRS attestation, signs the
-// EpochActivationConfirmation over them, and submits it from the signer account.
+// Builds one key result and one CRS result, signs the EpochActivationConfirmation over them, and
+// submits it from the signer account.
 // Both arrays must be non-empty, so a key-only payload is rejected. The material is identical across
 // signers, so every signer produces the same epochMaterialHash and quorum is reachable.
 // `contextId`/`epochId` are the pair being activated. The previous epoch is the active one.
@@ -321,7 +321,7 @@ function findEventArg(
 
 // Rotates the canonical ProtocolConfig to a fresh KMS context that reuses `committee`, driving the full
 // epoch lifecycle (define -> confirm creation -> confirm activation) so getCurrentKmsContextId advances.
-// Activation requires a non-empty key and CRS array, so each signer submits one self-signed attestation of each.
+// Activation requires a non-empty key and CRS array, so each signer submits one result of each.
 export async function rotateToNewKmsContext(
   proxyAddress: string,
   ownerSigner: Signer,

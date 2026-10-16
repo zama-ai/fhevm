@@ -1511,7 +1511,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         _confirmEpochActivation(contextId, epochId, kmsPk0, completedKeyId, completedCrsId);
 
         // Replay with the same material the first confirm used. The signer check passes, so the call reaches
-        // the already-confirmed check. An empty array would revert earlier with EmptyEpochActivationAttestation.
+        // the already-confirmed check. An empty array would revert earlier with EmptyEpochActivationResults.
         (keys, crsList) = _buildEpochResults(completedKeyId, completedCrsId);
         signature = _signEpochActivation(contextId, epochId, kmsPk0, keys, crsList, "");
         vm.expectRevert(
@@ -1529,7 +1529,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         // A live pending epoch passes the state check, so the empty payload reaches the dedicated revert.
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](0);
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationAttestation.selector, epochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationResults.selector, epochId));
         protocolConfig.confirmEpochActivation(epochId, keys, crsList, "", "");
     }
 
@@ -1549,7 +1549,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         });
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationAttestation.selector, epochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationResults.selector, epochId));
         protocolConfig.confirmEpochActivation(epochId, keys, crsList, "", "");
     }
 
@@ -1568,7 +1568,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
             crsDigest: hex"deadbeef"
         });
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationAttestation.selector, epochId));
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationResults.selector, epochId));
         protocolConfig.confirmEpochActivation(epochId, keys, crsList, "", "");
     }
 

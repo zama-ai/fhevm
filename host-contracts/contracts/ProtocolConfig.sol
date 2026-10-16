@@ -551,7 +551,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         bytes calldata extraData
     ) internal view virtual returns (address signer, bytes32 epochMaterialHash, bytes32 digest) {
         if (keys.length == 0 || crsList.length == 0) {
-            revert EmptyEpochActivationAttestation(epochId);
+            revert EmptyEpochActivationResults(epochId);
         }
         epochMaterialHash = _hashEpochMaterial(keys, crsList);
         digest = _hashTypedData(

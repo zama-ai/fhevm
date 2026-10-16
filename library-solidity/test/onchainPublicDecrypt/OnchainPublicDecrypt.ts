@@ -195,7 +195,7 @@ async function activateNewKmsContext(
       epochId = createdEvent.epochId;
     }
   }
-  // An empty `keys` or `crsList` reverts with EmptyEpochActivationAttestation, so supply one result of each.
+  // An empty `keys` or `crsList` reverts with EmptyEpochActivationResults, so supply one result of each.
   // confirmEpochActivation checks only that the signature recovers to the node signer, so the constant ids need
   // not exist in KMSGeneration, and every signer produces the same epochMaterialHash for quorum.
   const keyMaterial = {

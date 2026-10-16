@@ -58,6 +58,8 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       // The previous-committee quorum is now computed from the active context at confirmation time,
       // so the cache and its getter were removed.
       "function getContextCreationPreviousTxSenderThreshold(uint256) returns (uint256)",
+      // The key and CRS results carry no signature now, so the error names results, not attestations.
+      "error EmptyEpochActivationAttestation(uint256)",
     ],
   },
   "gateway-contracts": {

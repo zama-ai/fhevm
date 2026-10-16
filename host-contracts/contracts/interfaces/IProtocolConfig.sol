@@ -225,7 +225,7 @@ interface IProtocolConfig is IProtocolConfigBase {
 
     /// @notice The epoch activation payload has no keys or no CRS.
     /// @param epochId The epoch ID.
-    error EmptyEpochActivationAttestation(uint256 epochId);
+    error EmptyEpochActivationResults(uint256 epochId);
 
     /// @notice The KMS context was not destroyed with destroyKmsContext.
     /// @param kmsContextId The context ID.
