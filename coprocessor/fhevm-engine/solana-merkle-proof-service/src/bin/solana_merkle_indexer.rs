@@ -11,8 +11,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, Level};
 
 use fhevm_engine_common::{
-    database::connect_pool_with_options, metrics_server, telemetry,
-    utils::DatabaseURL,
+    database::connect_pool_with_options, metrics_server,
+    shutdown_signal::cancel_on_shutdown_signal, telemetry, utils::DatabaseURL,
 };
 use solana_host_follower::{
     block_checkpoint, run, track_finalized_slot, Follower, FollowerArgs,
@@ -118,13 +118,8 @@ async fn main() -> Result<()> {
         }
     };
 
-    let signal_cancel = cancel.clone();
-    tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            info!("Received ctrl-c, shutting down");
-            signal_cancel.cancel();
-        }
-    });
+    cancel_on_shutdown_signal(cancel.clone())
+        .context("install the SIGINT and SIGTERM handlers")?;
 
     tokio::spawn(run_store_checks(
         pool.clone(),
