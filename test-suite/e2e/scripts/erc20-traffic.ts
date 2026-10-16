@@ -245,7 +245,7 @@ const setup = async () => {
   };
   const ctx: Ctx = { signers, instances: await createInstances(signers), token: await attach(state.contractAddress), state };
   await mint(ctx, initialMint);
-  const balance = await decryptBalance(ctx, 'alice');
+  const balance = await withRetries(state, 'setup decrypt alice', () => decryptBalance(ctx, 'alice'));
   if (balance !== initialMint) throw new Error(`setup: alice decrypts to ${balance}, expected ${initialMint}`);
   await recordHandles(ctx, 0, Number(await ethers.provider.getBlockNumber()), ['alice']);
   ctx.state.counters.decrypts += 1;
