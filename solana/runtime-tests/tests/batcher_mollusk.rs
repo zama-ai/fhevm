@@ -2037,9 +2037,7 @@ fn mollusk_settle_stops_only_under_the_execution_pause() {
     check_batcher_instruction(
         &context,
         &settle_ix(&fixture, &keys, 100, signatures, extra_data, pending_burn),
-        &[anchor_error_check(
-            host::errors::ZamaHostError::ExecutionPaused as u32,
-        )],
+        &[host_error(host::errors::ZamaHostError::ExecutionPaused)],
     );
     assert_eq!(
         read_batch(&context, keys.batch).status,

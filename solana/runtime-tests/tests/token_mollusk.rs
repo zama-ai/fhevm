@@ -5281,7 +5281,7 @@ fn mollusk_transfer_from_value_checks_every_application_deny_record() {
             check_token_instruction(
                 &context,
                 &transfer,
-                &[anchor_error_check(host::ZamaHostError::ScopeDenied as u32)],
+                &[host_error(host::ZamaHostError::ScopeDenied)],
             );
             assert_eq!(
                 read_store_handle(&context, fixture.alice_balance_store, token::balance_key()),
@@ -6067,7 +6067,7 @@ fn mollusk_burn_from_value_checks_every_application_deny_record() {
             check_token_instruction(
                 &context,
                 &burn,
-                &[anchor_error_check(host::ZamaHostError::ScopeDenied as u32)],
+                &[host_error(host::ZamaHostError::ScopeDenied)],
             );
             assert_eq!(
                 read_store_handle(&context, fixture.balance_store, token::balance_key()),
