@@ -35,7 +35,7 @@ jobs:
               - kms-connector/crates/api/**
               - kms-connector/Cargo.toml
               # Solana path dependencies: the request form (through `kms-connector-api`), the
-              # permit's Ed25519 verification and the host chain ids.
+              # permit's fields and the host chain ids.
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-permit/**
               - solana/crates/zama-solana-request/**
