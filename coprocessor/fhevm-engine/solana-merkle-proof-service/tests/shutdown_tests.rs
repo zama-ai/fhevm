@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use alloy::{primitives::U256, sol_types::SolValue};
+use alloy::{primitives::U256, rpc::types::Block, sol_types::SolValue};
 use axum::{routing::post, Json, Router};
 use kms_context::KMS_CONTEXT_COUNTER_BASE;
 use serde_json::{json, Value};
@@ -154,6 +154,11 @@ async fn protocol_config_without_kms_contexts() -> String {
     async fn answer(Json(request): Json<Value>) -> Json<Value> {
         let result = match request["method"].as_str() {
             Some("eth_chainId") => json!("0x1"),
+            Some("eth_getBlockByNumber") => {
+                let mut block = Block::<()>::default();
+                block.header.inner.number = 1;
+                serde_json::to_value(block).unwrap()
+            }
             Some("eth_call") => {
                 let counter: U256 = KMS_CONTEXT_COUNTER_BASE;
                 json!(format!("0x{}", hex::encode(counter.abi_encode())))

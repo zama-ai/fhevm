@@ -54,15 +54,16 @@ pub enum KmsContextReadError {
 }
 
 /// The context's `NewKmsContext` event, read at the block its anchor names and checked against the
-/// anchor's `contextInfoHash`. The anchor is read at the finalized block. Unlike
+/// anchor's `contextInfoHash`. The anchor itself is read at block `at`. Unlike
 /// `getKmsNodesForContext`, this also reads a Pending or Created context.
 pub async fn read_kms_context<P: Provider>(
     protocol_config: &ProtocolConfigInstance<P>,
     context_id: U256,
+    at: BlockId,
 ) -> Result<NewKmsContext, KmsContextReadError> {
     let anchor = protocol_config
         .getKmsContextAnchor(context_id)
-        .block(BlockId::finalized())
+        .block(at)
         .call()
         .await
         .map_err(|source| KmsContextReadError::Anchor {
@@ -196,6 +197,7 @@ mod tests {
         read_kms_context(
             &ProtocolConfig::new(CONTRACT, Node { root, logs }),
             context_id(),
+            BlockId::finalized(),
         )
         .await
     }

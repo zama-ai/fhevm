@@ -1,5 +1,5 @@
 use crate::core::{config::Config, event_processor::ProcessingError};
-use alloy::{primitives::U256, providers::Provider};
+use alloy::{eips::BlockId, primitives::U256, providers::Provider};
 use anyhow::anyhow;
 use connector_utils::types::{
     KmsGrpcRequest, db::KeyType, extra_data::extra_data_v2_payload, u256_to_request_id,
@@ -61,10 +61,13 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
         event: &NewKmsContext,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
         let new = build_new_kms_context_grpc_from_event(event)?;
-        let previous_context_event =
-            read_kms_context(&self.protocol_config_contract, event.previousContextId)
-                .await
-                .map_err(ProcessingError::transient)?;
+        let previous_context_event = read_kms_context(
+            &self.protocol_config_contract,
+            event.previousContextId,
+            BlockId::finalized(),
+        )
+        .await
+        .map_err(ProcessingError::transient)?;
         let old = build_new_kms_context_grpc_from_event(&previous_context_event)?;
         Ok(KmsGrpcRequest::NewMpcContext { new, old })
     }
