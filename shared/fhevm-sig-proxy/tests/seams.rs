@@ -102,7 +102,7 @@ async fn each_route_has_its_own_response_timeout() {
 }
 
 #[tokio::test]
-async fn a_typed_route_accepts_only_its_methods_and_canonical_parameters() {
+async fn a_route_with_a_parameter_accepts_only_its_methods() {
     let t = TestProxy::start(defaults).await;
 
     assert_eq!(
@@ -114,11 +114,6 @@ async fn a_typed_route_accepts_only_its_methods_and_canonical_parameters() {
     assert_eq!(not_allowed.status(), StatusCode::METHOD_NOT_ALLOWED);
     assert_eq!(not_allowed.headers()["allow"], "GET, HEAD");
 
-    for path in ["/items/03", "/items/65536"] {
-        let refused = t.signed(Method::GET, path, b"").await;
-        assert_eq!(refused.status(), StatusCode::BAD_REQUEST, "{path}");
-        assert_eq!(refused.text().await.unwrap(), "NonCanonicalPath");
-    }
     assert_eq!(
         t.signed(Method::GET, "/items", b"").await.status(),
         StatusCode::NOT_FOUND

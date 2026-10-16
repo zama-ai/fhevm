@@ -19,7 +19,6 @@ pub fn error_body(error: &ProxyError) -> ErrorBody {
         ProxyError::NotOriginForm | ProxyError::BodyTooLarge => {
             (StatusCode::BAD_REQUEST, "malformed")
         }
-        ProxyError::NonCanonicalPath => (StatusCode::BAD_REQUEST, "non_canonical_path"),
         ProxyError::NotFound => (StatusCode::NOT_FOUND, "not_found"),
         ProxyError::MethodNotAllowed(_) => (StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed"),
         ProxyError::Auth(auth) => (StatusCode::UNAUTHORIZED, auth.code()),
@@ -52,12 +51,6 @@ mod tests {
         for (error, status, code, retryable) in [
             (ProxyError::NotOriginForm, 400, "malformed", false),
             (ProxyError::BodyTooLarge, 400, "malformed", false),
-            (
-                ProxyError::NonCanonicalPath,
-                400,
-                "non_canonical_path",
-                false,
-            ),
             (ProxyError::NotFound, 404, "not_found", false),
             (
                 ProxyError::MethodNotAllowed(vec![http::Method::GET]),

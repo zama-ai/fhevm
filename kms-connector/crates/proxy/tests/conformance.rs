@@ -19,7 +19,6 @@ const PROFILE: Profile = Profile {
         template: PUBLIC_DECRYPTION_ROUTE,
         other_method: Method::GET,
         methods: &[Method::POST],
-        non_canonical_path: None,
     },
     metrics: MetricsPort::Health,
     forwards_authorization: false,

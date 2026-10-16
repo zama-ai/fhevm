@@ -19,9 +19,7 @@ const HEALTHCHECK_PATH: &str = "/healthz";
 /// A body naming the error, with the status a deployment would give it.
 pub fn error_body(error: &ProxyError) -> ErrorBody {
     let status = match error {
-        ProxyError::NotOriginForm | ProxyError::NonCanonicalPath | ProxyError::BodyTooLarge => {
-            StatusCode::BAD_REQUEST
-        }
+        ProxyError::NotOriginForm | ProxyError::BodyTooLarge => StatusCode::BAD_REQUEST,
         ProxyError::NotFound => StatusCode::NOT_FOUND,
         ProxyError::MethodNotAllowed(_) => StatusCode::METHOD_NOT_ALLOWED,
         ProxyError::Auth(_) => StatusCode::UNAUTHORIZED,
@@ -37,7 +35,7 @@ pub fn error_body(error: &ProxyError) -> ErrorBody {
 /// Two upstreams `a` and `b`, with routes differing in methods, template, body cap and timeout:
 /// - `POST /small` to `a`, no body, 300 ms;
 /// - `POST /large` to `b`, up to 1024 bytes, 5 s;
-/// - `GET|HEAD /items/{id:u16}` to `b`, no body, 5 s.
+/// - `GET|HEAD /items/{id}` to `b`, no body, 5 s.
 pub fn config(addr: SocketAddr, tls: &TestTls, a: &Stub, b: &Stub) -> ProxyConfig {
     let route =
         |methods: &[Method], path: &str, upstream: &str, max_body_bytes, timeout_ms| Route {
@@ -67,13 +65,7 @@ pub fn config(addr: SocketAddr, tls: &TestTls, a: &Stub, b: &Stub) -> ProxyConfi
         routes: vec![
             route(&[Method::POST], "/small", "a", 0, 300),
             route(&[Method::POST], "/large", "b", 1024, 5000),
-            route(
-                &[Method::GET, Method::HEAD],
-                "/items/{id:u16}",
-                "b",
-                0,
-                5000,
-            ),
+            route(&[Method::GET, Method::HEAD], "/items/{id}", "b", 0, 5000),
         ],
         upstreams: vec![upstream("a", a), upstream("b", b)],
         endpoint_connect_timeout: Duration::from_millis(500),

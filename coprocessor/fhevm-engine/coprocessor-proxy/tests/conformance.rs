@@ -16,12 +16,9 @@ const PROFILE: Profile = Profile {
         path:
             "/v1/prf/1/labels/abababababababababababababababababababababababababababababababab/32",
         body: b"",
-        template: "/v1/prf/{prf:u16}/labels/{label:hex32}/{padLength:u16}",
+        template: "/v1/prf/{prf}/labels/{label}/{padLength}",
         other_method: Method::POST,
         methods: &[Method::GET, Method::HEAD],
-        non_canonical_path: Some(
-            "/v1/prf/01/labels/abababababababababababababababababababababababababababababababab/32",
-        ),
     },
     metrics: MetricsPort::Own,
     forwards_authorization: true,

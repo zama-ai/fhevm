@@ -6,8 +6,9 @@ use super::{
 use crate::{ErrorBody, ProxyError};
 use alloy::transports::http::reqwest::{self, Client, Url};
 use http::{Method, StatusCode};
+use pingora::tls::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use std::{
-    io::{BufRead, BufReader, Read},
+    io::{BufRead, BufReader, Read, Write},
     net::SocketAddr,
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
@@ -52,8 +53,6 @@ pub struct SignedRoute {
     /// The methods the route accepts, and one it refuses.
     pub methods: &'static [Method],
     pub other_method: Method,
-    /// The path in a parameter encoding the route refuses, if it has parameters.
-    pub non_canonical_path: Option<&'static str>,
 }
 
 pub enum MetricsPort {
@@ -209,6 +208,49 @@ impl ProxyProcess {
             request = request.header("authorization", authorization);
         }
         request.body(body.to_vec()).send().await.unwrap()
+    }
+
+    /// Sends a request whose target is `path` byte for byte, where a URL parser such as
+    /// `reqwest`'s removes dot segments, and returns the response status and body.
+    pub async fn send_raw(
+        &self,
+        method: &Method,
+        path: &str,
+        authorization: &str,
+        body: &[u8],
+    ) -> (StatusCode, Vec<u8>) {
+        let mut request = format!(
+            "{method} {path} HTTP/1.1\r\nhost: localhost\r\nauthorization: {authorization}\r\n\
+             content-length: {}\r\nconnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        request.extend_from_slice(body);
+        let bind = self.launch.bind;
+        let response = tokio::task::spawn_blocking(move || {
+            let mut connector = SslConnector::builder(SslMethod::tls_client()).unwrap();
+            connector.set_verify(SslVerifyMode::NONE); // self-signed test certificate
+            let tcp = std::net::TcpStream::connect(bind).unwrap();
+            let mut tls = connector.build().connect("localhost", tcp).unwrap();
+            tls.write_all(&request).unwrap();
+            let mut response = Vec::new();
+            tls.read_to_end(&mut response).unwrap();
+            response
+        })
+        .await
+        .unwrap();
+        let end_of_head = response
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .expect("a response head");
+        let status = std::str::from_utf8(&response[..end_of_head])
+            .unwrap()
+            .split(' ')
+            .nth(1)
+            .expect("a status line")
+            .parse()
+            .unwrap();
+        (status, response[end_of_head + 4..].to_vec())
     }
 
     pub async fn healthz(&self) -> StatusCode {

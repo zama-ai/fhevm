@@ -80,7 +80,7 @@ pub fn error_body(error: &ProxyError) -> ErrorBody {
     let response = match error {
         ProxyError::NotFound => return empty(StatusCode::NOT_FOUND),
         ProxyError::MethodNotAllowed(_) => return empty(StatusCode::METHOD_NOT_ALLOWED),
-        ProxyError::NotOriginForm | ProxyError::NonCanonicalPath | ProxyError::BodyTooLarge => {
+        ProxyError::NotOriginForm | ProxyError::BodyTooLarge => {
             ErrorResponse::new(ErrorCode::Malformed, error.to_string(), None)
         }
         ProxyError::Auth(error) => auth_error_response(error),

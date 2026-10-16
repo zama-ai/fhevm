@@ -1904,7 +1904,7 @@ coprocessorProxy:
     # The PRF route of RFC-038.
     [[routes]]
     methods = ["GET", "HEAD"]
-    path = "/v1/prf/{prf:u16}/labels/{label:hex32}/{padLength:u16}"
+    path = "/v1/prf/{prf}/labels/{label}/{padLength}"
     upstream = "prf-service"
     # Must exceed the time the endpoint holds a request for a pad not yet computed.
     endpoint_response_timeout = "120s"

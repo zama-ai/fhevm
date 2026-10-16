@@ -1,10 +1,10 @@
 //! Default-deny routing: the configured routes, anything else is rejected before any body byte is
 //! read.
 //!
-//! A path template is literal segments and typed parameters, e.g.
-//! `/v1/prf/{prf:u16}/labels/{label:hex32}/{padLength:u16}`. A parameter accepts exactly one
-//! encoding, so each resource has one URL, the one its `FhevmSig` signs: `u16` is decimal without
-//! leading zeros, `hex32` is 64 lowercase hexadecimal characters without `0x`.
+//! A path template is literal segments and named parameters, e.g.
+//! `/v1/prf/{prf}/labels/{label}/{padLength}`. A parameter matches one non-empty segment other
+//! than `.` and `..`, so a path the proxy forwards names no other resource than its template's.
+//! The endpoint parses and validates its own parameters.
 
 use crate::{ProxyError, Upstream};
 use anyhow::{Context, bail, ensure};
@@ -31,7 +31,7 @@ pub struct Route {
 #[derive(Debug)]
 pub(crate) struct RouteTable {
     routes: Vec<ParsedRoute>,
-    /// A path of the first route accepting `GET`, with each parameter set to zero. The TLS
+    /// A path of the first route accepting `GET`, with each parameter set to `0`. The TLS
     /// listener healthcheck requests it without credentials and expects `401`.
     self_check_path: String,
 }
@@ -47,8 +47,7 @@ pub(crate) struct ParsedRoute {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Segment {
     Literal(String),
-    U16,
-    Hex32,
+    Parameter,
 }
 
 impl RouteTable {
@@ -106,8 +105,7 @@ impl RouteTable {
             .iter()
             .map(|segment| match segment {
                 Segment::Literal(literal) => format!("/{literal}"),
-                Segment::U16 => "/0".to_owned(),
-                Segment::Hex32 => format!("/{}", "0".repeat(64)),
+                Segment::Parameter => "/0".to_owned(),
             })
             .collect();
         Ok(Self {
@@ -125,26 +123,20 @@ impl RouteTable {
     }
 
     /// Matches a request path, without its query, and returns the index of the route found, or
-    /// the [`ProxyError::NotFound`], [`ProxyError::MethodNotAllowed`] or
-    /// [`ProxyError::NonCanonicalPath`] to answer.
+    /// the [`ProxyError::NotFound`] or [`ProxyError::MethodNotAllowed`] to answer.
     pub fn find(&self, method: &Method, path: &str) -> Result<usize, ProxyError> {
         let mut error = ProxyError::NotFound;
         let Some(path) = path.strip_prefix('/') else {
             return Err(error);
         };
         for (index, route) in self.routes.iter().enumerate() {
-            match route.shape(path) {
-                Shape::Other => {}
-                Shape::NonCanonical => {
-                    if error == ProxyError::NotFound {
-                        error = ProxyError::NonCanonicalPath;
-                    }
-                }
-                Shape::Canonical if route.route.methods.contains(method) => return Ok(index),
-                Shape::Canonical => {
-                    error = ProxyError::MethodNotAllowed(route.route.methods.clone())
-                }
+            if !route.matches(path) {
+                continue;
             }
+            if route.route.methods.contains(method) {
+                return Ok(index);
+            }
+            error = ProxyError::MethodNotAllowed(route.route.methods.clone());
         }
         Err(error)
     }
@@ -157,64 +149,43 @@ fn parse_template(path: &str) -> anyhow::Result<Vec<Segment>> {
     path.split('/')
         .map(
             |segment| match segment.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
-                Some(param) => match param.split_once(':').map(|(_, kind)| kind) {
-                    Some("u16") => Ok(Segment::U16),
-                    Some("hex32") => Ok(Segment::Hex32),
-                    _ => bail!("parameter {{{param}}} needs a type, u16 or hex32"),
-                },
-                None if segment.contains(['{', '}']) || segment.is_empty() => {
-                    bail!("invalid segment {segment:?}")
+                Some(name)
+                    if !name.is_empty()
+                        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') =>
+                {
+                    Ok(Segment::Parameter)
                 }
-                None => Ok(Segment::Literal(segment.to_owned())),
+                None if !segment.contains(['{', '}']) && names_a_resource(segment) => {
+                    Ok(Segment::Literal(segment.to_owned()))
+                }
+                _ => bail!("invalid segment {segment:?}"),
             },
         )
         .collect()
 }
 
-enum Shape {
-    Other,
-    NonCanonical,
-    Canonical,
+/// Whether a path segment names a resource: it is neither empty nor the current or parent one.
+fn names_a_resource(segment: &str) -> bool {
+    !matches!(segment, "" | "." | "..")
 }
 
 impl ParsedRoute {
-    fn shape(&self, path: &str) -> Shape {
-        let parts: Vec<&str> = path.split('/').collect();
-        if parts.len() != self.segments.len() {
-            return Shape::Other;
-        }
-        let mut canonical = true;
-        for (part, segment) in parts.iter().zip(&self.segments) {
-            match segment {
-                Segment::Literal(literal) if literal != part => return Shape::Other,
-                Segment::Literal(_) => {}
-                Segment::U16 => canonical &= is_canonical_u16(part),
-                Segment::Hex32 => canonical &= is_canonical_hex32(part),
-            }
-        }
-        if canonical {
-            Shape::Canonical
-        } else {
-            Shape::NonCanonical
-        }
+    fn matches(&self, path: &str) -> bool {
+        let mut parts = path.split('/');
+        self.segments.iter().all(|segment| {
+            parts.next().is_some_and(|part| match segment {
+                Segment::Literal(literal) => literal == part,
+                Segment::Parameter => names_a_resource(part),
+            })
+        }) && parts.next().is_none()
     }
-}
-
-fn is_canonical_u16(part: &str) -> bool {
-    part.bytes().all(|b| b.is_ascii_digit())
-        && (part == "0" || !part.starts_with('0'))
-        && part.parse::<u16>().is_ok()
-}
-
-fn is_canonical_hex32(part: &str) -> bool {
-    part.len() == 64 && part.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const PRF_ROUTE: &str = "/v1/prf/{prf:u16}/labels/{label:hex32}/{padLength:u16}";
+    const PRF_ROUTE: &str = "/v1/prf/{prf}/labels/{label}/{padLength}";
 
     fn route(methods: &[Method], path: &str, upstream: &str) -> Route {
         Route {
@@ -234,7 +205,7 @@ mod tests {
         }
     }
 
-    /// The connector's literal routes, and a typed route on a second upstream.
+    /// The connector's literal routes, and a route with parameters on a second upstream.
     fn table() -> RouteTable {
         RouteTable::new(
             &[
@@ -263,6 +234,8 @@ mod tests {
             "/v2/public-decrypt",
             "/v1/public-decrypt/",
             "/v1//public-decrypt",
+            "/v1/x/../public-decrypt",
+            "/v1/./public-decrypt",
         ] {
             assert_eq!(
                 table.find(&Method::POST, path),
@@ -277,35 +250,38 @@ mod tests {
     }
 
     #[test]
-    fn a_canonical_path_matches_its_route_and_upstream() {
+    fn a_parameter_matches_any_one_segment() {
         let table = table();
+        let label = label();
         for method in [Method::GET, Method::HEAD] {
-            let path = format!("/v1/prf/0/labels/{}/2048", label());
+            let path = format!("/v1/prf/0/labels/{label}/2048");
             assert_eq!(table.find(&method, &path), Ok(3));
         }
-        let path = format!("/v1/prf/65535/labels/{}/1", label());
-        assert_eq!(table.find(&Method::GET, &path), Ok(3));
+        for path in [
+            format!("/v1/prf/003/labels/{label}/64"),
+            format!("/v1/prf/%33/labels/{}/64", label.to_uppercase()),
+            "/v1/prf/a.b/labels/..x/...".to_owned(),
+        ] {
+            assert_eq!(table.find(&Method::GET, &path), Ok(3), "{path}");
+        }
         assert_eq!(table.get(3).upstream, 1);
         assert_eq!(table.get(0).upstream, 0);
     }
 
     #[test]
-    fn each_parameter_has_one_encoding() {
+    fn a_parameter_is_never_empty_or_a_dot_segment() {
         let table = table();
         let label = label();
         for path in [
-            format!("/v1/prf/003/labels/{label}/64"),
-            format!("/v1/prf/65536/labels/{label}/64"),
-            format!("/v1/prf/%33/labels/{label}/64"),
-            format!("/v1/prf/+3/labels/{label}/64"),
-            format!("/v1/prf/3/labels/{}/64", label.to_uppercase()),
-            format!("/v1/prf/3/labels/0x{}/64", &label[2..]),
-            format!("/v1/prf/3/labels/{}/64", &label[2..]),
-            format!("/v1/prf/3/labels/{label}/064"),
+            format!("/v1/prf//labels/{label}/64"),
+            format!("/v1/prf/./labels/{label}/64"),
+            "/v1/prf/3/labels/../64".to_owned(),
+            format!("/v1/prf/3/labels/{label}/.."),
+            format!("/v1/prf/3/labels/{label}/a/b"),
         ] {
             assert_eq!(
                 table.find(&Method::GET, &path),
-                Err(ProxyError::NonCanonicalPath),
+                Err(ProxyError::NotFound),
                 "{path}"
             );
         }
@@ -340,7 +316,7 @@ mod tests {
     fn the_self_check_path_is_the_first_get_route_with_zero_parameters() {
         assert_eq!(table().self_check_path(), "/version");
 
-        let typed = RouteTable::new(
+        let with_parameters = RouteTable::new(
             &[
                 route(&[Method::POST], "/v1/public-decrypt", "prf"),
                 route(&[Method::GET, Method::HEAD], PRF_ROUTE, "prf"),
@@ -348,9 +324,9 @@ mod tests {
             &[upstream("prf")],
         )
         .unwrap();
-        let path = typed.self_check_path();
-        assert_eq!(path, format!("/v1/prf/0/labels/{}/0", "0".repeat(64)));
-        assert_eq!(typed.find(&Method::GET, path), Ok(1));
+        let path = with_parameters.self_check_path();
+        assert_eq!(path, "/v1/prf/0/labels/0/0");
+        assert_eq!(with_parameters.find(&Method::GET, path), Ok(1));
 
         let post_only = RouteTable::new(
             &[route(&[Method::POST], "/v1/public-decrypt", "prf")],
@@ -360,10 +336,20 @@ mod tests {
     }
 
     #[test]
-    fn a_template_needs_typed_parameters() {
+    fn a_template_has_named_parameters_and_no_dot_segment() {
+        assert!(
+            RouteTable::new(
+                &[route(&[Method::GET], "/v1/{prf_id}", "prf")],
+                &[upstream("prf")]
+            )
+            .is_ok()
+        );
         for path in [
-            "/v1/{prf}",
-            "/v1/{prf:u32}",
+            "/v1/{}",
+            "/v1/{prf:u16}",
+            "/v1/{a-b}",
+            "/v1/..",
+            "/v1/./x",
             "/v1//x",
             "v1/x",
             "/v1/a{b}",

@@ -25,6 +25,7 @@ macro_rules! conformance_tests {
             an_accepted_request_reaches_the_endpoint_unchanged,
             a_failed_authentication_never_reaches_the_endpoint,
             a_routing_error_never_reaches_the_endpoint,
+            a_dot_segment_never_reaches_the_endpoint,
             the_endpoint_rate_limit_reaches_the_client_unchanged,
             an_unreachable_endpoint_is_a_502_and_not_ready,
             a_slow_endpoint_is_a_504,
@@ -61,7 +62,6 @@ async fn started(profile: &Profile) -> ProxyProcess {
     proxy
 }
 
-/// Asserts `response` is the deployment's rendering of `error`.
 /// Asserts `response` is the deployment's rendering of `error`: its status and body, a
 /// `Content-Type` exactly when there is a body, `WWW-Authenticate` exactly on a `401`, and `Allow`
 /// on a `405`.
@@ -188,8 +188,8 @@ pub async fn a_failed_authentication_never_reaches_the_endpoint(profile: &Profil
     assert_eq!(proxy.stub.requests().len(), 0);
 }
 
-/// An unknown path is a `404`, a refused method a `405` with `Allow`, a non-canonical parameter
-/// a `400`, each rendered by the deployment, and none reaches the endpoint.
+/// An unknown path is a `404`, a refused method a `405` with `Allow`, each rendered by the
+/// deployment, and neither reaches the endpoint.
 pub async fn a_routing_error_never_reaches_the_endpoint(profile: &Profile) {
     let proxy = started(profile).await;
     let route = &profile.route;
@@ -220,16 +220,34 @@ pub async fn a_routing_error_never_reaches_the_endpoint(profile: &Profile) {
     )
     .await;
 
-    if let Some(path) = route.non_canonical_path {
+    assert_eq!(proxy.stub.heads(), Vec::<String>::new());
+}
+
+/// A signed request with a `.` or `..` path segment, anywhere and as any parameter, is the
+/// deployment's `404` and never reaches the endpoint, which could resolve it to another resource
+/// than its route's.
+pub async fn a_dot_segment_never_reaches_the_endpoint(profile: &Profile) {
+    let proxy = started(profile).await;
+    let route = &profile.route;
+    let segments: Vec<&str> = route.path.split('/').collect();
+    let mut paths = vec![format!("{}/x/..", route.path)];
+    for (index, template) in route.template.split('/').enumerate() {
+        if template.starts_with('{') {
+            for dots in [".", ".."] {
+                let mut path = segments.clone();
+                path[index] = dots;
+                paths.push(path.join("/"));
+            }
+        }
+    }
+
+    let expected = (profile.error_body)(&ProxyError::NotFound);
+    for path in &paths {
+        let authorization = authorization(path, route.body).await;
         let response = proxy
-            .send(
-                route.method.clone(),
-                path,
-                Some(&authorization(path, route.body).await),
-                route.body,
-            )
+            .send_raw(&route.method, path, &authorization, route.body)
             .await;
-        assert_error(profile, response, ProxyError::NonCanonicalPath).await;
+        assert_eq!(response, (expected.status, expected.json.clone()), "{path}");
     }
     assert_eq!(proxy.stub.heads(), Vec::<String>::new());
 }

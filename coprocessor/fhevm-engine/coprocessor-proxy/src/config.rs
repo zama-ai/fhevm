@@ -127,7 +127,7 @@ pub struct UpstreamConfig {
 #[serde(deny_unknown_fields)]
 pub struct RouteConfig {
     pub methods: Vec<String>,
-    /// The path template, e.g. `/v1/prf/{prf:u16}/labels/{label:hex32}/{padLength:u16}`.
+    /// The path template, e.g. `/v1/prf/{prf}/labels/{label}/{padLength}`.
     pub path: String,
     /// The name of the upstream the route is forwarded to.
     pub upstream: String,
@@ -351,7 +351,7 @@ mod tests {
     #[test]
     fn an_invalid_example_fails() {
         for (from, to) in [
-            ("{prf:u16}", "{prf}"),
+            ("{prf}", "{prf:u16}"),
             ("upstream = \"prf-service\"", "upstream = \"other\""),
             ("[\"prf-service:8080\"]", "[]"),
             ("[\"prf-service:8080\"]", "[\"prf service\"]"),
