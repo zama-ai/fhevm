@@ -265,7 +265,7 @@ describe('Decryption signature invalidation', function () {
     } catch (e) {
       error = e;
     }
-    expect((error as Error | undefined)?.name, String(error)).to.equal('RelayerTimeoutError');
+    expect(String(error)).to.match(/Request timed out after/);
   });
 
   it('test decryption signature invalidation accepts a request signed at/after the invalidation timestamp', async function () {
