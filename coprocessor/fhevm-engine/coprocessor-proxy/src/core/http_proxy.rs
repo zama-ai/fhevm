@@ -264,6 +264,10 @@ impl ProxyHttp for Proxy {
         e: &Error,
         _ctx: &mut Self::CTX,
     ) -> FailToProxy {
+        // The connection is closed after the answer (`can_reuse_downstream: false`), so the answer
+        // says `Connection: close`, as Pingora's own `write_error_response` does: a client must not
+        // send its next request on it.
+        session.set_keepalive(None);
         let error_code = match e.root_cause().downcast_ref::<ErrorResponse>() {
             Some(error) => {
                 let status = StatusCode::from_u16(error.code.http_status())

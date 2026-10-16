@@ -490,6 +490,8 @@ async fn test_upstream_timeout() {
         .send()
         .await
         .unwrap();
+    // The proxy closes the connection after a failure: the client must not reuse it.
+    assert_eq!(response.headers()["connection"], "close");
     assert_proxy_error(response, StatusCode::GATEWAY_TIMEOUT, "timeout", true).await;
 }
 
@@ -501,6 +503,7 @@ async fn test_unreachable_endpoint() {
         TestProxy::start_with_addresses(vec![dead_addr.to_string().parse().unwrap()], vec![]).await;
 
     let response = t.get(&prf_path(1)).await.send().await.unwrap();
+    assert_eq!(response.headers()["connection"], "close");
     assert_proxy_error(
         response,
         StatusCode::BAD_GATEWAY,
