@@ -227,7 +227,7 @@ async fn run() -> anyhow::Result<()> {
         conf.log_level,
         &conf.service_name,
         "otlp-layer",
-        transaction_sender::diagnostics::gateway_tracing_filter,
+        telemetry::transport_dependency_filter,
     );
 
     let cancel_token = CancellationToken::new();

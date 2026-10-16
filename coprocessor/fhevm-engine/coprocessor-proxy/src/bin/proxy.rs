@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use coprocessor_proxy::core::{Config, Proxy};
-use fhevm_engine_common::{healthz_server, metrics_server};
+use fhevm_engine_common::{healthz_server, metrics_server, telemetry};
 use std::{path::PathBuf, process::ExitCode, sync::Arc};
 use tokio_util::sync::CancellationToken;
 use tracing::error;
@@ -57,12 +57,12 @@ fn run() -> anyhow::Result<()> {
                 .enable_all()
                 .build()?;
             let _guard = runtime.enter();
-            let _otel_guard =
-                fhevm_engine_common::telemetry::init_tracing_otel_with_logs_only_fallback(
-                    config.log_level,
-                    &config.service_name,
-                    "otlp-layer",
-                );
+            let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback_and_filter(
+                config.log_level,
+                &config.service_name,
+                "otlp-layer",
+                telemetry::transport_dependency_filter,
+            );
 
             // The monitoring servers run on the tokio runtime, next to Pingora's own.
             let healthcheck_port = config.healthcheck_port;
