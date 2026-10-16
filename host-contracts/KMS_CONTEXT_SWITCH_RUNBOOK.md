@@ -57,7 +57,7 @@ assemble and validate the env file (Annex B.3).
 
 | Field             | Format                                                                                                                                                                                                                                           | Provided by                      | Used for (end to end)                                                                                                                                                                                                             | Validation                                                                                                |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `txSenderAddress` | 20-byte EVM address (`0x` + 40 hex)                                                                                                                                                                                                              | **KMS party**                    | The **connector's** wallet. Host chain: sends no switch confirmations in this version (§4.2 step 4). Gateway chain: broadcasts decryption responses — `Decryption` requires the response sender to be this registered node        | Party signs a message with it, or sends a test tx; must be funded on the host chain **and** gateway chain |
+| `txSenderAddress` | 20-byte EVM address (`0x` + 40 hex)                                                                                                                                                                                                              | **KMS party**                    | The **connector's** wallet. Host chain: sends no switch confirmations in this version (§4.2 step 4). Gateway chain: broadcasts decryption responses. `Decryption` requires the response sender to be this registered node         | Party signs a message with it, or sends a test tx; must be funded on the host chain **and** gateway chain |
 | `signerAddress`   | 20-byte EVM address of the **core's** signing key                                                                                                                                                                                                | **KMS party** (verifiable by us) | Signs key/CRS attestations (epoch activation is unanimous per signer) and EIP-712 decryption responses (verified per pinned context on the gateway). The core publishes it at `<storageUrl>/<storagePrefix>/VerfAddress/<handle>` | Fetch from their public storage and compare (Annex B.2)                                                   |
 | `ipAddress`       | URL `scheme://host:port` — host may be a **DNS name** or IP; the **port is mandatory and must be non-default** (`:443`/`:80` are normalized away by the core's URL parser and rejected as "missing port"). E.g. `http://kms.party.example:50001` | **KMS party**                    | The core's MPC endpoint. Consumed **only by the other parties' cores**: each peer parses host+port and dials it for MPC traffic (reshares, decryption sessions).                                                                  | Reachable from every _other_ party's core (peer-to-peer, not from us)                                     |
 | `storageUrl`      | Base URL of the party's public vault (S3-compatible bucket)                                                                                                                                                                                      | **KMS party**                    | Where the core publishes its public material. Emitted in `ActivateEpoch` and served per key/CRS result by `KMSGeneration` → the relayer's `/v2/keyurl`, so clients know where to download public keys and CRS                     | `curl` returns objects (Annex B.2)                                                                        |
@@ -125,8 +125,8 @@ receiver.
    npx hardhat task:defineNewEpochForCurrentKmsContext --network <network>
    ```
 
-3. **After the broadcast**: the contract emits `NewKmsEpoch`
-   (same context — `kmsContextId == previousContextId`), and each connector drives its
+3. **After the broadcast**: the contract emits `NewKmsEpoch` for the same context
+   (`kmsContextId == previousContextId`). Each connector drives its
    core through the reshare. Activation needs a `confirmEpochActivation` from every
    signer, with its signed key/CRS attestations and its signed
    `EpochActivationConfirmation`. Once the signatures are unanimous the contract emits
@@ -232,19 +232,19 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
      guard). If the host switch is cancelled after this step (`destroyKmsContext`),
      recover by registering the retry's (higher) context id.
 
-4. **Phase 1 — creation quorum**: every signer (old and new
+4. **Phase 1, creation quorum**: every signer (old and new
    committees) needs a `ContextCreationConfirmation` signature submitted through
    `confirmKmsContextCreation`. When **all new + (n − t) old** signers have confirmed
-   the same digest, the context flips to CREATED and the contract emits the
+   the same digest, the context becomes CREATED and the contract emits the
    `NewKmsEpoch` that starts the reshare.
    **The connectors do not submit these confirmations in this version.** kms-grpc
    returns no confirmation signature, so the tx-sender marks each confirmation failed
    and sends nothing. No other service submits them. The context stays PENDING,
    the contract never emits `NewKmsEpoch`, and phase 2 never starts. A context switch cannot
    complete until planning-blockchain#1369 lands.
-5. **Phase 2 — reshare + activation**: outgoing nodes send (Set 1),
+5. **Phase 2, reshare and activation**: outgoing nodes send (Set 1),
    incoming nodes receive (Set 2), continuing nodes do both. Then every
-   **new-committee** signer needs a `confirmEpochActivation`; unanimity on the
+   **new-committee** signer needs a `confirmEpochActivation`. Unanimity on the
    same `epochMaterialHash` and `extraData` triggers `ActivateEpoch`. The context becomes ACTIVE and
    `getCurrentKmsContextAndEpoch` advances.
 6. **Watch throughout**:

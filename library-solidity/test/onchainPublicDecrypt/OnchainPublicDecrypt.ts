@@ -152,7 +152,7 @@ describe('OnchainPublicDecrypt', function () {
       },
     ];
     const resetThresholds = { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 };
-    // accounts[7] alone completes the creation quorum: it is the only new signer and its
+    // accounts[7] alone completes the creation quorum. It is the only new signer and its
     // confirmation also covers the previous side's n - t = 1 target (3 nodes, mpc = 2).
     await activateNewKmsContext(protocolConfig, deployer, resetNodes, resetThresholds, [accounts[7]]);
     expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(1);

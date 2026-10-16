@@ -2147,7 +2147,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _buildEpochResults(completedKeyId, completedCrsId);
 
-        // 65 bytes is the only valid ECDSA length; a 10-byte blob is rejected by ECDSA.recover.
+        // 65 bytes is the only valid ECDSA length. ECDSA.recover rejects a 10-byte blob.
         vm.expectRevert();
         protocolConfig.confirmEpochActivation(epochId, keys, crsList, hex"00112233445566778899", "");
     }

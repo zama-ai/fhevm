@@ -345,7 +345,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             }
         }
 
-        // All signers agreed on `epochId`: promote `contextId` and `epochId` to Active.
+        // All signers agreed on `epochId`, so promote `contextId` and `epochId` to Active.
         $.contextState[contextId] = ContextState.Active;
         $.latestActiveKmsContextId = contextId;
         _activateEpoch(epochId, contextId);

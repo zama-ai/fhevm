@@ -12,7 +12,8 @@ import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUU
  * @dev Replays test-vectors/protocol-config-eip712.json (written by scripts/generateProtocolConfigVectors.ts,
  *      ethers only) against ProtocolConfig. The contract accepts a vector signature only if it computes the
  *      same digest, so acceptance proves the domain, typehashes, nodeConfigHash and epochMaterialHash.
- *      JSON fields are read one by one: abi.decode(vm.parseJson(...)) orders struct fields alphabetically.
+ *      The test reads JSON fields one by one because abi.decode(vm.parseJson(...)) orders struct fields
+ *      alphabetically.
  */
 contract ProtocolConfigVectorsTest is HostContractsDeployerTestUtils {
     address internal constant owner = address(456);
