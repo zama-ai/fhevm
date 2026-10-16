@@ -1,32 +1,32 @@
-# Per-party gRPC proxy between kms-worker and kms-core, deployed only with
-# fhe_keys=default-insecure. Not the kms-connector's HTTPS proxy
-# (kmsConnectorProxy); the name is the docker stack's. It runs
+# Per-party gRPC redirect between kms-worker and kms-core, deployed only with
+# fhe_keys=default-insecure. It runs the docker stack's
 # test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs (loaded with --set-file),
-# which sends keygen to the KMS insecure keygen and forwards everything else.
-# Every kms-worker call to its core goes through it for the life of the preview,
-# so it is a Service of its own: the test-suite pod exists only with --tests.
+# which sends the keygen calls to the KMS insecure keygen and forwards the rest.
+# Every kms-worker call to its core, decryptions included, goes through it for
+# the life of the preview, so it is a Service of its own, one per party,
+# installed before the kms-connector.
 #
 # Deployed as:
-#   helm upgrade --install kms-test-keygen-proxy-<i> \
+#   helm upgrade --install kms-insecure-keygen-redirect-<i> \
 #     oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
-#     -n <namespace> -f this-file --set-string fullnameOverride=kms-test-keygen-proxy-<i> ...
-fullnameOverride: kms-test-keygen-proxy
+#     -n <namespace> -f this-file --set-string fullnameOverride=kms-insecure-keygen-redirect-<i> ...
+fullnameOverride: kms-insecure-keygen-redirect
 
 deployment:
   enabled: true
 
 image:
-  # Same image and digest as the docker stack's proxy (test-suite/fhevm/src/generate/kms-core.ts).
+  # Same image and digest as the docker stack's keygen proxy (test-suite/fhevm/src/generate/kms-core.ts).
   repository: node
   tag: "22-bookworm-slim@sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9"
   pullPolicy: IfNotPresent
 
-command: ["node", "/proxy/kms-test-keygen-proxy.cjs"]
+command: ["node", "/redirect/kms-test-keygen-proxy.cjs"]
 
 configmapFiles:
   enabled: true
   volumeMount:
-    mountPath: /proxy
+    mountPath: /redirect
     subPath: ""
     readOnly: true
 

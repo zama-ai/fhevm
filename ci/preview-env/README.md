@@ -70,7 +70,7 @@ ci/preview-env/
 ├── kms-connector/
 │   ├── values-kms-connector-e2e.yaml       # kms-connector overlay
 │   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain to hostChains (deploy_polygon)
-│   ├── values-kms-test-keygen-proxy-e2e.yaml # `common` chart overlay: kms-worker -> kms-core proxy, insecure keygen (fhe_keys=default-insecure)
+│   ├── values-kms-insecure-keygen-redirect-e2e.yaml # `common` chart overlay: kms-worker -> kms-core redirect, insecure keygen (fhe_keys=default-insecure)
 │   └── values-postgres-connector-e2e.yaml  # `common` chart overlay: in-cluster Postgres, dedicated to kms-connector
 ├── observability/
 │   ├── values-prometheus-e2e.yaml # `common` chart overlay (raw objects): in-namespace Prometheus, endpoints-SD scraping
@@ -298,8 +298,8 @@ The two host chains are the real public testnets, so this is the only preview sh
   `101-preview-env.md`; PR-label runs use the default):
   - `default-insecure` (the default): production-size **Default**
     parameters (`params-type=0`), and each kms-worker reaches its core through
-    `kms-test-keygen-proxy-<i>`, the docker stack's proxy, which switches keygen to
-    the KMS insecure keygen (minutes, no DKG). The proxy also sits on every other
+    `kms-insecure-keygen-redirect-<i>` (the docker stack's keygen proxy script), which switches keygen to
+    the KMS insecure keygen (minutes, no DKG). The redirect also sits on every other
     kms-worker call, decryptions included. The CRS ceremony is the real one; key
     and CRS took about 6 min on a 4-party Anvil preview, so the 15 m waits and
     45 m Helm stay; testnets 60 m / 40 m and 110 m Helm.

@@ -237,7 +237,7 @@ the real keygen, so that pair is not offered.
   smaller, so FHE operations are far cheaper than in production.
 - `insecure`: the KMS insecure keygen, a shortcut where one party makes the key
   and shares it. Test environments only. The preview runs the docker stack's
-  `kms-test-keygen-proxy` in front of each KMS core to use it (see `README.md`).
+  `kms-insecure-keygen-redirect` in front of each KMS core to use it (see `README.md`).
 - `secure`: the real multi-party preprocessing and DKG, as in production.
 - The CRS is always made by the real ceremony.
 - GPU workers need `default` parameters, so `--gpu` refuses `--fhe-keys test-secure`.
