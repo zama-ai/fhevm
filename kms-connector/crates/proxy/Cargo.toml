@@ -10,15 +10,13 @@ version.workspace = true
 connector-utils.workspace = true
 kms-connector-api.workspace = true
 fhevm-sig-auth.workspace = true
+fhevm-sig-proxy.workspace = true
 
 actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
-async-trait.workspace = true
-bytes.workspace = true
 http.workspace = true
 humantime-serde.workspace = true
-pingora.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

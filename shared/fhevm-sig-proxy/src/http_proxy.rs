@@ -1,6 +1,6 @@
 //! The Pingora [`ProxyHttp`] implementation of [`Proxy`]: the request lifecycle of the proxy.
 
-use crate::core::{Proxy, Route, match_route};
+use crate::{ErrorBody, Proxy, ProxyError, Route, match_route};
 use alloy::primitives::{Address, B256, KECCAK256_EMPTY, Keccak256};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -12,7 +12,6 @@ use http::{
         PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, TE, TRAILER, UPGRADE, VIA, WWW_AUTHENTICATE,
     },
 };
-use kms_connector_api::{ErrorCode, ErrorResponse};
 use pingora::{
     Error, ErrorSource, ErrorType,
     http::{RequestHeader, ResponseHeader},
@@ -31,10 +30,6 @@ const X_FORWARDED_HOST: HeaderName = HeaderName::from_static("x-forwarded-host")
 const KEEP_ALIVE: HeaderName = HeaderName::from_static("keep-alive");
 const PROXY_CONNECTION: HeaderName = HeaderName::from_static("proxy-connection");
 
-/// Error message for oversized request bodies.
-const BODY_TOO_LARGE: &str = "request body too large";
-const NOT_ORIGIN_FORM: &str = "request target must be an origin-form UTF-8 path";
-
 /// Per-request context.
 pub struct RequestContext {
     started_at: Instant,
@@ -51,15 +46,13 @@ pub struct RequestContext {
 }
 
 impl Proxy {
-    /// Writes an error body as JSON.
+    /// Writes an error body as JSON, rendered by the deployment.
     async fn respond_with_error(
         &self,
         session: &mut Session,
-        error: ErrorResponse,
+        error: &ProxyError,
     ) -> pingora::Result<()> {
-        let status = StatusCode::from_u16(error.code.http_status())
-            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-        let body = serde_json::to_vec(&error).unwrap_or_default();
+        let ErrorBody { status, json: body } = (self.config.error_body)(error);
         let mut header = ResponseHeader::build(status, None)?;
         header.insert_header(CONTENT_TYPE, "application/json")?;
         header.insert_header(CONTENT_LENGTH, body.len().to_string())?;
@@ -136,13 +129,13 @@ impl ProxyHttp for Proxy {
             .path_and_query()
             .filter(|target| target.as_str().as_bytes() == req.raw_path())
         else {
-            let error = ErrorResponse::new(ErrorCode::Malformed, NOT_ORIGIN_FORM, None);
-            self.respond_with_error(session, error).await?;
+            self.respond_with_error(session, &ProxyError::NotOriginForm)
+                .await?;
             return Ok(true);
         };
 
-        let route = match match_route(&req.method, target.path()) {
-            Ok(route) => route,
+        let route = match match_route(&self.config.routes, &req.method, target.path()) {
+            Ok(route) => route.clone(),
             Err(e) => {
                 self.respond_empty(session, e.http_status(), e.allow_header())
                     .await?;
@@ -155,7 +148,7 @@ impl ProxyHttp for Proxy {
         let (sender, body_digest) = match self.verifier.verify_header(authorization, target) {
             Ok(signed) => signed,
             Err(e) => {
-                self.respond_with_error(session, auth_error_response(&e))
+                self.respond_with_error(session, &ProxyError::Auth(e))
                     .await?;
                 return Ok(true);
             }
@@ -168,13 +161,13 @@ impl ProxyHttp for Proxy {
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<usize>().ok());
         if declared_length.is_some_and(|len| len > self.config.max_body_bytes) {
-            let error = ErrorResponse::new(ErrorCode::Malformed, BODY_TOO_LARGE, None);
-            self.respond_with_error(session, error).await?;
+            self.respond_with_error(session, &ProxyError::BodyTooLarge)
+                .await?;
             return Ok(true);
         }
 
         if session.is_body_empty() && KECCAK256_EMPTY != body_digest {
-            self.respond_with_error(session, auth_error_response(&AuthError::BodyMismatch))
+            self.respond_with_error(session, &ProxyError::Auth(AuthError::BodyMismatch))
                 .await?;
             return Ok(true);
         }
@@ -196,16 +189,15 @@ impl ProxyHttp for Proxy {
         if let Some(chunk) = body {
             ctx.body_len += chunk.len();
             if ctx.body_len > self.config.max_body_bytes {
-                return abort_with(ErrorResponse::new(
-                    ErrorCode::Malformed,
-                    BODY_TOO_LARGE,
-                    None,
-                ));
+                return abort_with(self.config.error_body, ProxyError::BodyTooLarge);
             }
             ctx.body_hasher.update(chunk);
         }
         if end_of_stream && ctx.body_hasher.clone().finalize() != ctx.body_digest {
-            return abort_with(auth_error_response(&AuthError::BodyMismatch));
+            return abort_with(
+                self.config.error_body,
+                ProxyError::Auth(AuthError::BodyMismatch),
+            );
         }
         Ok(())
     }
@@ -219,11 +211,7 @@ impl ProxyHttp for Proxy {
             .endpoint_balancer
             .select(SELECT_KEY, MAX_SELECT_ITERATIONS)
         else {
-            return abort_with(ErrorResponse::new(
-                ErrorCode::UpstreamTransient,
-                "endpoint unavailable",
-                None,
-            ));
+            return abort_with(self.config.error_body, ProxyError::EndpointUnavailable);
         };
         ctx.endpoint = Some(backend.addr.to_string());
 
@@ -257,32 +245,23 @@ impl ProxyHttp for Proxy {
         e: &Error,
         _ctx: &mut Self::CTX,
     ) -> FailToProxy {
-        let error_code = match e.root_cause().downcast_ref::<ErrorResponse>() {
-            Some(error) => {
-                let status = StatusCode::from_u16(error.code.http_status())
-                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                if let Err(e) = self.respond_with_error(session, error.clone()).await {
-                    error!("Failed to send error response to downstream: {e}");
-                }
-                status.as_u16()
-            }
-            // An upstream failure (unreachable endpoint, timeout...) gets an `ErrorResponse` body.
-            // The detailed Pingora error (which includes the endpoint's address) is only logged
+        let error = match e.root_cause().downcast_ref::<ProxyError>() {
+            Some(error) => Some(error.clone()),
+            // An upstream failure (unreachable endpoint, timeout...) gets an error body. The
+            // detailed Pingora error (which includes the endpoint's address) is only logged
             // server-side by `logging()`; the client, e.g. the relayer, gets a fixed message.
-            None if *e.esource() == ErrorSource::Upstream => {
-                let (code, message) = match e.etype() {
-                    ErrorType::ConnectTimedout | ErrorType::ReadTimedout => {
-                        (ErrorCode::Timeout, "endpoint timed out")
-                    }
-                    _ => (ErrorCode::UpstreamTransient, "endpoint unavailable"),
-                };
-                let error = ErrorResponse::new(code, message.to_string(), None);
-                let status = StatusCode::from_u16(error.code.http_status())
-                    .unwrap_or(StatusCode::BAD_GATEWAY);
-                if let Err(e) = self.respond_with_error(session, error).await {
+            None if *e.esource() == ErrorSource::Upstream => Some(match e.etype() {
+                ErrorType::ConnectTimedout | ErrorType::ReadTimedout => ProxyError::EndpointTimeout,
+                _ => ProxyError::EndpointUnavailable,
+            }),
+            None => None,
+        };
+        let error_code = match error {
+            Some(error) => {
+                if let Err(e) = self.respond_with_error(session, &error).await {
                     error!("Failed to send error response to downstream: {e}");
                 }
-                status.as_u16()
+                (self.config.error_body)(&error).status.as_u16()
             }
             None => {
                 let code = default_error_code(e);
@@ -325,21 +304,14 @@ impl ProxyHttp for Proxy {
     }
 }
 
-/// Converts an `AuthError` into an `ErrorResponse`.
-fn auth_error_response(error: &AuthError) -> ErrorResponse {
-    let code = if matches!(error, AuthError::Expired) {
-        ErrorCode::AuthExpired
-    } else {
-        ErrorCode::SenderAuthenticationFailed
-    };
-    ErrorResponse::new(code, format!("{}: {error}", error.code()), None)
-}
-
-/// Aborts the proxying with an kms-connector-api error.
+/// Aborts the proxying with a [`ProxyError`], with the status `error_body` renders it with.
 ///
-/// The [`ErrorResponse`] is kept as the cause so `fail_to_proxy` can send it back to the client.
-fn abort_with<T>(error: ErrorResponse) -> pingora::Result<T> {
-    let etype = ErrorType::HTTPStatus(error.code.http_status());
+/// The [`ProxyError`] is kept as the cause so `fail_to_proxy` can send it back to the client.
+fn abort_with<T>(
+    error_body: fn(&ProxyError) -> ErrorBody,
+    error: ProxyError,
+) -> pingora::Result<T> {
+    let etype = ErrorType::HTTPStatus(error_body(&error).status.as_u16());
     Error::e_because(etype, error.to_string(), error)
 }
 
@@ -390,24 +362,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn error_response_is_recovered_from_the_pingora_error() {
-        let error = ErrorResponse::new(ErrorCode::UpstreamTransient, "endpoint unavailable", None);
-        let e: Box<Error> = abort_with::<()>(error.clone()).unwrap_err();
+    fn the_error_is_recovered_from_the_pingora_error() {
+        let bad_gateway = |_: &ProxyError| ErrorBody {
+            status: StatusCode::BAD_GATEWAY,
+            json: vec![],
+        };
+        let error = ProxyError::EndpointUnavailable;
+        let e: Box<Error> = abort_with::<()>(bad_gateway, error.clone()).unwrap_err();
         assert_eq!(e.etype(), &ErrorType::HTTPStatus(502));
         assert_eq!(default_error_code(&e), 502);
-        assert_eq!(e.root_cause().downcast_ref::<ErrorResponse>(), Some(&error));
-    }
-
-    #[test]
-    fn only_expired_auth_rejection_is_retryable() {
-        let expired = auth_error_response(&AuthError::Expired);
-        assert_eq!(expired.code, ErrorCode::AuthExpired);
-        assert!(expired.retryable);
-
-        let missing = auth_error_response(&AuthError::Missing);
-        assert_eq!(missing.code, ErrorCode::SenderAuthenticationFailed);
-        assert!(!missing.retryable);
-        assert!(missing.message.starts_with("auth_missing: "));
+        assert_eq!(e.root_cause().downcast_ref::<ProxyError>(), Some(&error));
     }
 
     #[test]

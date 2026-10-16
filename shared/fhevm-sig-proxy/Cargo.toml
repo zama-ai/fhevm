@@ -1,0 +1,34 @@
+[package]
+authors = ["Zama"]
+name = "fhevm-sig-proxy"
+version = "0.1.0"
+edition = "2024"
+license = "BSD-3-Clause-Clear"
+description = "HTTPS reverse proxy on Pingora that authenticates each request's FhevmSig before forwarding it"
+
+[dependencies]
+alloy = { version = "2", default-features = false, features = [
+    "reqwest-rustls-tls",
+    "std",
+    "transport-http",
+] }
+anyhow = "1"
+async-trait = "0.1"
+bytes = "1"
+fhevm-sig-auth = { path = "../fhevm-sig-auth" }
+http = "1"
+pingora = { version = "=0.9.0", default-features = false, features = [
+    "openssl",
+    "lb",
+    "proxy",
+] }
+tokio = { version = "1", default-features = false, features = ["time"] }
+tracing = "0.1"
+
+[dev-dependencies]
+rcgen = { version = "0.14", default-features = false, features = [
+    "aws_lc_rs",
+    "crypto",
+    "pem",
+] }
+rstest = "0.26"

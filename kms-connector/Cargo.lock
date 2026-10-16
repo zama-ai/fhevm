@@ -3338,6 +3338,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "fhevm-sig-proxy"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "async-trait",
+ "bytes",
+ "fhevm-sig-auth",
+ "http 1.4.0",
+ "pingora",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "fhevm_gateway_bindings"
 version = "0.15.0"
 dependencies = [
@@ -5863,14 +5878,12 @@ dependencies = [
  "actix-web",
  "alloy",
  "anyhow",
- "async-trait",
- "bytes",
  "connector-utils",
  "fhevm-sig-auth",
+ "fhevm-sig-proxy",
  "http 1.4.0",
  "humantime-serde",
  "kms-connector-api",
- "pingora",
  "rcgen",
  "rstest",
  "rustls",

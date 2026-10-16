@@ -43,6 +43,8 @@ jobs:
             - kms-connector/Cargo.*
             - gateway-contracts/rust_bindings/**
             - host-contracts/rust_bindings/**
+            # The connector's proxy tests also cover the library its proxy runs on.
+            - shared/fhevm-sig-proxy/**
           # Shared crates are tested on their own (`shared-crates-tests`): only check that the connector still
           # compiles against them.
           shared-deps:

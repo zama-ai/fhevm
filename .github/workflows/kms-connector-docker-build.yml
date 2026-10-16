@@ -208,6 +208,7 @@ jobs:
           - kms-connector/crates/utils/**
           - kms-connector/Cargo.*
           - shared/fhevm-sig-auth/**
+          - shared/fhevm-sig-proxy/**
 
   ########################################################################
   #                        BUILD DECISIONS                               #
