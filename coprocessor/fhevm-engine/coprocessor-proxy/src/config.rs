@@ -210,8 +210,8 @@ impl Config {
             },
             audience: self.coprocessor_signer_address,
             error_body: crate::error::error_body,
-            // The endpoints receive the request as it was signed, so they can check the caller's
-            // `FhevmSig` themselves.
+            // prf-service keeps per-connector slots, so it needs the caller's identity: with the
+            // signed header it verifies that identity itself instead of trusting one the proxy sets.
             forward_authorization: true,
             routes,
             upstreams,
