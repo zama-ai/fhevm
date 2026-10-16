@@ -1,6 +1,9 @@
 //! The Pingora [`ProxyHttp`] implementation of [`Proxy`]: the request lifecycle of the proxy.
 
-use crate::{ErrorBody, Proxy, ProxyError, Route, match_route};
+use crate::{
+    ErrorBody, Proxy, ProxyError,
+    routing::{ParsedRoute, RouteError},
+};
 use alloy::primitives::{Address, B256, KECCAK256_EMPTY, Keccak256};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -33,7 +36,8 @@ const PROXY_CONNECTION: HeaderName = HeaderName::from_static("proxy-connection")
 /// Per-request context.
 pub struct RequestContext {
     started_at: Instant,
-    route: Option<Route>,
+    /// The index of the matched route in [`Proxy::routes`].
+    route: Option<usize>,
     endpoint: Option<String>,
     /// The sender authenticated by the `FhevmSig` header.
     sender: Option<Address>,
@@ -72,14 +76,23 @@ impl Proxy {
         &self,
         session: &mut Session,
         status: StatusCode,
-        allow: Option<&Method>,
+        allow: Option<&[Method]>,
     ) -> pingora::Result<()> {
         let mut header = ResponseHeader::build(status, None)?;
         header.insert_header(CONTENT_LENGTH, "0")?;
-        if let Some(method) = allow {
-            header.insert_header(ALLOW, method.as_str())?;
+        if let Some(methods) = allow {
+            let methods: Vec<_> = methods.iter().map(Method::as_str).collect();
+            header.insert_header(ALLOW, methods.join(", "))?;
         }
         session.write_response_header(Box::new(header), true).await
+    }
+
+    /// The route `request_filter` matched: the later phases only run after it did.
+    fn matched_route(&self, ctx: &RequestContext) -> pingora::Result<&ParsedRoute> {
+        let index = ctx
+            .route
+            .ok_or_else(|| Error::explain(ErrorType::InternalError, "no route matched"))?;
+        Ok(self.routes.get(index))
     }
 }
 
@@ -134,15 +147,27 @@ impl ProxyHttp for Proxy {
             return Ok(true);
         };
 
-        let route = match match_route(&self.config.routes, &req.method, target.path()) {
-            Ok(route) => route.clone(),
-            Err(e) => {
-                self.respond_empty(session, e.http_status(), e.allow_header())
+        let index = match self.routes.find(&req.method, target.path()) {
+            Ok(index) => index,
+            Err(RouteError::NotFound) => {
+                self.respond_empty(session, StatusCode::NOT_FOUND, None)
+                    .await?;
+                return Ok(true);
+            }
+            // RFC 9110 §15.5.6: a `405` lists the methods the route accepts in `Allow`.
+            Err(RouteError::MethodNotAllowed(methods)) => {
+                self.respond_empty(session, StatusCode::METHOD_NOT_ALLOWED, Some(&methods))
+                    .await?;
+                return Ok(true);
+            }
+            Err(RouteError::NonCanonical) => {
+                self.respond_with_error(session, &ProxyError::NonCanonicalPath)
                     .await?;
                 return Ok(true);
             }
         };
-        ctx.route = Some(route);
+        ctx.route = Some(index);
+        let max_body_bytes = self.routes.get(index).route.max_body_bytes;
 
         let authorization = req.headers.get(AUTHORIZATION).map(HeaderValue::as_bytes);
         let (sender, body_digest) = match self.verifier.verify_header(authorization, target) {
@@ -160,7 +185,7 @@ impl ProxyHttp for Proxy {
             .get(CONTENT_LENGTH)
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<usize>().ok());
-        if declared_length.is_some_and(|len| len > self.config.max_body_bytes) {
+        if declared_length.is_some_and(|len| len > max_body_bytes) {
             self.respond_with_error(session, &ProxyError::BodyTooLarge)
                 .await?;
             return Ok(true);
@@ -188,7 +213,7 @@ impl ProxyHttp for Proxy {
     ) -> pingora::Result<()> {
         if let Some(chunk) = body {
             ctx.body_len += chunk.len();
-            if ctx.body_len > self.config.max_body_bytes {
+            if ctx.body_len > self.matched_route(ctx)?.route.max_body_bytes {
                 return abort_with(self.config.error_body, ProxyError::BodyTooLarge);
             }
             ctx.body_hasher.update(chunk);
@@ -207,9 +232,10 @@ impl ProxyHttp for Proxy {
         _session: &mut Session,
         ctx: &mut Self::CTX,
     ) -> pingora::Result<Box<HttpPeer>> {
-        let Some(backend) = self
-            .endpoint_balancer
-            .select(SELECT_KEY, MAX_SELECT_ITERATIONS)
+        let route = self.matched_route(ctx)?;
+        let response_timeout = route.route.endpoint_response_timeout;
+        let Some(backend) =
+            self.balancers[route.upstream].select(SELECT_KEY, MAX_SELECT_ITERATIONS)
         else {
             return abort_with(self.config.error_body, ProxyError::EndpointUnavailable);
         };
@@ -218,20 +244,21 @@ impl ProxyHttp for Proxy {
         let mut peer = HttpPeer::new(backend.addr, false, String::new());
         peer.options.connection_timeout = Some(self.config.endpoint_connect_timeout);
         peer.options.total_connection_timeout = Some(self.config.endpoint_connect_timeout);
-        peer.options.read_timeout = Some(self.config.endpoint_response_timeout);
-        peer.options.write_timeout = Some(self.config.endpoint_response_timeout);
+        peer.options.read_timeout = Some(response_timeout);
+        peer.options.write_timeout = Some(response_timeout);
         peer.options.idle_timeout = Some(self.config.endpoint_idle_timeout);
         Ok(Box::new(peer))
     }
 
-    // Strips the credentials before forwarding. The body is never touched.
+    // Strips the forwarding information and hop-by-hop headers, and the credentials unless the
+    // endpoints read them. The body is never touched.
     async fn upstream_request_filter(
         &self,
         session: &mut Session,
         upstream_request: &mut RequestHeader,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
-        sanitize_headers(upstream_request);
+        sanitize_headers(upstream_request, self.config.forward_authorization);
         if let Some(addr) = session.client_addr().and_then(|a| a.as_inet()) {
             upstream_request.insert_header(X_FORWARDED_FOR, addr.ip().to_string())?;
         }
@@ -331,10 +358,9 @@ fn default_error_code(e: &Error) -> u16 {
     }
 }
 
-/// Headers that must not be forwarded to the endpoint: the proxy credentials, client-supplied
-/// forwarding information and the HTTP/1.1 hop-by-hop headers (RFC 9110 §7.6.1).
-const STRIPPED_HEADERS: [HeaderName; 14] = [
-    AUTHORIZATION,
+/// Headers that must not be forwarded to the endpoint: client-supplied forwarding information and
+/// the HTTP/1.1 hop-by-hop headers (RFC 9110 §7.6.1).
+const STRIPPED_HEADERS: [HeaderName; 13] = [
     X_FORWARDED_FOR,
     X_FORWARDED_PROTO,
     X_FORWARDED_HOST,
@@ -350,10 +376,14 @@ const STRIPPED_HEADERS: [HeaderName; 14] = [
     UPGRADE,
 ];
 
-/// Removes the [`STRIPPED_HEADERS`] from the request.
-pub fn sanitize_headers(req: &mut RequestHeader) {
+/// Removes the [`STRIPPED_HEADERS`] from the request, and `Authorization` unless
+/// `forward_authorization`.
+pub fn sanitize_headers(req: &mut RequestHeader, forward_authorization: bool) {
     for name in &STRIPPED_HEADERS {
         req.remove_header(name);
+    }
+    if !forward_authorization {
+        req.remove_header(&AUTHORIZATION);
     }
 }
 
@@ -374,8 +404,7 @@ mod tests {
         assert_eq!(e.root_cause().downcast_ref::<ProxyError>(), Some(&error));
     }
 
-    #[test]
-    fn sanitize_strips_credentials_forwarding_and_hop_by_hop_headers() {
+    fn request_with_all_headers() -> RequestHeader {
         let mut req = RequestHeader::build("POST", b"/v1/public-decrypt", None).unwrap();
         for (name, value) in [
             ("authorization", "Bearer secret"),
@@ -394,13 +423,38 @@ mod tests {
         ] {
             req.append_header(name, value).unwrap();
         }
+        req
+    }
 
-        sanitize_headers(&mut req);
+    fn remaining(req: &RequestHeader) -> Vec<&str> {
+        let mut names: Vec<_> = req.headers.keys().map(|k| k.as_str()).collect();
+        names.sort();
+        names
+    }
 
-        let remaining: Vec<_> = req.headers.keys().map(|k| k.as_str()).collect();
-        assert_eq!(remaining.len(), 4);
-        for kept in ["content-type", "content-length", "host", "x-request-id"] {
-            assert!(remaining.contains(&kept), "{kept} should be kept");
-        }
+    #[test]
+    fn sanitize_strips_credentials_forwarding_and_hop_by_hop_headers() {
+        let mut req = request_with_all_headers();
+        sanitize_headers(&mut req, false);
+        assert_eq!(
+            remaining(&req),
+            ["content-length", "content-type", "host", "x-request-id"]
+        );
+    }
+
+    #[test]
+    fn sanitize_keeps_the_credentials_the_endpoints_read() {
+        let mut req = request_with_all_headers();
+        sanitize_headers(&mut req, true);
+        assert_eq!(
+            remaining(&req),
+            [
+                "authorization",
+                "content-length",
+                "content-type",
+                "host",
+                "x-request-id"
+            ]
+        );
     }
 }

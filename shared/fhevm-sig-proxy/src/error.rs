@@ -10,6 +10,9 @@ use std::fmt::Display;
 pub enum ProxyError {
     /// The request target is not an origin-form UTF-8 path.
     NotOriginForm,
+    /// The request path matches a route's template, with a parameter not in its canonical
+    /// encoding.
+    NonCanonicalPath,
     /// The request body exceeds the route's cap.
     BodyTooLarge,
     /// The `FhevmSig` header failed a check.
@@ -24,6 +27,7 @@ impl Display for ProxyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NotOriginForm => f.write_str("request target must be an origin-form UTF-8 path"),
+            Self::NonCanonicalPath => f.write_str("path parameter not in its canonical encoding"),
             Self::BodyTooLarge => f.write_str("request body too large"),
             Self::Auth(error) => error.fmt(f),
             Self::EndpointUnavailable => f.write_str("endpoint unavailable"),

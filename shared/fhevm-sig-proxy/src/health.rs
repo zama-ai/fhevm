@@ -15,7 +15,8 @@ use std::{
 #[derive(Clone)]
 pub struct State {
     self_check_url: Url,
-    endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
+    /// Each upstream's name and load-balancer.
+    upstreams: Vec<(String, Arc<LoadBalancer<RoundRobin>>)>,
     healthcheck_timeout: Duration,
     /// The client used to reach the proxy's own TLS listener through the loopback interface.
     loopback_client: reqwest::Client,
@@ -25,7 +26,7 @@ impl State {
     pub fn new(
         bind_address: SocketAddr,
         self_check_path: &str,
-        endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
+        upstreams: Vec<(String, Arc<LoadBalancer<RoundRobin>>)>,
         healthcheck_timeout: Duration,
     ) -> anyhow::Result<Self> {
         // The proxy's certificate is issued for its public hostname, not for the loopback
@@ -37,21 +38,32 @@ impl State {
 
         Ok(Self {
             self_check_url: self_check_url(bind_address, self_check_path),
-            endpoint_balancer,
+            upstreams,
             healthcheck_timeout,
             loopback_client,
         })
     }
 
-    /// Splits the endpoints into the healthy and unhealthy ones, as last observed by the
-    /// load-balancer's background healthcheck.
-    pub fn endpoints_health(&self) -> (Vec<String>, Vec<String>) {
-        let backends = self.endpoint_balancer.backends();
-        let all = backends.get_backend();
-        let (healthy, unhealthy) = all.iter().partition(|b| backends.ready(b));
+    /// Splits each upstream's endpoints into the healthy and unhealthy ones, as last observed by
+    /// the load-balancers' background healthchecks.
+    pub fn endpoints_health(&self) -> EndpointsHealth {
         let addresses =
             |backends: Vec<&Backend>| backends.into_iter().map(|b| b.addr.to_string()).collect();
-        (addresses(healthy), addresses(unhealthy))
+        EndpointsHealth(
+            self.upstreams
+                .iter()
+                .map(|(name, balancer)| {
+                    let backends = balancer.backends();
+                    let all = backends.get_backend();
+                    let (healthy, unhealthy) = all.iter().partition(|b| backends.ready(b));
+                    UpstreamHealth {
+                        name: name.clone(),
+                        healthy: addresses(healthy),
+                        unhealthy: addresses(unhealthy),
+                    }
+                })
+                .collect(),
+        )
     }
 
     /// Performs the healthcheck of the proxy's TLS listener by querying a route through the
@@ -74,13 +86,44 @@ impl State {
     }
 }
 
-/// The healthcheck run against each endpoint: a `GET` of the healthcheck path must be answered
-/// with `200`.
-pub fn endpoint_health_check(config: &ProxyConfig) -> anyhow::Result<HttpHealthCheck> {
+/// The endpoints' health, read once from every upstream.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EndpointsHealth(pub Vec<UpstreamHealth>);
+
+/// One upstream's endpoints, split by their last background healthcheck.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UpstreamHealth {
+    pub name: String,
+    pub healthy: Vec<String>,
+    pub unhealthy: Vec<String>,
+}
+
+impl EndpointsHealth {
+    /// Whether every upstream has a healthy endpoint, so that every route can be forwarded.
+    pub fn serving(&self) -> bool {
+        self.0.iter().all(|upstream| !upstream.healthy.is_empty())
+    }
+
+    /// The healthy endpoints of all upstreams.
+    pub fn healthy_endpoints(&self) -> Vec<String> {
+        self.0.iter().flat_map(|u| u.healthy.clone()).collect()
+    }
+
+    /// The unhealthy endpoints of all upstreams.
+    pub fn unhealthy_endpoints(&self) -> Vec<String> {
+        self.0.iter().flat_map(|u| u.unhealthy.clone()).collect()
+    }
+}
+
+/// The healthcheck run against each endpoint: a `GET` of `healthcheck_path` must be answered with
+/// `200`.
+pub fn endpoint_health_check(
+    config: &ProxyConfig,
+    healthcheck_path: &str,
+) -> anyhow::Result<HttpHealthCheck> {
     // The endpoints answer whatever the `Host` header says, so it is left empty
     let mut health_check = HttpHealthCheck::new("", false);
-    let uri = config
-        .endpoint_healthcheck_path
+    let uri = healthcheck_path
         .parse()
         .map_err(|e| anyhow!("Failed to build the endpoint healthcheck request: {e}"))?;
     health_check.req.set_uri(uri);
@@ -126,5 +169,26 @@ mod tests {
             self_check_url("10.0.0.3:9443".parse().unwrap(), "/version").as_str(),
             "https://10.0.0.3:9443/version"
         );
+    }
+
+    #[test]
+    fn serving_needs_a_healthy_endpoint_in_every_upstream() {
+        let upstream = |name: &str, healthy: &[&str]| UpstreamHealth {
+            name: name.to_owned(),
+            healthy: healthy.iter().map(|a| a.to_string()).collect(),
+            unhealthy: vec!["10.0.0.9:80".to_owned()],
+        };
+        let one_down = EndpointsHealth(vec![upstream("a", &["10.0.0.1:80"]), upstream("b", &[])]);
+        assert!(!one_down.serving());
+        assert_eq!(one_down.healthy_endpoints(), ["10.0.0.1:80"]);
+        assert_eq!(
+            one_down.unhealthy_endpoints(),
+            ["10.0.0.9:80", "10.0.0.9:80"]
+        );
+        let both_up = EndpointsHealth(vec![
+            upstream("a", &["10.0.0.1:80"]),
+            upstream("b", &["10.0.0.2:80"]),
+        ]);
+        assert!(both_up.serving());
     }
 }

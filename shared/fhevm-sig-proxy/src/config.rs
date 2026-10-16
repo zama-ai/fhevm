@@ -21,28 +21,25 @@ pub struct ProxyConfig {
     pub audience: Address,
     /// Renders the errors the proxy answers itself in the deployment's error body.
     pub error_body: fn(&ProxyError) -> ErrorBody,
+    /// Whether the `Authorization` header is forwarded to the endpoints, for endpoints that read
+    /// the `FhevmSig` themselves. Otherwise it is removed.
+    pub forward_authorization: bool,
 
     /// The routes forwarded to the endpoints; any other request is rejected.
     pub routes: Vec<Route>,
-    /// A route the proxy answers `401` to without credentials, requested by its own TLS
-    /// listener healthcheck.
+    /// The pools of endpoints the routes are forwarded to.
+    pub upstreams: Vec<Upstream>,
+    /// A path the proxy answers `401` to a `GET` without credentials, requested by its own TLS
+    /// listener healthcheck. It must match a route.
     pub tls_self_check_path: String,
 
-    /// The `host:port` addresses of the endpoints to forward requests to.
-    pub endpoint_addresses: Vec<Authority>,
-    /// The path the endpoints are probed on in the background; a healthy endpoint answers `200`.
-    pub endpoint_healthcheck_path: String,
     /// The timeout to establish a TCP connection to an endpoint.
     pub endpoint_connect_timeout: Duration,
     /// How often the endpoints are probed in the background to filter which ones receive requests.
     pub endpoint_healthcheck_frequency: Duration,
-    /// How long the proxy waits for an endpoint response before answering `502`.
-    pub endpoint_response_timeout: Duration,
     /// How long an idle pooled endpoint connection is kept before being closed.
     pub endpoint_idle_timeout: Duration,
 
-    /// The maximum accepted size of a request body.
-    pub max_body_bytes: usize,
     /// How long the proxy waits for the client to send request bytes before dropping it.
     pub request_read_timeout: Duration,
     /// How long in-flight requests are given to complete after `SIGTERM`.
@@ -61,4 +58,15 @@ pub struct TlsConfig {
     pub cert_path: PathBuf,
     /// The path of the PEM private key.
     pub key_path: PathBuf,
+}
+
+/// A pool of interchangeable endpoints, load-balanced round-robin and probed in the background.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Upstream {
+    /// The name the routes refer to the upstream by.
+    pub name: String,
+    /// The `host:port` addresses of the endpoints, reached over plain HTTP.
+    pub endpoint_addresses: Vec<Authority>,
+    /// The path the endpoints are probed on; a healthy endpoint answers `200`.
+    pub healthcheck_path: String,
 }

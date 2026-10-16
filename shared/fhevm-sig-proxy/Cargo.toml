@@ -26,9 +26,20 @@ tokio = { version = "1", default-features = false, features = ["time"] }
 tracing = "0.1"
 
 [dev-dependencies]
+alloy = { version = "2", default-features = false, features = ["signer-local"] }
+futures-util = { version = "0.3", default-features = false }
+http-body-util = "0.1"
+hyper = { version = "1", default-features = false, features = ["http1", "server"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 rcgen = { version = "0.14", default-features = false, features = [
     "aws_lc_rs",
     "crypto",
     "pem",
 ] }
+reqwest = { version = "0.13", default-features = false, features = ["stream"] }
 rstest = "0.26"
+tokio = { version = "1", default-features = false, features = [
+    "macros",
+    "net",
+    "rt-multi-thread",
+] }

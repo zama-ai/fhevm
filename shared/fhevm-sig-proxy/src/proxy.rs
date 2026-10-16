@@ -1,10 +1,11 @@
 use crate::{
     ProxyConfig,
     health::{self, endpoint_health_check},
+    routing::RouteTable,
 };
-use anyhow::{Context, anyhow};
+use anyhow::{Context, anyhow, ensure};
 use fhevm_sig_auth::FhevmSigVerifier;
-use http::uri::Authority;
+use http::{Method, uri::Authority};
 use pingora::{
     lb::{LoadBalancer, selection::RoundRobin},
     listeners::tls::TlsSettings,
@@ -20,7 +21,9 @@ use tracing::info;
 pub struct Proxy {
     pub(crate) config: ProxyConfig,
     pub(crate) verifier: FhevmSigVerifier,
-    pub(crate) endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
+    pub(crate) routes: RouteTable,
+    /// The load-balancer of each of [`ProxyConfig::upstreams`], in the same order.
+    pub(crate) balancers: Vec<Arc<LoadBalancer<RoundRobin>>>,
 }
 
 /// How long in-flight connections are given to finish once the graceful shutdown deadline (
@@ -30,27 +33,49 @@ const GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: u64 = 5;
 impl Proxy {
     /// Creates the `Proxy` from its configuration, and the `health::State` used to monitor it.
     pub fn from_config(config: ProxyConfig) -> anyhow::Result<(Self, health::State)> {
-        let mut endpoint_balancer =
-            LoadBalancer::try_from_iter(config.endpoint_addresses.iter().map(Authority::as_str))
-                .context("Failed to resolve endpoint addresses")?;
-        info!(
-            "Resolved endpoints: {:?}",
-            endpoint_balancer
-                .backends()
-                .get_backend()
-                .iter()
-                .map(|b| b.addr.to_string())
-                .collect::<Vec<_>>()
+        let routes = RouteTable::new(&config.routes, &config.upstreams)?;
+        ensure!(
+            routes
+                .find(&Method::GET, &config.tls_self_check_path)
+                .is_ok(),
+            "TLS self-check path {} matches no GET route",
+            config.tls_self_check_path
         );
-        endpoint_balancer.set_health_check(Box::new(endpoint_health_check(&config)?));
-        endpoint_balancer.health_check_frequency = Some(config.endpoint_healthcheck_frequency);
-        endpoint_balancer.parallel_health_check = true;
-        let endpoint_balancer = Arc::new(endpoint_balancer);
+
+        let mut balancers = Vec::with_capacity(config.upstreams.len());
+        for upstream in &config.upstreams {
+            let mut balancer = LoadBalancer::try_from_iter(
+                upstream.endpoint_addresses.iter().map(Authority::as_str),
+            )
+            .with_context(|| {
+                format!("Failed to resolve endpoint addresses of {}", upstream.name)
+            })?;
+            info!(
+                upstream = upstream.name,
+                "Resolved endpoints: {:?}",
+                balancer
+                    .backends()
+                    .get_backend()
+                    .iter()
+                    .map(|b| b.addr.to_string())
+                    .collect::<Vec<_>>()
+            );
+            let health_check = endpoint_health_check(&config, &upstream.healthcheck_path)?;
+            balancer.set_health_check(Box::new(health_check));
+            balancer.health_check_frequency = Some(config.endpoint_healthcheck_frequency);
+            balancer.parallel_health_check = true;
+            balancers.push(Arc::new(balancer));
+        }
 
         let state = health::State::new(
             config.bind_address,
             &config.tls_self_check_path,
-            Arc::clone(&endpoint_balancer),
+            config
+                .upstreams
+                .iter()
+                .map(|upstream| upstream.name.clone())
+                .zip(balancers.iter().cloned())
+                .collect(),
             config.healthcheck_timeout,
         )?;
         let domain =
@@ -60,7 +85,8 @@ impl Proxy {
         let proxy = Self {
             verifier,
             config,
-            endpoint_balancer,
+            routes,
+            balancers,
         };
         Ok((proxy, state))
     }
@@ -97,11 +123,12 @@ impl Proxy {
         tls.check_private_key()
             .map_err(|e| anyhow!("Failed to configure TLS: {e}"))?;
 
-        let endpoint_health_service = GenBackgroundService::new(
-            "BG endpoint health check".to_string(),
-            Arc::clone(&self.endpoint_balancer),
-        );
-        server.add_service(endpoint_health_service);
+        for (upstream, balancer) in self.config.upstreams.iter().zip(&self.balancers) {
+            server.add_service(GenBackgroundService::new(
+                format!("BG {} health check", upstream.name),
+                Arc::clone(balancer),
+            ));
+        }
 
         let service_name = self.config.service_name.clone();
         let mut proxy_service =
@@ -122,7 +149,7 @@ fn path_to_str(path: &std::path::Path) -> anyhow::Result<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Route, TlsConfig};
+    use crate::{Route, TlsConfig, Upstream};
     use alloy::primitives::Address;
     use rstest::rstest;
     use std::{collections::HashSet, time::Duration};
@@ -143,18 +170,23 @@ mod tests {
                 status: http::StatusCode::INTERNAL_SERVER_ERROR,
                 json: vec![],
             },
+            forward_authorization: false,
             routes: vec![Route {
-                method: http::Method::GET,
+                methods: vec![Method::GET],
                 path: "/version".to_owned(),
+                upstream: "endpoint".to_owned(),
+                max_body_bytes: 1024,
+                endpoint_response_timeout: Duration::from_secs(60),
+            }],
+            upstreams: vec![Upstream {
+                name: "endpoint".to_owned(),
+                endpoint_addresses: vec!["127.0.0.1:1".parse().unwrap()],
+                healthcheck_path: "/version".to_owned(),
             }],
             tls_self_check_path: "/version".to_owned(),
-            endpoint_addresses: vec!["127.0.0.1:1".parse().unwrap()],
-            endpoint_healthcheck_path: "/version".to_owned(),
             endpoint_connect_timeout: Duration::from_secs(3),
             endpoint_healthcheck_frequency: Duration::from_secs(3),
-            endpoint_response_timeout: Duration::from_secs(60),
             endpoint_idle_timeout: Duration::from_secs(10),
-            max_body_bytes: 1024,
             request_read_timeout: Duration::from_secs(30),
             shutdown_grace_period: Duration::from_secs(60),
             service_name: "test-proxy".to_owned(),
@@ -210,5 +242,20 @@ mod tests {
             Err(e) => e.to_string(),
         };
         assert!(error.contains("Failed to configure TLS"), "{error}");
+    }
+
+    #[test]
+    fn the_tls_self_check_path_must_match_a_get_route() {
+        for path in ["/healthz", "/version/"] {
+            let config = ProxyConfig {
+                tls_self_check_path: path.to_owned(),
+                ..test_config()
+            };
+            let error = Proxy::from_config(config).err().unwrap().to_string();
+            assert_eq!(
+                error,
+                format!("TLS self-check path {path} matches no GET route")
+            );
+        }
     }
 }

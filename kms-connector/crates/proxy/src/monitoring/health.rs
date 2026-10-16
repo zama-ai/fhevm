@@ -15,7 +15,10 @@ impl State {
 impl Healthcheck for State {
     async fn healthcheck(&self) -> actix_web::HttpResponse {
         let tls_listener_result = self.0.tls_listener_healthcheck().await;
-        let (healthy_endpoints, unhealthy_endpoints) = self.0.endpoints_health();
+        let endpoints_health = self.0.endpoints_health();
+        let endpoints_serving = endpoints_health.serving();
+        let healthy_endpoints = endpoints_health.healthy_endpoints();
+        let unhealthy_endpoints = endpoints_health.unhealthy_endpoints();
 
         let mut errors = vec![];
         let tls_listener_reachable = tls_listener_result.map_err(|e| errors.push(e)).is_ok();
@@ -25,11 +28,11 @@ impl Healthcheck for State {
                 unhealthy_endpoints.join(", ")
             ));
         }
-        if healthy_endpoints.is_empty() {
+        if !endpoints_serving {
             errors.push("No healthy endpoint available".to_string());
         }
 
-        let healthy = tls_listener_reachable && !healthy_endpoints.is_empty();
+        let healthy = tls_listener_reachable && endpoints_serving;
         let status_code = if healthy {
             StatusCode::OK
         } else {

@@ -1,6 +1,6 @@
 use crate::{core::Config, monitoring::health};
 use fhevm_sig_auth::AuthError;
-use fhevm_sig_proxy::{ErrorBody, ProxyConfig, ProxyError, Route, TlsConfig};
+use fhevm_sig_proxy::{ErrorBody, ProxyConfig, ProxyError, Route, TlsConfig, Upstream};
 use http::{Method, StatusCode};
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
@@ -22,6 +22,9 @@ impl Proxy {
     }
 }
 
+/// The upstream of the connector's endpoints.
+const ENDPOINT_UPSTREAM: &str = "endpoint";
+
 /// The connector's interface: its three routes, all served by the endpoints.
 fn proxy_config(config: Config) -> ProxyConfig {
     let routes = [
@@ -30,8 +33,11 @@ fn proxy_config(config: Config) -> ProxyConfig {
         (Method::GET, VERSION_ROUTE),
     ]
     .map(|(method, path)| Route {
-        method,
+        methods: vec![method],
         path: path.to_owned(),
+        upstream: ENDPOINT_UPSTREAM.to_owned(),
+        max_body_bytes: config.max_body_bytes,
+        endpoint_response_timeout: config.endpoint_response_timeout,
     })
     .to_vec();
     ProxyConfig {
@@ -45,15 +51,17 @@ fn proxy_config(config: Config) -> ProxyConfig {
         allowed_senders: config.allowed_senders,
         audience: config.tx_sender_address,
         error_body,
+        forward_authorization: false,
         routes,
+        upstreams: vec![Upstream {
+            name: ENDPOINT_UPSTREAM.to_owned(),
+            endpoint_addresses: config.endpoint_addresses,
+            healthcheck_path: VERSION_ROUTE.to_owned(),
+        }],
         tls_self_check_path: VERSION_ROUTE.to_owned(),
-        endpoint_addresses: config.endpoint_addresses,
-        endpoint_healthcheck_path: VERSION_ROUTE.to_owned(),
         endpoint_connect_timeout: config.endpoint_connect_timeout,
         endpoint_healthcheck_frequency: config.endpoint_healthcheck_frequency,
-        endpoint_response_timeout: config.endpoint_response_timeout,
         endpoint_idle_timeout: config.endpoint_idle_timeout,
-        max_body_bytes: config.max_body_bytes,
         request_read_timeout: config.request_read_timeout,
         shutdown_grace_period: config.shutdown_grace_period,
         service_name: config.service_name,
@@ -64,7 +72,7 @@ fn proxy_config(config: Config) -> ProxyConfig {
 /// Renders the errors the proxy answers itself as a kms-connector-api `ErrorResponse`.
 fn error_body(error: &ProxyError) -> ErrorBody {
     let response = match error {
-        ProxyError::NotOriginForm | ProxyError::BodyTooLarge => {
+        ProxyError::NotOriginForm | ProxyError::NonCanonicalPath | ProxyError::BodyTooLarge => {
             ErrorResponse::new(ErrorCode::Malformed, error.to_string(), None)
         }
         ProxyError::Auth(error) => auth_error_response(error),
