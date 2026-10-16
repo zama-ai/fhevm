@@ -13,203 +13,87 @@
 # The chart is shared between gateway and host deployments
 
 # -----------------------------------------------------------------------------
-# Smart Contract Deployment
+# Smart Contracts Jobs
 # -----------------------------------------------------------------------------
-# Handles initial deployment of all required smart contracts
-scDeploy:
-  enabled: true
-
-  # Prevent redeployment if already done for current version
-  # preventRedeployment: false
-
-  nameOverride:
-
-  image:
-    name: ghcr.io/zama-ai/fhevm/host-contracts
-    tag: v0.13.0
-
-  # ConfigMap to store deployed contract addresses
-  configmap:
-    name: "sc-addresses"
-    annotations:
-
-  # Environment variables for contract deployment
-  env:
-    # =========================================================================
-    # ==========================  GATEWAY =====================================
-    # =========================================================================
-
-    # Deployer's private key
-    - name: DEPLOYER_PRIVATE_KEY
-      value: ""
-
-    # Pauser set contract address
-    - name: PAUSER_SET_ADDRESS
-      value: ""
-
-    # Number of pausers
-    # Should be set to the number of registered operators, ie `n_kms + n_copro` with `n_kms` the
-    # number of KMS nodes and `n_copro` the number of coprocessors
-    - name: NUM_PAUSERS
-      value: 18
-
-    # Pauser addresses (replace x with sequential number starting from 0 up to NUM_PAUSERS - 1)
-    # Each operator has its own hot wallet address used as pauser
-    - name: PAUSER_ADDRESS_x
-      value: ""
-
-    # =========================================================================
-    # ==========================  HOST    =====================================
-    # =========================================================================
-
-    # Deployer's private key
-    - name: DEPLOYER_PRIVATE_KEY
-      value: ""
-
-    # Pauser set contract address
-    - name: PAUSER_SET_CONTRACT_ADDRESS
-      value: ""
-
-    # Number of pausers
-    # Should be set to the number of registered operators, ie `n_kms + n_copro` with `n_kms` the
-    # number of KMS nodes and `n_copro` the number of coprocessors
-    - name: NUM_PAUSERS
-      value: 18
-
-    # Pauser addresses (replace x with sequential number starting from 0 up to NUM_PAUSERS - 1)
-    # Each operator has its own hot wallet address used as pauser
-    - name: PAUSER_ADDRESS_x
-      value: ""
-
-    # -------------------------------------------------------------------------
-    # ProtocolConfig (KMS node identity, context, thresholds)
-    # -------------------------------------------------------------------------
-    - name: NUM_KMS_NODES
-      value: 13
-
-    # KMS node fields, indexed from 0 up to NUM_KMS_NODES - 1
-    - name: KMS_TX_SENDER_ADDRESS_x
-      value: ""
-
-    - name: KMS_SIGNER_ADDRESS_x
-      value: ""
-
-    - name: KMS_NODE_IP_x
-      value: ""
-
-    - name: KMS_NODE_STORAGE_URL_x
-      value: ""
-
-    - name: PUBLIC_DECRYPTION_THRESHOLD
-      value: 7
-    - name: USER_DECRYPTION_THRESHOLD
-      value: 7
-    - name: KMS_GEN_THRESHOLD
-      value: 7
-    - name: MPC_THRESHOLD
-      value: 3
-
-    # -------------------------------------------------------------------------
-    # KMSVerifier / InputVerifier (references to gateway contracts)
-    # -------------------------------------------------------------------------
-    - name: CHAIN_ID_GATEWAY
-      value: ""
-
-    - name: DECRYPTION_ADDRESS
-      value: ""
-
-    - name: INPUT_VERIFICATION_ADDRESS
-      value: ""
-
-    # -------------------------------------------------------------------------
-    # InputVerifier (coprocessor signer set)
-    # -------------------------------------------------------------------------
-    - name: NUM_COPROCESSORS
-      value: 5
-
-    - name: COPROCESSOR_THRESHOLD
-      value: 3
-
-    # Coprocessor signer addresses, indexed from 0 up to NUM_COPROCESSORS - 1
-    - name: COPROCESSOR_SIGNER_ADDRESS_x
-      value: ""
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  # Security context for container execution
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 10000
-    fsGroup: 10001
-
-  # Deployment commands executed in sequence
-  deployCommands:
-    # =========================================================================
-    # ==========================  GATEWAY =====================================
-    # =========================================================================
-    # Deploy all gateway contracts
-    - npx hardhat task:deployAllGatewayContracts
-
-    # Register host chains in the gateway
-    - npx hardhat task:addHostChainsToGatewayConfig
-
-    # Add pausers to the gateway contracts
-    - npx hardhat task:addGatewayPausers
-
-    # =========================================================================
-    # ==========================  HOST    =====================================
-    # =========================================================================
-    # Deploy all host contracts, including KMSGeneration. KMSGeneration belongs
-    # only on the canonical host chain in the multi-chain model.
-    # See host-contracts/README.md#host-deployment-role.
-    - npx hardhat task:deployAllHostContracts --with-kms-generation true
-
-    # Add pausers to the host contracts
-    - npx hardhat task:addHostPausers
-
-  # Contract verification on block explorers
-  verifyContracts: false
+# Declare one entry per Job to run. Each entry produces a uniquely-named Job
+# (`<release>-<kind>-<name>-<tagSlug>`) so re-installs with a new image tag
+# don't collide with prior runs.
+#
+# Entry schema:
+#   enabled:         bool, default true; set to false to skip the entry
+#   name:            short slug identifying the job
+#   kind:            deploy | upgrade | task
+#   image:           { name, tag } container image and version
+#   oldImage:        { name, tag } source for old contracts (kind=upgrade only)
+#   env:             list of env entries passed to the container
+#   commands:        shell commands run in order
+#   envFile:         path or glob of address env files to record after the
+#                    commands, default "addresses/.env.*"; set it to the file
+#                    the job's image family writes (e.g. addresses/.env.host)
+#                    so jobs sharing a PVC never re-stamp each other's keys
+#   configmap:       { name } overrides the global configmap.name for this job
+#   persistence:     merged over the global persistence block for this job
+#                    (enabled, mountPath, volumeClaim.name); an overridden
+#                    volumeClaim.name must reference an existing PVC, the
+#                    chart only creates the shared one
+#
+# Each Job records `<contract>.address` (immutable, skipped if already set)
+# and, for deploy/upgrade kinds, `<contract>.version=<image.tag>` (overwritten
+# on each run) in the configmap named below (configmap.name), unless the entry
+# sets its own `configmap.name`.
+scJobs: []
+# Example:
+#   - name: protocol-payment
+#     kind: deploy
+#     image:
+#       name: ghcr.io/zama-ai/fhevm/gateway-contracts
+#       tag: v0.10.0
+#     env:
+#       - name: DEPLOYER_PRIVATE_KEY
+#         value: ""
+#       - name: ZAMA_OFT_ADDRESS
+#         value: ""
+#     envFile: addresses/.env.gateway
+#     commands:
+#       - npx hardhat task:setPaymentBridgingContractAddresses
+#       - npx hardhat task:deploySingleContract --name ProtocolPayment
+#   - name: add-pausers
+#     kind: task
+#     image:
+#       name: ghcr.io/zama-ai/fhevm/host-contracts
+#       tag: v0.13.0
+#     env:
+#       - name: DEPLOYER_PRIVATE_KEY
+#         value: ""
+#     commands:
+#       - npx hardhat task:addHostPausers
 
 # -----------------------------------------------------------------------------
-# Smart Contract Upgrade
+# Contract Addresses ConfigMap
 # -----------------------------------------------------------------------------
-# Handles upgrades of existing smart contracts
-scUpgrade:
-  enabled: false
+# ConfigMap where Jobs record deployed contract addresses and versions, unless
+# a scJobs entry sets its own `configmap.name`.
+configmap:
+  name: "sc-addresses"
+  annotations:
 
-  # Configuration for old contracts (used during upgrade process)
-  oldContracts:
-    image:
-      name: ghcr.io/zama-ai/fhevm/host-contracts
-      tag: v0.10.0
+# -----------------------------------------------------------------------------
+# Container Runtime Configuration
+# -----------------------------------------------------------------------------
+# Shared by all scJobs containers and the scDebug pod
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
 
-  # Note: The upgrade process uses the new contracts image from scDeploy.image
-
-  # Upgrade commands executed during contract upgrade
-  upgradeCommands:
-    # Example upgrade command (uncomment and modify as needed)
-    # - npx hardhat task:upgradeACL
-
-    # =========================================================================
-    # ==========================  GATEWAY =====================================
-    # =========================================================================
-    - npx hardhat task:upgradeGatewayConfig
-
-    - npx hardhat task:upgradeDecryption
-
-    - npx hardhat task:upgradeKMSGeneration
-
-    # =========================================================================
-    # ==========================  HOST    =====================================
-    # =========================================================================
-    - npx hardhat task:upgradeKMSVerifier
-
+# Security context for container execution
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10000
+  fsGroup: 10001
 
 # -----------------------------------------------------------------------------
 # Node Placement Configuration
@@ -238,10 +122,22 @@ scUpgrade:
 # -----------------------------------------------------------------------------
 # Smart Contract Debugging
 # -----------------------------------------------------------------------------
-# Utilities for debugging smart contract deployments
+# Utilities for debugging smart contract deployments. The debug pod reuses the
+# configuration (image, env, oldImage, persistence) of the last enabled scJobs
+# entry, so enabling it requires at least one entry.
 scDebug:
   enabled: false
   nameOverride:
+
+  # How the debug pod consumes the deploy PVC:
+  #   readOnly  (default): mount the PVC read-only so the debug pod always
+  #     sees the current state without being able to mutate it.
+  #   readWrite          : mount the PVC read-write. Use sparingly: only when
+  #     you need to edit the PVC contents by hand.
+  # Both modes share the same node-level ReadWriteOnce lock; a contract Job
+  # scheduled to a different node will still wait for the debug pod's node
+  # attachment.
+  mountMode: readOnly
 
 # -----------------------------------------------------------------------------
 # Persistent Storage Configuration

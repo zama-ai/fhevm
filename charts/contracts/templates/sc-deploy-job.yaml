@@ -1,114 +1,115 @@
-{{- if or .Values.scDeploy.enabled .Values.scUpgrade.enabled -}}
+{{- $jobs := fromYamlArray (include "scAllJobs" .) -}}
+{{- if gt (len $jobs) 0 -}}
+{{- range $index, $job := $jobs }}
+{{- $jobName := include "scJobResourceName" (dict "ctx" $ "job" $job) }}
+{{- $scriptKey := include "scJobScriptKey" (dict "job" $job) }}
+{{- $persistence := mergeOverwrite (deepCopy $.Values.persistence) (default dict $job.persistence) }}
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
   labels:
     app: fhevm-sc-deploy
-    app.kubernetes.io/name: {{ include "scDeployJobName" . }}
-  name: {{ include "scDeployJobName" . }}
+    app.kubernetes.io/name: {{ $jobName }}
+    fhevm.zama.ai/job-kind: {{ $job.kind }}
+    fhevm.zama.ai/contracts-version: {{ include "scSlug" $job.image.tag }}
+  annotations:
+    # Keep completed Jobs alive even if their entry is later removed from scJobs.
+    argocd.argoproj.io/sync-options: Prune=false
+    # ArgoCD applies Jobs in wave order, waiting for each to become
+    # Healthy (Job Succeeded) before moving to the next.
+    argocd.argoproj.io/sync-wave: {{ $index | quote }}
+  name: {{ $jobName }}
 spec:
   backoffLimit: 0
   template:
     metadata:
       annotations:
-        {{- if .Values.persistence.enabled }}
-        checksum/pvc: {{ include (print $.Template.BasePath "/sc-deploy-pvc.yaml") . | sha256sum }}
+        {{- if $persistence.enabled }}
+        checksum/pvc: {{ include (print $.Template.BasePath "/sc-deploy-pvc.yaml") $ | sha256sum }}
         {{- end }}
-        {{- with .Values.podAnnotations }}
+        {{- with $.Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- if .Values.persistence.enabled }}
-        checksum/pvc: {{ include (print $.Template.BasePath "/sc-deploy-pvc.yaml") . | sha256sum | trunc 63 }}
-        {{- end }}
-        {{- with .Values.podLabels }}
+        app: fhevm-sc-deploy
+        fhevm.zama.ai/job-kind: {{ $job.kind }}
+        {{- with $.Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ .Release.Name }}-config-writer
+      serviceAccountName: {{ $.Release.Name }}-config-writer
       securityContext:
-        {{- toYaml .Values.scDeploy.securityContext | nindent 8 }}
-      {{- with .Values.nodeSelector }}
+        {{- toYaml $.Values.securityContext | nindent 8 }}
+      {{- with $.Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tolerations }}
+      {{- with $.Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- with $.Values.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.scUpgrade.enabled }}
+      {{- if eq $job.kind "upgrade" }}
       initContainers:
-      - name: copy-old-contracts
-        image: {{ .Values.scUpgrade.oldContracts.image.name }}:{{ .Values.scUpgrade.oldContracts.image.tag }}
-        command: ["cp", "-r", "/app/contracts/.", "/app/oldContracts"]
-        volumeMounts:
-          - mountPath: /app/oldContracts
-            name: old-contracts
-      containers:
-      - name: upgrade-smart-contracts
-        command: [ "/app/upgrade-contracts.sh" ]
-      {{- else if .Values.scDeploy.enabled }}
-      containers:
-      - name: deploy-smart-contracts
-        command: [ "/app/deploy-contracts.sh" ]
+        - name: copy-old-contracts
+          image: {{ $job.oldImage.name }}:{{ $job.oldImage.tag }}
+          command: ["cp", "-r", "/app/contracts/.", "/app/oldContracts"]
+          volumeMounts:
+            - mountPath: /app/oldContracts
+              name: old-contracts
       {{- end }}
-        image: {{ .Values.scDeploy.image.name }}:{{ .Values.scDeploy.image.tag }}
-        env:
-          - name: DEPLOYED_SMART_CONTRACTS_VERSION
-            valueFrom:
-              configMapKeyRef:
-                name: {{ .Values.scDeploy.configmap.name }}
-                key: contracts.version
-                optional: true
-          {{- /* See https://docs.openzeppelin.com/upgrades-plugins/network-files#custom-network-files-location */}}
-          - name: MANIFEST_DEFAULT_DIR
-            value: "{{ .Values.persistence.mountPath }}/.openzeppelin"
-        {{- if .Values.scDeploy.env }}
-          {{ toYaml .Values.scDeploy.env | nindent 10 }}
-        {{- end }}
-        volumeMounts:
-          - mountPath: /app/deploy-contracts.sh
-            subPath: deploy-contracts.sh
-            name: config
-          - mountPath: /app/upgrade-contracts.sh
-            subPath: upgrade-contracts.sh
-            name: config
-          {{- if .Values.scUpgrade.enabled }}
-          - mountPath: /app/oldContracts
-            name: old-contracts
+      containers:
+        - name: {{ $job.kind }}-smart-contracts
+          image: {{ $job.image.name }}:{{ $job.image.tag }}
+          command: ["/app/run.sh"]
+          env:
+            {{- /* See https://docs.openzeppelin.com/upgrades-plugins/network-files#custom-network-files-location */}}
+            - name: MANIFEST_DEFAULT_DIR
+              value: "{{ $persistence.mountPath }}/.openzeppelin"
+          {{- with $job.env }}
+            {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if .Values.persistence.enabled }}
-          - mountPath: {{ .Values.persistence.mountPath }}
-            name: persistence
-          {{- end }}
-        resources:
-          requests:
-            cpu: {{ .Values.scDeploy.resources.requests.cpu | default "100m" }}
-            memory: {{ .Values.scDeploy.resources.requests.memory | default "256Mi" }}
-          limits:
-            cpu: {{ .Values.scDeploy.resources.limits.cpu | default "500m" }}
-            memory: {{ .Values.scDeploy.resources.limits.memory | default "512Mi" }}
+          volumeMounts:
+            - mountPath: /app/run.sh
+              subPath: {{ $scriptKey }}
+              name: config
+            {{- if eq $job.kind "upgrade" }}
+            - mountPath: /app/oldContracts
+              name: old-contracts
+            {{- end }}
+            {{- if $persistence.enabled }}
+            - mountPath: {{ $persistence.mountPath }}
+              name: persistence
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ $.Values.resources.requests.cpu | default "100m" }}
+              memory: {{ $.Values.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ $.Values.resources.limits.cpu | default "500m" }}
+              memory: {{ $.Values.resources.limits.memory | default "512Mi" }}
       volumes:
-      - name: config
-        configMap:
-          name: {{ .Release.Name }}-config
-          defaultMode: 0755
-      {{- if .Values.persistence.enabled }}
-      - name: persistence
-        persistentVolumeClaim:
-          claimName: {{ include "scVolumeName" . }}
-      {{- end }}
-      {{- if .Values.scUpgrade.enabled }}
-      - name: old-contracts
-        emptyDir: {}
-      {{- end }}
+        - name: config
+          configMap:
+            name: {{ $.Release.Name }}-config
+            defaultMode: 0755
+        {{- if $persistence.enabled }}
+        - name: persistence
+          persistentVolumeClaim:
+            claimName: {{ default $.Release.Name $persistence.volumeClaim.name }}
+        {{- end }}
+        {{- if eq $job.kind "upgrade" }}
+        - name: old-contracts
+          emptyDir: {}
+        {{- end }}
       restartPolicy: Never
       imagePullSecrets:
         - name: registry-credentials
+{{- end }}
 
 ---
 kind: Role
