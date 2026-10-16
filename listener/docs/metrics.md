@@ -41,14 +41,28 @@ Enabled via `telemetry.enabled: true` in config.
 |--------|------|--------|-------------|
 | `listener_publish_errors_total` | Counter | `chain_id` | Failures when publishing block events to the broker. Incremented per failed publish attempt (after broker-level retries are exhausted). |
 
-### Catchup (live flow)
+### Catchup
+
+Both catchup flows report on the same metric names, separated by the `flow`
+label: `catchup` (clamped to the chain head, fans out onto `range-catchup`) and
+`final_catchup` (clamped to the finalized head, fans out onto
+`range-final-catchup`). Use `sum by (flow) (...)` to split them and a bare
+`sum(...)` to total them.
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `listener_catchup_iterations_total` | Counter | `chain_id` | CatchupPayloads received on the principal `catchup` queue (orchestrator invocations). |
-| `listener_catchup_skipped_above_head_total` | Counter | `chain_id` | Orchestrator skips: `block_start` was above the current chain head. |
-| `listener_catchup_subranges_total` | Counter | `chain_id` | Sub-ranges fanned out by the orchestrator onto `range-catchup`. |
-| `listener_catchup_range_duration_seconds` | Histogram | `chain_id` | Wall-clock time to fetch and publish a single catchup sub-range. |
+| `listener_catchup_iterations_total` | Counter | `chain_id`, `flow` | CatchupPayloads received on a principal catchup queue (orchestrator invocations). Counts deliveries, so a redelivered request counts again. |
+| `listener_catchup_skipped_above_head_total` | Counter | `chain_id`, `flow` | Orchestrator skips: `block_start` was above the current head. The request is recorded `SKIPPED` and nothing is fanned out. |
+| `listener_catchup_subranges_total` | Counter | `chain_id`, `flow` | Sub-ranges fanned out by the orchestrator. Counts messages published, so a re-fan after a crash mid-fanout counts again. |
+| `listener_catchup_range_duration_seconds` | Histogram | `chain_id`, `flow` | Wall-clock time to fetch and publish a single catchup sub-range. Records both successful and failed sub-ranges. |
+| `listener_catchup_subrange_discarded_total` | Counter | `chain_id`, `flow` | Sub-ranges dropped before any RPC call because their request was already cancelled or skipped. |
+| `listener_catchup_completed_total` | Counter | `chain_id`, `flow` | Requests that covered every block they fanned out and moved to `COMPLETED`. Counts requests, not sub-ranges, and fires exactly once per request. |
+| `listener_catchup_cancelled_total` | Counter | `chain_id`, `flow` | Requests moved to `CANCELLED` by their owner. Re-cancelling an already-terminal request is idempotent and not counted. |
+| `listener_catchup_cancel_rejected_total` | Counter | `chain_id`, `flow` | Cancels refused because the `catchup_id` belongs to a different consumer. The request is still running and the caller was not told — alert on this. |
+| `listener_catchup_active_requests` | Gauge | `chain_id`, `flow` | Requests currently `ACTIVE`, refreshed every 15s from the database. Should track the number of consumers; a climbing value means a consumer is minting ids without cancelling the ones they replace. |
+
+Because the gauge is polled rather than event-driven, it lags a state change by
+up to one poll interval. The counters above are exact.
 
 ### Finality
 
@@ -60,14 +74,8 @@ Enabled via `telemetry.enabled: true` in config.
 | `listener_finality_range_fetch_duration_seconds` | Histogram | `chain_id` | Wall-clock time to fetch, publish, and insert an entire final block range. |
 | `listener_finality_active` | Gauge | `chain_id` | Whether the finality flow is enabled for this chain (1 = active, 0 = inactive). Distinguishes "off" from "stalled". |
 
-### Final Catchup
-
-| Metric | Type | Labels | Description |
-|--------|------|--------|-------------|
-| `listener_final_catchup_iterations_total` | Counter | `chain_id` | CatchupPayloads received on the principal `final-catchup` queue (orchestrator invocations). |
-| `listener_final_catchup_skipped_above_head_total` | Counter | `chain_id` | Orchestrator skips: `block_start` was above the current final height. |
-| `listener_final_catchup_subranges_total` | Counter | `chain_id` | Sub-ranges fanned out by the orchestrator onto `range-final-catchup`. |
-| `listener_final_catchup_range_duration_seconds` | Histogram | `chain_id` | Wall-clock time to fetch and publish a single final catchup sub-range. |
+The final catchup flow reports under the Catchup metrics above with
+`flow="final_catchup"`; it has no metric names of its own.
 
 The finality flows also feed the shared metrics: block fetches count toward
 `listener_block_fetch_duration_seconds`, `get_final_block_number` calls appear
