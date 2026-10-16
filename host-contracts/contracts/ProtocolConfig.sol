@@ -80,10 +80,9 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfigCanonical
     /// @dev Canonical-only state added in v0.4.0. It is outside the base namespace, so
     ///      `ProtocolConfigReplica` does not carry it, and v0.3.0 votes left in the base fields marked
-    ///      "Unused since v0.4.0" do not count. `destroyedContexts` and
-    ///      `contextCreationPreviousTxSenderThreshold` are also canonical-only but stay in base storage,
-    ///      because they existed before v0.4.0. So a context destroyed before the upgrade can still
-    ///      collect destruction confirmations, but an epoch destroyed before the upgrade cannot.
+    ///      "Unused since v0.4.0" do not count. `destroyedContexts` is also canonical-only but stays in
+    ///      base storage, because it existed before v0.4.0. So a context destroyed before the upgrade can
+    ///      still collect destruction confirmations, but an epoch destroyed before the upgrade cannot.
     struct ProtocolConfigCanonicalStorage {
         /// @notice Hash of the stored node set and thresholds, signed in ContextCreationConfirmation.
         mapping(uint256 contextId => bytes32) nodeConfigHashForContext;
@@ -206,19 +205,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             abi.encode(nodes, thresholds)
         );
 
-        // Cache the number of previous-committee confirmations confirmKmsContextCreation requires.
-        // The previous committee has `n` nodes, of which at most `t` (its MPC threshold) are assumed
-        // faulty — crashed, offline, or malicious. The quorum must be:
-        //   - more than `t`, so faulty nodes can never approve a switch on their own;
-        //   - at most `n - t`, because if `t` nodes stay silent only `n - t` confirmations ever
-        //     arrive — anything higher lets a dead node block the switch forever.
-        // `n - t` satisfies `n - t >= t + 1` under the `n >= 3t + 1` topology the KMS core
-        // requires; the contract itself does not enforce the topology.
-        // Floored at 1 so the degenerate `t = n` config cannot make the quorum zero.
-        uint256 previousQuorum = $.kmsNodesForContext[previousContextId].length -
-            $.mpcThresholdForContext[previousContextId];
-        $.contextCreationPreviousTxSenderThreshold[contextId] = previousQuorum > 0 ? previousQuorum : 1;
-
         // Store context anchor and emit NewKmsContext event.
         $.contextAnchors[contextId] = KmsContextAnchor({
             emissionBlockNumber: block.number,
@@ -300,11 +286,21 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         emit KmsContextCreationConfirmation(kmsContextId, signer, signature, extraData);
 
         // Context creation quorum: all new nodes and (n - t) previous nodes confirmed the same digest.
+        // The previous committee has `n` nodes, of which at most `t` (its MPC threshold) are assumed
+        // faulty: crashed, offline, or malicious. The quorum must be:
+        //   - more than `t`, so faulty nodes can never approve a switch on their own.
+        //   - at most `n - t`, because if `t` nodes stay silent only `n - t` confirmations ever
+        //     arrive. Anything higher lets a dead node block the switch forever.
+        // `n - t` satisfies `n - t >= t + 1` under the `n >= 3t + 1` topology the KMS core
+        // requires. The contract itself does not enforce the topology.
+        // Floored at 1 so the degenerate `t = n` config cannot make the quorum zero.
+        uint256 previousQuorum = $.kmsNodesForContext[previousContextId].length -
+            $.mpcThresholdForContext[previousContextId];
         if (
             canonical$.contextCreationNewConfirmationCountForDigest[kmsContextId][digest] ==
             $.kmsNodesForContext[kmsContextId].length &&
             canonical$.contextCreationPreviousConfirmationCountForDigest[kmsContextId][digest] >=
-            $.contextCreationPreviousTxSenderThreshold[kmsContextId]
+            (previousQuorum > 0 ? previousQuorum : 1)
         ) {
             $.contextState[kmsContextId] = ContextState.Created;
             // Create the confirmed context's first epoch here, pairing it with the context by construction.
@@ -369,7 +365,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             revert InvalidKmsContext(kmsContextId);
         }
 
-        // Mark the context destroyed, clear its epoch (if any), and wipe context-creation bookkeeping.
+        // Mark the context destroyed and clear its epoch (if any).
         $.destroyedContexts[kmsContextId] = true;
         $.contextState[kmsContextId] = ContextState.None;
         // A confirmed switch created this context's epoch as the latest-issued one: clear it whether
@@ -380,7 +376,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         if ($.contextForEpoch[latestEpochId] == kmsContextId) {
             _clearEpoch(latestEpochId);
         }
-        delete $.contextCreationPreviousTxSenderThreshold[kmsContextId];
 
         emit KmsContextDestroyed(kmsContextId);
     }
@@ -532,11 +527,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
         KmsContextAnchor memory anchor = _getProtocolConfigStorage().contextAnchors[contextId];
         return (anchor.emissionBlockNumber, anchor.contextInfoHash);
-    }
-
-    /// @inheritdoc IProtocolConfig
-    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view virtual returns (uint256) {
-        return _getProtocolConfigStorage().contextCreationPreviousTxSenderThreshold[kmsContextId];
     }
 
     // -----------------------------------------------------------------------------------------

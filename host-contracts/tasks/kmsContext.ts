@@ -519,9 +519,8 @@ async function fillContextSwitch(
     status.abortReason = 'context-destroyed';
   }
 
-  // Old-side (n - t) target: read the value cached at define time. A recompute from the previous
-  // context's live signer count and MPC threshold drifts if either is updated mid-switch.
-  status.previousSignerThreshold = Number(await pc.getContextCreationPreviousTxSenderThreshold(pendingContextId));
+  // Old-side (n - t) target. The previous committee is the active one during an in-flight switch.
+  status.previousSignerThreshold = committee.threshold;
 
   // New committee: read it from the event, because views cannot enumerate the pending context. When
   // the defining event is outside the scanned window, the committee, its confirmation count, and the

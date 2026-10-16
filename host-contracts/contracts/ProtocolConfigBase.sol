@@ -90,6 +90,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         /// @dev Unused since v0.4.0. Kept for storage layout.
         mapping(uint256 epochId => mapping(bytes32 dataHash => uint256 confirmations)) epochActivationConfirmationCountForDigest;
         /// @notice Required previous-context confirmation quorum, cached at pending-context creation time.
+        /// @dev Unused since v0.4.0. Kept for storage layout.
         mapping(uint256 contextId => uint256 threshold) contextCreationPreviousTxSenderThreshold;
         /// @notice New-context tx-sender confirmations for context creation.
         /// @dev Unused since v0.4.0. Kept for storage layout.

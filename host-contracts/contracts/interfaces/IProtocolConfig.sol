@@ -284,16 +284,6 @@ interface IProtocolConfig is IProtocolConfigBase {
         uint256 contextId
     ) external view returns (uint256 emissionBlockNumber, bytes32 contextInfoHash);
 
-    /**
-     * @notice Returns the previous-committee confirmation quorum cached for a context at define time.
-     * @dev The `(n - t)` target that `confirmKmsContextCreation` requires from the previous committee.
-     *      Returns 0 for a context that was never a switch target or whose bookkeeping was cleared on
-     *      destruction.
-     * @param kmsContextId The context ID.
-     * @return The cached previous-committee confirmation target.
-     */
-    function getContextCreationPreviousTxSenderThreshold(uint256 kmsContextId) external view returns (uint256);
-
     // -----------------------------------------------------------------------------------------
     // State-changing functions
     // -----------------------------------------------------------------------------------------
