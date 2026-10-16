@@ -99,9 +99,14 @@ pub struct UpstreamHealth {
 }
 
 impl EndpointsHealth {
-    /// Whether every upstream has a healthy endpoint, so that every route can be forwarded.
-    pub fn serving(&self) -> bool {
-        self.0.iter().all(|upstream| !upstream.healthy.is_empty())
+    /// Whether some upstream has a healthy endpoint, so that the proxy can forward some routes.
+    ///
+    /// A deployment's readiness uses this rather than requiring every upstream: the upstreams are
+    /// shared by all replicas, so one upstream down would take every replica out of service,
+    /// including for the routes of the other upstreams. A route whose upstream is down answers
+    /// [`crate::ProxyError::EndpointUnavailable`] instead.
+    pub fn any_upstream_healthy(&self) -> bool {
+        self.0.iter().any(|upstream| !upstream.healthy.is_empty())
     }
 
     /// The healthy endpoints of all upstreams.
@@ -172,23 +177,20 @@ mod tests {
     }
 
     #[test]
-    fn serving_needs_a_healthy_endpoint_in_every_upstream() {
+    fn one_healthy_upstream_is_enough() {
         let upstream = |name: &str, healthy: &[&str]| UpstreamHealth {
             name: name.to_owned(),
             healthy: healthy.iter().map(|a| a.to_string()).collect(),
             unhealthy: vec!["10.0.0.9:80".to_owned()],
         };
         let one_down = EndpointsHealth(vec![upstream("a", &["10.0.0.1:80"]), upstream("b", &[])]);
-        assert!(!one_down.serving());
+        assert!(one_down.any_upstream_healthy());
         assert_eq!(one_down.healthy_endpoints(), ["10.0.0.1:80"]);
         assert_eq!(
             one_down.unhealthy_endpoints(),
             ["10.0.0.9:80", "10.0.0.9:80"]
         );
-        let both_up = EndpointsHealth(vec![
-            upstream("a", &["10.0.0.1:80"]),
-            upstream("b", &["10.0.0.2:80"]),
-        ]);
-        assert!(both_up.serving());
+        let both_down = EndpointsHealth(vec![upstream("a", &[]), upstream("b", &[])]);
+        assert!(!both_down.any_upstream_healthy());
     }
 }

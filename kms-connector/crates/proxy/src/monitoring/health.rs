@@ -16,7 +16,7 @@ impl Healthcheck for State {
     async fn healthcheck(&self) -> actix_web::HttpResponse {
         let tls_listener_result = self.0.tls_listener_healthcheck().await;
         let endpoints_health = self.0.endpoints_health();
-        let endpoints_serving = endpoints_health.serving();
+        let endpoints_serving = endpoints_health.any_upstream_healthy();
         let healthy_endpoints = endpoints_health.healthy_endpoints();
         let unhealthy_endpoints = endpoints_health.unhealthy_endpoints();
 

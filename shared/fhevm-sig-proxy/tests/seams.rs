@@ -166,7 +166,7 @@ async fn a_request_without_the_signed_body_never_reaches_an_endpoint() {
 }
 
 #[tokio::test]
-async fn health_needs_a_healthy_endpoint_in_every_upstream() {
+async fn an_upstream_down_fails_only_its_own_routes() {
     let down = format!("127.0.0.1:{}", free_port());
     let t = TestProxy::start(|config| {
         config.upstreams[1].endpoint_addresses = vec![down.parse().unwrap()];
@@ -179,10 +179,13 @@ async fn health_needs_a_healthy_endpoint_in_every_upstream() {
     assert_eq!(health.0[0].healthy, [t.a.addr.to_string()]);
     assert_eq!(health.0[1].name, "b");
     assert_eq!(health.0[1].unhealthy, [down]);
-    assert!(!health.serving());
+    assert!(health.any_upstream_healthy());
+    let unavailable = t.signed(Method::GET, "/items/1", b"").await;
+    assert_eq!(unavailable.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(unavailable.text().await.unwrap(), "EndpointUnavailable");
     assert_eq!(
-        t.signed(Method::GET, "/items/1", b"").await.status(),
-        StatusCode::BAD_GATEWAY
+        t.signed(Method::POST, "/small", b"").await.status(),
+        StatusCode::OK
     );
     // The TLS listener answers its self-check on a typed route.
     assert_eq!(t.state.tls_listener_healthcheck().await, Ok(()));
