@@ -14,7 +14,10 @@ for (const mismatch of [false, true]) test(`topology probe publishes only after 
     writeFileSync(path.join(dir, "docker"), `#!/bin/bash
 if [[ "$1" == inspect ]]; then
   url=http://host-node:8545
-  [[ "$2" != *consumer ]] || url=redis://listener-redis:6379/0
+  # Mirror listenerBrokerUrl: operator 0 keeps the bare template URL, and every
+  # later operator reads its own Redis logical database.
+  operator=\${2%%-*}; operator=\${operator#coprocessor}
+  [[ "$2" != *consumer ]] || url=redis://listener-redis:6379\${operator:+/$operator}
   printf '[{"Config":{"Cmd":["--url=%s"]},"State":{"Running":true}}]' "$url"
 elif [[ "$1" == exec ]]; then
   [[ " $* " == *'assertGatewayTopology'* ]] || exit 90

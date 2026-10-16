@@ -4,7 +4,10 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
-use super::{connection::RedisConnectionManager, error::RedisConsumerError};
+use super::{
+    connection::RedisConnectionManager, error::RedisConsumerError,
+    stream_manager::parse_group_statuses,
+};
 
 /// Configuration for the stream trimmer.
 #[derive(Debug, Clone)]
@@ -97,7 +100,7 @@ impl StreamTrimmer {
                 source: e,
             })?;
 
-        let groups = Self::parse_groups(groups_value);
+        let groups = parse_group_statuses(&groups_value);
 
         if groups.is_empty() {
             // No consumer groups — use fallback MAXLEN if configured
@@ -209,7 +212,7 @@ impl StreamTrimmer {
                 source: e,
             })?;
 
-        let groups = Self::parse_groups(groups_value);
+        let groups = parse_group_statuses(&groups_value);
         for g in &groups {
             if g.name == group {
                 return Ok(Some(g.last_delivered_id.clone()));
@@ -239,59 +242,6 @@ impl StreamTrimmer {
             b.to_string()
         }
     }
-
-    /// Parse consumer group info from XINFO GROUPS response.
-    fn parse_groups(value: Value) -> Vec<GroupInfo> {
-        let mut groups = Vec::new();
-
-        if let Value::Array(items) = value {
-            for item in items {
-                if let Value::Array(fields) = item {
-                    let map = Self::flat_array_to_map(&fields);
-                    let name = map.get("name").cloned().unwrap_or_default();
-                    let last_delivered_id = map
-                        .get("last-delivered-id")
-                        .cloned()
-                        .unwrap_or_else(|| "0-0".to_string());
-
-                    groups.push(GroupInfo {
-                        name,
-                        last_delivered_id,
-                    });
-                }
-            }
-        }
-
-        groups
-    }
-
-    /// Convert a flat Redis field array [key, value, key, value, ...] to a HashMap.
-    fn flat_array_to_map(fields: &[Value]) -> std::collections::HashMap<String, String> {
-        let mut map = std::collections::HashMap::new();
-        let mut iter = fields.iter();
-        while let Some(key) = iter.next() {
-            if let Value::BulkString(k) = key {
-                if let Some(val) = iter.next() {
-                    let v = match val {
-                        Value::BulkString(b) => String::from_utf8_lossy(b).to_string(),
-                        Value::Int(n) => n.to_string(),
-                        _ => continue,
-                    };
-                    map.insert(String::from_utf8_lossy(k).to_string(), v);
-                }
-            } else {
-                // Skip non-bulk-string keys (shouldn't happen in XINFO output)
-                let _ = iter.next();
-            }
-        }
-        map
-    }
-}
-
-/// Internal representation of a consumer group from XINFO GROUPS.
-struct GroupInfo {
-    name: String,
-    last_delivered_id: String,
 }
 
 #[cfg(test)]
@@ -304,31 +254,5 @@ mod tests {
         assert_eq!(StreamTrimmer::min_stream_id("200-0", "100-0"), "100-0");
         assert_eq!(StreamTrimmer::min_stream_id("100-1", "100-2"), "100-1");
         assert_eq!(StreamTrimmer::min_stream_id("100-0", "100-0"), "100-0");
-    }
-
-    #[test]
-    fn test_parse_groups_empty() {
-        let value = Value::Array(vec![]);
-        let groups = StreamTrimmer::parse_groups(value);
-        assert!(groups.is_empty());
-    }
-
-    #[test]
-    fn test_parse_groups_with_data() {
-        let value = Value::Array(vec![Value::Array(vec![
-            Value::BulkString(b"name".to_vec()),
-            Value::BulkString(b"my-group".to_vec()),
-            Value::BulkString(b"consumers".to_vec()),
-            Value::Int(2),
-            Value::BulkString(b"pending".to_vec()),
-            Value::Int(5),
-            Value::BulkString(b"last-delivered-id".to_vec()),
-            Value::BulkString(b"1234567890-0".to_vec()),
-        ])]);
-
-        let groups = StreamTrimmer::parse_groups(value);
-        assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].name, "my-group");
-        assert_eq!(groups[0].last_delivered_id, "1234567890-0");
     }
 }

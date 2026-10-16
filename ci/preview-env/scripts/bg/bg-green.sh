@@ -247,7 +247,9 @@ start)
     done
     if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
       # Twin of the Blue Polygon consumer: its values, Green image/version/fleet and an
-      # own consumer name (the Redis group is <service-name>.<chain-id>).
+      # own service name. That name is a telemetry label, not the broker identity, which
+      # is compiled in: the twins read separate consumer groups because their consensus
+      # versions differ, and Blue at v0.14.1 predates the suffix entirely.
       helm get values "coprocessor-polygon-${i}${LIVE_RELEASE_SUFFIX}" -n "${NAMESPACE}" -o yaml > "${work}/polygon-${i}.yaml"
       echo "party ${i}: installing coprocessor-polygon-${i}${GREEN_SLOT}"
       green_releases+=("coprocessor-polygon-${i}${GREEN_SLOT}")
@@ -276,12 +278,35 @@ start)
   for i in $(seq 1 "${NB_COPROCESSOR}"); do
     chains=0
     for _ in $(seq 1 36); do
-      chains=$(psql_party "${i}" "SELECT CASE WHEN to_regclass('\"${schema}\".host_chain_blocks_valid') IS NULL THEN 0 ELSE (SELECT count(DISTINCT chain_id) FROM \"${schema}\".host_chain_blocks_valid WHERE created_at > now() - interval '60 seconds') END;")
-      [[ "${chains}" -ge "${expected_chains}" ]] && break
+      # Existence and count are two queries because one cannot do both: Postgres resolves
+      # relation names when it parses, so naming the table inside a CASE does not defer it
+      # past the guard. While the controller has yet to create the schema that is a hard
+      # error, and under `set -e` it would end the run rather than let this loop wait.
+      if [[ "$(psql_party "${i}" "SELECT to_regclass('\"${schema}\".host_chain_blocks_valid') IS NOT NULL;")" == "t" ]]; then
+        chains=$(psql_party "${i}" "SELECT count(DISTINCT chain_id) FROM \"${schema}\".host_chain_blocks_valid WHERE created_at > now() - interval '60 seconds';")
+        [[ "${chains}" -ge "${expected_chains}" ]] && break
+      fi
       sleep 5
     done
     if [[ "${chains}" -ge "${expected_chains}" ]]; then
       echo "party ${i}: Green schema ${schema} present, Green consumers ingesting on ${chains} chain(s)"
+      # Green must see what Blue sees, not a share of it. The chain count above passes on
+      # partial ingestion, so it cannot tell a Green reading its own consumer group from one
+      # that collapsed onto Blue's: Redis hands each member of a group a different subset, so
+      # the fleets would split the stream and both would still report the chain as ingesting.
+      # Compare volumes over one window instead. A split lands near half.
+      # Only reachable once the schema exists, which is what the loop above established —
+      # naming a missing one here would fail at parse, before any guard could run.
+      volumes=$(psql_party "${i}" "SELECT (SELECT count(*) FROM public.host_chain_blocks_valid WHERE created_at > now() - interval '60 seconds'), (SELECT count(*) FROM \"${schema}\".host_chain_blocks_valid WHERE created_at > now() - interval '60 seconds');")
+      blue_blocks="${volumes%%|*}"; green_blocks="${volumes##*|}"
+      if [[ "${blue_blocks}" -lt 10 ]]; then
+        # Too thin to divide: on a quiet chain the two fleets differ by jitter alone.
+        echo "party ${i}: ${blue_blocks} Blue block(s) in the last minute, too few to compare fleets"
+      elif [[ $((green_blocks * 100)) -lt $((blue_blocks * 80)) ]]; then
+        echo "::error::party ${i}: Green ingested ${green_blocks} blocks against Blue's ${blue_blocks} over the same minute; a fleet sharing Blue's consumer group sees about half"; failed=1
+      else
+        echo "party ${i}: Green ${green_blocks} blocks against Blue's ${blue_blocks} over the last minute, so the fleets read separate groups"
+      fi
     else
       echo "::error::party ${i}: Green ingests on ${chains}/${expected_chains} chain(s) in ${schema} after 3 min"; failed=1
     fi

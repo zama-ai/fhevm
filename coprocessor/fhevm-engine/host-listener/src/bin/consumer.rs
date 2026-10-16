@@ -74,8 +74,23 @@ struct Args {
     )]
     log_level: Level,
 
-    #[arg(long, default_value = "host-listener-consumer")]
+    #[arg(
+        long,
+        default_value = "host-listener-consumer",
+        help = "OTLP service name. Telemetry only — it does not name the broker identity, which is a compiled-in constant"
+    )]
     service_name: String,
+
+    #[arg(
+        long,
+        help = "Service name this environment ran under before the broker identity became a \
+                compiled-in constant, when the two were the same thing. The chain id is appended \
+                to it, giving the identity to retire once it stops being read: its streams are \
+                deleted and its filters unregistered, or, when that identity is the current one, \
+                only its unsuffixed consumer group is destroyed. Temporary — remove it after the \
+                environment has migrated"
+    )]
+    migrate_from_service_name: Option<String>,
 
     #[arg(
         long,
@@ -208,7 +223,6 @@ async fn main() -> anyhow::Result<()> {
         database_retry_interval: Duration::from_millis(
             args.database_retry_interval,
         ),
-        service_name: args.service_name,
         health_port: args.health_port,
         dependence_cache_size: args.dependence_cache_size,
         dependence_by_connexity: args.dependence_by_connexity,
@@ -218,6 +232,7 @@ async fn main() -> anyhow::Result<()> {
         gcs_mode,
         disable_synthetic_ops: args.disable_synthetic_ops,
         canonical_protocol_config_chain_id: args.protocol_config.chain_id,
+        migrate_from_service_name: args.migrate_from_service_name,
     };
 
     run_consumer(config).await
