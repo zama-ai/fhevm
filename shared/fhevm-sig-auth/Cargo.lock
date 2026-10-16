@@ -19,6 +19,7 @@ dependencies = [
  "alloy-core",
  "alloy-eips",
  "alloy-ens",
+ "alloy-json-rpc",
  "alloy-network",
  "alloy-provider",
  "alloy-rpc-client",
@@ -1539,6 +1540,7 @@ dependencies = [
  "prometheus",
  "thiserror",
  "tokio",
+ "tower",
  "tracing",
  "tracing-subscriber",
 ]

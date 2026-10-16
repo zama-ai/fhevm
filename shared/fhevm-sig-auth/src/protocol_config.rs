@@ -232,12 +232,26 @@ mod tests {
     use super::*;
     use crate::SignerAllowlist;
     use alloy::{
-        primitives::Bytes, providers::ProviderBuilder, rpc::types::Block, sol_types::SolCall,
-        transports::mock::Asserter,
+        primitives::Bytes,
+        providers::ProviderBuilder,
+        rpc::{
+            client::ClientBuilder,
+            json_rpc::{RequestPacket, ResponsePacket},
+            types::Block,
+        },
+        sol_types::SolCall,
+        transports::{
+            TransportError, TransportFut,
+            mock::{Asserter, MockTransport},
+        },
     };
     use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::{
         KmsNode, getCurrentKmsContextIdCounterCall, getKmsNodesForContextCall,
         isValidKmsContextCall,
+    };
+    use std::{
+        sync::Arc,
+        task::{Context, Poll},
     };
 
     fn context_id(n: u64) -> U256 {
@@ -333,6 +347,61 @@ mod tests {
         let (mut reader, asserter) = reader(&[counter(1)]);
         asserter.push_failure_msg("execution reverted");
         assert!(reader.read().await.is_err());
+    }
+
+    /// The mocked RPC, recording the parameters of each `eth_call` it answers.
+    #[derive(Clone)]
+    struct RecordedCalls {
+        transport: MockTransport,
+        params: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl tower::Service<RequestPacket> for RecordedCalls {
+        type Response = ResponsePacket;
+        type Error = TransportError;
+        type Future = TransportFut<'static>;
+
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), TransportError>> {
+            self.transport.poll_ready(cx)
+        }
+
+        fn call(&mut self, request: RequestPacket) -> Self::Future {
+            if let RequestPacket::Single(call) = &request
+                && call.method() == "eth_call"
+            {
+                let params = call
+                    .params()
+                    .map_or_else(String::new, |p| p.get().to_owned());
+                self.params.lock().unwrap().push(params);
+            }
+            self.transport.call(request)
+        }
+    }
+
+    #[tokio::test]
+    async fn every_call_reads_the_finalized_block() {
+        let a = Address::repeat_byte(1);
+        let asserter = Asserter::new();
+        asserter.push_success(&finalized());
+        for answer in [counter(1), valid(true), nodes(&[a])] {
+            asserter.push_success(&answer);
+        }
+        let recorded = RecordedCalls {
+            transport: MockTransport::new(asserter),
+            params: Arc::default(),
+        };
+        let client = ClientBuilder::default().transport(recorded.clone(), true);
+        let provider = ProviderBuilder::new().connect_client(client);
+        let mut reader = Reader::new(IProtocolConfigBase::new(Address::ZERO, provider));
+
+        assert_eq!(reader.read().await.unwrap(), HashSet::from([a]));
+        let params = recorded.params.lock().unwrap();
+        assert_eq!(params.len(), 3, "{params:?}");
+        // The finalized block is number 100.
+        assert!(
+            params.iter().all(|p| p.ends_with(r#","0x64"]"#)),
+            "{params:?}"
+        );
     }
 
     /// Runs `follower` until the RPC answers are consumed and one more refresh is due.
