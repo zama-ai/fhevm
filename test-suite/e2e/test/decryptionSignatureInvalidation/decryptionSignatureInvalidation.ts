@@ -38,7 +38,7 @@ const TIMEOUT_MARGIN_MS = 60 * 1000;
 // queued — the test waits this long and then treats "still pending" as
 // rejected. A successful decryption takes ~2-30s on this stack, so a request
 // that would succeed had ample time to do so.
-const REJECTION_WAIT_MS = 90 * 1000;
+const REJECTION_WAIT_MS = 60 * 1000;
 // The KMS Connector reads `decryptionSignatureInvalidatedBefore` from the host
 // ACL at a lagging block tag (same reason delegation needs propagation). After
 // an invalidation tx, mine/await this many blocks before submitting a request
@@ -244,6 +244,28 @@ describe('Decryption signature invalidation', function () {
     // which rejects without responding — the job stays queued.
     expect(post.httpStatus, JSON.stringify(post.raw)).to.equal(202);
     expectStuckAtKms(poll);
+  });
+
+  it('test decryption signature invalidation rejects a legacy request signed before the invalidation timestamp', async function () {
+    this.timeout(REJECTION_WAIT_MS + TIMEOUT_MARGIN_MS);
+    const threshold = await ensureEveInvalidated();
+    await awaitEvePropagation();
+    const handle = await eveContract.xUint64();
+    // Legacy permit path (relayer `/v2`). As in the unified case, the KMS
+    // Connector rejects without responding, so the SDK times out polling.
+    let error: unknown;
+    try {
+      await instances.eve.userDecryptSingleHandle({
+        handle,
+        contractAddress: eveContractAddress,
+        signer: signers.eve,
+        startTimestamp: startBefore(threshold, 3600),
+        timeoutMs: REJECTION_WAIT_MS,
+      });
+    } catch (e) {
+      error = e;
+    }
+    expect(String(error)).to.match(/Request timed out after/);
   });
 
   it('test decryption signature invalidation accepts a request signed at/after the invalidation timestamp', async function () {

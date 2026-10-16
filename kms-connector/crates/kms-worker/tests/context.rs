@@ -81,7 +81,7 @@ async fn test_decryption_context_not_found(
     info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain ACL to ALLOW decryption.
-    // Per attempt: Public → 1 bool; Legacy user → 2 bools;
+    // Per attempt: Public → 1 bool; Legacy user → 1 U256 (invalidation) + 2 bools;
     // V2 → 1 `isValidSignature` (RFC-012) + 1 U256 (invalidation) + 1 bool (ownership).
     let acl_responses = match event_type {
         TestEventType::PublicDecryption => {
@@ -96,9 +96,15 @@ async fn test_decryption_context_not_found(
                 ]
             })
             .collect(),
-        TestEventType::UserDecryption => {
-            vec![true.abi_encode(); 2 * MAX_DECRYPTION_ATTEMPTS as usize]
-        }
+        TestEventType::UserDecryption => (0..MAX_DECRYPTION_ATTEMPTS)
+            .flat_map(|_| {
+                vec![
+                    U256::ZERO.abi_encode(),
+                    true.abi_encode(),
+                    true.abi_encode(),
+                ]
+            })
+            .collect(),
         _ => vec![],
     };
     let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
@@ -196,7 +202,7 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
     info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain ACL to ALLOW decryption (1 attempt only, irrecoverable error).
-    // Per attempt: Public → 1 bool; Legacy user → 2 bools;
+    // Per attempt: Public → 1 bool; Legacy user → 1 U256 (invalidation) + 2 bools;
     // V2 → 1 `isValidSignature` (RFC-012) + 1 U256 (invalidation) + 1 bool (ownership).
     let acl_responses = match event_type {
         TestEventType::PublicDecryption => vec![true.abi_encode()],
@@ -205,7 +211,13 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
             U256::ZERO.abi_encode(),
             true.abi_encode(),
         ],
-        TestEventType::UserDecryption => vec![true.abi_encode(); 2],
+        TestEventType::UserDecryption => {
+            vec![
+                U256::ZERO.abi_encode(),
+                true.abi_encode(),
+                true.abi_encode(),
+            ]
+        }
         _ => vec![],
     };
     let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
