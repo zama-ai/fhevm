@@ -296,9 +296,9 @@ pub enum ZamaHostError {
     /// it. The wildcard row is exempt.
     #[msg("delegation scope is not an account of the delegated program")]
     DelegationScopeNotProgramAccount,
-    /// A scalar operand or trivial-encrypt plaintext exceeds its FHE type's maximum (EVM
-    /// `ScalarOutOfRange`).
-    #[msg("scalar exceeds the maximum of its FHE type")]
+    /// A scalar operand or trivial-encrypt plaintext exceeds its FHE type's maximum, or a scalar
+    /// shift or rotate amount exceeds 255 (EVM `ScalarOutOfRange`).
+    #[msg("scalar exceeds the maximum of its FHE type, or a shift amount exceeds 255")]
     ScalarOutOfRange,
     /// A new KMS epoch id is not above the active one (EVM `NonIncreasingEpochId`). The active id
     /// starts at all-zero, so the all-zero id is never accepted.

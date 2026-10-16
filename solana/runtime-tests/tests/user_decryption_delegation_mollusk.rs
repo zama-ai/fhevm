@@ -12,11 +12,10 @@
 //! * a grant whose application is the wildcard `[0xff; 32]` in both its program and its scope
 //!   position is legal and writes an ordinary record — that row is the delegator's grant across
 //!   every application, the same rule the EVM ACL applies to its wildcard delegation address;
-//! * both grant and revoke are gated by the `acl_writes` pause flag. During an incident pause
-//!   the delegator's only lever over existing delegations is blocked while those delegations
-//!   keep authorizing (the Connector's reads are pause-blind) — an asymmetry shared with the EVM
-//!   side and raised there as an open question; these tests pin the current parity, not endorse
-//!   it.
+//! * a grant is gated by the `acl_writes` pause flag, and a revocation by none: it takes no config
+//!   account. The Connector's reads are pause-blind, so revoking is the delegator's lever over a
+//!   delegation during an incident pause, as on EVM, whose ACL lets a revocation through its
+//!   pause.
 //!
 //! Build the program artifact before running these (`bash scripts/check-zama-host-idl.sh`); a
 //! stale `.so` makes the whole harness fail on an unrelated missing sysvar rather than on
@@ -109,11 +108,9 @@ fn grant_ix(
 }
 
 fn revoke_ix(delegator: Pubkey, delegation_record: Pubkey) -> Instruction {
-    let (host_config, _) = host::host_config_address();
     anchor_ix(
         host::accounts::RevokeDelegationForUserDecryption {
             delegator,
-            host_config,
             delegation_record,
         },
         host::instruction::RevokeDelegationForUserDecryption {},
@@ -205,12 +202,10 @@ fn grant_accounts(actors: &Actors, record: Account, paused: bool) -> Vec<(Pubkey
     ]
 }
 
-/// The three accounts a revoke takes.
-fn revoke_accounts(actors: &Actors, record: Account, paused: bool) -> Vec<(Pubkey, Account)> {
-    let (host_config, host_config_account) = host_config_account(paused);
+/// The two accounts a revoke takes.
+fn revoke_accounts(actors: &Actors, record: Account) -> Vec<(Pubkey, Account)> {
     vec![
         (actors.delegator, funded_wallet()),
-        (host_config, host_config_account),
         (actors.record_key, record),
     ]
 }
@@ -960,7 +955,7 @@ fn an_existing_record_of_the_wrong_size_is_rejected() {
 fn a_revocation_zeroes_the_expiry() {
     let actors = actors();
     let existing = live_record(&actors);
-    let accounts = revoke_accounts(&actors, record_account(&existing), false);
+    let accounts = revoke_accounts(&actors, record_account(&existing));
 
     let result = mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, actors.record_key),
@@ -980,10 +975,8 @@ fn a_stranger_cannot_revoke_a_delegation_they_did_not_grant() {
     let actors = actors();
     let existing = live_record(&actors);
     let stranger = Pubkey::new_unique();
-    let (host_config, host_config_acc) = host_config_account(false);
     let accounts = vec![
         (stranger, funded_wallet()),
-        (host_config, host_config_acc),
         (actors.record_key, record_account(&existing)),
     ];
 
@@ -1001,7 +994,7 @@ fn a_second_revocation_is_rejected() {
     let actors = actors();
     let mut revoked = live_record(&actors);
     revoked.expires_at = 0;
-    let accounts = revoke_accounts(&actors, record_account(&revoked), false);
+    let accounts = revoke_accounts(&actors, record_account(&revoked));
 
     mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, actors.record_key),
@@ -1014,7 +1007,7 @@ fn a_second_revocation_is_rejected() {
 #[test]
 fn a_revocation_of_a_record_never_granted_is_rejected() {
     let actors = actors();
-    let accounts = revoke_accounts(&actors, empty_system_account(), false);
+    let accounts = revoke_accounts(&actors, empty_system_account());
 
     mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, actors.record_key),
@@ -1031,7 +1024,7 @@ fn a_revocation_in_the_records_own_update_slot_is_rejected() {
     let actors = actors();
     let mut existing = live_record(&actors);
     existing.last_update_slot = CURRENT_SLOT;
-    let accounts = revoke_accounts(&actors, record_account(&existing), false);
+    let accounts = revoke_accounts(&actors, record_account(&existing));
 
     mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, actors.record_key),
@@ -1049,10 +1042,8 @@ fn a_revocation_of_a_record_at_a_non_canonical_address_is_rejected() {
     let actors = actors();
     let existing = live_record(&actors);
     let elsewhere = Pubkey::new_unique();
-    let (host_config, host_config_acc) = host_config_account(false);
     let accounts = vec![
         (actors.delegator, funded_wallet()),
-        (host_config, host_config_acc),
         (elsewhere, record_account(&existing)),
     ];
 
@@ -1073,7 +1064,7 @@ fn a_record_with_a_non_canonical_bump_is_rejected_on_revocation() {
     let actors = actors();
     let mut existing = live_record(&actors);
     existing.bump = actors.record_bump.wrapping_sub(1);
-    let accounts = revoke_accounts(&actors, record_account(&existing), false);
+    let accounts = revoke_accounts(&actors, record_account(&existing));
 
     mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, actors.record_key),
@@ -1086,38 +1077,64 @@ fn a_record_with_a_non_canonical_bump_is_rejected_on_revocation() {
     );
 }
 
-/// Revocation is paused with the other ACL writes, as EVM's `whenNotPaused` revocation is.
+/// A delegator can always end a delegation, as on EVM, whose ACL lets a revocation through its
+/// pause. The revocation takes no host config account, so no pause flag reaches it: under an
+/// `acl_writes` pause a re-grant of the exact or the wildcard row is refused, while revoking either
+/// runs.
 #[test]
-fn a_revocation_while_paused_is_rejected() {
-    let actors = actors();
-    let existing = live_record(&actors);
-    let accounts = revoke_accounts(&actors, record_account(&existing), true);
-
-    mollusk().process_and_validate_instruction(
-        &revoke_ix(actors.delegator, actors.record_key),
-        &accounts,
-        &[host_error(host::errors::ZamaHostError::AclWritesPaused)],
+fn a_revocation_takes_no_host_config_account() {
+    let exact = actors();
+    let mut wildcard = actors();
+    wildcard.app = AppScope::WILDCARD;
+    (wildcard.record_key, wildcard.record_bump) = host::user_decryption_delegation_address(
+        wildcard.delegator,
+        wildcard.delegate,
+        AppScope::WILDCARD,
     );
+    for actors in [exact, wildcard] {
+        let existing = live_record(&actors);
+        mollusk().process_and_validate_instruction(
+            &grant_ix(
+                actors.payer,
+                actors.delegator,
+                actors.record_key,
+                actors.delegate,
+                actors.app,
+                EXPIRES_AT + 1,
+            ),
+            &grant_accounts(&actors, record_account(&existing), true),
+            &[host_error(host::errors::ZamaHostError::AclWritesPaused)],
+        );
+
+        let result = mollusk().process_and_validate_instruction(
+            &revoke_ix(actors.delegator, actors.record_key),
+            &revoke_accounts(&actors, record_account(&existing)),
+            &[Check::success()],
+        );
+        let record = decode_record(&result.get_account(&actors.record_key).expect("record").data);
+        assert_eq!(record.expires_at, 0);
+        assert_eq!(record.delegation_counter, 2);
+    }
 }
 
-/// Delegation is paused only with the ACL writes: pausing execution and verified inputs leaves
-/// both grant and revocation running.
+/// Granting is paused only with the ACL writes: pausing execution and verified inputs leaves it
+/// running.
 #[test]
-fn a_grant_and_a_revocation_run_while_the_other_areas_are_paused() {
+fn a_grant_runs_while_the_other_areas_are_paused() {
     let actors = actors();
-    let other_areas = host::PauseFlags {
-        acl_writes: false,
-        ..host::PauseFlags::ALL
-    };
-    let pause_other_areas = |mut accounts: Vec<(Pubkey, Account)>| {
-        let host_config = host::host_config_address().0;
-        let (_, config) = accounts
-            .iter_mut()
-            .find(|(key, _)| *key == host_config)
-            .expect("host config");
-        *config = paused_host_config(config, other_areas);
-        accounts
-    };
+    let mut accounts = grant_accounts(&actors, empty_system_account(), false);
+    let host_config = host::host_config_address().0;
+    let (_, config) = accounts
+        .iter_mut()
+        .find(|(key, _)| *key == host_config)
+        .expect("host config");
+    *config = paused_host_config(
+        config,
+        host::PauseFlags {
+            acl_writes: false,
+            ..host::PauseFlags::ALL
+        },
+    );
 
     mollusk().process_and_validate_instruction(
         &grant_ix(
@@ -1128,13 +1145,7 @@ fn a_grant_and_a_revocation_run_while_the_other_areas_are_paused() {
             actors.app,
             EXPIRES_AT,
         ),
-        &pause_other_areas(grant_accounts(&actors, empty_system_account(), false)),
-        &[Check::success()],
-    );
-    let existing = live_record(&actors);
-    mollusk().process_and_validate_instruction(
-        &revoke_ix(actors.delegator, actors.record_key),
-        &pause_other_areas(revoke_accounts(&actors, record_account(&existing), false)),
+        &accounts,
         &[Check::success()],
     );
 }
@@ -1145,7 +1156,7 @@ fn a_revocation_with_remaining_accounts_is_rejected() {
     let actors = actors();
     let existing = live_record(&actors);
     let stowaway = Pubkey::new_unique();
-    let mut accounts = revoke_accounts(&actors, record_account(&existing), false);
+    let mut accounts = revoke_accounts(&actors, record_account(&existing));
     accounts.push((stowaway, funded_wallet()));
     let mut instruction = revoke_ix(actors.delegator, actors.record_key);
     instruction
@@ -1166,7 +1177,7 @@ fn a_revocation_with_remaining_accounts_is_rejected() {
 fn a_revocation_requires_the_delegators_signature() {
     let actors = actors();
     let existing = live_record(&actors);
-    let accounts = revoke_accounts(&actors, record_account(&existing), false);
+    let accounts = revoke_accounts(&actors, record_account(&existing));
     let mut instruction = revoke_ix(actors.delegator, actors.record_key);
     instruction.accounts[0] = AccountMeta::new_readonly(actors.delegator, false);
 
@@ -1177,38 +1188,17 @@ fn a_revocation_requires_the_delegators_signature() {
     );
 }
 
-/// The role-for-role substitution matrix: each program-owned account of this instruction
-/// pair, standing in the other's position, is refused by a discriminator check rather than
-/// misread. Both accounts are owned by the same program, which is exactly why ownership
-/// alone would not be enough.
+/// Another host-owned account standing where the delegation record should be is refused by the
+/// record's discriminator rather than misread: the host owns both, so ownership alone would not be
+/// enough.
 #[test]
-fn substituted_program_accounts_are_refused_by_their_discriminators() {
+fn a_host_config_in_the_record_position_is_refused_by_its_discriminator() {
     let actors = actors();
-    let (host_config, host_config_acc) = host_config_account(false);
+    let (_, host_config_acc) = host_config_account(false);
 
-    // The host config, standing where the delegation record should be.
-    let record_position = vec![
-        (actors.delegator, funded_wallet()),
-        (host_config, host_config_acc.clone()),
-        (actors.record_key, host_config_acc.clone()),
-    ];
     mollusk().process_and_validate_instruction(
         &revoke_ix(actors.delegator, actors.record_key),
-        &record_position,
-        &[anchor_framework_error_check(
-            anchor_lang::error::ErrorCode::AccountDiscriminatorMismatch,
-        )],
-    );
-
-    // The delegation record, standing where the host config should be.
-    let config_position = vec![
-        (actors.delegator, funded_wallet()),
-        (host_config, record_account(&live_record(&actors))),
-        (actors.record_key, record_account(&live_record(&actors))),
-    ];
-    mollusk().process_and_validate_instruction(
-        &revoke_ix(actors.delegator, actors.record_key),
-        &config_position,
+        &revoke_accounts(&actors, host_config_acc),
         &[anchor_framework_error_check(
             anchor_lang::error::ErrorCode::AccountDiscriminatorMismatch,
         )],
@@ -1407,7 +1397,7 @@ fn a_wallet_revoke_forwarded_through_another_program_is_rejected() {
         },
     );
     forwarded.accounts.extend(revoke.accounts);
-    let mut accounts = revoke_accounts(&actors, record_account(&live_record(&actors)), false);
+    let mut accounts = revoke_accounts(&actors, record_account(&live_record(&actors)));
     accounts.push((host::id(), host_program_account()));
 
     mollusk_with_vault().process_and_validate_instruction(

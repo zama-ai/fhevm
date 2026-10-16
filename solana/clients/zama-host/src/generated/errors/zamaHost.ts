@@ -180,7 +180,7 @@ export const ZAMA_HOST_ERROR__WALLET_PAUSE_THROUGH_CPI = 0x17c0; // 6080
 export const ZAMA_HOST_ERROR__ENCRYPTED_STORE_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c1; // 6081
 /** DelegationScopeNotProgramAccount: delegation scope is not an account of the delegated program */
 export const ZAMA_HOST_ERROR__DELEGATION_SCOPE_NOT_PROGRAM_ACCOUNT = 0x17c2; // 6082
-/** ScalarOutOfRange: scalar exceeds the maximum of its FHE type */
+/** ScalarOutOfRange: scalar exceeds the maximum of its FHE type, or a shift amount exceeds 255 */
 export const ZAMA_HOST_ERROR__SCALAR_OUT_OF_RANGE = 0x17c3; // 6083
 /** NonIncreasingKmsEpochId: KMS epoch id must be above the current one */
 export const ZAMA_HOST_ERROR__NON_INCREASING_KMS_EPOCH_ID = 0x17c4; // 6084
@@ -352,7 +352,7 @@ if (process.env['NODE_ENV'] !== 'production') {
     [ZAMA_HOST_ERROR__PENDING_ADMIN_MISMATCH]: `signer is not the pending host admin`,
     [ZAMA_HOST_ERROR__PREVIOUS_BANK_HASH_UNAVAILABLE]: `previous bank hash is not available`,
     [ZAMA_HOST_ERROR__PREVIOUS_STORE_MISMATCH]: `encrypted value previous handle does not match the account`,
-    [ZAMA_HOST_ERROR__SCALAR_OUT_OF_RANGE]: `scalar exceeds the maximum of its FHE type`,
+    [ZAMA_HOST_ERROR__SCALAR_OUT_OF_RANGE]: `scalar exceeds the maximum of its FHE type, or a shift amount exceeds 255`,
     [ZAMA_HOST_ERROR__SCOPE_DENIED]: `application scope is deny-listed`,
     [ZAMA_HOST_ERROR__TOO_MANY_COPROCESSOR_SIGNERS]: `coprocessor signer set exceeds the maximum size`,
     [ZAMA_HOST_ERROR__TOO_MANY_KMS_SIGNERS]: `KMS context exceeds the maximum signer count`,

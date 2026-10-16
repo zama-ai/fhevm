@@ -107,7 +107,20 @@ pub fn assert_binary_operand_types(
         }
     }
     if scalar {
-        assert_scalar_in_range(rhs, lhs_type)?;
+        // A shift or rotate amount fits in a byte, on every type (EVM
+        // `FHEVMExecutor._checkScalarShiftAmount`). Shifts run on euint8 and wider, so that also keeps
+        // it within the operand type.
+        if matches!(
+            op,
+            FheBinaryOpCode::Shl
+                | FheBinaryOpCode::Shr
+                | FheBinaryOpCode::Rotl
+                | FheBinaryOpCode::Rotr
+        ) {
+            require!(rhs[..31] == [0; 31], ZamaHostError::ScalarOutOfRange);
+        } else {
+            assert_scalar_in_range(rhs, lhs_type)?;
+        }
     } else {
         require!(
             handle_fhe_type(rhs) == lhs_type,

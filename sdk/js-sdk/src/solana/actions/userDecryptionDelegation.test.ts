@@ -156,12 +156,10 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
     expect(hex(instruction.data!)).toBe(REVOKE_DATA);
   });
 
-  it('names the three accounts in program order with their roles', async () => {
+  it('names the two accounts in program order with their roles', async () => {
     const instruction = await build();
-    const [hostConfig] = await findHostConfigPda();
     expect(instruction.accounts?.map((account) => [account.address, account.role])).toEqual([
       [delegator, AccountRole.READONLY_SIGNER],
-      [hostConfig, AccountRole.READONLY],
       [RECORD_ADDRESS, AccountRole.WRITABLE],
     ]);
   });
@@ -185,14 +183,12 @@ describe('buildRevokeDelegationForUserDecryptionInstruction', () => {
       ...application,
       programAddress: OTHER_PROGRAM,
     });
-    const [hostConfig] = await findHostConfigPda({ programAddress: OTHER_PROGRAM });
     const [record] = await findDelegationRecordPda(
       { delegator, delegate, ...application },
       { programAddress: OTHER_PROGRAM },
     );
     expect(instruction.programAddress).toBe(OTHER_PROGRAM);
-    expect(instruction.accounts?.[1]?.address).toBe(hostConfig);
-    expect(instruction.accounts?.[2]?.address).toBe(record);
+    expect(instruction.accounts?.[1]?.address).toBe(record);
   });
 });
 

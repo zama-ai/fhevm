@@ -404,7 +404,7 @@
       "fixture_len": 8,
       "name": "revoke_delegation_for_user_decryption",
       "program": "zama_host",
-      "schema_hash": "304673eafaf8a4e81c7b22018e49911a451026c5a000d2d4989f2cff5050bd28"
+      "schema_hash": "d91f446ee3df58612cd35efb2fd69f5ce8d25261f0a6411b76af8d79a8253dd1"
     },
     {
       "category": "instruction_args",

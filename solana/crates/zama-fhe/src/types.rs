@@ -262,3 +262,62 @@ pub(crate) fn binary_rhs_operand<'id, T>(rhs: impl Into<BinaryRhs<'id, T>>) -> O
         BinaryRhs::Scalar(value) => Operand::scalar(value.bytes()),
     }
 }
+
+/// Typed right-hand side of a shift or rotate. A scalar amount is a byte on every type, as EVM's
+/// `uint8` overloads take, so a larger amount does not compile instead of failing on chain:
+///
+/// ```
+/// use anchor_lang::prelude::Pubkey;
+/// use zama_fhe::{FheExecution, Scalar, StoreId, Uint};
+///
+/// let store = StoreId::new(Pubkey::new_unique(), Pubkey::new_unique(), Pubkey::new_from_array([0xA5; 32]));
+/// let execution = FheExecution::build(store, |builder| {
+///     let value = builder.trivial_encrypt(Scalar::<Uint<16>>::u16(1))?;
+///     builder.shl(value, Scalar::<Uint<8>>::u8(255))?;
+///     Ok(())
+/// });
+/// assert!(execution.is_ok());
+/// ```
+///
+/// ```compile_fail
+/// use anchor_lang::prelude::Pubkey;
+/// use zama_fhe::{FheExecution, Scalar, StoreId, Uint};
+///
+/// let store = StoreId::new(Pubkey::new_unique(), Pubkey::new_unique(), Pubkey::new_from_array([0xA5; 32]));
+/// FheExecution::build(store, |builder| {
+///     let value = builder.trivial_encrypt(Scalar::<Uint<16>>::u16(1))?;
+///     builder.shl(value, Scalar::<Uint<16>>::u16(300))?;
+///     Ok(())
+/// })
+/// .unwrap();
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShiftRhs<'id, T> {
+    Encrypted(Encrypted<'id, T>),
+    Scalar(Scalar<Uint<8>>),
+}
+
+impl<'id, T> From<Encrypted<'id, T>> for ShiftRhs<'id, T> {
+    fn from(value: Encrypted<'id, T>) -> Self {
+        Self::Encrypted(value)
+    }
+}
+
+impl<T> From<Scalar<Uint<8>>> for ShiftRhs<'_, T> {
+    fn from(value: Scalar<Uint<8>>) -> Self {
+        Self::Scalar(value)
+    }
+}
+
+impl<T> From<FheHandle<T>> for ShiftRhs<'_, T> {
+    fn from(value: FheHandle<T>) -> Self {
+        Self::Encrypted(value.into())
+    }
+}
+
+pub(crate) fn shift_rhs_operand<'id, T>(rhs: impl Into<ShiftRhs<'id, T>>) -> Operand {
+    match rhs.into() {
+        ShiftRhs::Encrypted(value) => value.operand(),
+        ShiftRhs::Scalar(value) => Operand::scalar(value.bytes()),
+    }
+}

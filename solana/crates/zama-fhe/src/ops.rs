@@ -19,7 +19,8 @@ use crate::acl::BoundedU64UpperBound;
 use crate::builder::FheExecutionBuilder;
 use crate::operand::Operand;
 use crate::types::{
-    binary_rhs_operand, BinaryRhs, Bool, Encrypted, FheType, FheTyped, FheUint, Scalar, Uint,
+    binary_rhs_operand, shift_rhs_operand, BinaryRhs, Bool, Encrypted, FheType, FheTyped, FheUint,
+    Scalar, ShiftRhs, Uint,
 };
 use crate::validate::handle_fhe_type;
 use crate::{FheExecutionError, Result};
@@ -279,12 +280,12 @@ impl<'id> FheExecutionBuilder<'id> {
     pub fn shl<T: FheUint>(
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
-        rhs: impl Into<BinaryRhs<'id, T>>,
+        rhs: impl Into<ShiftRhs<'id, T>>,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Shl,
             lhs.into().operand(),
-            binary_rhs_operand(rhs),
+            shift_rhs_operand(rhs),
             T::FHE_TYPE,
         )
         .map(Encrypted::from_operand)
@@ -293,12 +294,12 @@ impl<'id> FheExecutionBuilder<'id> {
     pub fn shr<T: FheUint>(
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
-        rhs: impl Into<BinaryRhs<'id, T>>,
+        rhs: impl Into<ShiftRhs<'id, T>>,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Shr,
             lhs.into().operand(),
-            binary_rhs_operand(rhs),
+            shift_rhs_operand(rhs),
             T::FHE_TYPE,
         )
         .map(Encrypted::from_operand)
@@ -307,12 +308,12 @@ impl<'id> FheExecutionBuilder<'id> {
     pub fn rotl<T: FheUint>(
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
-        rhs: impl Into<BinaryRhs<'id, T>>,
+        rhs: impl Into<ShiftRhs<'id, T>>,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Rotl,
             lhs.into().operand(),
-            binary_rhs_operand(rhs),
+            shift_rhs_operand(rhs),
             T::FHE_TYPE,
         )
         .map(Encrypted::from_operand)
@@ -321,12 +322,12 @@ impl<'id> FheExecutionBuilder<'id> {
     pub fn rotr<T: FheUint>(
         &mut self,
         lhs: impl Into<Encrypted<'id, T>>,
-        rhs: impl Into<BinaryRhs<'id, T>>,
+        rhs: impl Into<ShiftRhs<'id, T>>,
     ) -> Result<Encrypted<'id, T>> {
         self.binary_op(
             FheBinaryOpCode::Rotr,
             lhs.into().operand(),
-            binary_rhs_operand(rhs),
+            shift_rhs_operand(rhs),
             T::FHE_TYPE,
         )
         .map(Encrypted::from_operand)

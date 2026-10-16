@@ -440,19 +440,20 @@ upgrade authority close `HostConfig` and the KMS contexts (`AUTHORITY.md`).
 
 **36. [HOLDS]** `HostConfig.paused` holds one flag per host area (DD-058). `execution` stops `fhe_execute`;
 `verified_inputs` stops `fhe_execute` steps that consume a `VerifiedInput`; `acl_writes` stops `create_encrypted_store`,
-`make_store_handle_public`, `delegate_for_user_decryption` and `revoke_delegation_for_user_decryption`, as EVM's ACL
-pause stops `revokeDelegationForUserDecryption`. A flag stops only its own area, and no flag stops
+`make_store_handle_public` and `delegate_for_user_decryption`. A flag stops only its own area, and no flag stops
 `verify_public_decrypt`, as no pause stops EVM's `KMSVerifier`. Any signer with an enabled `PauserRecord` sets flags;
 only the admin clears them, and only the admin creates, enables or disables pauser records. A wallet pauser must call
 `pause` as a top-level instruction (`WalletPauseThroughCpi`), as a wallet must delegate and revoke (#27): otherwise any
 program the pauser calls could pause the host. A PDA pauser, such as a Squads vault, may pause through CPI. Admin
-setters are never paused, and `revoke_permits` takes no config account, so it runs under every flag. Pinned by
+setters are never paused. `revoke_permits` and `revoke_delegation_for_user_decryption` take no config account, so they
+run under every flag, as EVM's ACL lets `invalidateDecryptionSignaturesBefore` and `revokeDelegationForUserDecryption`
+through its pause. Pinned by
 `mollusk_each_pause_flag_stops_only_its_area`, `mollusk_no_pause_flag_stops_verify_public_decrypt`, the token tests of
 11f, `mollusk_settle_stops_only_under_the_execution_pause`, `mollusk_a_pauser_pauses_and_only_the_admin_unpauses`,
 `mollusk_only_an_enabled_pauser_pauses`, `mollusk_a_wallet_pause_forwarded_through_another_program_is_rejected`,
 `mollusk_a_vault_pda_pauses_through_cpi`, `mollusk_a_pauser_pauses_an_area_while_the_others_are_paused`,
-`mollusk_only_the_admin_sets_pausers`, `a_grant_while_paused_is_rejected`, `a_revocation_while_paused_is_rejected`,
-`a_grant_and_a_revocation_run_while_the_other_areas_are_paused`, `mollusk_admin_setters_run_while_every_area_is_paused`,
+`mollusk_only_the_admin_sets_pausers`, `a_grant_while_paused_is_rejected`, `a_revocation_takes_no_host_config_account`,
+`a_grant_runs_while_the_other_areas_are_paused`, `mollusk_admin_setters_run_while_every_area_is_paused`,
 `mollusk_the_admin_sets_pausers_and_hands_over_while_every_area_is_paused` and, over random sequences, the H1
 property of #35. The flags do not reach decryption, and the KMS connector does not read `HostConfig`. A Solana
 decryption arrives only over HTTP, and HTTP decryption has no pause on either chain, as on EVM.

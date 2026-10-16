@@ -83,7 +83,7 @@ pub mod zama_host {
         instructions::initialize_host_config(ctx, args)
     }
 
-    /// Defines a new KMS context (mirror of `ProtocolConfig.mirrorKmsContextAndEpoch`).
+    /// Defines a new KMS context (mirror of `ProtocolConfigReplica.mirrorKmsContextAndEpoch`).
     pub fn define_kms_context(
         ctx: Context<DefineKmsContext>,
         context_id: [u8; 32],
@@ -94,7 +94,7 @@ pub mod zama_host {
         instructions::define_kms_context(ctx, context_id, epoch_id, signers, thresholds)
     }
 
-    /// Activates a new epoch of the active KMS context (mirror of `ProtocolConfig.mirrorKmsEpoch`).
+    /// Activates a new epoch of the active KMS context (mirror of `ProtocolConfigReplica.mirrorKmsEpoch`).
     pub fn define_kms_epoch(
         ctx: Context<DefineKmsEpoch>,
         context_id: [u8; 32],

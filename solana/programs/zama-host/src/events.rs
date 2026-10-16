@@ -92,7 +92,7 @@ pub struct NewKmsContextEvent {
 }
 
 /// Emitted when a new epoch of the active KMS context is activated (mirrors
-/// `ProtocolConfig.MirrorKmsEpoch`).
+/// `ProtocolConfigReplica.MirrorKmsEpoch`).
 #[event]
 pub struct NewKmsEpochEvent {
     /// Event schema version.

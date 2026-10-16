@@ -33,8 +33,8 @@ export type PauseFlags = {
    */
   verifiedInputs: boolean;
   /**
-   * ACL writes outside an execution: Store creation, `make_store_handle_public` and
-   * user-decryption delegation (EVM ACL pause).
+   * ACL writes outside an execution: Store creation, `make_store_handle_public` and granting a
+   * user-decryption delegation; revoking one runs under every flag (EVM ACL pause).
    */
   aclWrites: boolean;
 };

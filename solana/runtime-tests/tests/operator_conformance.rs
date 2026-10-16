@@ -376,6 +376,20 @@ mod rejected {
             );
         }
         #[test]
+        fn shl_u16_rejects_a_scalar_shift_above_a_byte() {
+            let lhs = handle(1, 3);
+            expect_error(
+                args(vec![binary(
+                    FheBinaryOpCode::Shl,
+                    persistent(lhs),
+                    scalar(be(0x100)),
+                    3,
+                )]),
+                HashMap::from([(lhs, plain(8))]),
+                "ScalarOutOfRange",
+            );
+        }
+        #[test]
         fn add_u8_rejects_scalar_with_a_high_byte() {
             let lhs = handle(1, 2);
             let mut high_only = [0; 32];

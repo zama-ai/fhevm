@@ -101,8 +101,8 @@ pub struct PauseFlags {
     /// `fhe_execute` steps that consume a coprocessor-attested input (no EVM counterpart:
     /// `InputVerifier` cannot be paused, DD-058).
     pub verified_inputs: bool,
-    /// ACL writes outside an execution: Store creation, `make_store_handle_public` and
-    /// user-decryption delegation (EVM ACL pause).
+    /// ACL writes outside an execution: Store creation, `make_store_handle_public` and granting a
+    /// user-decryption delegation; revoking one runs under every flag (EVM ACL pause).
     pub acl_writes: bool,
 }
 

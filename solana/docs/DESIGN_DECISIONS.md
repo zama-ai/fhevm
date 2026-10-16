@@ -1922,7 +1922,7 @@ Context: the host had one pause flag that only the admin could set or clear. Gov
 the admin behind a Squads vault with a time lock (fhevm-internal#1634), so an admin-only pause
 would wait out that time lock too. On EVM, `ACL.pause()` accepts any member of `PauserSet`, while
 `unpause()` is `onlyOwner`. The host ACL pause stops `allow`, `allowForDecryption`,
-`allowTransient` and both delegation calls, and so execution, which needs `allowTransient`. The
+`allowTransient` and `delegateForUserDecryption`, and so execution, which needs `allowTransient`. The
 gateway's `InputVerification` contract pauses on its own, and Solana input proofs enter the gateway
 through its paused `verifyProofRequestSolana`, so the gateway pause already stops new input proofs
 for Solana. Solana decryptions arrive over HTTP, which has no pause.
@@ -1933,7 +1933,7 @@ Decision: `HostConfig.paused` is `PauseFlags`, one flag per area.
 |---|---|---|
 | `execution` | `fhe_execute`, with the allows, transient grants and public releases it writes, so every token instruction that computes (account setup, transfer, viewer grants, wrap, burn, cancel) and the batcher's settle through its wrap | ACL pause |
 | `verified_inputs` | `fhe_execute` steps that consume a `VerifiedInput` | None: `InputVerifier` cannot be paused; the gateway pause stops only new proofs |
-| `acl_writes` | `create_encrypted_store`, `make_store_handle_public`, `delegate_for_user_decryption`, `revoke_delegation_for_user_decryption` | ACL pause |
+| `acl_writes` | `create_encrypted_store`, `make_store_handle_public`, `delegate_for_user_decryption` | ACL pause |
 
 `verified_inputs` acts when a signed input is used, not when it is requested. It is the lever
 against compromised coprocessor signers, whose results the gateway pause cannot recall.
@@ -1955,15 +1955,14 @@ pauser or the admin. `set_pauser` emits `PauserUpdatedEvent`.
 Programs act on KMS results only through `verify_public_decrypt`. The token reads no pause flag and
 passes the config through to the host.
 
-Admin setters are never paused. `revoke_permits` takes no config account, so it runs under every
-flag, as EVM's `invalidateDecryptionSignaturesBefore` runs under the ACL pause.
-`revoke_delegation_for_user_decryption` is gated on `acl_writes`, as EVM's
-`revokeDelegationForUserDecryption` is `whenNotPaused`.
+Admin setters are never paused. `revoke_permits` and `revoke_delegation_for_user_decryption` take
+no config account, so they run under every flag, as EVM's `invalidateDecryptionSignaturesBefore`
+and `revokeDelegationForUserDecryption` run under the ACL pause. A pause does not stop a delegate
+from decrypting, so a delegator can still end the delegation during one.
 
 Accepted gap: nothing pauses Solana user decryption. During a host pause, user decryption of values
 already allowed continues, as it does on EVM while only the host ACL is paused, and HTTP decryption
-has no pause of its own. While `acl_writes` is paused, a delegator cannot revoke a delegation until the admin
-resumes ACL writes.
+has no pause of its own.
 
 Rejected alternatives:
 

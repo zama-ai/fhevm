@@ -26,7 +26,6 @@ import {
   type Instruction,
   type InstructionWithAccounts,
   type InstructionWithData,
-  type ReadonlyAccount,
   type ReadonlySignerAccount,
   type ReadonlyUint8Array,
   type WritableAccount,
@@ -39,7 +38,6 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from '@solana/program-client-core';
-import { findHostConfigPda } from '../pdas/index.js';
 import { ZAMA_HOST_PROGRAM_ADDRESS } from '../programAddress.js';
 
 export const REVOKE_DELEGATION_FOR_USER_DECRYPTION_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -53,7 +51,6 @@ export function getRevokeDelegationForUserDecryptionDiscriminatorBytes(): Readon
 export type RevokeDelegationForUserDecryptionInstruction<
   TProgram extends string = typeof ZAMA_HOST_PROGRAM_ADDRESS,
   TAccountDelegator extends string | AccountMeta<string> = string,
-  TAccountHostConfig extends string | AccountMeta<string> = string,
   TAccountDelegationRecord extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
@@ -63,7 +60,6 @@ export type RevokeDelegationForUserDecryptionInstruction<
       TAccountDelegator extends string
         ? ReadonlySignerAccount<TAccountDelegator> & AccountSignerMeta<TAccountDelegator>
         : TAccountDelegator,
-      TAccountHostConfig extends string ? ReadonlyAccount<TAccountHostConfig> : TAccountHostConfig,
       TAccountDelegationRecord extends string ? WritableAccount<TAccountDelegationRecord> : TAccountDelegationRecord,
       ...TRemainingAccounts,
     ]
@@ -96,107 +92,26 @@ export function getRevokeDelegationForUserDecryptionInstructionDataCodec(): Fixe
   );
 }
 
-export type RevokeDelegationForUserDecryptionAsyncInput<
-  TAccountDelegator extends InstructionSignerInput = InstructionSignerInput,
-  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
-  TAccountDelegationRecord extends InstructionAccountInput = InstructionAccountInput,
-> = {
-  /** Delegator that owns the delegation. */
-  delegator: TAccountDelegator;
-  /** Singleton config PDA, whose `acl_writes` pause flag gates this instruction. */
-  hostConfig?: TAccountHostConfig;
-  /** Delegation record to revoke. */
-  delegationRecord: TAccountDelegationRecord;
-};
-
-export async function getRevokeDelegationForUserDecryptionInstructionAsync<
-  TAccountDelegator extends InstructionSignerInput,
-  TAccountHostConfig extends InstructionAccountInput,
-  TAccountDelegationRecord extends InstructionAccountInput,
-  TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
->(
-  input: RevokeDelegationForUserDecryptionAsyncInput<TAccountDelegator, TAccountHostConfig, TAccountDelegationRecord>,
-  config?: { programAddress?: TProgramAddress },
-): Promise<
-  RevokeDelegationForUserDecryptionInstruction<
-    TProgramAddress,
-    ResolvedInstructionAccountMeta<TAccountDelegator, InstructionAccountInputAddress<TAccountDelegator>>,
-    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
-    ResolvedInstructionAccountMeta<TAccountDelegationRecord, InstructionAccountInputAddress<TAccountDelegationRecord>>
-  >
-> {
-  // Program address.
-  const programAddress = config?.programAddress ?? ZAMA_HOST_PROGRAM_ADDRESS;
-
-  // Account meta helper.
-  const getAccountMeta = getAccountMetaFactory(programAddress, 'programId');
-
-  // Original accounts.
-  const originalAccounts = {
-    delegator: {
-      value: input.delegator ?? null,
-      isSigner: true,
-      isWritable: false,
-    },
-    hostConfig: {
-      value: input.hostConfig ?? null,
-      isSigner: false,
-      isWritable: false,
-    },
-    delegationRecord: {
-      value: input.delegationRecord ?? null,
-      isSigner: false,
-      isWritable: true,
-    },
-  };
-  const accounts = originalAccounts as Record<keyof typeof originalAccounts, ResolvedInstructionAccount>;
-
-  // Resolve default values.
-  if (!accounts.hostConfig.value) {
-    accounts.hostConfig.value = await findHostConfigPda({ programAddress });
-  }
-
-  return Object.freeze({
-    accounts: [
-      getAccountMeta('delegator', accounts.delegator),
-      getAccountMeta('hostConfig', accounts.hostConfig),
-      getAccountMeta('delegationRecord', accounts.delegationRecord),
-    ],
-    data: getRevokeDelegationForUserDecryptionInstructionDataEncoder().encode({}),
-    programAddress,
-  } as RevokeDelegationForUserDecryptionInstruction<
-    TProgramAddress,
-    ResolvedInstructionAccountMeta<TAccountDelegator, InstructionAccountInputAddress<TAccountDelegator>>,
-    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
-    ResolvedInstructionAccountMeta<TAccountDelegationRecord, InstructionAccountInputAddress<TAccountDelegationRecord>>
-  >);
-}
-
 export type RevokeDelegationForUserDecryptionInput<
   TAccountDelegator extends InstructionSignerInput = InstructionSignerInput,
-  TAccountHostConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountDelegationRecord extends InstructionAccountInput = InstructionAccountInput,
 > = {
   /** Delegator that owns the delegation. */
   delegator: TAccountDelegator;
-  /** Singleton config PDA, whose `acl_writes` pause flag gates this instruction. */
-  hostConfig: TAccountHostConfig;
   /** Delegation record to revoke. */
   delegationRecord: TAccountDelegationRecord;
 };
 
 export function getRevokeDelegationForUserDecryptionInstruction<
   TAccountDelegator extends InstructionSignerInput,
-  TAccountHostConfig extends InstructionAccountInput,
   TAccountDelegationRecord extends InstructionAccountInput,
   TProgramAddress extends Address = typeof ZAMA_HOST_PROGRAM_ADDRESS,
 >(
-  input: RevokeDelegationForUserDecryptionInput<TAccountDelegator, TAccountHostConfig, TAccountDelegationRecord>,
+  input: RevokeDelegationForUserDecryptionInput<TAccountDelegator, TAccountDelegationRecord>,
   config?: { programAddress?: TProgramAddress },
 ): RevokeDelegationForUserDecryptionInstruction<
   TProgramAddress,
   ResolvedInstructionAccountMeta<TAccountDelegator, InstructionAccountInputAddress<TAccountDelegator>>,
-  ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
   ResolvedInstructionAccountMeta<TAccountDelegationRecord, InstructionAccountInputAddress<TAccountDelegationRecord>>
 > {
   // Program address.
@@ -212,11 +127,6 @@ export function getRevokeDelegationForUserDecryptionInstruction<
       isSigner: true,
       isWritable: false,
     },
-    hostConfig: {
-      value: input.hostConfig ?? null,
-      isSigner: false,
-      isWritable: false,
-    },
     delegationRecord: {
       value: input.delegationRecord ?? null,
       isSigner: false,
@@ -228,7 +138,6 @@ export function getRevokeDelegationForUserDecryptionInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta('delegator', accounts.delegator),
-      getAccountMeta('hostConfig', accounts.hostConfig),
       getAccountMeta('delegationRecord', accounts.delegationRecord),
     ],
     data: getRevokeDelegationForUserDecryptionInstructionDataEncoder().encode({}),
@@ -236,7 +145,6 @@ export function getRevokeDelegationForUserDecryptionInstruction<
   } as RevokeDelegationForUserDecryptionInstruction<
     TProgramAddress,
     ResolvedInstructionAccountMeta<TAccountDelegator, InstructionAccountInputAddress<TAccountDelegator>>,
-    ResolvedInstructionAccountMeta<TAccountHostConfig, InstructionAccountInputAddress<TAccountHostConfig>>,
     ResolvedInstructionAccountMeta<TAccountDelegationRecord, InstructionAccountInputAddress<TAccountDelegationRecord>>
   >);
 }
@@ -249,10 +157,8 @@ export type ParsedRevokeDelegationForUserDecryptionInstruction<
   accounts: {
     /** Delegator that owns the delegation. */
     delegator: TAccountMetas[0];
-    /** Singleton config PDA, whose `acl_writes` pause flag gates this instruction. */
-    hostConfig: TAccountMetas[1];
     /** Delegation record to revoke. */
-    delegationRecord: TAccountMetas[2];
+    delegationRecord: TAccountMetas[1];
   };
   data: RevokeDelegationForUserDecryptionInstructionData;
 };
@@ -263,10 +169,10 @@ export function parseRevokeDelegationForUserDecryptionInstruction<
 >(
   instruction: Instruction<TProgram> & InstructionWithAccounts<TAccountMetas> & InstructionWithData<ReadonlyUint8Array>,
 ): ParsedRevokeDelegationForUserDecryptionInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 3) {
+  if (instruction.accounts.length < 2) {
     throw new SolanaError(SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS, {
       actualAccountMetas: instruction.accounts.length,
-      expectedAccountMetas: 3,
+      expectedAccountMetas: 2,
     });
   }
   let accountIndex = 0;
@@ -279,7 +185,6 @@ export function parseRevokeDelegationForUserDecryptionInstruction<
     programAddress: instruction.programAddress,
     accounts: {
       delegator: getNextAccount(),
-      hostConfig: getNextAccount(),
       delegationRecord: getNextAccount(),
     },
     data: getRevokeDelegationForUserDecryptionInstructionDataDecoder().decode(instruction.data),
