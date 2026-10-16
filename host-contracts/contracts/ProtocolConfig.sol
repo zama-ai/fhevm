@@ -289,6 +289,12 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         emit KmsContextCreationConfirmation(kmsContextId, signer, signature, extraData);
 
         // Context creation quorum: all new nodes and (n - t) previous nodes confirmed the same digest.
+        if (
+            canonical$.contextCreationNewConfirmationCountForDigest[kmsContextId][digest] !=
+            $.kmsNodesForContext[kmsContextId].length
+        ) {
+            return;
+        }
         // The previous committee has `n` nodes, of which at most `t` (its MPC threshold) are assumed
         // faulty: crashed, offline, or malicious. The quorum must be:
         //   - more than `t`, so faulty nodes can never approve a switch on their own.
@@ -300,8 +306,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         uint256 previousQuorum = $.kmsNodesForContext[previousContextId].length -
             $.mpcThresholdForContext[previousContextId];
         if (
-            canonical$.contextCreationNewConfirmationCountForDigest[kmsContextId][digest] ==
-            $.kmsNodesForContext[kmsContextId].length &&
             canonical$.contextCreationPreviousConfirmationCountForDigest[kmsContextId][digest] >=
             (previousQuorum > 0 ? previousQuorum : 1)
         ) {
