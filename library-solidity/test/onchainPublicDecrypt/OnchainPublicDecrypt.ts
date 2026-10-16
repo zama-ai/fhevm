@@ -4,10 +4,13 @@ import * as fs from 'fs';
 import { ethers } from 'hardhat';
 
 import {
-  CONFIRMATION_TYPES,
+  CRS_COUNTER_BASE,
+  KEY_COUNTER_BASE,
   KmsThresholds,
+  PREP_KEYGEN_COUNTER_BASE,
   nodeConfigHash,
   protocolConfigDomainFor,
+  signConfirmation,
   signEpochActivation,
 } from '@fhevm/host-contracts/scripts/protocolConfigEip712';
 
@@ -177,7 +180,7 @@ async function activateNewKmsContext(
 
   let epochId;
   for (const signer of signerAccounts) {
-    const signature = await signer.signTypedData(domain, CONFIRMATION_TYPES.ContextCreationConfirmation, {
+    const signature = await signConfirmation(signer, domain, 'ContextCreationConfirmation', {
       previousContextId,
       newContextId: contextId,
       nodeConfigHash: newNodeConfigHash,
@@ -196,11 +199,11 @@ async function activateNewKmsContext(
   // confirmEpochActivation checks only that the signature recovers to the node signer, so the constant ids need
   // not exist in KMSGeneration, and every signer produces the same epochMaterialHash for quorum.
   const keyMaterial = {
-    prepKeygenId: (3n << 248n) + 1n, // PREP_KEYGEN_COUNTER_BASE + 1
-    keyId: (4n << 248n) + 1n, // KEY_COUNTER_BASE + 1
+    prepKeygenId: PREP_KEYGEN_COUNTER_BASE + 1n,
+    keyId: KEY_COUNTER_BASE + 1n,
     keyDigests: [{ keyType: 0, digest: '0x01020304' }],
   };
-  const crsMaterial = { crsId: (5n << 248n) + 1n, maxBitLength: 4096n, crsDigest: '0x01020304' }; // CRS_COUNTER_BASE + 1
+  const crsMaterial = { crsId: CRS_COUNTER_BASE + 1n, maxBitLength: 4096n, crsDigest: '0x01020304' };
   for (const signer of signerAccounts) {
     const signature = await signEpochActivation(signer, domain, {
       contextId,

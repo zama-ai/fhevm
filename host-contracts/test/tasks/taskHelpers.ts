@@ -5,12 +5,11 @@ import { ethers, upgrades } from 'hardhat';
 import path from 'path';
 
 import {
-  CONFIRMATION_TYPES,
-  ConfirmationType,
   KmsNodeParams,
   KmsThresholds,
   nodeConfigHash,
   protocolConfigDomainFor,
+  signConfirmation,
   signEpochActivation,
 } from '../../scripts/protocolConfigEip712';
 import type { KMSGeneration, ProtocolConfig } from '../../types';
@@ -206,19 +205,6 @@ export async function buildControllableKmsCommittee(): Promise<ControllableKmsCo
   };
 }
 
-async function signConfirmation(
-  signerSigner: Signer,
-  proxyAddress: string,
-  primaryType: ConfirmationType,
-  value: Record<string, unknown>,
-): Promise<string> {
-  return signerSigner.signTypedData(
-    await protocolConfigDomainFor(ethers.provider, proxyAddress),
-    CONFIRMATION_TYPES[primaryType],
-    value,
-  );
-}
-
 // Signs the signer's ContextCreationConfirmation for a pending context and submits it from the signer
 // account. `nodes`/`thresholds` are the pending context's definition, and the previous context is the
 // active one.
@@ -231,12 +217,17 @@ export async function confirmContextCreationBySigner(
   extraData = '0x',
 ): Promise<ContractTransactionReceipt> {
   const pc = await ethers.getContractAt('ProtocolConfig', proxyAddress, signerSigner);
-  const signature = await signConfirmation(signerSigner, proxyAddress, 'ContextCreationConfirmation', {
-    previousContextId: await pc.getCurrentKmsContextId(),
-    newContextId: contextId,
-    nodeConfigHash: nodeConfigHash(nodes, thresholds),
-    extraData,
-  });
+  const signature = await signConfirmation(
+    signerSigner,
+    await protocolConfigDomainFor(ethers.provider, proxyAddress),
+    'ContextCreationConfirmation',
+    {
+      previousContextId: await pc.getCurrentKmsContextId(),
+      newContextId: contextId,
+      nodeConfigHash: nodeConfigHash(nodes, thresholds),
+      extraData,
+    },
+  );
   return (await (await pc.confirmKmsContextCreation(contextId, signature, extraData)).wait())!;
 }
 
@@ -273,11 +264,16 @@ export async function confirmContextDestructionBySigner(
   extraData = '0x',
 ): Promise<ContractTransactionReceipt> {
   const pc = await ethers.getContractAt('ProtocolConfig', proxyAddress, signerSigner);
-  const signature = await signConfirmation(signerSigner, proxyAddress, 'ContextDestructionConfirmation', {
-    destroyedContextId,
-    destroyedEpochIds,
-    extraData,
-  });
+  const signature = await signConfirmation(
+    signerSigner,
+    await protocolConfigDomainFor(ethers.provider, proxyAddress),
+    'ContextDestructionConfirmation',
+    {
+      destroyedContextId,
+      destroyedEpochIds,
+      extraData,
+    },
+  );
   return (await (
     await pc.confirmKmsContextDestruction(destroyedContextId, destroyedEpochIds, signature, extraData)
   ).wait())!;
@@ -291,10 +287,15 @@ export async function confirmEpochDestructionBySigner(
   extraData = '0x',
 ): Promise<ContractTransactionReceipt> {
   const pc = await ethers.getContractAt('ProtocolConfig', proxyAddress, signerSigner);
-  const signature = await signConfirmation(signerSigner, proxyAddress, 'EpochDestructionConfirmation', {
-    destroyedEpochId,
-    extraData,
-  });
+  const signature = await signConfirmation(
+    signerSigner,
+    await protocolConfigDomainFor(ethers.provider, proxyAddress),
+    'EpochDestructionConfirmation',
+    {
+      destroyedEpochId,
+      extraData,
+    },
+  );
   return (await (await pc.confirmKmsEpochDestruction(destroyedEpochId, signature, extraData)).wait())!;
 }
 

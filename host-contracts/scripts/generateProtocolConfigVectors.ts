@@ -10,11 +10,16 @@ import path from 'path';
 
 import {
   CONFIRMATION_TYPES,
+  CRS_COUNTER_BASE,
   ConfirmationType,
   CrsResult,
+  EPOCH_COUNTER_BASE,
+  KEY_COUNTER_BASE,
+  KMS_CONTEXT_COUNTER_BASE,
   KeyResult,
   KmsNodeParams,
   KmsThresholds,
+  PREP_KEYGEN_COUNTER_BASE,
   crsHash,
   encodeNodeConfig,
   epochMaterialHash,
@@ -24,12 +29,6 @@ import {
 } from './protocolConfigEip712';
 
 export const VECTORS_PATH = path.join(__dirname, '..', 'test-vectors', 'protocol-config-eip712.json');
-
-const KMS_CONTEXT_COUNTER_BASE = 7n << 248n;
-const EPOCH_COUNTER_BASE = 8n << 248n;
-const PREP_KEYGEN_COUNTER_BASE = 3n << 248n;
-const KEY_COUNTER_BASE = 4n << 248n;
-const CRS_COUNTER_BASE = 5n << 248n;
 
 // Deterministic (RFC 6979) 65-byte r || s || v signature, the same layout as foundry's vm.sign packed.
 function sign(wallet: Wallet, digest: string): string {

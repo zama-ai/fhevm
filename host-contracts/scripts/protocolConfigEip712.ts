@@ -13,6 +13,13 @@ import {
   solidityPacked,
 } from 'ethers';
 
+// ID counter bases from contracts/shared/Constants.sol.
+export const PREP_KEYGEN_COUNTER_BASE = 3n << 248n;
+export const KEY_COUNTER_BASE = 4n << 248n;
+export const CRS_COUNTER_BASE = 5n << 248n;
+export const KMS_CONTEXT_COUNTER_BASE = 7n << 248n;
+export const EPOCH_COUNTER_BASE = 8n << 248n;
+
 export const CONFIRMATION_TYPES = {
   ContextCreationConfirmation: {
     ContextCreationConfirmation: [
@@ -47,6 +54,24 @@ export const CONFIRMATION_TYPES = {
 } satisfies Record<string, Record<string, TypedDataField[]>>;
 
 export type ConfirmationType = keyof typeof CONFIRMATION_TYPES;
+
+export type ConfirmationValue = {
+  ContextCreationConfirmation: {
+    previousContextId: bigint;
+    newContextId: bigint;
+    nodeConfigHash: string;
+    extraData: string;
+  };
+  EpochActivationConfirmation: {
+    contextId: bigint;
+    previousEpochId: bigint;
+    epochId: bigint;
+    epochMaterialHash: string;
+    extraData: string;
+  };
+  ContextDestructionConfirmation: { destroyedContextId: bigint; destroyedEpochIds: bigint[]; extraData: string };
+  EpochDestructionConfirmation: { destroyedEpochId: bigint; extraData: string };
+};
 
 const KEY_DIGEST_TYPES: Record<string, TypedDataField[]> = {
   KeyDigest: [
@@ -129,6 +154,15 @@ export function epochMaterialHash(keys: KeyResult[], crsList: CrsResult[]): stri
   return keccak256(abi.encode(['bytes32[]', 'bytes32[]'], [keys.map(keyHash), crsList.map(crsHash)]));
 }
 
+export function signConfirmation<T extends ConfirmationType>(
+  signer: Signer,
+  domain: TypedDataDomain,
+  primaryType: T,
+  value: ConfirmationValue[T],
+): Promise<string> {
+  return signer.signTypedData(domain, CONFIRMATION_TYPES[primaryType], value);
+}
+
 // Signs the EpochActivationConfirmation over the epochMaterialHash of the key and CRS results.
 export async function signEpochActivation(
   signer: Signer,
@@ -142,7 +176,7 @@ export async function signEpochActivation(
     extraData: string;
   },
 ): Promise<string> {
-  return signer.signTypedData(domain, CONFIRMATION_TYPES.EpochActivationConfirmation, {
+  return signConfirmation(signer, domain, 'EpochActivationConfirmation', {
     contextId: a.contextId,
     previousEpochId: a.previousEpochId,
     epochId: a.epochId,

@@ -1,13 +1,11 @@
 import { expect } from 'chai';
 import { ethers, upgrades } from 'hardhat';
 
+import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from '../../scripts/protocolConfigEip712';
 import { ACL, ACLUpgradedExample } from '../../types';
 import { getSigners, initSigners } from '../signers';
 import { buildProtocolConfigNodes, buildProtocolConfigThresholds, readHostAddress } from '../tasks/taskHelpers';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
-
-const KEY_COUNTER_BASE = BigInt(4) << BigInt(248);
-const CRS_COUNTER_BASE = BigInt(5) << BigInt(248);
 
 describe('Upgrades', function () {
   before(async function () {
