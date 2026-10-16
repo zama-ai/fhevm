@@ -17,13 +17,15 @@ use clap::Parser;
 use fhevm_host_bindings::protocol_config::ProtocolConfig;
 use sqlx::postgres::PgPoolOptions;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, Level};
+use tracing::Level;
 
 use fhevm_engine_common::{
     database::{
         connect_pool_with_options_and_connect_options, with_statement_timeout,
     },
-    metrics_server, telemetry,
+    metrics_server,
+    shutdown_signal::cancel_on_shutdown_signal,
+    telemetry,
     utils::DatabaseURL,
 };
 use solana_merkle_proof_service::{kms_tx_senders, server::HttpServer};
@@ -115,13 +117,8 @@ async fn main() -> Result<()> {
     .await
     .context("connect Merkle record database")?;
 
-    let signal_cancel = cancel.clone();
-    tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            info!("Received ctrl-c, shutting down");
-            signal_cancel.cancel();
-        }
-    });
+    cancel_on_shutdown_signal(cancel.clone())
+        .context("install the SIGINT and SIGTERM handlers")?;
 
     metrics_server::spawn(args.metrics_addr, cancel.child_token());
 

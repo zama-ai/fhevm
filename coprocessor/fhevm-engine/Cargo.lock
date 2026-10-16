@@ -9379,6 +9379,7 @@ dependencies = [
  "tokio-util",
  "tonic 0.14.6",
  "tracing",
+ "tracing-test",
  "yellowstone-grpc-proto",
  "zama-host",
  "zama-solana-acl",

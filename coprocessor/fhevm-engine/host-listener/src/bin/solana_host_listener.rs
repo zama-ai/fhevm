@@ -15,7 +15,9 @@ use fhevm_engine_common::{
         default_get_version, HealthCheckService, HealthStatus, HttpServer,
         Version,
     },
-    metrics_server, telemetry,
+    metrics_server,
+    shutdown_signal::cancel_on_shutdown_signal,
+    telemetry,
     utils::DatabaseURL,
 };
 use host_listener::{
@@ -154,13 +156,8 @@ async fn main() -> Result<()> {
     };
 
     let cancel = CancellationToken::new();
-    let signal_cancel = cancel.clone();
-    tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            info!("Received ctrl-c, shutting down");
-            signal_cancel.cancel();
-        }
-    });
+    cancel_on_shutdown_signal(cancel.clone())
+        .context("install the SIGINT and SIGTERM handlers")?;
 
     if args.metrics_addr.is_some() {
         metrics_server::spawn(args.metrics_addr, cancel.child_token());

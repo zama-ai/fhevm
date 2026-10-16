@@ -53,6 +53,10 @@ pub use metrics::track_finalized_slot;
 const MAX_DECODING_MESSAGE_SIZE: usize = 64 * 1024 * 1024;
 const SOLANA_GRPC_INGEST_TIMEOUT: Duration = Duration::from_secs(60);
 const STREAM_STALL_TIMEOUT: Duration = Duration::from_secs(30);
+/// Bounds the connection (TCP and TLS) and, separately, the wait for the Subscribe response,
+/// so a provider that accepts and then never answers is reconnected. Once the stream is open,
+/// [`STREAM_STALL_TIMEOUT`] bounds it.
+const GRPC_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, Debug)]
 enum IngestFailureKind {
@@ -399,7 +403,9 @@ async fn subscribe_loop(
     };
     let channel = tokio::select! {
         _ = cancel.cancelled() => return Ok(StreamEnd::Cancelled),
-        result = endpoint.connect() => result.context("connect grpc endpoint")?,
+        result = tokio::time::timeout(GRPC_HANDSHAKE_TIMEOUT, endpoint.connect()) => result
+            .map_err(|_| anyhow!("no grpc connection within {GRPC_HANDSHAKE_TIMEOUT:?}"))?
+            .context("connect grpc endpoint")?,
     };
 
     let token: Option<MetadataValue<Ascii>> = config
@@ -428,7 +434,9 @@ async fn subscribe_loop(
 
     let response = tokio::select! {
         _ = cancel.cancelled() => return Ok(StreamEnd::Cancelled),
-        result = client.subscribe(outbound) => result.context("subscribe")?,
+        result = tokio::time::timeout(GRPC_HANDSHAKE_TIMEOUT, client.subscribe(outbound)) => result
+            .map_err(|_| anyhow!("no subscribe response within {GRPC_HANDSHAKE_TIMEOUT:?}"))?
+            .context("subscribe")?,
     };
     let mut stream = response.into_inner();
 
@@ -908,6 +916,93 @@ mod slot_size_tests {
         assert_eq!(block.slot, 5);
         assert_eq!(transactions.len(), junk_count + 1);
         assert!(!transactions[host_index as usize].instructions.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod handshake_tests {
+    use solana_client::nonblocking::rpc_client::RpcClient;
+    use tokio::net::TcpListener;
+    use tokio::sync::watch;
+    use tokio_util::sync::CancellationToken;
+
+    use super::{
+        run, BlockSink, FollowerConfig, IngestFailure, PreparedBlock,
+        StartPosition, GRPC_HANDSHAKE_TIMEOUT,
+    };
+
+    struct NoBlocks;
+
+    impl BlockSink for NoBlocks {
+        async fn apply(
+            &self,
+            _: &PreparedBlock,
+        ) -> std::result::Result<(), IngestFailure> {
+            unreachable!("a silent provider sends no block")
+        }
+    }
+
+    /// Accepts connections and never writes to them. Counts the accepted connections.
+    async fn silent_provider() -> (u16, watch::Receiver<usize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (count, accepted) = watch::channel(0);
+        tokio::spawn(async move {
+            let mut open = Vec::new();
+            while let Ok((socket, _)) = listener.accept().await {
+                open.push(socket);
+                count.send_replace(open.len());
+            }
+        });
+        (port, accepted)
+    }
+
+    /// Runs the follower against a silent provider until it gives up and connects again.
+    async fn reconnect_from_a_silent_provider(scheme: &str) {
+        let (port, mut accepted) = silent_provider().await;
+        let config = FollowerConfig {
+            grpc_url: format!("{scheme}://localhost:{port}"),
+            ..super::test_support::config()
+        };
+        let archive = RpcClient::new("http://127.0.0.1:1".to_owned());
+        let cancel = CancellationToken::new();
+
+        let follower = run(
+            &NoBlocks,
+            &archive,
+            &config,
+            StartPosition::Tip,
+            cancel.clone(),
+        );
+        let reconnected = tokio::time::timeout(
+            GRPC_HANDSHAKE_TIMEOUT * 3,
+            accepted.wait_for(|count| *count >= 2),
+        );
+        tokio::select! {
+            result = follower => panic!("the follower stopped: {result:?}"),
+            result = reconnected => {
+                result.expect("no reconnect after a silent provider").unwrap();
+            }
+        }
+        cancel.cancel();
+    }
+
+    /// A TLS handshake that never completes ends the connection attempt.
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn a_provider_silent_during_the_tls_handshake_is_reconnected() {
+        reconnect_from_a_silent_provider("https").await;
+        assert!(logs_contain("ingestion interrupted"));
+        assert!(logs_contain("no grpc connection within"));
+    }
+
+    /// A Subscribe call that never gets its response headers ends the attempt.
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn a_provider_silent_after_the_connection_is_reconnected() {
+        reconnect_from_a_silent_provider("http").await;
+        assert!(logs_contain("ingestion interrupted"));
+        assert!(logs_contain("no subscribe response within"));
     }
 }
 
