@@ -49,9 +49,9 @@ pub struct SignedRoute {
     pub body: &'static [u8],
     /// The route template, the `route` label of the request counter.
     pub template: &'static str,
-    /// A method the route refuses, and the `Allow` value of the `405`.
+    /// The methods the route accepts, and one it refuses.
+    pub methods: &'static [Method],
     pub other_method: Method,
-    pub allow: &'static str,
     /// The path in a parameter encoding the route refuses, if it has parameters.
     pub non_canonical_path: Option<&'static str>,
 }

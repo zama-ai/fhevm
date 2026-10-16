@@ -1,9 +1,6 @@
 //! The Pingora [`ProxyHttp`] implementation of [`Proxy`]: the request lifecycle of the proxy.
 
-use crate::{
-    ErrorBody, Proxy, ProxyError,
-    routing::{ParsedRoute, RouteError},
-};
+use crate::{ErrorBody, Proxy, ProxyError, routing::ParsedRoute};
 use alloy::primitives::{Address, B256, KECCAK256_EMPTY, Keccak256};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -37,7 +34,8 @@ const X_FORWARDED_HOST: HeaderName = HeaderName::from_static("x-forwarded-host")
 static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "fhevm_sig_proxy_requests_total",
-        "Requests answered by the proxy, by route template and status",
+        "Requests answered by the proxy, by route template and status. Each readiness probe adds \
+         one 401: the TLS listener self-check, unsigned, on the first GET route.",
         &["route", "status"]
     )
     .unwrap()
@@ -60,41 +58,35 @@ pub struct RequestContext {
 }
 
 impl Proxy {
-    /// Writes an error body as JSON, rendered by the deployment.
+    /// Answers `error` as the deployment renders it, and returns the status written.
     async fn respond_with_error(
         &self,
         session: &mut Session,
         error: &ProxyError,
-    ) -> pingora::Result<()> {
+    ) -> pingora::Result<StatusCode> {
         let ErrorBody { status, json: body } = (self.config.error_body)(error);
         let mut header = ResponseHeader::build(status, None)?;
-        header.insert_header(CONTENT_TYPE, "application/json")?;
+        if !body.is_empty() {
+            header.insert_header(CONTENT_TYPE, "application/json")?;
+        }
         header.insert_header(CONTENT_LENGTH, body.len().to_string())?;
         if status == StatusCode::UNAUTHORIZED {
             header.insert_header(WWW_AUTHENTICATE, fhevm_sig_auth::SCHEME)?;
         }
-        session
-            .write_response_header(Box::new(header), false)
-            .await?;
-        session
-            .write_response_body(Some(Bytes::from(body)), true)
-            .await
-    }
-
-    /// Writes an empty response with the given status.
-    async fn respond_empty(
-        &self,
-        session: &mut Session,
-        status: StatusCode,
-        allow: Option<&[Method]>,
-    ) -> pingora::Result<()> {
-        let mut header = ResponseHeader::build(status, None)?;
-        header.insert_header(CONTENT_LENGTH, "0")?;
-        if let Some(methods) = allow {
+        // RFC 9110 §15.5.6: a `405` lists the methods the route accepts in `Allow`.
+        if let ProxyError::MethodNotAllowed(methods) = error {
             let methods: Vec<_> = methods.iter().map(Method::as_str).collect();
             header.insert_header(ALLOW, methods.join(", "))?;
         }
-        session.write_response_header(Box::new(header), true).await
+        session
+            .write_response_header(Box::new(header), body.is_empty())
+            .await?;
+        if !body.is_empty() {
+            session
+                .write_response_body(Some(Bytes::from(body)), true)
+                .await?;
+        }
+        Ok(status)
     }
 
     /// The route `request_filter` matched: the later phases only run after it did.
@@ -159,20 +151,8 @@ impl ProxyHttp for Proxy {
 
         let index = match self.routes.find(&req.method, target.path()) {
             Ok(index) => index,
-            Err(RouteError::NotFound) => {
-                self.respond_empty(session, StatusCode::NOT_FOUND, None)
-                    .await?;
-                return Ok(true);
-            }
-            // RFC 9110 §15.5.6: a `405` lists the methods the route accepts in `Allow`.
-            Err(RouteError::MethodNotAllowed(methods)) => {
-                self.respond_empty(session, StatusCode::METHOD_NOT_ALLOWED, Some(&methods))
-                    .await?;
-                return Ok(true);
-            }
-            Err(RouteError::NonCanonical) => {
-                self.respond_with_error(session, &ProxyError::NonCanonicalPath)
-                    .await?;
+            Err(error) => {
+                self.respond_with_error(session, &error).await?;
                 return Ok(true);
             }
         };
@@ -244,8 +224,9 @@ impl ProxyHttp for Proxy {
     ) -> pingora::Result<Box<HttpPeer>> {
         let route = self.matched_route(ctx)?;
         let response_timeout = route.route.endpoint_response_timeout;
-        let Some(backend) =
-            self.balancers[route.upstream].select(SELECT_KEY, MAX_SELECT_ITERATIONS)
+        let Some(backend) = self.balancers[route.upstream]
+            .1
+            .select(SELECT_KEY, MAX_SELECT_ITERATIONS)
         else {
             return abort_with(self.config.error_body, ProxyError::EndpointUnavailable);
         };
@@ -297,12 +278,13 @@ impl ProxyHttp for Proxy {
             None => None,
         };
         let error_code = match error {
-            Some(error) => {
-                if let Err(e) = self.respond_with_error(session, &error).await {
+            Some(error) => match self.respond_with_error(session, &error).await {
+                Ok(status) => status.as_u16(),
+                Err(e) => {
                     error!("Failed to send error response to downstream: {e}");
+                    (self.config.error_body)(&error).status.as_u16()
                 }
-                (self.config.error_body)(&error).status.as_u16()
-            }
+            },
             None => {
                 let code = default_error_code(e);
                 if code > 0
@@ -339,6 +321,7 @@ impl ProxyHttp for Proxy {
 
         info!(
             path = req.uri.path(),
+            route,
             status,
             client,
             endpoint = ctx.endpoint.as_deref().unwrap_or(""),

@@ -18,7 +18,7 @@ const PROFILE: Profile = Profile {
         body: br#"{"ciphertext_handles":["0x01"]}"#,
         template: PUBLIC_DECRYPTION_ROUTE,
         other_method: Method::GET,
-        allow: "POST",
+        methods: &[Method::POST],
         non_canonical_path: None,
     },
     metrics: MetricsPort::Health,

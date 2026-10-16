@@ -1,14 +1,12 @@
 //! Black-box harness: a `Proxy` run in-process behind real TLS, in front of the recording stub
 //! endpoints of the conformance toolbox.
 
-#![allow(dead_code)]
-
 use alloy::transports::http::reqwest::{self, Client};
 use fhevm_sig_proxy::{
     ErrorBody, Proxy, ProxyConfig, ProxyError, Route, SignerSource, TlsConfig, Upstream,
     conformance::{
         AUDIENCE, CHAIN_ID, ENDPOINT_HEALTHCHECK_FREQUENCY, PROTOCOL_CONFIG, Stub, TestTls,
-        authorization, free_port, sender, wait_for_listener,
+        authorization, free_addr, sender, wait_for_listener,
     },
     health,
 };
@@ -24,6 +22,8 @@ pub fn error_body(error: &ProxyError) -> ErrorBody {
         ProxyError::NotOriginForm | ProxyError::NonCanonicalPath | ProxyError::BodyTooLarge => {
             StatusCode::BAD_REQUEST
         }
+        ProxyError::NotFound => StatusCode::NOT_FOUND,
+        ProxyError::MethodNotAllowed(_) => StatusCode::METHOD_NOT_ALLOWED,
         ProxyError::Auth(_) => StatusCode::UNAUTHORIZED,
         ProxyError::EndpointUnavailable => StatusCode::BAD_GATEWAY,
         ProxyError::EndpointTimeout => StatusCode::GATEWAY_TIMEOUT,
@@ -99,7 +99,7 @@ pub struct TestProxy {
 impl TestProxy {
     pub async fn start(customize: impl FnOnce(&mut ProxyConfig)) -> Self {
         let (a, b) = (Stub::start().await, Stub::start().await);
-        let addr = SocketAddr::from(([127, 0, 0, 1], free_port()));
+        let addr = free_addr();
         let tls = TestTls::generate();
         let mut config = config(addr, &tls, &a, &b);
         customize(&mut config);

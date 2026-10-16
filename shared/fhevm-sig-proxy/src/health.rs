@@ -26,7 +26,7 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(
+    pub(crate) fn new(
         bind_address: SocketAddr,
         self_check_path: &str,
         upstreams: Vec<(String, Arc<LoadBalancer<RoundRobin>>)>,
@@ -133,7 +133,7 @@ impl EndpointsHealth {
 
 /// The healthcheck run against each endpoint: a `GET` of `healthcheck_path` must be answered with
 /// `200`.
-pub fn endpoint_health_check(
+pub(crate) fn endpoint_health_check(
     config: &ProxyConfig,
     healthcheck_path: &str,
 ) -> anyhow::Result<HttpHealthCheck> {

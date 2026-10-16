@@ -10,7 +10,10 @@ use crate::ProxyError;
 use alloy::{primitives::Address, transports::http::reqwest};
 use bytes::Bytes;
 use fhevm_sig_auth::{AuthError, unix_now};
-use http::{StatusCode, header::WWW_AUTHENTICATE};
+use http::{
+    Method, StatusCode,
+    header::{ALLOW, CONTENT_TYPE, WWW_AUTHENTICATE},
+};
 use std::time::{Duration, Instant};
 
 /// Expands to one `#[tokio::test]` per criterion every deployment meets, for the [`Profile`]
@@ -59,15 +62,27 @@ async fn started(profile: &Profile) -> ProxyProcess {
 }
 
 /// Asserts `response` is the deployment's rendering of `error`.
+/// Asserts `response` is the deployment's rendering of `error`: its status and body, a
+/// `Content-Type` exactly when there is a body, `WWW-Authenticate` exactly on a `401`, and `Allow`
+/// on a `405`.
 async fn assert_error(profile: &Profile, response: reqwest::Response, error: ProxyError) {
     let expected = (profile.error_body)(&error);
+    let headers = response.headers();
     assert_eq!(response.status(), expected.status, "{error:?}");
-    let www_authenticate = response.headers().get(WWW_AUTHENTICATE).cloned();
     assert_eq!(
-        www_authenticate.is_some(),
+        headers.get(CONTENT_TYPE).map(|v| v.to_str().unwrap()),
+        (!expected.json.is_empty()).then_some("application/json"),
+        "{error:?}"
+    );
+    assert_eq!(
+        headers.contains_key(WWW_AUTHENTICATE),
         expected.status == StatusCode::UNAUTHORIZED,
         "{error:?}"
     );
+    if let ProxyError::MethodNotAllowed(methods) = &error {
+        let methods: Vec<_> = methods.iter().map(Method::as_str).collect();
+        assert_eq!(headers[ALLOW], methods.join(", "), "{error:?}");
+    }
     assert_eq!(response.bytes().await.unwrap(), expected.json, "{error:?}");
 }
 
@@ -174,7 +189,7 @@ pub async fn a_failed_authentication_never_reaches_the_endpoint(profile: &Profil
 }
 
 /// An unknown path is a `404`, a refused method a `405` with `Allow`, a non-canonical parameter
-/// a `400`, none of which reaches the endpoint.
+/// a `400`, each rendered by the deployment, and none reaches the endpoint.
 pub async fn a_routing_error_never_reaches_the_endpoint(profile: &Profile) {
     let proxy = started(profile).await;
     let route = &profile.route;
@@ -188,8 +203,7 @@ pub async fn a_routing_error_never_reaches_the_endpoint(profile: &Profile) {
             route.body,
         )
         .await;
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    assert_eq!(response.bytes().await.unwrap(), "");
+    assert_error(profile, response, ProxyError::NotFound).await;
 
     let response = proxy
         .send(
@@ -199,8 +213,12 @@ pub async fn a_routing_error_never_reaches_the_endpoint(profile: &Profile) {
             b"",
         )
         .await;
-    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
-    assert_eq!(response.headers()["allow"], route.allow);
+    assert_error(
+        profile,
+        response,
+        ProxyError::MethodNotAllowed(route.methods.to_vec()),
+    )
+    .await;
 
     if let Some(path) = route.non_canonical_path {
         let response = proxy
@@ -304,8 +322,17 @@ pub async fn each_request_is_logged_and_counted(profile: &Profile) {
     let before = counted(&proxy.metrics().await);
 
     let unknown = "/not-a-route";
+    let authorization = authorization(route.path, route.body).await;
     let statuses = [
-        proxy.signed(route).await.status(),
+        proxy
+            .send(
+                route.method.clone(),
+                route.path,
+                Some(&authorization),
+                route.body,
+            )
+            .await
+            .status(),
         proxy
             .send(route.method.clone(), route.path, None, route.body)
             .await
@@ -320,16 +347,37 @@ pub async fn each_request_is_logged_and_counted(profile: &Profile) {
     // The count and the line are written once the response is sent.
     let expected = before.map(|count| count + 1);
     eventually(|| async { counted(&proxy.metrics().await) == expected }).await;
-    for (path, status) in [(route.path, 200), (route.path, 401), (unknown, 404)] {
+    let sender = sender().address().to_string();
+    for (path, template, status, signer) in [
+        (route.path, route.template, 200, sender.as_str()),
+        (route.path, route.template, 401, ""),
+        (unknown, "none", 404, ""),
+    ] {
         eventually(|| async {
             proxy.output().lines().any(|line| {
                 line.contains("Proxied request")
-                    && line.contains(path)
-                    && line.contains(&status.to_string())
+                    && has_field(line, "path", path)
+                    && has_field(line, "route", template)
+                    && has_field(line, "status", &status.to_string())
+                    && has_field(line, "sender", signer)
             })
         })
         .await;
     }
+    assert!(!proxy.output().contains(&authorization));
+}
+
+/// Whether a log line, in text (`name=value`, `name="value"`) or JSON, has the field `name` equal
+/// to `value`.
+fn has_field(line: &str, name: &str, value: &str) -> bool {
+    [
+        format!(" {name}={value} "),
+        format!(" {name}=\"{value}\""),
+        format!("\"{name}\":{value},"),
+        format!("\"{name}\":\"{value}\""),
+    ]
+    .iter()
+    .any(|field| format!("{line} ").contains(field.as_str()))
 }
 
 /// Before `ProtocolConfig` was first read the proxy is not ready and refuses every signer; it

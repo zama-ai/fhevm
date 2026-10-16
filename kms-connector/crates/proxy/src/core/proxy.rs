@@ -70,9 +70,16 @@ fn proxy_config(config: Config) -> ProxyConfig {
     }
 }
 
-/// Renders the errors the proxy answers itself as a kms-connector-api `ErrorResponse`.
+/// Renders the errors the proxy answers itself as a kms-connector-api `ErrorResponse`. An unknown
+/// path or method gets an empty answer.
 pub fn error_body(error: &ProxyError) -> ErrorBody {
+    let empty = |status| ErrorBody {
+        status,
+        json: Vec::new(),
+    };
     let response = match error {
+        ProxyError::NotFound => return empty(StatusCode::NOT_FOUND),
+        ProxyError::MethodNotAllowed(_) => return empty(StatusCode::METHOD_NOT_ALLOWED),
         ProxyError::NotOriginForm | ProxyError::NonCanonicalPath | ProxyError::BodyTooLarge => {
             ErrorResponse::new(ErrorCode::Malformed, error.to_string(), None)
         }

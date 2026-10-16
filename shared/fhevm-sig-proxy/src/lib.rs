@@ -7,6 +7,7 @@
 mod config;
 #[cfg(feature = "conformance")]
 pub mod conformance;
+pub mod defaults;
 mod error;
 pub mod health;
 mod http_proxy;

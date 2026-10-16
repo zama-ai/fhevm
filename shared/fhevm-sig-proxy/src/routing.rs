@@ -6,7 +6,7 @@
 //! encoding, so each resource has one URL, the one its `FhevmSig` signs: `u16` is decimal without
 //! leading zeros, `hex32` is 64 lowercase hexadecimal characters without `0x`.
 
-use crate::Upstream;
+use crate::{ProxyError, Upstream};
 use anyhow::{Context, bail, ensure};
 use http::Method;
 use std::{collections::HashSet, time::Duration};
@@ -27,20 +27,14 @@ pub struct Route {
     pub endpoint_response_timeout: Duration,
 }
 
-/// Why a request matches no route.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum RouteError {
-    /// Unknown path: `404`.
-    NotFound,
-    /// Known path, wrong method: `405`, with the methods the route accepts.
-    MethodNotAllowed(Vec<Method>),
-    /// Known path with a parameter not in its canonical encoding.
-    NonCanonical,
-}
-
 /// The routes, each parsed and resolved to the index of its upstream.
 #[derive(Debug)]
-pub(crate) struct RouteTable(Vec<ParsedRoute>);
+pub(crate) struct RouteTable {
+    routes: Vec<ParsedRoute>,
+    /// A path of the first route accepting `GET`, with each parameter set to zero. The TLS
+    /// listener healthcheck requests it without credentials and expects `401`.
+    self_check_path: String,
+}
 
 #[derive(Debug)]
 pub(crate) struct ParsedRoute {
@@ -58,7 +52,8 @@ enum Segment {
 }
 
 impl RouteTable {
-    /// Parses the routes and resolves their upstreams. Every upstream must serve a route.
+    /// Parses the routes and resolves their upstreams. Every upstream must serve a route, and a
+    /// route must accept `GET` for the TLS listener healthcheck.
     pub fn new(routes: &[Route], upstreams: &[Upstream]) -> anyhow::Result<Self> {
         ensure!(!routes.is_empty(), "no route configured");
         let mut names = HashSet::new();
@@ -73,6 +68,10 @@ impl RouteTable {
                 "upstream {} has no endpoint address",
                 upstream.name
             );
+            upstream
+                .healthcheck_path
+                .parse::<http::Uri>()
+                .with_context(|| format!("upstream {}: healthcheck_path", upstream.name))?;
         }
 
         let mut paths = HashSet::new();
@@ -99,18 +98,10 @@ impl RouteTable {
                 upstream.name
             );
         }
-        Ok(Self(parsed))
-    }
-
-    /// A path of the first route accepting `GET`, with each parameter set to zero. The TLS
-    /// listener healthcheck requests it without credentials and expects `401`.
-    pub fn self_check_path(&self) -> anyhow::Result<String> {
-        let route = self
-            .0
+        let self_check_path = parsed
             .iter()
             .find(|route| route.route.methods.contains(&Method::GET))
-            .context("no route accepts GET, as the TLS listener healthcheck needs")?;
-        Ok(route
+            .context("no route accepts GET, as the TLS listener healthcheck needs")?
             .segments
             .iter()
             .map(|segment| match segment {
@@ -118,30 +109,40 @@ impl RouteTable {
                 Segment::U16 => "/0".to_owned(),
                 Segment::Hex32 => format!("/{}", "0".repeat(64)),
             })
-            .collect())
+            .collect();
+        Ok(Self {
+            routes: parsed,
+            self_check_path,
+        })
+    }
+
+    pub fn self_check_path(&self) -> &str {
+        &self.self_check_path
     }
 
     pub fn get(&self, index: usize) -> &ParsedRoute {
-        &self.0[index]
+        &self.routes[index]
     }
 
-    /// Matches a request path, without its query, and returns the index of the route found.
-    pub fn find(&self, method: &Method, path: &str) -> Result<usize, RouteError> {
-        let mut error = RouteError::NotFound;
+    /// Matches a request path, without its query, and returns the index of the route found, or
+    /// the [`ProxyError::NotFound`], [`ProxyError::MethodNotAllowed`] or
+    /// [`ProxyError::NonCanonicalPath`] to answer.
+    pub fn find(&self, method: &Method, path: &str) -> Result<usize, ProxyError> {
+        let mut error = ProxyError::NotFound;
         let Some(path) = path.strip_prefix('/') else {
             return Err(error);
         };
-        for (index, route) in self.0.iter().enumerate() {
+        for (index, route) in self.routes.iter().enumerate() {
             match route.shape(path) {
                 Shape::Other => {}
                 Shape::NonCanonical => {
-                    if error == RouteError::NotFound {
-                        error = RouteError::NonCanonical;
+                    if error == ProxyError::NotFound {
+                        error = ProxyError::NonCanonicalPath;
                     }
                 }
                 Shape::Canonical if route.route.methods.contains(method) => return Ok(index),
                 Shape::Canonical => {
-                    error = RouteError::MethodNotAllowed(route.route.methods.clone())
+                    error = ProxyError::MethodNotAllowed(route.route.methods.clone())
                 }
             }
         }
@@ -265,13 +266,13 @@ mod tests {
         ] {
             assert_eq!(
                 table.find(&Method::POST, path),
-                Err(RouteError::NotFound),
+                Err(ProxyError::NotFound),
                 "{path}"
             );
         }
         assert_eq!(
             table.find(&Method::GET, "/v1/public-decrypt"),
-            Err(RouteError::MethodNotAllowed(vec![Method::POST]))
+            Err(ProxyError::MethodNotAllowed(vec![Method::POST]))
         );
     }
 
@@ -304,7 +305,7 @@ mod tests {
         ] {
             assert_eq!(
                 table.find(&Method::GET, &path),
-                Err(RouteError::NonCanonical),
+                Err(ProxyError::NonCanonicalPath),
                 "{path}"
             );
         }
@@ -316,7 +317,7 @@ mod tests {
         let path = format!("/v1/prf/3/labels/{}/64", label());
         assert_eq!(
             table.find(&Method::POST, &path),
-            Err(RouteError::MethodNotAllowed(vec![
+            Err(ProxyError::MethodNotAllowed(vec![
                 Method::GET,
                 Method::HEAD
             ]))
@@ -329,7 +330,7 @@ mod tests {
         ] {
             assert_eq!(
                 table.find(&Method::GET, &path),
-                Err(RouteError::NotFound),
+                Err(ProxyError::NotFound),
                 "{path}"
             );
         }
@@ -337,7 +338,7 @@ mod tests {
 
     #[test]
     fn the_self_check_path_is_the_first_get_route_with_zero_parameters() {
-        assert_eq!(table().self_check_path().unwrap(), "/version");
+        assert_eq!(table().self_check_path(), "/version");
 
         let typed = RouteTable::new(
             &[
@@ -347,16 +348,15 @@ mod tests {
             &[upstream("prf")],
         )
         .unwrap();
-        let path = typed.self_check_path().unwrap();
+        let path = typed.self_check_path();
         assert_eq!(path, format!("/v1/prf/0/labels/{}/0", "0".repeat(64)));
-        assert_eq!(typed.find(&Method::GET, &path), Ok(1));
+        assert_eq!(typed.find(&Method::GET, path), Ok(1));
 
         let post_only = RouteTable::new(
             &[route(&[Method::POST], "/v1/public-decrypt", "prf")],
             &[upstream("prf")],
-        )
-        .unwrap();
-        assert!(post_only.self_check_path().is_err());
+        );
+        assert!(post_only.is_err());
     }
 
     #[test]
@@ -411,6 +411,14 @@ mod tests {
         assert_eq!(
             error(&[get("/a", "x")], &[no_address]),
             "upstream x has no endpoint address"
+        );
+        let bad_healthcheck = Upstream {
+            healthcheck_path: "/a b".to_owned(),
+            ..upstream("x")
+        };
+        assert!(
+            error(&[get("/a", "x")], &[bad_healthcheck])
+                .starts_with("upstream x: healthcheck_path")
         );
     }
 }

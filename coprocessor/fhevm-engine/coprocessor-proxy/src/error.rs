@@ -20,6 +20,8 @@ pub fn error_body(error: &ProxyError) -> ErrorBody {
             (StatusCode::BAD_REQUEST, "malformed")
         }
         ProxyError::NonCanonicalPath => (StatusCode::BAD_REQUEST, "non_canonical_path"),
+        ProxyError::NotFound => (StatusCode::NOT_FOUND, "not_found"),
+        ProxyError::MethodNotAllowed(_) => (StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed"),
         ProxyError::Auth(auth) => (StatusCode::UNAUTHORIZED, auth.code()),
         ProxyError::EndpointUnavailable => (StatusCode::BAD_GATEWAY, "upstream_transient"),
         ProxyError::EndpointTimeout => (StatusCode::GATEWAY_TIMEOUT, "timeout"),
@@ -54,6 +56,13 @@ mod tests {
                 ProxyError::NonCanonicalPath,
                 400,
                 "non_canonical_path",
+                false,
+            ),
+            (ProxyError::NotFound, 404, "not_found", false),
+            (
+                ProxyError::MethodNotAllowed(vec![http::Method::GET]),
+                405,
+                "method_not_allowed",
                 false,
             ),
             (

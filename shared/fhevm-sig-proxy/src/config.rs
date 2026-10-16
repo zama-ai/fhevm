@@ -53,13 +53,12 @@ impl ProxyConfig {
     /// Checks the configuration as [`crate::Proxy::from_config`] does, without resolving the
     /// endpoint addresses.
     pub fn validate(&self) -> anyhow::Result<()> {
-        self.checked_routes().map(drop)
+        self.checked().map(drop)
     }
 
-    /// The parsed routes of a valid configuration.
-    pub(crate) fn checked_routes(&self) -> anyhow::Result<RouteTable> {
+    /// Checks the configuration and returns its parsed routes.
+    pub(crate) fn checked(&self) -> anyhow::Result<RouteTable> {
         let routes = RouteTable::new(&self.routes, &self.upstreams)?;
-        routes.self_check_path()?;
         match &self.signers {
             SignerSource::Static(signers) => ensure!(!signers.is_empty(), "no signer configured"),
             SignerSource::ProtocolConfig {

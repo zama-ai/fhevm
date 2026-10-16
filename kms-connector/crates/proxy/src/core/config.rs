@@ -48,14 +48,14 @@ pub struct Config {
     /// The timeout to establish a TCP connection to an endpoint.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
-        default = "default_endpoint_connect_timeout"
+        default = "fhevm_sig_proxy::defaults::endpoint_connect_timeout"
     )]
     #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_connect_timeout: Duration,
     /// How often the endpoints are probed in the background to filter which ones receive requests.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
-        default = "default_endpoint_healthcheck_frequency"
+        default = "fhevm_sig_proxy::defaults::endpoint_healthcheck_frequency"
     )]
     #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_healthcheck_frequency: Duration,
@@ -69,7 +69,7 @@ pub struct Config {
     /// How long an idle pooled endpoint connection is kept before being closed.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
-        default = "default_endpoint_idle_timeout"
+        default = "fhevm_sig_proxy::defaults::endpoint_idle_timeout"
     )]
     #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_idle_timeout: Duration,
@@ -80,12 +80,15 @@ pub struct Config {
     /// How long the proxy waits for the client to send request bytes before dropping it.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
-        default = "default_request_read_timeout"
+        default = "fhevm_sig_proxy::defaults::request_read_timeout"
     )]
     #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub request_read_timeout: Duration,
     /// How long in-flight requests are given to complete after `SIGTERM`.
-    #[serde(with = "humantime_serde", default = "default_shutdown_grace_period")]
+    #[serde(
+        with = "humantime_serde",
+        default = "fhevm_sig_proxy::defaults::shutdown_grace_period"
+    )]
     pub shutdown_grace_period: Duration,
 
     /// The service name used for tracing.
@@ -156,38 +159,14 @@ pub fn default_bind_address() -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8443)
 }
 
-fn default_endpoint_connect_timeout() -> Duration {
-    Duration::from_secs(3)
-}
-
-fn default_endpoint_healthcheck_frequency() -> Duration {
-    Duration::from_secs(3)
-}
-
 fn default_endpoint_response_timeout() -> Duration {
     // Should exceed the endpoint's `decryption_timeout` (30s by default) so the endpoint's own
     // `504 timeout` reaches the relayer instead of a proxy `502`.
     Duration::from_secs(60)
 }
 
-fn default_endpoint_idle_timeout() -> Duration {
-    // Short on purpose: a Kubernetes ClusterIP Service picks the target pod once per TCP
-    // connection, not per request, so all requests sent over a long-lived pooled connection
-    // keep landing on the same pod. A short idle timeout forces the pool to reconnect
-    // regularly, letting the Service's balancing reach newly scaled-up or restarted pods.
-    Duration::from_secs(10)
-}
-
 fn default_max_body_bytes() -> usize {
     1024 * 1024 // 1 MiB, mirrors the endpoint's default
-}
-
-fn default_request_read_timeout() -> Duration {
-    Duration::from_secs(30)
-}
-
-fn default_shutdown_grace_period() -> Duration {
-    Duration::from_secs(60)
 }
 
 // Default implementation for testing purpose
@@ -207,13 +186,14 @@ impl Default for Config {
                 "kms-connector-endpoint-1:8080".parse().unwrap(),
                 "kms-connector-endpoint-2:9090".parse().unwrap(),
             ],
-            endpoint_connect_timeout: default_endpoint_connect_timeout(),
-            endpoint_healthcheck_frequency: default_endpoint_healthcheck_frequency(),
+            endpoint_connect_timeout: fhevm_sig_proxy::defaults::endpoint_connect_timeout(),
+            endpoint_healthcheck_frequency:
+                fhevm_sig_proxy::defaults::endpoint_healthcheck_frequency(),
             endpoint_response_timeout: default_endpoint_response_timeout(),
-            endpoint_idle_timeout: default_endpoint_idle_timeout(),
+            endpoint_idle_timeout: fhevm_sig_proxy::defaults::endpoint_idle_timeout(),
             max_body_bytes: default_max_body_bytes(),
-            request_read_timeout: default_request_read_timeout(),
-            shutdown_grace_period: default_shutdown_grace_period(),
+            request_read_timeout: fhevm_sig_proxy::defaults::request_read_timeout(),
+            shutdown_grace_period: fhevm_sig_proxy::defaults::shutdown_grace_period(),
             service_name: default_service_name(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout: default_healthcheck_timeout(),

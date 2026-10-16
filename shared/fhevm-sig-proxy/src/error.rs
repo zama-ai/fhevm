@@ -2,7 +2,7 @@
 //! interface, through [`crate::ProxyConfig::error_body`].
 
 use fhevm_sig_auth::AuthError;
-use http::StatusCode;
+use http::{Method, StatusCode};
 use std::fmt::Display;
 
 /// Why the proxy answers a request itself instead of forwarding it.
@@ -10,6 +10,10 @@ use std::fmt::Display;
 pub enum ProxyError {
     /// The request target is not an origin-form UTF-8 path.
     NotOriginForm,
+    /// No route has the request path.
+    NotFound,
+    /// A route has the request path but not its method; the proxy sends `Allow` with the methods.
+    MethodNotAllowed(Vec<Method>),
     /// The request path matches a route's template, with a parameter not in its canonical
     /// encoding.
     NonCanonicalPath,
@@ -27,6 +31,8 @@ impl Display for ProxyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NotOriginForm => f.write_str("request target must be an origin-form UTF-8 path"),
+            Self::NotFound => f.write_str("no route for this path"),
+            Self::MethodNotAllowed(_) => f.write_str("method not allowed on this path"),
             Self::NonCanonicalPath => f.write_str("path parameter not in its canonical encoding"),
             Self::BodyTooLarge => f.write_str("request body too large"),
             Self::Auth(error) => error.fmt(f),
@@ -38,7 +44,8 @@ impl Display for ProxyError {
 
 impl std::error::Error for ProxyError {}
 
-/// A [`ProxyError`] rendered by a deployment: the status, and the JSON body.
+/// A [`ProxyError`] rendered by a deployment: the status, and the JSON body. An empty `json` is
+/// answered with no body and no `Content-Type`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ErrorBody {
     pub status: StatusCode,

@@ -27,8 +27,9 @@ pub struct Proxy {
     /// [`SignerSource::ProtocolConfig`].
     signer_refresh: Option<Arc<SignerRefresh>>,
     pub(crate) routes: RouteTable,
-    /// The load-balancer of each of [`ProxyConfig::upstreams`], in the same order.
-    pub(crate) balancers: Vec<Arc<LoadBalancer<RoundRobin>>>,
+    /// The name and load-balancer of each of [`ProxyConfig::upstreams`], in the same order: a
+    /// route's upstream index selects its balancer.
+    pub(crate) balancers: Vec<(String, Arc<LoadBalancer<RoundRobin>>)>,
 }
 
 /// How long in-flight connections are given to finish once the graceful shutdown deadline (
@@ -38,7 +39,7 @@ const GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: u64 = 5;
 impl Proxy {
     /// Creates the `Proxy` from its configuration, and the `health::State` used to monitor it.
     pub fn from_config(config: ProxyConfig) -> anyhow::Result<(Self, health::State)> {
-        let routes = config.checked_routes()?;
+        let routes = config.checked()?;
         let (signers, signer_refresh) = match &config.signers {
             SignerSource::Static(signers) => {
                 (RefreshableSigners::new(signers.iter().copied()), None)
@@ -84,18 +85,13 @@ impl Proxy {
             balancer.set_health_check(Box::new(health_check));
             balancer.health_check_frequency = Some(config.endpoint_healthcheck_frequency);
             balancer.parallel_health_check = true;
-            balancers.push(Arc::new(balancer));
+            balancers.push((upstream.name.clone(), Arc::new(balancer)));
         }
 
         let state = health::State::new(
             config.bind_address,
-            &routes.self_check_path()?,
-            config
-                .upstreams
-                .iter()
-                .map(|upstream| upstream.name.clone())
-                .zip(balancers.iter().cloned())
-                .collect(),
+            routes.self_check_path(),
+            balancers.clone(),
             signer_refresh.as_ref().map(|refresh| refresh.0.loaded()),
             config.healthcheck_timeout,
         )?;
@@ -144,9 +140,9 @@ impl Proxy {
         tls.check_private_key()
             .map_err(|e| anyhow!("Failed to configure TLS: {e}"))?;
 
-        for (upstream, balancer) in self.config.upstreams.iter().zip(&self.balancers) {
+        for (name, balancer) in &self.balancers {
             server.add_service(GenBackgroundService::new(
-                format!("BG {} health check", upstream.name),
+                format!("BG {name} health check"),
                 Arc::clone(balancer),
             ));
         }
@@ -190,14 +186,14 @@ fn path_to_str(path: &std::path::Path) -> anyhow::Result<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conformance::TestTls;
     use crate::{Route, TlsConfig, Upstream};
     use alloy::primitives::Address;
     use http::Method;
     use rstest::rstest;
-    use std::{collections::HashSet, time::Duration};
-    use std::{fs, path::PathBuf};
+    use std::{collections::HashSet, fs, time::Duration};
 
-    pub(crate) fn test_config() -> ProxyConfig {
+    fn test_config() -> ProxyConfig {
         ProxyConfig {
             bind_address: "127.0.0.1:0".parse().unwrap(),
             tls_config: TlsConfig {
@@ -235,44 +231,22 @@ mod tests {
         }
     }
 
-    fn key_pem() -> String {
-        rcgen::generate_simple_self_signed(vec!["localhost".to_string()])
-            .unwrap()
-            .signing_key
-            .serialize_pem()
-    }
-
-    /// Writes a self-signed certificate and key in a temporary directory, then overwrites either
-    /// `tls.crt` or `tls.key` with `content`.
-    fn tls_dir(overwrite: &str, content: &str) -> PathBuf {
-        let certified_key =
-            rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
-        let dir = std::env::temp_dir().join(format!(
-            "proxy-invalid-tls-{}-{overwrite}-{}",
-            std::process::id(),
-            content.len()
-        ));
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("tls.crt"), certified_key.cert.pem()).unwrap();
-        fs::write(
-            dir.join("tls.key"),
-            certified_key.signing_key.serialize_pem(),
-        )
-        .unwrap();
-        fs::write(dir.join(overwrite), content).unwrap();
-        dir
+    /// The key of another certificate.
+    fn other_key_pem() -> String {
+        fs::read_to_string(&TestTls::generate().key_path).unwrap()
     }
 
     #[rstest]
     #[case::garbage_cert("tls.crt", "not a certificate".to_string())]
     #[case::garbage_key("tls.key", "not a private key".to_string())]
-    #[case::mismatched_key("tls.key", key_pem())]
+    #[case::mismatched_key("tls.key", other_key_pem())]
     fn build_server_rejects_invalid_tls_material(#[case] overwrite: &str, #[case] content: String) {
-        let dir = tls_dir(overwrite, &content);
+        let tls = TestTls::generate();
+        fs::write(tls.dir().join(overwrite), content).unwrap();
         let config = ProxyConfig {
             tls_config: TlsConfig {
-                cert_path: dir.join("tls.crt"),
-                key_path: dir.join("tls.key"),
+                cert_path: tls.cert_path.clone(),
+                key_path: tls.key_path.clone(),
             },
             ..test_config()
         };
