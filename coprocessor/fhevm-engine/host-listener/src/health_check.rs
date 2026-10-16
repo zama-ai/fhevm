@@ -25,6 +25,12 @@ pub struct HealthCheck {
 impl HealthCheckService for HealthCheck {
     async fn health_check(&self) -> HealthStatus {
         let mut status = HealthStatus::default();
+        let pool = self.database_pool.read().await.clone();
+        let recovery_ready = matches!(
+            fhevm_engine_common::chain_recovery::readiness_blocked(&pool).await,
+            Ok(false)
+        );
+        status.set_custom_check("chain_recovery", recovery_ready, true);
         // service inner loop
         let check_alive = self.is_alive().await;
         status.set_custom_check("alive", check_alive, false);

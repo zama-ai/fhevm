@@ -531,13 +531,17 @@ fn prepare_revert_sql(chain_id: i64, to_block_number: i64) -> String {
         .filter(|line| {
             let trimmed = line.trim();
             // Strip psql directives
-            !trimmed.starts_with("\\set")
+            !trimmed.starts_with("\\set") && trimmed != "BEGIN;" && trimmed != "COMMIT;"
         })
         .collect::<Vec<_>>()
         .join("\n")
         .replace(":'chain_id'", &chain_id.to_string())
         .replace(":'to_block_number'", &to_block_number.to_string())
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("host history is contained; operator recovery must precede automatic drift revert")]
+struct HostHistoryContained;
 
 /// Execute the revert SQL script against the database.
 ///
@@ -572,7 +576,18 @@ pub async fn execute_revert(
     );
 
     let sql = prepare_revert_sql(host_chain_id, to_block_number);
-    sqlx::raw_sql(&sql).execute(pool).await?;
+    // Destructive repair must not bypass a confirmed host-history halt.
+    // Strip the script's BEGIN/COMMIT above so this fence covers all its writes.
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(crate::versioning::CUTOVER_LOCK_ID)
+        .execute(&mut *tx)
+        .await?;
+    if crate::chain_recovery::is_halted_tx(&mut tx).await? {
+        return Err(HostHistoryContained.into());
+    }
+    sqlx::Executor::execute(&mut *tx, sql.as_str()).await?;
+    tx.commit().await?;
 
     info!(host_chain_id, to_block_number, "DB state revert completed");
     Ok(())
@@ -791,6 +806,12 @@ async fn run_all_pending_as_runner(
         )
         .await
         {
+            if e.downcast_ref::<HostHistoryContained>().is_some() {
+                // No revert ran. Preserve retryability after audited recovery;
+                // containment is not a failed destructive recovery attempt.
+                update_signal_status(pool, signal.id, &SignalStatus::Pending).await?;
+                return Err(e);
+            }
             REVERT_FAILURE_COUNTER
                 .with_label_values(&[&signal.host_chain_id.to_string()])
                 .inc();
