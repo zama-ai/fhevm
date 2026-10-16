@@ -2170,6 +2170,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "pingora",
+ "prometheus",
  "rcgen",
  "reqwest",
  "rstest",

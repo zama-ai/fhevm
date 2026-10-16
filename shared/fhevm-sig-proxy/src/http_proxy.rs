@@ -22,7 +22,8 @@ use pingora::{
     proxy::{FailToProxy, ProxyHttp, Session},
     upstreams::peer::HttpUpstreamRequestPolicy,
 };
-use std::time::Instant;
+use prometheus::{IntCounterVec, register_int_counter_vec};
+use std::{sync::LazyLock, time::Instant};
 use tracing::{error, info};
 
 // The `X-Forwarded-*` headers set by the proxy (any inbound value is dropped first).
@@ -30,6 +31,17 @@ const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 const X_FORWARDED_PROTO: HeaderName = HeaderName::from_static("x-forwarded-proto");
 // Client-supplied forwarding header the proxy never sets but must not forward either.
 const X_FORWARDED_HOST: HeaderName = HeaderName::from_static("x-forwarded-host");
+
+/// The requests answered, by route template (`none` before a route matched) and status (`0` when
+/// no response was written). Both label sets are bounded: no raw path, no signer.
+static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "fhevm_sig_proxy_requests_total",
+        "Requests answered by the proxy, by route template and status",
+        &["route", "status"]
+    )
+    .unwrap()
+});
 
 /// Per-request context.
 pub struct RequestContext {
@@ -307,12 +319,18 @@ impl ProxyHttp for Proxy {
         }
     }
 
-    // Structured access log. Never logs bodies nor credentials.
+    // Structured access log and request count. Never logs bodies nor credentials.
     async fn logging(&self, session: &mut Session, e: Option<&Error>, ctx: &mut Self::CTX) {
         let status = session
             .response_written()
             .map(|resp| resp.status.as_u16())
             .unwrap_or(0);
+        let route = ctx
+            .route
+            .map_or("none", |index| self.routes.get(index).route.path.as_str());
+        REQUESTS
+            .with_label_values(&[route, &status.to_string()])
+            .inc();
         let req = session.req_header();
         let client = session
             .client_addr()

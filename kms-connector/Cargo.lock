@@ -3353,6 +3353,7 @@ dependencies = [
  "fhevm-sig-auth",
  "http 1.4.0",
  "pingora",
+ "prometheus",
  "tokio",
  "tracing",
 ]

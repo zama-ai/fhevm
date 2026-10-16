@@ -23,6 +23,7 @@ pingora = { version = "=0.9.0", default-features = false, features = [
     "lb",
     "proxy",
 ] }
+prometheus = { version = "0.14", default-features = false }
 tokio = { version = "1", default-features = false, features = ["time"] }
 tracing = "0.1"
 
