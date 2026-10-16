@@ -12,6 +12,17 @@ ignore = [
     # Temporary 0.13.x release exception: h2 unbounded empty DATA frames.
     # Covers both locked h2 versions; remove after migrating both to >=0.4.16.
     "RUSTSEC-2026-0258",
+    # Temporary 0.13.x exception: defer quinn-proto updates.
+    # Remove after upgrading to >=0.11.18.
+    "RUSTSEC-2026-0338",
+    "RUSTSEC-2026-0339",
+    "RUSTSEC-2026-0340",
+    "RUSTSEC-2026-0341",
+    "RUSTSEC-2026-0342",
+
+    # Temporary 0.13.x exception: defer rustls update.
+    # Remove after upgrading to >=0.23.46.
+    "RUSTSEC-2026-0346",
 ]
 # RUSTSEC-2025-0111 impacts only testcontainers
 informational_warnings = ["unmaintained"]
