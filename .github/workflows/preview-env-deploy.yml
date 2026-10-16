@@ -27,7 +27,7 @@ name: preview-env-deploy
 #     (CLI --workers-tag), the image tag for tfhe, sns, and zkproof.
 #     Workers land on the coprocessor-gpu nodepool. With enable_blue_green,
 #     Green/GCS is GPU and Blue/BCS stays CPU. GPU workers need Default FHE
-#     params, so fhe_params=test is rejected with it.
+#     params, so fhe_keys=test-secure is rejected with it.
 #   - preview-env-blue-green: deploy RFC-021 BCS+GCS on each party (forces
 #     nb_coprocessor=2) on chain_mode=blockchain-dev. Dispatch opt-in is
 #     enable_blue_green=true (plain nb_coprocessor=2 is two-party consensus
@@ -38,10 +38,11 @@ name: preview-env-deploy
 #     Blue only and no proposal; Green, the proposal and the checks come from
 #     ci/preview-env/scripts/bg/bg-*.sh. With deploy_polygon the upgrade spans
 #     both host chains. N=1 is rejected.
-# fhe_params (CLI --fhe-params) and keygen (CLI --keygen) pick the FHE keys.
-# Default for dispatch and PR labels: Default params from the KMS insecure
-# keygen (minutes). keygen=secure runs the real DKG (hours with Default params).
-# Test params need keygen=secure.
+# fhe_keys (CLI --fhe-keys) picks the FHE keys as <params>-<keygen>. Default for
+# dispatch and PR labels: default-insecure, Default params from the KMS insecure
+# keygen (minutes). default-secure runs the real DKG (hours); test-secure runs it
+# on small Test params. Test params with the insecure keygen test nothing, so
+# that pair is not offered.
 # Dispatch-only: listener_v2_only (CLI --listener-v2-only) runs the host side
 # on the listener v2 stack ONLY (listener-core producer -> Redis ->
 # host-listener-consumer); the host-listener pollers (coprocessor-poller-<i>,
@@ -91,29 +92,22 @@ on:
           - "false"
           - "true"
       enable_gpu:
-        description: "Schedule TFHE/SnS/zkproof workers on the coprocessor-gpu nodepool (one GPU each). Needs fhe_params=default. Requires workers_tag. With enable_blue_green, Green/GCS is GPU and Blue/BCS stays CPU. The preview-env-gpu label cannot set this."
+        description: "Schedule TFHE/SnS/zkproof workers on the coprocessor-gpu nodepool (one GPU each). Needs Default params (not fhe_keys=test-secure). Requires workers_tag. With enable_blue_green, Green/GCS is GPU and Blue/BCS stays CPU. The preview-env-gpu label cannot set this."
         required: true
         type: choice
         default: "false"
         options:
           - "false"
           - "true"
-      fhe_params:
-        description: "FHE parameters. default: production-size. test: small and cheaper; needs keygen=secure and no GPU."
+      fhe_keys:
+        description: "FHE keys, as <params>-<keygen>. default-insecure: production-size params from the KMS insecure keygen, in minutes. default-secure: the real preprocessing and DKG, hours; to test the DKG itself. test-secure: the real DKG on small Test params, faster; no GPU."
         required: false
         type: choice
-        default: default
+        default: default-insecure
         options:
-          - default
-          - test
-      keygen:
-        description: "How the KMS makes the keys. insecure: the KMS insecure keygen, in minutes. secure: the real preprocessing and DKG, hours with Default params; to test the DKG itself."
-        required: false
-        type: choice
-        default: insecure
-        options:
-          - insecure
-          - secure
+          - default-insecure
+          - default-secure
+          - test-secure
       listener_v2_only:
         description: "Run the host side on the listener v2 stack ONLY (listener-core producer -> Redis -> host-listener-consumer): skip the host-listener pollers (coprocessor-poller-<i>, coprocessor-poller-polygon-<i>). Pair with automated_tests to run e2e against it."
         required: false
@@ -318,8 +312,7 @@ jobs:
           DISPATCH_ENABLE_BLUE_GREEN: ${{ inputs.enable_blue_green || 'false' }}
           DISPATCH_ENABLE_GPU: ${{ inputs.enable_gpu || 'false' }}
           DISPATCH_WORKERS_TAG: ${{ inputs.workers_tag }}
-          DISPATCH_FHE_PARAMS: ${{ inputs.fhe_params || 'default' }}
-          DISPATCH_KEYGEN: ${{ inputs.keygen || 'insecure' }}
+          DISPATCH_FHE_KEYS: ${{ inputs.fhe_keys || 'default-insecure' }}
           DISPATCH_LISTENER_V2_ONLY: ${{ inputs.listener_v2_only || false }}
           DISPATCH_CHAIN_MODE: ${{ inputs.chain_mode || 'anvil' }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
@@ -330,8 +323,8 @@ jobs:
           # in via the preview-env-e2e-tests label (handled below).
           # GPU scheduling is dispatch enable_gpu plus workers_tag. The
           # preview-env-gpu label has no tag, so check-labels fails it.
-          # fhe_params and keygen are dispatch-only knobs (no PR label); PR
-          # runs use the defaults (Default params, insecure keygen).
+          # fhe_keys is a dispatch-only knob (no PR label); PR runs use
+          # default-insecure. The deploy reads it as fhe_params and keygen.
           # observability is a dispatch-only knob for
           # now (no PR label), off by default.
           # RFC-021 dual fleet. Dispatch: enable_blue_green=true (plain N=2
@@ -358,12 +351,10 @@ jobs:
             if [[ "${DISPATCH_ENABLE_GPU}" == "true" ]]; then
               workers_tag="${DISPATCH_WORKERS_TAG}"
             fi
-            if [[ "${DISPATCH_FHE_PARAMS}" == "test" && "${DISPATCH_KEYGEN}" == "insecure" ]]; then
-              echo "::error::fhe_params=test needs keygen=secure: Test params with the insecure keygen test neither real keys nor the real keygen"
-              exit 1
-            fi
-            if [[ "${DISPATCH_ENABLE_GPU}" == "true" && "${DISPATCH_FHE_PARAMS}" == "test" ]]; then
-              echo "::error::enable_gpu needs fhe_params=default; GPU workers cannot use Test keys"
+            fhe_params="${DISPATCH_FHE_KEYS%-*}"
+            keygen="${DISPATCH_FHE_KEYS#*-}"
+            if [[ "${DISPATCH_ENABLE_GPU}" == "true" && "${fhe_params}" == "test" ]]; then
+              echo "::error::enable_gpu needs Default params, not fhe_keys=test-secure; GPU workers cannot use Test keys"
               exit 1
             fi
             if [[ "${DISPATCH_ENABLE_BLUE_GREEN}" == "true" ]]; then
@@ -379,8 +370,8 @@ jobs:
               echo "automated_tests=${DISPATCH_AUTOMATED_TESTS:-false}"
               echo "gpu=${DISPATCH_ENABLE_GPU:-false}"
               echo "workers_tag=${workers_tag}"
-              echo "fhe_params=${DISPATCH_FHE_PARAMS}"
-              echo "keygen=${DISPATCH_KEYGEN}"
+              echo "fhe_params=${fhe_params}"
+              echo "keygen=${keygen}"
               echo "observability=${DISPATCH_OBSERVABILITY:-false}"
               echo "blue_green=${blue_green}"
               echo "listener_v2_only=${DISPATCH_LISTENER_V2_ONLY:-false}"

@@ -41,7 +41,7 @@ scDeploy:
     - {name: HARDHAT_NETWORK, value: "staging"}
     - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
     - {name: RPC_URL, value: "http://anvil-host-anvil-node:8545"}
-    # Default (params-type 0, production-size); fhe_params=test overwrites it to
+    # Default (params-type 0, production-size); fhe_keys=test-secure overwrites it to
     # 1 (Test) in apply-chain-env.sh. GPU needs Default: Test parameters use
     # drift noise reduction, which TFHE 1.6.3 cannot convert to a GPU server key.
     - {name: KEYGEN_PARAMS_TYPE, value: "0"}

@@ -1,7 +1,10 @@
 # Per-party gRPC proxy between kms-worker and kms-core, deployed only with
-# keygen=insecure. It runs the docker stack's
+# fhe_keys=default-insecure. Not the kms-connector's HTTPS proxy
+# (kmsConnectorProxy); the name is the docker stack's. It runs
 # test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs (loaded with --set-file),
 # which sends keygen to the KMS insecure keygen and forwards everything else.
+# Every kms-worker call to its core goes through it for the life of the preview,
+# so it is a Service of its own: the test-suite pod exists only with --tests.
 #
 # Deployed as:
 #   helm upgrade --install kms-test-keygen-proxy-<i> \
