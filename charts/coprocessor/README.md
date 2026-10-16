@@ -9,16 +9,31 @@ A helm chart to distribute and deploy the Zama fhevm coprocessor services.
 as the PRF route served by prf-service. The allowed signers are the KMS tx-senders of the Active KMS
 contexts listed by the `ProtocolConfig` contract, read through `coprocessorProxy.ethereumRpcUrl`.
 Requests must be signed for this coprocessor's signer address
-(`coprocessorProxy.coprocessorSignerAddress`).
+(`coprocessorProxy.coprocessorSignerAddress`). The signature's EIP-712 domain is the chain hosting
+`ProtocolConfig`: its chain id is `commonConfig.canonicalProtocolConfigChainId`, and its address
+is the `protocolConfigContractAddress` of the `chains` entry with that chain id. Rendering fails
+when either is missing.
 
 The proxy needs a `kubernetes.io/tls` secret that this chart does not create
 (`coprocessorProxy.tls.secretName`) with the certificate it serves. Its routes and upstreams are
-the TOML in `coprocessorProxy.config`; the chart sets the ports, the TLS paths, the chain id, the
-signer address, the RPC URL and the `ProtocolConfig` address itself. Its Service is a ClusterIP;
-exposing it outside the cluster is left to the deployment, within the requirement below.
+in the `proxy.toml` its image ships, which serves the PRF route of prf-service. Setting
+`coprocessorProxy.config` replaces that file. The chart sets the ports, the TLS paths, the
+shutdown grace period and the signature settings above in environment variables, which override
+either file. Its Service is a ClusterIP; exposing it outside the cluster is left to the
+deployment, within the requirement below.
 
 The readiness probe passes once the TLS listener answers, the KMS tx-senders have been read, and
-some upstream has a healthy endpoint. A route whose upstream has none answers `502`.
+some upstream has a healthy endpoint. A route whose upstream has none answers `502`. To check the
+TLS listener, each probe sends it one unsigned request and expects `401`, so the proxy logs one
+`401` access line per probe and counts it in `fhevm_sig_proxy_requests_total{status="401"}`.
+
+On `SIGTERM` the proxy stops accepting connections and gives in-flight requests
+`coprocessorProxy.shutdownGracePeriodSeconds` (60 by default) to complete. Pingora, which it runs
+on, waits that long on every shutdown, even when no request is in flight, so the value delays each
+rollout by as much. It is therefore not raised to the PRF route's 120 s response timeout: a
+request still waiting for a pad when the grace period ends is closed without an answer, and its
+client must send it again. The pod's `terminationGracePeriodSeconds` is the grace period plus 10 s: Pingora's
+5 s to close the remaining connections, and 5 s margin.
 
 ### Deployment requirement
 

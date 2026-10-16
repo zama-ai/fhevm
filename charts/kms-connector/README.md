@@ -15,6 +15,8 @@ This chart deploys the following components:
 
 The proxy needs a `kubernetes.io/tls` secret that this chart does not create (`kmsConnectorProxy.tls.secretName`) with the certificate it serves. It accepts requests signed by one of `kmsConnectorProxy.allowedSenders` for this connector's tx-sender address (`kmsConnectorProxy.txSenderAddress`), and takes the EIP-712 domain (Ethereum chain id and ProtocolConfig address) from the contract settings below. Its Service is a ClusterIP; exposing it outside the cluster is left to the deployment, within the requirement below.
 
+To check the TLS listener, each readiness probe of the proxy sends it one unsigned `GET /version` and expects `401`, so the proxy logs one `401` access line per probe and counts it in `fhevm_sig_proxy_requests_total{status="401"}`.
+
 ### Deployment requirement
 
 The proxy authenticates every request before forwarding it, but it does not protect its own

@@ -1,4 +1,4 @@
-{{- if .Values.coprocessorProxy.enabled -}}
+{{- if and .Values.coprocessorProxy.enabled .Values.coprocessorProxy.config -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:

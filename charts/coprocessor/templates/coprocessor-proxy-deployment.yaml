@@ -1,5 +1,16 @@
 {{- if .Values.coprocessorProxy.enabled -}}
 {{- $proxy := .Values.coprocessorProxy -}}
+{{- /* The FhevmSig domain is the chain hosting ProtocolConfig: the chains entry of the canonical chain id. */ -}}
+{{- $canonicalChainId := required "commonConfig.canonicalProtocolConfigChainId must be set for coprocessorProxy" .Values.commonConfig.canonicalProtocolConfigChainId | toString -}}
+{{- $protocolConfigChain := dict -}}
+{{- range .Values.chains }}
+{{- if eq (toString .chainId) $canonicalChainId }}
+{{- $protocolConfigChain = . }}
+{{- end }}
+{{- end }}
+{{- if not (or $protocolConfigChain.protocolConfigContractAddress $protocolConfigChain.protocolConfigContractAddressValueFrom) }}
+{{- fail (printf "coprocessorProxy needs the chains entry with chainId %s (commonConfig.canonicalProtocolConfigChainId), with protocolConfigContractAddress or protocolConfigContractAddressValueFrom" $canonicalChainId) }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -41,6 +52,8 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
+      # The shutdown grace period, then Pingora's 5 s to close what is left, then 5 s margin.
+      terminationGracePeriodSeconds: {{ add (int $proxy.shutdownGracePeriodSeconds) 10 }}
       {{- with .Values.coprocessorProxy.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -60,9 +73,11 @@ spec:
         - name: tls
           secret:
             secretName: {{ required "coprocessorProxy.tls.secretName must name a TLS Secret" .Values.coprocessorProxy.tls.secretName | quote }}
+        {{- if $proxy.config }}
         - name: config
           configMap:
             name: {{ include "coprocessorProxyName" . }}
+        {{- end }}
       containers:
         - name: coprocessor-proxy
           image: {{ .Values.coprocessorProxy.image.name }}:{{ .Values.coprocessorProxy.image.tag }}
@@ -76,7 +91,7 @@ spec:
           {{- end }}
           args:
             - start
-            - --config=/etc/coprocessor-proxy/config/proxy.toml
+            - --config=/etc/coprocessor-proxy/proxy.toml
           # The settings the chart owns override the configuration file.
           env:
             - name: COPROCESSOR_PROXY_BIND_ADDRESS
@@ -89,21 +104,21 @@ spec:
               value: {{ $proxy.ports.healthcheck | quote }}
             - name: COPROCESSOR_PROXY_METRICS_ENDPOINT
               value: "0.0.0.0:{{ $proxy.ports.metrics }}"
+            - name: COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD
+              value: "{{ int $proxy.shutdownGracePeriodSeconds }}s"
             - name: COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID
-              value: {{ required "coprocessorProxy.ethereumChainId must be set" $proxy.ethereumChainId | int64 | quote }}
-            - name: COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS
+              value: {{ $canonicalChainId | quote }}
+            - name: COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS
+              {{- if $protocolConfigChain.protocolConfigContractAddress }}
+              value: {{ $protocolConfigChain.protocolConfigContractAddress | quote }}
+              {{- else }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" $protocolConfigChain.protocolConfigContractAddressValueFrom) | nindent 16 }}
+              {{- end }}
+            - name: COPROCESSOR_PROXY_AUDIENCE
               value: {{ required "coprocessorProxy.coprocessorSignerAddress must be set" $proxy.coprocessorSignerAddress | quote }}
             {{- with required "coprocessorProxy.ethereumRpcUrl must be set" $proxy.ethereumRpcUrl }}
-            - name: COPROCESSOR_PROXY_ETHEREUM_RPC_URL
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- with required "coprocessorProxy.protocolConfigAddress must be set" $proxy.protocolConfigAddress }}
-            - name: COPROCESSOR_PROXY_PROTOCOL_CONFIG_CONTRACT__ADDRESS
+            - name: COPROCESSOR_PROXY_SIGNERS__PROTOCOL_CONFIG__RPC_URL
               {{- if .value }}
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
@@ -118,9 +133,12 @@ spec:
             - name: tls
               mountPath: /etc/coprocessor-proxy/tls
               readOnly: true
+            {{- if $proxy.config }}
             - name: config
-              mountPath: /etc/coprocessor-proxy/config
+              mountPath: /etc/coprocessor-proxy/proxy.toml
+              subPath: proxy.toml
               readOnly: true
+            {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.coprocessorProxy.ports }}
             - name: {{ $portName }}

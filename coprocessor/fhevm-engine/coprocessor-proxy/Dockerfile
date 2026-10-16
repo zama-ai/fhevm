@@ -26,6 +26,7 @@ COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY shared/block-manifest ./shared/block-manifest
 COPY shared/fhevm-sig-auth ./shared/fhevm-sig-auth
 COPY shared/fhevm-sig-proxy ./shared/fhevm-sig-proxy
+COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 
 WORKDIR /app/coprocessor/fhevm-engine
 
@@ -43,7 +44,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
     cargo fetch && \
-    SQLX_OFFLINE=true cargo build --profile=${CARGO_PROFILE} -p coprocessor-proxy && \
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p coprocessor-proxy && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     cp target/${CARGO_PROFILE}/coprocessor-proxy /tmp/coprocessor-proxy
 
@@ -53,10 +54,11 @@ FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder --chown=fhevm:fhevm /tmp/coprocessor-proxy /usr/local/bin/coprocessor-proxy
+COPY coprocessor/fhevm-engine/coprocessor-proxy/config/proxy.toml /etc/coprocessor-proxy/proxy.toml
 
 USER fhevm:fhevm
 
-ENTRYPOINT ["/usr/local/bin/coprocessor-proxy", "start"]
+ENTRYPOINT ["/usr/local/bin/coprocessor-proxy", "start", "--config", "/etc/coprocessor-proxy/proxy.toml"]
 
 HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
     CMD ["/usr/local/bin/coprocessor-proxy", "health", "--endpoint", "http://127.0.0.1:8080/healthz"]

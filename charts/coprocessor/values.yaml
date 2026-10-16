@@ -1877,39 +1877,29 @@ coprocessorProxy:
     # kubernetes.io/tls Secret holding tls.crt and tls.key.
     secretName: ""
 
+  # The FhevmSig EIP-712 domain is the chain hosting ProtocolConfig: the chain id is
+  # commonConfig.canonicalProtocolConfigChainId, and the ProtocolConfig address is the
+  # protocolConfigContractAddress (or ...ValueFrom) of the `chains` entry with that chainId.
+  # Both are required.
+
   # Ethereum RPC URL to read the KMS tx-senders of ProtocolConfig from (required).
   # Accepts `value` or `valueFrom` (secretKeyRef/configMapKeyRef).
   ethereumRpcUrl:
-  # ProtocolConfig address (required), the verifyingContract of the FhevmSig EIP-712
-  # domain. Accepts `value` or `valueFrom`, e.g.
-  #   valueFrom:
-  #     configMapKeyRef:
-  #       name: '{{ include "coprocessor.hostContractConfigMapName" . }}'
-  #       key: protocol_config.address
-  protocolConfigAddress:
-  # Ethereum chain id, the chainId of the FhevmSig EIP-712 domain (required).
-  ethereumChainId:
   # This coprocessor's signer address: the audience requests must be signed for (required).
   coprocessorSignerAddress:
 
-  # The proxy's configuration file in TOML, without the settings above, the ports and
-  # the TLS paths, which the chart sets. See
-  # coprocessor/fhevm-engine/coprocessor-proxy/config/proxy.toml for every key.
-  config: |
-    [[upstreams]]
-    name = "prf-service"
-    endpoint_addresses = ["prf-service:8080"]
-    healthcheck_path = "/healthz"
+  # How long in-flight requests get to complete after SIGTERM. Pingora waits this long on
+  # every shutdown, even with no request in flight, so it delays each rollout by as much.
+  # The pod's terminationGracePeriodSeconds is this plus 10.
+  shutdownGracePeriodSeconds: 60
 
-    # The PRF route of RFC-038.
-    [[routes]]
-    methods = ["GET", "HEAD"]
-    path = "/v1/prf/{prf}/labels/{label}/{padLength}"
-    upstream = "prf-service"
-    # Must exceed the time the endpoint holds a request for a pad not yet computed.
-    endpoint_response_timeout = "120s"
+  # A TOML file replacing the one the image ships, e.g. to change the routes or upstreams.
+  # Unset, the image's coprocessor/fhevm-engine/coprocessor-proxy/config/proxy.toml applies;
+  # it lists every key. The chart's settings above override either file.
+  config:
 
-  # Additional environment variables, e.g. COPROCESSOR_PROXY_SIGNER_REFRESH_INTERVAL.
+  # Additional environment variables, e.g.
+  # COPROCESSOR_PROXY_SIGNERS__PROTOCOL_CONFIG__REFRESH_INTERVAL.
   env: []
 
   ports:
