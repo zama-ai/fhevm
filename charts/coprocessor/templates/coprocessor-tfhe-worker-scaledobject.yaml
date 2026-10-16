@@ -1,0 +1,41 @@
+{{- if and .Values.tfheWorker.enabled .Values.tfheWorker.keda.enabled }}
+{{- if .Values.tfheWorker.hpa.enabled }}
+{{- fail "tfheWorker: enable hpa or keda, not both; they would fight over the replica count" }}
+{{- end }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "tfheWorkerName" . }}
+  labels:
+    app: coprocessor-tfhe-worker
+    app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
+spec:
+  scaleTargetRef:
+    name: {{ include "tfheWorkerName" . }}
+  minReplicaCount: {{ .Values.tfheWorker.keda.minReplicas }}
+  maxReplicaCount: {{ .Values.tfheWorker.keda.maxReplicas }}
+  pollingInterval: {{ .Values.tfheWorker.keda.pollingInterval }}
+  {{- with .Values.tfheWorker.keda.fallbackReplicas }}
+  fallback:
+    failureThreshold: 3
+    replicas: {{ . }}
+  {{- end }}
+  {{- with .Values.tfheWorker.keda.behavior }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        {{- toYaml . | nindent 8 }}
+  {{- end }}
+  triggers:
+    - type: postgresql
+      metadata:
+        targetQueryValue: {{ .Values.tfheWorker.keda.chainsPerWorker | quote }}
+        query: {{ .Files.Get "configs/tfhe-worker-scaling-query.sql" | quote }}
+        {{- if not .Values.tfheWorker.keda.authenticationRef }}
+        connectionFromEnv: DATABASE_URL
+        {{- end }}
+      {{- with .Values.tfheWorker.keda.authenticationRef }}
+      authenticationRef:
+        name: {{ . }}
+      {{- end }}
+{{- end }}

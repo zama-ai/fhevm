@@ -112,6 +112,7 @@ async fn dex_swap_request_finalize(
 pub async fn dex_swap_request_transaction(
     ctx: &Context,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    transaction_id: Handle,
     from_balance_0: Option<Handle>,
     from_balance_1: Option<Handle>,
     current_balance_0: Option<Handle>,
@@ -127,7 +128,6 @@ pub async fn dex_swap_request_transaction(
     contract_address: &String,
     user_address: &String,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
-    let transaction_id = next_random_handle(DEF_TYPE);
     let from_balance_0 =
         generate_random_handle_amount_if_none(ctx, from_balance_0, contract_address, user_address)
             .await?;
@@ -464,6 +464,7 @@ async fn dex_swap_claim_update_dex_balance(
 pub async fn dex_swap_claim_transaction(
     ctx: &Context,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    transaction_id: Handle,
     pending_0_in: Option<Handle>,
     pending_1_in: Option<Handle>,
     total_token_0_in: u64,
@@ -479,7 +480,6 @@ pub async fn dex_swap_claim_transaction(
     contract_address: &String,
     user_address: &String,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
-    let transaction_id = next_random_handle(DEF_TYPE);
     let pending_0_in =
         generate_random_handle_amount_if_none(ctx, pending_0_in, contract_address, user_address)
             .await?;

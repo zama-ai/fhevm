@@ -205,11 +205,24 @@ pub async fn generate_random_handle_vec(
         0,
     )
     .await?;
+    // Keep the transaction-sender off this row until we have read the handles:
+    // the Gateway never requested this proof, so the sender would delete the row
+    // on VerifyProofNotRequested, often before the first poll below.
+    sqlx::query(
+        "UPDATE verify_proofs SET last_retry_at = NOW() + INTERVAL '1 hour' WHERE zk_proof_id = $1",
+    )
+    .bind(zk_id)
+    .execute(db_tx.deref_mut())
+    .await?;
 
     db_tx.commit().await?;
 
     info!(zk_id, count, "waiting for verification...");
     let handles = wait_for_verification_and_handle(&pool, zk_id, 5000).await?;
+    sqlx::query("DELETE FROM verify_proofs WHERE zk_proof_id = $1")
+        .bind(zk_id)
+        .execute(&pool)
+        .await?;
     info!(handles = ?handles.iter().map(hex::encode), count = handles.len(), "received handles");
 
     Ok(handles)

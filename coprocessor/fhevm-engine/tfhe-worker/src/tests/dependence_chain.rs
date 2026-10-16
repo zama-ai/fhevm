@@ -1,6 +1,6 @@
 use crate::dependence_chain::{
-    delete_old_processed_dependence_chains, rearm_demoted_chains, rearm_demoted_chains_limited,
-    LockMngr, LockingReason,
+    chain_queue, delete_old_processed_dependence_chains, rearm_demoted_chains,
+    rearm_demoted_chains_limited, ChainQueue, LockMngr, LockingReason,
 };
 use crate::tests::utils::{setup_test_db_without_worker, TestInstance};
 use fhevm_engine_common::types::SchedulePriority;
@@ -1457,6 +1457,64 @@ async fn test_stale_gated_lock_respects_live_producers() {
     .unwrap();
     let (acquired, _) = mgr.acquire_stale_gated_lock(60.0).await.unwrap();
     assert_eq!(acquired, Some(gated_id));
+}
+
+/// The queue gauge counts what workers can take (waiting, lease expired) and
+/// what they hold, and nothing gated, processed or parked behind a live lease
+/// twice.
+#[tokio::test]
+async fn test_chain_queue_counts_each_acquisition_state() {
+    let test_instance = setup().await;
+    let pool = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(test_instance.db_url())
+        .await
+        .unwrap();
+    seed_chain(&pool, &handle(1), 0, &[]).await;
+    seed_chain(&pool, &handle(2), 0, &[]).await;
+    seed_chain(&pool, &handle(3), 1, &[]).await; // gated on a parent
+    for (seed, expires, status) in [
+        (4, "NOW() + interval '30 seconds'", "processing"),
+        (5, "NOW() - interval '1 second'", "processing"),
+        (6, "NULL", "processed"),
+    ] {
+        sqlx::query(&format!(
+            "INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at, \
+             worker_id, lock_acquired_at, lock_expires_at) \
+             VALUES ($1, '{status}', NOW(), $2, NOW(), {expires})"
+        ))
+        .bind(handle(seed))
+        .bind((status == "processing").then(Uuid::new_v4))
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    assert_eq!(
+        chain_queue(&pool).await.unwrap(),
+        ChainQueue {
+            held: 1,
+            waiting: 2,
+            lease_expired: 1,
+        }
+    );
+
+    // The chart's KEDA queries must run on this schema; the tfhe one must
+    // count what the gauge counts.
+    let configs = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../charts/coprocessor/configs");
+    let tfhe_query =
+        std::fs::read_to_string(configs.join("tfhe-worker-scaling-query.sql")).unwrap();
+    let scaling_count: i64 = sqlx::query_scalar(&tfhe_query)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(scaling_count, 4);
+    let sns_query = std::fs::read_to_string(configs.join("sns-worker-scaling-query.sql")).unwrap();
+    let _: i64 = sqlx::query_scalar(&sns_query)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 }
 
 /// Insert one chain row with the given gate and dependents.

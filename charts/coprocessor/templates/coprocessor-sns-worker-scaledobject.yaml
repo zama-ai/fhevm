@@ -1,0 +1,41 @@
+{{- if and .Values.snsWorker.enabled .Values.snsWorker.keda.enabled }}
+{{- if .Values.snsWorker.hpa.enabled }}
+{{- fail "snsWorker: enable hpa or keda, not both; they would fight over the replica count" }}
+{{- end }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "snsWorkerName" . }}
+  labels:
+    app: coprocessor-sns-worker
+    app.kubernetes.io/name: {{ include "snsWorkerName" . }}
+spec:
+  scaleTargetRef:
+    name: {{ include "snsWorkerName" . }}
+  minReplicaCount: {{ .Values.snsWorker.keda.minReplicas }}
+  maxReplicaCount: {{ .Values.snsWorker.keda.maxReplicas }}
+  pollingInterval: {{ .Values.snsWorker.keda.pollingInterval }}
+  {{- with .Values.snsWorker.keda.fallbackReplicas }}
+  fallback:
+    failureThreshold: 3
+    replicas: {{ . }}
+  {{- end }}
+  {{- with .Values.snsWorker.keda.behavior }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        {{- toYaml . | nindent 8 }}
+  {{- end }}
+  triggers:
+    - type: postgresql
+      metadata:
+        targetQueryValue: {{ .Values.snsWorker.keda.readyTasksPerWorker | quote }}
+        query: {{ .Files.Get "configs/sns-worker-scaling-query.sql" | quote }}
+        {{- if not .Values.snsWorker.keda.authenticationRef }}
+        connectionFromEnv: DATABASE_URL
+        {{- end }}
+      {{- with .Values.snsWorker.keda.authenticationRef }}
+      authenticationRef:
+        name: {{ . }}
+      {{- end }}
+{{- end }}

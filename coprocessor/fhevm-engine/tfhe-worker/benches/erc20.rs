@@ -894,6 +894,16 @@ const MAIN_BLOCK_ONE_SHOT_SCENARIOS: &[MainBlockOneShotScenario] = &[
             short_chains: 50,
         },
     },
+    // Shape of the 2026-10-12 testnet backlog: few long chains. Not in the
+    // canonical suite.
+    MainBlockOneShotScenario {
+        name: "long_chains_1600_8x200",
+        workload: MainBlockWorkload::Erc20,
+        transfers: 1_600,
+        chain_len: 200,
+        erc20_transaction_identity: Erc20TransactionIdentity::PerTransfer,
+        staging: MainBlockOneShotStaging::OneLogicalBlock,
+    },
     // Native port of gpu-e2e-perf's ConfidentialAuctionBidBench batch.  It
     // is one L1 block with 300 bids, 150 bidder chains, 39 price aggregates,
     // and 32 holding-wallet aggregates.

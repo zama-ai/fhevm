@@ -46,38 +46,49 @@ fn start_runtime_inner(
     close_recv: Option<tokio::sync::watch::Receiver<bool>>,
     readiness: tfhe_worker::Readiness,
 ) {
-    let fatal = tokio::runtime::Builder::new_multi_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(args.tokio_threads)
         // not using tokio main to specify max blocking threads
         .max_blocking_threads(args.coprocessor_fhe_threads)
         .enable_all()
         .build()
-        .unwrap()
-        .block_on(async {
-            if let Some(mut close_recv) = close_recv {
-                tokio::select! {
-                    main = async_main_inner(args, readiness) => {
-                        if let Err(e) = main {
-                            error!(target: "main_wchannel", { error = e }, "Runtime error");
-                        }
-                    }
-                    _ = close_recv.changed() => {
-                        info!(target: "main_wchannel", "Service stopped voluntarily");
-                    }
+        .unwrap();
+    let fatal = runtime.block_on(async {
+        let shutdown = CancellationToken::new();
+        if let Some(mut close_recv) = close_recv {
+            // A close request takes the same shutdown path as SIGTERM.
+            let main = async_main_inner(args, readiness, shutdown.clone());
+            tokio::pin!(main);
+            let result = tokio::select! {
+                result = &mut main => result,
+                _ = close_recv.changed() => {
+                    info!(target: "main_wchannel", "Service stopped voluntarily");
+                    shutdown.cancel();
+                    main.await
                 }
-                // Callers that pass `close_recv` run the worker in-process (the
-                // unit tests and the benchmark harness) and own the process
-                // themselves, so a failure here must not take them down.
-                false
-            } else if let Err(e) = async_main_inner(args, readiness).await {
-                error!(target: "main", { error = e }, "Runtime error");
-                // Export the fatal event while its async runtime is still alive.
-                telemetry::flush();
-                true
-            } else {
-                false
+            };
+            if let Err(e) = result {
+                error!(target: "main_wchannel", { error = e }, "Runtime error");
             }
-        });
+            // Callers that pass `close_recv` run the worker in-process (the
+            // unit tests and the benchmark harness) and own the process
+            // themselves, so a failure here must not take them down.
+            false
+        } else if let Err(e) = install_signal_handlers(shutdown.clone()) {
+            error!(target: "main", { error = %e }, "Failed to install signal handlers");
+            true
+        } else if let Err(e) = async_main_inner(args, readiness, shutdown).await {
+            error!(target: "main", { error = e }, "Runtime error");
+            // Export the fatal event while its async runtime is still alive.
+            telemetry::flush();
+            true
+        } else {
+            false
+        }
+    });
+    // An abandoned batch keeps its FHE threads busy, and waiting for them would
+    // run past the termination grace period. Its writes are already rolled back.
+    runtime.shutdown_timeout(std::time::Duration::from_secs(1));
 
     // Supervisors using restart-on-failure need a nonzero status. The runtime
     // has been dropped here; embedded callers retain ownership of their process.
@@ -93,7 +104,23 @@ static OTEL_GUARD: OnceLock<Option<telemetry::TracerProviderGuard>> = OnceLock::
 pub async fn async_main(
     args: daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    async_main_inner(args, tfhe_worker::NO_READINESS).await
+    async_main_inner(args, tfhe_worker::NO_READINESS, CancellationToken::new()).await
+}
+
+/// SIGTERM (Kubernetes scale-in, rollout) and SIGINT stop the worker: it
+/// abandons its open batch, hands its chains back and exits.
+fn install_signal_handlers(shutdown: CancellationToken) -> std::io::Result<()> {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut sigint = signal(SignalKind::interrupt())?;
+    let mut sigterm = signal(SignalKind::terminate())?;
+    tokio::spawn(async move {
+        tokio::select! {
+            _ = sigint.recv() => info!(target: "main", "SIGINT received; shutting down"),
+            _ = sigterm.recv() => info!(target: "main", "SIGTERM received; shutting down"),
+        }
+        shutdown.cancel();
+    });
+    Ok(())
 }
 
 // `readiness` is the cfg-erased unit type without `bench`.
@@ -101,6 +128,7 @@ pub async fn async_main(
 async fn async_main_inner(
     args: daemon_cli::Args,
     readiness: tfhe_worker::Readiness,
+    cancel_token: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     TRACING_INIT.call_once(|| {
         let otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
@@ -118,7 +146,6 @@ async fn async_main_inner(
         std::process::exit(1);
     }
 
-    let cancel_token = CancellationToken::new();
     info!(target: "async_main", args = ?args, "Starting runtime with args");
 
     let database_url = resolve_database_url_from_option(args.database_url.clone())?;
@@ -138,7 +165,7 @@ async fn async_main_inner(
     }
 
     info!(target: "async_main", "Start health check server");
-    let health_check_cancel_token = CancellationToken::new();
+    let health_check_cancel_token = cancel_token.child_token();
     let health_check_server = healthz_server::HttpServer::new(
         std::sync::Arc::new(health_check.clone()),
         args.health_check_port,
@@ -174,11 +201,13 @@ async fn async_main_inner(
             args.clone(),
             health_check.clone(),
             readiness,
+            cancel_token.child_token(),
         ));
         #[cfg(not(feature = "bench"))]
         set.spawn(tfhe_worker::run_tfhe_worker(
             args.clone(),
             health_check.clone(),
+            cancel_token.child_token(),
         ));
 
         set.spawn(bridge::run_confidential_bridge(

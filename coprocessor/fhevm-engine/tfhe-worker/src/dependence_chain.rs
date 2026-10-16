@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use fhevm_engine_common::types::SchedulePriority;
 use prometheus::{
-    register_histogram, register_int_counter, register_int_gauge, Histogram, IntCounter, IntGauge,
+    register_histogram, register_int_counter, register_int_gauge, register_int_gauge_vec,
+    Histogram, IntCounter, IntGauge, IntGaugeVec,
 };
 use sqlx::Postgres;
 use std::{collections::HashSet, fmt, sync::LazyLock, time::SystemTime};
@@ -58,6 +59,71 @@ static SLOW_LANE_CHAINS_GAUGE: LazyLock<IntGauge> = LazyLock::new(|| {
     .expect("slow lane gauge registration")
 });
 const CLEANUP_AGE_THRESHOLD_SECONDS: u32 = 48 * 60 * 60; // 48 hours
+
+/// Dependence chains by acquisition state, database-wide: every worker
+/// reports the same values. The chart's KEDA query scales on their sum.
+static CHAIN_QUEUE_GAUGE: LazyLock<IntGaugeVec> = LazyLock::new(|| {
+    register_int_gauge_vec!(
+        "coprocessor_dependence_chains",
+        "dependence chains by acquisition state (held, waiting, lease_expired)",
+        &["state"]
+    )
+    .expect("chain queue gauge registration")
+});
+const CHAIN_QUEUE_REPORT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Chains a worker can take or holds: the two arms of
+/// [`LockMngr::acquire_next_locks`] plus the live leases, each counted on its
+/// own partial index.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ChainQueue {
+    pub held: i64,
+    pub waiting: i64,
+    pub lease_expired: i64,
+}
+
+pub async fn chain_queue(pool: &sqlx::PgPool) -> Result<ChainQueue, sqlx::Error> {
+    let (held, waiting, lease_expired) = sqlx::query_as::<_, (i64, i64, i64)>(
+        "SELECT \
+           (SELECT count(*) FROM dependence_chain \
+             WHERE worker_id IS NOT NULL AND lock_expires_at >= NOW()), \
+           (SELECT count(*) FROM dependence_chain \
+             WHERE status = 'updated' AND worker_id IS NULL AND dependency_count = 0), \
+           (SELECT count(*) FROM dependence_chain WHERE lock_expires_at < NOW())",
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(ChainQueue {
+        held,
+        waiting,
+        lease_expired,
+    })
+}
+
+/// Refreshes [`CHAIN_QUEUE_GAUGE`] until `stop` fires.
+pub async fn report_chain_queue(pool: sqlx::PgPool, stop: tokio_util::sync::CancellationToken) {
+    let mut ticker = tokio::time::interval(CHAIN_QUEUE_REPORT_INTERVAL);
+    loop {
+        tokio::select! {
+            _ = stop.cancelled() => return,
+            _ = ticker.tick() => {}
+        }
+        match chain_queue(&pool).await {
+            Ok(queue) => {
+                CHAIN_QUEUE_GAUGE
+                    .with_label_values(&["held"])
+                    .set(queue.held);
+                CHAIN_QUEUE_GAUGE
+                    .with_label_values(&["waiting"])
+                    .set(queue.waiting);
+                CHAIN_QUEUE_GAUGE
+                    .with_label_values(&["lease_expired"])
+                    .set(queue.lease_expired);
+            }
+            Err(error) => warn!(%error, "could not count dependence chains for the queue gauge"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LockingReason {
