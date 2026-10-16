@@ -6,6 +6,17 @@ edition = "2024"
 license = "BSD-3-Clause-Clear"
 description = "FhevmSig HTTP request authentication: EIP-712 signature over path, body digest, expiry and audience"
 
+[features]
+# The signers a coprocessor accepts, read from the `ProtocolConfig` contract.
+protocol-config = [
+    "alloy/providers",
+    "dep:anyhow",
+    "dep:fhevm_host_bindings",
+    "dep:prometheus",
+    "dep:tokio",
+    "dep:tracing",
+]
+
 [dependencies]
 alloy = { version = "2", default-features = false, features = [
     "k256",
@@ -15,11 +26,24 @@ alloy = { version = "2", default-features = false, features = [
 http = "1"
 thiserror = { version = "2.0", default-features = false }
 
+anyhow = { version = "1", optional = true }
+fhevm_host_bindings = { path = "../../host-contracts/rust_bindings", default-features = false, optional = true }
+prometheus = { version = "0.14", default-features = false, optional = true }
+tokio = { version = "1", default-features = false, features = [
+    "macros",
+    "sync",
+    "time",
+], optional = true }
+tracing = { version = "0.1", optional = true }
+
 [dev-dependencies]
 alloy = { version = "2", default-features = false, features = [
+    "reqwest",
+    "rpc-types",
     "signer-local",
 ] }
 tokio = { version = "1", default-features = false, features = [
     "macros",
     "rt",
 ] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
