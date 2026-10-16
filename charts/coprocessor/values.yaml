@@ -1879,7 +1879,8 @@ coprocessorProxy:
     secretName: ""
 
   # The FhevmSig EIP-712 domain and the accepted signers come from the chain hosting
-  # ProtocolConfig: the `chains` entry whose chainId is commonConfig.canonicalProtocolConfigChainId.
+  # ProtocolConfig: the `chains` entry whose chainId is commonConfig.canonicalProtocolConfigChainId
+  # (both quoted strings).
   # Its protocolConfigContractAddress (or ...ValueFrom) and httpUrl (or httpUrlValueFrom) are
   # required. The proxy never logs the RPC URL.
 
@@ -1887,7 +1888,8 @@ coprocessorProxy:
   coprocessorSignerAddress:
 
   # `host:port` of the endpoints the proxy forwards to (required): prf-service, which serves
-  # the PRF route, e.g. ["prf-service:8080"].
+  # the PRF route, e.g. ["prf-service:8080"]. Each must answer `GET /healthz` with 200 over
+  # HTTP/2 cleartext on that address (chart README).
   endpointAddresses: []
   # How long the proxy waits for an endpoint's answer. prf-service holds a request until the
   # PRF output is ready, so this must exceed the KMS connector's PRF_RETRIEVAL_DEADLINE
@@ -1945,6 +1947,8 @@ coprocessorProxy:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
+      # Above the proxy's 3 s TLS self-check timeout.
+      timeoutSeconds: 5
 
   # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
   podLabels: {}

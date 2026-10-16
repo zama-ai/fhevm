@@ -25,6 +25,19 @@ through environment variables only. `coprocessor/fhevm-engine/coprocessor-proxy/
 lists every setting; `coprocessorProxy.env` sets the others. The Service is a ClusterIP. Exposing it
 outside the cluster is left to the deployment, within the requirement below.
 
+Each endpoint must answer `GET /healthz` with `200` over HTTP/2 cleartext on its address in
+`endpointAddresses`: the proxy sends requests only to the endpoints that do. The healthz server of
+the other coprocessor services runs on its own port, so it does not meet this.
+
+With a ClusterIP Service as the endpoint address, a proxy replica sends its requests over one
+HTTP/2 connection, up to 100 at a time, to the pod that connection reached. The connection closes
+after 10 s without traffic, so pods added under steady traffic receive requests only from new
+connections.
+
+The proxy reads its TLS certificate at startup: a renewed secret takes effect after a pod restart.
+`commonConfig.env` applies to the proxy too, which is the internet-facing pod, so it must hold
+nothing the proxy should not.
+
 A NetworkPolicy admits only the proxy pods to the pods that `endpointNetworkPolicy.podSelector`
 selects, so no caller reaches prf-service without the proxy's checks. Add any other ingress those
 pods need, such as metrics scraping, to `endpointNetworkPolicy.extraIngress`.
@@ -64,6 +77,9 @@ internet. Put it behind one of:
   as Cloudflare or an HTTP(S) load balancer configured this way;
 - a network allowlist that admits only the callers' addresses (the KMS connectors'), for example a
   firewall rule in front of a TLS-passthrough exposure.
+
+The proxy speaks HTTP/1.1 to its clients, so each request a connector holds open takes one
+connection: a per-client connection limit must allow the connector's concurrent PRF requests.
 
 A TCP (layer 4) load balancer without an allowlist is not enough: it forwards slow and idle
 connections to the proxy unchanged. Every timeout of that layer must also exceed the connector's
