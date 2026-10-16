@@ -37,6 +37,8 @@ export type RollbackCaseContext = {
   propose: (proposalId: number, duration: string) => Promise<GatewayTips>;
   /** Waits for `DryRunStarted` and the Gateway gate, on these operators only. */
   waitDryRunStarted: (databases: string[], tips: GatewayTips) => Promise<void>;
+  /** Runs `body` with background ERC-20 traffic on every host chain. */
+  withTraffic: <T>(body: () => Promise<T>) => Promise<T>;
 };
 
 type RollbackCase = {
@@ -255,7 +257,16 @@ const assertEveryOperatorRolledBack = async (ctx: RollbackCaseContext) => {
   console.log(`OK:   every operator kept v0.14 for ${SPLIT_WATCH_SECONDS}s after it caught up`);
 };
 
+/** The traffic moves the Gateway tip, so each attempt pins its own block. */
 const runRollbackCase = async (ctx: RollbackCaseContext, item: RollbackCase) => {
+  // Assert after the traffic stops, so the catch-up wait sees a still chain.
+  const attempt = await ctx.withTraffic(() => runRollbackCaseBody(ctx, item));
+  await assertEveryOperatorRolledBack(ctx);
+  await item.extraAssertions?.(attempt);
+  console.log(`OK:   rollback case ${item.proposalId} passed`);
+};
+
+const runRollbackCaseBody = async (ctx: RollbackCaseContext, item: RollbackCase) => {
   console.log(`\n==== rollback case ${item.proposalId}: ${item.label} ====`);
   const tips = await ctx.propose(item.proposalId, CASE_WINDOW);
   const attempt = await attemptOf(ctx);
@@ -273,9 +284,7 @@ const runRollbackCase = async (ctx: RollbackCaseContext, item: RollbackCase) => 
   console.log("OK:   the healthy operator cancelled the upgrade");
 
   await item.restore();
-  await assertEveryOperatorRolledBack(ctx);
-  await item.extraAssertions?.(attempt);
-  console.log(`OK:   rollback case ${item.proposalId} passed`);
+  return attempt;
 };
 
 /**
