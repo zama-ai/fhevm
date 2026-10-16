@@ -224,17 +224,19 @@ fn default_endpoint_healthcheck_frequency() -> Duration {
     Duration::from_secs(3)
 }
 
+// An endpoint can hold a request until its result is ready: the response timeout must exceed how
+// long the callers wait, so only they give up on a held request. The shutdown grace covers such a
+// request.
+const HELD_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+
 fn default_endpoint_response_timeout() -> Duration {
-    // An endpoint can hold a request until its result is ready: this must exceed how long the
-    // callers wait, so only they give up on a held request.
-    Duration::from_secs(120)
+    HELD_REQUEST_TIMEOUT
 }
 
 fn default_endpoint_idle_timeout() -> Duration {
-    // Short on purpose: a Kubernetes ClusterIP Service picks the target pod once per TCP
-    // connection, not per request, so all requests sent over a long-lived pooled connection
-    // keep landing on the same pod. A short idle timeout forces the pool to reconnect
-    // regularly, letting the Service's balancing reach newly scaled-up or restarted pods.
+    // A Kubernetes ClusterIP Service picks the target pod once per TCP connection. Over HTTP/2
+    // the requests share the pooled connection, which goes idle only when traffic pauses: then
+    // this timeout lets the next connection reach newly scaled-up or restarted pods.
     Duration::from_secs(10)
 }
 
@@ -247,8 +249,7 @@ fn default_request_read_timeout() -> Duration {
 }
 
 fn default_shutdown_grace_period() -> Duration {
-    // Covers a request held for the whole `endpoint_response_timeout`.
-    Duration::from_secs(120)
+    HELD_REQUEST_TIMEOUT
 }
 
 fn default_log_level() -> Level {

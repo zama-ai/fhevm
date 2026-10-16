@@ -135,7 +135,8 @@ struct StubState {
 /// A stub prf-service endpoint, over HTTP/1.1 and HTTP/2 cleartext.
 ///
 /// It holds a request for the milliseconds of an `x-stub-delay-ms` header, answers `429` with
-/// `Retry-After` on [`rate_limited_path`], and [`stub_output`] with [`stub_attestation`] otherwise.
+/// `Retry-After` on [`rate_limited_path`], fails after the first 32 bytes of the answer with an
+/// `x-stub-fail-mid-body` header, and answers [`stub_output`] with [`stub_attestation`] otherwise.
 pub struct StubEndpoint {
     pub addr: SocketAddr,
     state: Arc<StubState>,
@@ -236,12 +237,30 @@ async fn prf(
         )
             .into_response();
     }
+    let output = stub_output(&path);
+    if headers.contains_key("x-stub-fail-mid-body") {
+        // The header and the first 32 bytes, then, once the proxy has passed them on, the stream
+        // is reset.
+        use futures_util::StreamExt;
+        let first: axum::body::Bytes = output[..32].to_vec().into();
+        let chunks = futures_util::stream::once(async { Ok(first) }).chain(
+            futures_util::stream::once(async {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                Err(std::io::Error::other("endpoint failed"))
+            }),
+        );
+        return (
+            [("content-length", output.len().to_string())],
+            axum::body::Body::from_stream(chunks),
+        )
+            .into_response();
+    }
     (
         [
             ("content-type", "application/octet-stream".to_string()),
             ("x-prf-attestation", stub_attestation(&path)),
         ],
-        stub_output(&path),
+        output,
     )
         .into_response()
 }
@@ -397,43 +416,35 @@ pub struct TestProxy {
 
 impl TestProxy {
     pub async fn start(endpoints: Vec<StubEndpoint>) -> Self {
-        let addresses = endpoints
-            .iter()
-            .map(|u| u.addr.to_string().parse().unwrap())
-            .collect();
-        Self::start_with_addresses(addresses, endpoints).await
-    }
-
-    pub async fn start_with_addresses(
-        endpoint_addresses: Vec<Authority>,
-        endpoints: Vec<StubEndpoint>,
-    ) -> Self {
-        Self::start_with_config(endpoint_addresses, endpoints, |_| {}).await
+        Self::start_with_config(endpoints, |_| {}).await
     }
 
     /// Starts the proxy with the first KMS context holding [`sender`] only, and waits until it
     /// has read it.
     pub async fn start_with_config(
-        endpoint_addresses: Vec<Authority>,
         endpoints: Vec<StubEndpoint>,
         customize: impl FnOnce(&mut Config),
     ) -> Self {
         let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
-        let t = Self::launch(rpc, endpoint_addresses, endpoints, customize).await;
+        let t = Self::launch(rpc, endpoints, customize).await;
         t.wait_until_accepted(&sender()).await;
         t
     }
 
-    /// Starts the proxy reading `rpc`, without waiting for its first read.
+    /// Starts the proxy reading `rpc` and forwarding to `endpoints`, without waiting for its
+    /// first read.
     pub async fn launch(
         rpc: FakeRpc,
-        endpoint_addresses: Vec<Authority>,
         endpoints: Vec<StubEndpoint>,
         customize: impl FnOnce(&mut Config),
     ) -> Self {
         let addr = free_addr();
         let tls = TestTls::generate(addr);
-        let mut config = Self::config(addr, &tls, &rpc, endpoint_addresses);
+        let addresses = endpoints
+            .iter()
+            .map(|e| e.addr.to_string().parse().unwrap())
+            .collect();
+        let mut config = Self::config(addr, &tls, &rpc, addresses);
         customize(&mut config);
         let (proxy, state) = Proxy::from_config(config).unwrap();
         std::thread::spawn(move || proxy.run());
@@ -486,12 +497,7 @@ impl TestProxy {
 
     /// A `GET` of `route`, signed by [`sender`].
     pub async fn get(&self, route: &str) -> RequestBuilder {
-        self.get_signed_by(&sender(), route).await
-    }
-
-    /// A `GET` of `route`, signed by `signer`.
-    pub async fn get_signed_by(&self, signer: &PrivateKeySigner, route: &str) -> RequestBuilder {
-        let auth = auth_header(signer, route, b"").await;
+        let auth = auth_header(&sender(), route, b"").await;
         self.client
             .get(self.url(route))
             .header("authorization", auth)

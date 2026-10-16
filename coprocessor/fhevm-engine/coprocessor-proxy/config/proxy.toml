@@ -36,6 +36,8 @@ ethereum_rpc_url = "http://localhost:8545"
 coprocessor_signer_address = "0x0000000000000000000000000000000000000000"
 
 # `host:port` addresses of the endpoints the requests are forwarded to, over HTTP/2 cleartext (required).
+# Each endpoint must also answer `GET /healthz` with `200` over HTTP/2 cleartext on that address:
+# the proxy sends requests only to endpoints that do.
 # Can be a Kubernetes ClusterIP Service (kube-proxy balances), a docker-compose service name, or
 # plain IPs. Hostnames are resolved once at startup.
 # ENV: COPROCESSOR_PROXY_ENDPOINT_ADDRESSES (comma-separated list, e.g. "endpoint-1:8080,endpoint-2:8080")
@@ -55,7 +57,8 @@ endpoint_addresses = ["endpoint:8080"]
 # endpoint_response_timeout = "120s"
 
 # How long an idle pooled endpoint connection is kept open (optional, defaults to "10s").
-# Keep it short behind a ClusterIP Service so newly scaled endpoint pods receive traffic.
+# Behind a ClusterIP Service, a new connection can reach newly scaled endpoint pods. Over HTTP/2 the
+# requests share the connection, so it closes only after a pause in traffic.
 # ENV: COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # endpoint_idle_timeout = "10s"
 

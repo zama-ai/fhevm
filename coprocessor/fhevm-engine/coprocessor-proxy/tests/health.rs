@@ -149,8 +149,7 @@ async fn test_not_ready_before_the_first_read() -> anyhow::Result<()> {
     let endpoint = StubEndpoint::start().await;
     let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
     rpc.set_failing(true);
-    let addresses = vec![endpoint.addr.to_string().parse()?];
-    let t = TestProxy::launch(rpc, addresses, vec![endpoint], |_| {}).await;
+    let t = TestProxy::launch(rpc, vec![endpoint], |_| {}).await;
     let cancel_token = CancellationToken::new();
     let base_url = serve_health(t.state.clone(), &cancel_token).await;
 

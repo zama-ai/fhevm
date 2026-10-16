@@ -274,6 +274,18 @@ impl ProxyHttp for Proxy {
         // says `Connection: close`, as Pingora's own `write_error_response` does: a client must not
         // send its next request on it.
         session.set_keepalive(None);
+        // The endpoint's answer has started, e.g. the endpoint failed mid-body: an error answer
+        // would land in its body. Nothing more is written, as Pingora's own `write_error_response`
+        // does, and the closed connection cuts the answer short.
+        if session
+            .response_written()
+            .is_some_and(|written| !written.status.is_informational())
+        {
+            return FailToProxy {
+                error_code: 0,
+                can_reuse_downstream: false,
+            };
+        }
         let error_code = match e.root_cause().downcast_ref::<ErrorResponse>() {
             Some(error) => {
                 let status = StatusCode::from_u16(error.code.http_status())
@@ -287,10 +299,9 @@ impl ProxyHttp for Proxy {
             // The detailed Pingora error (which includes the endpoint's address) is only logged
             // server-side by `logging()`; the client, e.g. the relayer, gets a fixed message.
             None if *e.esource() == ErrorSource::Upstream => {
+                // An endpoint that cannot be connected to is unavailable, a timeout or not.
                 let (code, message) = match e.etype() {
-                    ErrorType::ConnectTimedout | ErrorType::ReadTimedout => {
-                        (ErrorCode::Timeout, "endpoint timed out")
-                    }
+                    ErrorType::ReadTimedout => (ErrorCode::Timeout, "endpoint timed out"),
                     _ => (ErrorCode::UpstreamTransient, "endpoint unavailable"),
                 };
                 let error = ErrorResponse::new(code, message);

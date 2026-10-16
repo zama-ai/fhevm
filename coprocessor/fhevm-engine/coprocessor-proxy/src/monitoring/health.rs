@@ -20,7 +20,7 @@ const ENDPOINT_HEALTH_PATH: &str = "/healthz";
 pub struct State {
     self_check_url: Url,
     endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
-    kms_tx_senders: Loaded,
+    kms_tx_senders_loaded: Loaded,
     healthcheck_timeout: Duration,
     /// The client used to reach the proxy's own TLS listener through the loopback interface.
     loopback_client: reqwest::Client,
@@ -30,7 +30,7 @@ impl State {
     pub fn new(
         bind_address: SocketAddr,
         endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
-        kms_tx_senders: Loaded,
+        kms_tx_senders_loaded: Loaded,
         healthcheck_timeout: Duration,
     ) -> anyhow::Result<Self> {
         // The proxy's certificate is issued for its public hostname, not for the loopback
@@ -43,7 +43,7 @@ impl State {
         Ok(Self {
             self_check_url: self_check_url(bind_address),
             endpoint_balancer,
-            kms_tx_senders,
+            kms_tx_senders_loaded,
             healthcheck_timeout,
             loopback_client,
         })
@@ -87,7 +87,7 @@ impl HealthCheckService for State {
     async fn health_check(&self) -> HealthStatus {
         let tls_listener_result = self.tls_listener_healthcheck().await;
         let (healthy_endpoints, unhealthy_endpoints) = self.endpoints_health();
-        let kms_tx_senders_loaded = self.kms_tx_senders.is_loaded();
+        let kms_tx_senders_loaded = self.kms_tx_senders_loaded.is_loaded();
 
         let mut status = HealthStatus::default();
         status.set_custom_check("tls_listener", tls_listener_result.is_ok(), true);

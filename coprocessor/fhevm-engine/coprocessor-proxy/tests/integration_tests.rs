@@ -313,12 +313,9 @@ async fn test_rejects_request_bodies() {
 
 #[tokio::test]
 async fn test_checks_streamed_bodies_against_their_signature() {
-    let endpoint = StubEndpoint::start().await;
-    let t = TestProxy::start_with_config(
-        vec![endpoint.addr.to_string().parse().unwrap()],
-        vec![endpoint],
-        |config| config.max_body_bytes = 4,
-    )
+    let t = TestProxy::start_with_config(vec![StubEndpoint::start().await], |config| {
+        config.max_body_bytes = 4
+    })
     .await;
     let path = prf_path(1);
     // What the endpoint received of the last request: it may receive the start of a body the
@@ -344,15 +341,10 @@ async fn test_checks_streamed_bodies_against_their_signature() {
 
 #[tokio::test]
 async fn test_errors_pingora_writes_are_not_cached() {
-    let endpoint = StubEndpoint::start().await;
-    let t = TestProxy::start_with_config(
-        vec![endpoint.addr.to_string().parse().unwrap()],
-        vec![endpoint],
-        |config| {
-            config.max_body_bytes = 4;
-            config.request_read_timeout = Duration::from_millis(500);
-        },
-    )
+    let t = TestProxy::start_with_config(vec![StubEndpoint::start().await], |config| {
+        config.max_body_bytes = 4;
+        config.request_read_timeout = Duration::from_millis(500);
+    })
     .await;
     let path = prf_path(1);
     let addr = t.addr;
@@ -391,12 +383,9 @@ async fn test_passes_endpoint_answers_through() {
 
 #[tokio::test]
 async fn test_holds_requests_until_the_endpoint_answers() {
-    let endpoint = StubEndpoint::start().await;
-    let t = TestProxy::start_with_config(
-        vec![endpoint.addr.to_string().parse().unwrap()],
-        vec![endpoint],
-        |config| config.endpoint_response_timeout = Duration::from_secs(4),
-    )
+    let t = TestProxy::start_with_config(vec![StubEndpoint::start().await], |config| {
+        config.endpoint_response_timeout = Duration::from_secs(4)
+    })
     .await;
     let path = prf_path(1);
 
@@ -449,12 +438,9 @@ async fn test_load_balances_across_endpoints() {
 
 #[tokio::test]
 async fn test_upstream_timeout() {
-    let endpoint = StubEndpoint::start().await;
-    let t = TestProxy::start_with_config(
-        vec![endpoint.addr.to_string().parse().unwrap()],
-        vec![endpoint],
-        |config| config.endpoint_response_timeout = Duration::from_millis(100),
-    )
+    let t = TestProxy::start_with_config(vec![StubEndpoint::start().await], |config| {
+        config.endpoint_response_timeout = Duration::from_millis(100)
+    })
     .await;
 
     let response = t
@@ -473,8 +459,10 @@ async fn test_upstream_timeout() {
 async fn test_unreachable_endpoint() {
     // Bind a port and close it right away: nothing listens there.
     let dead_addr = free_addr();
-    let t =
-        TestProxy::start_with_addresses(vec![dead_addr.to_string().parse().unwrap()], vec![]).await;
+    let t = TestProxy::start_with_config(vec![], |config| {
+        config.endpoint_addresses = vec![dead_addr.to_string().parse().unwrap()];
+    })
+    .await;
 
     let response = t.get(&prf_path(1)).await.send().await.unwrap();
     assert_eq!(response.headers()["connection"], "close");
@@ -485,6 +473,28 @@ async fn test_unreachable_endpoint() {
         true,
     )
     .await;
+}
+
+#[tokio::test]
+async fn test_endpoint_failure_mid_body_cuts_the_answer_short() {
+    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+    let path = prf_path(1);
+
+    let mut response = t
+        .get(&path)
+        .await
+        .header("x-stub-fail-mid-body", "1")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    // The client gets what the endpoint sent, then the end of the connection: no error answer
+    // inside the started body.
+    let mut received = Vec::new();
+    while let Ok(Some(chunk)) = response.chunk().await {
+        received.extend_from_slice(&chunk);
+    }
+    assert_eq!(received, stub_output(&path)[..32]);
 }
 
 #[tokio::test]
@@ -519,8 +529,7 @@ async fn test_refuses_everything_before_the_first_read() {
     let endpoint = StubEndpoint::start().await;
     let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
     rpc.set_failing(true);
-    let addresses = vec![endpoint.addr.to_string().parse().unwrap()];
-    let t = TestProxy::launch(rpc, addresses, vec![endpoint], |_| {}).await;
+    let t = TestProxy::launch(rpc, vec![endpoint], |_| {}).await;
 
     tokio::time::sleep(3 * common::REFRESH_INTERVAL).await;
     assert_eq!(t.auth_code(&sender()).await, "auth_unknown_signer");

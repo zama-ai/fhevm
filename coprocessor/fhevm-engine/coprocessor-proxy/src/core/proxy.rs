@@ -28,9 +28,7 @@ pub struct Proxy {
     kms_tx_senders: Arc<KmsTxSenders>,
 }
 
-/// Keeps the verifier's signers equal to the KMS tx-senders of the Active KMS contexts in
-/// `ProtocolConfig`. A context being switched to is not listed until it is Active: the contract
-/// lists the nodes of Active contexts only.
+/// Runs the [`Follower`] that keeps the verifier's signers equal to the KMS tx-senders.
 struct KmsTxSenders(Follower<DynProvider>);
 
 #[async_trait]
