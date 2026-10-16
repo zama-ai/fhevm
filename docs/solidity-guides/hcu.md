@@ -12,31 +12,35 @@ To do so, there is a contract named `HCULimit`, which monitors HCU consumption a
 
 - **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order. Exceeding it reverts with `HCUTransactionDepthLimitExceeded`.
 - **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel. Exceeding it reverts with `HCUTransactionLimitExceeded`.
-- **Global homomorphic operations complexity per block**: Caps the total HCU consumed across all transactions from non-whitelisted callers in the same block. Exceeding it reverts with `HCUBlockLimitExceeded`.
+- **HCU quota per block**: Caps the total HCU that the contracts sharing a quota consume in one block. Exceeding it reverts with `HCUQuotaExceeded`.
 
 If any of these limits is exceeded, the transaction will revert.
 
 ## HCU limit
 
-The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. The global per-block HCU cap is set on-chain by governance (via `HCULimit.setHCUPerBlock`) and is always greater than or equal to the per-transaction limit; you can read its current value from the deployed `HCULimit` contract (`getGlobalHCUCapPerBlock()`), and the current block's running total via `getBlockMeter()`. If any HCU limit is exceeded, the transaction will revert.
+The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. Quota caps are set on-chain by governance (via `HCULimit.setQuotaCap`); you can read a contract's quota with `getContractQuota(contract)`, and that quota's cap and the current block's usage with `getQuota(quotaId)`. If any HCU limit is exceeded, the transaction will revert.
 
 To resolve a per-transaction revert, you must do one of the following:
 
 - Refactor your code to reduce the number of FHE operations in your transaction.
 - Split your FHE operations across multiple independent transactions.
 
-### Block-level limit and transaction estimation
+### Quotas and transaction estimation
 
-Unlike the per-transaction limits, the per-block cap depends on the **other transactions included in the same block**, not just on your own. The contract keeps a counter (`usedBlockHCU`) that resets every new block and aggregates HCU spent by every transaction from a non-whitelisted caller in that block. Here, the caller is the dApp contract address passed by `FHEVMExecutor`, not the user's EOA. As a result:
+Every contract that calls `FHEVMExecutor` belongs to one quota. Contracts start in the default quota (`0`); governance can assign a contract to another quota (`assignQuota`). A quota with the maximum cap (`type(uint48).max`) is not metered. A quota's usage resets every block. Here, the contract is the dApp contract address passed by `FHEVMExecutor`, not the user's EOA.
 
-- A transaction that estimates successfully (e.g. via `eth_estimateGas` or a static call) can still revert with `HCUBlockLimitExceeded` at execution time if other FHE-heavy transactions are mined in the same block ahead of it.
+Unlike the per-transaction limits, a quota depends on the **other transactions included in the same block**, not just on your own. As a result:
+
+- A transaction that estimates successfully (e.g. via `eth_estimateGas` or a static call) can still revert with `HCUQuotaExceeded` at execution time if other FHE-heavy transactions in the same quota are mined in the same block ahead of it.
 - This revert is **non-deterministic from the sender's perspective**: it is a function of block-inclusion ordering, not of the transaction's own payload.
 
-If you hit `HCUBlockLimitExceeded`, options include:
+If you hit `HCUQuotaExceeded`, options include:
 
-- **Retry** the transaction in a later block, optionally with adjusted gas/priority so it is included when block HCU usage is lower.
+- **Retry** the transaction in a later block, when the quota has room again.
 - **Reduce the HCU footprint** of the transaction so it is more likely to fit alongside others (same techniques as for per-transaction reverts).
-- **Request a whitelist entry** (`addToBlockHCUWhitelist`) for caller contracts that have a justified need to bypass the block cap; this is governed on-chain and is not available to arbitrary callers.
+- **Request a dedicated quota** for contracts that have a justified need for more HCU per block; this is governed on-chain and is not available to arbitrary callers.
+
+Pausers can lower quota caps and move a contract to the paused quota (`PAUSED_QUOTA`), whose cap is zero: every FHE operation from a paused contract reverts with `HCUQuotaExceeded`.
 
 ## HCU costs for common operations
 
