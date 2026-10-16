@@ -79,10 +79,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfigCanonical
     /// @dev Canonical-only state added in v0.4.0. It is outside the base namespace, so
-    ///      `ProtocolConfigReplica` does not carry it. A base field keeps its v0.3.0 values, so v0.4.0
-    ///      reuses one only when no old value can count. `reinitializeV4` reverts while a lifecycle
-    ///      operation is in flight, so every v0.3.0 epoch activation vote belongs to a settled epoch.
-    ///      Epoch IDs only increase, so the base epoch activation fields are safe to reuse.
+    ///      `ProtocolConfigReplica` does not carry it. The epoch activation confirmations stay in base
+    ///      storage, because `reinitializeV4` leaves only v0.3.0 votes of settled epochs there.
     ///      `destroyedContexts` is also canonical-only but stays in base storage, because it existed
     ///      before v0.4.0. So a context destroyed before the upgrade can still collect destruction
     ///      confirmations, but an epoch destroyed before the upgrade cannot.
