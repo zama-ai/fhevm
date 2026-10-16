@@ -526,7 +526,7 @@ async function fillContextSwitch(
     status.abortReason = 'context-destroyed';
   }
 
-  // Old-side (n - t) target. The previous committee is the active one during an in-flight switch.
+  // The old-side target is n - t of the previous committee, which is the active one during an in-flight switch.
   status.previousSignerThreshold = committee.threshold;
 
   // New committee: read it from the event, because views cannot enumerate the pending context. When

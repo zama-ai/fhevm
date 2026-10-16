@@ -602,7 +602,7 @@ describe('KMS context tasks', function () {
       expect(result.pendingContextId).to.equal(contextId);
       expect(result.contextState).to.equal('PENDING');
       expect(result.aborted).to.equal(false);
-      // Previous-committee target of the active context (3 old nodes, mpc = 2 -> n - t = 1).
+      // Previous-committee target of the active context (3 old nodes and mpc = 2, so n - t = 1).
       expect(result.previousSignerThreshold).to.equal(1);
       // The new committee comes from the out-of-range event, so it is not reconstructable.
       expect(result.newSigners).to.equal(undefined);

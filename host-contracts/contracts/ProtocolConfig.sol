@@ -293,14 +293,14 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         ) {
             return;
         }
-        // The previous committee has `n` nodes, of which at most `t` (its MPC threshold) are assumed
-        // faulty: crashed, offline, or malicious. The quorum must be:
+        // The previous committee has `n` nodes. At most `t` of them (its MPC threshold) can be faulty,
+        // which means crashed, offline, or malicious. The quorum must be:
         //   - more than `t`, so faulty nodes can never approve a switch on their own.
         //   - at most `n - t`, because if `t` nodes stay silent only `n - t` confirmations ever
         //     arrive. Anything higher lets a dead node block the switch forever.
         // `n - t` satisfies `n - t >= t + 1` under the `n >= 3t + 1` topology the KMS core
         // requires. The contract itself does not enforce the topology.
-        // Floored at 1 so the degenerate `t = n` config cannot make the quorum zero.
+        // The quorum is floored at 1, so the degenerate `t = n` config cannot make it zero.
         uint256 previousQuorum = $.kmsNodesForContext[previousContextId].length -
             $.mpcThresholdForContext[previousContextId];
         if (
