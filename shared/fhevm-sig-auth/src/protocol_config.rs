@@ -40,7 +40,7 @@ const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 static KMS_TX_SENDERS: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
-        "kms_tx_senders",
+        "fhevm_sig_auth_kms_tx_senders",
         "KMS tx-senders the last successful read of ProtocolConfig allows"
     )
     .unwrap()
@@ -48,7 +48,7 @@ static KMS_TX_SENDERS: LazyLock<IntGauge> = LazyLock::new(|| {
 
 static KMS_TX_SENDERS_READ_TIMESTAMP: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
-        "kms_tx_senders_read_timestamp_seconds",
+        "fhevm_sig_auth_kms_tx_senders_read_timestamp_seconds",
         "Unix time of the last successful read of the KMS tx-senders from ProtocolConfig"
     )
     .unwrap()
@@ -210,6 +210,8 @@ fn describe_read_error(err: &anyhow::Error) -> String {
         }
         match cause.downcast_ref::<alloy::contract::Error>()? {
             alloy::contract::Error::TransportError(error) => Some(describe_transport_error(error)),
+            // The usual cause: a wrong ProtocolConfig address or chain.
+            alloy::contract::Error::ZeroData(..) => Some("no contract at the address".into()),
             _ => Some("undecodable contract answer".into()),
         }
     });
@@ -463,13 +465,21 @@ mod tests {
         );
 
         // A contract call wraps the transport error in `alloy::contract::Error`.
-        let (mut reader, asserter) = reader(&[]);
+        let (mut counter_fails, asserter) = reader(&[]);
         asserter.push_success(&finalized());
         asserter.push_failure_msg(echo);
-        let err = reader.read().await.unwrap_err();
+        let err = counter_fails.read().await.unwrap_err();
         assert_eq!(
             describe_read_error(&err),
             "getCurrentKmsContextIdCounter: JSON-RPC error -32603"
+        );
+
+        // No contract at the address: the call returns no data.
+        let (mut no_contract, _asserter) = reader(&[Bytes::new()]);
+        let err = no_contract.read().await.unwrap_err();
+        assert_eq!(
+            describe_read_error(&err),
+            "getCurrentKmsContextIdCounter: no contract at the address"
         );
 
         for (error, described) in [
