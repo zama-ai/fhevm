@@ -1,5 +1,5 @@
 use crate::{
-    ProxyConfig, SignerSource,
+    ErrorBody, ProxyConfig, ProxyError, SignerSource,
     health::{self, endpoint_health_check},
     routing::RouteTable,
 };
@@ -22,6 +22,8 @@ use tracing::info;
 /// The `Proxy` service: sender authentication and load-balancing in front of the endpoints.
 pub struct Proxy {
     pub(crate) config: ProxyConfig,
+    /// Renders the errors the proxy answers itself in the deployment's error body.
+    pub(crate) error_body: fn(&ProxyError) -> ErrorBody,
     pub(crate) verifier: FhevmSigVerifier<RefreshableSigners>,
     /// Keeps the verifier's signers equal to `ProtocolConfig`'s, for
     /// [`SignerSource::ProtocolConfig`].
@@ -37,8 +39,12 @@ pub struct Proxy {
 const GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: u64 = 5;
 
 impl Proxy {
-    /// Creates the `Proxy` from its configuration, and the `health::State` used to monitor it.
-    pub fn from_config(config: ProxyConfig) -> anyhow::Result<(Self, health::State)> {
+    /// Creates the `Proxy` from its configuration and the deployment's renderer of the errors it
+    /// answers itself, and the `health::State` used to monitor it.
+    pub fn from_config(
+        config: ProxyConfig,
+        error_body: fn(&ProxyError) -> ErrorBody,
+    ) -> anyhow::Result<(Self, health::State)> {
         let routes = config.checked()?;
         let (signers, signer_refresh) = match &config.signers {
             SignerSource::Static(signers) => {
@@ -99,6 +105,7 @@ impl Proxy {
             fhevm_sig_auth::domain(config.ethereum_chain_id, config.protocol_config_address);
         let verifier = FhevmSigVerifier::new(domain, config.audience, signers);
         let proxy = Self {
+            error_body,
             verifier,
             signer_refresh,
             config,
@@ -193,6 +200,13 @@ mod tests {
     use rstest::rstest;
     use std::{collections::HashSet, fs, time::Duration};
 
+    fn error_body(_: &ProxyError) -> ErrorBody {
+        ErrorBody {
+            status: http::StatusCode::INTERNAL_SERVER_ERROR,
+            json: vec![],
+        }
+    }
+
     fn test_config() -> ProxyConfig {
         ProxyConfig {
             bind_address: "127.0.0.1:0".parse().unwrap(),
@@ -204,10 +218,6 @@ mod tests {
             protocol_config_address: Address::ZERO,
             signers: SignerSource::Static(HashSet::from([Address::ZERO])),
             audience: Address::ZERO,
-            error_body: |_| crate::ErrorBody {
-                status: http::StatusCode::INTERNAL_SERVER_ERROR,
-                json: vec![],
-            },
             forward_authorization: false,
             routes: vec![Route {
                 methods: vec![Method::GET],
@@ -251,7 +261,7 @@ mod tests {
             ..test_config()
         };
 
-        let (proxy, _state) = Proxy::from_config(config).unwrap();
+        let (proxy, _state) = Proxy::from_config(config, error_body).unwrap();
         let error = match proxy.build_server() {
             Ok(_) => panic!("invalid TLS material was accepted"),
             Err(e) => e.to_string(),
@@ -284,7 +294,13 @@ mod tests {
         ];
         for config in invalid {
             let error = config.validate().unwrap_err().to_string();
-            assert_eq!(Proxy::from_config(config).err().unwrap().to_string(), error);
+            assert_eq!(
+                Proxy::from_config(config, error_body)
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                error
+            );
         }
         test_config.validate().unwrap();
     }

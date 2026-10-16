@@ -64,7 +64,7 @@ impl Proxy {
         session: &mut Session,
         error: &ProxyError,
     ) -> pingora::Result<StatusCode> {
-        let ErrorBody { status, json: body } = (self.config.error_body)(error);
+        let ErrorBody { status, json: body } = (self.error_body)(error);
         let mut header = ResponseHeader::build(status, None)?;
         if !body.is_empty() {
             header.insert_header(CONTENT_TYPE, "application/json")?;
@@ -204,15 +204,12 @@ impl ProxyHttp for Proxy {
         if let Some(chunk) = body {
             ctx.body_len += chunk.len();
             if ctx.body_len > self.matched_route(ctx)?.route.max_body_bytes {
-                return abort_with(self.config.error_body, ProxyError::BodyTooLarge);
+                return abort_with(self.error_body, ProxyError::BodyTooLarge);
             }
             ctx.body_hasher.update(chunk);
         }
         if end_of_stream && ctx.body_hasher.clone().finalize() != ctx.body_digest {
-            return abort_with(
-                self.config.error_body,
-                ProxyError::Auth(AuthError::BodyMismatch),
-            );
+            return abort_with(self.error_body, ProxyError::Auth(AuthError::BodyMismatch));
         }
         Ok(())
     }
@@ -228,7 +225,7 @@ impl ProxyHttp for Proxy {
             .1
             .select(SELECT_KEY, MAX_SELECT_ITERATIONS)
         else {
-            return abort_with(self.config.error_body, ProxyError::EndpointUnavailable);
+            return abort_with(self.error_body, ProxyError::EndpointUnavailable);
         };
         ctx.endpoint = Some(backend.addr.to_string());
 
@@ -282,7 +279,7 @@ impl ProxyHttp for Proxy {
                 Ok(status) => status.as_u16(),
                 Err(e) => {
                     error!("Failed to send error response to downstream: {e}");
-                    (self.config.error_body)(&error).status.as_u16()
+                    (self.error_body)(&error).status.as_u16()
                 }
             },
             None => {

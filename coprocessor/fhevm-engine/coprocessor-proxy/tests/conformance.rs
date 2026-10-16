@@ -1,5 +1,5 @@
 //! The `fhevm-sig-proxy` conformance suite, run against the `coprocessor-proxy` binary started
-//! with the example configuration.
+//! with the configuration its image ships.
 
 use fhevm_sig_proxy::conformance::{
     Launch, MetricsPort, Profile, SignedRoute, AUDIENCE, CHAIN_ID, ENDPOINT_HEALTHCHECK_FREQUENCY,
@@ -25,10 +25,10 @@ const PROFILE: Profile = Profile {
     error_body: coprocessor_proxy::error::error_body,
 };
 
-/// The example configuration with the stub endpoint and a short response timeout, and the rest
+/// The shipped configuration with the stub endpoint and a short response timeout, and the rest
 /// of the launch in the environment.
 fn configure(launch: &Launch, command: &mut Command) {
-    let example = include_str!("../config/proxy.toml");
+    let shipped = include_str!("../config/proxy.toml");
     let timeout = format!("\"{}ms\"", ENDPOINT_RESPONSE_TIMEOUT.as_millis());
     let config = [
         (
@@ -38,7 +38,7 @@ fn configure(launch: &Launch, command: &mut Command) {
         ("\"120s\"", timeout),
     ]
     .into_iter()
-    .fold(example.to_owned(), |config, (from, to)| {
+    .fold(shipped.to_owned(), |config, (from, to)| {
         assert!(config.contains(from), "{from}");
         config.replace(from, &to)
     });
@@ -58,20 +58,17 @@ fn configure(launch: &Launch, command: &mut Command) {
         ),
         ("COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID", CHAIN_ID.to_string()),
         (
-            "COPROCESSOR_PROXY_ETHEREUM_RPC_URL",
+            "COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS",
+            PROTOCOL_CONFIG.to_string(),
+        ),
+        ("COPROCESSOR_PROXY_AUDIENCE", AUDIENCE.to_string()),
+        (
+            "COPROCESSOR_PROXY_SIGNERS__PROTOCOL_CONFIG__RPC_URL",
             launch.rpc_url.to_string(),
         ),
         (
-            "COPROCESSOR_PROXY_PROTOCOL_CONFIG_CONTRACT__ADDRESS",
-            PROTOCOL_CONFIG.to_string(),
-        ),
-        (
-            "COPROCESSOR_PROXY_SIGNER_REFRESH_INTERVAL",
+            "COPROCESSOR_PROXY_SIGNERS__PROTOCOL_CONFIG__REFRESH_INTERVAL",
             ms(SIGNER_REFRESH_INTERVAL),
-        ),
-        (
-            "COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS",
-            AUDIENCE.to_string(),
         ),
         (
             "COPROCESSOR_PROXY_ENDPOINT_HEALTHCHECK_FREQUENCY",

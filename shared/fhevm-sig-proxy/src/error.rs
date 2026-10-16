@@ -1,5 +1,5 @@
 //! The errors the proxy answers itself. Each deployment renders them in the error body of its own
-//! interface, through [`crate::ProxyConfig::error_body`].
+//! interface, through the renderer given to [`crate::Proxy::from_config`].
 
 use fhevm_sig_auth::AuthError;
 use http::{Method, StatusCode};

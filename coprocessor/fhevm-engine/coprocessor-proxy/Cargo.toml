@@ -6,12 +6,10 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-alloy = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
-config = { version = "=0.15.19", default-features = false, features = ["toml"] }
+config = { workspace = true }
 http = { workspace = true }
-humantime = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

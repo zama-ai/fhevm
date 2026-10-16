@@ -60,7 +60,6 @@ pub fn config(addr: SocketAddr, tls: &TestTls, a: &Stub, b: &Stub) -> ProxyConfi
         protocol_config_address: PROTOCOL_CONFIG,
         signers: SignerSource::Static(HashSet::from([sender().address()])),
         audience: AUDIENCE,
-        error_body,
         forward_authorization: false,
         routes: vec![
             route(&[Method::POST], "/small", "a", 0, 300),
@@ -95,7 +94,7 @@ impl TestProxy {
         let tls = TestTls::generate();
         let mut config = config(addr, &tls, &a, &b);
         customize(&mut config);
-        let (proxy, state) = Proxy::from_config(config).unwrap();
+        let (proxy, state) = Proxy::from_config(config, error_body).unwrap();
         std::thread::spawn(move || proxy.run());
         wait_for_listener(addr).await;
         let client = Client::builder()

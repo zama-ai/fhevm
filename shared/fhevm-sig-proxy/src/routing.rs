@@ -6,24 +6,30 @@
 //! than `.` and `..`, so a path the proxy forwards names no other resource than its template's.
 //! The endpoint parses and validates its own parameters.
 
-use crate::{ProxyError, Upstream};
+use crate::{ProxyError, Upstream, config::parsed};
 use anyhow::{Context, bail, ensure};
 use http::Method;
+use serde::Deserialize;
 use std::{collections::HashSet, time::Duration};
 
 /// A route the proxy forwards.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Route {
     /// The methods the route accepts.
+    #[serde(deserialize_with = "parsed")]
     pub methods: Vec<Method>,
     /// The path template, without query.
     pub path: String,
     /// The name of the [`Upstream`] the route is forwarded to.
     pub upstream: String,
-    /// The maximum accepted size of a request body; `0` refuses any body.
+    /// The maximum accepted size of a request body; `0`, the default, refuses any body.
+    #[serde(default)]
     pub max_body_bytes: usize,
     /// How long the proxy waits for an endpoint response before answering
-    /// [`crate::ProxyError::EndpointTimeout`].
+    /// [`crate::ProxyError::EndpointTimeout`]. It must exceed the time the endpoint holds a
+    /// request, so the client gets the endpoint's own answer.
+    #[serde(with = "humantime_serde")]
     pub endpoint_response_timeout: Duration,
 }
 

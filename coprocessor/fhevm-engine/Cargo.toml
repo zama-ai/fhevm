@@ -41,6 +41,7 @@ aws-sdk-s3 = { version = "1.103.0", default-features = false, features = ["rt-to
 aws-sigv4 = "1.3.5"
 bigdecimal = "0.4.8"
 clap = { version = "4.5.38", features = ["derive", "env"] }
+config = { version = "=0.15.19", default-features = false, features = ["toml"] }
 daggy = "0.8.1"
 dashmap = { version = "=6.1.0", default-features = false }
 foundry-compilers = { version = "0.19.1", features = ["svm-solc"] }

@@ -14,7 +14,7 @@ pub struct Proxy(fhevm_sig_proxy::Proxy);
 impl Proxy {
     /// Creates the `Proxy` from its configuration, and the `health::State` used to monitor it.
     pub fn from_config(config: Config) -> anyhow::Result<(Self, health::State)> {
-        let (proxy, state) = fhevm_sig_proxy::Proxy::from_config(proxy_config(config))?;
+        let (proxy, state) = fhevm_sig_proxy::Proxy::from_config(proxy_config(config), error_body)?;
         Ok((Self(proxy), health::State::new(state)))
     }
 
@@ -52,7 +52,6 @@ fn proxy_config(config: Config) -> ProxyConfig {
         protocol_config_address: config.protocol_config_contract.address,
         signers: SignerSource::Static(config.allowed_senders),
         audience: config.tx_sender_address,
-        error_body,
         forward_authorization: false,
         routes,
         upstreams: vec![Upstream {

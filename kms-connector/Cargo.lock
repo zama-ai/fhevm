@@ -3354,14 +3354,17 @@ dependencies = [
  "fhevm_host_bindings",
  "http 1.4.0",
  "http-body-util",
+ "humantime-serde",
  "hyper",
  "hyper-util",
  "pingora",
  "prometheus",
  "rcgen",
+ "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]

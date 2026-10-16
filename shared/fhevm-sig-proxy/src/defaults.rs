@@ -1,5 +1,5 @@
-//! The defaults of the [`crate::ProxyConfig`] settings every deployment exposes, for their
-//! configuration loaders, e.g. `#[serde(default = "fhevm_sig_proxy::defaults::request_read_timeout")]`.
+//! The defaults of the [`crate::ProxyConfig`] settings, for a deployment that loads its settings
+//! into its own struct, e.g. `#[serde(default = "fhevm_sig_proxy::defaults::request_read_timeout")]`.
 
 use std::time::Duration;
 
@@ -24,5 +24,13 @@ pub fn request_read_timeout() -> Duration {
 }
 
 pub fn shutdown_grace_period() -> Duration {
+    Duration::from_secs(60)
+}
+
+pub fn healthcheck_timeout() -> Duration {
+    Duration::from_secs(3)
+}
+
+pub fn signer_refresh_interval() -> Duration {
     Duration::from_secs(60)
 }

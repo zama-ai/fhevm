@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use coprocessor_proxy::{config::Config, health::State};
+use coprocessor_proxy::{config, error, health::State};
 use fhevm_engine_common::{healthz_server, metrics_server};
 use fhevm_sig_proxy::Proxy;
 use std::{path::PathBuf, process::ExitCode, sync::Arc};
@@ -52,11 +52,7 @@ fn main() -> ExitCode {
 fn run() -> anyhow::Result<()> {
     fhevm_engine_common::handle_stack_version_flag();
     match Cli::parse().command {
-        Subcommands::Validate { config } => {
-            Config::from_env_and_file(Some(&config))?
-                .proxy_config()?
-                .validate()?;
-        }
+        Subcommands::Validate { config } => config::load(Some(&config))?.1.validate()?,
         Subcommands::Health { endpoint } => {
             let runtime = tokio::runtime::Runtime::new()?;
             let response = runtime.block_on(reqwest::get(endpoint))?;
@@ -67,7 +63,7 @@ fn run() -> anyhow::Result<()> {
             );
         }
         Subcommands::Start { config } => {
-            let config = Config::from_env_and_file(config.as_deref())?;
+            let (config, proxy_config) = config::load(config.as_deref())?;
 
             // The monitoring servers and the OTLP exporter run on this tokio runtime, next to
             // Pingora's own.
@@ -79,11 +75,11 @@ fn run() -> anyhow::Result<()> {
                 let _runtime = runtime.enter();
                 fhevm_engine_common::telemetry::init_tracing_otel_with_logs_only_fallback(
                     config.log_level,
-                    &config.service_name,
+                    &proxy_config.service_name,
                     "otlp-layer",
                 )
             };
-            let (proxy, state) = Proxy::from_config(config.proxy_config()?)?;
+            let (proxy, state) = Proxy::from_config(proxy_config, error::error_body)?;
             let cancel_token = CancellationToken::new();
             let health_server = healthz_server::HttpServer::new(
                 Arc::new(State::new(state)),
