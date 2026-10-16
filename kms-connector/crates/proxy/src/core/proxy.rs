@@ -60,7 +60,6 @@ fn proxy_config(config: Config) -> ProxyConfig {
             endpoint_addresses: config.endpoint_addresses,
             healthcheck_path: VERSION_ROUTE.to_owned(),
         }],
-        tls_self_check_path: VERSION_ROUTE.to_owned(),
         endpoint_connect_timeout: config.endpoint_connect_timeout,
         endpoint_healthcheck_frequency: config.endpoint_healthcheck_frequency,
         endpoint_idle_timeout: config.endpoint_idle_timeout,

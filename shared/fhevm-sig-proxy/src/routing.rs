@@ -102,6 +102,25 @@ impl RouteTable {
         Ok(Self(parsed))
     }
 
+    /// A path of the first route accepting `GET`, with each parameter set to zero. The TLS
+    /// listener healthcheck requests it without credentials and expects `401`.
+    pub fn self_check_path(&self) -> anyhow::Result<String> {
+        let route = self
+            .0
+            .iter()
+            .find(|route| route.route.methods.contains(&Method::GET))
+            .context("no route accepts GET, as the TLS listener healthcheck needs")?;
+        Ok(route
+            .segments
+            .iter()
+            .map(|segment| match segment {
+                Segment::Literal(literal) => format!("/{literal}"),
+                Segment::U16 => "/0".to_owned(),
+                Segment::Hex32 => format!("/{}", "0".repeat(64)),
+            })
+            .collect())
+    }
+
     pub fn get(&self, index: usize) -> &ParsedRoute {
         &self.0[index]
     }
@@ -314,6 +333,30 @@ mod tests {
                 "{path}"
             );
         }
+    }
+
+    #[test]
+    fn the_self_check_path_is_the_first_get_route_with_zero_parameters() {
+        assert_eq!(table().self_check_path().unwrap(), "/version");
+
+        let typed = RouteTable::new(
+            &[
+                route(&[Method::POST], "/v1/public-decrypt", "prf"),
+                route(&[Method::GET, Method::HEAD], PRF_ROUTE, "prf"),
+            ],
+            &[upstream("prf")],
+        )
+        .unwrap();
+        let path = typed.self_check_path().unwrap();
+        assert_eq!(path, format!("/v1/prf/0/labels/{}/0", "0".repeat(64)));
+        assert_eq!(typed.find(&Method::GET, &path), Ok(1));
+
+        let post_only = RouteTable::new(
+            &[route(&[Method::POST], "/v1/public-decrypt", "prf")],
+            &[upstream("prf")],
+        )
+        .unwrap();
+        assert!(post_only.self_check_path().is_err());
     }
 
     #[test]

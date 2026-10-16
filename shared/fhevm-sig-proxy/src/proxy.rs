@@ -4,10 +4,10 @@ use crate::{
     routing::RouteTable,
 };
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
-use anyhow::{Context, anyhow, ensure};
+use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use fhevm_sig_auth::{FhevmSigVerifier, RefreshableSigners, protocol_config::Follower};
-use http::{Method, uri::Authority};
+use http::uri::Authority;
 use pingora::{
     lb::{LoadBalancer, selection::RoundRobin},
     listeners::tls::TlsSettings,
@@ -38,28 +38,15 @@ const GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: u64 = 5;
 impl Proxy {
     /// Creates the `Proxy` from its configuration, and the `health::State` used to monitor it.
     pub fn from_config(config: ProxyConfig) -> anyhow::Result<(Self, health::State)> {
-        let routes = RouteTable::new(&config.routes, &config.upstreams)?;
-        ensure!(
-            routes
-                .find(&Method::GET, &config.tls_self_check_path)
-                .is_ok(),
-            "TLS self-check path {} matches no GET route",
-            config.tls_self_check_path
-        );
-
+        let routes = config.checked_routes()?;
         let (signers, signer_refresh) = match &config.signers {
             SignerSource::Static(signers) => {
-                ensure!(!signers.is_empty(), "no signer configured");
                 (RefreshableSigners::new(signers.iter().copied()), None)
             }
             SignerSource::ProtocolConfig {
                 rpc_url,
                 refresh_interval,
             } => {
-                ensure!(
-                    !refresh_interval.is_zero(),
-                    "signer refresh interval is zero"
-                );
                 let signers = RefreshableSigners::default();
                 let provider = ProviderBuilder::new()
                     .disable_recommended_fillers()
@@ -102,7 +89,7 @@ impl Proxy {
 
         let state = health::State::new(
             config.bind_address,
-            &config.tls_self_check_path,
+            &routes.self_check_path()?,
             config
                 .upstreams
                 .iter()
@@ -204,6 +191,7 @@ fn path_to_str(path: &std::path::Path) -> anyhow::Result<&str> {
 mod tests {
     use super::*;
     use crate::{Route, TlsConfig, Upstream};
+    use http::Method;
     use alloy::primitives::Address;
     use rstest::rstest;
     use std::{collections::HashSet, time::Duration};
@@ -237,7 +225,6 @@ mod tests {
                 endpoint_addresses: vec!["127.0.0.1:1".parse().unwrap()],
                 healthcheck_path: "/version".to_owned(),
             }],
-            tls_self_check_path: "/version".to_owned(),
             endpoint_connect_timeout: Duration::from_secs(3),
             endpoint_healthcheck_frequency: Duration::from_secs(3),
             endpoint_idle_timeout: Duration::from_secs(10),
@@ -299,17 +286,32 @@ mod tests {
     }
 
     #[test]
-    fn the_tls_self_check_path_must_match_a_get_route() {
-        for path in ["/healthz", "/version/"] {
-            let config = ProxyConfig {
-                tls_self_check_path: path.to_owned(),
-                ..test_config()
-            };
-            let error = Proxy::from_config(config).err().unwrap().to_string();
-            assert_eq!(
-                error,
-                format!("TLS self-check path {path} matches no GET route")
-            );
+    fn validate_checks_what_from_config_checks() {
+        let test_config = test_config();
+        let invalid = [
+            ProxyConfig {
+                routes: vec![Route {
+                    methods: vec![Method::POST],
+                    ..test_config.routes[0].clone()
+                }],
+                ..test_config.clone()
+            },
+            ProxyConfig {
+                signers: SignerSource::Static(HashSet::new()),
+                ..test_config.clone()
+            },
+            ProxyConfig {
+                signers: SignerSource::ProtocolConfig {
+                    rpc_url: "http://127.0.0.1:1".parse().unwrap(),
+                    refresh_interval: Duration::ZERO,
+                },
+                ..test_config.clone()
+            },
+        ];
+        for config in invalid {
+            let error = config.validate().unwrap_err().to_string();
+            assert_eq!(Proxy::from_config(config).err().unwrap().to_string(), error);
         }
+        test_config.validate().unwrap();
     }
 }

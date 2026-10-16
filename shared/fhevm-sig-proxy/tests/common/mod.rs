@@ -335,7 +335,6 @@ pub fn config(addr: SocketAddr, tls: &TestTls, a: &Stub, b: &Stub) -> ProxyConfi
             ),
         ],
         upstreams: vec![upstream("a", a), upstream("b", b)],
-        tls_self_check_path: "/items/0".to_owned(),
         endpoint_connect_timeout: Duration::from_millis(500),
         endpoint_healthcheck_frequency: ENDPOINT_HEALTHCHECK_FREQUENCY,
         endpoint_idle_timeout: Duration::from_secs(10),

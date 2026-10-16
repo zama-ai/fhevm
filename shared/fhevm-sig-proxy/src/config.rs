@@ -1,5 +1,6 @@
-use crate::{ErrorBody, ProxyError, Route};
+use crate::{ErrorBody, ProxyError, Route, routing::RouteTable};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
+use anyhow::ensure;
 use http::uri::Authority;
 use std::{collections::HashSet, net::SocketAddr, path::PathBuf, time::Duration};
 
@@ -29,9 +30,6 @@ pub struct ProxyConfig {
     pub routes: Vec<Route>,
     /// The pools of endpoints the routes are forwarded to.
     pub upstreams: Vec<Upstream>,
-    /// A path the proxy answers `401` to a `GET` without credentials, requested by its own TLS
-    /// listener healthcheck. It must match a route.
-    pub tls_self_check_path: String,
 
     /// The timeout to establish a TCP connection to an endpoint.
     pub endpoint_connect_timeout: Duration,
@@ -49,6 +47,30 @@ pub struct ProxyConfig {
     pub service_name: String,
     /// The timeout to perform each external service connection healthcheck.
     pub healthcheck_timeout: Duration,
+}
+
+impl ProxyConfig {
+    /// Checks the configuration as [`crate::Proxy::from_config`] does, without resolving the
+    /// endpoint addresses.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        self.checked_routes().map(drop)
+    }
+
+    /// The parsed routes of a valid configuration.
+    pub(crate) fn checked_routes(&self) -> anyhow::Result<RouteTable> {
+        let routes = RouteTable::new(&self.routes, &self.upstreams)?;
+        routes.self_check_path()?;
+        match &self.signers {
+            SignerSource::Static(signers) => ensure!(!signers.is_empty(), "no signer configured"),
+            SignerSource::ProtocolConfig {
+                refresh_interval, ..
+            } => ensure!(
+                !refresh_interval.is_zero(),
+                "signer refresh interval is zero"
+            ),
+        }
+        Ok(routes)
+    }
 }
 
 /// Where the addresses allowed to sign requests come from.
