@@ -239,9 +239,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-json-rpc"
-version = "2.5.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fff9cb760601d352d1e59aab5803c3fb6dc99824b6883f5c7a781aacd4b54c66"
+checksum = "24d7ff4d7f1503d12edda9b241904a309d6e1d5bcee3f0ffdc4d3d3f16f366b8"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -382,9 +382,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-client"
-version = "2.5.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f73519dc8f4ab73dafe90ac47aec4b9055c421c762d770d911eed83fcbef28d"
+checksum = "52bffef2c5714f578f267bb959b47908b95728f1f3e2073a96d928f4441c148d"
 dependencies = [
  "alloy-json-rpc",
  "alloy-primitives",
@@ -568,9 +568,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-transport"
-version = "2.5.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e10be13ab13ddadcfaec3320cc6cee83548a1ae32ada214ff864604cbf5c6f77"
+checksum = "830c87b05870c80c8d2cfb9245feaff36468893f19fc124c7ff563cabda6386c"
 dependencies = [
  "alloy-json-rpc",
  "auto_impl",
@@ -591,9 +591,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-transport-http"
-version = "2.5.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df948f2f9530ed0325d789ad98aa08403aaeaf55ddd6eeaf0cda143e02afab39"
+checksum = "23ecd298fb0e6a31bd90c72efba2728e3d7569f1c89a3719576fb0e4e40b0fc8"
 dependencies = [
  "alloy-json-rpc",
  "alloy-transport",
