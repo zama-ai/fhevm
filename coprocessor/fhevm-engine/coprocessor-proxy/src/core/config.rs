@@ -313,34 +313,30 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config/proxy.toml")
     }
 
-    const ENV_VARS: [&str; 22] = [
-        "COPROCESSOR_PROXY_BIND_ADDRESS",
-        "COPROCESSOR_PROXY_TLS_CONFIG__CERT_PATH",
-        "COPROCESSOR_PROXY_TLS_CONFIG__KEY_PATH",
-        "COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID",
-        "COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS",
-        "COPROCESSOR_PROXY_ETHEREUM_RPC_URL",
-        "COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL",
-        "COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS",
-        "COPROCESSOR_PROXY_ENDPOINT_ADDRESSES",
-        "COPROCESSOR_PROXY_ENDPOINT_CONNECT_TIMEOUT",
-        "COPROCESSOR_PROXY_ENDPOINT_HEALTHCHECK_FREQUENCY",
-        "COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT",
-        "COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT",
-        "COPROCESSOR_PROXY_ENDPOINT_MAX_H2_STREAMS",
-        "COPROCESSOR_PROXY_MAX_BODY_BYTES",
-        "COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT",
-        "COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD",
-        "COPROCESSOR_PROXY_SERVICE_NAME",
-        "COPROCESSOR_PROXY_LOG_LEVEL",
-        "COPROCESSOR_PROXY_HEALTHCHECK_PORT",
-        "COPROCESSOR_PROXY_METRICS_ENDPOINT",
-        "COPROCESSOR_PROXY_HEALTHCHECK_TIMEOUT",
-    ];
-
     fn cleanup_env_vars() {
-        for name in ENV_VARS {
-            unsafe { env::remove_var(name) };
+        unsafe {
+            env::remove_var("COPROCESSOR_PROXY_BIND_ADDRESS");
+            env::remove_var("COPROCESSOR_PROXY_TLS_CONFIG__CERT_PATH");
+            env::remove_var("COPROCESSOR_PROXY_TLS_CONFIG__KEY_PATH");
+            env::remove_var("COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID");
+            env::remove_var("COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS");
+            env::remove_var("COPROCESSOR_PROXY_ETHEREUM_RPC_URL");
+            env::remove_var("COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL");
+            env::remove_var("COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS");
+            env::remove_var("COPROCESSOR_PROXY_ENDPOINT_ADDRESSES");
+            env::remove_var("COPROCESSOR_PROXY_ENDPOINT_CONNECT_TIMEOUT");
+            env::remove_var("COPROCESSOR_PROXY_ENDPOINT_HEALTHCHECK_FREQUENCY");
+            env::remove_var("COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT");
+            env::remove_var("COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT");
+            env::remove_var("COPROCESSOR_PROXY_ENDPOINT_MAX_H2_STREAMS");
+            env::remove_var("COPROCESSOR_PROXY_MAX_BODY_BYTES");
+            env::remove_var("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT");
+            env::remove_var("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD");
+            env::remove_var("COPROCESSOR_PROXY_SERVICE_NAME");
+            env::remove_var("COPROCESSOR_PROXY_LOG_LEVEL");
+            env::remove_var("COPROCESSOR_PROXY_HEALTHCHECK_PORT");
+            env::remove_var("COPROCESSOR_PROXY_METRICS_ENDPOINT");
+            env::remove_var("COPROCESSOR_PROXY_HEALTHCHECK_TIMEOUT");
         }
     }
 
@@ -357,73 +353,96 @@ mod tests {
     #[serial(config_tests)]
     fn test_load_from_env() {
         cleanup_env_vars();
-        for (name, value) in [
-            ("BIND_ADDRESS", "127.0.0.1:9443"),
-            ("TLS_CONFIG__CERT_PATH", "/etc/proxy/tls.crt"),
-            ("TLS_CONFIG__KEY_PATH", "/etc/proxy/tls.key"),
-            ("ETHEREUM_CHAIN_ID", "31444"),
-            (
-                "PROTOCOL_CONFIG_ADDRESS",
+        unsafe {
+            env::set_var("COPROCESSOR_PROXY_BIND_ADDRESS", "127.0.0.1:9443");
+            env::set_var(
+                "COPROCESSOR_PROXY_TLS_CONFIG__CERT_PATH",
+                "/etc/proxy/tls.crt",
+            );
+            env::set_var(
+                "COPROCESSOR_PROXY_TLS_CONFIG__KEY_PATH",
+                "/etc/proxy/tls.key",
+            );
+            env::set_var("COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID", "31444");
+            env::set_var(
+                "COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS",
                 "0xc0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
-            ),
-            ("ETHEREUM_RPC_URL", "https://rpc.example/v1/key"),
-            ("KMS_REGISTRY_REFRESH_INTERVAL", "2m"),
-            (
-                "COPROCESSOR_SIGNER_ADDRESS",
+            );
+            env::set_var(
+                "COPROCESSOR_PROXY_ETHEREUM_RPC_URL",
+                "https://rpc.example/v1/key",
+            );
+            env::set_var("COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL", "2m");
+            env::set_var(
+                "COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS",
                 "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
-            ),
-            ("ENDPOINT_ADDRESSES", "endpoint-1:8080,endpoint-2:8080"),
-            ("ENDPOINT_CONNECT_TIMEOUT", "1s"),
-            ("ENDPOINT_HEALTHCHECK_FREQUENCY", "500ms"),
-            ("ENDPOINT_RESPONSE_TIMEOUT", "45s"),
-            ("ENDPOINT_IDLE_TIMEOUT", "7s"),
-            ("ENDPOINT_MAX_H2_STREAMS", "50"),
-            ("MAX_BODY_BYTES", "2048"),
-            ("REQUEST_READ_TIMEOUT", "12s"),
-            ("SHUTDOWN_GRACE_PERIOD", "15s"),
-            ("SERVICE_NAME", "coprocessor-proxy-test"),
-            ("LOG_LEVEL", "debug"),
-            ("HEALTHCHECK_PORT", "8081"),
-            ("METRICS_ENDPOINT", "127.0.0.1:9101"),
-            ("HEALTHCHECK_TIMEOUT", "7s"),
-        ] {
-            unsafe { env::set_var(format!("{ENV_PREFIX}_{name}"), value) };
+            );
+            env::set_var(
+                "COPROCESSOR_PROXY_ENDPOINT_ADDRESSES",
+                "endpoint-1:8080,endpoint-2:8080",
+            );
+            env::set_var("COPROCESSOR_PROXY_ENDPOINT_CONNECT_TIMEOUT", "1s");
+            env::set_var("COPROCESSOR_PROXY_ENDPOINT_HEALTHCHECK_FREQUENCY", "500ms");
+            env::set_var("COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT", "45s");
+            env::set_var("COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT", "7s");
+            env::set_var("COPROCESSOR_PROXY_ENDPOINT_MAX_H2_STREAMS", "50");
+            env::set_var("COPROCESSOR_PROXY_MAX_BODY_BYTES", "2048");
+            env::set_var("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT", "12s");
+            env::set_var("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD", "15s");
+            env::set_var("COPROCESSOR_PROXY_SERVICE_NAME", "coprocessor-proxy-test");
+            env::set_var("COPROCESSOR_PROXY_LOG_LEVEL", "debug");
+            env::set_var("COPROCESSOR_PROXY_HEALTHCHECK_PORT", "8081");
+            env::set_var("COPROCESSOR_PROXY_METRICS_ENDPOINT", "127.0.0.1:9101");
+            env::set_var("COPROCESSOR_PROXY_HEALTHCHECK_TIMEOUT", "7s");
         }
 
         let config = Config::from_env_and_file::<&str>(None).unwrap();
 
+        assert_eq!(config.bind_address, "127.0.0.1:9443".parse().unwrap());
         assert_eq!(
-            config,
-            Config {
-                bind_address: "127.0.0.1:9443".parse().unwrap(),
-                tls_config: TlsConfig {
-                    cert_path: PathBuf::from("/etc/proxy/tls.crt"),
-                    key_path: PathBuf::from("/etc/proxy/tls.key"),
-                },
-                ethereum_chain_id: 31444,
-                protocol_config_address: Address::repeat_byte(0xc0),
-                ethereum_rpc_url: "https://rpc.example/v1/key".parse().unwrap(),
-                kms_registry_refresh_interval: Duration::from_secs(120),
-                coprocessor_signer_address: Address::repeat_byte(0xa1),
-                endpoint_addresses: vec![
-                    "endpoint-1:8080".parse().unwrap(),
-                    "endpoint-2:8080".parse().unwrap(),
-                ],
-                endpoint_connect_timeout: Duration::from_secs(1),
-                endpoint_healthcheck_frequency: Duration::from_millis(500),
-                endpoint_response_timeout: Duration::from_secs(45),
-                endpoint_idle_timeout: Duration::from_secs(7),
-                endpoint_max_h2_streams: 50,
-                max_body_bytes: 2048,
-                request_read_timeout: Duration::from_secs(12),
-                shutdown_grace_period: Duration::from_secs(15),
-                service_name: "coprocessor-proxy-test".to_string(),
-                log_level: Level::DEBUG,
-                healthcheck_port: 8081,
-                metrics_endpoint: "127.0.0.1:9101".parse().unwrap(),
-                healthcheck_timeout: Duration::from_secs(7),
+            config.tls_config,
+            TlsConfig {
+                cert_path: PathBuf::from("/etc/proxy/tls.crt"),
+                key_path: PathBuf::from("/etc/proxy/tls.key"),
             }
         );
+        assert_eq!(config.ethereum_chain_id, 31444);
+        assert_eq!(config.protocol_config_address, Address::repeat_byte(0xc0));
+        assert_eq!(
+            config.ethereum_rpc_url,
+            "https://rpc.example/v1/key".parse().unwrap()
+        );
+        assert_eq!(
+            config.kms_registry_refresh_interval,
+            Duration::from_secs(120)
+        );
+        assert_eq!(
+            config.coprocessor_signer_address,
+            Address::repeat_byte(0xa1)
+        );
+        assert_eq!(
+            config.endpoint_addresses,
+            vec![
+                "endpoint-1:8080".parse::<Authority>().unwrap(),
+                "endpoint-2:8080".parse::<Authority>().unwrap(),
+            ]
+        );
+        assert_eq!(config.endpoint_connect_timeout, Duration::from_secs(1));
+        assert_eq!(
+            config.endpoint_healthcheck_frequency,
+            Duration::from_millis(500)
+        );
+        assert_eq!(config.endpoint_response_timeout, Duration::from_secs(45));
+        assert_eq!(config.endpoint_idle_timeout, Duration::from_secs(7));
+        assert_eq!(config.endpoint_max_h2_streams, 50);
+        assert_eq!(config.max_body_bytes, 2048);
+        assert_eq!(config.request_read_timeout, Duration::from_secs(12));
+        assert_eq!(config.shutdown_grace_period, Duration::from_secs(15));
+        assert_eq!(config.service_name, "coprocessor-proxy-test");
+        assert_eq!(config.log_level, Level::DEBUG);
+        assert_eq!(config.healthcheck_port, 8081);
+        assert_eq!(config.metrics_endpoint, "127.0.0.1:9101".parse().unwrap());
+        assert_eq!(config.healthcheck_timeout, Duration::from_secs(7));
 
         cleanup_env_vars();
     }
