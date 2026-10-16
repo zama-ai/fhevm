@@ -1129,6 +1129,35 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         protocolConfig.confirmKmsContextCreation(newContextId, signature, "");
     }
 
+    /// @dev The previous committee has n = 4 and t = 4, so n - t is 0 and the previous quorum is floored at 1.
+    ///      The new committee alone cannot complete the switch. The first previous confirmation completes it.
+    function test_confirmKmsContextCreationPreviousQuorumFlooredAtOne() public {
+        _setupDefaultWithMpcThreshold(4);
+        KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
+        nodes[0].txSenderAddress = address(0xC1);
+        nodes[0].signerAddress = vm.addr(0xB2);
+        nodes[1].txSenderAddress = address(0xC2);
+        nodes[1].signerAddress = vm.addr(0xB3);
+
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
+        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 2;
+
+        _confirmContextCreation(newContextId, 0xB2, "");
+        _confirmContextCreation(newContextId, 0xB3, "");
+
+        bytes memory signature = _signContextCreation(newContextId, kmsPk0, "");
+        vm.expectEmit(true, true, false, true, address(protocolConfig));
+        emit IProtocolConfig.NewKmsEpoch(
+            newContextId,
+            EPOCH_COUNTER_BASE + 2,
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            EPOCH_COUNTER_BASE + 1,
+            block.number - 1
+        );
+        protocolConfig.confirmKmsContextCreation(newContextId, signature, "");
+    }
+
     function test_revertConfirmEpochActivationBeforeCreateKmsContext() public {
         _setupEpochLifecycle();
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
