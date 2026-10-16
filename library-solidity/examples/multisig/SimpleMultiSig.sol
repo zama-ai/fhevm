@@ -4,7 +4,7 @@ import "../../lib/FHE.sol";
 import {CoprocessorSetup} from "../CoprocessorSetup.sol";
 
 interface IEncryptedSetter {
-    function setEncryptedValue(externalEuint64 inputHandle, bytes memory inputProof) external;
+    function computeResult64(externalEuint64 inputHandle, bytes memory inputProof) external;
 }
 
 /// @notice Simple MultiSig contract, where all owners must approve a tx before executing it
@@ -67,7 +67,7 @@ contract SimpleMultiSig {
     function executeSpecialTx(address encryptedSetter) external {
         // this function is just for testing the edge case of an uninitialized external handle without inputProof
         FHE.allowTransient(uninitializedHandle, encryptedSetter); // this line is not strictly needed in the edge case of uninitialized handle, but we keep it as best practice.
-        IEncryptedSetter(encryptedSetter).setEncryptedValue(
+        IEncryptedSetter(encryptedSetter).computeResult64(
             externalEuint64.wrap(euint64.unwrap(uninitializedHandle)),
             hex""
         );
