@@ -225,7 +225,7 @@ const waitForCatchUp = async (ctx: RollbackCaseContext) => {
  * [`SPLIT_WATCH_SECONDS`] once the perturbed one catches up.
  */
 const assertEveryOperatorRolledBack = async (ctx: RollbackCaseContext) => {
-  for (const database of ctx.operatorDatabases) {
+  for (const [index, database] of ctx.operatorDatabases.entries()) {
     await waitForRollback(ctx, database, 600);
     const flags = await ctx.psqlQuery(
       database,
@@ -235,12 +235,19 @@ const assertEveryOperatorRolledBack = async (ctx: RollbackCaseContext) => {
     if (flags !== "unanimity_consensus_timeout|false|false") {
       throw new Error(`${database} rollback left unexpected flags "${flags}"`);
     }
+    // Only on an operator that stayed up. One that was down indexes the
+    // window again when it catches up, and those rows are not residue.
+    if (index === PERTURBED) continue;
     const residue = await ctx.psqlQuery(
       database,
-      `SELECT (SELECT count(*) FROM "gcs-${ctx.gcsStackVersion}".computations) + ` +
-        `(SELECT count(*) FROM "gcs-${ctx.gcsStackVersion}".state_hash);`,
+      `SELECT (SELECT count(*) FROM "gcs-${ctx.gcsStackVersion}".computations
+                WHERE block_number <= w.last_block)
+            + (SELECT count(*) FROM "gcs-${ctx.gcsStackVersion}".state_hash
+                WHERE block_number <= w.last_block
+                  AND chain_id IN (SELECT host_chain_id FROM upgrade_state WHERE stack_role='GCS'))
+         FROM (SELECT MAX(end_block) AS last_block FROM upgrade_state WHERE stack_role='GCS') w;`,
     );
-    if (residue !== "0") throw new Error(`${database} gcs schema not reset: ${residue} residual row(s)`);
+    if (residue !== "0") throw new Error(`${database} kept ${residue} row(s) from the window`);
   }
 
   await waitForCatchUp(ctx);
@@ -325,7 +332,7 @@ export const runRollbackCases = async (ctx: RollbackCaseContext) => {
   await runRollbackCase(ctx, {
     label: "one operator records quorum, and the other reaches its deadline first",
     proposalId: 4,
-    beforeWindow: false,
+    beforeWindow: true,
     perturb: async () => {
       const blocked = objectStoreOperatorHost(0);
       const services = await recreateServices(
