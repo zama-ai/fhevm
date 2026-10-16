@@ -628,7 +628,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
 
         if self
             .precedes_gcs_window(db_pool, block_number, request.zkProofId)
-            .await?
+            .await
         {
             return Ok(());
         }
@@ -682,12 +682,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         db_pool: &Pool<Postgres>,
         block_number: Option<i64>,
         zk_proof_id: U256,
-    ) -> anyhow::Result<bool> {
+    ) -> bool {
         if !self.stack_mode.gcs_mode() {
-            return Ok(false);
+            return false;
         }
         let Some(bn) = block_number else {
-            return Ok(false);
+            return false;
         };
         match active_gcs_window(db_pool).await {
             Ok(Some(window)) if bn < window.gw_start_block => {
@@ -697,16 +697,16 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                     gw_start_block = window.gw_start_block,
                     "GCS: proof precedes gw_start_block; skipping pre-window verify_proofs insert"
                 );
-                Ok(true)
+                true
             }
-            Ok(_) => Ok(false),
+            Ok(_) => false,
             // Non-fatal: if the window can't be read, do not skip - insert the proof and
             // let the one-shot pre-window prune (the documented backstop) drop it if it is
             // pre-snapshot. Tearing down the listener on a transient DB error would be
             // worse than a little extra churn.
             Err(e) => {
                 warn!(error = %e, "GCS: pre-window gate check failed; inserting and relying on the prune backstop");
-                Ok(false)
+                false
             }
         }
     }
@@ -743,7 +743,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
 
         if self
             .precedes_gcs_window(db_pool, block_number, request.zkProofId)
-            .await?
+            .await
         {
             return Ok(());
         }

@@ -151,6 +151,20 @@ class SolanaCharts(unittest.TestCase):
             self.assertEqual(env["DATABASE_IAM_AUTH_ENABLED"]["value"], "true")
             self.assertIn("DATABASE_SSL_ROOT_CERT_PATH", env)
 
+    def test_value_from_reaches_the_versioned_contract_config_map(self):
+        # With stackVersion set, the contract-address ConfigMaps carry it in their name, so values
+        # name them through the chart helper, which only a tpl render resolves.
+        reference = {"name": "HOST_ACL_ADDRESS", "valueFrom": {"configMapKeyRef": {
+            "name": '{{ include "coprocessor.hostContractConfigMapName" . }}', "key": "acl.address"}}}
+        documents = render("coprocessor-1", "coprocessor", COPROCESSOR, *START_SLOT, *SIGNER,
+                           "--set-string", "commonConfig.stackVersion=v0.15.0",
+                           "--set-json", "commonConfig.env=" + json.dumps([reference]))
+        for name in [LISTENER, INDEXER, PROOF_SERVER]:
+            deployment = next(d for d in documents if d and d["kind"] == "Deployment" and d["metadata"]["name"] == name)
+            env = {e["name"]: e for e in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
+            self.assertEqual(env["HOST_ACL_ADDRESS"]["valueFrom"]["configMapKeyRef"]["name"],
+                             "eth-sc-addresses-v0-15-0", name)
+
     def test_connector_preserves_evm_and_exact_solana_chain_id(self):
         # Same composition as deploy-preview.sh: the party's values, the Solana overlay, and the
         # proof servers the script sets. aclAddress is filled per party by deploy-kms-connector.sh.
