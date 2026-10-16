@@ -1,10 +1,11 @@
 #[cfg(test)]
 use crate::core::TlsConfig;
 use crate::{
-    core::{ApiKeyVerifier, Config},
+    core::Config,
     monitoring::health::{self, endpoint_health_check},
 };
 use anyhow::{Context, anyhow};
+use fhevm_sig_auth::FhevmSigVerifier;
 use http::uri::Authority;
 use pingora::{
     lb::{LoadBalancer, selection::RoundRobin},
@@ -20,7 +21,7 @@ use tracing::info;
 /// The `Proxy` service: sender authentication and load-balancing in front of the endpoints.
 pub struct Proxy {
     pub(super) config: Config,
-    pub(super) verifier: ApiKeyVerifier,
+    pub(super) verifier: FhevmSigVerifier,
     pub(super) endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
 }
 
@@ -53,8 +54,17 @@ impl Proxy {
             Arc::clone(&endpoint_balancer),
             config.healthcheck_timeout,
         )?;
+        let domain = fhevm_sig_auth::domain(
+            config.ethereum_chain_id,
+            config.protocol_config_contract.address,
+        );
+        let verifier = FhevmSigVerifier::new(
+            domain,
+            config.tx_sender_address,
+            config.allowed_senders.clone(),
+        );
         let proxy = Self {
-            verifier: ApiKeyVerifier::new(config.api_key_digest),
+            verifier,
             config,
             endpoint_balancer,
         };

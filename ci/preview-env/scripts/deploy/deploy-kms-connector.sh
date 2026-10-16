@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install one kms-connector release per KMS party.
 # Env: NAMESPACE, NB_KMS_CORE, DEPLOY_POLYGON, OBSERVABILITY, OTLP_ENDPOINT,
-# KMS_CONNECTOR_CHART, TAGS_JSON.
+# KMS_CONNECTOR_CHART, TAGS_JSON, WALLETS_JSON (the KMS tx-sender wallets).
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -15,6 +15,11 @@ proxy_service() { echo "kms-connector-${1}-kms-connector-proxy"; }
 proxy_port=8443
 tls_secret=kms-connector-proxy-tls          # kmsConnectorProxy.tls.secretName in the overlay
 http_configmap=kms-connector-http           # read by the test-suite overlays
+# Party i's KMS tx-sender address: the `audience` its proxy accepts.
+tx_sender() { jq -r --argjson party "${1}" '.[] | select(.party == $party) | .address' <<<"${WALLETS_JSON}"; }
+for i in $(seq 1 "${NB_KMS_CORE}"); do
+  require_nonempty "$(tx_sender "${i}")" "no KMS tx-sender address for party ${i} in WALLETS_JSON"
+done
 
 decryption=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.decryption\.address}')
 gateway_config=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.gateway_config\.address}')
@@ -98,11 +103,14 @@ fi
 #   endpoint-urls  KMS_CONNECTOR_ENDPOINT_URLS, one https proxy URL per party
 #   kms-threshold  KMS_THRESHOLD: MPC t, quorum is 2t+1 (kms_t in lib.sh)
 #   ca.crt         the proxies' certificate, for NODE_EXTRA_CA_CERTS
-# The API key itself is a fixed test literal in the overlays.
+#   tx-sender-addresses  KMS_CONNECTOR_TX_SENDER_ADDRESSES, aligned with endpoint-urls
+# The FhevmSig test key itself is a fixed literal in the overlays.
 ######################################################################
 urls="https://$(proxy_service 1):${proxy_port}"
+tx_senders="$(tx_sender 1)"
 for i in $(seq 2 "${NB_KMS_CORE}"); do
   urls="${urls},https://$(proxy_service "${i}"):${proxy_port}"
+  tx_senders="${tx_senders},$(tx_sender "${i}")"
 done
 threshold=$(kms_t "${NB_KMS_CORE}")
 ca_file=$(mktemp)
@@ -110,10 +118,11 @@ kubectl get secret "${tls_secret}" -n "${NAMESPACE}" -o jsonpath='{.data.tls\.cr
 kubectl create configmap "${http_configmap}" -n "${NAMESPACE}" \
   --from-literal=endpoint-urls="${urls}" \
   --from-literal=kms-threshold="${threshold}" \
+  --from-literal=tx-sender-addresses="${tx_senders}" \
   --from-file=ca.crt="${ca_file}" \
   --dry-run=client -o yaml | kubectl apply -f -
 rm -f "${ca_file}"
-echo "Connector HTTP: urls=${urls} threshold=${threshold}"
+echo "Connector HTTP: urls=${urls} tx-senders=${tx_senders} threshold=${threshold}"
 
 for i in $(seq 1 "${NB_KMS_CORE}"); do
   helm upgrade --install "kms-connector-${i}" "${KMS_CONNECTOR_CHART}" \
@@ -126,6 +135,7 @@ for i in $(seq 1 "${NB_KMS_CORE}"); do
     --set-string "commonConfig.databaseUrl=postgresql://zama:zama@postgres-connector-${i}:5432/connector" \
     --set-string "kmsConnectorKmsWorker.config.kmsCoreEndpoints=http://kms-core-${i}-core-${i}:50100" \
     --set-string "kmsConnectorTxSender.wallet.secret.name=kms-connector-tx-sender-${i}" \
+    --set-string "kmsConnectorProxy.txSenderAddress=$(tx_sender "${i}")" \
     --set-string "kmsConnectorDbMigration.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/db-migration" \
     --set-string "kmsConnectorDbMigration.image.tag=$(jq -r .kms_connector_db_migration <<<"${TAGS_JSON}")" \
     --set-string "kmsConnectorGwListener.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/gw-listener" \

@@ -72,7 +72,7 @@ Run via the fhevm-cli profiles `erc1271-user-decryption`,
 E2E coverage for the kms-connector HTTP decryption endpoint (RFC 033,
 `POST /v1/public-decrypt`, `POST /v1/user-decrypt`), driven from the e2e
 container the way the relayer reaches a KMS party: over TLS through every
-party's `kms-connector[-i]-proxy` (API-key check + forwarding to the party's
+party's `kms-connector[-i]-proxy` (`FhevmSig` check + forwarding to the party's
 `kms-connector[-i]-endpoint`):
 
 - `test/connectorHttp/connectorHttpPublicDecrypt.ts` — per-party KMS
@@ -84,12 +84,16 @@ party's `kms-connector[-i]-proxy` (API-key check + forwarding to the party's
 - `test/connectorHttp/connectorHttpNegative.ts` — rejections decided
   by the kms-worker against the real ACL (`403 acl_denied`,
   `403 user_signature_rejected`, `422 unprocessable`) and the re-arm of a
-  retryable error once the ACL changes. Rejections the endpoint decides alone
-  (`400 malformed`, `503`, `504`) are covered by the crate's own tests
+  retryable error once the ACL changes, plus a request signed for another
+  party's audience (`401 sender_authentication_failed`), which checks each
+  proxy is deployed with its own tx-sender address. Rejections the endpoint
+  decides alone (`400 malformed`, `503`, `504`) are covered by the crate's own
+  tests
 
 The client lives in `test/sdk/connector/` and is deliberately thin: it posts the
-RFC 033 body with the `Authorization: Bearer $KMS_CONNECTOR_API_KEY` header the
-proxy checks, never throws on non-2xx, re-submits transient worker outcomes, and
+RFC 033 body with the `Authorization: FhevmSig ...` header (RFC 038) the proxy
+checks, signed with `KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY` for the party's address in
+`KMS_CONNECTOR_TX_SENDER_ADDRESSES`, never throws on non-2xx, re-submits transient worker outcomes, and
 leaves quorum verification to `verify.ts` (the endpoint only returns its own
 party's answer). The suites skip when `KMS_CONNECTOR_ENDPOINT_URLS` is empty
 (bundles without the endpoint and proxy images). The proxies serve the
