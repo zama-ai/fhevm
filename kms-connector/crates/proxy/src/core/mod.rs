@@ -2,4 +2,4 @@ mod config;
 mod proxy;
 
 pub use config::{Config, TlsConfig};
-pub use proxy::Proxy;
+pub use proxy::{Proxy, error_body};

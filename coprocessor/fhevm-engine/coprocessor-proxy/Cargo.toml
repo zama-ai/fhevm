@@ -24,6 +24,9 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 fhevm-sig-auth = { path = "../../../shared/fhevm-sig-auth" }
 fhevm-sig-proxy = { path = "../../../shared/fhevm-sig-proxy" }
 
+[dev-dependencies]
+fhevm-sig-proxy = { path = "../../../shared/fhevm-sig-proxy", features = ["conformance"] }
+
 [[bin]]
 name = "coprocessor-proxy"
 path = "src/bin/proxy.rs"

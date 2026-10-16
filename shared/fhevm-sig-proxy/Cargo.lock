@@ -2163,6 +2163,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "fhevm-sig-auth",
+ "fhevm-sig-proxy",
  "fhevm_host_bindings",
  "futures-util",
  "http",

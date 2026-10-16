@@ -2,8 +2,11 @@
 
 mod common;
 
-use common::{FakeRpc, KmsContext, TestProxy, sender};
-use fhevm_sig_proxy::SignerSource;
+use common::TestProxy;
+use fhevm_sig_proxy::{
+    SignerSource,
+    conformance::{FakeRpc, KmsContext, sender},
+};
 use http::{Method, StatusCode};
 use std::time::{Duration, Instant};
 

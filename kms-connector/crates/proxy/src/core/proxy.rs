@@ -71,7 +71,7 @@ fn proxy_config(config: Config) -> ProxyConfig {
 }
 
 /// Renders the errors the proxy answers itself as a kms-connector-api `ErrorResponse`.
-fn error_body(error: &ProxyError) -> ErrorBody {
+pub fn error_body(error: &ProxyError) -> ErrorBody {
     let response = match error {
         ProxyError::NotOriginForm | ProxyError::NonCanonicalPath | ProxyError::BodyTooLarge => {
             ErrorResponse::new(ErrorCode::Malformed, error.to_string(), None)

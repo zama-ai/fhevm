@@ -24,6 +24,7 @@ tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+fhevm-sig-proxy = { workspace = true, features = ["conformance"] }
 rcgen.workspace = true
 rstest.workspace = true
 rustls.workspace = true

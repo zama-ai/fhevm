@@ -3,5 +3,5 @@
 //! accepted request to the endpoints of its route, and returns their answer unchanged.
 
 pub mod config;
-mod error;
+pub mod error;
 pub mod health;

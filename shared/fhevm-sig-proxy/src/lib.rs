@@ -5,6 +5,8 @@
 //! configuration into a [`ProxyConfig`], runs the [`Proxy`] and serves its [`health::State`].
 
 mod config;
+#[cfg(feature = "conformance")]
+pub mod conformance;
 mod error;
 pub mod health;
 mod http_proxy;

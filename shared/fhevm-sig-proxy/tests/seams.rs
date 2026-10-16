@@ -3,8 +3,11 @@
 
 mod common;
 
-use common::{ENDPOINT_HEALTHCHECK_FREQUENCY, TestProxy, authorization, free_port};
-use fhevm_sig_proxy::ProxyConfig;
+use common::TestProxy;
+use fhevm_sig_proxy::{
+    ProxyConfig,
+    conformance::{ENDPOINT_HEALTHCHECK_FREQUENCY, authorization, free_port},
+};
 use http::{Method, StatusCode};
 use std::time::Duration;
 
