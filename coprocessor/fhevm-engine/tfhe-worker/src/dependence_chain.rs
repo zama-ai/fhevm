@@ -4,7 +4,12 @@ use prometheus::{
     register_histogram, register_int_counter, register_int_gauge, Histogram, IntCounter, IntGauge,
 };
 use sqlx::Postgres;
-use std::{collections::HashSet, fmt, sync::LazyLock, time::SystemTime};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+    sync::LazyLock,
+    time::SystemTime,
+};
 use time::PrimitiveDateTime;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -93,6 +98,7 @@ pub struct LockMngr {
     // refill its slot without waiting for the rest of the batch.
     locks: Vec<(DatabaseChainLock, SystemTime)>,
     last_stale_probe_at: Option<SystemTime>,
+    pending_errors: HashMap<Vec<u8>, Option<String>>,
 
     // Configurations
     lock_ttl_sec: i64,
@@ -150,6 +156,7 @@ impl LockMngr {
             pool,
             locks: Vec::new(),
             last_stale_probe_at: None,
+            pending_errors: HashMap::new(),
             lock_ttl_sec: 30,
             lock_timeslice_sec: None,
             disable_locking: false,
@@ -594,6 +601,31 @@ impl LockMngr {
         mark_as_processed: bool,
         update_at: Option<PrimitiveDateTime>,
     ) -> Result<u64, sqlx::Error> {
+        loop {
+            match self
+                .release_locks_attempt(dep_chain_ids, mark_as_processed, update_at)
+                .await
+            {
+                Err(err) if is_release_contention(&err) => {
+                    // The failed attempt drops its transaction and every row
+                    // lock before retrying. This also re-reads ownership and
+                    // dependents armed while the previous attempt was waiting.
+                    tokio::time::sleep(std::time::Duration::from_millis(rand::random_range(
+                        25..50,
+                    )))
+                    .await;
+                }
+                result => return result,
+            }
+        }
+    }
+
+    async fn release_locks_attempt(
+        &mut self,
+        dep_chain_ids: &[Vec<u8>],
+        mark_as_processed: bool,
+        update_at: Option<PrimitiveDateTime>,
+    ) -> Result<u64, sqlx::Error> {
         if self.disable_locking {
             debug!("Locking is disabled, skipping release_locks");
             return Ok(0);
@@ -603,6 +635,9 @@ impl LockMngr {
             debug!("No lock to release");
             return Ok(0);
         }
+
+        let mut tx = self.pool.begin().await?;
+        lock_chain_rows_nowait(&mut tx, dep_chain_ids).await?;
 
         // Since UPDATE always acquire a row-level lock internally,
         // this acts as atomic_exchange.
@@ -661,10 +696,18 @@ impl LockMngr {
                 ) AS parent_dependents
                 GROUP BY dependent_id
             ),
+            locked_dependents AS MATERIALIZED (
+                SELECT dc.dependence_chain_id
+                FROM dependence_chain dc JOIN decrements
+                  ON dc.dependence_chain_id = decrements.dependent_id
+                ORDER BY dc.dependence_chain_id
+                FOR NO KEY UPDATE OF dc NOWAIT
+            ),
             updated AS (
                 UPDATE dependence_chain dc
                 SET dependency_count = GREATEST(dc.dependency_count - decrements.n, 0)
-                FROM decrements
+                FROM decrements JOIN locked_dependents
+                  ON locked_dependents.dependence_chain_id = decrements.dependent_id
                 WHERE dc.dependence_chain_id = decrements.dependent_id
                 RETURNING dc.dependency_count
             ),
@@ -686,7 +729,7 @@ impl LockMngr {
                 mark_as_processed,
                 update_at,
             )
-            .fetch_one(&self.pool)
+            .fetch_one(tx.as_mut())
             .await?;
 
             // Prune what this retirement discharged, in its OWN statement.
@@ -712,7 +755,7 @@ impl LockMngr {
                      WHERE dependence_chain_id = ANY($1) AND dependents <> ARRAY[]::bytea[]",
                     &r.retired,
                 )
-                .execute(&self.pool)
+                .execute(tx.as_mut())
                 .await?
                 .rows_affected();
                 debug!(
@@ -723,6 +766,9 @@ impl LockMngr {
             (r.released, r.dependents_updated, r.notified)
         };
 
+        tx.commit().await?;
+        self.pending_errors
+            .retain(|id, _| !dep_chain_ids.contains(id));
         self.locks
             .retain(|(lock, _)| !dep_chain_ids.contains(&lock.dependence_chain_id));
         info!(
@@ -748,6 +794,23 @@ impl LockMngr {
     /// re-updated DCIDs remain owned and continue through the normal lease
     /// lifecycle.
     pub async fn release_completed_locks(&mut self) -> Result<u64, sqlx::Error> {
+        loop {
+            match self.release_completed_locks_attempt().await {
+                Err(err) if is_release_contention(&err) => {
+                    // The failed attempt drops its transaction and every row
+                    // lock before retrying. This also re-reads ownership and
+                    // dependents armed while the previous attempt was waiting.
+                    tokio::time::sleep(std::time::Duration::from_millis(rand::random_range(
+                        25..50,
+                    )))
+                    .await;
+                }
+                result => return result,
+            }
+        }
+    }
+
+    async fn release_completed_locks_attempt(&mut self) -> Result<u64, sqlx::Error> {
         if self.disable_locking {
             debug!("Locking is disabled, skipping release_completed_locks");
             return Ok(0);
@@ -792,17 +855,11 @@ impl LockMngr {
         // on X2. Both edges are legal in a DAG, and one owned chain per worker
         // (the pre-batching shape) could not produce it.
         //
-        // FOR NO KEY UPDATE, not FOR UPDATE: it is exactly the strength a
-        // non-key UPDATE takes anyway, so neither statement below upgrades a
-        // lock. No SKIP LOCKED — this must acquire all of them; waiting is
-        // fine and cannot cycle once every waiter sorts the same way.
-        //
-        // Residual: a dependent the listener arms between this snapshot and the
-        // release below is not in the set, and gets locked out of order by the
-        // decrement. That is a much narrower window than the unordered case,
-        // and pre-locking a parent also makes the listener's own gate query —
-        // which is FOR UPDATE SKIP LOCKED — skip it and not arm the gate at
-        // all.
+        // NO KEY UPDATE matches the following updates. NOWAIT makes an
+        // opposite listener/worker lock order a local retry, not a deadlock.
+        // The decrement locks its actual target rows in the same statement:
+        // the listener can arm another dependent between this snapshot and
+        // the parent lock, or insert a previously missing dependent later.
         let candidate_dependents: Vec<Vec<u8>> = sqlx::query_scalar!(
             r#"
             SELECT unnest(dependents) AS "dependent_id!"
@@ -829,7 +886,7 @@ impl LockMngr {
             FROM dependence_chain
             WHERE dependence_chain_id = ANY($1)
             ORDER BY dependence_chain_id
-            FOR NO KEY UPDATE
+            FOR NO KEY UPDATE NOWAIT
             "#,
             &lock_set,
         )
@@ -970,10 +1027,18 @@ impl LockMngr {
                     FROM unnest($1::bytea[]) AS dependent_id
                     GROUP BY dependent_id
                 ),
+                locked_dependents AS MATERIALIZED (
+                    SELECT dc.dependence_chain_id
+                    FROM dependence_chain dc JOIN decrements
+                      ON dc.dependence_chain_id = decrements.dependent_id
+                    ORDER BY dc.dependence_chain_id
+                    FOR NO KEY UPDATE OF dc NOWAIT
+                ),
                 updated AS (
                     UPDATE dependence_chain AS dc
                     SET dependency_count = GREATEST(dc.dependency_count - decrements.n, 0)
-                    FROM decrements
+                    FROM decrements JOIN locked_dependents
+                      ON locked_dependents.dependence_chain_id = decrements.dependent_id
                     WHERE dc.dependence_chain_id = decrements.dependent_id
                     RETURNING dc.dependency_count
                 )
@@ -1032,6 +1097,8 @@ impl LockMngr {
             .into_iter()
             .map(|row| row.dependence_chain_id)
             .collect();
+        self.pending_errors
+            .retain(|id, _| !released_ids.contains(id));
         self.locks.retain(|(lock, _)| {
             !released_ids
                 .iter()
@@ -1063,44 +1130,48 @@ impl LockMngr {
     /// informational only — nothing reads it to make a decision — so this is
     /// legibility, not correctness.
     pub async fn set_processing_error(
-        &self,
+        &mut self,
         err: Option<String>,
         owner: Option<&[u8]>,
     ) -> Result<u64, sqlx::Error> {
-        if self.disable_locking {
-            debug!("Locking is disabled");
-            return Ok(0);
+        // The caller can still hold computation rows in its output transaction.
+        // Queue this diagnostic until the output transaction commits, so we never wait for chain rows
+        // on another connection while an ingester waits for those computations.
+        let mut count = 0;
+        for id in self.get_current_lock_ids() {
+            if owner.is_none_or(|owner| owner == id.as_slice()) {
+                self.pending_errors.insert(id, err.clone());
+                count += 1;
+            }
         }
+        Ok(count)
+    }
 
-        let dep_chain_ids = self.get_current_lock_ids();
-        if dep_chain_ids.is_empty() {
-            warn!("No lock to set error on");
-            return Ok(0);
+    pub async fn flush_processing_errors(
+        &self,
+        tx: &mut sqlx::Transaction<'_, Postgres>,
+    ) -> Result<(), sqlx::Error> {
+        let mut ids: Vec<_> = self.pending_errors.keys().collect();
+        ids.sort_unstable();
+        for id in ids {
+            if let Some(error) = self.pending_errors.get(id) {
+                sqlx::query(
+                    "UPDATE dependence_chain SET error_message = $3
+                     WHERE worker_id = $1 AND dependence_chain_id = $2
+                       AND status = 'processing'",
+                )
+                .bind(self.worker_id)
+                .bind(id)
+                .bind(error.as_deref())
+                .execute(tx.as_mut())
+                .await?;
+            }
         }
+        Ok(())
+    }
 
-        let rows = sqlx::query!(
-            r#"
-            UPDATE dependence_chain
-            SET
-                error_message = CASE
-                        WHEN status = 'processing' THEN $3
-                        ELSE error_message
-                        END
-            WHERE worker_id = $1 AND dependence_chain_id = ANY($2)
-              -- NULL owner keeps the old fan-out for callers that genuinely
-              -- have no single owning chain.
-              AND ($4::bytea IS NULL OR dependence_chain_id = $4)
-            "#,
-            self.worker_id,
-            &dep_chain_ids,
-            err.as_deref(),
-            owner,
-        )
-        .execute(&self.pool)
-        .await?;
-
-        info!(dcid_count = dep_chain_ids.len(), error = ?err, "Set error on locks");
-        Ok(rows.rows_affected())
+    pub fn clear_processing_errors(&mut self) {
+        self.pending_errors.clear();
     }
 
     /// Extend the lock expiration time on the current dependence chain
@@ -1313,6 +1384,7 @@ impl LockMngr {
     /// Clear the current lock without releasing it in the database
     fn take_locks(&mut self) {
         self.locks.clear();
+        self.pending_errors.clear();
     }
 }
 
@@ -1536,4 +1608,31 @@ pub(crate) async fn delete_old_processed_dependence_chains(
         "Deleted old processed dependence chains");
 
     Ok(result.rows_affected())
+}
+
+/// Acquire every row that a release will update without waiting while holding
+/// another chain's row. The caller retries the whole transaction on contention.
+async fn lock_chain_rows_nowait(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    ids: &[Vec<u8>],
+) -> Result<(), sqlx::Error> {
+    if !ids.is_empty() {
+        sqlx::query(
+            "SELECT dependence_chain_id FROM dependence_chain
+                     WHERE dependence_chain_id = ANY($1)
+                     ORDER BY dependence_chain_id FOR NO KEY UPDATE NOWAIT",
+        )
+        .bind(ids)
+        .fetch_all(tx.as_mut())
+        .await?;
+    }
+    Ok(())
+}
+
+fn is_release_contention(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .and_then(|error| error.code())
+        .as_deref()
+        == Some("55P03")
 }

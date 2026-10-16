@@ -488,6 +488,8 @@ async fn ingest_fallback_block_at(
                     address: Address::from(BRIDGE),
                     data: event.encode_log_data(),
                 },
+                block_hash: Some(block_hash),
+                block_number: Some(block_number),
                 transaction_hash: Some(FixedBytes::from([*tx_seed; 32])),
                 log_index: Some(log_index as u64),
                 ..Default::default()
@@ -1493,6 +1495,8 @@ fn log_from(
             address: Address::from(address),
             data,
         },
+        block_hash: Some(FixedBytes::from(BLOCK_HASH)),
+        block_number: Some(BLOCK_NUMBER),
         transaction_hash: Some(tx),
         log_index: Some(log_index),
         ..Default::default()

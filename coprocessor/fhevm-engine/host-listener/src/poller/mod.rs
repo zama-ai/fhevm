@@ -566,64 +566,35 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         let mut rpc_errors = 0;
 
         for block in iteration_start..=target {
-            let logs = match client.logs_for_block(block).await {
-                Ok(logs) => {
+            let block_logs = match client.block_logs_for_number(block).await {
+                Ok(block_logs) => {
                     consecutive_rpc_failures = 0;
-                    logs
+                    block_logs
                 }
                 Err(err) => {
                     handle_rpc_failure(
                         &mut consecutive_rpc_failures,
                         Some(block),
                         &err,
-                        "Failed to fetch logs for block after retries",
+                        "Failed to fetch a coherent block snapshot after retries",
                     )?;
                     rpc_errors += 1;
                     break;
                 }
             };
 
-            let header = match client.header_for_block(block).await {
-                Ok(header) => {
-                    consecutive_rpc_failures = 0;
-                    header
-                }
-                Err(err) => {
-                    handle_rpc_failure(
-                        &mut consecutive_rpc_failures,
-                        Some(block),
-                        &err,
-                        "Failed to fetch header for block after retries",
-                    )?;
-                    rpc_errors += 1;
-                    break;
-                }
-            };
-
-            let summary: BlockSummary = header.into();
-            if let Err(err) = validate_log_provenance(block, &summary, &logs) {
-                handle_rpc_failure(
-                    &mut consecutive_rpc_failures,
-                    Some(block),
-                    &err,
-                    "RPC log/header identity mismatch; leaving cursor unchanged",
-                )?;
-                rpc_errors += 1;
-                break;
-            }
+            validate_log_provenance(
+                block,
+                &block_logs.summary,
+                &block_logs.logs,
+            )?;
             validate_committed_header(
                 &pool,
                 chain_id,
-                &summary,
+                &block_logs.summary,
                 config.gcs_mode,
             )
             .await?;
-            let block_logs = BlockLogs {
-                logs,
-                summary,
-                catchup: true,
-                finalized: true,
-            };
 
             let ingest_options = IngestOptions {
                 dependence_by_connexity: config.dependence_by_connexity,

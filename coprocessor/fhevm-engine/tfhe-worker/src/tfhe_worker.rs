@@ -2937,7 +2937,9 @@ async fn tfhe_worker_cycle(
         #[cfg(feature = "test-failpoints")]
         crate::test_failpoints::hit(&pool, "before-commit", batch_dependence_chain_ids.clone())
             .await?;
+        dcid_mngr.flush_processing_errors(&mut trx).await?;
         trx.commit().await?;
+        dcid_mngr.clear_processing_errors();
         WORK_BATCH_TRANSACTIONS.observe(batch_transactions as f64);
         #[cfg(feature = "test-failpoints")]
         crate::test_failpoints::hit(&pool, "after-commit", batch_dependence_chain_ids).await?;

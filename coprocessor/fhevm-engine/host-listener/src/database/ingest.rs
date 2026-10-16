@@ -1,5 +1,7 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::future::Future;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
@@ -45,6 +47,25 @@ pub struct BlockLogs<T> {
     pub summary: BlockSummary,
     pub catchup: bool,
     pub finalized: bool,
+}
+
+/// Refuse to commit logs under a header from another fork, or logs whose
+/// identity/order cannot be established. The caller must refetch the batch.
+pub fn validate_block_logs(block: &BlockLogs<Log>) -> Result<(), sqlx::Error> {
+    for log in &block.logs {
+        if log.block_hash != Some(block.summary.hash)
+            || log.block_number != Some(block.summary.number)
+            || log.removed
+            || log.transaction_hash.is_none()
+            || log.log_index.is_none()
+        {
+            return Err(sqlx::Error::Protocol(format!(
+                "Invalid log identity in block {} ({:?}); refetch the block",
+                block.summary.number, block.summary.hash
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -327,10 +348,57 @@ pub async fn ingest_block_logs(
         info!("cutover completed — host-listener skipping block ingest (retired stack)");
         return Ok(());
     };
+    validate_block_logs(block_logs)?;
+
+    // Collect every handle whose permission or stored chain may need repair,
+    // including bridge events and deliveries containing only ACL logs.
+    let mut touched_handles = HashSet::new();
+    for log in &block_logs.logs {
+        let address = Some(log.inner.address);
+        if acl_contract_address.is_none() || &address == acl_contract_address {
+            if let Ok(event) =
+                AclContract::AclContractEvents::decode_log(&log.inner)
+            {
+                touched_handles.extend(
+                    acl_result_handles(&event).into_iter().map(|h| h.to_vec()),
+                );
+            }
+        }
+        if tfhe_contract_address.is_none() || &address == tfhe_contract_address
+        {
+            if let Ok(event) =
+                TfheContract::TfheContractEvents::decode_log(&log.inner)
+            {
+                touched_handles.extend(
+                    tfhe_result_handles(&event).into_iter().map(|h| h.to_vec()),
+                );
+            }
+        }
+        if &address == confidential_bridge_address {
+            use BridgeContract::BridgeContractEvents as E;
+            if let Ok(event) = E::decode_log(&log.inner) {
+                match event.data {
+                    E::BridgeHandle(e) => {
+                        touched_handles.insert(e.srcHandle.to_vec());
+                    }
+                    E::HandleBridged(e) => {
+                        touched_handles.insert(e.dstHandle.to_vec());
+                    }
+                    E::FallbackGrantedPlaintext(e) => {
+                        touched_handles.insert(e.dstHandle.to_vec());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    let touched_handles = touched_handles.into_iter().collect::<Vec<_>>();
 
     // The identity/parent check and all block writes share one per-chain
     // admission lock. A second replica must observe this transaction's rows
-    // before it can admit a conflicting finalized block.
+    // before it can admit a conflicting finalized block. It also serializes
+    // computation/ACL reconciliation for overlapping deliveries, so the
+    // per-handle lock stripes used in v0.14 are unnecessary here.
     use fhevm_engine_common::chain_recovery::{
         host_role_tx, lock_history_tx, record_halt, HistoryMismatch,
         ListenerSource,
@@ -790,6 +858,13 @@ pub async fn ingest_block_logs(
         acl_event_log.clear();
     }
 
+    // ACL evidence may have arrived in an earlier delivery or another block.
+    // Resolve it before grouping, which also uses the allowed output set.
+    is_allowed.extend(
+        db.allowed_computation_handles(&mut tx, &touched_handles)
+            .await?,
+    );
+
     for tfhe_log in tfhe_event_log.iter_mut() {
         tfhe_log.allowed_outputs = tfhe_result_handles(&tfhe_log.event)
             .into_iter()
@@ -803,9 +878,13 @@ pub async fn ingest_block_logs(
     // database-local inference.
     populate_operand_boundary_masks(&mut tfhe_event_log)?;
 
+    // Publish only committed producer identities. Rolled-back grouping must
+    // not assign later consumers to chains that were never stored.
+    let private_cache =
+        Arc::new(RwLock::new(db.dependence_chain.read().await.clone()));
     let chains = dependence_chains(
         &mut tfhe_event_log,
-        &db.dependence_chain,
+        &private_cache,
         &db.consumed_boundaries,
         &db.sealed_chains,
         options.dependence_by_connexity,
@@ -813,8 +892,17 @@ pub async fn ingest_block_logs(
     )
     .await;
 
+    let inferred_chains = tfhe_event_log
+        .iter()
+        .flat_map(|log| {
+            tfhe_result_handles(&log.event)
+                .into_iter()
+                .map(|handle| (handle.to_vec(), log.dependence_chain))
+        })
+        .collect::<HashMap<_, _>>();
     let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
     let mut dependent_ops_by_chain: HashMap<ChainHash, u64> = HashMap::new();
+    let mut counted_outputs = HashSet::new();
     for tfhe_log in tfhe_event_log {
         let inserted = match db.insert_tfhe_event(&mut tx, &tfhe_log).await {
             Err(sqlx::Error::Protocol(reason))
@@ -842,6 +930,11 @@ pub async fn ingest_block_logs(
         // Count all newly inserted ops per chain to avoid underestimating
         // pressure from producer paths that are required by downstream work.
         if slow_lane_enabled && inserted {
+            counted_outputs.extend(
+                tfhe_result_handles(&tfhe_log.event)
+                    .into_iter()
+                    .map(|h| h.to_vec()),
+            );
             dependent_ops_by_chain
                 .entry(tfhe_log.dependence_chain)
                 .and_modify(|count| *count = count.saturating_add(1))
@@ -886,6 +979,37 @@ pub async fn ingest_block_logs(
         }
     }
 
+    let upgraded = db
+        .upgrade_allowed_computations(
+            &mut tx,
+            &touched_handles,
+            &block_logs.summary,
+            &is_allowed.iter().cloned().collect::<Vec<_>>(),
+        )
+        .await?;
+    let upgraded_chains = upgraded
+        .iter()
+        .filter_map(|(_, chain)| chain.clone())
+        .collect::<Vec<_>>();
+    at_least_one_insertion |= !upgraded.is_empty();
+    if slow_lane_enabled {
+        for (handle, stored_chain) in &upgraded {
+            // Recording a missing producer inventory entry can already have
+            // counted this operation. Its eligibility repair is the same work.
+            if counted_outputs.contains(handle) {
+                continue;
+            }
+            let chain = inferred_chains.get(handle).copied().or_else(|| {
+                stored_chain
+                    .as_ref()
+                    .and_then(|id| ChainHash::try_from(id.as_slice()).ok())
+            });
+            if let Some(chain) = chain {
+                *dependent_ops_by_chain.entry(chain).or_default() += 1;
+            }
+        }
+    }
+
     let mut slow_dep_chain_ids: HashSet<ChainHash> = HashSet::new();
     if slow_lane_enabled {
         let max_per_chain = u64::from(options.dependent_ops_max_per_chain);
@@ -895,6 +1019,13 @@ pub async fn ingest_block_logs(
             max_per_chain,
         );
 
+        // ACL-only replay may have no newly inferred chain at all.
+        slow_dep_chain_ids.extend(
+            dependent_ops_by_chain
+                .iter()
+                .filter(|(_, count)| **count > max_per_chain)
+                .map(|(chain, _)| *chain),
+        );
         let parent_dep_chain_ids = chains
             .iter()
             .flat_map(|chain| {
@@ -912,6 +1043,21 @@ pub async fn ingest_block_logs(
         slow_dep_chain_ids.extend(existing_slow_parents);
         propagate_slow_lane_to_dependents(&chains, &mut slow_dep_chain_ids);
 
+        // Preserve classification on the stored identity when replay grouped
+        // an upgraded computation differently from its first ingestion.
+        for (handle, stored_chain) in &upgraded {
+            if inferred_chains
+                .get(handle)
+                .is_some_and(|chain| slow_dep_chain_ids.contains(chain))
+            {
+                if let Some(chain) = stored_chain
+                    .as_ref()
+                    .and_then(|id| ChainHash::try_from(id.as_slice()).ok())
+                {
+                    slow_dep_chain_ids.insert(chain);
+                }
+            }
+        }
         let slow_marked_chains = chains
             .iter()
             .filter(|chain| slow_dep_chain_ids.contains(&chain.hash))
@@ -945,17 +1091,82 @@ pub async fn ingest_block_logs(
         allow_event_count,
     )
     .await?;
+    // A replay's inferred grouping can differ from the persisted computation's
+    // chain. Order the union before taking any chain row locks: two separately
+    // sorted passes can still deadlock (inferred B -> stored A vs A -> B).
+    // Write missing rows in this order too; SELECT FOR UPDATE alone misses them.
+    let mut chain_updates = BTreeMap::new();
     if at_least_one_insertion {
-        db.update_dependence_chain(
-            &mut tx,
-            chains,
-            block_timestamp,
-            &block_logs.summary,
-            &slow_dep_chain_ids,
-        )
-        .await?;
+        for chain in chains {
+            chain_updates.insert(chain.hash.to_vec(), (Some(chain), None));
+        }
     }
-    tx.commit().await
+    for (id, schedule_order) in db
+        .pending_computation_chains(&mut tx, &touched_handles)
+        .await?
+    {
+        chain_updates.entry(id).or_default().1 = Some(schedule_order);
+    }
+    let upgraded_chains = upgraded_chains.into_iter().collect::<HashSet<_>>();
+    let slow_chains = slow_dep_chain_ids
+        .iter()
+        .map(|id| id.to_vec())
+        .collect::<HashSet<_>>();
+    let mut repaired = 0;
+    for (id, (inferred, pending)) in chain_updates {
+        if let Some(chain) = inferred {
+            db.update_dependence_chain(
+                &mut tx,
+                &chain,
+                block_timestamp,
+                &block_logs.summary,
+                &slow_dep_chain_ids,
+            )
+            .await?;
+            // This upsert already wakes/recreates the chain and preserves its
+            // slow priority, so it also covers any pending repair for this ID.
+        } else if let Some(schedule_order) = pending {
+            repaired += usize::from(
+                db.repair_pending_computation_chain(
+                    &mut tx,
+                    &id,
+                    schedule_order,
+                    upgraded_chains.contains(&id),
+                    slow_chains.contains(&id),
+                )
+                .await?,
+            );
+        }
+    }
+    if repaired > 0 {
+        warn!(
+            count = repaired,
+            "Pending computation dependence chains re-armed"
+        );
+    }
+    let cache_updates = if options.dependence_cross_block {
+        db.computation_chain_cache_entries(&mut tx, &touched_handles)
+            .await?
+    } else {
+        vec![]
+    };
+    tx.commit().await?;
+    if options.dependence_cross_block {
+        // Merge only this batch's entries: replacing the entire snapshot could
+        // erase another listener clone's successful publication.
+        let mut shared_cache = db.dependence_chain.write().await;
+        for (handle, chain) in cache_updates {
+            if let (Ok(handle), Ok(chain)) = (
+                alloy::primitives::FixedBytes::<32>::try_from(
+                    handle.as_slice(),
+                ),
+                ChainHash::try_from(chain.as_slice()),
+            ) {
+                shared_cache.put(handle, chain);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Check both adjacent committed identities: replicas can finish neighboring
@@ -1800,14 +2011,18 @@ pub async fn synthesize_finalized_fallback_grants(
         parent_hash: BlockHash::ZERO,
         timestamp: 0,
     };
-    db.update_dependence_chain(
-        tx,
-        chains,
-        block_timestamp,
-        &summary,
-        &HashSet::new(),
-    )
-    .await?;
+    let mut chains = chains;
+    chains.sort_by_key(|chain| chain.hash);
+    for chain in chains {
+        db.update_dependence_chain(
+            tx,
+            &chain,
+            block_timestamp,
+            &summary,
+            &HashSet::new(),
+        )
+        .await?;
+    }
     Ok(())
 }
 

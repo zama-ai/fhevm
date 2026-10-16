@@ -73,6 +73,7 @@ async fn websocket_rejected_block_exits_without_advancing_past_it(
     args.start_at_block = Some(0);
     args.end_at_block = Some(good.block_number.unwrap() as i64);
     args.catchup_margin = 0;
+    args.catchup_finalization_in_blocks = 0;
     args.health_port = 0;
     args.disable_synthetic_ops = true;
     let result =

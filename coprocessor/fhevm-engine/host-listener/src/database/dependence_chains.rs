@@ -799,15 +799,18 @@ mod tests {
                 .await
                 .expect("insert event");
         }
-        db.update_dependence_chain(
-            &mut tx,
-            chains,
-            block_timestamp,
-            &summary,
-            &std::collections::HashSet::new(),
-        )
-        .await
-        .expect("update chains");
+        for chain in chains {
+            db.update_dependence_chain(
+                &mut tx,
+                &chain,
+                block_timestamp,
+                &summary,
+                &std::collections::HashSet::new(),
+            )
+            .await
+            .expect("update chains");
+        }
+
         tx.commit().await.expect("commit");
     }
 
