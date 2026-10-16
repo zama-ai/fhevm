@@ -198,12 +198,20 @@ fn run_rand_bounded(fhe_type: u8, upper_bound: u64) {
 mod edges {
     use super::*;
     #[test]
-    fn binary_shl_u8_scalar_reduces_shift_modulo_width() {
-        run_binary(FheBinaryOpCode::Shl, 2, true, 1, 9, 2, 2);
+    fn binary_shl_u8_scalar_at_the_width_is_zero() {
+        run_binary(FheBinaryOpCode::Shl, 2, true, 1, 8, 2, 0);
     }
     #[test]
-    fn binary_shr_u8_scalar_reduces_shift_modulo_width() {
-        run_binary(FheBinaryOpCode::Shr, 2, true, 0x80, 9, 2, 0x40);
+    fn binary_shr_u8_scalar_at_the_width_is_zero() {
+        run_binary(FheBinaryOpCode::Shr, 2, true, 0x80, 8, 2, 0);
+    }
+    #[test]
+    fn binary_shl_u16_encrypted_above_the_width_is_zero() {
+        run_binary(FheBinaryOpCode::Shl, 3, false, 1, 300, 3, 0);
+    }
+    #[test]
+    fn binary_shr_u16_encrypted_above_the_width_is_zero() {
+        run_binary(FheBinaryOpCode::Shr, 3, false, 0x8000, 300, 3, 0);
     }
     #[test]
     fn binary_rotl_u8_scalar_wraps_high_bit() {
