@@ -96,6 +96,9 @@ Now, we need a way to store the highest bid and the potential winner. To store t
 euint64 private highestBid;
 eaddress private winningAddress;
 
+/// @notice Winner address, set after decryption and verification
+address public winnerAddress;
+
 /// @notice Mapping from bidder to their bid value
 mapping(address account => euint64 bidAmount) private bids;
 ```
