@@ -83,9 +83,18 @@ pub async fn host_chain_id(
     let (host_config, _) =
         zama_solana_acl::find_host_config_address(program_id.as_array());
     let host_config = Pubkey::new_from_array(host_config);
+    // Not `get_account`: solana-rpc-client 3.1.14 formats its transport error, URL and API key
+    // included, into a string (nonblocking/rpc_client.rs:3659-3662) that `without_url` cannot
+    // reach.
     let account = rpc
-        .get_account(&host_config)
+        .get_multiple_accounts(&[host_config])
         .await
+        .map_err(|error| anyhow::Error::from(crate::without_url(error)))
+        .and_then(|mut accounts| {
+            accounts.pop().flatten().ok_or_else(|| {
+                anyhow::anyhow!("AccountNotFound: pubkey={host_config}")
+            })
+        })
         .with_context(|| format!("fetch HostConfig {host_config}"))?;
     parse_host_config(&account.data)
 }
@@ -625,6 +634,44 @@ mod tests {
         assert!(
             error.to_string().contains("a step it does not have"),
             "{error}"
+        );
+    }
+
+    /// A binary that cannot read `HostConfig` exits with this error, so it must not name the RPC
+    /// URL and its API key.
+    #[tokio::test]
+    async fn a_failed_host_config_read_names_no_rpc_key() {
+        let rpc = RpcClient::new(
+            "http://127.0.0.1:1/v2/PATH-KEY?api-key=QUERY-KEY".to_owned(),
+        );
+        let err = host_chain_id(&rpc, &Pubkey::new_unique())
+            .await
+            .unwrap_err();
+        let text = format!("{err:?}");
+        assert!(text.contains("error sending request"), "{text}");
+        assert!(!text.contains("PATH-KEY"), "{text}");
+        assert!(!text.contains("QUERY-KEY"), "{text}");
+    }
+
+    /// A missing `HostConfig` reads as `get_account` reported it.
+    #[tokio::test]
+    async fn a_missing_host_config_is_account_not_found() {
+        let rpc = RpcClient::new_mock_with_mocks(
+            "succeeds".to_owned(),
+            [(
+                solana_client::rpc_request::RpcRequest::GetMultipleAccounts,
+                serde_json::json!({ "context": { "slot": 1 }, "value": [null] }),
+            )]
+            .into(),
+        );
+        let program_id = Pubkey::new_unique();
+        let (host_config, _) =
+            zama_solana_acl::find_host_config_address(program_id.as_array());
+        let host_config = Pubkey::new_from_array(host_config);
+        let err = host_chain_id(&rpc, &program_id).await.unwrap_err();
+        assert_eq!(
+            format!("{err:#}"),
+            format!("fetch HostConfig {host_config}: AccountNotFound: pubkey={host_config}")
         );
     }
 }

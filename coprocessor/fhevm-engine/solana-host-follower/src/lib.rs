@@ -3,6 +3,8 @@
 
 use std::time::Duration;
 
+use solana_client::client_error::{ClientError, ClientErrorKind};
+
 mod args;
 mod follower;
 pub mod host;
@@ -26,6 +28,22 @@ pub fn url_origin(url: &str) -> String {
         |_| "<unparsable URL>".to_owned(),
         |url| url.origin().ascii_serialization(),
     )
+}
+
+/// `error` without its request URL. A hosted Solana RPC URL usually carries its API key, and
+/// reqwest errors print the URL.
+pub fn without_url(error: ClientError) -> ClientError {
+    let ClientError { request, kind } = error;
+    let kind = match *kind {
+        ClientErrorKind::Reqwest(error) => {
+            ClientErrorKind::Reqwest(error.without_url())
+        }
+        kind => kind,
+    };
+    ClientError {
+        request,
+        kind: Box::new(kind),
+    }
 }
 
 #[cfg(test)]

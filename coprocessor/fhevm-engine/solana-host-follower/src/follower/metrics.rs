@@ -18,6 +18,7 @@ use tracing::warn;
 
 use super::StartPosition;
 use crate::source::SealedBlock;
+use crate::without_url;
 
 const FINALIZED_SLOT_POLL_INTERVAL: Duration = Duration::from_secs(10);
 
@@ -135,7 +136,7 @@ pub async fn track_finalized_slot(
         {
             Ok(slot) => gauge.set(slot as i64),
             Err(error) => {
-                warn!(error = %error, "finalized-slot poll failed")
+                warn!(error = %without_url(error), "finalized-slot poll failed")
             }
         }
     }
@@ -168,5 +169,30 @@ mod tests {
             },
         );
         assert_eq!(gauge.get(), 0);
+    }
+
+    /// A failed poll is logged without the RPC URL and its API key.
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn a_failed_poll_logs_no_rpc_key() {
+        let rpc = RpcClient::new(
+            "http://127.0.0.1:1/v2/PATH-KEY?api-key=QUERY-KEY".to_owned(),
+        );
+        let logged = async {
+            while !logs_contain("finalized-slot poll failed") {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        };
+        tokio::select! {
+            () = track_finalized_slot(rpc, 9_000_002, CancellationToken::new()) => {
+                unreachable!("the poll runs until cancelled")
+            }
+            logged = tokio::time::timeout(Duration::from_secs(10), logged) => {
+                logged.expect("no failed poll logged")
+            }
+        }
+        assert!(logs_contain("error sending request"));
+        assert!(!logs_contain("PATH-KEY"));
+        assert!(!logs_contain("QUERY-KEY"));
     }
 }

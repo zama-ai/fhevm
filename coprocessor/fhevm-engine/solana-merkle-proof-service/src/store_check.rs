@@ -19,6 +19,7 @@ use prometheus::{
     IntGaugeVec,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_host_follower::without_url;
 use solana_sdk::{account::Account, pubkey::Pubkey};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -164,7 +165,10 @@ impl StoreAccounts for RpcClient {
     ) -> anyhow::Result<Vec<Option<Account>>> {
         let keys: Vec<Pubkey> =
             stores.iter().copied().map(Pubkey::new_from_array).collect();
-        Ok(self.get_multiple_accounts(&keys).await?)
+        Ok(self
+            .get_multiple_accounts(&keys)
+            .await
+            .map_err(without_url)?)
     }
 }
 
@@ -359,4 +363,21 @@ async fn check_store(
     );
     quarantine.add(pool, store).await?;
     Ok(StoreCheck::Mismatch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The store check logs this error, which must not name the RPC URL and its API key.
+    #[tokio::test]
+    async fn a_failed_account_read_names_no_rpc_key() {
+        let rpc = RpcClient::new(
+            "http://127.0.0.1:1/v2/PATH-KEY?api-key=QUERY-KEY".to_owned(),
+        );
+        let text = format!("{:#}", rpc.accounts(&[[1; 32]]).await.unwrap_err());
+        assert!(text.contains("error sending request"), "{text}");
+        assert!(!text.contains("PATH-KEY"), "{text}");
+        assert!(!text.contains("QUERY-KEY"), "{text}");
+    }
 }
