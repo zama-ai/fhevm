@@ -61,6 +61,10 @@ hex = { workspace = true }
 reqwest = { workspace = true, features = ["http2"] }
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
+# Names the JSON-RPC request packets the KMS tx-sender test records.
+alloy = { workspace = true, features = ["json-rpc"] }
+tower = "0.5"
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true

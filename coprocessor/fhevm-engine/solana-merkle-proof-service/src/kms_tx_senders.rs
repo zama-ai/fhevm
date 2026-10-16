@@ -2,7 +2,7 @@
 //! KMS context of the canonical `ProtocolConfig`. The KMS connector signs its requests with that
 //! tx-sender key.
 //!
-//! A background task reads the set at the finalized block and replaces it; requests only read the
+//! A background task reads the set at one finalized block and replaces it; requests only read the
 //! last set, so a forged signature costs no RPC call. A failed refresh keeps the last set. Until
 //! the first read succeeds the route refuses every request.
 
@@ -13,15 +13,17 @@ use std::{
 };
 
 use alloy::{
-    eips::BlockId,
+    eips::{BlockId, BlockNumberOrTag},
     primitives::{Address, U256},
     providers::Provider,
+    transports::http::reqwest,
 };
 use anyhow::{anyhow, Context};
 use fhevm_host_bindings::protocol_config::ProtocolConfig::ProtocolConfigInstance;
 use kms_context::{read_kms_context, KMS_CONTEXT_COUNTER_BASE};
 use prometheus::{register_int_gauge, IntGauge};
 use request_authorization::KeyRegistry;
+use solana_host_follower::url_origin;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -114,7 +116,7 @@ pub fn follow<P: Provider + 'static>(
                     REFRESH_INTERVAL
                 }
                 Err(err) => {
-                    warn!(error = %format!("{err:#}"), "KMS tx-sender read failed; keeping the last set");
+                    warn!(error = %without_rpc_url_secrets(&err), "KMS tx-sender read failed; keeping the last set");
                     RETRY_INTERVAL
                 }
             };
@@ -125,6 +127,19 @@ pub fn follow<P: Provider + 'static>(
         }
     });
     KmsTxSenders(senders)
+}
+
+/// `err` as text, with each request URL cut to its [`url_origin`]: `reqwest` prints the full URL.
+fn without_rpc_url_secrets(err: &anyhow::Error) -> String {
+    let mut text = format!("{err:#}");
+    for url in err
+        .chain()
+        .filter_map(|cause| cause.downcast_ref::<reqwest::Error>())
+        .filter_map(reqwest::Error::url)
+    {
+        text = text.replace(url.as_str(), &url_origin(url.as_str()));
+    }
+    text
 }
 
 struct KmsTxSenderReader<P> {
@@ -148,10 +163,23 @@ impl<P: Provider> KmsTxSenderReader<P> {
             .get_chain_id()
             .await
             .context("eth_chainId")?;
+        // Every ProtocolConfig read of a refresh uses this one block. Read at different blocks, the
+        // counter could predate a new context while a liveness flag already shows its predecessor
+        // destroyed.
+        let finalized = self
+            .protocol_config
+            .provider()
+            .get_block_by_number(BlockNumberOrTag::Finalized)
+            .await
+            .context("finalized block")?
+            .ok_or_else(|| anyhow!("no finalized block"))?
+            .header
+            .number;
+        let at = BlockId::number(finalized);
         let latest = self
             .protocol_config
             .getCurrentKmsContextIdCounter()
-            .block(BlockId::finalized())
+            .block(at)
             .call()
             .await
             .context("getCurrentKmsContextIdCounter")?;
@@ -161,14 +189,14 @@ impl<P: Provider> KmsTxSenderReader<P> {
             let live = self
                 .protocol_config
                 .isLiveKmsContext(context_id)
-                .block(BlockId::finalized())
+                .block(at)
                 .call()
                 .await
                 .with_context(|| format!("isLiveKmsContext({context_id})"))?;
             if live {
                 if !self.nodes_by_context.contains_key(&context_id) {
                     let context =
-                        read_kms_context(&self.protocol_config, context_id)
+                        read_kms_context(&self.protocol_config, context_id, at)
                             .await?;
                     let nodes = context
                         .kmsNodeParams
@@ -197,13 +225,19 @@ mod tests {
     use alloy::{
         primitives::{Bytes, Log as PrimitiveLog, B256},
         providers::{mock::Asserter, ProviderBuilder},
-        rpc::types::Log,
+        rpc::{
+            client::RpcClient,
+            json_rpc::{RequestPacket, ResponsePacket, SerializedRequest},
+            types::{Block, Log},
+        },
         sol_types::{SolEvent, SolValue},
+        transports::{mock::MockTransport, TransportError, TransportFut},
     };
     use fhevm_host_bindings::protocol_config::ProtocolConfig::{
         self, KmsNodeParams, KmsThresholds, NewKmsContext,
     };
     use kms_context::context_info_hash;
+    use std::sync::Mutex;
 
     const CONTRACT: Address = Address::repeat_byte(0xC0);
 
@@ -244,14 +278,59 @@ mod tests {
         }]);
     }
 
-    fn reader(asserter: &Asserter) -> KmsTxSenderReader<impl Provider> {
-        let provider =
-            ProviderBuilder::new().connect_mocked_client(asserter.clone());
-        KmsTxSenderReader::new(ProtocolConfig::new(CONTRACT, provider))
+    /// Answers from an [`Asserter`] and keeps every request it was sent.
+    #[derive(Clone)]
+    struct Recording {
+        answers: MockTransport,
+        requests: Arc<Mutex<Vec<SerializedRequest>>>,
     }
 
-    fn chain_id(asserter: &Asserter) {
+    impl tower::Service<RequestPacket> for Recording {
+        type Response = ResponsePacket;
+        type Error = TransportError;
+        type Future = TransportFut<'static>;
+
+        fn poll_ready(
+            &mut self,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
+            self.answers.poll_ready(cx)
+        }
+
+        fn call(&mut self, request: RequestPacket) -> Self::Future {
+            self.requests
+                .lock()
+                .unwrap()
+                .extend(request.requests().iter().cloned());
+            self.answers.call(request)
+        }
+    }
+
+    fn reader(
+        asserter: &Asserter,
+    ) -> (
+        KmsTxSenderReader<impl Provider>,
+        Arc<Mutex<Vec<SerializedRequest>>>,
+    ) {
+        let requests = Arc::default();
+        let transport = Recording {
+            answers: MockTransport::new(asserter.clone()),
+            requests: Arc::clone(&requests),
+        };
+        let provider = ProviderBuilder::new()
+            .connect_client(RpcClient::new(transport, true));
+        (
+            KmsTxSenderReader::new(ProtocolConfig::new(CONTRACT, provider)),
+            requests,
+        )
+    }
+
+    /// Answers `eth_chainId` and the finalized block, `finalized`.
+    fn start(asserter: &Asserter, finalized: u64) {
         asserter.push_success(&"0x3039");
+        let mut block = Block::<()>::default();
+        block.header.inner.number = finalized;
+        asserter.push_success(&block);
     }
 
     fn anchor(asserter: &Asserter, block: u64, hash: B256) {
@@ -274,9 +353,9 @@ mod tests {
             Address::repeat_byte(0xC3),
         );
         let asserter = Asserter::new();
-        let mut reader = reader(&asserter);
+        let (mut reader, _) = reader(&asserter);
 
-        chain_id(&asserter);
+        start(&asserter, 100);
         abi(&asserter, context(3));
         abi(&asserter, false);
         abi(&asserter, true);
@@ -293,7 +372,7 @@ mod tests {
         );
         assert_eq!(set.senders, HashSet::from([a, b, c]));
 
-        chain_id(&asserter);
+        start(&asserter, 101);
         abi(&asserter, context(3));
         abi(&asserter, false);
         abi(&asserter, false);
@@ -301,5 +380,95 @@ mod tests {
         let set = reader.read().await.expect("second read");
         assert_eq!(set.senders, HashSet::from([c]));
         assert!(asserter.read_q().is_empty(), "no further RPC call");
+    }
+
+    /// The counter, the liveness flag and the new context's anchor are all read at the finalized
+    /// block the refresh resolved first.
+    #[tokio::test]
+    async fn a_refresh_reads_every_contract_value_at_one_block() {
+        let asserter = Asserter::new();
+        let (mut reader, requests) = reader(&asserter);
+        start(&asserter, 0x7b);
+        abi(&asserter, context(1));
+        abi(&asserter, true);
+        created(&asserter, context(1), 10, &[Address::repeat_byte(0xA1)]);
+        reader.read().await.expect("read");
+
+        let blocks: Vec<String> = requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|request| request.method() == "eth_call")
+            .map(|request| {
+                let params: serde_json::Value =
+                    serde_json::from_str(request.params().unwrap().get())
+                        .unwrap();
+                params[1].to_string()
+            })
+            .collect();
+        assert_eq!(blocks, ["\"0x7b\""; 3]);
+    }
+
+    #[derive(Clone, Default)]
+    struct Logs(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Logs {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Logs {
+        type Writer = Self;
+        fn make_writer(&'a self) -> Self {
+            self.clone()
+        }
+    }
+
+    impl Logs {
+        fn text(&self) -> String {
+            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+        }
+    }
+
+    /// The read failure is logged from the follower's own task, so the test runs on one thread
+    /// and captures that thread's events: `tracing_test` keeps only the test's own span.
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_failed_read_logs_the_rpc_origin_without_its_keys() {
+        let logs = Logs::default();
+        let _subscriber = tracing::subscriber::set_default(
+            tracing_subscriber::fmt()
+                .with_writer(logs.clone())
+                .with_ansi(false)
+                .finish(),
+        );
+        // Nothing listens there, so the first call fails in the HTTP transport.
+        let rpc = "http://USER-KEY:PASSWORD-KEY@127.0.0.1:1/v2/PATH-KEY?apikey=QUERY-KEY";
+        let provider =
+            ProviderBuilder::new().connect_http(rpc.parse().unwrap());
+        let cancel = CancellationToken::new();
+        let _senders =
+            follow(ProtocolConfig::new(CONTRACT, provider), cancel.clone());
+
+        let deadline =
+            tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !logs.text().contains("KMS tx-sender read failed") {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "no failed read logged"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        cancel.cancel();
+
+        let text = logs.text();
+        assert!(text.contains("http://127.0.0.1:1"), "{text}");
+        for secret in ["USER-KEY", "PASSWORD-KEY", "PATH-KEY", "QUERY-KEY"] {
+            assert!(!text.contains(secret), "{secret} in {text}");
+        }
     }
 }
