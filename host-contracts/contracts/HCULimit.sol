@@ -3,17 +3,16 @@ pragma solidity ^0.8.24;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
-import {fhevmExecutorAdd, aclAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
+import {fhevmExecutorAdd, aclAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "./ACL.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
-import {IPauserSet} from "./interfaces/IPauserSet.sol";
 
 import {FheType} from "./shared/FheType.sol";
 
 /**
  * @title HCULimit
  * @notice This contract manages the total allowed complexity for FHE operations at the
- * transaction level, including the maximum number of homomorphic complexity units (HCU) per transaction.
+ * transaction level, the HCU depth carried across transactions, and the HCU quotas per block.
  * @dev The contract is designed to be used with the FHEVMExecutor contract.
  */
 /// @dev This contract was migrated from Ownable2StepUpgradeable to ACLOwnable.
@@ -102,9 +101,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /// @notice FHEVMExecutor address.
     address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
-
-    /// @notice PauserSet contract, the same set that can pause the ACL.
-    IPauserSet private constant PAUSER_SET = IPauserSet(pauserSetAdd);
 
     /// @notice Quota of every contract that was never assigned.
     uint16 private constant DEFAULT_QUOTA = 0;
@@ -1920,7 +1916,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @dev Returns whether the sender is the ACL owner; otherwise reverts unless it is a pauser.
     function _isOwnerElseRequirePauser() private view returns (bool) {
         if (msg.sender == ACL(aclAdd).owner()) return true;
-        if (!PAUSER_SET.isPauser(msg.sender)) revert NotPauser(msg.sender);
+        if (!ACL(aclAdd).isPauser(msg.sender)) revert NotPauser(msg.sender);
         return false;
     }
 

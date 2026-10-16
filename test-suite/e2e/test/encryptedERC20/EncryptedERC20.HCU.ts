@@ -336,18 +336,12 @@ describe('EncryptedERC20:HCU', function () {
           this.skip();
         }
         const deployer = requireDeployer(this.deployer);
-        const [[defaultCap], [uncappedCap], maxPerTx, maxDepthPerTx] = await Promise.all([
+        [[savedDefaultCap], [savedUncappedCap], savedMaxHCUPerTx, savedMaxHCUDepthPerTx] = await Promise.all([
           hcuLimit.getQuota(DEFAULT_QUOTA),
           hcuLimit.getQuota(UNCAPPED_QUOTA),
           hcuLimit.getMaxHCUPerTx(),
           hcuLimit.getMaxHCUDepthPerTx(),
         ]);
-        [savedDefaultCap, savedUncappedCap, savedMaxHCUPerTx, savedMaxHCUDepthPerTx] = [
-          defaultCap,
-          uncappedCap,
-          maxPerTx,
-          maxDepthPerTx,
-        ];
         // Narrowest-first when lowering: maxHCUPerTx >= maxHCUDepthPerTx
         const ownerHcuLimit = hcuLimit.connect(deployer);
         await (await ownerHcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX)).wait();
@@ -470,7 +464,8 @@ describe('EncryptedERC20:HCU', function () {
           gasLimit: BATCHED_TRANSFER_GAS_LIMIT,
         });
         await ethers.provider.send('evm_mine');
-        await waitForTransactionReceipt(tx1.hash);
+        const receiptUncapped = await waitForTransactionReceipt(tx1.hash);
+        expect(receiptUncapped.status).to.eq(1, 'Transfer in an uncapped quota should succeed');
 
         const [, usedHCUUncapped] = await hcuLimit.getQuota(DEFAULT_QUOTA);
         expect(usedHCUUncapped).to.eq(0n, 'A contract in an uncapped quota should not count HCU');

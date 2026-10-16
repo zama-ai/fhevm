@@ -23,11 +23,7 @@ describe('EncryptedERC20:HCU', function () {
   });
 
   afterEach(async function () {
-    const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
-    const [defaultCap] = await this.hcuLimit.getQuota(0);
-    if (defaultCap !== MAX_UINT48) {
-      await ownerHcuLimit.setQuotaCap(0, MAX_UINT48);
-    }
+    await this.hcuLimit.connect(this.signers.fred).setQuotaCap(0, MAX_UINT48);
   });
 
   it('should transfer tokens between two users', async function () {
