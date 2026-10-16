@@ -452,7 +452,14 @@ async function fetchActiveCommittee(
 }
 
 // Groups the checksummed signers of `confirmations` by `digestKey`. `digestKey` returns the signed fields
-// that vary between confirmations, so equal keys mean equal digests.
+// that vary between confirmations, so equal keys mean equal digests. Each key leaves out the signed fields
+// that are fixed for one operation:
+// - ContextCreationConfirmation: previousContextId, newContextId and nodeConfigHash. The in-flight guard
+//   keeps the active context fixed, and the pending context and its node set never change.
+// - EpochActivationConfirmation: contextId, previousEpochId and epochId. They are fixed for one pending epoch.
+// - ContextDestructionConfirmation: destroyedContextId. The caller groups per destroyed context.
+// - EpochDestructionConfirmation: destroyedEpochId. The caller groups per destroyed epoch.
+// A new field in one of these structs must also go into its key here.
 function groupSignersByDigest<E extends { args: { signer: string } }>(
   confirmations: E[],
   digestKey: (confirmation: E) => string,
