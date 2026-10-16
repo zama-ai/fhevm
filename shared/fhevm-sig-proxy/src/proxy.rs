@@ -191,8 +191,8 @@ fn path_to_str(path: &std::path::Path) -> anyhow::Result<&str> {
 mod tests {
     use super::*;
     use crate::{Route, TlsConfig, Upstream};
-    use http::Method;
     use alloy::primitives::Address;
+    use http::Method;
     use rstest::rstest;
     use std::{collections::HashSet, time::Duration};
     use std::{fs, path::PathBuf};
