@@ -1951,7 +1951,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         ProtocolConfig(protocolConfigAdd).reinitializeV4();
     }
 
-    /// @dev reinitializeV4 reverts while an epoch is Pending, so no v0.3.0 vote can count toward
+    /// @dev reinitializeV4 reverts while an epoch is Pending, so no v0.3.0 confirmation can count toward
     ///      its activation. It succeeds once the epoch is destroyed.
     function test_reinitializeV4RevertsWhileEpochPending() public {
         _setupEpochLifecycle();
