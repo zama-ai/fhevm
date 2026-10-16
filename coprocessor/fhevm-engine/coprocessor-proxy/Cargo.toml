@@ -1,0 +1,32 @@
+[package]
+name = "coprocessor-proxy"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+alloy = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+config = { version = "=0.15.19", default-features = false, features = ["toml"] }
+http = { workspace = true }
+humantime = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+url = { workspace = true }
+
+fhevm-engine-common = { path = "../fhevm-engine-common" }
+fhevm-sig-auth = { path = "../../../shared/fhevm-sig-auth" }
+fhevm-sig-proxy = { path = "../../../shared/fhevm-sig-proxy" }
+
+[[bin]]
+name = "coprocessor-proxy"
+path = "src/bin/proxy.rs"
+
+[lints]
+workspace = true

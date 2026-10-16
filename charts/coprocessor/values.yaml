@@ -11,6 +11,7 @@
 # - SNS worker (notification service)
 # - Consensus detector (manifest publication and peer verification)
 # - Transaction sender (blockchain transaction submission)
+# - Coprocessor proxy (public HTTPS entry point, FhevmSig auth)
 # - Upgrade controller / consensus detector (RFC-021 GCS control plane, off by default)
 # =============================================================================
 
@@ -1841,6 +1842,111 @@ txSender:
 
   # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
   podLabels: {}
+
+  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
+  nodeSelector:
+  affinity:
+  tolerations:
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
+# Coprocessor proxy
+# -----------------------------------------------------------------------------
+# Public HTTPS entry point: checks each request's FhevmSig against the KMS
+# tx-senders ProtocolConfig lists, then forwards it unchanged to the internal
+# service its route names. The Service is ClusterIP; exposing it (load
+# balancer, per-IP limits) and restricting callers are the deployment's.
+coprocessorProxy:
+  enabled: false
+  # nameOverride: override default <release>-<component> resource name.
+  nameOverride:
+
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/coprocessor-proxy
+    tag: v0.11.0
+
+  # Stateless: replicas answer alike.
+  replicas: 2
+
+  tls:
+    # kubernetes.io/tls Secret holding tls.crt and tls.key.
+    secretName: ""
+
+  # Ethereum RPC URL to read the KMS tx-senders of ProtocolConfig from (required).
+  # Accepts `value` or `valueFrom` (secretKeyRef/configMapKeyRef).
+  ethereumRpcUrl:
+  # ProtocolConfig address (required), the verifyingContract of the FhevmSig EIP-712
+  # domain. Accepts `value` or `valueFrom`, e.g.
+  #   valueFrom:
+  #     configMapKeyRef:
+  #       name: '{{ include "coprocessor.hostContractConfigMapName" . }}'
+  #       key: protocol_config.address
+  protocolConfigAddress:
+  # Ethereum chain id, the chainId of the FhevmSig EIP-712 domain (required).
+  ethereumChainId:
+  # This coprocessor's signer address: the audience requests must be signed for (required).
+  coprocessorSignerAddress:
+
+  # The proxy's configuration file in TOML, without the settings above, the ports and
+  # the TLS paths, which the chart sets. See
+  # coprocessor/fhevm-engine/coprocessor-proxy/config/proxy.toml for every key.
+  config: |
+    [[upstreams]]
+    name = "prf-service"
+    endpoint_addresses = ["prf-service:8080"]
+    healthcheck_path = "/healthz"
+
+    # The PRF route of RFC-038.
+    [[routes]]
+    methods = ["GET", "HEAD"]
+    path = "/v1/prf/{prf:u16}/labels/{label:hex32}/{padLength:u16}"
+    upstream = "prf-service"
+    # Must exceed the time the endpoint holds a request for a pad not yet computed.
+    endpoint_response_timeout = "120s"
+
+  # Additional environment variables, e.g. COPROCESSOR_PROXY_SIGNER_REFRESH_INTERVAL.
+  env: []
+
+  ports:
+    https: 8443
+    healthcheck: 8080
+    metrics: 9100
+
+  serviceMonitor:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  probes:
+    liveness:
+      enabled: true
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: true
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
+
+  serviceAccountName:
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:

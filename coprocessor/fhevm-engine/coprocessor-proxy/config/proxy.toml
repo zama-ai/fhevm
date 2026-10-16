@@ -1,0 +1,46 @@
+# Example configuration of the coprocessor proxy. Each value can be overridden by an environment
+# variable prefixed with `COPROCESSOR_PROXY_`, with `__` between nested keys, e.g.
+# `COPROCESSOR_PROXY_TLS_CONFIG__CERT_PATH`.
+
+bind_address = "0.0.0.0:8443"
+
+# FhevmSig (RFC-038): the EIP-712 domain is (ethereum_chain_id, ProtocolConfig), the audience is
+# this coprocessor's signer, and the allowed signers are the KMS tx-senders of the Active KMS
+# contexts that ProtocolConfig lists, read through ethereum_rpc_url.
+ethereum_chain_id = 11155111
+ethereum_rpc_url = "http://localhost:8545"
+signer_refresh_interval = "60s"
+coprocessor_signer_address = "0x0000000000000000000000000000000000000000"
+
+endpoint_connect_timeout = "3s"
+endpoint_healthcheck_frequency = "3s"
+endpoint_idle_timeout = "10s"
+request_read_timeout = "30s"
+shutdown_grace_period = "60s"
+
+service_name = "coprocessor-proxy"
+log_level = "info"
+healthcheck_port = 8080
+metrics_endpoint = "0.0.0.0:9100"
+healthcheck_timeout = "3s"
+
+[tls_config]
+cert_path = "/etc/coprocessor-proxy/tls/tls.crt"
+key_path = "/etc/coprocessor-proxy/tls/tls.key"
+
+[protocol_config_contract]
+address = "0x0000000000000000000000000000000000000000"
+
+[[upstreams]]
+name = "prf-service"
+endpoint_addresses = ["prf-service:8080"]
+healthcheck_path = "/healthz"
+
+# The PRF route of RFC-038.
+[[routes]]
+methods = ["GET", "HEAD"]
+path = "/v1/prf/{prf:u16}/labels/{label:hex32}/{padLength:u16}"
+upstream = "prf-service"
+# Must exceed the time the endpoint holds a request for a pad not yet computed.
+endpoint_response_timeout = "120s"
+max_body_bytes = 0

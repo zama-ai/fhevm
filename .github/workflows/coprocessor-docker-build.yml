@@ -57,6 +57,9 @@ on:
       upgrade_controller_build_result:
         description: "Result of the build-upgrade-controller job"
         value: ${{ jobs.build-upgrade-controller.result }}
+      coprocessor_proxy_build_result:
+        description: "Result of the build-coprocessor-proxy job"
+        value: ${{ jobs.build-coprocessor-proxy.result }}
   workflow_dispatch:
     inputs:
       build_db_migration:
@@ -93,6 +96,10 @@ on:
         default: true
       build_upgrade_controller:
         description: "Enable/disable build for Coprocessor's Upgrade Controller"
+        type: boolean
+        default: true
+      build_coprocessor_proxy:
+        description: "Enable/disable build for Coprocessor's Proxy"
         type: boolean
         default: true
   push:
@@ -310,6 +317,26 @@ jobs:
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
 
+  check-changes-coprocessor-proxy:
+    uses: ./.github/workflows/check-changes-for-docker-build.yml
+    if: github.event_name == 'push' || inputs.is_workflow_call
+    secrets: *check_changes_secrets
+    permissions: *check_changes_permissions
+    with:
+      caller-workflow-event-name: ${{ github.event_name }}
+      caller-workflow-event-before: ${{ github.event.before }}
+      path-filter-base-commit: ${{ inputs.path-filter-base-commit }}
+      docker-image: fhevm/coprocessor/coprocessor-proxy
+      filters: |
+        coprocessor-proxy:
+          - .github/workflows/coprocessor-docker-build.yml
+          - coprocessor/fhevm-engine/coprocessor-proxy/**
+          - coprocessor/fhevm-engine/fhevm-engine-common/**
+          - coprocessor/fhevm-engine/Cargo.*
+          - host-contracts/rust_bindings/**
+          - shared/fhevm-sig-auth/**
+          - shared/fhevm-sig-proxy/**
+
   ########################################################################
   #                        BUILD DECISIONS                               #
   # Centralizes all build/re-tag logic in one place for maintainability  #
@@ -331,6 +358,7 @@ jobs:
       - check-changes-zkproof-worker
       - check-changes-consensus-detector
       - check-changes-upgrade-controller
+      - check-changes-coprocessor-proxy
     outputs:
       db_migration: ${{ steps.decide.outputs.db_migration }}
       gw_listener: ${{ steps.decide.outputs.gw_listener }}
@@ -341,6 +369,7 @@ jobs:
       zkproof_worker: ${{ steps.decide.outputs.zkproof_worker }}
       consensus_detector: ${{ steps.decide.outputs.consensus_detector }}
       upgrade_controller: ${{ steps.decide.outputs.upgrade_controller }}
+      coprocessor_proxy: ${{ steps.decide.outputs.coprocessor_proxy }}
     steps:
       - id: decide
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -379,6 +408,7 @@ jobs:
               zkproof_worker: { changes: needs['check-changes-zkproof-worker'].outputs?.changes, build_input: inputs.build_zkproof_worker },
               consensus_detector: { changes: needs['check-changes-consensus-detector'].outputs?.changes, build_input: inputs.build_consensus_detector },
               upgrade_controller: { changes: needs['check-changes-upgrade-controller'].outputs?.changes, build_input: inputs.build_upgrade_controller },
+              coprocessor_proxy: { changes: needs['check-changes-coprocessor-proxy'].outputs?.changes, build_input: inputs.build_coprocessor_proxy },
             };
 
             core.info(`Event: ${event}, Is latest commit: ${isLatestCommit}, Is workflow call: ${isWorkflowCall}`);
@@ -672,4 +702,34 @@ jobs:
     with:
       image-name: "fhevm/coprocessor/upgrade-controller"
       previous-tag-or-commit: ${{ needs.check-changes-upgrade-controller.outputs.base-commit }}
+      new-tag-or-commit: ${{ github.event.after }}
+
+  ########################################################################
+  #                          COPROCESSOR PROXY                           #
+  ########################################################################
+  build-coprocessor-proxy:
+    needs: build-decisions
+    if: always() && needs.build-decisions.outputs.coprocessor_proxy == 'build'
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      image-name: "fhevm/coprocessor/coprocessor-proxy"
+      docker-file: "coprocessor/fhevm-engine/coprocessor-proxy/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-coprocessor-proxy"
+      # 16 vCPUs to match runs-on-arm; the ubuntu-latest default (2 vCPUs) makes
+      # cache-miss Rust builds the longest job on the merge-queue critical path.
+      runs-on-amd: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/extras=s3-cache
+      rust-toolchain-file-path: coprocessor/fhevm-engine/rust-toolchain.toml
+
+  re-tag-coprocessor-proxy-image:
+    needs: [build-decisions, check-changes-coprocessor-proxy]
+    if: always() && needs.build-decisions.outputs.coprocessor_proxy == 'retag'
+    permissions: *re-tag-image-permissions
+    uses: ./.github/workflows/re-tag-docker-image.yml
+    with:
+      image-name: "fhevm/coprocessor/coprocessor-proxy"
+      previous-tag-or-commit: ${{ needs.check-changes-coprocessor-proxy.outputs.base-commit }}
       new-tag-or-commit: ${{ github.event.after }}

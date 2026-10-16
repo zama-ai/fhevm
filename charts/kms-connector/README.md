@@ -13,7 +13,24 @@ This chart deploys the following components:
 - **kms-connector-endpoint**: A service that serves the HTTP decryption interface, reached through the proxy.
 - **kms-connector-proxy**: A TLS-terminating proxy that authenticates the relayer's `FhevmSig` (RFC-038) signatures and forwards requests to the endpoint.
 
-The proxy needs a `kubernetes.io/tls` secret that this chart does not create (`kmsConnectorProxy.tls.secretName`) with the certificate it serves. It accepts requests signed by one of `kmsConnectorProxy.allowedSenders` for this connector's tx-sender address (`kmsConnectorProxy.txSenderAddress`), and takes the EIP-712 domain (Ethereum chain id and ProtocolConfig address) from the contract settings below. Its Service is a ClusterIP; exposing it outside the cluster (TLS passthrough, since the proxy terminates TLS itself) is left to the deployment.
+The proxy needs a `kubernetes.io/tls` secret that this chart does not create (`kmsConnectorProxy.tls.secretName`) with the certificate it serves. It accepts requests signed by one of `kmsConnectorProxy.allowedSenders` for this connector's tx-sender address (`kmsConnectorProxy.txSenderAddress`), and takes the EIP-712 domain (Ethereum chain id and ProtocolConfig address) from the contract settings below. Its Service is a ClusterIP; exposing it outside the cluster is left to the deployment, within the requirement below.
+
+### Deployment requirement
+
+The proxy authenticates every request before forwarding it, but it does not protect its own
+connections from a client that holds them open. Pingora 0.9, which it runs on, caps neither the
+number of connections nor the time a client takes to send a request head, accepts request heads of
+up to 1 MiB, and waits up to 60 s for a TLS handshake. The proxy must therefore not be reachable
+directly from the internet. Put it behind one of:
+
+- an HTTP-aware layer that terminates the client's TLS connection, receives each request in full
+  before forwarding it, limits connections per client IP, and connects to the proxy over TLS, such as
+  Cloudflare or an HTTP(S) load balancer configured this way;
+- a network allowlist that admits only the callers' addresses (the relayer's), for example a firewall
+  rule in front of a TLS-passthrough exposure.
+
+A TCP (layer 4) load balancer without an allowlist is not enough: it forwards slow and idle
+connections to the proxy unchanged.
 
 ## Installing the Chart
 

@@ -1,0 +1,142 @@
+{{- if .Values.coprocessorProxy.enabled -}}
+{{- $proxy := .Values.coprocessorProxy -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-proxy
+    app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
+  name: {{ include "coprocessorProxyName" . }}
+spec:
+  replicas: {{ .Values.coprocessorProxy.replicas }}
+  selector:
+    matchLabels:
+      app: coprocessor-proxy
+      {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
+  {{- if .Values.coprocessorProxy.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.coprocessorProxy.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: coprocessor-proxy
+        app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
+        {{- include "coprocessor.extraSelectorLabels" . | nindent 8 }}
+        {{- with .Values.commonConfig.stackVersion }}
+        app.kubernetes.io/version: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with .Values.coprocessorProxy.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/coprocessor-proxy-configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      {{- with .Values.coprocessorProxy.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.coprocessorProxy.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.coprocessorProxy.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.coprocessorProxy.serviceAccountName }}
+      serviceAccountName: {{ .Values.coprocessorProxy.serviceAccountName }}
+      {{- end }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ required "coprocessorProxy.tls.secretName must name a TLS Secret" .Values.coprocessorProxy.tls.secretName | quote }}
+        - name: config
+          configMap:
+            name: {{ include "coprocessorProxyName" . }}
+      containers:
+        - name: coprocessor-proxy
+          image: {{ .Values.coprocessorProxy.image.name }}:{{ .Values.coprocessorProxy.image.tag }}
+          command: ["coprocessor-proxy"]
+          {{- if .Values.commonConfig.stackVersionProbe.enabled }}
+          startupProbe:
+            exec:
+              command: ["coprocessor-proxy", "--stack-version"]
+            periodSeconds: {{ .Values.commonConfig.stackVersionProbe.periodSeconds | default 10 }}
+            failureThreshold: {{ .Values.commonConfig.stackVersionProbe.failureThreshold | default 30 }}
+          {{- end }}
+          args:
+            - start
+            - --config=/etc/coprocessor-proxy/config/proxy.toml
+          # The settings the chart owns override the configuration file.
+          env:
+            - name: COPROCESSOR_PROXY_BIND_ADDRESS
+              value: "0.0.0.0:{{ $proxy.ports.https }}"
+            - name: COPROCESSOR_PROXY_TLS_CONFIG__CERT_PATH
+              value: /etc/coprocessor-proxy/tls/tls.crt
+            - name: COPROCESSOR_PROXY_TLS_CONFIG__KEY_PATH
+              value: /etc/coprocessor-proxy/tls/tls.key
+            - name: COPROCESSOR_PROXY_HEALTHCHECK_PORT
+              value: {{ $proxy.ports.healthcheck | quote }}
+            - name: COPROCESSOR_PROXY_METRICS_ENDPOINT
+              value: "0.0.0.0:{{ $proxy.ports.metrics }}"
+            - name: COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID
+              value: {{ required "coprocessorProxy.ethereumChainId must be set" $proxy.ethereumChainId | int64 | quote }}
+            - name: COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS
+              value: {{ required "coprocessorProxy.coprocessorSignerAddress must be set" $proxy.coprocessorSignerAddress | quote }}
+            {{- with required "coprocessorProxy.ethereumRpcUrl must be set" $proxy.ethereumRpcUrl }}
+            - name: COPROCESSOR_PROXY_ETHEREUM_RPC_URL
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with required "coprocessorProxy.protocolConfigAddress must be set" $proxy.protocolConfigAddress }}
+            - name: COPROCESSOR_PROXY_PROTOCOL_CONFIG_CONTRACT__ADDRESS
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with $proxy.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/coprocessor-proxy/tls
+              readOnly: true
+            - name: config
+              mountPath: /etc/coprocessor-proxy/config
+              readOnly: true
+          ports:
+            {{- range $portName, $portValue := .Values.coprocessorProxy.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
+          {{- with .Values.coprocessorProxy.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.coprocessorProxy.probes .Values.coprocessorProxy.probes.liveness.enabled }}
+          livenessProbe:
+            {{- toYaml (omit .Values.coprocessorProxy.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.coprocessorProxy.probes .Values.coprocessorProxy.probes.readiness.enabled }}
+          readinessProbe:
+            {{- toYaml (omit .Values.coprocessorProxy.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
+{{- end -}}

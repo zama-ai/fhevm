@@ -1,0 +1,12 @@
+{{- if .Values.coprocessorProxy.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    app: coprocessor-proxy
+    app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
+  name: {{ include "coprocessorProxyName" . }}
+data:
+  proxy.toml: |
+    {{- .Values.coprocessorProxy.config | nindent 4 }}
+{{- end -}}
