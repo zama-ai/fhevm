@@ -43,6 +43,7 @@ serde_json = { version = "1", optional = true }
 # The black-box conformance suite of the proxy binaries built on this library, and its toolbox.
 # Test-only: enabled from dev-dependencies.
 conformance = [
+    "alloy/rpc-types",
     "alloy/signer-local",
     "dep:fhevm_host_bindings",
     "dep:http-body-util",

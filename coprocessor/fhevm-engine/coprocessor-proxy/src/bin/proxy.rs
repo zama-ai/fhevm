@@ -4,7 +4,7 @@ use fhevm_engine_common::{healthz_server, metrics_server};
 use fhevm_sig_proxy::Proxy;
 use std::{path::PathBuf, process::ExitCode, sync::Arc};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error};
+use tracing::error;
 use url::Url;
 
 #[derive(Parser)]
@@ -83,8 +83,6 @@ fn run() -> anyhow::Result<()> {
                     "otlp-layer",
                 )
             };
-            debug!("{config:?}");
-
             let (proxy, state) = Proxy::from_config(config.proxy_config()?)?;
             let cancel_token = CancellationToken::new();
             let health_server = healthz_server::HttpServer::new(

@@ -38,9 +38,12 @@ tracing = { version = "0.1", optional = true }
 
 [dev-dependencies]
 alloy = { version = "2", default-features = false, features = [
+    "reqwest",
+    "rpc-types",
     "signer-local",
 ] }
 tokio = { version = "1", default-features = false, features = [
     "macros",
     "rt",
 ] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }

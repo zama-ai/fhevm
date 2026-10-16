@@ -6,13 +6,13 @@
 //! accepted during a switch. A Pending or Created context is not read, because
 //! `getKmsNodesForContext` reverts until the context is Active.
 //!
-//! A [`Follower`] reads the set at the finalized block and replaces the content of a
+//! A [`Follower`] reads the set at one finalized block and replaces the content of a
 //! [`RefreshableSigners`]. A failed read keeps the last set. Until the first read succeeds the set
 //! is empty and [`Loaded::is_loaded`] is false.
 
 use crate::RefreshableSigners;
 use alloy::{
-    eips::BlockId,
+    eips::{BlockId, BlockNumberOrTag},
     primitives::{Address, U256},
     providers::Provider,
 };
@@ -119,7 +119,10 @@ impl<P: Provider> Follower<P> {
                     self.interval
                 }
                 Err(err) => {
-                    warn!(error = %format!("{err:#}"), "KMS tx-sender read failed; keeping the last set");
+                    warn!(
+                        error = redact_urls(&format!("{err:#}")),
+                        "KMS tx-sender read failed; keeping the last set"
+                    );
                     RETRY_INTERVAL.min(self.interval)
                 }
             };
@@ -146,10 +149,19 @@ impl<P: Provider> Reader<P> {
     }
 
     async fn read(&mut self) -> anyhow::Result<HashSet<Address>> {
+        // Every call reads the same block, so the set is one state of `ProtocolConfig`.
+        let finalized = self
+            .protocol_config
+            .provider()
+            .get_block_by_number(BlockNumberOrTag::Finalized)
+            .await
+            .context("finalized block")?
+            .context("no finalized block")?;
+        let block = BlockId::number(finalized.header.number);
         let counter = self
             .protocol_config
             .getCurrentKmsContextIdCounter()
-            .block(BlockId::finalized())
+            .block(block)
             .call()
             .await
             .context("getCurrentKmsContextIdCounter")?;
@@ -161,7 +173,7 @@ impl<P: Provider> Reader<P> {
             let active = self
                 .protocol_config
                 .isValidKmsContext(context_id)
-                .block(BlockId::finalized())
+                .block(block)
                 .call()
                 .await
                 .with_context(|| format!("isValidKmsContext({context_id})"))?;
@@ -170,7 +182,7 @@ impl<P: Provider> Reader<P> {
                     let nodes = self
                         .protocol_config
                         .getKmsNodesForContext(context_id)
-                        .block(BlockId::finalized())
+                        .block(block)
                         .call()
                         .await
                         .with_context(|| format!("getKmsNodesForContext({context_id})"))?;
@@ -187,6 +199,26 @@ impl<P: Provider> Reader<P> {
     }
 }
 
+/// `text` with every URL replaced: an RPC URL often carries the provider's API key in its path or
+/// query, and transport errors quote the URL they failed on.
+fn redact_urls(text: &str) -> String {
+    let mut redacted = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(separator) = rest.find("://") {
+        let scheme_start = rest[..separator]
+            .rfind(|c: char| !(c.is_ascii_alphanumeric() || "+-.".contains(c)))
+            .map_or(0, |i| i + 1);
+        let url_len = rest[separator..]
+            .find(|c: char| c.is_whitespace() || "()<>\"'`,".contains(c))
+            .unwrap_or(rest.len() - separator);
+        redacted.push_str(&rest[..scheme_start]);
+        redacted.push_str("<url>");
+        rest = &rest[separator + url_len..];
+    }
+    redacted.push_str(rest);
+    redacted
+}
+
 /// The first KMS context id under `counter`, the last id `ProtocolConfig` allocated. Ids are
 /// `KMS_CONTEXT_COUNTER_BASE` (host-contracts `shared/Constants.sol`: a type tag in the top byte)
 /// plus a counter from 1, so the first id keeps the counter's top byte. `None` before any context.
@@ -200,7 +232,7 @@ mod tests {
     use super::*;
     use crate::SignerAllowlist;
     use alloy::{
-        primitives::Bytes, providers::ProviderBuilder, sol_types::SolCall,
+        primitives::Bytes, providers::ProviderBuilder, rpc::types::Block, sol_types::SolCall,
         transports::mock::Asserter,
     };
     use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::{
@@ -210,6 +242,12 @@ mod tests {
 
     fn context_id(n: u64) -> U256 {
         (U256::from(7) << 248) + U256::from(n)
+    }
+
+    fn finalized() -> Block {
+        let mut block: Block = Block::default();
+        block.header.inner.number = 100;
+        block
     }
 
     fn counter(n: u64) -> Bytes {
@@ -231,10 +269,14 @@ mod tests {
         getKmsNodesForContextCall::abi_encode_returns(&nodes).into()
     }
 
-    /// A provider whose RPC answers `answers` in order: the mock does not match calls, so a call
-    /// the reader should not make consumes an answer meant for another and fails to decode.
+    /// A provider whose RPC answers the finalized block, then `answers` in order: the mock does not
+    /// match calls, so a call the reader should not make consumes an answer meant for another and
+    /// fails to decode.
     fn provider(answers: &[Bytes]) -> (impl Provider + use<>, Asserter) {
         let asserter = Asserter::new();
+        if !answers.is_empty() {
+            asserter.push_success(&finalized());
+        }
         for answer in answers {
             asserter.push_success(answer);
         }
@@ -269,6 +311,7 @@ mod tests {
         assert!(asserter.read_q().is_empty());
 
         // Context 2 destroyed since: its nodes leave the set, and no node list is read again.
+        asserter.push_success(&finalized());
         asserter.push_success(&counter(4));
         for active in [false, false, true, false] {
             asserter.push_success(&valid(active));
@@ -324,6 +367,18 @@ mod tests {
 
         assert!(!follower.loaded().is_loaded());
         assert!(!signers.allows(Address::repeat_byte(1)));
+    }
+
+    #[test]
+    fn every_url_is_redacted() {
+        assert_eq!(
+            redact_urls(
+                "error sending request for url (https://rpc.example/v2/key?x=1): refused, \
+                 then ws://h:1/p and http://a"
+            ),
+            "error sending request for url (<url>): refused, then <url> and <url>"
+        );
+        assert_eq!(redact_urls("no url: a:b"), "no url: a:b");
     }
 
     #[test]

@@ -3,6 +3,7 @@
 use super::{PROTOCOL_CONFIG, stub::serve};
 use alloy::{
     primitives::{Address, U256, hex},
+    rpc::types::Block,
     sol_types::{SolCall, SolInterface},
     transports::http::reqwest::Url,
 };
@@ -63,6 +64,9 @@ impl FakeRpc {
     }
 }
 
+/// The number of the finalized block, the only block the contexts are known at.
+const FINALIZED: u64 = 100;
+
 /// Context ids as `ProtocolConfig` allocates them: the type tag 0x07 in the top byte.
 fn context_id(index: usize) -> U256 {
     (U256::from(7) << 248) + U256::from(index + 1)
@@ -77,11 +81,18 @@ async fn rpc(state: &Mutex<RpcState>, request: Request<Incoming>) -> Response<Fu
         *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
         return response;
     }
+    let id = &call["id"];
+    if call["method"] == "eth_getBlockByNumber" && call["params"][0] == "finalized" {
+        let mut block: Block = Block::default();
+        block.header.inner.number = FINALIZED;
+        let reply = serde_json::json!({"jsonrpc": "2.0", "id": id, "result": block});
+        return Response::new(Full::new(Bytes::from(reply.to_string())));
+    }
     assert_eq!(call["method"], "eth_call", "unexpected RPC {call}");
     let tx = &call["params"][0];
     let to: Option<Address> = tx["to"].as_str().and_then(|to| to.parse().ok());
-    // Only `ProtocolConfig` at the finalized block knows the contexts.
-    if to != Some(PROTOCOL_CONFIG) || call["params"][1] != "finalized" {
+    // Only `ProtocolConfig` at the finalized block's number knows the contexts.
+    if to != Some(PROTOCOL_CONFIG) || call["params"][1] != format!("{FINALIZED:#x}") {
         let error = serde_json::json!({"jsonrpc": "2.0", "id": call["id"],
             "error": {"code": -32000, "message": format!("unexpected call {call}")}});
         return Response::new(Full::new(Bytes::from(error.to_string())));
@@ -122,7 +133,6 @@ async fn rpc(state: &Mutex<RpcState>, request: Request<Incoming>) -> Response<Fu
         }
         _ => panic!("unexpected ProtocolConfig call"),
     };
-    let id = &call["id"];
     let reply = match result {
         Some(result) => {
             serde_json::json!({"jsonrpc": "2.0", "id": id, "result": hex::encode_prefixed(result)})
