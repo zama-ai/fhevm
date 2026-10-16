@@ -43,7 +43,7 @@ describe("solana", () => {
   });
 
   test("carries a Solana chain id as a raw integer literal, losslessly", () => {
-    // RFC-021 ids exceed Number.MAX_SAFE_INTEGER, so a `JSON.stringify(Number(id))` round trip
+    // DD-052 ids exceed Number.MAX_SAFE_INTEGER, so a `JSON.stringify(Number(id))` round trip
     // would silently corrupt the id. Read the literal out of the text rather than through
     // JSON.parse, which would itself go through a double.
     const serialized = serializeKmsHostChains(

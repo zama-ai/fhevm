@@ -78,7 +78,7 @@ fn assert_canonical_metadata(handle: [u8; 32], fhe_type: u8, chain_id: u64) {
 fn eval_handle_derivation_preserves_solana_chain_type_byte() {
     // A Solana host chain id has type byte `0x01`; the derived handle must
     // round-trip it verbatim through bytes 22..30. `SOLANA_POC_CHAIN_ID`
-    // already carries the type byte (RFC-021 / DD-052).
+    // already carries the type byte (DD-052).
     let chain_id = SOLANA_POC_CHAIN_ID;
     let handle = computed_eval_handle(
         FheBinaryOpCode::Sub,

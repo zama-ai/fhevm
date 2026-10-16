@@ -300,7 +300,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                                     // This listener only reacts to proof requests. Other known InputVerification
                                     // events are expected when multiple coprocessors interact with the gateway.
                                     // EVM hosts emit VerifyProofRequest (address identities); Solana hosts
-                                    // (RFC-021) emit VerifyProofRequestSolana (bytes32 identities, type-byte chain id).
+                                    // emit VerifyProofRequestSolana (bytes32 identities, type-byte chain id).
                                     match event.data {
                                         InputVerification::InputVerificationEvents::VerifyProofRequest(request) => {
                                             self.verify_proof_request(db_pool, request, log.clone()).await.
@@ -711,9 +711,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         }
     }
 
-    /// Solana (RFC-021) counterpart of [`Self::verify_proof_request`]: the gateway emits
-    /// `VerifyProofRequestSolana` with bytes32 host identities and a chain id carrying
-    /// type byte `0x01` (decoded via `from_canonical_u64`, stored as its i64 bit-pattern).
+    /// Solana counterpart of [`Self::verify_proof_request`]: the gateway emits
+    /// `VerifyProofRequestSolana` with bytes32 host identities (DD-026) and a chain id carrying
+    /// type byte `0x01` (DD-052).
     /// The verify_proofs row is otherwise identical; the zkproof-worker selects the 128-byte
     /// aux + 32-byte identity layout from the type byte.
     async fn verify_proof_request_solana(
@@ -725,7 +725,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         let transaction_id = log.transaction_hash.map(|h| h.to_vec()).unwrap_or_default();
         info!(zk_proof_id = %request.zkProofId, tid = %to_hex(&transaction_id), "Received Solana ZK proof request event");
 
-        let chain_id = ChainId::from_canonical_u64(request.contractChainId.to::<u64>());
+        let chain_id = ChainId::try_from(request.contractChainId)?;
 
         let _ = telemetry::try_begin_transaction(
             db_pool,
@@ -1712,5 +1712,40 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    /// A type-byte chain id is below `i64::MAX` (DD-052), so a Solana proof request whose
+    /// chain id has bit 63 set is refused with `InvalidChainId` before it reaches the database.
+    #[tokio::test]
+    async fn solana_proof_request_refuses_a_bit_63_chain_id() {
+        let listener = GatewayListener::new(
+            Address::ZERO,
+            ConfigSettings::default(),
+            CancellationToken::new(),
+            alloy::providers::ProviderBuilder::new()
+                .connect_http("http://127.0.0.1:1".parse().unwrap()),
+        );
+        // Never connected: any database access would fail with a pool error instead.
+        let db_pool = PgPoolOptions::new()
+            .connect_lazy("postgres://127.0.0.1:1/unused")
+            .unwrap();
+        let request = InputVerification::VerifyProofRequestSolana {
+            zkProofId: U256::from(1),
+            contractChainId: U256::from(0x8000_0000_0000_3039_u64),
+            contractAddress: B256::repeat_byte(0x11),
+            userAddress: B256::repeat_byte(0x22),
+            ciphertextWithZKProof: vec![1; 8].into(),
+            extraData: vec![0].into(),
+        };
+
+        let err = listener
+            .verify_proof_request_solana(&db_pool, request, Log::default())
+            .await
+            .unwrap_err();
+        assert!(
+            err.downcast_ref::<fhevm_engine_common::chain_id::InvalidChainId>()
+                .is_some(),
+            "{err:#}"
+        );
     }
 }

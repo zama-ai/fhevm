@@ -65,7 +65,7 @@ BEGIN
     RAISE EXCEPTION 'chain_id % does not exist in host_chains', _chain_id;
   END IF;
 
-  -- A Solana host chain id carries chain type 0x01 in its top byte (RFC-021). Its listener
+  -- A Solana host chain id carries chain type 0x01 in its top byte (DD-052). Its listener
   -- resumes from solana_listener_checkpoint, not host_listener_poller_state: left ahead, it
   -- would never re-ingest the rows deleted below, so the checkpoint must be the block at
   -- to_block_number that the operator rewound to. The checkpoint names a slot, and the rows

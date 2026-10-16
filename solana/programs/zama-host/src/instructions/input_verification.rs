@@ -1,4 +1,4 @@
-//! Coprocessor EIP-712 `CiphertextVerification` attestation verification (RFC-021).
+//! Coprocessor EIP-712 `CiphertextVerification` attestation verification (DD-026).
 //!
 //! The coprocessor signs the attested handles + binding context as an EVM EIP-712 message; the host
 //! recovers each signer via `secp256k1_recover` and requires at least `coprocessor_threshold`

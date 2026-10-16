@@ -585,8 +585,8 @@ export const renderEnvMaps = async (
   // as production rather than bypassing it via direct SQL. Applied BEFORE
   // `buildInstanceEnvs` so multi-coprocessor topology instances inherit
   // these env vars when they clone `envs["coprocessor"]`.
-  // Externally-provisioned hosts (Solana) are seeded by their own bring-up — which maps the
-  // RFC-021 u64 chain id to the signed i64 the `bigint` column requires and mirrors the keyset
+  // Externally-provisioned hosts (Solana) are seeded by their own bring-up — which writes the
+  // type-byte chain id (DD-052) as it is and mirrors the keyset
   // (only available post-keygen) — so they're excluded here; indices stay contiguous (0..N-1).
   const seedHostChains = chains.filter((chain) => isEvmHost(chain));
   envs["coprocessor"].HOST_CHAINS_COUNT = String(seedHostChains.length);

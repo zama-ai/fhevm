@@ -64,7 +64,7 @@ fhevm_gateway_bindings = { path = "../gateway-contracts/rust_bindings", default-
 fhevm_host_bindings = { path = "../host-contracts/rust_bindings", default-features = false }
 # Shared utils for signature verification in user-decrypt requests.
 user-decryption-signature = { path = "../shared/user-decryption-signature" }
-# RFC-021 host chain ids: which type byte marks a Solana host chain.
+# DD-052 host chain ids: which type byte marks a Solana host chain.
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 # Off-chain Coprocessor attestation consensus, backing the ciphertext readiness check.
 ciphertext-attestation = { path = "../shared/ciphertext-attestation", features = ["client"] }

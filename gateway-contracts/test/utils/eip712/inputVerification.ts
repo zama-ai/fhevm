@@ -50,7 +50,7 @@ export function createEIP712ResponseZKPoK(
   };
 }
 
-// Create an EIP712 message for a Solana (RFC-021) ZKPoK response, with bytes32 host identities.
+// Create an EIP712 message for a Solana ZKPoK response, with bytes32 host identities.
 // The type string and domain must match the gateway's EIP712_SOLANA_ZKPOK_TYPE and the zama-host
 // program's CiphertextVerification verifier byte-for-byte.
 export function createEIP712ResponseZKPoKSolana(

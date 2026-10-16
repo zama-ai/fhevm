@@ -36,7 +36,7 @@ export type SolanaEncryptActions = {
   readonly encryptValues: (
     parameters: SolanaEncryptInputParameters & { readonly options?: RelayerInputProofOptions | undefined },
   ) => Promise<SolanaEncryptValuesResult>;
-  /** Builds a Solana input ZK proof (RFC-021 bytes32 identities + 128-byte aux). */
+  /** Builds a Solana input ZK proof (DD-026 bytes32 identities + 128-byte aux). */
   readonly generateZkProof: (parameters: SolanaEncryptInputParameters) => Promise<SolanaEncryptInputResult>;
   /** Submits a built Solana input proof and verifies the returned handles. */
   readonly submitInputProof: (parameters: SolanaSubmitInputProofParameters) => Promise<SolanaSubmitInputProofResult>;

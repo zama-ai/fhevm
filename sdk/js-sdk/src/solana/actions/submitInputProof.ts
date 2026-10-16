@@ -49,7 +49,7 @@ export async function submitInputProof(
     });
   }
 
-  // The relayer payload predates RFC-021 and carries Solana host identities as base58 strings.
+  // The relayer payload predates the bytes32 identities (DD-026) and carries Solana host identities as base58 strings.
   // Keep that wire adaptation here so callers only handle canonical bytes32 identities.
   const relayerOptions: RelayerInputProofOptions = {
     auth: fhevm.runtime.config.auth,

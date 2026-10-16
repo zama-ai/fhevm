@@ -73,7 +73,7 @@ export type SolanaDemoConfig = {
   readonly source: "demo-config";
   /** The cluster the seed ran on; consumers derive funding (airdrop vs transfer) and URL policy from it. */
   readonly network: SolanaNetwork;
-  /** RFC-021 Solana host chain id, as an unsigned decimal string (`72057594037940281`). */
+  /** Solana host chain id (DD-052), as an unsigned decimal string (`72057594037940281`). */
   readonly chainId: string;
   readonly rpcUrl: string;
   readonly wsUrl: string;

@@ -1015,7 +1015,7 @@ describe('InputVerification', function () {
     });
   });
 
-  describe('Solana host (RFC-021) proof verification', function () {
+  describe('Solana host proof verification', function () {
     let inputVerification: InputVerification;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];

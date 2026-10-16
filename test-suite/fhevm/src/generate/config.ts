@@ -84,7 +84,7 @@ const rewriteHostChains = (
   if (!Array.isArray(config.host_chains)) return config;
   config.host_chains = hostChainRuntimes(chains).map((chain) => {
     if (chain.type === "solana") {
-      // RFC-021 ids exceed Number.MAX_SAFE_INTEGER, so the id stays a string, which YAML quotes;
+      // Solana chain ids (DD-052) exceed Number.MAX_SAFE_INTEGER, so the id stays a string, which YAML quotes;
       // the relayer accepts a quoted chain_id. The relayer serves Solana input proofs only and
       // reads no Solana account: it checks that acl_address, the zama-host program, is base58,
       // and never calls `url`.

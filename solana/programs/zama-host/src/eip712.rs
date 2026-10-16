@@ -24,7 +24,7 @@ pub(crate) const DOMAIN_TYPE: &[u8] =
     b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
 const PUBLIC_DECRYPT_TYPE: &[u8] =
     b"PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)";
-// RFC-021 Solana form: EVM uses `address` for user/contract; host-chain addresses
+// DD-026 Solana form: EVM uses `address` for user/contract; host-chain addresses
 // are widened to bytes32 so Solana 32-byte pubkeys fit.
 pub(crate) const CIPHERTEXT_VERIFICATION_TYPE: &[u8] = b"CiphertextVerification(bytes32[] ctHandles,bytes32 userAddress,bytes32 contractAddress,uint256 contractChainId,bytes extraData)";
 
@@ -87,7 +87,7 @@ pub fn public_decrypt_struct_hash(
     ])
 }
 
-/// struct hash for the coprocessor `CiphertextVerification` input attestation (RFC-021 bytes32 form).
+/// struct hash for the coprocessor `CiphertextVerification` input attestation (DD-026 bytes32 form).
 pub fn ciphertext_verification_struct_hash(
     ct_handles: &[[u8; 32]],
     user_address: &[u8; 32],

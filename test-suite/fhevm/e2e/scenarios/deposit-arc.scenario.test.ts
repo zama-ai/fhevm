@@ -68,7 +68,7 @@ const loadSigner = async (keypairPath: string): Promise<TransactionSigner> => {
   return createKeyPairSignerFromBytes(bytes);
 };
 
-/** A base58 address as the bytes32 hex identity the RFC-021 proof binding uses. */
+/** A base58 address as the bytes32 hex identity the DD-026 proof binding uses. */
 const addressToBytes32Hex = (value: Address): Bytes32Hex =>
   asBytes32Hex(`0x${Buffer.from(getAddressEncoder().encode(value)).toString("hex")}`);
 const addressBytes = (value: Address): Uint8Array => new Uint8Array(getAddressEncoder().encode(value));
