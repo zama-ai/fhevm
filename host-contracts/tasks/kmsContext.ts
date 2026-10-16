@@ -459,7 +459,7 @@ async function fetchActiveCommittee(
 // - EpochActivationConfirmation: contextId, previousEpochId and epochId. They are fixed for one pending epoch.
 // - ContextDestructionConfirmation: destroyedContextId. The caller groups per destroyed context.
 // - EpochDestructionConfirmation: destroyedEpochId. The caller groups per destroyed epoch.
-// A new field in one of these structs must also go into its key here.
+// A new signed field that can differ between signers of one operation must also go into its key here.
 function groupSignersByDigest<E extends { args: { signer: string } }>(
   confirmations: E[],
   digestKey: (confirmation: E) => string,
