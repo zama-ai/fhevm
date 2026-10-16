@@ -19,7 +19,7 @@ impl ZkData {
     /// for byte, or proof verification fails. Both layouts live in
     /// [`fhevm_engine_common::zk_aux`] so the verifier and the synthetic-input
     /// prover cannot drift. The host chain type selects it: EVM hosts use
-    /// 20-byte addresses (92 bytes total), Solana hosts use RFC-021 bytes32
+    /// 20-byte addresses (92 bytes total), Solana hosts use DD-026 bytes32
     /// identities (128 bytes total). The chain id is always the trailing
     /// 32-byte big-endian word and carries the type byte verbatim.
     pub fn assemble(&self) -> anyhow::Result<Vec<u8>> {
@@ -57,7 +57,7 @@ mod tests {
 
     /// EVM auxiliary layout: 3 x 20-byte address + 32-byte chain id.
     const SIZE_EVM: usize = ZK_AUX_DATA_SIZE;
-    /// Solana (RFC-021) auxiliary layout: 3 x 32-byte bytes32 identity + 32-byte chain id.
+    /// Solana (DD-026) auxiliary layout: 3 x 32-byte bytes32 identity + 32-byte chain id.
     const SIZE_SOLANA: usize = SOLANA_ZK_AUX_DATA_SIZE;
 
     #[test]
@@ -91,7 +91,7 @@ mod tests {
         let contract = format!("0x{}", "11".repeat(32));
         let user = format!("0x{}", "22".repeat(32));
         let acl = format!("0x{}", "33".repeat(32));
-        let chain_id = ChainId::from_canonical_u64(solana_host_chain_id(12345));
+        let chain_id = ChainId::try_from(solana_host_chain_id(12345)).unwrap();
 
         let zk_data = ZkData {
             contract_address: contract,
@@ -118,7 +118,7 @@ mod tests {
             contract_address: "0x1111111111111111111111111111111111111111".to_string(),
             user_address: format!("0x{}", "22".repeat(32)),
             acl_contract_address: format!("0x{}", "33".repeat(32)),
-            chain_id: ChainId::from_canonical_u64(solana_host_chain_id(1)),
+            chain_id: ChainId::try_from(solana_host_chain_id(1)).unwrap(),
         };
         // The 20-byte contract address is not a valid bytes32 identity.
         assert!(zk_data.assemble().is_err());
@@ -130,7 +130,7 @@ mod tests {
             contract_address: "0x1111111111111111111111111111111111111111".to_string(),
             user_address: "0x2222222222222222222222222222222222222222".to_string(),
             acl_contract_address: "0x3333333333333333333333333333333333333333".to_string(),
-            chain_id: ChainId::from_canonical_u64(0x0200_0000_0000_3039),
+            chain_id: ChainId::try_from(0x0200_0000_0000_3039_u64).unwrap(),
         };
         let err = zk_data
             .assemble()
@@ -156,7 +156,7 @@ mod tests {
         let user = format!("0x{}", "22".repeat(32));
         let acl_hex = "0x9c7da263cccb5084844e292a2ce0db0e51bbf310100656aa4572b83dfe35fca5";
         let acl_b58 = "BXsiKq6Jg4vgdBqSd75NbMbKaB7WFKK48NVXx4zoeLsW";
-        let chain_id = ChainId::from_canonical_u64(solana_host_chain_id(12345));
+        let chain_id = ChainId::try_from(solana_host_chain_id(12345)).unwrap();
 
         let with_hex = ZkData {
             contract_address: contract.clone(),

@@ -107,7 +107,7 @@ elif [ "$squads_fixtures_status" -ne 0 ]; then
   echo "[clean-e2e] WARN: Squads fixtures unavailable; the Squads delegation scenario will not run"
 fi
 
-# Pin the EVM stack to the main SHA this PoC was validated against. RFC-021 / Solana host support
+# Pin the EVM stack to the main SHA this PoC was validated against. Solana host support
 # is not yet on a release bundle, so we resolve a specific main commit explicitly.
 BASE_SHA="feaf86e"
 LOCK="$ROOT/.fhevm/state/locks/sha-$BASE_SHA.json"
@@ -142,7 +142,7 @@ json.dump(d, open(p, "w"), indent=2)
 PY
 
 # 2. Clean rebuild of the whole EVM stack with the Solana code baked in from bootstrap.
-#    The `solana` scenario declares the RFC-021 Solana host alongside the default EVM host, so
+#    The `solana` scenario declares the Solana host alongside the default EVM host, so
 #    fhevm-cli generates the Solana relayer + kms-connector config (the Solana host-process step
 #    does not patch those — single config writer).
 #    SOLANA_E2E_SCENARIO selects the fhevm-cli scenario. Default `solana`.

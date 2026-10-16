@@ -749,7 +749,7 @@ impl ContractConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct HostChainConfig {
-    /// Host chain id, as a number or a quoted decimal string. RFC-021 Solana host ids start at
+    /// Host chain id, as a number or a quoted decimal string. Solana host ids (DD-052) start at
     /// `2^56`, beyond what a JavaScript number holds exactly, so the e2e config writer quotes them.
     #[serde(deserialize_with = "deserialize_u64_from_str_or_num")]
     pub chain_id: u64,
@@ -2172,7 +2172,7 @@ mod tests {
         );
     }
 
-    /// RFC-021: a type-byte Solana host chain carries a Solana base58 acl_address, while
+    /// A type-byte Solana host chain (DD-052) carries a Solana base58 acl_address, while
     /// an EVM host chain carries an EVM address.
     #[test]
     fn test_host_chains_accepts_solana_address_base58_acl() {
@@ -2262,7 +2262,7 @@ mod tests {
         );
     }
 
-    /// An RFC-021 Solana host chain id is above the IEEE-754 mantissa, so the e2e config writes
+    /// A Solana host chain id (DD-052) is above the IEEE-754 mantissa, so the e2e config writes
     /// it as a quoted string. It loads through `Settings::new` to the exact u64 because
     /// `chain_id` takes a string; without `deserialize_u64_from_str_or_num` it fails as "data did
     /// not match any variant of untagged enum MapOrSeq".
@@ -2291,7 +2291,7 @@ mod tests {
         let result = Settings::new(Some(path.to_string_lossy().into_owned()));
         let _ = std::fs::remove_file(&path);
         let settings =
-            result.expect("Settings::new must load a quoted Solana host chain id (RFC-021)");
+            result.expect("Settings::new must load a quoted Solana host chain id (DD-052)");
         assert_eq!(settings.host_chains[0].chain_id, SOLANA_CHAIN_ID);
     }
 

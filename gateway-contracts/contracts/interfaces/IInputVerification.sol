@@ -26,7 +26,7 @@ interface IInputVerification {
     );
 
     /**
-     * @notice Emitted when a verification of a ZK Proof is requested for a Solana (RFC-021) host.
+     * @notice Emitted when a verification of a ZK Proof is requested for a Solana host.
      * @dev Counterpart of {VerifyProofRequest} with 32-byte host identities (Solana program id /
      * pubkey) instead of 20-byte EVM addresses.
      * @param zkProofId The ID of the requested ZK Proof.
@@ -137,7 +137,7 @@ interface IInputVerification {
     ) external;
 
     /**
-     * @notice Requests the verification of a ZK Proof for a Solana (RFC-021) host.
+     * @notice Requests the verification of a ZK Proof for a Solana host.
      * @dev Counterpart of {verifyProofRequest} with 32-byte host identities.
      * @param contractChainId The ID of the host chain the contract belongs to.
      * @param contractAddress The 32-byte identity of the dapp the input is used for.
@@ -154,7 +154,7 @@ interface IInputVerification {
     ) external;
 
     /**
-     * @notice Responds to a correct ZK Proof verification request for a Solana (RFC-021) host.
+     * @notice Responds to a correct ZK Proof verification request for a Solana host.
      * @dev Counterpart of {verifyProofResponse}; validates the coprocessor signature over the
      * bytes32 CiphertextVerification typed data. Shares all consensus state with the EVM path.
      * @param zkProofId The ID of the requested ZK Proof.

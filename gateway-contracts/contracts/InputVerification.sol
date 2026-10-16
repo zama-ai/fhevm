@@ -59,7 +59,7 @@ contract InputVerification is
     }
 
     /**
-     * @notice RFC-021 (Solana host) counterpart of {@link CiphertextVerification}. The dapp and
+     * @notice Solana host (DD-026) counterpart of {@link CiphertextVerification}. The dapp and
      * user identities are 32-byte host addresses (Solana program ids / pubkeys) rather than 20-byte
      * EVM addresses. The EVM `CiphertextVerification` is left untouched; this parallel struct lets
      * the gateway verify the same bytes32 coprocessor attestation that the zama-host program checks.
@@ -99,7 +99,7 @@ contract InputVerification is
     bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
 
     /**
-     * @notice The Solana (RFC-021) CiphertextVerification typed data definition. Identical to
+     * @notice The Solana (DD-026) CiphertextVerification typed data definition. Identical to
      * EIP712_ZKPOK_TYPE except the user/dapp identities are bytes32. This string MUST match the
      * zama-host program's CiphertextVerification type byte-for-byte so a single coprocessor
      * signature validates both on the gateway and on-chain on Solana.
@@ -184,7 +184,7 @@ contract InputVerification is
         ///      see above.
         mapping(uint256 zkProofId => address coprocessorTxSenderAddress) priorityRejectProofConsensusTxSender;
         // ----------------------------------------------------------------------------------------------
-        // Solana (RFC-021) host state variables (appended; preserves the ERC-7201 storage layout):
+        // Solana host state variables (appended; preserves the ERC-7201 storage layout):
         // ----------------------------------------------------------------------------------------------
         /// @notice The bytes32-identity request inputs for Solana host ZK Proof verifications.
         mapping(uint256 zkProofId => SolanaZKProofInput solanaZkProofInput) solanaZkProofInputs;
@@ -215,7 +215,7 @@ contract InputVerification is
     }
 
     /**
-     * @notice Re-initializes the contract from V5 (includes the Solana RFC-021 input-verification path).
+     * @notice Re-initializes the contract from V5 (includes the Solana input-verification path).
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
@@ -257,7 +257,7 @@ contract InputVerification is
 
     /**
      * @notice See {IInputVerification-verifyProofRequestSolana}.
-     * @dev RFC-021 (Solana host) counterpart of {verifyProofRequest}. Identical lifecycle and fee
+     * @dev Solana host (DD-026) counterpart of {verifyProofRequest}. Identical lifecycle and fee
      * collection; only the dapp/user identities are 32-byte host addresses. Shares the zkProofId
      * counter and all consensus state with the EVM path; only the request inputs are stored in the
      * parallel `solanaZkProofInputs` mapping for bytes32 EIP712 signature validation on response.
@@ -323,7 +323,7 @@ contract InputVerification is
 
     /**
      * @notice See {IInputVerification-verifyProofResponseSolana}.
-     * @dev RFC-021 (Solana host) counterpart of {verifyProofResponse}. The only difference is the
+     * @dev Solana host (DD-026) counterpart of {verifyProofResponse}. The only difference is the
      * EIP712 digest, computed over bytes32 host identities via {_hashSolanaCiphertextVerification};
      * all consensus, signer/tx-sender and verification state is shared with the EVM path (keyed by
      * zkProofId), so a Solana request verified here is indistinguishable downstream from an EVM one.

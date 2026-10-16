@@ -198,7 +198,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
 
   /**
    * Solana counterpart of {@link build}: produces a {@link SolanaZkProof} bound to
-   * RFC-021 bytes32 host identities and the 128-byte aux layout. The proof-generation
+   * DD-026 bytes32 host identities and the 128-byte aux layout. The proof-generation
    * core is shared with {@link build}; only the aux layout (selected by host chain
    * type inside `buildInputProofMetaData`) and the returned proof type differ.
    */
@@ -271,7 +271,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
 
     // Prover side of the input-proof auxiliary data. It MUST agree with the
     // coprocessor zkproof-worker verifier byte-for-byte: EVM hosts use the
-    // 92-byte 20-byte-address layout, Solana hosts (RFC-021) the 128-byte bytes32
+    // 92-byte 20-byte-address layout, Solana hosts (DD-026) the 128-byte bytes32
     // layout. Per-host identity validation happens inside the helper.
     const metaData = buildInputProofMetaData({
       chainId,

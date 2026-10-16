@@ -931,7 +931,7 @@ pub struct InputProofRequest {
     pub extra_data: Bytes,
 }
 
-/// The contract and user of an input proof, in the format of their host chain (RFC-021). The
+/// The contract and user of an input proof, in the format of their host chain (DD-026). The
 /// variant follows the chain id's type byte and selects the Gateway entry.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -946,7 +946,7 @@ pub enum HostIdentities {
     },
 }
 
-/// The kind of host chain a chain id names, by its RFC-021 type byte.
+/// The kind of host chain a chain id names, by its type byte (DD-052).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HostChainType {
     Evm,
@@ -1075,7 +1075,7 @@ mod tests {
     // Canonical 32-byte base58 Solana identities (Token program + wrapped-SOL mint).
     const SOLANA_CONTRACT: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
     const SOLANA_USER: &str = "So11111111111111111111111111111111111111112";
-    // A canonical RFC-021 Solana chain id: type byte `0x01` | 12345.
+    // A Solana chain id (DD-052): type byte `0x01` | 12345.
     const SOLANA_CHAIN_ID_HEX: &str = "0x0100000000003039";
 
     #[test]

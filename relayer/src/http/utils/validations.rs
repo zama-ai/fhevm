@@ -69,7 +69,7 @@ pub fn validate_blockchain_addresses(addresses: &Vec<String>) -> Result<(), Vali
     Ok(())
 }
 
-/// Validates a host-chain account identity in the format of the request's host chain (RFC-021):
+/// Validates a host-chain account identity in the format of the request's host chain (DD-026):
 /// an EVM 0x-hex 20-byte address, as `validate_blockchain_address` does, or a Solana base58 32-byte
 /// public key. An unknown chain type is reported on the chain id, by `validate_host_chain_type`.
 pub fn validate_host_address(address: &str, chain: &HostChainType) -> Result<(), ValidationError> {
@@ -82,7 +82,7 @@ pub fn validate_host_address(address: &str, chain: &HostChainType) -> Result<(),
     }
 }
 
-/// Refuses a chain id whose RFC-021 type byte is neither EVM (`0x00`) nor Solana (`0x01`).
+/// Refuses a chain id whose type byte (DD-052) is neither EVM (`0x00`) nor Solana (`0x01`).
 pub fn validate_host_chain_type(
     _chain_id: &str,
     chain: &HostChainType,

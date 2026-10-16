@@ -116,7 +116,7 @@ async fn main() -> Result<()> {
 
     let db = Database::new(
         &args.database_url,
-        ChainId::from_canonical_u64(config.chain_id),
+        ChainId::try_from(config.chain_id).context("HostConfig chain id")?,
         args.dependence_cache_size,
     )
     .await

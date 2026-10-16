@@ -963,7 +963,7 @@ mod apply_block_tests {
     ) -> Database {
         Database::new(
             &instance.db_url,
-            ChainId::from_canonical_u64(config().chain_id),
+            ChainId::try_from(config().chain_id).unwrap(),
             100,
         )
         .await
@@ -999,6 +999,42 @@ mod apply_block_tests {
                 returned_results: vec![],
             }),
         }
+    }
+
+    /// The solana-devnet chain id (DD-052) is a positive `BIGINT`, so it passes the
+    /// `chain_id >= 0` checks and reads back unchanged. A bit-63 id is refused by them.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_devnet_chain_id_passes_the_chain_id_checks() {
+        const SOLANA_DEVNET_CHAIN_ID: u64 = 0x01ce_59db_5080_fc2c;
+        let (_instance, db) = new_db().await;
+        let pool = db.pool().await;
+        let insert = |chain_id: i64| {
+            sqlx::query(
+                "INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES ($1, 'solana-devnet', '')",
+            )
+            .bind(chain_id)
+            .execute(&pool)
+        };
+
+        let devnet = ChainId::try_from(SOLANA_DEVNET_CHAIN_ID).unwrap();
+        insert(devnet.as_i64()).await.unwrap();
+        let stored: i64 = sqlx::query_scalar(
+            "SELECT chain_id FROM host_chains WHERE name = 'solana-devnet'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            ChainId::try_from(stored).unwrap().as_u64(),
+            SOLANA_DEVNET_CHAIN_ID
+        );
+
+        let refused =
+            insert(0x8000_0000_0000_3039_u64 as i64).await.unwrap_err();
+        assert!(
+            refused.to_string().contains("host_chains_chain_id_check"),
+            "{refused}"
+        );
     }
 
     /// Slots 40, 41, 43 and 44, with slot 42 skipped, are heights 38 to 41: the rows step by
@@ -1117,7 +1153,7 @@ mod apply_block_tests {
         };
 
         let (instance, db) = new_db().await;
-        let chain_id = ChainId::from_canonical_u64(config().chain_id);
+        let chain_id = ChainId::try_from(config().chain_id).unwrap();
         let pool = db.pool().await;
         sqlx::query("INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES ($1, 'solana', '') ON CONFLICT DO NOTHING")
             .bind(chain_id.as_i64())

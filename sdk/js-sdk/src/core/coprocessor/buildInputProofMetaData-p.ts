@@ -13,7 +13,7 @@ import { chainTypeByte, isEvmHostChainId, isSolanaHostChainId } from '../chains/
  * selects the layout:
  *
  * - EVM hosts: `contract(20) || user(20) || acl(20) || chainId(32)` = 92 bytes.
- * - Solana hosts (RFC-021): `contract(32) || user(32) || acl(32) || chainId(32)`
+ * - Solana hosts (DD-026): `contract(32) || user(32) || acl(32) || chainId(32)`
  *   = 128 bytes, where the three identities are bytes32 host addresses.
  *
  * The chain id is always the trailing 32-byte big-endian word and carries the

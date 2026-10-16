@@ -32,7 +32,7 @@ export interface ZkProof {
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// SolanaZkProof — RFC-021 bytes32 host-identity counterpart of ZkProof. Kept as a
+// SolanaZkProof — DD-026 bytes32 host-identity counterpart of ZkProof. Kept as a
 // parallel type so the EVM ZkProof's ChecksummedAddress surface stays untouched.
 //
 ////////////////////////////////////////////////////////////////////////////////

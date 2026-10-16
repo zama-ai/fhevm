@@ -9,7 +9,7 @@
 //! contract_addr (20) || user_addr (20) || acl_contract_addr (20) || chain_id (32 BE)
 //! ```
 //!
-//! Solana hosts (RFC-021 bytes32 identities, 128 bytes total):
+//! Solana hosts (DD-026 bytes32 identities, 128 bytes total):
 //!
 //! ```text
 //! contract (32) || user (32) || acl (32) || chain_id (32 BE, type byte 0x01)
@@ -58,7 +58,7 @@ pub const SOLANA_ZK_AUX_DATA_SIZE: usize = 128;
 
 /// Assemble the auxiliary data bound into an input proof for a Solana host.
 ///
-/// The three identities are RFC-021 bytes32 host addresses, accepted in either encoding
+/// The three identities are DD-026 bytes32 host addresses, accepted in either encoding
 /// they appear in (see [`parse_bytes32`]). The chain id keeps its type byte.
 pub fn assemble_solana_aux_data(
     contract_identity: &str,
@@ -135,7 +135,7 @@ mod tests {
             &format!("0x{}", "11".repeat(32)),
             &format!("0x{}", "22".repeat(32)),
             &format!("0x{}", "33".repeat(32)),
-            ChainId::from_canonical_u64(solana_host_chain_id(12345)),
+            ChainId::try_from(solana_host_chain_id(12345)).unwrap(),
         )
         .expect("assemble");
         assert_eq!(&assembled[0..32], &[0x11; 32]);

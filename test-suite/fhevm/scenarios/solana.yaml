@@ -2,7 +2,7 @@ version: 1
 kind: coprocessor-consensus
 name: Solana Host
 description: >-
-  EVM gateway + coprocessor stack with an RFC-021 Solana host chain. fhevm-cli owns the whole
+  EVM gateway + coprocessor stack with a Solana host chain. fhevm-cli owns the whole
   stack: the EVM services in compose, and the Solana host as a host process (solana-test-validator
   with the geyser plugin, program deploy, zama-host bootstrap, DB registration, gateway
   addHostChain, and the host-listener) in the `host-process` pipeline step. The KMS is the default

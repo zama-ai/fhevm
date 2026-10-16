@@ -5,7 +5,7 @@ import type { Bytes32Hex } from './primitives.js';
  * counterpart of `FhevmChain`.
  *
  * - `id` — the Solana host chain id embedded in each ciphertext handle (`contracts_chain_id`).
- *   It is a `bigint`: the RFC-021 Solana host id (e.g. `72057594037940281n`) exceeds
+ *   It is a `bigint`: a Solana host id (DD-052), such as `72057594037940281n`, exceeds
  *   `Number.MAX_SAFE_INTEGER`, so a `number` would silently lose precision.
  * - `relayerUrl` — the relayer that serves input proofs and the FHE public key.
  * - `decryptionRelayerUrl` — the relayer that answers user and public decryptions, synchronously

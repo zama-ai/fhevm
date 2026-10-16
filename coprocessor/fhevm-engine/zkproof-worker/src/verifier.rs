@@ -477,10 +477,12 @@ async fn execute_verify_proof_routine(
         };
         let host_chain_id_raw: i64 = row.chain_id;
 
-        // A Solana host id carries type byte `0x01` and stores as a positive i64.
-        // from_canonical_u64 recovers the full u64 host id for EVM and Solana alike.
-        // The lookup below still guards against a cache/SELECT divergence.
-        let host_chain_id = ChainId::from_canonical_u64(host_chain_id_raw as u64);
+        // The filter above guarantees host_chain_id_raw is in HostChainsCache.
+        // Both lookups below are infallible in practice; the `?` is a sanity
+        // backstop for the (impossible-in-current-code) case where the cache
+        // diverges from the SELECT result mid-routine.
+        let host_chain_id = ChainId::try_from(host_chain_id_raw)
+            .map_err(|_| ExecutionError::UnknownChainId(host_chain_id_raw))?;
         let host_chain = host_chain_cache
             .get_chain(host_chain_id)
             .ok_or(ExecutionError::UnknownChainId(host_chain_id_raw))?;

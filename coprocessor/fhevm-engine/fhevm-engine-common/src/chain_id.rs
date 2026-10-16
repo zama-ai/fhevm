@@ -23,29 +23,16 @@ pub use zama_solana_acl::host_chain::{
 
 impl ChainId {
     /// Returns the inner value as `i64` (for database operations).
-    ///
-    /// Type-byte Solana ids sit below `i64::MAX` and store as a positive BIGINT.
-    /// [`Self::from_canonical_u64`] still bitcasts any `u64`, including values
-    /// with bit 63 set.
     #[inline]
     pub fn as_i64(self) -> i64 {
         self.0
     }
 
-    /// Returns the canonical u64 chain id (for blockchain APIs and handle
-    /// derivation). The type byte is preserved verbatim.
+    /// Returns the inner value as `u64` (for blockchain APIs).
+    /// Safe because the invariant guarantees 0 <= self.0 <= i64::MAX.
     #[inline]
     pub fn as_u64(self) -> u64 {
         self.0 as u64
-    }
-
-    /// Builds a chain id from a canonical u64 host identifier. Unlike
-    /// `TryFrom<u64>` (which rejects values above `i64::MAX`), this bitcasts the
-    /// full 64-bit identity so a value with bit 63 set still round-trips through
-    /// the BIGINT column. Type-byte Solana ids do not need that path.
-    #[inline]
-    pub fn from_canonical_u64(value: u64) -> Self {
-        ChainId(value as i64)
     }
 
     /// True when the high byte is the Solana type byte `0x01`.
@@ -196,31 +183,19 @@ mod tests {
 
     #[test]
     fn unknown_type_byte_is_neither_evm_nor_solana() {
-        let id = ChainId::from_canonical_u64(0x0200_0000_0000_3039);
+        let id = ChainId::try_from(0x0200_0000_0000_3039_u64).unwrap();
         assert!(!id.is_solana_host());
         assert!(!id.is_evm_host());
-        let leftover_bit63 = ChainId::from_canonical_u64(0x8000_0000_0000_3039);
-        assert!(!leftover_bit63.is_solana_host());
-        assert!(!leftover_bit63.is_evm_host());
     }
 
     #[test]
-    fn canonical_u64_round_trips_solana_type_byte() {
+    fn solana_type_byte_round_trips() {
         let canonical = solana_host_chain_id(12345);
-        let id = ChainId::from_canonical_u64(canonical);
+        let id = ChainId::try_from(canonical).unwrap();
 
         assert_eq!(id.as_u64(), canonical);
         assert!(id.as_i64() > 0);
         assert!(id.is_solana_host());
-        assert_eq!(ChainId::try_from(canonical).unwrap(), id);
-        assert_eq!(ChainId::from_canonical_u64(id.as_i64() as u64), id);
-    }
-
-    #[test]
-    fn canonical_u64_preserves_evm_ids() {
-        let id = ChainId::from_canonical_u64(12345);
-        assert_eq!(id.as_u64(), 12345);
-        assert_eq!(id.as_i64(), 12345);
-        assert!(!id.is_solana_host());
+        assert_eq!(ChainId::try_from(id.as_i64()).unwrap(), id);
     }
 }

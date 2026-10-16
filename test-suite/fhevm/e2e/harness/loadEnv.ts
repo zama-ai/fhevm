@@ -7,7 +7,7 @@
 // Source "local" (the default): the local clean-e2e stack. Every value below is what that runtime
 // provides, traced to where it lands:
 //   - urls/ids: the clean-e2e bring-up (validator RPC/WS, relayer, the
-//     RFC-021 host chain id, ACL program, KMS context ids), as named by
+//     host chain id (DD-052), ACL program, KMS context ids), as named by
 //     `src/solana/endpoints.ts` (LOCAL_SOLANA_ENDPOINTS) and `src/layout.ts` (SOLANA_ACL_PROGRAM).
 //   - coprocessor DB and Merkle record containers: `test-suite/fhevm/src/layout.ts`
 //     (COPROCESSOR_DB_CONTAINER, SOLANA_MERKLE_DB_CONTAINER).
@@ -65,7 +65,7 @@ export type TestEnv = {
   readonly gatewayRpcUrl: string;
   /** Primary EVM host chain RPC — where the deployed `ProtocolConfig` declares the active KMS pair. */
   readonly hostRpcUrl: string;
-  /** RFC-021 Solana host chain id (72057594037940281); type byte `0x01` marks it a Solana chain. */
+  /** Solana host chain id (72057594037940281, DD-052); type byte `0x01` marks it a Solana chain. */
   readonly chainId: bigint;
   /** zama-host program id as a bytes32 hex — the Solana ACL identity. */
   readonly aclProgram: `0x${string}`;

@@ -13,9 +13,9 @@ export type SolanaEncryptInputValue = {
 };
 
 export type SolanaEncryptInputParameters = {
-  /** The bound contract identity, a 32-byte (bytes32) Solana host identity (RFC-021). */
+  /** The bound contract identity, a 32-byte (bytes32) Solana host identity (DD-026). */
   readonly contractAddress: Bytes32Hex;
-  /** The bound user identity, a 32-byte (bytes32) Solana host identity (RFC-021). */
+  /** The bound user identity, a 32-byte (bytes32) Solana host identity (DD-026). */
   readonly userAddress: Bytes32Hex;
   readonly values: readonly SolanaEncryptInputValue[];
 };
@@ -27,7 +27,7 @@ export type SolanaEncryptInputResult = SolanaZkProof;
 /**
  * Builds a Solana input ZK proof — the public counterpart of the EVM `generateZkProof`.
  * It packs the values, fetches the FHE encryption key, and produces a {@link SolanaZkProof}
- * (RFC-021 bytes32 host identities + 128-byte aux). Submitting the proof to the relayer and
+ * (DD-026 bytes32 host identities + 128-byte aux). Submitting the proof to the relayer and
  * reading back the verified handle is the caller's job.
  */
 export async function encryptInput(

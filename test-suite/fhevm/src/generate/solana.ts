@@ -77,7 +77,7 @@ export type KmsHostChainEntry = {
 
 /**
  * Serializes `KMS_CONNECTOR_HOST_CHAINS`. EVM entries carry a numeric `chain_id` + `acl_address`.
- * Solana entries emit `chain_id` as a raw integer literal (RFC-021 ids exceed
+ * Solana entries emit `chain_id` as a raw integer literal (DD-052 ids exceed
  * Number.MAX_SAFE_INTEGER, so `JSON.stringify(Number(id))` would corrupt it),
  * `solana_host_program_id` and the Merkle proof server the connector requires for a Solana chain,
  * with `proofServerSignerAddress`, the signer of the coprocessor running it, and no `acl_address`.

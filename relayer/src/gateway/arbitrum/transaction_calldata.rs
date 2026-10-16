@@ -171,7 +171,7 @@ impl ComputeCalldata {
         Ok(Bytes::from(calldata))
     }
 
-    /// Solana (RFC-021) counterpart of [`Self::verify_proof_req`]: encodes a
+    /// Solana (DD-026) counterpart of [`Self::verify_proof_req`]: encodes a
     /// `verifyProofRequestSolana` call with 32-byte bytes32 host identities (Solana
     /// program id / pubkey). The contract chain id is the full u64 carrying the
     /// Solana type byte.
@@ -214,7 +214,7 @@ mod solana_calldata_tests {
     fn verify_proof_req_solana_encodes_bytes32_identities() {
         let contract = FixedBytes::<32>::from([0x11u8; 32]);
         let user = FixedBytes::<32>::from([0x22u8; 32]);
-        // RFC-021 Solana host chain id (type byte 0x01).
+        // Solana host chain id (type byte 0x01, DD-052).
         let chain_id = zama_solana_acl::host_chain::solana_host_chain_id(12345);
 
         let calldata = ComputeCalldata::verify_proof_req_solana(

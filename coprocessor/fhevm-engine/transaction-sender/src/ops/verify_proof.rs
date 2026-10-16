@@ -32,7 +32,7 @@ sol! {
     }
 }
 
-// RFC-021 (Solana host) counterpart with bytes32 host identities. The gateway names this
+// Solana host (DD-026) counterpart with bytes32 host identities. The gateway names this
 // EIP-712 type "CiphertextVerification" as well (EIP712_SOLANA_ZKPOK_TYPE), distinguished
 // from the EVM type only by its bytes32 identity fields. alloy derives the EIP-712 type name
 // from the struct identifier, so this lives in its own module to reuse the name while differing
@@ -449,21 +449,24 @@ where
                         verifying_contract: self.input_verification_address,
                     };
 
-                    // RFC-021 Solana hosts carry type byte `0x01`; they use bytes32 dapp/user
-                    // identities and the verifyProofResponseSolana entrypoint, signing the matching
-                    // bytes32 CiphertextVerification typed data. EVM hosts keep the 20-byte path.
-                    let chain_id = ChainId::from_canonical_u64(row.chain_id as u64);
-                    if !chain_id.is_solana_host() && !chain_id.is_evm_host() {
-                        error!(
-                            parent: &span,
-                            chain_id = row.chain_id,
-                            "unsupported chain type byte (expected 0x00 EVM or 0x01 Solana)"
-                        );
-                        self.remove_proof_by_id(row.zk_proof_id)
-                            .instrument(span.clone())
-                            .await?;
-                        continue;
-                    }
+                    // Solana hosts carry type byte `0x01` (DD-052); they use bytes32 dapp/user
+                    // identities (DD-026) and the verifyProofResponseSolana entrypoint, signing the
+                    // matching bytes32 CiphertextVerification typed data. EVM hosts keep the
+                    // 20-byte path.
+                    let chain_id = match ChainId::try_from(row.chain_id) {
+                        Ok(id) if id.is_solana_host() || id.is_evm_host() => id,
+                        _ => {
+                            error!(
+                                parent: &span,
+                                chain_id = row.chain_id,
+                                "unsupported chain type byte (expected 0x00 EVM or 0x01 Solana)"
+                            );
+                            self.remove_proof_by_id(row.zk_proof_id)
+                                .instrument(span.clone())
+                                .await?;
+                            continue;
+                        }
+                    };
                     if chain_id.is_solana_host() {
                         let signing_hash = solana_zkpok::CiphertextVerification {
                             ctHandles: handles.clone(),
