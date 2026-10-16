@@ -315,7 +315,9 @@ pub fn evaluate_steps(
 
 fn binary(op: FheBinaryOpCode, lhs: Value, rhs: Value, output_fhe_type: u8) -> Result<Value> {
     let width = fhe_type_bit_width(lhs.fhe_type)?;
-    // Shift and rotate amounts wrap at the operand width, as tfhe-rs 1.7 does.
+    // A shift by the operand width or more gives 0, and a rotation wraps at the width, as tfhe-rs
+    // does for scalar and encrypted amounts.
+    let overshift = rhs.bits >= u128::from(width);
     let amount = || (rhs.bits % u128::from(width)) as u32;
     let bits = match op {
         FheBinaryOpCode::Add => lhs.bits.wrapping_add(rhs.bits),
@@ -326,7 +328,8 @@ fn binary(op: FheBinaryOpCode, lhs: Value, rhs: Value, output_fhe_type: u8) -> R
         FheBinaryOpCode::And => lhs.bits & rhs.bits,
         FheBinaryOpCode::Or => lhs.bits | rhs.bits,
         FheBinaryOpCode::Xor => lhs.bits ^ rhs.bits,
-        FheBinaryOpCode::Shl => lhs.bits.checked_shl(amount()).unwrap_or(0),
+        FheBinaryOpCode::Shl | FheBinaryOpCode::Shr if overshift => 0,
+        FheBinaryOpCode::Shl => lhs.bits << amount(),
         FheBinaryOpCode::Shr => lhs.bits >> amount(),
         FheBinaryOpCode::Rotl | FheBinaryOpCode::Rotr => {
             let amount = amount();
