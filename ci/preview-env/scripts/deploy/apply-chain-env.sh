@@ -170,11 +170,15 @@ for f in "${root}/coprocessor/values-coprocessor-bcs-e2e.yaml" \
 done
 GATEWAY_WS="${GATEWAY_WS}" yq -i '.commonConfig.gatewayUrl.value = strenv(GATEWAY_WS)' \
   "${root}/coprocessor/values-coprocessor-e2e.yaml"
-# The tx-sender needs HTTP from 0.15 on - it fails fast on a ws:// URL ("Gateway URL is not usable
-# by this build") - while commonConfig stays ws:// for the gw-listener. The BCS overlay pins the
-# previous release's sender back to ws://, since that build speaks WebSocket.
-GATEWAY_HTTP="${GATEWAY_HTTP}" yq -i '.txSender.config.gatewayUrl.value = strenv(GATEWAY_HTTP)' \
-  "${root}/coprocessor/values-coprocessor-e2e.yaml"
+# v0.14.2+ tx-sender fails fast on a ws:// URL ("Gateway URL is not usable by this
+# build"); commonConfig stays ws:// for the gw-listener. Chart 0.13.8 ignores
+# txSender.config.gatewayUrl and only renders the template --gateway-url flag, so
+# the HTTP URL is also the extraArgs entry (the template flag is disabled). The
+# BCS overlay clears that arg and pins the v0.14.1 sender back to ws://.
+GATEWAY_HTTP="${GATEWAY_HTTP}" yq -i '
+  .txSender.config.gatewayUrl.value = strenv(GATEWAY_HTTP) |
+  .txSender.extraArgs = ["--gateway-url=" + strenv(GATEWAY_HTTP)]
+' "${root}/coprocessor/values-coprocessor-e2e.yaml"
 GATEWAY_WS="${GATEWAY_WS}" yq -i '.txSender.config.gatewayUrl.value = strenv(GATEWAY_WS)' \
   "${root}/coprocessor/values-coprocessor-bcs-e2e.yaml"
 if rpc_from_secret; then
@@ -193,11 +197,27 @@ set_poller_flag "${poller}" "--finality-lag" "${HOST_FINALITY_LAG}"
 kms="${root}/kms-connector/values-kms-connector-e2e.yaml"
 set_kms_host_chain() {
   # $1 file, $2 entry name, $3 url, $4 chain id
+  # Chart 2.x reads hostChains.<name>. Chart 1.5.3 (v0.14.2) reads the flat
+  # ethereumUrl / ethereumChainId / polygonUrl / polygonChainId keys.
   local file="$1" name="$2" url="$3" chain_id="$4"
   NAME="${name}" URL="${url}" CHAIN_ID="${chain_id}" yq -i '
     .commonConfig.hostChains[strenv(NAME)].url = strenv(URL) |
     .commonConfig.hostChains[strenv(NAME)].chainId = strenv(CHAIN_ID)
   ' "${file}"
+  case "${name}" in
+    ethereum)
+      URL="${url}" CHAIN_ID="${chain_id}" yq -i '
+        .commonConfig.ethereumUrl = strenv(URL) |
+        .commonConfig.ethereumChainId = strenv(CHAIN_ID)
+      ' "${file}"
+      ;;
+    polygon)
+      URL="${url}" CHAIN_ID="${chain_id}" yq -i '
+        .commonConfig.polygonUrl = strenv(URL) |
+        .commonConfig.polygonChainId = strenv(CHAIN_ID)
+      ' "${file}"
+      ;;
+  esac
 }
 GATEWAY_HTTP="${GATEWAY_HTTP}" GATEWAY_CHAIN_ID="${GATEWAY_CHAIN_ID}" yq -i '
   .commonConfig.gatewayUrl = strenv(GATEWAY_HTTP) |

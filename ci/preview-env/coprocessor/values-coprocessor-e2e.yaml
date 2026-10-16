@@ -270,22 +270,31 @@ txSender:
   # so the relayer polls forever and the e2e input test times out.
   wallet: {secret: {value: "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"}}
   config:
-    # From 0.15 the sender talks HTTP to the gateway and aborts at startup on a
-    # ws:// URL ("Gateway URL is not usable by this build"). Unset, the template
-    # falls back to commonConfig.gatewayUrl, which stays ws:// for gwListener -
-    # anvil serves both schemes on the same port (see ../gateway-chain/
-    # values-anvil-gateway-e2e.yaml's single `port: 8546`). apply-chain-env.sh
-    # overwrites this for blockchain-dev/testnets, and the BCS overlay pins it
-    # back to ws:// for the v0.14.x sender.
+    # v0.14.2 and later talk HTTP to the gateway and abort at startup on a
+    # ws:// URL ("Gateway URL is not usable by this build"). Unset, charts
+    # that know this field fall back to commonConfig.gatewayUrl, which stays
+    # ws:// for gwListener. Anvil serves both schemes on the same port (see
+    # ../gateway-chain/values-anvil-gateway-e2e.yaml's single `port: 8546`).
+    # apply-chain-env.sh overwrites this for blockchain-dev/testnets, and the
+    # BCS overlay pins it back to ws:// for the v0.14.1 sender.
     gatewayUrl: {value: "http://anvil-gateway-anvil-node:8546"}
+  # coprocessor chart 0.13.8 (v0.14.2) injects GATEWAY_URL only from
+  # commonConfig.gatewayUrl, so txSender.config.gatewayUrl above never reaches
+  # the container. Drop the template flag and pass the HTTP URL as an arg,
+  # which both 0.13.8 and the current chart honor. apply-chain-env.sh rewrites
+  # this list with config.gatewayUrl. The BCS overlay clears it so the v0.14.1
+  # sender keeps the template's ws:// flag.
+  extraArgs:
+    - "--gateway-url=http://anvil-gateway-anvil-node:8546"
   # --multichain-acl-address (see charts/coprocessor/values.yaml's
   # txSender.disabledArgs comment) would reference a nonexistent
   # gw-sc-addresses key: gateway-contracts still doesn't deploy a
   # MultichainAcl contract even at v0.13.0 (see commonConfig.
   # gatewayContractAddresses above; confirmed via `kubectl get configmap
   # gw-sc-addresses` - no multichain_acl.address key) - caused
-  # CreateContainerConfigError without this.
-  disabledArgs: ["multichain-acl-address"]
+  # CreateContainerConfigError without this. gateway-url is disabled so the
+  # extraArgs HTTP URL is the one the process starts with.
+  disabledArgs: ["multichain-acl-address", "gateway-url"]
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
