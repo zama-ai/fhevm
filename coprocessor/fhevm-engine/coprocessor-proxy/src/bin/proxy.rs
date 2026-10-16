@@ -68,19 +68,23 @@ fn run() -> anyhow::Result<()> {
         }
         Subcommands::Start { config } => {
             let config = Config::from_env_and_file(config.as_deref())?;
-            fhevm_engine_common::telemetry::init_json_subscriber(
-                config.log_level,
-                &config.service_name,
-                "",
-            )
-            .map_err(|e| anyhow::anyhow!(e))?;
-            debug!("{config:?}");
 
-            // The monitoring servers run on this tokio runtime, next to Pingora's own.
+            // The monitoring servers and the OTLP exporter run on this tokio runtime, next to
+            // Pingora's own.
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(1)
                 .enable_all()
                 .build()?;
+            let _otel_guard = {
+                let _runtime = runtime.enter();
+                fhevm_engine_common::telemetry::init_tracing_otel_with_logs_only_fallback(
+                    config.log_level,
+                    &config.service_name,
+                    "otlp-layer",
+                )
+            };
+            debug!("{config:?}");
+
             let (proxy, state) = Proxy::from_config(config.proxy_config()?)?;
             let cancel_token = CancellationToken::new();
             let health_server = healthz_server::HttpServer::new(
