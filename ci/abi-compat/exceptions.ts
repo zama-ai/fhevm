@@ -55,8 +55,8 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "event ActivateEpoch(uint256 indexed,uint256 indexed,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[],string[])",
       "function confirmEpochActivation(uint256,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[]) returns ()",
       "function confirmKmsContextCreation(uint256) returns ()",
-      // The previous-committee quorum is now computed from the active context at confirmation time,
-      // so the cache and its getter were removed.
+      // confirmKmsContextCreation now computes the previous-committee quorum from the active context,
+      // so ProtocolConfig no longer has the cache and its getter.
       "function getContextCreationPreviousTxSenderThreshold(uint256) returns (uint256)",
       // The key and CRS results carry no signature now, so the error names results, not attestations.
       "error EmptyEpochActivationAttestation(uint256)",
