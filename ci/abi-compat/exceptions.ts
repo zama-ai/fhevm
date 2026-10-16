@@ -8,6 +8,20 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
     // FHEVMExecutor declarations whose only revert sites were removed as unreachable
     // dead code (see issue #1370). No deployed call path can emit these selectors.
     FHEVMExecutor: ["error InvalidByteLength(uint8,uint256)", "error SecondOperandIsNotScalar()"],
+    // HCU quotas replace the global block cap and its whitelist. The cap was never activated
+    // (always type(uint48).max) and the whitelist has no entries, so no deployed behavior is lost.
+    HCULimit: [
+      "error AlreadyBlockHCUWhitelisted(address)",
+      "error HCUBlockLimitExceeded()",
+      "error HCUPerBlockBelowMaxPerTx()",
+      "error NotBlockHCUWhitelisted(address)",
+      "event BlockHCUWhitelistAdded(address indexed)",
+      "event BlockHCUWhitelistRemoved(address indexed)",
+      "event HCUPerBlockSet(uint48)",
+      "function getBlockMeter() returns (uint48,uint48)",
+      "function getGlobalHCUCapPerBlock() returns (uint48)",
+      "function isBlockHCUWhitelisted(address) returns (bool)",
+    ],
     KMSVerifier: [
       "event NewContextSet(address[],uint256)",
       "function defineNewContext(address[],uint256)",
