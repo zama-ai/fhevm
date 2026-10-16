@@ -1,0 +1,43 @@
+[package]
+name = "coprocessor-proxy"
+authors.workspace = true
+edition = "2024"
+license.workspace = true
+version = "0.1.0"
+
+[dependencies]
+fhevm-engine-common = { path = "../fhevm-engine-common" }
+fhevm-sig-auth = { path = "../../../shared/fhevm-sig-auth", features = ["protocol-config"] }
+
+alloy.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+clap.workspace = true
+config.workspace = true
+http.workspace = true
+humantime-serde.workspace = true
+pingora.workspace = true
+prometheus.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+axum = { workspace = true, features = ["http2"] }
+fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-features = false }
+futures-util.workspace = true
+rcgen.workspace = true
+rstest.workspace = true
+rustls.workspace = true
+serial_test.workspace = true
+tokio-rustls.workspace = true
+
+[[bin]]
+name = "coprocessor-proxy"
+path = "src/bin/proxy.rs"
+
+[lints]
+workspace = true

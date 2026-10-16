@@ -51,6 +51,8 @@ jobs:
             - shared/user-decryption-signature/**
           fhevm-sig-auth:
             - shared/fhevm-sig-auth/**
+            # Path dependency of the `protocol-config` feature.
+            - host-contracts/rust_bindings/**
           gateway-contracts-bindings:
             - gateway-contracts/rust_bindings/**
           host-contracts-bindings:

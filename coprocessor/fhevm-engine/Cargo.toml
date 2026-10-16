@@ -12,6 +12,7 @@ members = [
     "stress-test-generator",
     "upgrade-controller",
     "consensus-detector",
+    "coprocessor-proxy",
 ]
 
 [workspace.package]
@@ -31,6 +32,20 @@ alloy = { version = "2.2.0", default-features = false, features = [
 alloy-primitives = "1.6.1"
 async-trait = "0.1.88"
 axum = "0.7"
+bytes = "1.10"
+config = { version = "=0.15.19", default-features = false, features = ["toml"] }
+humantime-serde = "1.1.1"
+pingora = { version = "=0.9.0", default-features = false, features = [
+    "openssl",
+    "lb",
+    "proxy",
+] }
+rcgen = { version = "0.14", default-features = false, features = [
+    "aws_lc_rs",
+    "crypto",
+    "pem",
+] }
+rstest = "0.25"
 tower-http = { version = "0.5", features = ["trace"] }
 anyhow = "1.0.98"
 aws-config = "1.8.5"
@@ -89,6 +104,7 @@ tfhe-zk-pok = "=0.9.0"
 time = "0.3.47"
 tokio = { version = "1.45.0", features = ["full"] }
 tokio-util = "0.7.15"
+tokio-rustls = { version = "0.26", default-features = false, features = ["aws-lc-rs"] }
 tonic = { version = "0.12.3", features = ["server"] }
 tonic-build = "0.12.3"
 tracing = "0.1.41"
