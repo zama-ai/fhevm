@@ -6,7 +6,7 @@ use crate::core::{
         AppState,
         decrypt::{self, DecryptionRoute},
     },
-    validation::validate_user_decryption,
+    validation::{ValidationError, validate_user_decryption},
 };
 use actix_web::{
     HttpResponse,
@@ -28,8 +28,15 @@ pub async fn user_decrypt(
     body: Json<UserDecryptionRequest>,
 ) -> Result<HttpResponse, ErrorResponse> {
     let request = body.into_inner();
-    validate_user_decryption(&request, &state.config)
-        .map_err(|e| ErrorResponse::new(e.code(), e.to_string(), None))?;
+    validate_user_decryption(&request, &state.config).map_err(|e| {
+        let id = match e {
+            ValidationError::RequestNotYetValid | ValidationError::RequestExpired => {
+                Some(request.id())
+            }
+            _ => None,
+        };
+        ErrorResponse::new(e.code(), e.to_string(), id)
+    })?;
     let id = request.id();
     tracing::Span::current().record("decryption_id", id.to_string());
 

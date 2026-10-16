@@ -322,7 +322,7 @@ where
         if now > end {
             return Err(RequestCheckError::irrecoverable(
                 RequestCheckKind::Signature,
-                ErrorCode::UserSignatureRejected,
+                ErrorCode::UserDecryptionExpired,
                 anyhow!(
                     "RFC016 user decryption request validity window expired: now {now} > end {end}"
                 ),
@@ -1035,6 +1035,15 @@ mod tests {
             .check_user_decryption_request_v2(&request)
             .await
             .map_err(RequestCheckError::record);
+
+        let error = result.as_ref().unwrap_err();
+        if start_offset_secs < 0 {
+            assert_eq!(error.code, ErrorCode::UserDecryptionExpired);
+            assert!(!error.code.retryable());
+        } else {
+            assert_eq!(error.code, ErrorCode::UserSignatureRejected);
+            assert!(error.code.retryable());
+        }
 
         match expected {
             ExpectedOutcome::Ok => {

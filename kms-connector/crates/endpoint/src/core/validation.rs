@@ -1,4 +1,4 @@
-//! Cheap, stateless request checks (no RPC, no DB). Any failure maps to `400 Bad Request`.
+//! Cheap request checks (no RPC, no DB).
 
 use crate::core::Config;
 use alloy::primitives::B256;
@@ -9,6 +9,7 @@ use connector_utils::types::{
 use kms_connector_api::{
     AttestationType, ErrorCode, PublicDecryptionRequest, RequestValidity, UserDecryptionRequest,
 };
+use sqlx::types::chrono::Utc;
 use tfhe::FheTypes;
 use thiserror::Error;
 
@@ -34,6 +35,10 @@ pub enum ValidationError {
     InvalidExtraData(String),
     #[error("requestValidity.{field} is too high: {value}, max is {}", i64::MAX)]
     RequestValidityOutOfRange { field: &'static str, value: u64 },
+    #[error("user decryption request is not yet valid")]
+    RequestNotYetValid,
+    #[error("user decryption request has expired; submit a new signed request")]
+    RequestExpired,
     #[error(
         "unsupported attestationType, supported: [{supported}]",
         supported = supported_attestation_types()
@@ -50,6 +55,8 @@ impl ValidationError {
     pub fn code(&self) -> ErrorCode {
         match self {
             Self::UnsupportedAttestationType => ErrorCode::UnsupportedAttestationType,
+            Self::RequestNotYetValid => ErrorCode::UserSignatureRejected,
+            Self::RequestExpired => ErrorCode::UserDecryptionExpired,
             Self::NoHandles
             | Self::BitSizeExceeded(..)
             | Self::TooManyAllowedContracts(..)
@@ -90,6 +97,7 @@ pub fn validate_user_decryption(
     validate_extra_data(&payload.extraData)
 }
 
+/// Checks storage bounds and the inclusive signed interval before admission.
 fn validate_request_validity(validity: &RequestValidity) -> Result<(), ValidationError> {
     for (field, value) in [
         ("startTimestamp", validity.startTimestamp),
@@ -98,6 +106,16 @@ fn validate_request_validity(validity: &RequestValidity) -> Result<(), Validatio
         if i64::try_from(value).is_err() {
             return Err(ValidationError::RequestValidityOutOfRange { field, value });
         }
+    }
+    let now = Utc::now().timestamp() as u64;
+    let start = validity.startTimestamp;
+    // Both fields fit in i64, so their sum fits in u64.
+    let end = start + validity.durationSeconds;
+    if now < start {
+        return Err(ValidationError::RequestNotYetValid);
+    }
+    if now > end {
+        return Err(ValidationError::RequestExpired);
     }
     Ok(())
 }
@@ -231,7 +249,7 @@ pub(crate) mod tests {
                 publicKey: Bytes::from(vec![0x20; 32]),
                 allowedContracts: vec![Address::repeat_byte(0x33)],
                 requestValidity: RequestValidity {
-                    startTimestamp: 1_770_000_000,
+                    startTimestamp: Utc::now().timestamp() as u64 - 60,
                     durationSeconds: 300,
                 },
                 extraData: Bytes::from(extra_data),
@@ -316,7 +334,10 @@ pub(crate) mod tests {
         let cfg = config();
         let mut request = user_request(vec![handle(1, EUINT64)], vec![]);
         request.payload.requestValidity.startTimestamp = i64::MAX as u64;
-        assert_eq!(validate_user_decryption(&request, &cfg), Ok(()));
+        assert_eq!(
+            validate_user_decryption(&request, &cfg),
+            Err(ValidationError::RequestNotYetValid)
+        );
 
         request.payload.requestValidity.startTimestamp = i64::MAX as u64 + 1;
         assert_eq!(
@@ -327,7 +348,7 @@ pub(crate) mod tests {
             })
         );
 
-        request.payload.requestValidity.startTimestamp = 1_770_000_000;
+        request.payload.requestValidity.startTimestamp = Utc::now().timestamp() as u64 - 60;
         request.payload.requestValidity.durationSeconds = u64::MAX;
         assert_eq!(
             validate_user_decryption(&request, &cfg),
@@ -336,6 +357,27 @@ pub(crate) mod tests {
                 value: u64::MAX,
             })
         );
+    }
+
+    #[test]
+    fn request_validity_checks_time_and_retryability() {
+        let now = Utc::now().timestamp() as u64;
+        let mut validity = RequestValidity {
+            startTimestamp: now - 60,
+            durationSeconds: 300,
+        };
+        assert_eq!(validate_request_validity(&validity), Ok(()));
+
+        validity.startTimestamp = now + 3600;
+        let early = validate_request_validity(&validity).unwrap_err();
+        assert_eq!(early, ValidationError::RequestNotYetValid);
+        assert!(early.code().retryable());
+
+        validity.startTimestamp = now - 3600;
+        let expired = validate_request_validity(&validity).unwrap_err();
+        assert_eq!(expired, ValidationError::RequestExpired);
+        assert_eq!(expired.code().http_status(), 403);
+        assert!(!expired.code().retryable());
     }
 
     #[test]

@@ -27,13 +27,13 @@ In order to achieve this, the KMS Connector has been divided into 3 components:
     - But we should be able to scale the number of workers to handle more events if required
   - Gets notified by the Postgres DB when new events are stored
   - Forwards the events' requests to the KMS Core, and stores its responses to DB
-  - Removes the events from the DB once handled
+  - Marks handled events as completed; DB rows are retained permanently
 
 - **TransactionSender**
   - Only one tx sender
   - Gets notified by the Postgres DB when new KMS Core responses are stored
   - Forwards the KMS Core responses to the Gateway by submitting transactions
-  - Removes the responses from the DB once forwarded
+  - Marks forwarded responses as completed; DB rows are retained permanently
 
 Here is an overview of the architecture:
 
@@ -82,6 +82,32 @@ block-beta
 ```
 
 ## KMS Connector flow
+
+### HTTP decryption result reuse
+
+The HTTP endpoint derives a request ID from the request contents. An identical submission
+can reuse a stored result without repeating the worker's authorization checks. The proxy
+still authenticates the sender on every HTTP request.
+
+- Public-decryption successes can be reused indefinitely.
+- User-decryption submissions, including requests for stored results, are accepted only within the user-signed interval:
+  `startTimestamp <= now <= startTimestamp + durationSeconds`, using Unix seconds. The endpoint
+  checks this before looking up or queuing work. An admitted HTTP call may receive its
+  outcome after expiry; subsequent submissions are rejected.
+  There is no additional fixed-duration serve window based on response age.
+- An expired user request returns `403 user_decryption_expired` with `retryable: false`.
+  The caller needs a new signed request; the same input cannot be renewed by resubmitting it.
+  A not-yet-valid request returns `403 user_signature_rejected` with `retryable: true`.
+- During the signed interval, stored successes are returned without rechecking ACL access,
+  delegation, signature invalidation, or ERC-1271 account state. Expiry therefore bounds reuse,
+  but does not make revocation immediately effective for already-computed results.
+- Retryable error results cause another processing attempt (or attachment to active work);
+  non-retryable error results are reused. The user validity check also gates these retries.
+
+Connector DB rows are retained permanently. Expiry prevents serving a user result; it does
+not delete it or cause a completed request to be reprocessed. Work already admitted continues
+even if the HTTP caller times out or the signed interval expires, and its result is persisted.
+The endpoint does not recheck expiry when returning the outcome to an already-admitted call.
 
 Here is an overview of the KMS Connector flow from the Gateway request event emitted to the
 transaction response:

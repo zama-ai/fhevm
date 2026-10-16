@@ -26,7 +26,7 @@ use kms_connector_api::{
     VersionResponse,
 };
 use rstest::rstest;
-use sqlx::{Pool, Postgres, Row};
+use sqlx::{Pool, Postgres, Row, types::chrono::Utc};
 use std::{
     net::SocketAddr,
     str::FromStr,
@@ -193,11 +193,19 @@ async fn test_duplicate_submissions_share_one_request() -> anyhow::Result<()> {
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_existing_payload_row_is_served_immediately() -> anyhow::Result<()> {
+async fn test_existing_pdec_payload_row_is_served_immediately() -> anyhow::Result<()> {
     let endpoint = setup().await?;
 
     let public = public_request();
     let inserted = complete_public(&endpoint.db, public.id()).await?;
+    let updated = sqlx::query(
+        "UPDATE public_decryption_responses SET created_at = NOW() - INTERVAL '10 years'
+        WHERE decryption_id = $1",
+    )
+    .bind(db_id(public.id()).as_le_slice().to_vec())
+    .execute(&endpoint.db)
+    .await?;
+    assert_eq!(updated.rows_affected(), 1);
     let response = endpoint.post_public(&public).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body: PublicDecryptionResponse = response.json().await?;
@@ -219,6 +227,91 @@ async fn test_existing_payload_row_is_served_immediately() -> anyhow::Result<()>
     assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 0);
     assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 0);
 
+    endpoint.stop().await
+}
+
+/// Expiry gates both cached successes and retries, without deleting results or queuing work.
+#[rstest]
+#[case::no_result(false, false)]
+#[case::cached_success(true, false)]
+#[case::retryable_error(false, true)]
+#[tokio::test]
+async fn expired_user_request_is_not_served_or_requeued(
+    #[case] cached_success: bool,
+    #[case] retryable_error: bool,
+) -> anyhow::Result<()> {
+    let endpoint = setup().await?;
+    let mut request = user_request();
+    request.payload.requestValidity.startTimestamp = Utc::now().timestamp() as u64 - 600;
+    let id = request.id();
+    if cached_success {
+        complete_udec(&endpoint.db, id).await?;
+    }
+    if retryable_error {
+        insert_rand_user_decryption_request_v2(&endpoint.db, failed_http_request(id)).await?;
+        fail_user(&endpoint.db, id, "acl_denied", "before").await?;
+    }
+
+    assert_error(
+        endpoint.post_user(&request).await,
+        StatusCode::FORBIDDEN,
+        ErrorCode::UserDecryptionExpired,
+        id,
+    )
+    .await;
+    assert_eq!(
+        count_rows(&endpoint.db, USER_REQUESTS).await,
+        i64::from(retryable_error)
+    );
+    assert_eq!(
+        count_rows(&endpoint.db, "user_decryption_responses").await,
+        i64::from(cached_success || retryable_error),
+    );
+    if retryable_error {
+        let row = wait_for_request_row(&endpoint.db, USER_REQUESTS, id).await;
+        assert_eq!(
+            row.get::<OperationStatus, _>("status"),
+            OperationStatus::Failed
+        );
+    }
+    endpoint.stop().await
+}
+
+#[tokio::test]
+async fn admitted_request_can_receive_result_after_expiry() -> anyhow::Result<()> {
+    let endpoint = setup().await?;
+    let mut request = user_request();
+    request.payload.requestValidity.startTimestamp = Utc::now().timestamp() as u64;
+    request.payload.requestValidity.durationSeconds = 2;
+    let id = request.id();
+    let pending = endpoint.spawn_udec(&request);
+    wait_for_request_row(&endpoint.db, USER_REQUESTS, id).await;
+    let end = request.payload.requestValidity.startTimestamp + 2;
+    while Utc::now().timestamp() as u64 <= end {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    complete_udec(&endpoint.db, id).await?;
+    let response = pending.await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .json::<UserDecryptionResponse>()
+            .await?
+            .decryption_id,
+        id
+    );
+    // A later submission is still rejected, even though the result is now cached.
+    assert_error(
+        endpoint.post_user(&request).await,
+        StatusCode::FORBIDDEN,
+        ErrorCode::UserDecryptionExpired,
+        id,
+    )
+    .await;
+    assert_eq!(
+        count_rows(&endpoint.db, "user_decryption_responses").await,
+        1
+    );
     endpoint.stop().await
 }
 
@@ -791,7 +884,7 @@ fn user_request() -> UserDecryptionRequest {
             publicKey: Bytes::from(vec![0x20; 32]),
             allowedContracts: vec![Address::repeat_byte(0x33)],
             requestValidity: RequestValidity {
-                startTimestamp: 1_770_000_000,
+                startTimestamp: Utc::now().timestamp() as u64 - 60,
                 durationSeconds: 300,
             },
             extraData: Bytes::from(vec![0x00]),
