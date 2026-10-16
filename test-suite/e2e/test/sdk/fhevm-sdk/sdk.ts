@@ -172,6 +172,7 @@ export class FhevmSdk implements SdkInstance {
     readonly signer: Signer & { readonly address: string };
     readonly startTimestamp?: number | undefined;
     readonly transportKeypair?: { readonly privateKey: string; readonly publicKey: string } | undefined;
+    readonly timeoutMs?: number | undefined;
   }): Promise<ClearValueType> {
     const { handle, contractAddress, signer } = parameters;
 
@@ -196,6 +197,7 @@ export class FhevmSdk implements SdkInstance {
       transportKeyPair,
       signedPermit,
       encryptedValue: handle,
+      ...(parameters.timeoutMs !== undefined ? { options: { timeout: parameters.timeoutMs } } : {}),
     });
 
     if (typeof res.value === 'number') {
