@@ -1,7 +1,7 @@
 /**
  * Rollback cases for the blue-green profile.
  *
- * Each case perturbs one operator, lets the attempt end, and then asserts that
+ * Each case breaks one operator, lets the attempt end, and then asserts that
  * every operator ended on the same version. They run before the successful
  * cutover, because the cutover moves `versioning` and merges the GCS schema
  * away. Each rollback leaves its rows at `failed`, which is what the listener
@@ -10,11 +10,11 @@
  * The cases run with synthetic ops on, which the profile re-enables before it
  * calls them. The GCS host-listener then injects non-trivial work into each
  * window, so a healthy operator anchors and the rollback comes from the
- * perturbation. A quiet window would roll back on its own and prove nothing.
+ * fault. A quiet window would roll back on its own and prove nothing.
  *
- * They drive no client traffic of their own. Case 2 takes a whole operator out,
- * and on a two-of-two fleet that alone fails every input proof, so traffic
- * there would fail the case for a reason the case is not about.
+ * They run background traffic, as a live fleet carries. A case that takes an
+ * operator out can starve the input proofs, and the traffic then stops without
+ * stopping the case.
  */
 import { PreflightError } from "../errors";
 import { OBJECT_STORE_EXTERNAL_URL, PROJECT, composePath, objectStoreOperatorHost } from "../layout";
@@ -45,12 +45,12 @@ type RollbackCase = {
   label: string;
   proposalId: number;
   /**
-   * True when the perturbation takes the operator out before the window opens.
+   * True when the fault takes the operator out before the window opens.
    * That operator then never reaches `DryRunStarted`, so the profile waits for
    * the others, and no early hash of its own can let a peer anchor.
    */
   beforeWindow: boolean;
-  perturb: () => Promise<void>;
+  fault: () => Promise<void>;
   restore: () => Promise<void>;
   extraAssertions?: (attempt: Attempt) => Promise<void>;
 };
@@ -59,15 +59,15 @@ type Attempt = { proposalHex: string; proposalBlock: string };
 
 /** How long every operator must hold the old version after the rollback. */
 const SPLIT_WATCH_SECONDS = 120;
-/** The operator the cases perturb. Operator 0 stays healthy throughout. */
-const PERTURBED = 1;
+/** The operator each case breaks. Operator 0 stays healthy throughout. */
+const TARGET_OPERATOR = 1;
 /**
  * Window length for these cases. Long enough that the injected work lands and
  * every healthy operator hashes it before the deadline, which is what case 4
  * needs for its `quorum`.
  */
 const CASE_WINDOW = "3m";
-/** Blocks the perturbed operator may still lag by once it catches up. */
+/** Blocks the target operator may still lag by once it catches up. */
 const CATCH_UP_TOLERANCE = 5;
 
 const SHARED_CONTAINERS = /^coprocessor-and-kms-db$/;
@@ -200,19 +200,19 @@ const highestIndexedBlock = async (ctx: RollbackCaseContext, database: string) =
   Number(await ctx.psqlQuery(database, "SELECT COALESCE(MAX(block_number), 0) FROM host_chain_blocks_valid;"));
 
 /**
- * Wait until the perturbed operator indexes what the healthy one holds.
+ * Wait until the target operator indexes what the healthy one holds.
  *
  * The split appears only once the operator that was away works through its
  * backlog. Watching its version before that watches the wrong minutes.
  */
 const waitForCatchUp = async (ctx: RollbackCaseContext) => {
-  const perturbed = ctx.operatorDatabases[PERTURBED]!;
+  const target = ctx.operatorDatabases[TARGET_OPERATOR]!;
   const healthy = ctx.operatorDatabases[0]!;
   await ctx.waitUntil({
-    label: `${perturbed}  caught up with ${healthy}`,
+    label: `${target}  caught up with ${healthy}`,
     timeoutSecs: 600,
     check: async () =>
-      (await highestIndexedBlock(ctx, perturbed)) + CATCH_UP_TOLERANCE >=
+      (await highestIndexedBlock(ctx, target)) + CATCH_UP_TOLERANCE >=
       (await highestIndexedBlock(ctx, healthy)),
   });
 };
@@ -222,7 +222,7 @@ const waitForCatchUp = async (ctx: RollbackCaseContext) => {
  *
  * The version watch is the regression guard. A split appears minutes late, so
  * one reading proves nothing. This watches every operator for
- * [`SPLIT_WATCH_SECONDS`] once the perturbed one catches up.
+ * [`SPLIT_WATCH_SECONDS`] once the target one catches up.
  */
 const assertEveryOperatorRolledBack = async (ctx: RollbackCaseContext) => {
   for (const [index, database] of ctx.operatorDatabases.entries()) {
@@ -237,7 +237,7 @@ const assertEveryOperatorRolledBack = async (ctx: RollbackCaseContext) => {
     }
     // Only on an operator that stayed up. One that was down indexes the
     // window again when it catches up, and those rows are not residue.
-    if (index === PERTURBED) continue;
+    if (index === TARGET_OPERATOR) continue;
     const residue = await ctx.psqlQuery(
       database,
       `SELECT (SELECT count(*) FROM "gcs-${ctx.gcsStackVersion}".computations
@@ -280,12 +280,12 @@ const runRollbackCaseBody = async (ctx: RollbackCaseContext, item: RollbackCase)
 
   // An operator that goes before the window opens never reaches DryRunStarted,
   // so this asserts the Gateway gate on the operators that stay.
-  if (item.beforeWindow) await item.perturb();
+  if (item.beforeWindow) await item.fault();
   const watched = item.beforeWindow
-    ? ctx.operatorDatabases.filter((_, index) => index !== PERTURBED)
+    ? ctx.operatorDatabases.filter((_, index) => index !== TARGET_OPERATOR)
     : ctx.operatorDatabases;
   await ctx.waitDryRunStarted(watched, tips);
-  if (!item.beforeWindow) await item.perturb();
+  if (!item.beforeWindow) await item.fault();
 
   await waitForRollback(ctx, ctx.operatorDatabases[0]!, 600);
   console.log("OK:   the healthy operator cancelled the upgrade");
@@ -297,7 +297,7 @@ const runRollbackCaseBody = async (ctx: RollbackCaseContext, item: RollbackCase)
 /**
  * Run the three rollback cases, in order, before the successful cutover.
  *
- * Case 4 blocks the reads of the perturbed operator from the healthy
+ * Case 4 blocks the reads of the target operator from the healthy
  * operator's bucket. Each operator publishes its bucket under its own hostname
  * for the one store, so one blocked host entry on one container cuts that one
  * path and leaves every other read working.
@@ -311,10 +311,10 @@ export const runRollbackCases = async (ctx: RollbackCaseContext) => {
     label: "a node stops before the window, and starts again after the abort",
     proposalId: 2,
     beforeWindow: true,
-    perturb: async () => stopContainers(await operatorContainers(PERTURBED)),
-    restore: async () => startContainers(await operatorContainers(PERTURBED)),
+    fault: async () => stopContainers(await operatorContainers(TARGET_OPERATOR)),
+    restore: async () => startContainers(await operatorContainers(TARGET_OPERATOR)),
     extraAssertions: async attempt => {
-      const record = await decisionRecord(PERTURBED, attempt);
+      const record = await decisionRecord(TARGET_OPERATOR, attempt);
       if (record === "quorum") {
         throw new Error("the operator that was down recorded quorum after it came back");
       }
@@ -325,33 +325,33 @@ export const runRollbackCases = async (ctx: RollbackCaseContext) => {
     label: "Blue falls behind before the window, and starts again after the abort",
     proposalId: 3,
     beforeWindow: true,
-    perturb: async () => stopContainers(await blueHostListeners(PERTURBED)),
-    restore: async () => startContainers(await blueHostListeners(PERTURBED)),
+    fault: async () => stopContainers(await blueHostListeners(TARGET_OPERATOR)),
+    restore: async () => startContainers(await blueHostListeners(TARGET_OPERATOR)),
   });
 
   await runRollbackCase(ctx, {
     label: "one operator records quorum, and the other reaches its deadline first",
     proposalId: 4,
     beforeWindow: true,
-    perturb: async () => {
+    fault: async () => {
       const blocked = objectStoreOperatorHost(0);
       const services = await recreateServices(
-        await greenDetector(PERTURBED),
+        await greenDetector(TARGET_OPERATOR),
         "rollback-case-isolate",
         () => ({ extra_hosts: [`${blocked}:127.0.0.1`] }),
       );
       console.log(`OK:   ${services.join(", ")} cannot reach ${blocked}`);
     },
     restore: async () => {
-      await recreateServices(await greenDetector(PERTURBED), "rollback-case-restore");
+      await recreateServices(await greenDetector(TARGET_OPERATOR), "rollback-case-restore");
       console.log("OK:   the detector reads every bucket again");
     },
     extraAssertions: async attempt => {
       const healthy = await decisionRecord(0, attempt);
-      const perturbed = await decisionRecord(PERTURBED, attempt);
-      if (healthy !== "quorum" || perturbed !== "abort") {
+      const target = await decisionRecord(TARGET_OPERATOR, attempt);
+      if (healthy !== "quorum" || target !== "abort") {
         throw new Error(
-          `expected quorum from the healthy operator and abort from the isolated one, read "${healthy}" and "${perturbed}"`,
+          `expected quorum from the healthy operator and abort from the isolated one, read "${healthy}" and "${target}"`,
         );
       }
       console.log("OK:   abort beat quorum, and both operators cancelled the upgrade");
