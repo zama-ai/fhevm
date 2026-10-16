@@ -1224,7 +1224,9 @@ const runBlueGreenSteps = async (
     if (hooks.stdout.trim() !== "true") throw new PreflightError("upgrade interruption requires upgrade-controller/test-failpoints binaries");
   }
 
-  const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
+  // The rollback cases take ids 2 to 4, so the cutover proposal follows them.
+const CUTOVER_PROPOSAL_ID = 5;
+const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;
   // Opt-in manifest publication/verification checks on the Green detectors.
   const manifests = withManifests
@@ -1651,8 +1653,8 @@ const runBlueGreenSteps = async (
     "host-sc-deploy",
     'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
       '--environment local --start-time "$PROPOSE_START_TIME" --duration 5m --buffer 10s ' +
-      // Ids 2 to 4 belong to the rollback cases above.
-      '--proposal-id 5 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+      `--proposal-id ${CUTOVER_PROPOSAL_ID} --software-version "$PROPOSE_SW_VERSION" ` +
+      "--use-internal-proxy-address true",
     {
       env: {
         LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
@@ -1663,7 +1665,9 @@ const runBlueGreenSteps = async (
     },
   );
   const proposeTipAfter = await gatewayTip();
-  console.log(`OK:   activation emitted via task (proposalId=5, version=${gcsVersionLive}, start=${proposeStartTime})`);
+  console.log(
+    `OK:   activation emitted via task (proposalId=${CUTOVER_PROPOSAL_ID}, version=${gcsVersionLive}, start=${proposeStartTime})`,
+  );
   // The dry run must compute real application handles for the trigger to pick
   // one: run traffic from the proposal until DryRunStarted, while Green queues
   // every block from start_block for the dry run to compute.
@@ -1703,10 +1707,10 @@ const runBlueGreenSteps = async (
     console.log(`\n[7/11] verify committed GCS DryRunStarted transitions per operator`);
     for (const db of operatorDatabases) {
       await waitUntil({
-        label: `${db}  proposal 2 entered GCS DryRunStarted`,
+        label: `${db}  proposal ${CUTOVER_PROPOSAL_ID} entered GCS DryRunStarted`,
         timeoutSecs: 120,
         check: async () => (await psqlQuery(db,
-          dryRunEvidenceReadinessSql(gcsStackVersion, hostChains.map(chain => chain.chainId), 2))) === "ready",
+          dryRunEvidenceReadinessSql(gcsStackVersion, hostChains.map(chain => chain.chainId), CUTOVER_PROPOSAL_ID))) === "ready",
       });
     }
     await assertGatewayGateOpens(proposeTipBefore, proposeTipAfter);
