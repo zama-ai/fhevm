@@ -58,7 +58,7 @@ spec:
         - name: registry-credentials
       restartPolicy: Always
       # The shutdown grace period, then Pingora's 5 s to close what is left, then 5 s margin.
-      terminationGracePeriodSeconds: {{ add (int $proxy.shutdownGracePeriodSeconds) 10 }}
+      terminationGracePeriodSeconds: {{ add (int $proxy.endpointResponseTimeoutSeconds) 10 }}
       {{- with $proxy.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -102,8 +102,9 @@ spec:
               value: {{ $proxy.ports.healthcheck | quote }}
             - name: COPROCESSOR_PROXY_METRICS_ENDPOINT
               value: "0.0.0.0:{{ $proxy.ports.metrics }}"
+            # A request in flight at SIGTERM completes within the response timeout.
             - name: COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD
-              value: "{{ int $proxy.shutdownGracePeriodSeconds }}s"
+              value: "{{ int $proxy.endpointResponseTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID
               value: {{ $canonicalChainId | quote }}
             - name: COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS
@@ -125,10 +126,21 @@ spec:
             - name: COPROCESSOR_PROXY_ENDPOINT_ADDRESSES
               value: {{ $proxy.endpointAddresses | join "," | quote }}
             - name: COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT
-              value: {{ $proxy.endpointResponseTimeout | quote }}
-            {{- with $proxy.env }}
-            {{- toYaml . | nindent 12 }}
+              value: "{{ int $proxy.endpointResponseTimeoutSeconds }}s"
+          {{- if default .Values.commonConfig.tracing.enabled $proxy.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+            {{- with $proxy.tracing.service }}
+            - name: COPROCESSOR_PROXY_SERVICE_NAME
+              value: {{ . | quote }}
             {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
+          {{- end }}
+          {{- with $proxy.env }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: tls
               mountPath: /etc/coprocessor-proxy/tls

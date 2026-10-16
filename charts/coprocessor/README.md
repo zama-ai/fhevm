@@ -29,19 +29,27 @@ A NetworkPolicy admits only the proxy pods to the pods that `endpointNetworkPoli
 selects, so no caller reaches prf-service without the proxy's checks. Add any other ingress those
 pods need, such as metrics scraping, to `endpointNetworkPolicy.extraIngress`.
 
-The readiness probe passes once the TLS listener answers, the KMS tx-senders have been read, and
-some endpoint passes its `GET /healthz`. Without a healthy endpoint, the proxy answers `502`. To
-check the TLS listener, each probe sends it one unsigned request and expects `401`. So the proxy
-logs one `401` access line per probe and counts it in
-`coprocessor_proxy_requests_total{status="401"}`.
+The proxy reads the signers at the latest finalized block, so a signer change takes effect once
+its block is finalized (about 13 minutes on Ethereum) and the next read has run. The KMS
+connector's gw-listener likewise reads Ethereum events only up to the finalized block.
 
-prf-service holds a request until its output is ready, so `coprocessorProxy.endpointResponseTimeout`
-(120 s) must exceed the KMS connector's `PRF_RETRIEVAL_DEADLINE`. On `SIGTERM` the proxy stops
-accepting connections and gives in-flight requests `coprocessorProxy.shutdownGracePeriodSeconds`
-(120 by default, the length of a held request) to complete. Pingora, which the proxy runs on, waits
-that long on every shutdown, even when no request is in flight, so each pod's rollout takes as long.
-The pod's `terminationGracePeriodSeconds` is the grace period plus 10 s: Pingora's 5 s to close the
-remaining connections, and 5 s margin.
+The NetworkPolicy matches the proxy pods in the release namespace only. When prf-service runs in
+another namespace, add its own policy there.
+
+The readiness probe reports the proxy's own ability to serve. It passes once the TLS listener
+answers and the KMS tx-senders have been read. The health of each endpoint appears in the
+`/healthz` details but does not change readiness: without a healthy endpoint, every replica stays
+ready and answers `502` with `"code": "upstream_transient"` and `"retryable": true` itself. To
+check the TLS listener, each probe sends it `GET /` and expects `404`, counted in
+`coprocessor_proxy_requests_total{route="none",status="404"}`.
+
+prf-service holds a request until its output is ready, so `coprocessorProxy.endpointResponseTimeoutSeconds`
+(120 by default) must exceed the KMS connector's `PRF_RETRIEVAL_DEADLINE`. It is also the shutdown
+grace period: on `SIGTERM` the proxy stops accepting connections and gives in-flight requests that
+long to complete. Pingora, which the proxy runs on, waits that long on every shutdown, even when no
+request is in flight, so each pod's rollout takes as long. The pod's
+`terminationGracePeriodSeconds` is that value plus 10 s: Pingora's 5 s to close the remaining
+connections, and 5 s margin.
 
 ### Deployment requirement
 

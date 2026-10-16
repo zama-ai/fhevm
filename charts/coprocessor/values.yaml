@@ -1858,9 +1858,9 @@ txSender:
 # Coprocessor proxy
 # -----------------------------------------------------------------------------
 # Public HTTPS entry point: checks each request's FhevmSig against the KMS
-# tx-senders ProtocolConfig lists, then forwards it unchanged to the endpoints of
-# its route over HTTP/2 cleartext. The Service is ClusterIP; exposing it is the
-# deployment's, within the requirement in the chart README.
+# tx-senders ProtocolConfig lists, then forwards it unchanged to prf-service, its
+# one upstream, over HTTP/2 cleartext. The Service is ClusterIP; exposing it is
+# the deployment's, within the requirement in the chart README.
 coprocessorProxy:
   enabled: false
   # nameOverride: override default <release>-<component> resource name.
@@ -1892,7 +1892,10 @@ coprocessorProxy:
   # How long the proxy waits for an endpoint's answer. prf-service holds a request until the
   # PRF output is ready, so this must exceed the KMS connector's PRF_RETRIEVAL_DEADLINE
   # (RFC-038): only the connector gives up on a held request.
-  endpointResponseTimeout: 120s
+  # It is also the shutdown grace period: after SIGTERM, in-flight requests get this long to
+  # complete. Pingora waits this long on every shutdown, even with no request in flight, so it
+  # delays each pod's rollout by as much. The pod's terminationGracePeriodSeconds is this plus 10.
+  endpointResponseTimeoutSeconds: 120
 
   # Ingress of the endpoint pods: only the proxy reaches them.
   endpointNetworkPolicy:
@@ -1902,15 +1905,15 @@ coprocessorProxy:
     # More ingress rules for those pods, e.g. Prometheus scraping their metrics port.
     extraIngress: []
 
-  # How long in-flight requests get to complete after SIGTERM: a held request lasts up to
-  # endpointResponseTimeout. Pingora waits this long on every shutdown, even with no request in
-  # flight, so it delays each pod's rollout by as much. The pod's terminationGracePeriodSeconds
-  # is this plus 10.
-  shutdownGracePeriodSeconds: 120
-
   # Additional environment variables, e.g. COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL.
   # coprocessor/fhevm-engine/coprocessor-proxy/config/proxy.toml lists every setting.
   env: []
+
+  tracing:
+    # Defaults to commonConfig.tracing.enabled.
+    enabled: false
+    # OTEL service name. If empty, the proxy uses "coprocessor-proxy".
+    service: ""
 
   ports:
     https: 8443
