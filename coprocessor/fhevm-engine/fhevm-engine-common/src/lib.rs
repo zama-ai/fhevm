@@ -1,6 +1,7 @@
 pub mod bootstrap_versioning;
 pub mod bridge;
 pub mod chain_id;
+pub mod chain_recovery;
 pub mod crs;
 pub mod database;
 pub mod db_keys;
@@ -8,6 +9,7 @@ pub mod drift_containment;
 pub mod drift_revert;
 pub mod gcs_activation;
 pub mod gpu_arch;
+pub mod handle_metadata;
 #[cfg(feature = "gpu")]
 pub mod gpu_memory;
 pub mod healthz_server;

@@ -6,6 +6,7 @@ use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEventInterface;
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log};
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::chain_recovery::{self, HistoryMismatch, ListenerHeader, ListenerSource};
 use fhevm_engine_common::database::{connect_options_for_database_url, GCS_SCHEMA_QUOTED};
 use fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
 use fhevm_engine_common::telemetry;
@@ -35,6 +36,20 @@ use fhevm_gateway_bindings::input_verification::InputVerification;
 struct ListenerProgress {
     last_processed_block_num: Option<u64>,
     earliest_open_ct_commits_block: Option<u64>,
+    revision: sqlx::types::Uuid,
+}
+
+impl ListenerProgress {
+    fn sender_seed_block(&self) -> Option<u64> {
+        let seed = self
+            .earliest_open_ct_commits_block
+            .map(|block| block.saturating_sub(1))
+            .or(self.last_processed_block_num);
+        match (seed, self.last_processed_block_num) {
+            (Some(seed), Some(tip)) => Some(seed.min(tip)),
+            _ => seed,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,7 +143,34 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         db_pool: &Pool<Postgres>,
         sleep_duration: &mut u64,
     ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            (1..=1000).contains(&self.conf.get_logs_block_batch_size),
+            "Gateway block batch size must be between 1 and 1000"
+        );
+        if chain_recovery::is_halted(db_pool).await? {
+            anyhow::bail!("Gateway ingestion is contained; operator recovery required");
+        }
         let mut ticker = tokio::time::interval(self.conf.get_logs_poll_interval);
+        let mut next_registry_refresh = Instant::now() + self.conf.gateway_config_refresh_interval;
+        let gateway_chain_id = i64::try_from(self.provider.get_chain_id().await?)?;
+        let mut progress =
+            get_listener_progress(db_pool, self.stack_mode.gcs_mode(), gateway_chain_id).await?;
+        if chain_recovery::is_halted(db_pool).await? {
+            anyhow::bail!("Gateway ingestion is contained; operator recovery required");
+        }
+        // Verify the persisted tip before registry refresh or drift rebuilding
+        // can act on externally observed history.
+        if let Some(height) = progress.last_processed_block_num {
+            let header = self.fetch_canonical_header(height).await?;
+            chain_recovery::save_checkpoints(
+                db_pool,
+                ListenerSource::Gateway,
+                self.stack_mode.gcs_mode(),
+                gateway_chain_id,
+                &[header],
+            )
+            .await?;
+        }
         if let Some(gateway_config_address) = self.conf.gateway_config_address {
             if let Err(error) =
                 refresh_coprocessor_registry(&self.provider, gateway_config_address, db_pool).await
@@ -137,14 +179,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 error!(%error, "Initial GatewayConfig registry refresh failed; listener will continue");
             }
         }
-        let mut next_registry_refresh = Instant::now() + self.conf.gateway_config_refresh_interval;
-        let progress = self.get_listener_progress(db_pool).await?;
         let mut last_processed_block_num = progress.last_processed_block_num;
         let mut number_of_last_processed_updates: u64 = 0;
-        let sender_seed_block = progress
-            .earliest_open_ct_commits_block
-            .map(|block| block.saturating_sub(1))
-            .or(last_processed_block_num);
+        let sender_seed_block = progress.sender_seed_block();
         let expected_senders = if let Some(gw_config_addr) = self.conf.gateway_config_address {
             match self
                 .fetch_expected_senders(gw_config_addr, sender_seed_block)
@@ -165,17 +202,14 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             self.conf.drift_post_consensus_grace,
             self.conf.drift_auto_revert_enabled,
         );
-        if let Err(e) = self
-            .rebuild_drift_detector(
-                db_pool,
-                &mut drift_detector,
-                progress.earliest_open_ct_commits_block,
-                last_processed_block_num,
-            )
-            .await
-        {
-            error!(error = %e, "Failed to rebuild drift detector; continuing with partial state");
-        }
+        self.rebuild_drift_detector(
+            db_pool,
+            &mut drift_detector,
+            progress.earliest_open_ct_commits_block,
+            last_processed_block_num,
+            gateway_chain_id,
+        )
+        .await?;
 
         let filter_addresses = {
             let mut addrs = vec![self.input_verification_address];
@@ -202,6 +236,17 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                     if self.stack_mode.is_paused() {
                         continue;
                     }
+                    if chain_recovery::is_halted(db_pool).await? {
+                        anyhow::bail!("Gateway ingestion is contained; operator recovery required");
+                    }
+
+                    // A sibling scan, rewind or schema reset invalidates our local drift
+                    // state as well as the cursor. Reload both on retry, including idle ticks.
+                    let current_progress = get_listener_progress(
+                        db_pool, self.stack_mode.gcs_mode(), gateway_chain_id,
+                    ).await?;
+                    anyhow::ensure!(current_progress.revision == progress.revision,
+                        "Gateway progress changed; reload scan state");
 
                     self.refresh_registry_if_due(db_pool, &mut next_registry_refresh).await;
 
@@ -210,6 +255,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                     }).inspect_err(|_| {
                         GET_BLOCK_NUM_FAIL_COUNTER.inc();
                     })?;
+
+                    if let Some(height) = last_processed_block_num {
+                        let header = self.fetch_canonical_header(height).await?;
+                        chain_recovery::save_checkpoints(db_pool, ListenerSource::Gateway,
+                            self.stack_mode.gcs_mode(), gateway_chain_id, &[header]).await?;
+                    }
 
                     // GCS only: the dry-run window start must be *scanned*, not merely passed.
                     // The moment a proposal's `gw_start_block` becomes known (UpgradeActivated),
@@ -231,10 +282,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                             last_processed_block_num,
                             current_block,
                             drift_detector.earliest_open_block(),
+                            gateway_chain_id,
+                            |height| self.fetch_canonical_header(height),
                         )
                         .await
                         {
-                            Ok(Some(cursor)) => last_processed_block_num = Some(cursor),
+                            Ok(Some(_)) => anyhow::bail!("Gateway cursor rewound; reload scan state"),
                             Ok(None) => {}
                             Err(e) => {
                                 error!(error = %e, "GCS: window alignment check failed; skipping this tick");
@@ -288,6 +341,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                     }).inspect_err(|_| {
                         GET_LOGS_FAIL_COUNTER.inc();
                     })?;
+                    self.pin_log_range(db_pool, gateway_chain_id, from_block, to_block, &logs).await?;
                     for log in logs {
                         match log.address() {
                             a if a == self.input_verification_address => {
@@ -372,11 +426,15 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                         Err(e) => error!(error = %e, "Synthetic Gateway input injection failed"),
                     }
                     last_processed_block_num = Some(to_block);
-                    self.update_listener_progress(
+                    progress = update_listener_progress(
                         db_pool,
+                        &self.conf,
+                        self.stack_mode.gcs_mode(),
+                        gateway_chain_id,
                         ListenerProgress {
                             last_processed_block_num,
                             earliest_open_ct_commits_block: drift_detector.earliest_open_block(),
+                            revision: progress.revision,
                         },
                         &mut number_of_last_processed_updates,
                     )
@@ -399,6 +457,59 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             self.reset_sleep_duration(sleep_duration);
         }
         Ok(())
+    }
+
+    async fn fetch_canonical_header(&self, height: u64) -> anyhow::Result<ListenerHeader> {
+        let block = self
+            .provider
+            .get_block_by_number(height.into())
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Gateway header unavailable"))?;
+        anyhow::ensure!(
+            block.header.number == height,
+            "Gateway header has wrong height"
+        );
+        Ok(ListenerHeader {
+            number: i64::try_from(height)?,
+            hash: block.header.hash.to_vec(),
+            parent_hash: block.header.parent_hash.to_vec(),
+        })
+    }
+
+    async fn pin_log_range(
+        &self,
+        pool: &Pool<Postgres>,
+        chain_id: i64,
+        from: u64,
+        to: u64,
+        logs: &[Log],
+    ) -> anyhow::Result<()> {
+        let mut headers = Vec::new();
+        for height in from..=to {
+            headers.push(self.fetch_canonical_header(height).await?);
+        }
+        for log in logs {
+            let header = log
+                .block_number
+                .and_then(|n| n.checked_sub(from))
+                .and_then(|n| usize::try_from(n).ok())
+                .and_then(|i| headers.get(i));
+            anyhow::ensure!(
+                !log.removed
+                    && header.is_some_and(|header| log
+                        .block_hash
+                        .is_some_and(|hash| hash.as_slice() == header.hash)),
+                "Gateway log does not belong to the canonical requested range"
+            );
+        }
+        chain_recovery::save_checkpoints(
+            pool,
+            ListenerSource::Gateway,
+            self.stack_mode.gcs_mode(),
+            chain_id,
+            &headers,
+        )
+        .await
     }
 
     async fn refresh_registry_if_due(&self, db_pool: &Pool<Postgres>, next_refresh: &mut Instant) {
@@ -484,6 +595,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         drift_detector: &mut DriftDetector,
         earliest_open_ct_commits_block: Option<u64>,
         last_processed_block_num: Option<u64>,
+        gateway_chain_id: i64,
     ) -> anyhow::Result<()> {
         let Some(ciphertext_commits_address) = self.conf.ciphertext_commits_address else {
             return Ok(());
@@ -531,6 +643,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 .inspect_err(|_| {
                     GET_LOGS_FAIL_COUNTER.inc();
                 })?;
+
+            self.pin_log_range(db_pool, gateway_chain_id, batch_from, batch_to, &logs)
+                .await?;
 
             for log in logs {
                 if log.address() == ciphertext_commits_address {
@@ -645,7 +760,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
             db_pool,
             self.stack_mode.gcs_mode(),
-            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+            fhevm_engine_common::versioning::GcsRollbackPolicy::RawIngestion,
         )
         .await?
         .into_tx() else {
@@ -692,7 +807,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
             db_pool,
             self.stack_mode.gcs_mode(),
-            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+            fhevm_engine_common::versioning::GcsRollbackPolicy::RawIngestion,
         )
         .await?
         .into_tx() else {
@@ -796,7 +911,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
             db_pool,
             self.stack_mode.gcs_mode(),
-            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+            fhevm_engine_common::versioning::GcsRollbackPolicy::RawIngestion,
         )
         .await?
         .into_tx() else {
@@ -837,32 +952,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         *sleep_duration = std::cmp::min(*sleep_duration * 2, self.conf.error_sleep_max_secs as u64);
     }
 
-    async fn get_listener_progress(
-        &self,
-        db_pool: &Pool<Postgres>,
-    ) -> anyhow::Result<ListenerProgress> {
-        get_listener_progress(db_pool).await
-    }
-
-    async fn update_listener_progress(
-        &self,
-        db_pool: &Pool<Postgres>,
-        progress: ListenerProgress,
-        number_of_last_processed_updates: &mut u64,
-    ) -> anyhow::Result<()> {
-        update_listener_progress(
-            db_pool,
-            &self.conf,
-            self.stack_mode.gcs_mode(),
-            progress,
-            number_of_last_processed_updates,
-        )
-        .await
-    }
-
     pub async fn health_check(&self) -> HealthStatus {
         let mut database_connected = false;
         let mut blockchain_connected = false;
+        let mut recovery_ready = false;
         let mut error_details = Vec::new();
 
         // Check database connection
@@ -881,6 +974,11 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 Ok(_) => {
                     database_connected = true;
                     info!("Database connection healthy");
+                    recovery_ready =
+                        matches!(chain_recovery::readiness_blocked(&pool).await, Ok(false));
+                    if !recovery_ready {
+                        error_details.push("chain history recovery blocks readiness".to_owned());
+                    }
                 }
                 Err(e) => {
                     error!(error = %e, "Database check failed");
@@ -918,7 +1016,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             }
         }
 
-        if database_connected && blockchain_connected {
+        if database_connected && blockchain_connected && recovery_ready {
             HealthStatus::healthy()
         } else {
             HealthStatus::unhealthy(
@@ -1026,6 +1124,15 @@ fn window_rewind_cursor(
     }
 }
 
+#[cfg(test)]
+async fn test_rewind_header(height: u64) -> anyhow::Result<ListenerHeader> {
+    Ok(ListenerHeader {
+        number: height as i64,
+        hash: vec![height as u8; 32],
+        parent_hash: vec![height.saturating_sub(1) as u8; 32],
+    })
+}
+
 /// Align the scan cursor to the active GCS dry-run window, once per proposal.
 ///
 /// Reads the active window and, when the current cursor would leave a gap at
@@ -1036,12 +1143,18 @@ fn window_rewind_cursor(
 /// moved past `gw_start_block` is not mistaken for a late join and rewound
 /// again - the watermark only advances contiguously once aligned. Returns
 /// `None` when the cursor is unchanged.
-async fn align_cursor_to_active_window(
+async fn align_cursor_to_active_window<F, Fut>(
     db_pool: &Pool<Postgres>,
     last_processed_block_num: Option<u64>,
     current_block: u64,
     earliest_open_ct_commits_block: Option<u64>,
-) -> anyhow::Result<Option<u64>> {
+    gateway_chain_id: i64,
+    fetch_header: F,
+) -> anyhow::Result<Option<u64>>
+where
+    F: FnOnce(u64) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<ListenerHeader>>,
+{
     let Some(window) = active_gcs_window(db_pool).await? else {
         return Ok(None);
     };
@@ -1056,13 +1169,27 @@ async fn align_cursor_to_active_window(
         return Ok(None);
     }
 
+    // Fetch before committing any cursor change. An RPC failure leaves the
+    // previous cursor/latch untouched and can be retried normally.
+    let anchor = match cursor {
+        Some(height) => {
+            let header = fetch_header(height).await?;
+            anyhow::ensure!(
+                header.number == i64::try_from(height)?,
+                "Gateway rewind header has wrong height"
+            );
+            Some(header)
+        }
+        None => None,
+    };
+
     // Same write fence as every other listener write; the latch and the
     // lowered watermark must land atomically, or a crash in between could
     // leave a latched proposal whose window start was never scanned.
     let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
         db_pool,
         true,
-        fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+        fhevm_engine_common::versioning::GcsRollbackPolicy::RawIngestion,
     )
     .await?
     .into_tx() else {
@@ -1070,6 +1197,60 @@ async fn align_cursor_to_active_window(
         return Ok(None);
     };
 
+    // The header RPC ran without a database lock. A rollback/new proposal
+    // must not let its old window overwrite the newly selected cursor.
+    chain_recovery::lock_history_tx(&mut tx, ListenerSource::Gateway, true, gateway_chain_id)
+        .await?;
+    let current_window: Option<(i64, bool)> = sqlx::query_as(
+        "SELECT MIN(gw_start_block), BOOL_AND(gw_window_rewound) FROM upgrade_state
+         WHERE stack_role = 'GCS' AND status = 'in_progress'
+           AND state IN ('UpgradeActivated', 'DryRunStarted')
+         HAVING COUNT(DISTINCT gw_start_block) = 1",
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    anyhow::ensure!(
+        current_window.map(|(start, _)| start) == Some(window.gw_start_block),
+        "Gateway window changed while fetching its anchor; retry alignment"
+    );
+    let (_, already_aligned) = current_window.expect("validated window");
+    let saved: Option<i64> = sqlx::query_scalar(&format!(
+        "SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block WHERE dummy_id"
+    ))
+    .fetch_optional(&mut *tx)
+    .await?
+    .flatten();
+    let cursor = window_rewind_cursor(
+        saved.map(u64::try_from).transpose()?,
+        window.gw_start_block,
+        current_block,
+        already_aligned,
+    );
+    if cursor.is_none() && already_aligned {
+        return Ok(None);
+    }
+    if let Some(cursor) = cursor {
+        let header = anchor
+            .filter(|header| header.number == cursor as i64)
+            .ok_or_else(|| anyhow::anyhow!("Gateway progress changed; retry anchor fetch"))?;
+        if let Some(conflict) = chain_recovery::pin_headers_tx(
+            &mut tx,
+            ListenerSource::Gateway,
+            true,
+            gateway_chain_id,
+            &[header],
+        )
+        .await?
+        {
+            tx.rollback().await?;
+            chain_recovery::record_halt(
+                db_pool,
+                conflict.observation(ListenerSource::Gateway, true, gateway_chain_id),
+            )
+            .await?;
+            anyhow::bail!("Gateway rewind conflicts with committed history");
+        }
+    }
     if let Some(cursor) = cursor {
         info!(
             gw_start_block = window.gw_start_block,
@@ -1080,7 +1261,7 @@ async fn align_cursor_to_active_window(
         write_gcs_rewound_watermark(&mut tx, cursor, earliest_open_ct_commits_block).await?;
     }
 
-    if !window.gw_window_rewound {
+    if !already_aligned {
         // Scoped to the exact window that was read, so a racing newer proposal
         // (different gw_start_block) is never latched by mistake.
         sqlx::query(
@@ -1170,7 +1351,8 @@ async fn write_gcs_rewound_watermark(
          VALUES (true, $1, $2)
          ON CONFLICT (dummy_id) DO UPDATE SET
              last_block_num = EXCLUDED.last_block_num,
-             earliest_open_ct_commits_block = EXCLUDED.earliest_open_ct_commits_block"
+             earliest_open_ct_commits_block = EXCLUDED.earliest_open_ct_commits_block,
+             progress_revision = gen_random_uuid()"
     ))
     .bind(last_block_num)
     .bind(earliest_open_ct_commits_block)
@@ -1179,97 +1361,155 @@ async fn write_gcs_rewound_watermark(
     Ok(())
 }
 
+/// Resolve routing and serialize progress with checkpoint admission/pruning.
+async fn gateway_progress_tx(
+    pool: &Pool<Postgres>,
+    gcs_mode: bool,
+    chain_id: i64,
+) -> anyhow::Result<(sqlx::Transaction<'static, Postgres>, bool)> {
+    let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        gcs_mode,
+        fhevm_engine_common::versioning::GcsRollbackPolicy::RawIngestion,
+    )
+    .await?
+    .into_tx() else {
+        anyhow::bail!("Gateway progress blocked by containment or stack lifecycle");
+    };
+    let role = chain_recovery::gateway_role_tx(&mut tx).await?;
+    chain_recovery::lock_history_tx(&mut tx, ListenerSource::Gateway, role, chain_id).await?;
+    Ok((tx, role))
+}
+
 async fn update_listener_progress(
     db_pool: &Pool<Postgres>,
     conf: &ConfigSettings,
     gcs_mode: bool,
+    chain_id: i64,
     progress: ListenerProgress,
     number_of_last_processed_updates: &mut u64,
-) -> anyhow::Result<()> {
-    let last_block_num = progress
-        .last_processed_block_num
-        .map(i64::try_from)
-        .transpose()?;
-    let earliest_open_ct_commits_block = progress
+) -> anyhow::Result<ListenerProgress> {
+    let last_block_num = i64::try_from(
+        progress
+            .last_processed_block_num
+            .ok_or_else(|| anyhow::anyhow!("Gateway progress requires a completed range"))?,
+    )?;
+    let earliest_open = progress
         .earliest_open_ct_commits_block
         .map(i64::try_from)
         .transpose()?;
-    // Fence the watermark and notification against cutover and schema reset.
-    // Retired BCS listeners stop; GCS raw ingestion continues after rollback.
-    // This keeps the stored progress aligned with the listener's writes.
-    let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
-        db_pool,
-        gcs_mode,
-        fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+    let (mut tx, role) = gateway_progress_tx(db_pool, gcs_mode, chain_id).await?;
+    // The token changes on every update and rewind. This rejects a delayed
+    // completion even if a rewind later revisits exactly the same height.
+    let revision: Option<sqlx::types::Uuid> = sqlx::query_scalar(
+        "UPDATE gw_listener_last_block SET last_block_num = $1,
+             earliest_open_ct_commits_block = $2, progress_revision = gen_random_uuid()
+         WHERE dummy_id AND progress_revision = $3
+           AND (last_block_num IS NULL OR last_block_num < $1)
+         RETURNING progress_revision",
     )
-    .await?
-    .into_tx() else {
-        info!("Cutover completed — gw-listener skipping watermark update on retired stack");
-        return Ok(());
-    };
-    sqlx::query!(
-        "INSERT into gw_listener_last_block (dummy_id, last_block_num, earliest_open_ct_commits_block)
-        VALUES (true, $1, $2)
-        ON CONFLICT (dummy_id) DO UPDATE SET
-            last_block_num = EXCLUDED.last_block_num,
-            earliest_open_ct_commits_block = EXCLUDED.earliest_open_ct_commits_block",
-        last_block_num,
-        earliest_open_ct_commits_block,
-    )
-    .execute(tx.as_mut())
+    .bind(last_block_num)
+    .bind(earliest_open)
+    .bind(progress.revision)
+    .fetch_optional(&mut *tx)
     .await?;
-
-    // Wake the upgrade-controller's Gateway-side readiness task so it can
-    // re-check whether the GCS gw-listener has reached `gw_start_block`.
-    // The payload carries the new tip purely for observability; the
-    // controller re-reads the `gw_listener_last_block` watermark itself. In
-    // GCS mode this notify (and the progress row above) target the `gcs`
-    // schema's watermark via the connection's `search_path`.
-    if let Some(last_block_num) = last_block_num {
-        sqlx::query!(
-            "SELECT pg_notify($1, $2)",
-            EVENT_GW_NEW_BLOCK,
-            last_block_num.to_string()
-        )
-        .execute(tx.as_mut())
+    let revision =
+        revision.ok_or_else(|| anyhow::anyhow!("Gateway progress changed; reload scan state"))?;
+    let anchored: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM public.listener_block_checkpoints
+         WHERE source = 'gateway' AND stack_role = $1 AND chain_id = $2 AND block_number = $3)",
+    )
+    .bind(chain_recovery::stack_role(role))
+    .bind(chain_id)
+    .bind(last_block_num)
+    .fetch_one(&mut *tx)
+    .await?;
+    anyhow::ensure!(
+        anchored,
+        "Gateway progress has no admitted checkpoint; retry range"
+    );
+    // Only the successful cursor owner may prune, in this same transaction.
+    // Ranges beyond the durable tip remain pinned; superseded scans cannot
+    // later publish an older cursor or prune a new rewind anchor.
+    sqlx::query(
+        "DELETE FROM public.listener_block_checkpoints
+        WHERE source = 'gateway' AND stack_role = $1 AND chain_id = $2 AND block_number < $3",
+    )
+    .bind(chain_recovery::stack_role(role))
+    .bind(chain_id)
+    .bind(last_block_num.saturating_sub(64))
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("SELECT pg_notify($1, $2)")
+        .bind(EVENT_GW_NEW_BLOCK)
+        .bind(last_block_num.to_string())
+        .execute(&mut *tx)
         .await?;
-    }
     tx.commit().await?;
-
     *number_of_last_processed_updates += 1;
     if (*number_of_last_processed_updates)
         .is_multiple_of(conf.log_last_processed_every_number_of_updates)
     {
-        info!(
-            last_block_num,
-            earliest_open_ct_commits_block, "Updated listener progress"
-        );
+        info!(last_block_num, earliest_open, "Updated listener progress");
     }
-    Ok(())
+    Ok(ListenerProgress {
+        revision,
+        ..progress
+    })
 }
 
-async fn get_listener_progress(db_pool: &Pool<Postgres>) -> anyhow::Result<ListenerProgress> {
-    let row = sqlx::query!(
-        r#"
-        SELECT last_block_num, earliest_open_ct_commits_block
-            FROM gw_listener_last_block
-            WHERE dummy_id = true
-        "#,
+async fn get_listener_progress(
+    db_pool: &Pool<Postgres>,
+    gcs_mode: bool,
+    chain_id: i64,
+) -> anyhow::Result<ListenerProgress> {
+    let (mut tx, role) = gateway_progress_tx(db_pool, gcs_mode, chain_id).await?;
+    // Give even an empty cursor a token, so recreation cannot authorize an
+    // older scan that also started without a height.
+    sqlx::query(
+        "INSERT INTO gw_listener_last_block (dummy_id) VALUES (TRUE) ON CONFLICT DO NOTHING",
     )
-    .fetch_optional(db_pool)
+    .execute(&mut *tx)
     .await?;
-
-    let Some(row) = row else {
-        return Ok(ListenerProgress::default());
-    };
-
+    let (last, earliest, revision): (Option<i64>, Option<i64>, sqlx::types::Uuid) = sqlx::query_as(
+        "SELECT last_block_num, earliest_open_ct_commits_block, progress_revision
+         FROM gw_listener_last_block WHERE dummy_id",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if let Some(height) = last.filter(|height| *height > 0) {
+        let anchored: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM public.listener_block_checkpoints
+             WHERE source = 'gateway' AND stack_role = $1 AND chain_id = $2 AND block_number = $3)",
+        )
+        .bind(chain_recovery::stack_role(role))
+        .bind(chain_id)
+        .bind(height)
+        .fetch_one(&mut *tx)
+        .await?;
+        if !anchored {
+            tx.rollback().await?;
+            chain_recovery::record_halt(
+                db_pool,
+                HistoryMismatch {
+                    source: ListenerSource::Gateway,
+                    gcs_mode: role,
+                    chain_id,
+                    block_number: height,
+                    expected_hash: None,
+                    observed_hash: None,
+                    reason: "legacy Gateway cursor lacks a verified canonical checkpoint",
+                },
+            )
+            .await?;
+            anyhow::bail!("Legacy Gateway baseline requires operator recovery");
+        }
+    }
+    tx.commit().await?;
     Ok(ListenerProgress {
-        last_processed_block_num: row
-            .last_block_num
-            .map(|n| n.try_into().expect("Got an invalid block number")),
-        earliest_open_ct_commits_block: row
-            .earliest_open_ct_commits_block
-            .map(|n| n.try_into().expect("Got an invalid block number")),
+        last_processed_block_num: last.map(u64::try_from).transpose()?,
+        earliest_open_ct_commits_block: earliest.map(u64::try_from).transpose()?,
+        revision,
     })
 }
 
@@ -1462,20 +1702,39 @@ mod tests {
             .await
         };
 
+        // An unavailable RPC anchor must not leave a committed cursor without
+        // its checkpoint (which startup would mistake for a legacy baseline).
+        assert!(
+            align_cursor_to_active_window(&db_pool, Some(140), 150, None, 42, |_| async {
+                anyhow::bail!("temporary header outage")
+            })
+            .await
+            .is_err()
+        );
+        assert_eq!(gcs_watermark().await?, None);
+        assert!(!latched().await?);
+
         // Late join: the cursor is past the window start — rewind and latch.
         assert_eq!(
-            align_cursor_to_active_window(&db_pool, Some(140), 150, None).await?,
+            align_cursor_to_active_window(&db_pool, Some(140), 150, None, 42, test_rewind_header)
+                .await?,
             Some(99)
         );
         assert_eq!(gcs_watermark().await?, Some(Some(99)));
         assert!(latched().await?);
+        assert_eq!(
+            chain_recovery::checkpoint_hash(&db_pool, ListenerSource::Gateway, true, 42, 99)
+                .await?,
+            Some(vec![99; 32])
+        );
         // Only the GCS namespace is written; blue's watermark stays untouched.
         assert_eq!(public_watermark_rows().await?, 0);
 
         // Restart mid-window with a surviving watermark: the latch suppresses
         // a second rewind, the cursor keeps its progress.
         assert_eq!(
-            align_cursor_to_active_window(&db_pool, Some(140), 150, None).await?,
+            align_cursor_to_active_window(&db_pool, Some(140), 150, None, 42, test_rewind_header)
+                .await?,
             None
         );
         assert_eq!(gcs_watermark().await?, Some(Some(99)));
@@ -1488,7 +1747,8 @@ mod tests {
         .execute(&db_pool)
         .await?;
         assert_eq!(
-            align_cursor_to_active_window(&db_pool, None, 150, None).await?,
+            align_cursor_to_active_window(&db_pool, None, 150, None, 42, test_rewind_header)
+                .await?,
             Some(99)
         );
         assert_eq!(gcs_watermark().await?, Some(Some(99)));
@@ -1500,7 +1760,8 @@ mod tests {
             .execute(&db_pool)
             .await?;
         assert_eq!(
-            align_cursor_to_active_window(&db_pool, Some(140), 150, None).await?,
+            align_cursor_to_active_window(&db_pool, Some(140), 150, None, 42, test_rewind_header)
+                .await?,
             None
         );
 
@@ -1521,7 +1782,8 @@ mod tests {
         .await?;
         assert!(active_gcs_window(&db_pool).await?.is_none());
         assert_eq!(
-            align_cursor_to_active_window(&db_pool, Some(140), 150, None).await?,
+            align_cursor_to_active_window(&db_pool, Some(140), 150, None, 42, test_rewind_header)
+                .await?,
             None
         );
         assert_eq!(gcs_watermark().await?, None);
@@ -1544,64 +1806,56 @@ mod tests {
     #[tokio::test]
     #[serial(db)]
     async fn listener_progress_round_trips_earliest_open_watermark() -> anyhow::Result<()> {
-        let db_instance = test_harness::instance::setup_test_db(ImportMode::None)
+        let db = test_harness::instance::setup_test_db(ImportMode::None)
             .await
             .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-        let db_pool = PgPoolOptions::new()
-            .max_connections(1)
-            .connect(db_instance.db_url.as_str())
+        let pool = PgPoolOptions::new()
+            .max_connections(2)
+            .connect(db.db_url.as_str())
             .await?;
-        sqlx::query("TRUNCATE gw_listener_last_block")
-            .execute(&db_pool)
-            .await?;
-
         let conf = ConfigSettings::default();
-        assert_eq!(
-            get_listener_progress(&db_pool).await?,
-            ListenerProgress::default()
-        );
-
-        let mut update_count = 0;
-        update_listener_progress(
-            &db_pool,
+        let initial = get_listener_progress(&pool, false, 42).await?;
+        assert_eq!(initial.last_processed_block_num, None);
+        assert_eq!(initial.earliest_open_ct_commits_block, None);
+        let headers = [test_rewind_header(42).await?, test_rewind_header(43).await?];
+        chain_recovery::save_checkpoints(&pool, ListenerSource::Gateway, false, 42, &headers)
+            .await?;
+        let mut count = 0;
+        let first = update_listener_progress(
+            &pool,
             &conf,
-            conf.gcs_mode,
+            false,
+            42,
             ListenerProgress {
                 last_processed_block_num: Some(42),
                 earliest_open_ct_commits_block: Some(17),
+                ..initial
             },
-            &mut update_count,
+            &mut count,
         )
         .await?;
-        assert_eq!(update_count, 1);
-        assert_eq!(
-            get_listener_progress(&db_pool).await?,
-            ListenerProgress {
-                last_processed_block_num: Some(42),
-                earliest_open_ct_commits_block: Some(17),
-            }
-        );
-
-        update_listener_progress(
-            &db_pool,
+        assert_ne!(first.revision, initial.revision);
+        assert_eq!(get_listener_progress(&pool, false, 42).await?, first);
+        let second = update_listener_progress(
+            &pool,
             &conf,
-            conf.gcs_mode,
+            false,
+            42,
             ListenerProgress {
                 last_processed_block_num: Some(43),
                 earliest_open_ct_commits_block: None,
+                ..first
             },
-            &mut update_count,
+            &mut count,
         )
         .await?;
-        assert_eq!(update_count, 2);
-        assert_eq!(
-            get_listener_progress(&db_pool).await?,
-            ListenerProgress {
-                last_processed_block_num: Some(43),
-                earliest_open_ct_commits_block: None,
-            }
-        );
-
+        assert_ne!(second.revision, first.revision);
+        assert_eq!(get_listener_progress(&pool, false, 42).await?, second);
+        assert_eq!(count, 2);
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "progress_tests.rs"]
+mod progress_tests;

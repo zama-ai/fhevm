@@ -1,3 +1,8 @@
+use super::event_operands::fhe_mul_div_factor2_is_scalar;
+pub use super::event_operands::{
+    operand_boundary_mask_from_minted, tfhe_encrypted_operand_positions,
+    tfhe_inputs_handle,
+};
 use alloy_primitives::Address;
 use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
@@ -672,7 +677,7 @@ impl Database {
             fhevm_engine_common::versioning::begin_write_guarded_conn(
                 &mut connection,
                 self.stack_mode.gcs_mode(),
-                fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+                fhevm_engine_common::versioning::GcsRollbackPolicy::RawIngestion,
             )
             .await?
             .into_tx()
@@ -807,7 +812,7 @@ impl Database {
         Ok(fhevm_engine_common::versioning::begin_write_guarded(
             &pool,
             self.stack_mode.gcs_mode(),
-            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+            fhevm_engine_common::versioning::GcsRollbackPolicy::RawIngestion,
         )
         .await?
         .into_tx())
@@ -987,7 +992,12 @@ impl Database {
         // this INSERT references `computations` unqualified.
         let group_id_vec = group_id.map(|g| g.to_vec());
         let output_allowed = log.is_output_allowed(output_handle);
-        let query = sqlx::query!(
+        // A computation first ingested without its ACL allow event (e.g. a
+        // partial get_logs during reorg recovery) is stored as not allowed and
+        // already completed, so it is never scheduled. When a later ingestion
+        // of the same event sees it allowed, upgrade the row while its
+        // ciphertext does not exist yet, and re-queue its dependence chain.
+        let row = sqlx::query!(
             r#"
             INSERT INTO computations (
                 output_handle,
@@ -1008,7 +1018,17 @@ impl Database {
                 output_count
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14, $15)
-            ON CONFLICT (output_handle, transaction_id) DO NOTHING
+            ON CONFLICT (output_handle, transaction_id) DO UPDATE
+            SET is_allowed = TRUE,
+                is_completed = FALSE,
+                completed_at = NULL
+            WHERE EXCLUDED.is_allowed
+              AND NOT computations.is_allowed
+              AND NOT EXISTS (
+                  SELECT 1 FROM ciphertexts ct
+                  WHERE ct.handle = computations.output_handle
+              )
+            RETURNING (xmax = 0) AS "inserted!", dependence_chain_id
             "#,
             output_handle,
             dependencies as _,
@@ -1028,11 +1048,39 @@ impl Database {
             group_id_vec,
             output_index,
             output_count,
-        );
-        query
-            .execute(tx.deref_mut())
-            .await
-            .map(|result| result.rows_affected() > 0)
+        )
+        .fetch_optional(tx.deref_mut())
+        .await?;
+        let Some(row) = row else {
+            return Ok(false);
+        };
+        if !row.inserted {
+            warn!(
+                output_handle = to_hex(output_handle),
+                "Computation upgraded to allowed, re-queuing its dependence chain"
+            );
+            if let Some(dependence_chain_id) = row.dependence_chain_id {
+                // Cleanup may have removed the original processed chain,
+                // and this listener's cache may assign a different chain on
+                // replay. Recreate the stored chain so its work is reachable.
+                // For existing chains, preserve ownership and dependencies.
+                sqlx::query!(
+                    r#"
+                    INSERT INTO dependence_chain (
+                        dependence_chain_id, status, last_updated_at
+                    )
+                    VALUES ($1, 'updated', $2::timestamp)
+                    ON CONFLICT (dependence_chain_id) DO UPDATE
+                    SET status = 'updated'
+                    "#,
+                    dependence_chain_id,
+                    log.block_timestamp,
+                )
+                .execute(tx.deref_mut())
+                .await?;
+            }
+        }
+        Ok(true)
     }
 
     #[rustfmt::skip]
@@ -1463,10 +1511,10 @@ impl Database {
         allow_event_count: i32,
     ) -> Result<(), SqlxError> {
         let status = if finalized { "finalized" } else { "pending" };
-        // Insert with per-block event counts (written once at first insert and
-        // not touched on later finalization transitions). On conflict, preserve
-        // existing state but repair missing/stale ancestry so branch resolution
-        // remains available after restarts.
+        // A complete replay may restore events omitted by an earlier response.
+        // Counts for an immutable block hash can only increase: duplicate or
+        // incomplete replays and finalization-only observations must not lower
+        // the known totals. Preserve status and repair ancestry independently.
         sqlx::query!(
             r#"
             INSERT INTO host_chain_blocks_valid
@@ -1478,7 +1526,9 @@ impl Database {
             -- observed non-empty parent_hash is authoritative: prefer it. This
             -- both fills a missing value and corrects a stale/wrong one, while
             -- never clobbering a known parent with a NULL/empty re-observation.
-            SET parent_hash = COALESCE(NULLIF(EXCLUDED.parent_hash, ''::BYTEA), host_chain_blocks_valid.parent_hash);
+            SET parent_hash = COALESCE(NULLIF(EXCLUDED.parent_hash, ''::BYTEA), host_chain_blocks_valid.parent_hash),
+                fhe_event_count = GREATEST(host_chain_blocks_valid.fhe_event_count, EXCLUDED.fhe_event_count),
+                allow_event_count = GREATEST(host_chain_blocks_valid.allow_event_count, EXCLUDED.allow_event_count);
             "#,
             self.chain_id.as_i64(),
             block_summary.hash.to_vec(),
@@ -1767,7 +1817,7 @@ impl Database {
             INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block)
             VALUES ($1, $2)
             ON CONFLICT (chain_id) DO UPDATE
-            SET last_caught_up_block = EXCLUDED.last_caught_up_block,
+            SET last_caught_up_block = GREATEST(host_listener_poller_state.last_caught_up_block, EXCLUDED.last_caught_up_block),
                 updated_at = NOW()
             "#,
         )
@@ -2859,408 +2909,6 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
         | AclContractEvents::UnblockedAccount(_)
         | AclContractEvents::DecryptionSignaturesInvalidated(_) => vec![],
     }
-}
-
-pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
-    use TfheContract as C;
-    use TfheContractEvents as E;
-    match op {
-        E::Cast(C::Cast { ct, .. })
-        | E::FheNeg(C::FheNeg { ct, .. })
-        | E::FheNot(C::FheNot { ct, .. }) => vec![*ct],
-
-        E::FheAdd(C::FheAdd {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheBitAnd(C::FheBitAnd {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheBitOr(C::FheBitOr {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheBitXor(C::FheBitXor {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheDiv(C::FheDiv {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheMax(C::FheMax {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheMin(C::FheMin {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheMul(C::FheMul {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheRem(C::FheRem {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheRotl(C::FheRotl {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheRotr(C::FheRotr {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheShl(C::FheShl {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheShr(C::FheShr {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheSub(C::FheSub {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheEq(C::FheEq {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheGe(C::FheGe {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheGt(C::FheGt {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheLe(C::FheLe {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheLt(C::FheLt {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheNe(C::FheNe {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        }) => {
-            if scalarByte.const_is_zero() {
-                vec![*lhs, *rhs]
-            } else {
-                vec![*lhs]
-            }
-        }
-
-        E::FheIfThenElse(C::FheIfThenElse {
-            control,
-            ifTrue,
-            ifFalse,
-            ..
-        }) => {
-            vec![*control, *ifTrue, *ifFalse]
-        }
-
-        E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => vec![],
-
-        E::FheSum(C::FheSum { values, .. }) => values.clone(),
-
-        E::FheIsIn(C::FheIsIn { value, values, .. }) => {
-            let mut handles = vec![*value];
-            handles.extend(values.iter().copied());
-            handles
-        }
-
-        E::FheMulDiv(C::FheMulDiv {
-            factor1,
-            factor2,
-            scalarByte,
-            ..
-        }) => {
-            if fhe_mul_div_factor2_is_scalar(scalarByte) {
-                vec![*factor1]
-            } else {
-                vec![*factor1, *factor2]
-            }
-        }
-
-        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
-    }
-}
-
-/// Returns every encrypted executor operand together with its position in the
-/// `dependencies` vector stored for the computation. The position is also the
-/// bit position used by `FHEVMExecutor`'s `boundaryBits` preimage. Plaintext
-/// scalar positions are intentionally absent, and therefore retain their
-/// required zero bit.
-///
-/// Keep this in lock-step with both `insert_tfhe_event` and the executor's
-/// `_oneOperandBoundaryBit` callers. In particular, `FheMulDiv` always has a
-/// scalar divisor at position 2, and binary scalar operations have a scalar
-/// right operand at position 1.
-pub fn tfhe_encrypted_operand_positions(
-    op: &TfheContractEvents,
-) -> Vec<(usize, Handle)> {
-    use TfheContract as C;
-    use TfheContractEvents as E;
-
-    match op {
-        E::Cast(C::Cast { ct, .. })
-        | E::FheNeg(C::FheNeg { ct, .. })
-        | E::FheNot(C::FheNot { ct, .. }) => vec![(0, *ct)],
-
-        E::FheAdd(C::FheAdd {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheBitAnd(C::FheBitAnd {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheBitOr(C::FheBitOr {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheBitXor(C::FheBitXor {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheDiv(C::FheDiv {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheMax(C::FheMax {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheMin(C::FheMin {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheMul(C::FheMul {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheRem(C::FheRem {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheRotl(C::FheRotl {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheRotr(C::FheRotr {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheShl(C::FheShl {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheShr(C::FheShr {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheSub(C::FheSub {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheEq(C::FheEq {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheGe(C::FheGe {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheGt(C::FheGt {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheLe(C::FheLe {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheLt(C::FheLt {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheNe(C::FheNe {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        }) => {
-            let mut operands = vec![(0, *lhs)];
-            if scalarByte.const_is_zero() {
-                operands.push((1, *rhs));
-            }
-            operands
-        }
-
-        E::FheIfThenElse(C::FheIfThenElse {
-            control,
-            ifTrue,
-            ifFalse,
-            ..
-        }) => vec![(0, *control), (1, *ifTrue), (2, *ifFalse)],
-
-        E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => {
-            vec![]
-        }
-
-        E::FheSum(C::FheSum { values, .. }) => {
-            values.iter().copied().enumerate().collect()
-        }
-
-        E::FheIsIn(C::FheIsIn { value, values, .. }) => {
-            let mut operands =
-                Vec::with_capacity(values.len().saturating_add(1));
-            operands.push((0, *value));
-            operands.extend(
-                values
-                    .iter()
-                    .copied()
-                    .enumerate()
-                    .map(|(i, value)| (i.saturating_add(1), value)),
-            );
-            operands
-        }
-
-        E::FheMulDiv(C::FheMulDiv {
-            factor1,
-            factor2,
-            scalarByte,
-            ..
-        }) => {
-            let mut operands = vec![(0, *factor1)];
-            if !fhe_mul_div_factor2_is_scalar(scalarByte) {
-                operands.push((1, *factor2));
-            }
-            operands
-        }
-
-        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
-    }
-}
-
-/// Reconstructs the exact `uint256 boundaryBits` value committed by the
-/// executor for one operation. `was_minted` must represent successful prior
-/// executor operations in this transaction, in log order.
-///
-/// The executor only has 256 bits of provenance. Current collection events
-/// are bounded below that limit; reject a larger event rather than silently
-/// inventing a sourcing rule that its handle does not commit to.
-pub fn operand_boundary_mask_from_minted<F>(
-    op: &TfheContractEvents,
-    mut was_minted: F,
-) -> Result<OperandBoundaryMask, String>
-where
-    F: FnMut(&Handle) -> bool,
-{
-    let mut mask = [0_u8; OPERAND_BOUNDARY_MASK_BYTES];
-    for (position, handle) in tfhe_encrypted_operand_positions(op) {
-        if position >= OPERAND_BOUNDARY_MASK_BYTES * 8 {
-            return Err(format!(
-                "operation has encrypted operand at position {position}, beyond executor boundaryBits"
-            ));
-        }
-        if !was_minted(&handle) {
-            // Match `uint256` ABI byte order: Solidity bit 0 is the least
-            // significant bit of the final byte.
-            let byte_index = OPERAND_BOUNDARY_MASK_BYTES - 1 - position / 8;
-            mask[byte_index] |= 1 << (position % 8);
-        }
-    }
-    Ok(mask)
-}
-
-/// `fheMulDiv` `scalarByte` bit 1 — factor2 is a plaintext scalar (bit 0 is the
-/// always-scalar divisor).
-fn fhe_mul_div_factor2_is_scalar(scalar_byte: &ScalarByte) -> bool {
-    scalar_byte.0[0] & 0b10 != 0
 }
 
 #[cfg(test)]

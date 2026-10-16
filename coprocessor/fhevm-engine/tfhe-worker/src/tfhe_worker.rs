@@ -1356,6 +1356,134 @@ mod operand_boundary_mask_tests {
         Ok(())
     }
 
+    /// Pending scheduler results must rotate the lockless window, including
+    /// a consumer waiting on a producer whose GPU reservation was deferred.
+    #[tokio::test]
+    async fn pending_scheduler_results_rotate_lockless_window_without_stamping(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use scheduler::dfg::types::DFGTxResult;
+
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+        let blocked = vec![0xB1; 32];
+        let sibling = vec![0xB2; 32];
+        for (tx, output, age) in [(&blocked, handle(0x71), 120), (&sibling, handle(0x81), 1)] {
+            seed_computation(
+                &pool,
+                &output,
+                vec![handle(0x70)],
+                mask_with_bits(&[0]),
+                None,
+                tx,
+                age,
+            )
+            .await;
+        }
+        let args = test_args("1", db.db_url());
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url().to_owned().into(),
+            Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            true,
+            None,
+            None,
+            None,
+            3,
+        );
+
+        for error in [
+            SchedulerError::MissingInputs,
+            SchedulerError::DataflowGraphError,
+            SchedulerError::SchedulerError,
+            SchedulerError::ReRandomisationError,
+        ] {
+            let mut cooldown = DeferredTransactionCooldown::new();
+            let mut no_progress_cycles = 0;
+            let mut trx = pool.begin().await?;
+            let (nodes, _, _, _) = query_for_work(
+                &args,
+                &health_check,
+                &mut trx,
+                &mut locks,
+                &mut no_progress_cycles,
+                &mut cooldown,
+                false,
+            )
+            .await?;
+            assert_eq!(nodes.len(), 1);
+            assert_eq!(nodes[0].transaction_id, blocked);
+
+            let mut graph = DFComponentGraph::default();
+            graph.results.push(DFGTxResult {
+                handles: vec![handle(0x71)],
+                transaction_id: blocked.clone(),
+                compressed_ct: Err(error.into()),
+            });
+            let (progress, deferred) = upload_transaction_graph_results(
+                &mut graph,
+                &mut trx,
+                &mut locks,
+                false,
+                &mut frozen_computations::Freeze::default(),
+            )
+            .await?;
+            trx.commit().await?;
+            assert!(!progress);
+            assert_eq!(deferred, vec![blocked.clone()]);
+            for transaction in deferred {
+                cooldown.quarantine(&transaction);
+            }
+
+            let pending: (bool, bool, Option<String>) = sqlx::query_as(
+                "SELECT is_completed, is_error, error_message FROM computations WHERE output_handle = $1")
+                .bind(handle(0x71)).fetch_one(&pool).await?;
+            assert_eq!(pending, (false, false, None));
+            let mut trx = pool.begin().await?;
+            let (nodes, _, _, _) = query_for_work(
+                &args,
+                &health_check,
+                &mut trx,
+                &mut locks,
+                &mut no_progress_cycles,
+                &mut cooldown,
+                false,
+            )
+            .await?;
+            trx.commit().await?;
+            assert_eq!(nodes.len(), 1);
+            assert_eq!(
+                nodes[0].transaction_id, sibling,
+                "a pending oldest consumer must not starve the younger transaction"
+            );
+
+            // Retry eligibility returns after cooldown; no durable work is lost.
+            cooldown
+                .until
+                .insert(blocked.clone(), std::time::Instant::now());
+            let mut trx = pool.begin().await?;
+            let (nodes, _, _, _) = query_for_work(
+                &args,
+                &health_check,
+                &mut trx,
+                &mut locks,
+                &mut no_progress_cycles,
+                &mut cooldown,
+                false,
+            )
+            .await?;
+            trx.commit().await?;
+            assert_eq!(nodes[0].transaction_id, blocked);
+        }
+        Ok(())
+    }
+
     /// A scalar operand whose bytes equal the failed handle is not a dependency.
     ///
     /// `computations.dependencies` stores encrypted operand handles and plain
@@ -4348,13 +4476,14 @@ async fn build_transaction_graph_and_execute<'a>(
 #[tracing::instrument(name = "upload_results", skip_all)]
 /// Returns (progress, cooldown_transactions): the latter are transactions that
 /// failed this cycle in a way that leaves the row PENDING and pace-able — a
-/// retryable ExecutionPanic, or a GPU memory reservation timeout. The lockless
+/// retryable ExecutionPanic, a GPU memory reservation timeout, or a pending
+/// scheduler result (including missing boundary inputs). The lockless
 /// caller quarantines them so the oldest-first window cannot re-select a
 /// still-failing transaction at poll cadence (DCID locking paces the same case
 /// via no-progress parking).
 ///
-/// The two belong on one list because they share the property that matters
-/// here: neither writes a verdict the window can filter on, so the cooldown is
+/// These share the property that matters here: no terminal verdict is written
+/// that the window can filter on, so the cooldown is
 /// the only thing that can rotate selection past them.
 async fn upload_transaction_graph_results<'a>(
     tx_graph: &mut DFComponentGraph,
@@ -4395,6 +4524,7 @@ async fn upload_transaction_graph_results<'a>(
                 transaction_id = %hex::encode(&result.transaction_id),
                 handles = ?result.handles.iter().map(hex::encode).collect::<Vec<_>>(),
                 "Discarding frozen computation result; leaving work pending");
+            cooldown_transactions.push(result.transaction_id.clone());
             continue;
         }
         match result.compressed_ct {
@@ -4465,6 +4595,7 @@ async fn upload_transaction_graph_results<'a>(
                         output_handles = ?output_handles },
                                         "scheduler encountered an error while processing work item"
                                     );
+                        cooldown_transactions.push(result.transaction_id.clone());
                         continue;
                     }
                     if matches!(
@@ -4473,6 +4604,9 @@ async fn upload_transaction_graph_results<'a>(
                     ) {
                         // Make sure we don't mark this as an error since this simply means that the
                         // inputs weren't available when we tried scheduling these operations.
+                        // A blocked consumer can otherwise monopolize the
+                        // lockless window while its producer is cooling down.
+                        cooldown_transactions.push(result.transaction_id.clone());
                         continue;
                     }
                     if matches!(
@@ -4491,6 +4625,7 @@ async fn upload_transaction_graph_results<'a>(
                         warn!(target: "tfhe_worker",
                             { error = cerr, output_handles = ?output_handles },
                             "key lacks re-randomization material; leaving computation pending for retry");
+                        cooldown_transactions.push(result.transaction_id.clone());
                         continue;
                     }
                 }

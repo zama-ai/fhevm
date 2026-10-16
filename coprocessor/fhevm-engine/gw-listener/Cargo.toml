@@ -34,6 +34,7 @@ semver = { workspace = true }
 alloy = { workspace = true, features = ["node-bindings"] }
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
+upgrade-controller = { path = "../upgrade-controller" }
 
 [lints]
 workspace = true

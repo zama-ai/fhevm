@@ -136,7 +136,7 @@ pub async fn maybe_inject_synthetic_input(
     // Same write fence as every other listener write. A retired blue stack never reaches
     // here (`gcs_mode` is false for it), but a green stack rolled back mid-window can, and
     // `Continue` is what keeps raw ingestion going after a rollback.
-    let Some(mut tx) = begin_write_guarded(db_pool, true, GcsRollbackPolicy::Continue)
+    let Some(mut tx) = begin_write_guarded(db_pool, true, GcsRollbackPolicy::RawIngestion)
         .await?
         .into_tx()
     else {

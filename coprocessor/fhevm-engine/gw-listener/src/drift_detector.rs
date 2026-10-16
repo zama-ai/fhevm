@@ -44,6 +44,14 @@ struct ConsensusState {
     senders: Vec<Address>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LocalConsensusCheck {
+    AwaitingDigest,
+    /// A mismatch was confirmed, but recovery has not accepted its signal yet.
+    RecoveryPending,
+    Checked,
+}
+
 #[derive(Clone, Debug)]
 struct HandleState {
     first_seen_block: u64,
@@ -53,7 +61,7 @@ struct HandleState {
     expected_senders: Vec<Address>,
     submissions: Vec<Submission>,
     consensus: Option<ConsensusState>,
-    local_consensus_checked: bool,
+    local_consensus_check: LocalConsensusCheck,
     drift_reported: bool,
 }
 
@@ -68,7 +76,7 @@ impl HandleState {
             expected_senders,
             submissions: Vec::with_capacity(submission_capacity),
             consensus: None,
-            local_consensus_checked: false,
+            local_consensus_check: LocalConsensusCheck::AwaitingDigest,
             drift_reported: false,
         }
     }
@@ -83,10 +91,9 @@ enum HandleOutcome {
 
 pub(crate) struct DriftDetector {
     current_expected_senders: Vec<Address>,
-    /// Handles waiting for consensus or post-consensus grace. Bounded implicitly:
-    /// `evict_stale` removes entries after `drift_no_consensus_timeout` (no consensus)
-    /// or `drift_post_consensus_grace` (consensus reached). Steady-state size is
-    /// proportional to handle throughput * timeout duration.
+    /// Handles waiting for consensus or post-consensus grace normally expire.
+    /// Confirmed mismatches awaiting recovery remain open, retaining their replay
+    /// watermark until a recovery signal is accepted.
     open_handles: HashMap<CiphertextDigest, HandleState>,
     local_node_id: String,
     drift_no_consensus_timeout: Duration,
@@ -232,7 +239,9 @@ impl DriftDetector {
             },
             senders: event.coprocessorTxSenders,
         });
-        state.local_consensus_checked = false;
+        if state.local_consensus_check != LocalConsensusCheck::RecoveryPending {
+            state.local_consensus_check = LocalConsensusCheck::AwaitingDigest;
+        }
         if !self.replaying {
             CONSENSUS_LATENCY_BLOCKS_HISTOGRAM
                 .observe(context.block_number.saturating_sub(state.first_seen_block) as f64);
@@ -248,7 +257,9 @@ impl DriftDetector {
             .open_handles
             .iter()
             .filter_map(|(handle, state)| {
-                (state.consensus.is_some() && !state.local_consensus_checked).then_some(*handle)
+                (state.consensus.is_some()
+                    && state.local_consensus_check != LocalConsensusCheck::Checked)
+                    .then_some(*handle)
             })
             .collect::<Vec<_>>();
 
@@ -273,6 +284,10 @@ impl DriftDetector {
         let Some(state) = self.open_handles.get(&handle) else {
             return Ok(());
         };
+        if state.local_consensus_check == LocalConsensusCheck::RecoveryPending {
+            self.try_record_recovery(handle, db_pool).await;
+            return Ok(());
+        }
         let Some(consensus) = &state.consensus else {
             return Ok(());
         };
@@ -349,21 +364,37 @@ impl DriftDetector {
             self.deferred_drift_detected += 1;
 
             if self.auto_revert_enabled {
-                fhevm_engine_common::drift_revert::on_drift_detected(
-                    db_pool,
-                    handle.as_slice(),
-                    chain_id_from_handle(handle),
-                )
-                .await;
+                // Distinguish confirmed mismatches awaiting recovery from missing
+                // digests: a temporary replay gate must not expire this work.
+                if let Some(state) = self.open_handles.get_mut(&handle) {
+                    state.local_consensus_check = LocalConsensusCheck::RecoveryPending;
+                }
+                self.try_record_recovery(handle, db_pool).await;
+                return Ok(());
             }
         }
 
         let Some(state) = self.open_handles.get_mut(&handle) else {
             return Ok(());
         };
-        state.local_consensus_checked = true;
+        state.local_consensus_check = LocalConsensusCheck::Checked;
         self.finish_if_complete(handle);
         Ok(())
+    }
+
+    async fn try_record_recovery(&mut self, handle: CiphertextDigest, db_pool: &Pool<Postgres>) {
+        if fhevm_engine_common::drift_revert::on_drift_detected(
+            db_pool,
+            handle.as_slice(),
+            chain_id_from_handle(handle),
+        )
+        .await
+        {
+            if let Some(state) = self.open_handles.get_mut(&handle) {
+                state.local_consensus_check = LocalConsensusCheck::Checked;
+            }
+            self.finish_if_complete(handle);
+        }
     }
 
     fn evict_stale(&mut self, now: Instant) {
@@ -557,7 +588,7 @@ impl DriftDetector {
         }
 
         if let Some(consensus) = &state.consensus {
-            if !state.local_consensus_checked {
+            if state.local_consensus_check != LocalConsensusCheck::Checked {
                 return;
             }
             let consensus_block = consensus.context.block_number;
@@ -587,7 +618,10 @@ impl DriftDetector {
 
     fn classify_handle(&self, state: &HandleState, now: Instant) -> HandleOutcome {
         if let Some(consensus) = &state.consensus {
-            if !state.local_consensus_checked {
+            if state.local_consensus_check == LocalConsensusCheck::RecoveryPending {
+                return HandleOutcome::Pending;
+            }
+            if state.local_consensus_check == LocalConsensusCheck::AwaitingDigest {
                 return if now.duration_since(consensus.received_at)
                     >= self.drift_no_consensus_timeout
                 {
@@ -1034,7 +1068,7 @@ mod tests {
                 FixedBytes::from([14u8; 32]),
                 senders,
             )),
-            local_consensus_checked: false,
+            local_consensus_check: LocalConsensusCheck::AwaitingDigest,
             drift_reported: false,
         };
         detector.open_handles.insert(handle, state);
@@ -1046,7 +1080,7 @@ mod tests {
             .open_handles
             .get_mut(&handle)
             .unwrap()
-            .local_consensus_checked = true;
+            .local_consensus_check = LocalConsensusCheck::Checked;
         detector.finish_if_complete(handle);
         assert!(!detector.open_handles.contains_key(&handle));
     }
@@ -1224,7 +1258,7 @@ mod tests {
             .open_handles
             .get_mut(&handle)
             .unwrap()
-            .local_consensus_checked = true;
+            .local_consensus_check = LocalConsensusCheck::Checked;
 
         detector.finalize_completed_without_consensus();
 
@@ -1268,7 +1302,7 @@ mod tests {
             .open_handles
             .get_mut(&handle)
             .unwrap()
-            .local_consensus_checked = true;
+            .local_consensus_check = LocalConsensusCheck::Checked;
 
         // base + 2s: elapsed since consensus (base) = 2s >= 2s grace, should evict.
         detector.evict_stale(base + Duration::from_secs(2));
@@ -1338,7 +1372,7 @@ mod tests {
             .open_handles
             .get_mut(&handle)
             .unwrap()
-            .local_consensus_checked = true;
+            .local_consensus_check = LocalConsensusCheck::Checked;
 
         // consensus_at + 1s: 1 < 2 (grace), should NOT evict.
         detector.evict_stale(consensus_at + Duration::from_secs(1));
@@ -1408,7 +1442,7 @@ mod tests {
                     senders(),
                     base,
                 )),
-                local_consensus_checked: true,
+                local_consensus_check: LocalConsensusCheck::Checked,
                 drift_reported: false,
             },
         );
@@ -1492,7 +1526,7 @@ mod tests {
 
     #[test]
     fn local_check_not_ready_evicts_after_timeout() {
-        // Consensus arrives but local_consensus_checked stays false (simulating
+        // Consensus arrives but local consensus awaits its digest (simulating
         // the DB digest never becoming available). After no_consensus_timeout
         // the handle should be evicted with a warning.
         let mut detector = detector(); // no_consensus_timeout = 5s
@@ -1517,7 +1551,7 @@ mod tests {
             vec![senders()[0]],
             consensus_at,
         ));
-        // local_consensus_checked remains false (default).
+        // Local consensus still awaits its digest (the default).
 
         // Within timeout: consensus_at + 4s = 4 < 5, should not evict.
         detector.evict_stale(consensus_at + Duration::from_secs(4));
@@ -1703,6 +1737,192 @@ mod tests {
 
     #[tokio::test]
     #[serial(db)]
+    async fn consensus_mismatch_retries_after_replay_finishes() {
+        let (pool, _inst) = setup_db().await;
+
+        let chain_id: i64 = 12345;
+        let block: i64 = 42;
+        let handle = setup_computation_for_recovery(&pool, chain_id, block).await;
+
+        let local_ct = [0xBB; 32];
+        let local_ct128 = [0xCC; 32];
+        let consensus_ct_mismatch = [0xFF; 32];
+
+        insert_ciphertext_digest(
+            &pool,
+            chain_id,
+            [0u8; 32],
+            &handle,
+            &local_ct,
+            &local_ct128,
+            0,
+        )
+        .await
+        .unwrap();
+
+        use fhevm_engine_common::chain_recovery::{begin_replay, complete_replay, ListenerSource};
+        let replay = begin_replay(&pool, ListenerSource::Host, false, chain_id, 40, 42)
+            .await
+            .unwrap();
+        let mut detector = detector_with_auto_revert();
+        detector
+            .handle_consensus(
+                make_consensus_event(
+                    FixedBytes::from(handle),
+                    FixedBytes::from(consensus_ct_mismatch),
+                    FixedBytes::from(local_ct128),
+                    senders(),
+                ),
+                context(10),
+                &pool,
+            )
+            .await
+            .unwrap();
+
+        assert!(fhevm_engine_common::drift_revert::latest_signal(&pool)
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            detector.open_handles[&FixedBytes::from(handle)].local_consensus_check,
+            LocalConsensusCheck::RecoveryPending
+        );
+        complete_replay(
+            &pool,
+            ListenerSource::Host,
+            false,
+            chain_id,
+            replay.from_block,
+            replay.to_block,
+            replay.generation,
+        )
+        .await
+        .unwrap();
+        detector
+            .refresh_pending_consensus_checks(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            detector.open_handles[&FixedBytes::from(handle)].local_consensus_check,
+            LocalConsensusCheck::Checked
+        );
+
+        let signal = fhevm_engine_common::drift_revert::latest_signal(&pool)
+            .await
+            .unwrap()
+            .expect("consensus mismatch should create a revert signal");
+        assert_eq!(signal.host_chain_id, chain_id);
+        assert_eq!(signal.offending_host_block_number, block);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
+    async fn deferred_recovery_retains_watermark_through_timeout_and_rebuild() {
+        use fhevm_engine_common::chain_recovery::{begin_replay, complete_replay, ListenerSource};
+
+        let (pool, _inst) = setup_db().await;
+        let chain_id = 12345;
+        let block = 42;
+        let handle = setup_computation_for_recovery(&pool, chain_id, block).await;
+        let handle_key = FixedBytes::from(handle);
+        insert_ciphertext_digest(
+            &pool,
+            chain_id,
+            [0u8; 32],
+            &handle,
+            &[0xBB; 32],
+            &[0xCC; 32],
+            0,
+        )
+        .await
+        .unwrap();
+        let replay = begin_replay(&pool, ListenerSource::Host, false, chain_id, 40, 42)
+            .await
+            .unwrap();
+        let event = || {
+            make_consensus_event(
+                handle_key,
+                FixedBytes::from([0xFF; 32]),
+                FixedBytes::from([0xCC; 32]),
+                senders(),
+            )
+        };
+        let mut observed = context(10);
+        // Exercise real batch completion after both configured timeouts without
+        // wall-clock sleeps. The local digest exists; only recovery is deferred.
+        observed.observed_at -= Duration::from_secs(60);
+        let mut detector = detector_with_auto_revert();
+        detector
+            .handle_consensus(event(), observed, &pool)
+            .await
+            .unwrap();
+        for _ in 0..2 {
+            detector.end_of_batch(&pool).await.unwrap();
+            assert_eq!(
+                detector.open_handles[&handle_key].local_consensus_check,
+                LocalConsensusCheck::RecoveryPending
+            );
+            assert_eq!(detector.earliest_open_block(), Some(observed.block_number));
+            assert_eq!(detector.deferred_drift_detected, 1);
+        }
+        detector
+            .handle_consensus(event(), observed, &pool)
+            .await
+            .unwrap();
+        detector.end_of_batch(&pool).await.unwrap();
+        assert_eq!(detector.earliest_open_block(), Some(observed.block_number));
+        assert_eq!(detector.deferred_drift_detected, 1);
+        assert!(fhevm_engine_common::drift_revert::latest_signal(&pool)
+            .await
+            .unwrap()
+            .is_none());
+
+        // The retained watermark keeps this event in startup replay. A fresh
+        // detector must rediscover the mismatch and retain it even when the
+        // replay itself has lasted beyond the ordinary missing-digest timeout.
+        let retained_from = detector.earliest_open_block().unwrap();
+        drop(detector);
+        let mut rebuilt = detector_with_auto_revert();
+        rebuilt.set_replaying(true);
+        assert_eq!(retained_from, observed.block_number);
+        rebuilt
+            .handle_consensus(event(), observed, &pool)
+            .await
+            .unwrap();
+        rebuilt.set_replaying(false);
+        rebuilt.end_of_rebuild(&pool).await.unwrap();
+        rebuilt.end_of_batch(&pool).await.unwrap();
+        assert_eq!(rebuilt.earliest_open_block(), Some(retained_from));
+        assert_eq!(
+            rebuilt.open_handles[&handle_key].local_consensus_check,
+            LocalConsensusCheck::RecoveryPending
+        );
+        assert_eq!(rebuilt.deferred_drift_detected, 1);
+
+        complete_replay(
+            &pool,
+            ListenerSource::Host,
+            false,
+            chain_id,
+            replay.from_block,
+            replay.to_block,
+            replay.generation,
+        )
+        .await
+        .unwrap();
+        rebuilt.end_of_batch(&pool).await.unwrap();
+        let signal = fhevm_engine_common::drift_revert::latest_signal(&pool)
+            .await
+            .unwrap()
+            .expect("deferred mismatch should request recovery once replay finishes");
+        assert_eq!(signal.host_chain_id, chain_id);
+        assert_eq!(signal.offending_host_block_number, block);
+        assert_eq!(rebuilt.deferred_drift_detected, 1);
+        assert_eq!(rebuilt.earliest_open_block(), None);
+    }
+
+    #[tokio::test]
+    #[serial(db)]
     async fn consensus_match_does_not_create_revert_signal() {
         let (pool, _inst) = setup_db().await;
 
@@ -1775,7 +1995,10 @@ mod tests {
             .open_handles
             .get(&FixedBytes::from(handle))
             .unwrap();
-        assert!(!state.local_consensus_checked);
+        assert_eq!(
+            state.local_consensus_check,
+            LocalConsensusCheck::AwaitingDigest
+        );
         assert_eq!(detector.deferred_drift_detected, 0);
 
         detector.set_replaying(false);
@@ -1788,7 +2011,7 @@ mod tests {
             .open_handles
             .get(&FixedBytes::from(handle))
             .unwrap();
-        assert!(state.local_consensus_checked);
+        assert_eq!(state.local_consensus_check, LocalConsensusCheck::Checked);
         assert_eq!(detector.deferred_drift_detected, 1);
     }
 
@@ -1831,7 +2054,10 @@ mod tests {
             .open_handles
             .get(&FixedBytes::from(handle))
             .unwrap();
-        assert!(!state.local_consensus_checked);
+        assert_eq!(
+            state.local_consensus_check,
+            LocalConsensusCheck::AwaitingDigest
+        );
         assert_eq!(detector.deferred_drift_detected, 0);
 
         // Now populate the digests (simulating the worker finishing computation).
@@ -1862,7 +2088,7 @@ mod tests {
             .open_handles
             .get(&FixedBytes::from(handle))
             .unwrap();
-        assert!(state.local_consensus_checked);
+        assert_eq!(state.local_consensus_check, LocalConsensusCheck::Checked);
         // Consensus digest [0xFF] != local digest [0xBB] → drift.
         assert_eq!(detector.deferred_drift_detected, 1);
     }
@@ -1914,7 +2140,10 @@ mod tests {
             .open_handles
             .get(&FixedBytes::from(handle))
             .unwrap();
-        assert!(!state.local_consensus_checked);
+        assert_eq!(
+            state.local_consensus_check,
+            LocalConsensusCheck::AwaitingDigest
+        );
         assert_eq!(detector.deferred_drift_detected, 0);
     }
 
@@ -2011,7 +2240,7 @@ mod tests {
             .open_handles
             .get(&FixedBytes::from(handle))
             .unwrap();
-        assert!(state.local_consensus_checked);
+        assert_eq!(state.local_consensus_check, LocalConsensusCheck::Checked);
         assert_eq!(detector.deferred_drift_detected, 0);
     }
 }

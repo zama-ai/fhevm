@@ -998,32 +998,13 @@ impl From<SupportedFheOperations> for i16 {
 
 pub type Handle = Vec<u8>;
 pub type TxHash = Vec<u8>;
-pub const HANDLE_LEN: usize = 32;
-
-/// Byte 21 marker for handles produced by FHE operations or by the bridge,
-/// distinguishing them from input-verification handles which encode the input
-/// index in this position (0..=254). Matches the `0xff` literal used by the
-/// FHEVMExecutor and the bridge contracts in `host-contracts/`.
-pub const COMPUTED_HANDLE_INDEX_MARKER: u8 = 0xff;
-
-/// Byte 31 of every handle. Matches the contract-side `HANDLE_VERSION`
-/// constant in `host-contracts/contracts/shared/Constants.sol`.
-pub const HANDLE_VERSION: u8 = 0;
-
-/// Ingest-time sanity ceiling against a malformed event declaring a huge group;
-/// fits one byte and `output_index SMALLINT`. Real caps are per-op and smaller.
-pub const MAX_MULTI_OUTPUT_ARITY: usize = u8::MAX as usize;
-
-/// Enforced at ingestion by the host-listener.
-pub fn is_valid_multi_output_arity(outputs: usize) -> bool {
-    outputs > 0 && outputs <= MAX_MULTI_OUTPUT_ARITY
-}
+pub use crate::handle_metadata::{
+    is_valid_multi_output_arity, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_LEN, HANDLE_VERSION,
+    MAX_MULTI_OUTPUT_ARITY,
+};
 
 pub fn get_ct_type(handle: &[u8]) -> Result<i16, FhevmError> {
-    match handle.len() {
-        HANDLE_LEN => Ok(handle[30] as i16),
-        _ => Err(FhevmError::InvalidHandle),
-    }
+    crate::handle_metadata::get_ct_type(handle).ok_or(FhevmError::InvalidHandle)
 }
 
 pub fn is_ebytes_type(inp: i16) -> bool {

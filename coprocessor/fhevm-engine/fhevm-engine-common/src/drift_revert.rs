@@ -160,6 +160,15 @@ pub async fn create_revert_signal(
     host_chain_id: i64,
     offending_host_block_number: i64,
 ) -> anyhow::Result<Option<i64>> {
+    let Some(mut tx) = crate::versioning::begin_write_guarded(
+        pool,
+        false,
+        crate::versioning::GcsRollbackPolicy::Continue,
+    )
+    .await?
+    .into_tx() else {
+        anyhow::bail!("chain recovery or stack lifecycle defers automatic drift recovery");
+    };
     let row = sqlx::query(
         "WITH ins AS ( \
             INSERT INTO drift_revert_signal (host_chain_id, offending_host_block_number, status) \
@@ -184,9 +193,9 @@ pub async fn create_revert_signal(
     .bind(offending_host_block_number)
     .bind(SignalStatus::Pending.as_db_str())
     .bind(SignalStatus::Reverting.as_db_str())
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
-
+    tx.commit().await?;
     Ok(row.map(|r| r.get("id")))
 }
 
@@ -330,7 +339,7 @@ pub async fn update_signal_status(
 ///
 /// Transient failures (DB errors) are logged and swallowed so they don't
 /// cascade into the drift detector — the next detection cycle will retry.
-pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_id: i64) {
+pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_id: i64) -> bool {
     // Byte 21 is `COMPUTED_HANDLE_INDEX_MARKER` for compute outputs; inputs
     // encode the ciphertext index in the proof (0x00..=0xfe). Input drift is
     // out of scope for auto-recovery.
@@ -341,7 +350,7 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
             host_chain_id,
             "Drifted handle is a ZK input; auto-recovery is not supported for input handles"
         );
-        return;
+        return true;
     }
 
     let host_block: Option<i64> = match sqlx::query_scalar::<_, Option<i64>>(
@@ -356,7 +365,7 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
         Ok(row) => row,
         Err(e) => {
             error!(error = %e, host_chain_id, "Failed to look up computation for drifted handle");
-            return;
+            return false;
         }
     };
 
@@ -386,7 +395,7 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
             Ok(row) => row,
             Err(e) => {
                 error!(error = %e, host_chain_id, "Failed to look up bridged event for drifted handle");
-                return;
+                return false;
             }
         },
     };
@@ -396,7 +405,7 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
             host_chain_id,
             "Cannot create revert signal: no computation or bridged event found for drifted handle"
         );
-        return;
+        return false;
     };
 
     match create_revert_signal(pool, host_chain_id, block).await {
@@ -408,6 +417,7 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
                 host_chain_id,
                 block, id, "Drift revert signal recorded (created or lowered to earlier block)"
             );
+            true
         }
         Ok(None) => {
             warn!(
@@ -415,9 +425,11 @@ pub async fn on_drift_detected(pool: &Pool<Postgres>, handle: &[u8], host_chain_
                 block,
                 "Drift revert signal not recorded: revert already in flight or pending at earlier block"
             );
+            true
         }
         Err(e) => {
             error!(error = %e, "Failed to record drift revert signal");
+            false
         }
     }
 }
@@ -531,7 +543,7 @@ fn prepare_revert_sql(chain_id: i64, to_block_number: i64) -> String {
         .filter(|line| {
             let trimmed = line.trim();
             // Strip psql directives
-            !trimmed.starts_with("\\set")
+            !trimmed.starts_with("\\set") && trimmed != "BEGIN;" && trimmed != "COMMIT;"
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -572,7 +584,20 @@ pub async fn execute_revert(
     );
 
     let sql = prepare_revert_sql(host_chain_id, to_block_number);
-    sqlx::raw_sql(&sql).execute(pool).await?;
+    // Serialize destructive auto-recovery with containment and every writer.
+    // The SQL template's outer BEGIN/COMMIT are removed above so this guard
+    // stays held until every revert statement has committed or rolled back.
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(crate::versioning::CUTOVER_LOCK_ID)
+        .execute(&mut *tx)
+        .await?;
+    anyhow::ensure!(
+        !crate::chain_recovery::is_halted_tx(&mut tx).await?,
+        "chain history containment requires operator recovery; automatic drift revert refused"
+    );
+    sqlx::Executor::execute(&mut *tx, sql.as_str()).await?;
+    tx.commit().await?;
 
     info!(host_chain_id, to_block_number, "DB state revert completed");
     Ok(())

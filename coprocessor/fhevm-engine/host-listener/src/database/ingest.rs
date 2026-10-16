@@ -6,6 +6,10 @@ use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
 use fhevm_engine_common::bridge::chain_id_from_handle;
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::handle_metadata::{
+    validate_acl_handle_metadata, validate_computed_handle_metadata,
+    validate_verified_input_metadata,
+};
 use fhevm_engine_common::types::{
     Handle, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION,
 };
@@ -19,6 +23,10 @@ use crate::contracts::{
     AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
 };
 use crate::database::dependence_chains::dependence_chains;
+use crate::database::event_envelope::{classify, DecodedEvent};
+use crate::database::event_operands::{
+    validate_collection_shape, validate_scalar_mode,
+};
 use crate::database::synthetic_ops::{
     synthetic_logs, synthetic_transaction_hash, SyntheticContext,
     SYNTHETIC_BLOCK_OFFSET,
@@ -320,6 +328,35 @@ pub async fn ingest_block_logs(
         return Ok(());
     };
 
+    // The identity/parent check and all block writes share one per-chain
+    // admission lock. A second replica must observe this transaction's rows
+    // before it can admit a conflicting finalized block.
+    use fhevm_engine_common::chain_recovery::{
+        lock_history_tx, record_halt, ListenerSource,
+    };
+    lock_history_tx(
+        &mut tx,
+        ListenerSource::Host,
+        db.gcs_mode(),
+        chain_id.as_i64(),
+    )
+    .await?;
+    if let Some(conflict) =
+        host_history_conflict(&mut tx, chain_id, &block_logs.summary).await?
+    {
+        tx.rollback().await?;
+        record_halt(
+            &db.pool().await,
+            conflict.observation(
+                ListenerSource::Host,
+                db.gcs_mode(),
+                chain_id.as_i64(),
+            ),
+        )
+        .await?;
+        return Err(sqlx::Error::Protocol(conflict.reason.into()));
+    }
+
     // Queue `pg_notify('event_new_block', ...)` at the top of the transaction so
     // postgres defers delivery until `tx.commit()` below succeeds. Same
     // "after all events committed" guarantee as emitting post-commit, but
@@ -422,43 +459,100 @@ pub async fn ingest_block_logs(
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
         if acl_contract_address.is_none() || is_acl_address {
-            if let Ok(event) =
-                AclContract::AclContractEvents::decode_log(&log.inner)
-            {
-                allow_event_count = allow_event_count.saturating_add(1);
-                let handles = acl_result_handles(&event);
-                for handle in handles {
-                    is_allowed.insert(handle.to_vec());
+            match classify::<AclContract::AclContractEvents>(
+                &log.inner,
+                AclContract::AclContractEvents::SELECTORS,
+            ) {
+                DecodedEvent::Decoded(event) => {
+                    let handles = acl_result_handles(&event);
+                    for handle in &handles {
+                        validate_acl_handle_metadata(
+                            &handle.0,
+                            chain_id.as_u64(),
+                        )
+                        .map_err(|reason| {
+                            sqlx::Error::Protocol(reason.into())
+                        })?;
+                    }
+                    allow_event_count = allow_event_count.saturating_add(1);
+                    for handle in handles {
+                        is_allowed.insert(handle.to_vec());
+                    }
+                    acl_event_log.push((event, log.transaction_hash));
+                    continue;
                 }
-                acl_event_log.push((event, log.transaction_hash));
-                continue;
+                DecodedEvent::MalformedKnown => {
+                    return Err(sqlx::Error::Protocol(
+                        "malformed known ACL event envelope".into(),
+                    ));
+                }
+                DecodedEvent::Unknown => {}
             }
         }
 
         let is_tfhe_address = &current_address == tfhe_contract_address;
         if tfhe_contract_address.is_none() || is_tfhe_address {
-            if let Ok(event) =
-                TfheContract::TfheContractEvents::decode_log(&log.inner)
-            {
-                fhe_event_count = fhe_event_count.saturating_add(1);
-                let log = LogTfhe {
-                    event,
-                    transaction_hash: log.transaction_hash,
-                    block_number,
-                    block_hash,
-                    block_timestamp,
-                    // Filled in by the loop below.
-                    allowed_outputs: Default::default(),
-                    dependence_chain: Default::default(),
-                    tx_depth_size: 0,
-                    log_index: log.log_index,
-                    operand_boundary_mask: None,
-                    is_executor_minted: true,
-                    is_fallback_grant: false,
-                    is_synthetic,
-                };
-                tfhe_event_log.push(log);
-                continue;
+            match classify::<TfheContract::TfheContractEvents>(
+                &log.inner,
+                TfheContract::TfheContractEvents::SELECTORS,
+            ) {
+                DecodedEvent::Decoded(event) => {
+                    validate_scalar_mode(&event.data).map_err(|reason| {
+                        sqlx::Error::Protocol(reason.into())
+                    })?;
+                    validate_collection_shape(&event.data).map_err(
+                        |reason| sqlx::Error::Protocol(reason.into()),
+                    )?;
+                    for handle in tfhe_result_handles(&event.data) {
+                        validate_computed_handle_metadata(
+                            &handle.0,
+                            chain_id.as_u64(),
+                        )
+                        .map_err(|reason| {
+                            sqlx::Error::Protocol(reason.into())
+                        })?;
+                    }
+                    if let TfheContract::TfheContractEvents::VerifyInput(
+                        verify,
+                    ) = &event.data
+                    {
+                        validate_verified_input_metadata(
+                            &verify.inputHandle.0,
+                            &verify.result.0,
+                            verify.inputType,
+                            verify.inputProof.as_ref(),
+                            chain_id.as_u64(),
+                        )
+                        .map_err(|reason| {
+                            sqlx::Error::Protocol(reason.into())
+                        })?;
+                    }
+                    fhe_event_count = fhe_event_count.saturating_add(1);
+                    let log = LogTfhe {
+                        event,
+                        transaction_hash: log.transaction_hash,
+                        block_number,
+                        block_hash,
+                        block_timestamp,
+                        // Filled in by the loop below.
+                        allowed_outputs: Default::default(),
+                        dependence_chain: Default::default(),
+                        tx_depth_size: 0,
+                        log_index: log.log_index,
+                        operand_boundary_mask: None,
+                        is_executor_minted: true,
+                        is_fallback_grant: false,
+                        is_synthetic,
+                    };
+                    tfhe_event_log.push(log);
+                    continue;
+                }
+                DecodedEvent::MalformedKnown => {
+                    return Err(sqlx::Error::Protocol(
+                        "malformed known TFHE event envelope".into(),
+                    ));
+                }
+                DecodedEvent::Unknown => {}
             }
         }
 
@@ -832,6 +926,51 @@ pub async fn ingest_block_logs(
         .await?;
     }
     tx.commit().await
+}
+
+/// Check both adjacent committed identities: replicas can finish neighboring
+/// heights out of order. A missing predecessor is permitted only as an initial
+/// anchor; an existing committed row must agree. Pending forks are left to the
+/// existing finalizer until a poller cursor or finalization commits them.
+async fn host_history_conflict(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    header: &BlockSummary,
+) -> Result<
+    Option<fhevm_engine_common::chain_recovery::HistoryConflict>,
+    sqlx::Error,
+> {
+    let height = i64::try_from(header.number)
+        .map_err(|err| sqlx::Error::Protocol(err.to_string()))?;
+    let rows: Vec<(i64, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+        "SELECT block_number, block_hash, parent_hash FROM host_chain_blocks_valid
+         WHERE chain_id = $1 AND block_number BETWEEN $2 - 1 AND $2 + 1
+           AND (block_status = 'finalized' OR (block_status <> 'orphaned' AND block_number <=
+                (SELECT last_caught_up_block FROM host_listener_poller_state WHERE chain_id = $1)))",
+    ).bind(chain_id.as_i64()).bind(height).fetch_all(&mut **tx).await?;
+    for (number, hash, parent) in rows {
+        let (boundary, expected, observed) = if number == height {
+            (height, hash, header.hash.to_vec())
+        } else if number == height - 1 {
+            (number, hash, header.parent_hash.to_vec())
+        } else if !parent.is_empty() {
+            (height, parent, header.hash.to_vec())
+        } else {
+            continue;
+        };
+        if expected != observed {
+            return Ok(Some(
+                fhevm_engine_common::chain_recovery::HistoryConflict {
+                    block_number: boundary,
+                    expected_hash: expected,
+                    observed_hash: observed,
+                    reason:
+                        "host block does not extend committed canonical history",
+                },
+            ));
+        }
+    }
+    Ok(None)
 }
 
 /// Synthetic logs for this block, or empty if it is not the designated one.

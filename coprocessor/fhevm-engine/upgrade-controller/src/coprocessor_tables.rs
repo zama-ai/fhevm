@@ -374,6 +374,23 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: false,
         conflict_cols: &[],
     },
+    // Recovery state is shared across both stacks. Role-keyed checkpoints are
+    // promoted explicitly under the cutover fence, never by the generic merge.
+    CoprocessorTable {
+        name: "chain_recovery_halts",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "listener_block_checkpoints",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    CoprocessorTable {
+        name: "listener_replay_state",
+        duplicated: false,
+        conflict_cols: &[],
+    },
     // Event-derived consensus_epoch history is shared control-plane state. Blue and
     // Green must see the same failed and successful attempts.
     CoprocessorTable {

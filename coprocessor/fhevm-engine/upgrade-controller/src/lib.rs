@@ -522,6 +522,7 @@ async fn reset_gcs_schema(tx: &mut Transaction<'_, Postgres>) -> Result<(), Erro
     let drop_sql = format!("DROP SCHEMA IF EXISTS {GCS_SCHEMA_QUOTED} CASCADE");
     sqlx::query(&drop_sql).execute(&mut **tx).await?;
     let duplicated = create_gcs_tables(tx).await?;
+    fhevm_engine_common::chain_recovery::reset_green_replay_tx(tx).await?;
     info!(
         schema = GCS_SCHEMA_QUOTED,
         tables = ?duplicated,
@@ -632,6 +633,9 @@ async fn check_dry_run_ready(
     let (ready,): (bool,) = sqlx::query_as(
         r#"
         SELECT
+          NOT EXISTS (SELECT 1 FROM public.chain_recovery_halts WHERE resolved_at IS NULL)
+          AND NOT EXISTS (SELECT 1 FROM public.listener_replay_state WHERE pending)
+          AND
           -- 1. Watermark: the host-listener has ingested at least up to start_block.
           --    Without this, an un-ingested start_block would make the two checks
           --    below vacuously true (nothing to find yet != nothing wrong).
@@ -903,6 +907,15 @@ async fn transition_to_dry_run_started(
         }
     }
 
+    let Some(mut readiness_tx) = fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        true,
+        fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+    )
+    .await?
+    .into_tx() else {
+        return Ok(());
+    };
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
@@ -915,8 +928,10 @@ async fn transition_to_dry_run_started(
     )
     .bind(proposal_id)
     .bind(proposal_block)
-    .execute(pool)
+    .execute(&mut *readiness_tx)
     .await?;
+
+    readiness_tx.commit().await?;
 
     if result.rows_affected() == 0 {
         warn!(
@@ -1003,13 +1018,15 @@ async fn transition_to_dry_run_started(
 ///      `gw_start_block` — the Gateway-inputs analogue of `check_dry_run_ready`'s
 ///      `computations` completeness check, protecting the same class of
 ///      backfill-timing race for the input-ciphertext consensus track.
-async fn check_gw_dry_run_ready(
+pub async fn check_gw_dry_run_ready(
     pool: &Pool<Postgres>,
     gw_start_block: i64,
 ) -> Result<bool, sqlx::Error> {
     let sql = format!(
         "SELECT
-           COALESCE(
+           NOT EXISTS (SELECT 1 FROM public.chain_recovery_halts WHERE resolved_at IS NULL)
+           AND NOT EXISTS (SELECT 1 FROM public.listener_replay_state WHERE pending)
+           AND COALESCE(
              (SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
               WHERE dummy_id = true),
              -1
@@ -1205,6 +1222,15 @@ async fn transition_to_gw_dry_run_started(
     proposal_id: &[u8],
     proposal_block: i64,
 ) -> Result<(), Error> {
+    let Some(mut readiness_tx) = fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        true,
+        fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+    )
+    .await?
+    .into_tx() else {
+        return Ok(());
+    };
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
@@ -1218,8 +1244,10 @@ async fn transition_to_gw_dry_run_started(
     )
     .bind(proposal_id)
     .bind(proposal_block)
-    .execute(pool)
+    .execute(&mut *readiness_tx)
     .await?;
+
+    readiness_tx.commit().await?;
 
     if result.rows_affected() == 0 {
         warn!(
@@ -2388,6 +2416,66 @@ async fn delete_gcs_synthetic_inputs(tx: &mut Transaction<'_, Postgres>) -> Resu
     Ok(())
 }
 
+/// Runs under the exclusive cutover lock, before the cursor/table merge.
+async fn promote_gateway_checkpoints(
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<Option<(i64, fhevm_engine_common::chain_recovery::HistoryConflict)>, Error> {
+    let cursor: Option<Option<i64>> = sqlx::query_scalar(&format!(
+        "SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block WHERE dummy_id = TRUE"
+    )).fetch_optional(&mut **tx).await?;
+    let Some(cursor) = cursor.flatten() else {
+        return Ok(None);
+    };
+    let chains: Vec<i64> = sqlx::query_scalar(
+        "SELECT chain_id FROM public.listener_block_checkpoints
+         WHERE source = 'gateway' AND stack_role = 'GCS' AND block_number = $1",
+    )
+    .bind(cursor)
+    .fetch_all(&mut **tx)
+    .await?;
+    if cursor == 0 && chains.is_empty() {
+        return Ok(None);
+    }
+    if chains.len() != 1 {
+        return Err(sqlx::Error::Protocol(
+            "Gateway promotion requires one verified checkpoint for its cursor".into(),
+        )
+        .into());
+    }
+    let chain_id = chains[0];
+    let conflict: Option<(i64, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+        "SELECT g.block_number, b.block_hash, g.block_hash
+         FROM public.listener_block_checkpoints g
+         JOIN public.listener_block_checkpoints b USING (source, chain_id, block_number)
+         WHERE g.source = 'gateway' AND g.stack_role = 'GCS' AND b.stack_role = 'BCS'
+           AND g.chain_id = $1 AND b.block_hash <> g.block_hash LIMIT 1",
+    )
+    .bind(chain_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some((block_number, expected_hash, observed_hash)) = conflict {
+        return Ok(Some((
+            chain_id,
+            fhevm_engine_common::chain_recovery::HistoryConflict {
+                block_number,
+                expected_hash,
+                observed_hash,
+                reason: "Gateway identities disagree during stack promotion",
+            },
+        )));
+    }
+    sqlx::query(
+        "INSERT INTO public.listener_block_checkpoints
+            (source, stack_role, chain_id, block_number, block_hash, parent_hash)
+         SELECT source, 'BCS', chain_id, block_number, block_hash, parent_hash
+         FROM public.listener_block_checkpoints
+         WHERE source = 'gateway' AND stack_role = 'GCS' AND chain_id = $1
+         ON CONFLICT (source, stack_role, chain_id, block_number)
+         DO UPDATE SET parent_hash = COALESCE(listener_block_checkpoints.parent_hash, EXCLUDED.parent_hash)",
+    ).bind(chain_id).execute(&mut **tx).await?;
+    Ok(None)
+}
+
 /// Cutover routine — run once every GCS row is `UpgradeAuthorized`, from the
 /// unanimity handler or from `reconcile`. Idempotent via the under-lock re-read.
 ///
@@ -2453,6 +2541,13 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover acquired exclusive advisory lock"
     );
 
+    if fhevm_engine_common::chain_recovery::is_halted_tx(&mut tx).await?
+        || fhevm_engine_common::chain_recovery::replay_pending_tx(&mut tx).await?
+    {
+        warn!("cutover blocked by chain history recovery");
+        return Ok(());
+    }
+
     // Read the GCS proposal rows under the lock, and return early if they are
     // not `UpgradeAuthorized` (normally because a previous attempt already committed).
     let Some((stack_version, proposal_id, proposal_block)) =
@@ -2477,6 +2572,19 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         )
         .bind(&reason)
         .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        return Ok(());
+    }
+
+    // Green's cursor and its identity become live atomically. Keep historical
+    // halt records and refuse promotion if the two stacks disagree.
+    if let Some((chain_id, conflict)) = promote_gateway_checkpoints(&mut tx).await? {
+        use fhevm_engine_common::chain_recovery::{record_halt_tx, ListenerSource};
+        record_halt_tx(
+            &mut tx,
+            conflict.observation(ListenerSource::Gateway, false, chain_id),
+        )
         .await?;
         tx.commit().await?;
         return Ok(());
@@ -4152,6 +4260,101 @@ mod tests {
             .await
             .expect("pool");
         (instance, pool)
+    }
+
+    #[tokio::test]
+    async fn green_schema_reset_invalidates_only_green_replay() {
+        use fhevm_engine_common::chain_recovery::{begin_replay, pending_replay, ListenerSource};
+        let (_db, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.unwrap();
+        begin_replay(&pool, ListenerSource::Host, true, 42, 1, 64)
+            .await
+            .unwrap();
+        begin_replay(&pool, ListenerSource::Host, false, 42, 1, 64)
+            .await
+            .unwrap();
+        // A real history halt must survive discarding an upgrade attempt.
+        sqlx::query("INSERT INTO public.chain_recovery_halts (source, stack_role, chain_id, block_number, reason) VALUES ('host', 'GCS', 42, 1, 'retained evidence')").execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(CUTOVER_LOCK_ID)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        reset_gcs_schema(&mut tx).await.unwrap();
+        tx.commit().await.unwrap();
+        assert!(pending_replay(&pool, ListenerSource::Host, true, 42)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(pending_replay(&pool, ListenerSource::Host, false, 42)
+            .await
+            .unwrap()
+            .is_some());
+        assert!(fhevm_engine_common::chain_recovery::is_halted(&pool)
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn gateway_promotion_preserves_the_promoted_cursor_identity() {
+        use fhevm_engine_common::chain_recovery::{checkpoint_hash, ListenerSource};
+        let (_db, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.unwrap();
+        sqlx::query("INSERT INTO public.gw_listener_last_block (dummy_id, last_block_num) VALUES (TRUE, 140)").execute(&pool).await.unwrap();
+        for cursor in [60_i64, 200] {
+            sqlx::query(&format!("INSERT INTO {GCS_SCHEMA_QUOTED}.gw_listener_last_block (dummy_id, last_block_num) VALUES (TRUE, $1) ON CONFLICT (dummy_id) DO UPDATE SET last_block_num = EXCLUDED.last_block_num"))
+                .bind(cursor).execute(&pool).await.unwrap();
+            sqlx::query("INSERT INTO public.listener_block_checkpoints (source, stack_role, chain_id, block_number, block_hash, parent_hash) VALUES ('gateway', 'GCS', 42, $1, $2, $3)")
+                .bind(cursor).bind(vec![cursor as u8; 32]).bind(vec![(cursor - 1) as u8; 32]).execute(&pool).await.unwrap();
+            let mut tx = pool.begin().await.unwrap();
+            sqlx::query("SELECT pg_advisory_xact_lock($1)")
+                .bind(CUTOVER_LOCK_ID)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+            assert!(promote_gateway_checkpoints(&mut tx)
+                .await
+                .unwrap()
+                .is_none());
+            merge_gcs_table(&mut tx, "gw_listener_last_block", &["dummy_id"])
+                .await
+                .unwrap();
+            tx.commit().await.unwrap();
+            let actual: i64 = sqlx::query_scalar(
+                "SELECT last_block_num FROM public.gw_listener_last_block WHERE dummy_id",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(actual, cursor);
+            assert_eq!(
+                checkpoint_hash(&pool, ListenerSource::Gateway, false, 42, actual)
+                    .await
+                    .unwrap(),
+                Some(vec![cursor as u8; 32])
+            );
+        }
+        // Promotion must never overwrite a disagreeing live identity.
+        sqlx::query("UPDATE public.listener_block_checkpoints SET block_hash = $1 WHERE stack_role = 'BCS' AND block_number = 200")
+            .bind(vec![1_u8; 32]).execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(CUTOVER_LOCK_ID)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        assert!(promote_gateway_checkpoints(&mut tx)
+            .await
+            .unwrap()
+            .is_some());
+        tx.rollback().await.unwrap();
+        assert_eq!(
+            checkpoint_hash(&pool, ListenerSource::Gateway, false, 42, 200)
+                .await
+                .unwrap(),
+            Some(vec![1_u8; 32])
+        );
     }
 
     fn timeout_payload() -> String {
