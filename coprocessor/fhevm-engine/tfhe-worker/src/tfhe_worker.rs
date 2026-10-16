@@ -2707,9 +2707,11 @@ async fn tfhe_worker_cycle(
         let executed = tokio::select! {
             biased;
             _ = shutdown.cancelled() => {
-                // Roll back first: a chain must not look free while this
-                // transaction still holds its row locks. Dropping `trx` would
-                // only queue the rollback until `conn` is reused.
+                // Roll back before the release, so the next worker does not wait
+                // on this transaction's row locks. Dropping `trx` would only
+                // queue the rollback until `conn` is reused. If the rollback
+                // fails, the release still runs and the next worker waits until
+                // this process exits.
                 if let Err(error) = trx.rollback().await {
                     warn!(target: "tfhe_worker", { error = %error }, "rollback of the abandoned batch failed");
                 }

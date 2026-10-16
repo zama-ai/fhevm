@@ -100,7 +100,7 @@ fn start_runtime_inner(
     });
     // An abandoned batch keeps its FHE threads busy, and waiting for them would
     // run past the termination grace period. Its writes are already rolled back.
-    runtime.shutdown_timeout(std::time::Duration::from_secs(1));
+    runtime.shutdown_timeout(RUNTIME_SHUTDOWN_TIMEOUT);
 
     // Supervisors using restart-on-failure need a nonzero status. The runtime
     // has been dropped here; embedded callers retain ownership of their process.
@@ -110,7 +110,11 @@ fn start_runtime_inner(
 }
 
 /// How long a stopping worker may take to hand back its chains and return.
-const SHUTDOWN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(2);
+/// A step that does not watch the token (a commit, a key load, a cutover or
+/// containment lock wait) finishes inside it; one that outlasts it leaves its
+/// chains to the lock TTL. Both timeouts fit Kubernetes' default 30 s grace period.
+const SHUTDOWN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(10);
+const RUNTIME_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
 // Used for testing as we would call `async_main()` multiple times.
 static TRACING_INIT: Once = Once::new();
