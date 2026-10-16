@@ -9,7 +9,7 @@ import {
 import { getOrCreateUiWalletAccountForStandardWalletAccount_DO_NOT_USE_OR_YOU_WILL_BE_FIRED } from '@wallet-standard/ui-registry';
 import { solanaPermitWalletFromSecretKey } from '@fhevm/sdk/solana';
 import { ZAMA_HOST_ERROR__TRANSIENT_STORE_NOT_OPENED, ZAMA_HOST_PROGRAM_ADDRESS } from '@fhevm/solana-zama-host';
-import { CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
+import { CONFIDENTIAL_TOKEN_ERROR__OWNER_MISMATCH, CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS } from '@fhevm/confidential-token';
 
 import {
   assertWalletAccountCapabilities,
@@ -282,8 +282,8 @@ describe('Wallet Standard boundary', () => {
   test('leaves a token OwnerMismatch as the original diagnostic', () => {
     const original = [
       `Program ${CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS} invoke [1]`,
-      'Program log: AnchorError caused by account: authority. Error Code: OwnerMismatch. Error Number: 6000. Error Message: owner mismatch.',
-      `Program ${CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS} failed: custom program error: 0x1770`,
+      `Program log: AnchorError caused by account: authority. Error Code: OwnerMismatch. Error Number: ${CONFIDENTIAL_TOKEN_ERROR__OWNER_MISMATCH}. Error Message: Token owner does not match signer.`,
+      `Program ${CONFIDENTIAL_TOKEN_PROGRAM_ADDRESS} failed: custom program error: 0x${CONFIDENTIAL_TOKEN_ERROR__OWNER_MISMATCH.toString(16)}`,
     ].join('\n');
     expect(describeWalletError(new Error(original), 'transaction')).toBe(original);
   });
