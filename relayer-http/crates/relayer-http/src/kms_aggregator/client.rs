@@ -277,7 +277,7 @@ mod tests {
     use crate::kms_aggregator::config::tests::valid;
     use crate::kms_aggregator::mock::{self, Fixed};
 
-    const ALL_CODES: [ErrorCode; 16] = [
+    const ALL_CODES: [ErrorCode; 17] = [
         ErrorCode::Malformed,
         ErrorCode::UnsupportedAttestationType,
         ErrorCode::SenderAuthenticationFailed,
@@ -294,6 +294,7 @@ mod tests {
         ErrorCode::UpstreamTransient,
         ErrorCode::Timeout,
         ErrorCode::Unknown,
+        ErrorCode::UserDecryptionExpired,
     ];
 
     /// Position of `code` in `ALL_CODES`. No `_` arm: a new connector code fails to compile here.
@@ -315,6 +316,7 @@ mod tests {
             ErrorCode::UpstreamTransient => 13,
             ErrorCode::Timeout => 14,
             ErrorCode::Unknown => 15,
+            ErrorCode::UserDecryptionExpired => 16,
         }
     }
 
