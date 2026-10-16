@@ -61,6 +61,7 @@ hex = { workspace = true }
 reqwest = { workspace = true, features = ["http2"] }
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true

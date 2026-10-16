@@ -16,12 +16,14 @@ use alloy::{
     eips::BlockId,
     primitives::{Address, U256},
     providers::Provider,
+    transports::http::reqwest,
 };
 use anyhow::{anyhow, Context};
 use fhevm_host_bindings::protocol_config::ProtocolConfig::ProtocolConfigInstance;
 use kms_context::{read_kms_context, KMS_CONTEXT_COUNTER_BASE};
 use prometheus::{register_int_gauge, IntGauge};
 use request_authorization::KeyRegistry;
+use solana_host_follower::url_origin;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -114,7 +116,7 @@ pub fn follow<P: Provider + 'static>(
                     REFRESH_INTERVAL
                 }
                 Err(err) => {
-                    warn!(error = %format!("{err:#}"), "KMS tx-sender read failed; keeping the last set");
+                    warn!(error = %without_rpc_url_secrets(&err), "KMS tx-sender read failed; keeping the last set");
                     RETRY_INTERVAL
                 }
             };
@@ -125,6 +127,19 @@ pub fn follow<P: Provider + 'static>(
         }
     });
     KmsTxSenders(senders)
+}
+
+/// `err` as text, with each request URL cut to its [`url_origin`]: `reqwest` prints the full URL.
+fn without_rpc_url_secrets(err: &anyhow::Error) -> String {
+    let mut text = format!("{err:#}");
+    for url in err
+        .chain()
+        .filter_map(|cause| cause.downcast_ref::<reqwest::Error>())
+        .filter_map(reqwest::Error::url)
+    {
+        text = text.replace(url.as_str(), &url_origin(url.as_str()));
+    }
+    text
 }
 
 struct KmsTxSenderReader<P> {
@@ -301,5 +316,68 @@ mod tests {
         let set = reader.read().await.expect("second read");
         assert_eq!(set.senders, HashSet::from([c]));
         assert!(asserter.read_q().is_empty(), "no further RPC call");
+    }
+
+    #[derive(Clone, Default)]
+    struct Logs(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Logs {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Logs {
+        type Writer = Self;
+        fn make_writer(&'a self) -> Self {
+            self.clone()
+        }
+    }
+
+    impl Logs {
+        fn text(&self) -> String {
+            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+        }
+    }
+
+    /// The read failure is logged from the follower's own task, so the test runs on one thread
+    /// and captures that thread's events: `tracing_test` keeps only the test's own span.
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_failed_read_logs_the_rpc_origin_without_its_keys() {
+        let logs = Logs::default();
+        let _subscriber = tracing::subscriber::set_default(
+            tracing_subscriber::fmt()
+                .with_writer(logs.clone())
+                .with_ansi(false)
+                .finish(),
+        );
+        // Nothing listens there, so the first call fails in the HTTP transport.
+        let rpc = "http://USER-KEY:PASSWORD-KEY@127.0.0.1:1/v2/PATH-KEY?apikey=QUERY-KEY";
+        let provider =
+            ProviderBuilder::new().connect_http(rpc.parse().unwrap());
+        let cancel = CancellationToken::new();
+        let _senders =
+            follow(ProtocolConfig::new(CONTRACT, provider), cancel.clone());
+
+        let deadline =
+            tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !logs.text().contains("KMS tx-sender read failed") {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "no failed read logged"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        cancel.cancel();
+
+        let text = logs.text();
+        assert!(text.contains("http://127.0.0.1:1"), "{text}");
+        for secret in ["USER-KEY", "PASSWORD-KEY", "PATH-KEY", "QUERY-KEY"] {
+            assert!(!text.contains(secret), "{secret} in {text}");
+        }
     }
 }

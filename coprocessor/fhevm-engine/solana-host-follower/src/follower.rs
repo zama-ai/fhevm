@@ -40,6 +40,7 @@ use crate::host::DecodedInstruction;
 use crate::source::{
     build_subscribe_request, BlockValidator, SealDecision, SealedBlock,
 };
+use crate::url_origin;
 
 mod archive;
 mod metrics;
@@ -123,11 +124,12 @@ pub struct FollowerConfig {
     pub chain_id: u64,
 }
 
-/// Hand-written so the `x-token` never reaches a log through a `{:?}` of the config.
+/// Hand-written so neither the `x-token` nor a key in the gRPC URL reaches a log through a `{:?}`
+/// of the config.
 impl fmt::Debug for FollowerConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FollowerConfig")
-            .field("grpc_url", &self.grpc_url)
+            .field("grpc_url", &url_origin(&self.grpc_url))
             .field("x_token", &self.x_token.as_ref().map(|_| "[REDACTED]"))
             .field("program_id", &self.program_id)
             .field("chain_id", &self.chain_id)
@@ -222,7 +224,7 @@ pub async fn run(
 ) -> Result<()> {
     info!(
         program_id = %config.program_id,
-        grpc_url = %config.grpc_url,
+        grpc_url = %url_origin(&config.grpc_url),
         "Starting Solana host follower (Yellowstone gRPC transport)"
     );
     metrics::record_start(config.chain_id, &start);
@@ -926,21 +928,8 @@ mod handshake_tests {
     use tokio::sync::watch;
     use tokio_util::sync::CancellationToken;
 
-    use super::{
-        run, BlockSink, FollowerConfig, IngestFailure, PreparedBlock,
-        StartPosition, GRPC_HANDSHAKE_TIMEOUT,
-    };
-
-    struct NoBlocks;
-
-    impl BlockSink for NoBlocks {
-        async fn apply(
-            &self,
-            _: &PreparedBlock,
-        ) -> std::result::Result<(), IngestFailure> {
-            unreachable!("a silent provider sends no block")
-        }
-    }
+    use super::test_support::NoBlocks;
+    use super::{run, FollowerConfig, StartPosition, GRPC_HANDSHAKE_TIMEOUT};
 
     /// Accepts connections and never writes to them. Counts the accepted connections.
     async fn silent_provider() -> (u16, watch::Receiver<usize>) {
@@ -1020,12 +1009,65 @@ mod config_tests {
         assert!(!rendered.contains("secret"), "{rendered}");
         assert!(rendered.contains("[REDACTED]"), "{rendered}");
     }
+
+    const KEYED_GRPC_URL: &str =
+        "https://provider.example/PATH-KEY?api-key=QUERY-KEY";
+
+    #[test]
+    fn debug_shows_only_the_grpc_origin() {
+        let config = FollowerConfig {
+            grpc_url: KEYED_GRPC_URL.to_owned(),
+            ..super::test_support::config()
+        };
+        let rendered = format!("{config:?}");
+        assert!(rendered.contains("https://provider.example"), "{rendered}");
+        assert!(!rendered.contains("KEY"), "{rendered}");
+    }
+
+    /// The start log names the endpoint by its origin.
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn the_start_log_shows_only_the_grpc_origin() {
+        let config = FollowerConfig {
+            grpc_url: KEYED_GRPC_URL.to_owned(),
+            ..super::test_support::config()
+        };
+        let archive = solana_client::nonblocking::rpc_client::RpcClient::new(
+            "http://127.0.0.1:1".to_owned(),
+        );
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        super::run(
+            &super::test_support::NoBlocks,
+            &archive,
+            &config,
+            super::StartPosition::Tip,
+            cancel,
+        )
+        .await
+        .unwrap();
+        assert!(logs_contain("https://provider.example"));
+        assert!(!logs_contain("PATH-KEY"));
+        assert!(!logs_contain("QUERY-KEY"));
+    }
 }
 
-/// Configuration shared by the follower's tests.
+/// Configuration and a sink shared by the follower's tests.
 #[cfg(test)]
 pub(crate) mod test_support {
-    use super::FollowerConfig;
+    use super::{BlockSink, FollowerConfig, IngestFailure, PreparedBlock};
+
+    /// A sink for tests whose follower must never reach a block.
+    pub(crate) struct NoBlocks;
+
+    impl BlockSink for NoBlocks {
+        async fn apply(
+            &self,
+            _: &PreparedBlock,
+        ) -> std::result::Result<(), IngestFailure> {
+            unreachable!("this test's follower sends no block")
+        }
+    }
 
     // A valid pubkey that is not the compiled-in `zama_host::ID`: following must use the
     // configured deployment.
