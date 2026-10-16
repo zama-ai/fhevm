@@ -15,6 +15,7 @@ use alloy::{
     eips::{BlockId, BlockNumberOrTag},
     primitives::{Address, U256},
     providers::Provider,
+    transports::{RpcError, TransportError, TransportErrorKind},
 };
 use anyhow::{Context, anyhow};
 use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::{
@@ -120,7 +121,7 @@ impl<P: Provider> Follower<P> {
                 }
                 Err(err) => {
                     warn!(
-                        error = redact_urls(&format!("{err:#}")),
+                        error = describe_read_error(&err),
                         "KMS tx-sender read failed; keeping the last set"
                     );
                     RETRY_INTERVAL.min(self.interval)
@@ -199,24 +200,35 @@ impl<P: Provider> Reader<P> {
     }
 }
 
-/// `text` with every URL replaced: an RPC URL often carries the provider's API key in its path or
-/// query, and transport errors quote the URL they failed on.
-fn redact_urls(text: &str) -> String {
-    let mut redacted = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(separator) = rest.find("://") {
-        let scheme_start = rest[..separator]
-            .rfind(|c: char| !(c.is_ascii_alphanumeric() || "+-.".contains(c)))
-            .map_or(0, |i| i + 1);
-        let url_len = rest[separator..]
-            .find(|c: char| c.is_whitespace() || "()<>\"'`,".contains(c))
-            .unwrap_or(rest.len() - separator);
-        redacted.push_str(&rest[..scheme_start]);
-        redacted.push_str("<url>");
-        rest = &rest[separator + url_len..];
+/// A failed read as logged: the step that failed, which is our own text, and the kind of RPC
+/// failure. Nothing the RPC side wrote is kept: the RPC URL often carries the provider's API key,
+/// and an error body or message can echo it, with or without the scheme.
+fn describe_read_error(err: &anyhow::Error) -> String {
+    let rpc_failure = err.chain().find_map(|cause| {
+        if let Some(error) = cause.downcast_ref::<TransportError>() {
+            return Some(describe_transport_error(error));
+        }
+        match cause.downcast_ref::<alloy::contract::Error>()? {
+            alloy::contract::Error::TransportError(error) => Some(describe_transport_error(error)),
+            _ => Some("undecodable contract answer".into()),
+        }
+    });
+    match rpc_failure {
+        Some(failure) => format!("{err}: {failure}"),
+        None => err.to_string(),
     }
-    redacted.push_str(rest);
-    redacted
+}
+
+fn describe_transport_error(error: &TransportError) -> String {
+    match error {
+        RpcError::ErrorResp(payload) => format!("JSON-RPC error {}", payload.code),
+        RpcError::Transport(TransportErrorKind::HttpError(error)) => {
+            format!("HTTP status {}", error.status)
+        }
+        RpcError::DeserError { .. } => "invalid JSON-RPC answer".into(),
+        RpcError::NullResp => "null JSON-RPC answer".into(),
+        _ => "RPC transport failure".into(),
+    }
 }
 
 /// The first KMS context id under `counter`, the last id `ProtocolConfig` allocated. Ids are
@@ -438,16 +450,41 @@ mod tests {
         assert!(!signers.allows(Address::repeat_byte(1)));
     }
 
-    #[test]
-    fn every_url_is_redacted() {
+    #[tokio::test]
+    async fn read_errors_leave_out_what_the_rpc_wrote() {
+        let echo = "error for https://rpc.example/v3/SECRET-KEY: /v3/SECRET-KEY?apikey=SECRET-KEY";
+
+        let (mut finalized_fails, asserter) = reader(&[]);
+        asserter.push_failure_msg(echo);
+        let err = finalized_fails.read().await.unwrap_err();
         assert_eq!(
-            redact_urls(
-                "error sending request for url (https://rpc.example/v2/key?x=1): refused, \
-                 then ws://h:1/p and http://a"
-            ),
-            "error sending request for url (<url>): refused, then <url> and <url>"
+            describe_read_error(&err),
+            "finalized block: JSON-RPC error -32603"
         );
-        assert_eq!(redact_urls("no url: a:b"), "no url: a:b");
+
+        // A contract call wraps the transport error in `alloy::contract::Error`.
+        let (mut reader, asserter) = reader(&[]);
+        asserter.push_success(&finalized());
+        asserter.push_failure_msg(echo);
+        let err = reader.read().await.unwrap_err();
+        assert_eq!(
+            describe_read_error(&err),
+            "getCurrentKmsContextIdCounter: JSON-RPC error -32603"
+        );
+
+        for (error, described) in [
+            (
+                TransportErrorKind::http_error(500, echo.to_owned()),
+                "finalized block: HTTP status 500",
+            ),
+            (
+                TransportErrorKind::custom_str(echo),
+                "finalized block: RPC transport failure",
+            ),
+        ] {
+            let err = anyhow::Error::from(error).context("finalized block");
+            assert_eq!(describe_read_error(&err), described);
+        }
     }
 
     #[test]

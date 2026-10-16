@@ -9,6 +9,7 @@ description = "FhevmSig HTTP request authentication: EIP-712 signature over path
 [features]
 # The signers a coprocessor accepts, read from the `ProtocolConfig` contract.
 protocol-config = [
+    "alloy/contract",
     "alloy/providers",
     "dep:anyhow",
     "dep:fhevm_host_bindings",
