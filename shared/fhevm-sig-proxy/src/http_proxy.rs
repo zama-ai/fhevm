@@ -11,8 +11,8 @@ use fhevm_sig_auth::AuthError;
 use http::{
     HeaderValue, Method, StatusCode,
     header::{
-        ALLOW, AUTHORIZATION, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, FORWARDED, HeaderName,
-        PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, TE, TRAILER, UPGRADE, VIA, WWW_AUTHENTICATE,
+        ALLOW, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, FORWARDED, HeaderName, VIA,
+        WWW_AUTHENTICATE,
     },
 };
 use pingora::{
@@ -20,6 +20,7 @@ use pingora::{
     http::{RequestHeader, ResponseHeader},
     prelude::HttpPeer,
     proxy::{FailToProxy, ProxyHttp, Session},
+    upstreams::peer::HttpUpstreamRequestPolicy,
 };
 use std::time::Instant;
 use tracing::{error, info};
@@ -29,9 +30,6 @@ const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 const X_FORWARDED_PROTO: HeaderName = HeaderName::from_static("x-forwarded-proto");
 // Client-supplied forwarding header the proxy never sets but must not forward either.
 const X_FORWARDED_HOST: HeaderName = HeaderName::from_static("x-forwarded-host");
-// Hop-by-hop headers without a constant in the `http` crate.
-const KEEP_ALIVE: HeaderName = HeaderName::from_static("keep-alive");
-const PROXY_CONNECTION: HeaderName = HeaderName::from_static("proxy-connection");
 
 /// Per-request context.
 pub struct RequestContext {
@@ -247,11 +245,14 @@ impl ProxyHttp for Proxy {
         peer.options.read_timeout = Some(response_timeout);
         peer.options.write_timeout = Some(response_timeout);
         peer.options.idle_timeout = Some(self.config.endpoint_idle_timeout);
+        // Pingora strips the hop-by-hop and `Connection`-nominated headers by default but rebuilds
+        // a WebSocket handshake; the endpoints serve no upgrade.
+        peer.options.http_upstream_request_policy = HttpUpstreamRequestPolicy::deny_upgrades();
         Ok(Box::new(peer))
     }
 
-    // Strips the forwarding information and hop-by-hop headers, and the credentials unless the
-    // endpoints read them. The body is never touched.
+    // Strips the forwarding information, and the credentials unless the endpoints read them. The
+    // body is never touched.
     async fn upstream_request_filter(
         &self,
         session: &mut Session,
@@ -358,22 +359,13 @@ fn default_error_code(e: &Error) -> u16 {
     }
 }
 
-/// Headers that must not be forwarded to the endpoint: client-supplied forwarding information and
-/// the HTTP/1.1 hop-by-hop headers (RFC 9110 §7.6.1).
-const STRIPPED_HEADERS: [HeaderName; 13] = [
+/// Client-supplied forwarding information, which must not reach the endpoint.
+const STRIPPED_HEADERS: [HeaderName; 5] = [
     X_FORWARDED_FOR,
     X_FORWARDED_PROTO,
     X_FORWARDED_HOST,
     FORWARDED,
     VIA,
-    CONNECTION,
-    KEEP_ALIVE,
-    PROXY_CONNECTION,
-    PROXY_AUTHENTICATE,
-    PROXY_AUTHORIZATION,
-    TE,
-    TRAILER,
-    UPGRADE,
 ];
 
 /// Removes the [`STRIPPED_HEADERS`] from the request, and `Authorization` unless
@@ -413,9 +405,6 @@ mod tests {
             ("x-forwarded-host", "evil"),
             ("forwarded", "for=1.2.3.4"),
             ("via", "1.1 something"),
-            ("connection", "keep-alive"),
-            ("keep-alive", "timeout=5"),
-            ("te", "trailers"),
             ("content-type", "application/json"),
             ("content-length", "2"),
             ("host", "kms.example"),
@@ -433,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_strips_credentials_forwarding_and_hop_by_hop_headers() {
+    fn sanitize_strips_credentials_and_forwarding_headers() {
         let mut req = request_with_all_headers();
         sanitize_headers(&mut req, false);
         assert_eq!(

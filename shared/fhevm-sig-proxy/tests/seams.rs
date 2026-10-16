@@ -147,6 +147,58 @@ async fn authorization_is_removed_unless_the_endpoints_read_it() {
 }
 
 #[tokio::test]
+async fn hop_by_hop_and_connection_nominated_headers_never_reach_an_endpoint() {
+    let t = TestProxy::start(defaults).await;
+    let response = t
+        .client
+        .get(t.url("/items/1"))
+        .header("authorization", authorization("/items/1", b"").await)
+        .header("connection", "keep-alive, x-private-note")
+        .header("x-private-note", "secret")
+        .header("keep-alive", "timeout=5")
+        .header("proxy-authorization", "Basic eDp5")
+        .header("te", "trailers")
+        .header("trailer", "x-checksum")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let headers = &t.b.requests()[0].headers;
+    for name in [
+        "x-private-note",
+        "keep-alive",
+        "proxy-authorization",
+        "te",
+        "trailer",
+    ] {
+        assert!(!headers.contains_key(name), "{name} reached the endpoint");
+    }
+}
+
+#[tokio::test]
+async fn a_websocket_upgrade_reaches_an_endpoint_as_a_plain_request() {
+    let t = TestProxy::start(defaults).await;
+    let response = t
+        .client
+        .get(t.url("/items/1"))
+        .header("authorization", authorization("/items/1", b"").await)
+        .header("connection", "Upgrade")
+        .header("upgrade", "websocket")
+        .header("sec-websocket-version", "13")
+        .header("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let headers = &t.b.requests()[0].headers;
+    for name in ["connection", "upgrade"] {
+        assert!(!headers.contains_key(name), "{name} reached the endpoint");
+    }
+}
+
+#[tokio::test]
 async fn a_request_without_the_signed_body_never_reaches_an_endpoint() {
     let t = TestProxy::start(defaults).await;
     let signed_for_a_body = authorization("/items/1", b"x").await;
