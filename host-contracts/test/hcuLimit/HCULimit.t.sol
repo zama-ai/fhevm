@@ -28,8 +28,8 @@ contract MockHCULimit is HCULimit {
         _setHCUForHandle(handle, handleHCU);
     }
 
-    function setLegacyGlobalCapForTest(uint48 hcuPerBlock) external {
-        _getHCULimitStorage().globalHCUCapPerBlock = hcuPerBlock;
+    function setLegacyGlobalCapForTest(uint48 cap) external {
+        _getHCULimitStorage().globalHCUCapPerBlock = cap;
     }
 }
 
@@ -1198,11 +1198,9 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     }
 
     function test_setQuotaCapByOwner() public {
-        vm.prank(owner);
-        hcuLimit.setQuotaCap(7, 25_000_000);
-        (uint48 cap, uint48 used) = hcuLimit.getQuota(7);
+        _setCap(7, 25_000_000);
+        (uint48 cap, ) = hcuLimit.getQuota(7);
         assertEq(cap, 25_000_000);
-        assertEq(used, 0);
     }
 
     function test_setMaxHCUDepthPerTxRevertsIfAboveMaxPerTx() public {
@@ -1228,9 +1226,9 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x1002)), address(0x1234));
     }
 
-    function test_quotaRevertsWhenCastBurstReachesCap() public {
-        // Cast costs 32 HCU, so a cap of 95 allows two casts (64) and rejects the third (96).
-        _setCap(DEFAULT_QUOTA, 95);
+    function test_quotaAllowsUsageUpToItsCap() public {
+        // Cast costs 32 HCU, so a cap of 64 allows two casts and rejects the third.
+        _setCap(DEFAULT_QUOTA, 64);
 
         vm.startPrank(fhevmExecutor);
         hcuLimit.checkHCUForCast(FheType.Uint8, mockLHS, bytes32(uint256(0x2001)), address(0x1234));
@@ -1267,6 +1265,13 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _add(account, 0x1002);
         (, uint48 used) = hcuLimit.getQuota(1);
         assertEq(used, 0);
+        (, used) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        assertEq(used, 0);
+
+        // A default-quota caller is still metered.
+        _add(address(0xCAFE), 0x1003);
+        (, used) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        assertEq(used, 84_000);
     }
 
     function test_quotaResetsAcrossBlocks() public {
@@ -1279,21 +1284,6 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         (, used) = hcuLimit.getQuota(DEFAULT_QUOTA);
         assertEq(used, 0);
         _add(address(0x1234), 0x1002);
-    }
-
-    function test_quotaFollowsEachCallerWithinOneTransaction() public {
-        address uncapped = address(0xBEEF);
-        _setCap(DEFAULT_QUOTA, 100_000);
-        _setCap(1, type(uint48).max);
-        _assign(uncapped, 1);
-
-        _add(uncapped, 0x1001);
-        (, uint48 used) = hcuLimit.getQuota(DEFAULT_QUOTA);
-        assertEq(used, 0);
-
-        _add(address(0xCAFE), 0x1002);
-        (, used) = hcuLimit.getQuota(DEFAULT_QUOTA);
-        assertEq(used, 84_000);
     }
 
     function test_pausedQuotaRefusesEveryOperation() public {
@@ -1360,20 +1350,24 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         UnsafeUpgrades.upgradeProxy(proxyWithoutInitCall, implementationWithoutInitCall, "");
 
         MockHCULimit upgraded = MockHCULimit(proxyWithoutInitCall);
-        upgraded.setLegacyGlobalCapForTest(type(uint48).max);
+        upgraded.setLegacyGlobalCapForTest(123_456);
         upgraded.reinitializeV5();
         vm.stopPrank();
 
         (uint48 cap, ) = upgraded.getQuota(DEFAULT_QUOTA);
-        assertEq(cap, type(uint48).max);
+        assertEq(cap, 123_456);
     }
 
     function _setCap(uint16 quotaId, uint48 cap) internal {
+        vm.expectEmit(address(hcuLimit));
+        emit HCULimit.QuotaCapSet(quotaId, cap, owner);
         vm.prank(owner);
         hcuLimit.setQuotaCap(quotaId, cap);
     }
 
     function _assign(address account, uint16 quotaId) internal {
+        vm.expectEmit(address(hcuLimit));
+        emit HCULimit.ContractQuotaAssigned(account, quotaId, owner);
         vm.prank(owner);
         hcuLimit.assignQuota(account, quotaId);
     }

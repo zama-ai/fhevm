@@ -107,7 +107,7 @@ contract HCULimitInvariantHandler is Test {
         if (!uncapped && successes != 0 && afterUsedHCU > defaultCap) {
             accountingViolation = true;
         }
-        uint256 expectedDelta = uncapped || defaultCap == type(uint48).max ? 0 : successes * 32;
+        uint256 expectedDelta = (uncapped || defaultCap == type(uint48).max) ? 0 : successes * 32;
         if (uint256(afterUsedHCU - beforeUsedHCU) != expectedDelta) {
             accountingViolation = true;
         }
