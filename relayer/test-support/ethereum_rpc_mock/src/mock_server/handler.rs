@@ -207,7 +207,7 @@ impl EthRpcApiServer for MockRpcHandler {
         Ok(formatted_logs)
     }
 
-    async fn call(&self, input: Value, _block: Option<String>) -> RpcResult<String> {
+    async fn call(&self, input: Value, _block: Option<Value>) -> RpcResult<String> {
         // Parse call parameters using idiomatic conversion trait
         let call_params = match CallParams::try_from(&input) {
             Ok(params) => params,
