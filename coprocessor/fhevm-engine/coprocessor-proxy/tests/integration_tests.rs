@@ -368,6 +368,38 @@ async fn test_checks_streamed_bodies_against_their_signature() {
 }
 
 #[tokio::test]
+async fn test_errors_pingora_writes_are_not_cached() {
+    let endpoint = StubEndpoint::start().await;
+    let t = TestProxy::start_with_config(
+        vec![endpoint.addr.to_string().parse().unwrap()],
+        vec![endpoint],
+        |config| {
+            config.max_body_bytes = 4;
+            config.request_read_timeout = Duration::from_millis(500);
+        },
+    )
+    .await;
+    let path = prf_path(1);
+    let addr = t.addr;
+    let auth = auth_header(&sender(), &path, b"    ").await;
+    // Two of the four signed bytes, then nothing: reading the body times out, and Pingora's own
+    // error answer is written.
+    let request = format!(
+        "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
+         Content-Length: 4\r\nConnection: close\r\n\r\n  "
+    );
+
+    let response = raw_response(&t, request.as_bytes())
+        .await
+        .to_ascii_lowercase();
+    assert!(response.starts_with("http/1.1 400"), "{response}");
+    assert!(
+        response.contains("\r\ncache-control: no-store\r\n"),
+        "{response}"
+    );
+}
+
+#[tokio::test]
 async fn test_passes_endpoint_answers_through() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
 
@@ -593,6 +625,16 @@ async fn send_chunked(
 
 /// Sends raw request bytes over TLS and returns the response status.
 async fn send_raw(t: &TestProxy, request: &[u8]) -> StatusCode {
+    let response = raw_response(t, request).await;
+    response
+        .split_whitespace()
+        .nth(1)
+        .and_then(|status| StatusCode::from_bytes(status.as_bytes()).ok())
+        .unwrap_or_else(|| panic!("unexpected response: {response}"))
+}
+
+/// Sends raw request bytes over TLS and returns the whole response, read until the server closes.
+async fn raw_response(t: &TestProxy, request: &[u8]) -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let mut stream = t.tls.connect(t.addr).await;
@@ -601,10 +643,5 @@ async fn send_raw(t: &TestProxy, request: &[u8]) -> StatusCode {
     let mut response = Vec::new();
     // The server may close without a TLS `close_notify`, which surfaces as an EOF error.
     let _ = stream.read_to_end(&mut response).await;
-    let response = String::from_utf8_lossy(&response);
-    response
-        .split_whitespace()
-        .nth(1)
-        .and_then(|status| StatusCode::from_bytes(status.as_bytes()).ok())
-        .unwrap_or_else(|| panic!("unexpected response: {response}"))
+    String::from_utf8_lossy(&response).into_owned()
 }

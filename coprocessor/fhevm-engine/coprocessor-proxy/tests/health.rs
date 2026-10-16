@@ -1,6 +1,7 @@
 mod common;
 
 use alloy::transports::http::reqwest::{self, StatusCode};
+use axum::http::Version;
 use common::{
     ENDPOINT_HEALTHCHECK_FREQUENCY, FakeRpc, KmsContext, StubEndpoint, TestProxy, TestTls,
     free_addr, prf_path, sender, wait_for_listener,
@@ -70,6 +71,14 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
         assert_eq!(status.check(check), "ok", "{status:?}");
     }
     assert!(status.details.is_empty(), "{status:?}");
+    // The endpoints are probed over HTTP/2, the protocol of the proxied requests.
+    for endpoint in &t.endpoints {
+        let versions = endpoint.probe_versions();
+        assert!(
+            !versions.is_empty() && versions.iter().all(|v| *v == Version::HTTP_2),
+            "{versions:?}"
+        );
+    }
 
     // Stop one endpoint: degraded but healthy, the other one is still able to serve
     let (stopped, live) = (&t.endpoints[0], &t.endpoints[1]);

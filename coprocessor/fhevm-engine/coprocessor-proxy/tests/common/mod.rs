@@ -42,7 +42,7 @@ use tokio::task::AbortHandle;
 pub const SENDER_KEY: &str = "0x0101010101010101010101010101010101010101010101010101010101010101";
 /// The test proxy's own coprocessor signer address, the audience of the headers it accepts.
 pub const AUDIENCE: Address = Address::repeat_byte(0xa1);
-pub const CHAIN_ID: u64 = 1;
+pub const CHAIN_ID: u64 = 12345;
 pub const PROTOCOL_CONFIG: Address = Address::repeat_byte(0xc0);
 /// How often the test proxy reads the KMS tx-senders.
 pub const REFRESH_INTERVAL: Duration = Duration::from_millis(200);
@@ -124,6 +124,8 @@ struct StubState {
     last: Mutex<SeenRequest>,
     /// The client addresses of the connections the requests came on.
     connections: Mutex<HashSet<SocketAddr>>,
+    /// The HTTP versions of the `/healthz` probes.
+    probe_versions: Mutex<Vec<Version>>,
 }
 
 /// A stub prf-service endpoint, over HTTP/1.1 and HTTP/2 cleartext.
@@ -140,7 +142,15 @@ impl StubEndpoint {
     pub async fn start() -> Self {
         let state = Arc::new(StubState::default());
         let app = Router::new()
-            .route("/healthz", get(|| async { "ok" }))
+            .route(
+                "/healthz",
+                get(
+                    |State(state): State<Arc<StubState>>, version: Version| async move {
+                        state.probe_versions.lock().unwrap().push(version);
+                        "ok"
+                    },
+                ),
+            )
             .route("/v1/prf/:prf/labels/:label/:pad_length", get(prf))
             .with_state(Arc::clone(&state));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -167,6 +177,11 @@ impl StubEndpoint {
 
     pub fn last_request(&self) -> SeenRequest {
         self.state.last.lock().unwrap().clone()
+    }
+
+    /// The HTTP versions of the `/healthz` probes received so far.
+    pub fn probe_versions(&self) -> Vec<Version> {
+        self.state.probe_versions.lock().unwrap().clone()
     }
 
     /// The number of distinct connections the requests came on.
