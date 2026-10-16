@@ -16,6 +16,8 @@
  * operator out can starve the input proofs, and the traffic then stops without
  * stopping the case.
  */
+import path from "node:path";
+
 import { PreflightError } from "../errors";
 import { OBJECT_STORE_EXTERNAL_URL, PROJECT, composePath, objectStoreOperatorHost } from "../layout";
 import { composeEnv, run } from "../utils/process";
@@ -112,6 +114,9 @@ const startContainers = async (containers: string[]) => {
  * synthetic-ops recreate in the profile. `patch` of `undefined` recreates them
  * from the base files alone, which is how a case takes an override away.
  */
+/** Names every compose override these cases write. */
+const OVERRIDE_PREFIX = "rollback-case-";
+
 const recreateServices = async (
   containers: string[],
   name: string,
@@ -129,7 +134,11 @@ const recreateServices = async (
   for (const line of meta.stdout.split(/\r?\n/).map(entry => entry.trim()).filter(Boolean)) {
     const [files, service] = line.split("\t");
     if (!files || !service) throw new PreflightError(`compose labels are missing on "${containers.join(", ")}"`);
-    groups.set(files, [...(groups.get(files) ?? []), service]);
+    const base = files
+      .split(",")
+      .filter(file => !path.basename(file).startsWith(OVERRIDE_PREFIX))
+      .join(",");
+    groups.set(base, [...(groups.get(base) ?? []), service]);
   }
 
   const env = await composeEnv("coprocessor");
@@ -137,7 +146,7 @@ const recreateServices = async (
   for (const [index, [files, services]] of [...groups].entries()) {
     const overrideArgs: string[] = [];
     if (patch) {
-      const override = composePath(`${name}-${index}`);
+      const override = composePath(`${OVERRIDE_PREFIX}${name}-${index}`);
       await Bun.write(
         override,
         JSON.stringify({ services: Object.fromEntries(services.map(service => [service, patch(service)])) }),
@@ -337,13 +346,13 @@ export const runRollbackCases = async (ctx: RollbackCaseContext) => {
       const blocked = objectStoreOperatorHost(0);
       const services = await recreateServices(
         await greenDetector(TARGET_OPERATOR),
-        "rollback-case-isolate",
+        "isolate",
         () => ({ extra_hosts: [`${blocked}:127.0.0.1`] }),
       );
       console.log(`OK:   ${services.join(", ")} cannot reach ${blocked}`);
     },
     restore: async () => {
-      await recreateServices(await greenDetector(TARGET_OPERATOR), "rollback-case-restore");
+      await recreateServices(await greenDetector(TARGET_OPERATOR), "restore");
       console.log("OK:   the detector reads every bucket again");
     },
     extraAssertions: async attempt => {
