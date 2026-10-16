@@ -98,8 +98,8 @@ const targets = [
     linkHostPdas: true,
     generatedPath: `${sdkRoot}/../../solana/clients/confidential-token/src/generated`,
     // Omit `keep`: render the full instruction/account/type/PDA surface. Events stay
-    // pruned below; constants render separately. Errors stay pruned except
-    // the zama-host client (`keepErrors`).
+    // pruned below; constants render separately.
+    keepErrors: true,
     programAddress(program, anchorIdl) {
       const zamaHostProgramAddress = anchorIdl.instructions
         .find(({ name }) => name === 'confidential_transfer')

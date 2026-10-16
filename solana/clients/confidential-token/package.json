@@ -19,6 +19,7 @@
   },
   "devDependencies": {
     "@solana/kit": "8.4.0",
-    "@solana/program-client-core": "8.4.0"
+    "@solana/program-client-core": "8.4.0",
+    "@types/node": "22.20.1"
   }
 }
