@@ -291,20 +291,8 @@ async fn test_process_crsgen_response() -> anyhow::Result<()> {
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_process_new_kms_context_response() -> anyhow::Result<()> {
+async fn test_new_kms_context_response_fails_without_signature() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
-    let mut confirmation_filter = test_instance
-        .protocol_config_contract()
-        .KmsContextCreationConfirmation_filter()
-        .watch()
-        .await?;
-    confirmation_filter.poller = confirmation_filter
-        .poller
-        .with_poll_interval(Duration::from_millis(500));
-    let mut confirmation_stream = confirmation_filter.into_stream();
-
-    // Wait for 2 anvil blocks before starting the tx-sender, so event listening is fully ready
-    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     let cancel_token = CancellationToken::new();
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
@@ -314,27 +302,21 @@ async fn test_process_new_kms_context_response() -> anyhow::Result<()> {
         insert_rand_new_kms_context_response(test_instance.db(), None, None).await?;
     info!("NewKmsContextResponse successfully stored!");
 
-    info!("Checking response has been sent to Anvil...");
-    let (event, _) = confirmation_stream
-        .next()
-        .await
-        .ok_or_else(|| anyhow!("Failed to capture KmsContextCreationConfirmation"))??;
-    assert_eq!(event.kmsContextId, inserted_response.context_id);
-    info!("Response successfully sent to Anvil!");
-
+    // No transaction is sent until the KMS Core signs the confirmation.
+    test_instance.wait_for_log("planning-blockchain#1369").await;
     test_instance
         .wait_for_log("Successfully updated response in DB!")
         .await;
 
-    info!("Checking response was completed in DB...");
+    info!("Checking response was failed in DB...");
     let status: OperationStatus =
         sqlx::query("SELECT status FROM new_kms_context_responses WHERE context_id = $1")
-            .bind(event.kmsContextId.as_le_slice())
+            .bind(inserted_response.context_id.as_le_slice())
             .fetch_one(test_instance.db())
             .await?
             .try_get("status")?;
-    assert_eq!(status, OperationStatus::Completed);
-    info!("Response successfully completed in DB! Stopping TransactionSender...");
+    assert_eq!(status, OperationStatus::Failed);
+    info!("Response successfully failed in DB! Stopping TransactionSender...");
 
     cancel_token.cancel();
     Ok(tx_sender_task.await?)
@@ -343,20 +325,8 @@ async fn test_process_new_kms_context_response() -> anyhow::Result<()> {
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_process_epoch_result_response() -> anyhow::Result<()> {
+async fn test_epoch_result_response_fails_without_signature() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
-    let mut confirmation_filter = test_instance
-        .protocol_config_contract()
-        .EpochActivationConfirmation_filter()
-        .watch()
-        .await?;
-    confirmation_filter.poller = confirmation_filter
-        .poller
-        .with_poll_interval(Duration::from_millis(500));
-    let mut confirmation_stream = confirmation_filter.into_stream();
-
-    // Wait for 2 anvil blocks before starting the tx-sender, so event listening is fully ready
-    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     let cancel_token = CancellationToken::new();
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
@@ -366,27 +336,21 @@ async fn test_process_epoch_result_response() -> anyhow::Result<()> {
         insert_rand_epoch_result_response(test_instance.db(), None, None).await?;
     info!("EpochResultResponse successfully stored!");
 
-    info!("Checking response has been sent to Anvil...");
-    let (event, _) = confirmation_stream
-        .next()
-        .await
-        .ok_or_else(|| anyhow!("Failed to capture EpochActivationConfirmation"))??;
-    assert_eq!(event.epochId, inserted_response.epoch_id);
-    info!("Response successfully sent to Anvil!");
-
+    // No transaction is sent until the KMS Core signs the confirmation.
+    test_instance.wait_for_log("planning-blockchain#1369").await;
     test_instance
         .wait_for_log("Successfully updated response in DB!")
         .await;
 
-    info!("Checking response was completed in DB...");
+    info!("Checking response was failed in DB...");
     let status: OperationStatus =
         sqlx::query("SELECT status FROM epoch_result_responses WHERE epoch_id = $1")
-            .bind(event.epochId.as_le_slice())
+            .bind(inserted_response.epoch_id.as_le_slice())
             .fetch_one(test_instance.db())
             .await?
             .try_get("status")?;
-    assert_eq!(status, OperationStatus::Completed);
-    info!("Response successfully completed in DB! Stopping TransactionSender...");
+    assert_eq!(status, OperationStatus::Failed);
+    info!("Response successfully failed in DB! Stopping TransactionSender...");
 
     cancel_token.cancel();
     Ok(tx_sender_task.await?)

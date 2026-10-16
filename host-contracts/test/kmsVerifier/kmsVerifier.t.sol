@@ -100,20 +100,22 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     }
 
     function _activatePendingSingleSignerContext(uint256 contextId, uint256 epochId, uint256 pk) internal {
-        // Previous committee has 3 nodes with mpc=1, so the previous-side quorum is n - t = 2. The
-        // single new node reuses 0xA1, whose confirmation also covers the new-signer side.
-        _confirmContextCreation(contextId, address(0xA1));
-        _confirmContextCreation(contextId, address(0xA2));
-        _confirmEpochActivation(contextId, epochId, pk, address(0xA1));
+        // Previous committee {signer0, signer1, signer2} has mpc=1, so the previous-side quorum is n - t = 2.
+        // signer1 and signer2 reach it, then the single new signer completes the new side. `pk` may be
+        // signer0, which also counts toward the previous side.
+        _confirmContextCreation(contextId, privateKeySigner1, "");
+        _confirmContextCreation(contextId, privateKeySigner2, "");
+        _confirmContextCreation(contextId, pk, "");
+        _confirmEpochActivation(contextId, epochId, pk);
     }
 
     function _activatePendingThreeNodeContext(uint256 contextId, uint256 epochId) internal {
-        _confirmContextCreation(contextId, address(0xA1));
-        _confirmContextCreation(contextId, address(0xA2));
-        _confirmContextCreation(contextId, address(0xA3));
-        _confirmEpochActivation(contextId, epochId, privateKeySigner0, address(0xA1));
-        _confirmEpochActivation(contextId, epochId, privateKeySigner1, address(0xA2));
-        _confirmEpochActivation(contextId, epochId, privateKeySigner2, address(0xA3));
+        _confirmContextCreation(contextId, privateKeySigner0, "");
+        _confirmContextCreation(contextId, privateKeySigner1, "");
+        _confirmContextCreation(contextId, privateKeySigner2, "");
+        _confirmEpochActivation(contextId, epochId, privateKeySigner0);
+        _confirmEpochActivation(contextId, epochId, privateKeySigner1);
+        _confirmEpochActivation(contextId, epochId, privateKeySigner2);
     }
 
     function _buildSingleSignerProof(
