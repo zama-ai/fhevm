@@ -138,6 +138,7 @@ jobs:
       relayer-migrate-version: ${{ steps.create-e2e-tests-input.outputs.relayer-migrate-version }}
       relayer-version: ${{ steps.create-e2e-tests-input.outputs.relayer-version }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
+      test-suite-version-fallback: ${{ steps.create-e2e-tests-input.outputs.test-suite-version-fallback }}
     steps:
       - id: create-e2e-tests-input
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v0.8.0
@@ -146,6 +147,7 @@ jobs:
             const headTag = process.env.NEW_COMMIT_HASH.slice(0, 7);
             const buildResults = JSON.parse(process.env.DOCKER_BUILD_RESULTS);
             core.setOutput("kms-core-version", "");
+            core.setOutput("test-suite-version-fallback", "v0.13.7");
             const mappings = [
               ["coprocessor-docker-build", "db_migration_build_result", "coprocessor-db-migration-version"],
               ["coprocessor-docker-build", "gw_listener_build_result", "coprocessor-gw-listener-version"],
@@ -215,4 +217,4 @@ jobs:
       relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
       relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
       scenario: two-of-three-multi-chain
-      test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
+      test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version || needs.create-e2e-tests-input.outputs.test-suite-version-fallback }}
