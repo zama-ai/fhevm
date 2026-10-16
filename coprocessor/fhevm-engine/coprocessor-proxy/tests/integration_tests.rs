@@ -489,12 +489,16 @@ async fn test_endpoint_failure_mid_body_cuts_the_answer_short() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     // The client gets what the endpoint sent, then the end of the connection: no error answer
-    // inside the started body.
+    // inside the started body, and no answer that looks complete.
     let mut received = Vec::new();
-    while let Ok(Some(chunk)) = response.chunk().await {
-        received.extend_from_slice(&chunk);
-    }
+    let end = loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => received.extend_from_slice(&chunk),
+            end => break end,
+        }
+    };
     assert_eq!(received, stub_output(&path)[..32]);
+    assert!(end.is_err(), "{end:?}");
 }
 
 #[tokio::test]
