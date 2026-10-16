@@ -4,7 +4,6 @@ use fhevm_engine_common::drift_containment::{
 use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
 use test_harness::instance::{setup_test_db, ImportMode};
-use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn batches_share_the_barrier_until_commit_or_rollback(
@@ -16,11 +15,10 @@ async fn batches_share_the_barrier_until_commit_or_rollback(
         .await?;
     let mut first = pool.begin().await?;
     let mut second = pool.begin().await?;
-    let shutdown = CancellationToken::new();
-    assert!(acquire_ct_computation_permit(&mut first, &shutdown).await?);
+    acquire_ct_computation_permit(&mut first).await?;
     tokio::time::timeout(
         Duration::from_secs(1),
-        acquire_ct_computation_permit(&mut second, &shutdown),
+        acquire_ct_computation_permit(&mut second),
     )
     .await??;
     sqlx::query("CREATE TABLE containment_commits (id INT)")
@@ -42,14 +40,14 @@ async fn batches_share_the_barrier_until_commit_or_rollback(
     let mut next = pool.begin().await?;
     assert!(tokio::time::timeout(
         Duration::from_millis(100),
-        acquire_ct_computation_permit(&mut next, &shutdown)
+        acquire_ct_computation_permit(&mut next)
     )
     .await
     .is_err());
     exclusive.commit().await?;
     tokio::time::timeout(
         Duration::from_secs(1),
-        acquire_ct_computation_permit(&mut next, &shutdown),
+        acquire_ct_computation_permit(&mut next),
     )
     .await??;
     next.rollback().await?;

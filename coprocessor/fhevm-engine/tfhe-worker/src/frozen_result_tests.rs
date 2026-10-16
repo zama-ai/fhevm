@@ -32,12 +32,9 @@ async fn check_late_drift(success: bool) {
     .await
     .unwrap();
     let mut trx = pool.begin().await.unwrap();
-    fhevm_engine_common::drift_containment::acquire_ct_computation_permit(
-        &mut trx,
-        &CancellationToken::new(),
-    )
-    .await
-    .unwrap();
+    fhevm_engine_common::drift_containment::acquire_ct_computation_permit(&mut trx)
+        .await
+        .unwrap();
     assert!(frozen_computations::drifted_ct64_handles(&mut trx)
         .await
         .unwrap()

@@ -2574,14 +2574,7 @@ async fn tfhe_worker_cycle(
             }
         };
 
-        if !fhevm_engine_common::drift_containment::acquire_ct_computation_permit(
-            &mut trx, shutdown,
-        )
-        .await?
-        {
-            trx.rollback().await?;
-            continue;
-        }
+        fhevm_engine_common::drift_containment::acquire_ct_computation_permit(&mut trx).await?;
 
         // Query for transactions to execute
         let (mut transactions, _, has_more_work, mut freeze) = query_for_work(
