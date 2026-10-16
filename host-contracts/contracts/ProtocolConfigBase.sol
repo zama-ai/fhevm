@@ -83,11 +83,9 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         /// @notice Context creation confirmations.
         /// @dev Unused since v0.4.0. Kept for storage layout.
         mapping(uint256 contextId => mapping(address txSender => bool confirmed)) contextCreationConfirmedByTxSender;
-        /// @notice Epoch activation confirmations per signer.
-        /// @dev Unused since v0.4.0. Kept for storage layout.
+        /// @notice Epoch activation confirmations per signer (one digest per signer per epoch).
         mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochActivationConfirmedBySigner;
-        /// @notice Epoch activation confirmations grouped by data hash.
-        /// @dev Unused since v0.4.0. Kept for storage layout.
+        /// @notice Epoch activation confirmations grouped by EpochActivationConfirmation digest.
         mapping(uint256 epochId => mapping(bytes32 dataHash => uint256 confirmations)) epochActivationConfirmationCountForDigest;
         /// @notice Required previous-context confirmation quorum, cached at pending-context creation time.
         /// @dev Unused since v0.4.0. Kept for storage layout.

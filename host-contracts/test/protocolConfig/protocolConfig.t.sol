@@ -10,7 +10,6 @@ import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {ProtocolConfigUpgradedExample} from "@fhevm-host-contracts/examples/ProtocolConfigUpgradedExample.sol";
-import {ProtocolConfigV030VoteProbe} from "./ProtocolConfigV030VoteProbe.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {IProtocolConfigBase} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigBase.sol";
 import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
@@ -1923,26 +1922,46 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         ProtocolConfig(protocolConfigAdd).reinitializeV4();
     }
 
-    /// @dev A v0.3.0 vote is stored in the unused base field epochActivationConfirmedBySigner (field 18 of the
-    ///      base namespace). ProtocolConfig reads the canonical namespace, so that vote does not block the signer.
-    function test_confirmEpochActivationIgnoresV030VoteInBaseStorage() public {
+    /// @dev reinitializeV4 reverts while an epoch is Pending, so no v0.3.0 vote can count toward
+    ///      its activation. It succeeds once the epoch is destroyed.
+    function test_reinitializeV4RevertsWhileEpochPending() public {
         _setupEpochLifecycle();
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
-        (uint256 completedKeyId, uint256 completedCrsId) = _completeKmsGenerationMaterial();
+        bytes32 initializableStorage = 0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
+        vm.store(address(protocolConfig), initializableStorage, bytes32(uint256(4)));
 
-        uint256 baseField = uint256(0x80f3585af86806c5774303b06c1ee640aa83b6ef3e45df49bb26c8524500c200) + 18;
-        bytes32 voteSlot = keccak256(abi.encode(vm.addr(kmsPk0), keccak256(abi.encode(epochId, baseField))));
-        vm.store(address(protocolConfig), voteSlot, bytes32(uint256(1)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.KmsLifecycleOperationInFlight.selector,
+                KMS_CONTEXT_COUNTER_BASE + 1,
+                EPOCH_COUNTER_BASE + 2
+            )
+        );
+        protocolConfig.reinitializeV4();
 
-        // Positive control: the written slot is the base field epochActivationConfirmedBySigner.
-        address probe = address(new ProtocolConfigV030VoteProbe());
         vm.prank(owner);
-        protocolConfig.upgradeToAndCall(probe, "");
-        assertTrue(ProtocolConfigV030VoteProbe(address(protocolConfig)).v030Vote(epochId, vm.addr(kmsPk0)));
+        protocolConfig.destroyKmsEpoch(EPOCH_COUNTER_BASE + 2);
+        protocolConfig.reinitializeV4();
+        assertEq(uint256(vm.load(address(protocolConfig), initializableStorage)), 5);
+    }
 
-        _confirmEpochActivation(KMS_CONTEXT_COUNTER_BASE + 1, epochId, kmsPk0, completedKeyId, completedCrsId);
+    /// @dev reinitializeV4 reverts while a context switch is Pending.
+    function test_reinitializeV4RevertsWhileContextPending() public {
+        _setupEpochLifecycle();
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        bytes32 initializableStorage = 0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
+        vm.store(address(protocolConfig), initializableStorage, bytes32(uint256(4)));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfig.KmsLifecycleOperationInFlight.selector,
+                KMS_CONTEXT_COUNTER_BASE + 2,
+                EPOCH_COUNTER_BASE + 1
+            )
+        );
+        protocolConfig.reinitializeV4();
     }
 
     // -----------------------------------------------------------------------

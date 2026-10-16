@@ -79,10 +79,13 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfigCanonical
     /// @dev Canonical-only state added in v0.4.0. It is outside the base namespace, so
-    ///      `ProtocolConfigReplica` does not carry it, and v0.3.0 votes left in the base fields marked
-    ///      "Unused since v0.4.0" do not count. `destroyedContexts` is also canonical-only but stays in
-    ///      base storage, because it existed before v0.4.0. So a context destroyed before the upgrade can
-    ///      still collect destruction confirmations, but an epoch destroyed before the upgrade cannot.
+    ///      `ProtocolConfigReplica` does not carry it. A base field keeps its v0.3.0 values, so v0.4.0
+    ///      reuses one only when no old value can count. `reinitializeV4` reverts while a lifecycle
+    ///      operation is in flight, so every v0.3.0 epoch activation vote belongs to a settled epoch.
+    ///      Epoch IDs only increase, so the base epoch activation fields are safe to reuse.
+    ///      `destroyedContexts` is also canonical-only but stays in base storage, because it existed
+    ///      before v0.4.0. So a context destroyed before the upgrade can still collect destruction
+    ///      confirmations, but an epoch destroyed before the upgrade cannot.
     struct ProtocolConfigCanonicalStorage {
         /// @notice Hash of the stored node set and thresholds, signed in ContextCreationConfirmation.
         mapping(uint256 contextId => bytes32) nodeConfigHashForContext;
@@ -96,10 +99,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         mapping(uint256 contextId => mapping(address signer => bool confirmed)) contextDestructionConfirmedBySigner;
         /// @notice Epoch destruction confirmations per signer.
         mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochDestructionConfirmedBySigner;
-        /// @notice Epoch activation votes per signer (one digest per signer per epoch).
-        mapping(uint256 epochId => mapping(address signer => bool voted)) epochActivationVotedBySigner;
-        /// @notice Epoch activation votes grouped by digest.
-        mapping(uint256 epochId => mapping(bytes32 digest => uint256 votes)) epochActivationVoteCountForDigest;
         /// @notice Whether an epoch was destroyed by destroyKmsEpoch.
         mapping(uint256 epochId => bool) destroyedEpochs;
     }
@@ -168,10 +167,14 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /**
      * @notice Re-initializes the contract from V3.
+     * @dev Reverts while a lifecycle operation is in flight, so no v0.3.0 epoch activation vote
+     *      can count toward a v0.4.0 quorum.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {
+        _checkNoKmsLifecycleOperationInFlight();
+    }
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions
@@ -334,7 +337,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
                 signature,
                 extraData
             );
-            bool allSignersAgreed = _recordEpochVote(epochId, contextId, signer, digest);
+            bool allSignersAgreed = _recordEpochConfirmation(epochId, contextId, signer, digest);
             emit EpochActivationConfirmation(epochId, signer, epochMaterialHash, signature, extraData);
             if (!allSignersAgreed) {
                 return;
@@ -599,25 +602,26 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     }
 
     /**
-     * @dev Records `signer`'s vote for `digest`. Returns whether every signer of `contextId` voted for it.
+     * @dev Records `signer`'s confirmation of `digest`. Returns whether every signer of `contextId`
+     *      confirmed it.
      *      The contract requires unanimity by design. One divergent epochMaterialHash or extraData splits
      *      the vote, and no digest reaches quorum. Each signer confirms only once, so a divergent vote
      *      cannot change. The epoch stays Pending until governance settles it with destroyKmsEpoch()
      *      and re-triggers the rotation.
      */
-    function _recordEpochVote(
+    function _recordEpochConfirmation(
         uint256 epochId,
         uint256 contextId,
         address signer,
         bytes32 digest
     ) internal virtual returns (bool complete) {
-        ProtocolConfigCanonicalStorage storage canonical$ = _getProtocolConfigCanonicalStorage();
-        if (canonical$.epochActivationVotedBySigner[epochId][signer]) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        if ($.epochActivationConfirmedBySigner[epochId][signer]) {
             revert EpochActivationAlreadyConfirmed(signer, epochId);
         }
-        canonical$.epochActivationVotedBySigner[epochId][signer] = true;
-        uint256 digestCount = ++canonical$.epochActivationVoteCountForDigest[epochId][digest];
-        complete = digestCount == _getProtocolConfigStorage().kmsSignerAddressesForContext[contextId].length;
+        $.epochActivationConfirmedBySigner[epochId][signer] = true;
+        uint256 digestCount = ++$.epochActivationConfirmationCountForDigest[epochId][digest];
+        complete = digestCount == $.kmsSignerAddressesForContext[contextId].length;
     }
 
     /**
