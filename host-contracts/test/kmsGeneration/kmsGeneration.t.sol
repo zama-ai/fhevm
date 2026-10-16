@@ -373,7 +373,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     // -----------------------------------------------------------------------
 
     function test_initSuccess() public view {
-        assertEq(kmsGeneration.getVersion(), "KMSGeneration v0.4.0");
+        assertEq(kmsGeneration.getVersion(), "KMSGeneration v0.3.0");
         assertEq(kmsGeneration.getActiveKeyId(), 0);
         assertEq(kmsGeneration.getActiveCrsId(), 0);
         assertEq(kmsGeneration.getKeyCounter(), KEY_COUNTER_BASE);
@@ -1310,7 +1310,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
     function test_upgradeToV4() public {
         // Verify initial version
-        assertEq(kmsGeneration.getVersion(), "KMSGeneration v0.4.0");
+        assertEq(kmsGeneration.getVersion(), "KMSGeneration v0.3.0");
         assertEq(kmsGeneration.getActiveKeyId(), 0);
         assertEq(kmsGeneration.getActiveCrsId(), 0);
 
@@ -1321,27 +1321,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         // Verify new version
         string memory newVersion = kmsGeneration.getVersion();
-        assertEq(newVersion, "KMSGeneration v0.5.0");
+        assertEq(newVersion, "KMSGeneration v0.4.0");
 
         // Verify state is preserved
         assertEq(kmsGeneration.getActiveKeyId(), 0);
         assertEq(kmsGeneration.getActiveCrsId(), 0);
-    }
-
-    function test_upgradeFromV3AfterMigrationDescribesMigratedRecord() public {
-        (, uint256 keyId) = _runFullKeygenCycle();
-        (uint256 migrationPrepId, ) = _runFullMigrationCycle(keyId);
-
-        // Pin the proxy at the V3 initialized version, as left by the KMSGeneration v0.3.0 deployment.
-        bytes32 initializableStorage = 0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
-        vm.store(address(kmsGeneration), initializableStorage, bytes32(uint256(4)));
-
-        address newImpl = address(new KMSGeneration());
-        vm.prank(owner);
-        kmsGeneration.upgradeToAndCall(newImpl, abi.encodeCall(KMSGeneration.reinitializeV4, ()));
-
-        assertEq(kmsGeneration.getVersion(), "KMSGeneration v0.4.0");
-        assertEq(kmsGeneration.getKeyInfo(keyId).prepKeygenId, migrationPrepId);
     }
 
     function test_upgradeFromPopulatedV2PreservesStateAndAllowsMigration() public {
@@ -1370,10 +1354,10 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         address v3Impl = address(new KMSGeneration());
         vm.prank(owner);
-        EmptyUUPSProxy(scratchProxy).upgradeToAndCall(v3Impl, abi.encodeCall(KMSGeneration.reinitializeV4, ()));
+        EmptyUUPSProxy(scratchProxy).upgradeToAndCall(v3Impl, abi.encodeCall(KMSGeneration.reinitializeV3, ()));
         KMSGeneration migrated = KMSGeneration(scratchProxy);
 
-        assertEq(migrated.getVersion(), "KMSGeneration v0.4.0");
+        assertEq(migrated.getVersion(), "KMSGeneration v0.3.0");
         assertEq(migrated.getActiveKeyId(), keyId);
         assertEq(migrated.getKeyCounter(), keyId);
         assertEq(migrated.getCompletedKeyIds().length, 1);
