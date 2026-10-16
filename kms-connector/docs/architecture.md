@@ -89,25 +89,25 @@ The HTTP endpoint derives a request ID from the request contents. An identical s
 can reuse a stored result without repeating the worker's authorization checks. The proxy
 still authenticates the sender on every HTTP request.
 
-- Public-decryption successes can be reused indefinitely.
-- User-decryption submissions, including requests for stored results, are accepted only within the user-signed interval:
-  `startTimestamp <= now <= startTimestamp + durationSeconds`, using Unix seconds. The endpoint
-  checks this before looking up or queuing work. An admitted HTTP call may receive its
-  outcome after expiry; subsequent submissions are rejected.
-  There is no additional fixed-duration serve window based on response age.
-- An expired user request returns `403 user_decryption_expired` with `retryable: false`.
-  The caller needs a new signed request; the same input cannot be renewed by resubmitting it.
-  A not-yet-valid request returns `403 user_signature_rejected` with `retryable: true`.
-- During the signed interval, stored successes are returned without rechecking ACL access,
-  delegation, signature invalidation, or ERC-1271 account state. Expiry therefore bounds reuse,
-  but does not make revocation immediately effective for already-computed results.
-- Retryable error results cause another processing attempt (or attachment to active work);
-  non-retryable error results are reused. The user validity check also gates these retries.
+- Successful public and user decryption results are served indefinitely, including after the
+  user-signed validity interval expires. Stored results are returned without rechecking ACL
+  access, delegation, signature invalidation, or ERC-1271 account state, matching the Gateway path.
+- Recoverable error rows are not served if the request is submitted again. They trigger another processing
+  attempt, or attachment to work already in progress.
+- Irrecoverable error rows are served while their age is less than `error_serve_window`
+  (default: 30 days, configurable via `KMS_CONNECTOR_ERROR_SERVE_WINDOW`). At or past that
+  age, resubmission triggers reprocessing with all worker checks against current state.
+- The endpoint validates request structure. The worker checks the user-signed validity interval
+- when executing a request; expiry does not prevent serving a stored success. An expired
+  user request without a successful stored result is rejected by the worker with `403 user_decryption_expired`,
+  `retryable: false`. A request that is not yet valid yields `403 user_signature_rejected`, `retryable: true`.
+  Reprocessing an expired user request therefore replaces an old error with the expiry error;
+  it does not run decryption again. Gateway-originated user decryption requests stop retrying when a
+  processing attempt detects expiry.
 
-Connector DB rows are retained permanently. Expiry prevents serving a user result; it does
-not delete it or cause a completed request to be reprocessed. Work already admitted continues
-even if the HTTP caller times out or the signed interval expires, and its result is persisted.
-The endpoint does not recheck expiry when returning the outcome to an already-admitted call.
+Connector DB rows are retained permanently. Reprocessing a request updates the existing response under the same
+decryption ID. If the result is a new error, its 30 day serve window starts then; if reprocessing is successful, it is
+served infedinitely. Successful payloads are never overwritten.
 
 Here is an overview of the KMS Connector flow from the Gateway request event emitted to the
 transaction response:

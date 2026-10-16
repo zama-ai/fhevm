@@ -193,27 +193,28 @@ async fn test_duplicate_submissions_share_one_request() -> anyhow::Result<()> {
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_existing_pdec_payload_row_is_served_immediately() -> anyhow::Result<()> {
+async fn test_existing_payload_row_is_served_immediately() -> anyhow::Result<()> {
     let endpoint = setup().await?;
 
     let public = public_request();
     let inserted = complete_public(&endpoint.db, public.id()).await?;
-    let updated = sqlx::query(
-        "UPDATE public_decryption_responses SET created_at = NOW() - INTERVAL '10 years'
-        WHERE decryption_id = $1",
+    age_response(
+        &endpoint.db,
+        "public_decryption_responses",
+        public.id(),
+        3650,
     )
-    .bind(db_id(public.id()).as_le_slice().to_vec())
-    .execute(&endpoint.db)
     .await?;
-    assert_eq!(updated.rows_affected(), 1);
     let response = endpoint.post_public(&public).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body: PublicDecryptionResponse = response.json().await?;
     assert_eq!(body.decryption_id, public.id());
     assert_eq!(body.decrypted_result.to_vec(), inserted.decrypted_result);
 
-    let user = user_request();
+    let mut user = user_request();
+    user.payload.requestValidity.startTimestamp = Utc::now().timestamp() as u64 - 600;
     let inserted = complete_udec(&endpoint.db, user.id()).await?;
+    age_response(&endpoint.db, "user_decryption_responses", user.id(), 3650).await?;
     let response = endpoint.post_user(&user).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body: UserDecryptionResponse = response.json().await?;
@@ -230,28 +231,40 @@ async fn test_existing_pdec_payload_row_is_served_immediately() -> anyhow::Resul
     endpoint.stop().await
 }
 
-/// Expiry gates both cached successes and retries, without deleting results or queuing work.
+/// The worker owns validity checks: expired requests requiring work are queued, and a fresh
+/// expiry error replaces any recoverable or expired irrecoverable error.
 #[rstest]
-#[case::no_result(false, false)]
-#[case::cached_success(true, false)]
-#[case::retryable_error(false, true)]
+#[case::no_result(None)]
+#[case::recoverable_error(Some("acl_denied"))]
+#[case::old_irrecoverable_error(Some("unprocessable"))]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn expired_user_request_is_not_served_or_requeued(
-    #[case] cached_success: bool,
-    #[case] retryable_error: bool,
+async fn expired_user_request_receives_worker_expiry_error(
+    #[case] old_code: Option<&str>,
 ) -> anyhow::Result<()> {
     let endpoint = setup().await?;
     let mut request = user_request();
     request.payload.requestValidity.startTimestamp = Utc::now().timestamp() as u64 - 600;
     let id = request.id();
-    if cached_success {
-        complete_udec(&endpoint.db, id).await?;
-    }
-    if retryable_error {
+    if let Some(code) = old_code {
         insert_rand_user_decryption_request_v2(&endpoint.db, failed_http_request(id)).await?;
-        fail_user(&endpoint.db, id, "acl_denied", "before").await?;
+        fail_user(&endpoint.db, id, code, "before").await?;
+        age_response(&endpoint.db, "user_decryption_responses", id, 31).await?;
     }
 
+    let pending = endpoint.spawn_udec(&request);
+    wait_for_request_status(&endpoint.db, USER_REQUESTS, id, "pending").await;
+    // Play the worker's irrecoverable validity rejection, before reaching KMS Core.
+    fail_user(&endpoint.db, id, "user_decryption_expired", "expired").await?;
+    let body = assert_error(
+        pending.await?,
+        StatusCode::FORBIDDEN,
+        ErrorCode::UserDecryptionExpired,
+        id,
+    )
+    .await;
+    assert_eq!(body.message, "expired");
+    // A resubmission reuses the fresh irrecoverable error.
     assert_error(
         endpoint.post_user(&request).await,
         StatusCode::FORBIDDEN,
@@ -259,21 +272,11 @@ async fn expired_user_request_is_not_served_or_requeued(
         id,
     )
     .await;
-    assert_eq!(
-        count_rows(&endpoint.db, USER_REQUESTS).await,
-        i64::from(retryable_error)
-    );
+    assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 1);
     assert_eq!(
         count_rows(&endpoint.db, "user_decryption_responses").await,
-        i64::from(cached_success || retryable_error),
+        1
     );
-    if retryable_error {
-        let row = wait_for_request_row(&endpoint.db, USER_REQUESTS, id).await;
-        assert_eq!(
-            row.get::<OperationStatus, _>("status"),
-            OperationStatus::Failed
-        );
-    }
     endpoint.stop().await
 }
 
@@ -300,14 +303,16 @@ async fn admitted_request_can_receive_result_after_expiry() -> anyhow::Result<()
             .decryption_id,
         id
     );
-    // A later submission is still rejected, even though the result is now cached.
-    assert_error(
-        endpoint.post_user(&request).await,
-        StatusCode::FORBIDDEN,
-        ErrorCode::UserDecryptionExpired,
-        id,
-    )
-    .await;
+    // Later submissions also receive the stored success after expiry.
+    let response = endpoint.post_user(&request).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .json::<UserDecryptionResponse>()
+            .await?
+            .decryption_id,
+        id
+    );
     assert_eq!(
         count_rows(&endpoint.db, "user_decryption_responses").await,
         1
@@ -337,12 +342,15 @@ async fn test_non_retryable_error_row_is_served(
 
     let public = public_request();
     fail_public(&endpoint.db, public.id(), stored_code, "why").await?;
+    age_response(&endpoint.db, "public_decryption_responses", public.id(), 29).await?;
     let response = endpoint.post_public(&public).await;
     let body = assert_error(response, expected_status, expected_code, public.id()).await;
     assert_eq!(body.message, "why");
 
-    let user = user_request();
+    let mut user = user_request();
+    user.payload.requestValidity.startTimestamp = Utc::now().timestamp() as u64 - 600;
     fail_user(&endpoint.db, user.id(), stored_code, "why").await?;
+    age_response(&endpoint.db, "user_decryption_responses", user.id(), 29).await?;
     let response = endpoint.post_user(&user).await;
     assert_error(response, expected_status, expected_code, user.id()).await;
 
@@ -350,6 +358,129 @@ async fn test_non_retryable_error_row_is_served(
     assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 0);
     assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 0);
 
+    endpoint.stop().await
+}
+
+/// Irrecoverable errors past the serve window use the existing retry path on both routes.
+/// A fresh error or a successful payload can replace the old error.
+#[rstest]
+#[case::fresh_error(false)]
+#[case::success(true)]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_expired_irrecoverable_error_is_reprocessed(
+    #[case] success: bool,
+) -> anyhow::Result<()> {
+    let endpoint = setup().await?;
+    let public = public_request();
+    let id = public.id();
+    insert_rand_public_decryption_request(&endpoint.db, failed_http_request(id)).await?;
+    fail_public(&endpoint.db, id, "unprocessable", "before").await?;
+    age_response(&endpoint.db, "public_decryption_responses", id, 31).await?;
+
+    let pending = endpoint.spawn_pdec(&public);
+    wait_for_request_status(&endpoint.db, PUBLIC_REQUESTS, id, "pending").await;
+    if success {
+        replace_error_with_success(
+            &endpoint.db,
+            "public_decryption_responses",
+            "decrypted_result",
+            id,
+        )
+        .await?;
+    } else {
+        fail_public(&endpoint.db, id, "kms_context_destroyed", "after").await?;
+    }
+    let response = pending.await?;
+    if success {
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(endpoint.post_public(&public).await.status(), StatusCode::OK);
+    } else {
+        assert_eq!(error_body(response).await.message, "after");
+        assert_error(
+            endpoint.post_public(&public).await,
+            StatusCode::GONE,
+            ErrorCode::KmsContextDestroyed,
+            id,
+        )
+        .await;
+    }
+
+    let user = user_request();
+    let id = user.id();
+    insert_rand_user_decryption_request_v2(&endpoint.db, failed_http_request(id)).await?;
+    fail_user(&endpoint.db, id, "unprocessable", "before").await?;
+    age_response(&endpoint.db, "user_decryption_responses", id, 31).await?;
+
+    let pending = endpoint.spawn_udec(&user);
+    wait_for_request_status(&endpoint.db, USER_REQUESTS, id, "pending").await;
+    if success {
+        replace_error_with_success(
+            &endpoint.db,
+            "user_decryption_responses",
+            "user_decrypted_shares",
+            id,
+        )
+        .await?;
+    } else {
+        fail_user(&endpoint.db, id, "kms_context_destroyed", "after").await?;
+    }
+    let response = pending.await?;
+    if success {
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(endpoint.post_user(&user).await.status(), StatusCode::OK);
+    } else {
+        assert_eq!(error_body(response).await.message, "after");
+        assert_error(
+            endpoint.post_user(&user).await,
+            StatusCode::GONE,
+            ErrorCode::KmsContextDestroyed,
+            id,
+        )
+        .await;
+    }
+    assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 1);
+    assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 1);
+    assert_eq!(
+        count_rows(&endpoint.db, "public_decryption_responses").await,
+        1
+    );
+    assert_eq!(
+        count_rows(&endpoint.db, "user_decryption_responses").await,
+        1
+    );
+    endpoint.stop().await
+}
+
+#[tokio::test]
+async fn test_configured_error_serve_window() -> anyhow::Result<()> {
+    let endpoint = setup_with(|config| Config {
+        error_serve_window: Duration::from_hours(60 * 24),
+        ..config
+    })
+    .await?;
+    let public = public_request();
+    fail_public(&endpoint.db, public.id(), "unprocessable", "why").await?;
+    age_response(&endpoint.db, "public_decryption_responses", public.id(), 31).await?;
+    assert_error(
+        endpoint.post_public(&public).await,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        ErrorCode::Unprocessable,
+        public.id(),
+    )
+    .await;
+    let user = user_request();
+    fail_user(&endpoint.db, user.id(), "unprocessable", "why").await?;
+    age_response(&endpoint.db, "user_decryption_responses", user.id(), 31).await?;
+    assert_error(
+        endpoint.post_user(&user).await,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        ErrorCode::Unprocessable,
+        user.id(),
+    )
+    .await;
+    assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 0);
+    assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 0);
     endpoint.stop().await
 }
 
@@ -426,8 +557,13 @@ async fn test_retryable_error_row_resets_failed_request() -> anyhow::Result<()> 
 /// request is stored.
 #[rstest]
 #[timeout(Duration::from_secs(60))]
+#[case::recoverable("acl_denied", 0)]
+#[case::expired_irrecoverable("unprocessable", 31)]
 #[tokio::test]
-async fn test_retryable_error_row_attaches_to_reprocessing() -> anyhow::Result<()> {
+async fn test_retryable_or_expired_error_row_attaches_to_reprocessing(
+    #[case] code: &str,
+    #[case] age_days: u64,
+) -> anyhow::Result<()> {
     let endpoint = setup().await?;
 
     // Already under process by the kms-worker: attach, do not touch the request.
@@ -438,7 +574,14 @@ async fn test_retryable_error_row_attaches_to_reprocessing() -> anyhow::Result<(
         failed_http_request(public_id).with_status(OperationStatus::UnderProcess),
     )
     .await?;
-    fail_public(&endpoint.db, public_id, "acl_denied", "before").await?;
+    fail_public(&endpoint.db, public_id, code, "before").await?;
+    age_response(
+        &endpoint.db,
+        "public_decryption_responses",
+        public_id,
+        age_days,
+    )
+    .await?;
 
     let pending = endpoint.spawn_pdec(&public);
     // Nothing observable happens in DB until the worker answers, so give the route time to run.
@@ -457,7 +600,8 @@ async fn test_retryable_error_row_attaches_to_reprocessing() -> anyhow::Result<(
     // Request row gone (garbage collected) but error row still there: a fresh request is stored.
     let user = user_request();
     let user_id = user.id();
-    fail_user(&endpoint.db, user_id, "acl_denied", "before").await?;
+    fail_user(&endpoint.db, user_id, code, "before").await?;
+    age_response(&endpoint.db, "user_decryption_responses", user_id, age_days).await?;
     let pending = endpoint.spawn_udec(&user);
     wait_for_request_status(&endpoint.db, USER_REQUESTS, user_id, "pending").await;
     fail_user(&endpoint.db, user_id, "unprocessable", "after").await?;
@@ -940,6 +1084,39 @@ async fn fail_public(
 /// Plays the kms-worker: stores (or overrides) a user decryption error for `id`.
 async fn fail_user(db: &Pool<Postgres>, id: B256, code: &str, details: &str) -> anyhow::Result<()> {
     insert_test_user_decrypt_error_response(db, Some(db_id(id)), code, details).await?;
+    Ok(())
+}
+
+/// Plays a successful worker retry, replacing an error payload in place.
+async fn replace_error_with_success(
+    db: &Pool<Postgres>,
+    table: &str,
+    payload_column: &str,
+    id: B256,
+) -> anyhow::Result<()> {
+    let updated = sqlx::query(&format!(
+        "UPDATE {table} SET {payload_column} = $1, signature = $1, error_code = NULL,
+        error_details = NULL, created_at = $2 WHERE decryption_id = $3"
+    ))
+    .bind(vec![0x42_u8; 65])
+    .bind(Utc::now())
+    .bind(db_id(id).as_le_slice().to_vec())
+    .execute(db)
+    .await?;
+    assert_eq!(updated.rows_affected(), 1);
+    Ok(())
+}
+
+/// Ages a result without changing its identity or notifying waiters.
+async fn age_response(db: &Pool<Postgres>, table: &str, id: B256, days: u64) -> anyhow::Result<()> {
+    let updated = sqlx::query(&format!(
+        "UPDATE {table} SET created_at = $1 WHERE decryption_id = $2"
+    ))
+    .bind(Utc::now() - Duration::from_hours(days * 24))
+    .bind(db_id(id).as_le_slice().to_vec())
+    .execute(db)
+    .await?;
+    assert_eq!(updated.rows_affected(), 1);
     Ok(())
 }
 

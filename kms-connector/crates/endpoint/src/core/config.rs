@@ -36,6 +36,13 @@ pub struct Config {
     )]
     #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub decryption_timeout: Duration,
+    /// How long an irrecoverable decryption error is reused before reprocessing.
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_error_serve_window"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
+    pub error_serve_window: Duration,
     /// The maximum accepted size of a JSON request body.
     #[serde(default = "default_max_body_bytes")]
     pub max_body_bytes: usize,
@@ -80,6 +87,10 @@ fn default_decryption_timeout() -> Duration {
     Duration::from_secs(30)
 }
 
+fn default_error_serve_window() -> Duration {
+    Duration::from_hours(30 * 24)
+}
+
 fn default_max_body_bytes() -> usize {
     1024 * 1024 // 1 MiB
 }
@@ -97,6 +108,7 @@ impl Default for Config {
             http_endpoint: default_http_endpoint(),
             max_in_flight_decryptions: default_max_in_flight_decryptions(),
             decryption_timeout: default_decryption_timeout(),
+            error_serve_window: default_error_serve_window(),
             max_body_bytes: default_max_body_bytes(),
             max_allowed_contracts: default_max_allowed_contracts(),
             supported_chain_ids: vec![11155111],
@@ -124,6 +136,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_HTTP_ENDPOINT");
             env::remove_var("KMS_CONNECTOR_MAX_IN_FLIGHT_DECRYPTIONS");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_ERROR_SERVE_WINDOW");
             env::remove_var("KMS_CONNECTOR_MAX_BODY_BYTES");
             env::remove_var("KMS_CONNECTOR_MAX_ALLOWED_CONTRACTS");
             env::remove_var("KMS_CONNECTOR_SUPPORTED_CHAIN_IDS");
@@ -155,6 +168,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_HTTP_ENDPOINT", "127.0.0.1:9090");
             env::set_var("KMS_CONNECTOR_MAX_IN_FLIGHT_DECRYPTIONS", "12");
             env::set_var("KMS_CONNECTOR_DECRYPTION_TIMEOUT", "15s");
+            env::set_var("KMS_CONNECTOR_ERROR_SERVE_WINDOW", "7d");
             env::set_var("KMS_CONNECTOR_MAX_BODY_BYTES", "2048");
             env::set_var("KMS_CONNECTOR_MAX_ALLOWED_CONTRACTS", "3");
             env::set_var("KMS_CONNECTOR_SUPPORTED_CHAIN_IDS", "1,31337");
@@ -173,6 +187,7 @@ mod tests {
         assert_eq!(config.http_endpoint, "127.0.0.1:9090".parse().unwrap());
         assert_eq!(config.max_in_flight_decryptions, 12);
         assert_eq!(config.decryption_timeout, Duration::from_secs(15));
+        assert_eq!(config.error_serve_window, Duration::from_hours(7 * 24));
         assert_eq!(config.max_body_bytes, 2048);
         assert_eq!(config.max_allowed_contracts, 3);
         assert_eq!(config.supported_chain_ids, vec![1, 31337]);
