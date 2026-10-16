@@ -11,8 +11,8 @@ use zama_solana_acl::{
 };
 
 /// Checks that `delegator` has a live delegation to `delegate` in the application of `store`, at
-/// the Clock of the read of `rows`, by the rule the relayer's pre-check also applies
-/// ([`judge_delegation`]). A row the host program could not have written fails the entry.
+/// the Clock of the read of `rows`, combining the application's row and the wildcard row with
+/// [`judge_delegation`]. A row the host program could not have written fails the entry.
 pub fn check_delegation(
     rows: &ObservedRows,
     program_id: Pubkey,
