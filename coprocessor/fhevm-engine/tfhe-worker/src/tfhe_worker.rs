@@ -32,6 +32,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use time::PrimitiveDateTime;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn, Instrument};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
@@ -2181,8 +2182,9 @@ pub const NO_READINESS: Readiness = ();
 pub async fn run_tfhe_worker(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
+    shutdown: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    run_tfhe_worker_inner(args, health_check, NO_READINESS).await
+    run_tfhe_worker_inner(args, health_check, NO_READINESS, shutdown).await
 }
 
 /// Benchmark-harness entry point: identical to [`run_tfhe_worker`] but
@@ -2192,14 +2194,16 @@ pub async fn run_tfhe_worker_with_readiness(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
     readiness: Option<ReadinessSignal>,
+    shutdown: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    run_tfhe_worker_inner(args, health_check, readiness).await
+    run_tfhe_worker_inner(args, health_check, readiness, shutdown).await
 }
 
 async fn run_tfhe_worker_inner(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
     mut readiness: Readiness,
+    shutdown: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Determine worker ID to use for the lifetime of this process
     // In case of a failure in tfhe_worker_cycle, the same id must be reused to quickly unlock any held locks
@@ -2276,10 +2280,17 @@ async fn run_tfhe_worker_inner(
             start_block_state.clone(),
             health_check.clone(),
             &mut readiness,
+            &shutdown,
         )
         .await
         {
             WORKER_ERRORS_COUNTER.inc();
+            // Already stopping: return instead of exiting for a restart. This
+            // also keeps embedded callers alive while their database is dropped.
+            if shutdown.is_cancelled() {
+                warn!(target: "tfhe_worker", error = %cycle_error, "Error while shutting down; owned chains expire with the lock TTL");
+                return Ok(());
+            }
             if cycle_error.is_fatal_connection() {
                 error!(target: "tfhe_worker", error = %cycle_error, "Fatal DB connection error; exiting for k8s restart");
                 fhevm_engine_common::telemetry::flush();
@@ -2287,7 +2298,26 @@ async fn run_tfhe_worker_inner(
             }
             error!(target: "tfhe_worker", { error = %cycle_error }, "Error in background worker, retrying shortly");
         }
-        tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
+        if shutdown.is_cancelled() {
+            return Ok(());
+        }
+        // A stop during the wait still runs the next cycle, whose startup
+        // release and shutdown check hand back what the failed cycle held.
+        tokio::select! {
+            _ = shutdown.cancelled() => {}
+            _ = tokio::time::sleep(tokio::time::Duration::from_millis(5000)) => {}
+        }
+    }
+}
+
+/// Hands this worker's chains back so other workers can take them now
+/// instead of after `--dcid-ttl-sec`. The startup release cannot cover this:
+/// it filters on `worker_id`, a fresh UUID per process unless `--worker-id`
+/// is configured.
+async fn release_owned_locks_on_exit(dcid_mngr: &mut dependence_chain::LockMngr) {
+    if let Err(error) = dcid_mngr.release_all_owned_locks().await {
+        warn!(target: "tfhe_worker", { error = %error },
+            "could not release owned locks on exit; they expire with the lock TTL");
     }
 }
 
@@ -2310,6 +2340,7 @@ async fn tfhe_worker_cycle(
     start_block_state: Arc<AtomicI64>,
     health_check: crate::health_check::HealthCheck,
     readiness: &mut Readiness,
+    shutdown: &CancellationToken,
 ) -> Result<(), CoprocessorError> {
     let db_url = resolve_database_url_from_option(args.database_url.clone())
         .map_err(|e| CoprocessorError::Other(e.into()))?;
@@ -2453,6 +2484,11 @@ async fn tfhe_worker_cycle(
     // a worker with only frozen work does not spin.
     let mut consecutive_fully_frozen_picks: u32 = 0;
     loop {
+        if shutdown.is_cancelled() {
+            info!(target: "tfhe_worker", "Shutting down — releasing owned chains");
+            release_owned_locks_on_exit(&mut dcid_mngr).await;
+            return Ok(());
+        }
         // GCS gating: skip the iteration entirely until the activation
         // watcher has populated `start_block` in `upgrade_state` for
         // `stack_role='GCS'`. Once that's observed, the schema-isolated
@@ -2486,6 +2522,7 @@ async fn tfhe_worker_cycle(
                     WORK_ITEMS_POLL_COUNTER.inc();
                     debug!(target: "tfhe_worker", "Polling the database for more work on timer");
                 },
+                _ = shutdown.cancelled() => continue,
             };
         }
 
@@ -2527,15 +2564,7 @@ async fn tfhe_worker_cycle(
             WriteGuard::Proceed(trx) => trx,
             WriteGuard::Stop => {
                 info!(target: "tfhe_worker", "Cutover completed — BCS worker exiting cycle");
-                // Hand back what this worker holds instead of leaving up to
-                // `--dependence-chains-per-batch` chains to be reclaimed by
-                // work-stealing after `--dcid-ttl-sec`. The startup release
-                // cannot cover this: it filters on `worker_id`, which is a
-                // fresh UUID per process unless `--worker-id` is configured.
-                if let Err(error) = dcid_mngr.release_all_owned_locks().await {
-                    warn!(target: "tfhe_worker", { error = %error },
-                        "could not release owned locks on exit; they expire with the lock TTL");
-                }
+                release_owned_locks_on_exit(&mut dcid_mngr).await;
                 return Ok(());
             }
             WriteGuard::Skip => {
@@ -2672,19 +2701,36 @@ async fn tfhe_worker_cycle(
         .bind(&batch_transaction_ids)
         .fetch_all(&mut *trx)
         .await?;
-        let mut tx_graph = match build_transaction_graph_and_execute(
-            &mut transactions,
-            db_key_cache.clone(),
-            &health_check,
-            &mut trx,
-            &dcid_mngr,
-            stack_mode.gcs_mode(),
-            gpu_reservation_timeout,
-            args.gpu_streams_per_device,
-        )
-        .instrument(loop_span.clone())
-        .await
-        {
+        // Shutdown abandons the batch: a scale-in should not wait for a long
+        // batch to finish, and its results are deterministic, so the worker
+        // that takes the chains next recomputes the same values.
+        let executed = tokio::select! {
+            biased;
+            _ = shutdown.cancelled() => {
+                // Roll back before the release, so the next worker does not wait
+                // on this transaction's row locks. Dropping `trx` would only
+                // queue the rollback until `conn` is reused. If the rollback
+                // fails, the release still runs and the next worker waits until
+                // this process exits.
+                if let Err(error) = trx.rollback().await {
+                    warn!(target: "tfhe_worker", { error = %error }, "rollback of the abandoned batch failed");
+                }
+                info!(target: "tfhe_worker", "Shutting down — abandoned the open batch");
+                continue; // the shutdown check at the top releases the chains
+            }
+            executed = build_transaction_graph_and_execute(
+                &mut transactions,
+                db_key_cache.clone(),
+                &health_check,
+                &mut trx,
+                &dcid_mngr,
+                stack_mode.gcs_mode(),
+                gpu_reservation_timeout,
+                args.gpu_streams_per_device,
+            )
+            .instrument(loop_span.clone()) => executed,
+        };
+        let mut tx_graph = match executed {
             Ok(tx_graph) => {
                 consecutive_batch_failures = 0;
                 tx_graph
