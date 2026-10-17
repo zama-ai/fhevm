@@ -52,6 +52,13 @@ type RollbackCase = {
    * the others, and no early hash of its own can let a peer anchor.
    */
   beforeWindow: boolean;
+  /**
+   * True when the target operator can cancel the upgrade while it is still
+   * broken. The case waits for that before it starts its containers again.
+   * The operator indexes no block then, so only the record of a peer can
+   * make it cancel.
+   */
+  rollsBackUnderFault?: boolean;
   fault: () => Promise<void>;
   restore: () => Promise<void>;
   extraAssertions?: (attempt: Attempt) => Promise<void>;
@@ -299,6 +306,15 @@ const runRollbackCaseBody = async (ctx: RollbackCaseContext, item: RollbackCase)
   await waitForRollback(ctx, ctx.operatorDatabases[0]!, 600);
   console.log("OK:   the healthy operator cancelled the upgrade");
 
+  if (item.rollsBackUnderFault) {
+    const target = ctx.operatorDatabases[TARGET_OPERATOR]!;
+    const behind =
+      (await highestIndexedBlock(ctx, ctx.operatorDatabases[0]!)) -
+      (await highestIndexedBlock(ctx, target));
+    await waitForRollback(ctx, target, 600);
+    console.log(`OK:   the target operator cancelled the upgrade ${behind} block(s) behind`);
+  }
+
   await item.restore();
   return attempt;
 };
@@ -334,6 +350,7 @@ export const runRollbackCases = async (ctx: RollbackCaseContext) => {
     label: "Blue falls behind before the window, and starts again after the abort",
     proposalId: 3,
     beforeWindow: true,
+    rollsBackUnderFault: true,
     fault: async () => stopContainers(await blueHostListeners(TARGET_OPERATOR)),
     restore: async () => startContainers(await blueHostListeners(TARGET_OPERATOR)),
   });
