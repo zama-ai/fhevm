@@ -618,9 +618,10 @@ run_cell_body() {
         cr_record "$case_id" INVALID cleanup=not_required started_at="$started" detail="offline replay requires non-finalized consumer catchup"
         return 1
       }
-      local publisher=listener-publisher-for-anvil page_size
+      local publisher=listener-publisher-for-anvil page_size config
       [[ "$VICTIM" == 0 ]] || publisher="listener${VICTIM}-publisher-for-anvil"
-      page_size="$(docker exec "$publisher" cat /config.yaml | bun -e 'import YAML from "yaml"; const config=YAML.parse(await Bun.stdin.text()); console.log(config.blockchain.catchup?.catchup_max_sub_range);')" || return 1
+      config="$(docker cp "$publisher:/config.yaml" - | tar -xO)" || return 1
+      page_size="$(bun -e 'import YAML from "yaml"; const config=YAML.parse(await Bun.stdin.text()); console.log(config.blockchain.catchup?.catchup_max_sub_range);' <<<"$config")" || return 1
       [[ "$page_size" == 4 ]] || {
         cr_record "$case_id" INVALID cleanup=not_required started_at="$started" detail="offline replay requires observed listener-core catchup sub-ranges of four blocks"
         return 1
