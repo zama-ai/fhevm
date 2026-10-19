@@ -26,10 +26,10 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_DECRYPTION_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # decryption_timeout = "30s"
 
-# How long irrecoverable decryption errors are served before reprocessing (optional, defaults to "30d").
+# How long irrecoverable decryption errors are served before reprocessing (optional, defaults to "1h").
 # Successful results are reused indefinitely; recoverable errors are retried on resubmission.
 # ENV: KMS_CONNECTOR_ERROR_SERVE_WINDOW (format: https://docs.rs/humantime/latest/humantime/)
-# error_serve_window = "30d"
+# error_serve_window = "1h"
 
 # Maximum size of a JSON request body, in bytes (optional, defaults to 1 MiB)
 # ENV: KMS_CONNECTOR_MAX_BODY_BYTES

@@ -88,7 +88,7 @@ fn default_decryption_timeout() -> Duration {
 }
 
 fn default_error_serve_window() -> Duration {
-    Duration::from_hours(30 * 24)
+    Duration::from_hours(1)
 }
 
 fn default_max_body_bytes() -> usize {
