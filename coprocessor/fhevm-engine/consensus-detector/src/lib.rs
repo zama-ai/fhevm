@@ -287,8 +287,8 @@ fn all_slots_filled(slots: &[Option<Vec<u8>>]) -> bool {
 }
 
 /// An upgrade attempt and its per-chain windows:
-/// `(proposal_id, proposal_block, [(chain_id, start, end), ...])`.
-pub(crate) type HostWindows = (Vec<u8>, i64, Vec<(i64, i64, i64)>);
+/// `(proposal_id, proposal_block, stack_version, [(chain_id, start, end), ...])`.
+pub(crate) type HostWindows = (Vec<u8>, i64, Option<String>, Vec<(i64, i64, i64)>);
 
 /// Returns the complete per-chain window set for the active GCS dry-run.
 /// `None` otherwise. Proposal-level fields must agree across every row.
@@ -300,12 +300,13 @@ where
         String,
         Option<Vec<u8>>,
         Option<i64>,
+        Option<String>,
         i64,
         Option<i64>,
         Option<i64>,
     );
     let rows: Vec<ActiveWindowRow> = sqlx::query_as(
-        "SELECT state, proposal_id, proposal_block,
+        "SELECT state, proposal_id, proposal_block, version,
                 host_chain_id, start_block, end_block
            FROM upgrade_state
           WHERE stack_role = 'GCS' AND status = 'in_progress'
@@ -314,7 +315,7 @@ where
     .fetch_all(executor)
     .await?;
 
-    let Some((state, proposal_id, proposal_block, _, _, _)) = rows.first() else {
+    let Some((state, proposal_id, proposal_block, version, _, _, _)) = rows.first() else {
         return Ok(None);
     };
     if !matches!(state.as_str(), "UpgradeActivated" | "DryRunStarted") {
@@ -328,10 +329,11 @@ where
     };
 
     let mut windows = Vec::with_capacity(rows.len());
-    for (row_state, row_id, row_block, chain_id, start, end) in &rows {
+    for (row_state, row_id, row_block, row_version, chain_id, start, end) in &rows {
         if row_state != state
             || row_id.as_deref() != Some(proposal_id.as_slice())
             || *row_block != Some(proposal_block)
+            || row_version != version
         {
             return Err(Error::Payload(
                 "active GCS upgrade_state rows do not describe one proposal".to_owned(),
@@ -344,7 +346,12 @@ where
         };
         windows.push((*chain_id, start, end));
     }
-    Ok(Some((proposal_id.clone(), proposal_block, windows)))
+    Ok(Some((
+        proposal_id.clone(),
+        proposal_block,
+        version.clone(),
+        windows,
+    )))
 }
 
 /// Per-track eager consensus state. We only need ONE unanimous block to anchor
@@ -575,6 +582,8 @@ fn unanimity_notifications(
 /// and signing key, and the `GatewayConfig` reader that resolves the members.
 struct Fleet<'a, P: Provider<Ethereum>> {
     s3: Option<&'a aws_sdk_s3::Client>,
+    /// Green runs the cutover, so Green alone writes the record. Blue reads it.
+    writes: bool,
     bucket: Option<&'a str>,
     signer: Option<&'a fhevm_engine_common::types::CoproSigner>,
     gateway: &'a S3Service<P>,
@@ -623,7 +632,7 @@ where
         window_state.members.clear();
         window_state.tracked_window = active.clone();
     }
-    let Some((proposal_id, proposal_block, windows)) = active else {
+    let Some((proposal_id, proposal_block, stack_version, windows)) = active else {
         return Ok(());
     };
 
@@ -735,7 +744,7 @@ where
             // on the records, so no peer rolls back on this operator's silence.
             WindowTimeout::Armed(deadline) if Instant::now() >= deadline => {
                 expired = true;
-                if own.is_none() {
+                if own.is_none() && fleet.writes {
                     let mut unanchored: Vec<i64> = host_tracks
                         .iter()
                         .filter(|(_, t)| t.anchored.is_none())
@@ -767,14 +776,36 @@ where
     } else {
         None
     };
-    if let (None, Some(verdict), Some(client), Some(bucket), Some(signer)) =
-        (&own, verdict, fleet.s3, fleet.bucket, fleet.signer)
-    {
+    // The protocol version of this binary. The proposal names the stack version.
+    let consensus_version = i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION);
+    if verdict.is_some() && own.is_none() && stack_version.is_none() && fleet.writes {
+        warn!("active GCS proposal has no version; waiting to record the decision");
+    }
+
+    if let (
+        true,
+        None,
+        Some(verdict),
+        Some(client),
+        Some(bucket),
+        Some(signer),
+        Some(stack_version),
+    ) = (
+        fleet.writes,
+        &own,
+        verdict,
+        fleet.s3,
+        fleet.bucket,
+        fleet.signer,
+        stack_version.clone(),
+    ) {
         let anchors = unanimity_notifications(host_tracks, gateway);
         match decision::sign(
             signer,
             &proposal_id,
             proposal_block,
+            stack_version,
+            consensus_version,
             verdict,
             &members,
             anchors,
@@ -803,6 +834,21 @@ where
             Some(record) if Some(&member.address) == own_name.as_ref() => Some(record.clone()),
             _ => decision::get(http, member, &proposal_id, proposal_block).await,
         };
+        // A member on another release cannot cut over with this fleet.
+        if let (Some(record), Some(stack_version)) = (&record, &stack_version) {
+            if &record.payload.target_stack_version != stack_version
+                || record.payload.target_consensus_version != consensus_version
+            {
+                warn!(
+                    member = member.address,
+                    member_stack_version = record.payload.target_stack_version,
+                    member_consensus_version = record.payload.target_consensus_version,
+                    own_stack_version = stack_version,
+                    own_consensus_version = consensus_version,
+                    "a member signed a different release"
+                );
+            }
+        }
         decisions.push(
             record
                 .filter(|r| r.payload.addresses() == addresses)
@@ -992,9 +1038,14 @@ where
     } else {
         Some(Arc::clone(&s3_client))
     };
+    // Blue holds the old release, and the record must name the release that runs.
+    if !config.gcs_mode {
+        info!("blue stack; this detector reads decision records and writes none");
+    }
     let decision_s3 = s3.clone();
     let fleet = Fleet {
         s3: decision_s3.as_deref(),
+        writes: config.gcs_mode,
         bucket: config.my_bucket.as_deref(),
         signer: config.manifest_signer.as_ref(),
         gateway: &s3_service,

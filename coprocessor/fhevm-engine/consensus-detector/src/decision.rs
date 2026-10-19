@@ -39,6 +39,10 @@ pub(crate) struct Member {
 pub(crate) struct Payload {
     pub proposal_id: String,
     pub proposal_block: i64,
+    /// The release of the attempt. An operator on another image signs different
+    /// values, so a reader names that operator.
+    pub target_stack_version: String,
+    pub target_consensus_version: i64,
     pub decision: Decision,
     pub signer: String,
     pub members: Vec<Member>,
@@ -125,10 +129,13 @@ pub(crate) fn key(proposal_id: &[u8], proposal_block: i64) -> String {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn sign(
     signer: &CoproSigner,
     proposal_id: &[u8],
     proposal_block: i64,
+    target_stack_version: String,
+    target_consensus_version: i64,
     decision: Decision,
     members: &[Member],
     anchors: Vec<(i64, i64)>,
@@ -136,6 +143,8 @@ pub(crate) async fn sign(
     let payload = Payload {
         proposal_id: hex::encode(proposal_id),
         proposal_block,
+        target_stack_version,
+        target_consensus_version,
         decision,
         signer: name_of(signer.address()),
         members: members.to_vec(),
@@ -273,9 +282,18 @@ mod tests {
         members: &[Member],
     ) -> (Address, Record) {
         let signer: CoproSigner = std::sync::Arc::new(key.clone());
-        let record = sign(&signer, &[0x01], 5, decision, members, vec![(1, 100)])
-            .await
-            .expect("sign");
+        let record = sign(
+            &signer,
+            &[0x01],
+            5,
+            "v0.15".to_owned(),
+            2,
+            decision,
+            members,
+            vec![(1, 100)],
+        )
+        .await
+        .expect("sign");
         (key.address(), record)
     }
 
@@ -298,6 +316,22 @@ mod tests {
         let (address, mut record) = signed(&key, Decision::Quorum, &members).await;
 
         record.payload.decision = Decision::Abort;
+        assert!(!record.is_valid_from(address, &[0x01], 5));
+    }
+
+    #[tokio::test]
+    async fn a_changed_release_breaks_the_signature() {
+        let key = PrivateKeySigner::random();
+        let members = member_list(&[key.address()]);
+        let (address, mut record) = signed(&key, Decision::Quorum, &members).await;
+
+        record.payload.target_consensus_version = 3;
+        assert!(!record.is_valid_from(address, &[0x01], 5));
+
+        record.payload.target_consensus_version = 2;
+        assert!(record.is_valid_from(address, &[0x01], 5));
+
+        record.payload.target_stack_version = "v0.16".to_owned();
         assert!(!record.is_valid_from(address, &[0x01], 5));
     }
 

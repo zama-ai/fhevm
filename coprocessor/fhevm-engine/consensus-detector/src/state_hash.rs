@@ -721,7 +721,7 @@ async fn compute_and_upload_state_hashes(
     // gw_ready captures "GW track eligible this pass" (not anchored AND watermark past gw_start);
     // it gates compute AND upload.
     let mut gw_ready = false;
-    if let Some((_, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
+    if let Some((_, _, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
         let skip_gw = gw_consensus_reached(&mut *tx).await?;
         for (chain_id, start, end) in windows {
             compute_and_insert_gcs(
