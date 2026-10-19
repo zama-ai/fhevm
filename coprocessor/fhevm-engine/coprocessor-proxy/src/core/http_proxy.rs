@@ -4,13 +4,14 @@ use crate::core::{ErrorCode, ErrorResponse, Proxy, Route, RouteError, match_rout
 use alloy::primitives::{Address, B256, KECCAK256_EMPTY, Keccak256};
 use async_trait::async_trait;
 use bytes::Bytes;
+use fhevm_engine_common::kms_tx_senders::WOKEN_POLL_SPACING;
 use fhevm_sig_auth::AuthError;
 use http::{
     HeaderValue, StatusCode,
     header::{
         ALLOW, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, FORWARDED,
-        HeaderName, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, TE, TRAILER, UPGRADE, VIA,
-        WWW_AUTHENTICATE,
+        HeaderName, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, RETRY_AFTER, TE, TRAILER, UPGRADE,
+        VIA, WWW_AUTHENTICATE,
     },
 };
 use pingora::{
@@ -25,7 +26,7 @@ use std::{
     sync::LazyLock,
     time::{Duration, Instant},
 };
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
@@ -52,6 +53,7 @@ const NO_STORE: &str = "no-store";
 /// How long a request signed by an unknown signer waits for a poll of the KMS tx-senders that
 /// started after it, before it is checked again.
 pub const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
+const SIGNER_NOT_YET_KNOWN: &str = "signer not yet known";
 
 /// Error message for oversized request bodies.
 const BODY_TOO_LARGE: &str = "request body too large";
@@ -78,7 +80,7 @@ impl Proxy {
         &self,
         session: &mut Session,
         error: ErrorResponse,
-        allow: Option<&str>,
+        extra_header: Option<(HeaderName, &str)>,
     ) -> pingora::Result<()> {
         let status = StatusCode::from_u16(error.code.http_status())
             .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
@@ -90,8 +92,8 @@ impl Proxy {
         if status == StatusCode::UNAUTHORIZED {
             header.insert_header(WWW_AUTHENTICATE, fhevm_sig_auth::SCHEME)?;
         }
-        if let Some(methods) = allow {
-            header.insert_header(ALLOW, methods)?;
+        if let Some((name, value)) = extra_header {
+            header.insert_header(name, value)?;
         }
         session
             .write_response_header(Box::new(header), false)
@@ -159,7 +161,7 @@ impl ProxyHttp for Proxy {
                 self.respond_with_error(
                     session,
                     route_error_response(&e),
-                    e.allow_header().as_deref(),
+                    e.allow_header().as_deref().map(|methods| (ALLOW, methods)),
                 )
                 .await?;
                 return Ok(true);
@@ -182,6 +184,16 @@ impl ProxyHttp for Proxy {
         };
         let (sender, body_digest) = match verified {
             Ok(signed) => signed,
+            // This RPC node can lag the connector's by any amount: the connector retries instead.
+            Err(AuthError::UnknownSigner(signer)) => {
+                warn!(%signer, "Unknown signer after a fresh read of the KMS tx-senders");
+                let error = ErrorResponse::new(ErrorCode::UpstreamTransient, SIGNER_NOT_YET_KNOWN);
+                // No sooner than the reader can poll again.
+                let retry_after = WOKEN_POLL_SPACING.as_secs().to_string();
+                self.respond_with_error(session, error, Some((RETRY_AFTER, &retry_after)))
+                    .await?;
+                return Ok(true);
+            }
             Err(e) => {
                 self.respond_with_error(session, auth_error_response(&e), None)
                     .await?;

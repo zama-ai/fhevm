@@ -40,9 +40,11 @@ use tokio::task::AbortHandle;
 
 /// The private key of the KMS tx-sender in the first KMS context.
 pub const SENDER_KEY: &str = "0x0101010101010101010101010101010101010101010101010101010101010101";
-/// [`TestProxy::auth_code`] for a signer the proxy accepts: the signature checks out, then the
+/// [`TestProxy::answer_code`] for a signer the proxy accepts: the signature checks out, then the
 /// signed digest does not match the empty body.
 pub const ACCEPTED: &str = "auth_body_mismatch";
+/// [`TestProxy::answer_code`] for a signer the proxy does not know after a fresh read.
+pub const NOT_YET_KNOWN: &str = "upstream_transient";
 
 /// The test proxy's own coprocessor signer address, the audience of the headers it accepts.
 pub const AUDIENCE: Address = Address::repeat_byte(0xa1);
@@ -536,10 +538,10 @@ impl TestProxy {
             .header("authorization", auth)
     }
 
-    /// The `auth_*` code of the proxy's answer to a request signed by `signer` for a body it does
-    /// not send: [`ACCEPTED`] once the proxy accepts `signer`. The request never reaches an
-    /// endpoint.
-    pub async fn auth_code(&self, signer: &PrivateKeySigner) -> String {
+    /// The code of the proxy's answer to a request signed by `signer` for a body it does not send:
+    /// [`ACCEPTED`] once the proxy accepts `signer`, [`NOT_YET_KNOWN`] before. The request never
+    /// reaches an endpoint.
+    pub async fn answer_code(&self, signer: &PrivateKeySigner) -> String {
         let path = prf_path(1);
         let response = self
             .client
@@ -548,25 +550,32 @@ impl TestProxy {
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let status = response.status();
         let error: Value = response.json().await.unwrap();
-        error["code"].as_str().unwrap().to_string()
+        let code = error["code"].as_str().unwrap().to_string();
+        let expected = if code == NOT_YET_KNOWN {
+            StatusCode::BAD_GATEWAY
+        } else {
+            StatusCode::UNAUTHORIZED
+        };
+        assert_eq!(status, expected, "{error}");
+        code
     }
 
     /// Waits until the proxy accepts requests signed by `signer`.
     pub async fn wait_until_accepted(&self, signer: &PrivateKeySigner) {
-        self.wait_for_auth_code(signer, ACCEPTED).await;
+        self.wait_for_code(signer, ACCEPTED).await;
     }
 
-    /// Waits until a request signed by `signer` is refused as `auth_unknown_signer`.
+    /// Waits until a request signed by `signer` gets [`NOT_YET_KNOWN`].
     pub async fn wait_until_refused(&self, signer: &PrivateKeySigner) {
-        self.wait_for_auth_code(signer, "auth_unknown_signer").await;
+        self.wait_for_code(signer, NOT_YET_KNOWN).await;
     }
 
-    async fn wait_for_auth_code(&self, signer: &PrivateKeySigner, expected: &str) {
+    async fn wait_for_code(&self, signer: &PrivateKeySigner, expected: &str) {
         let deadline = Instant::now() + 50 * POLL_INTERVAL;
         loop {
-            let code = self.auth_code(signer).await;
+            let code = self.answer_code(signer).await;
             if code == expected {
                 return;
             }
