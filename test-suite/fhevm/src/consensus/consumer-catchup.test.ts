@@ -1,5 +1,15 @@
 import { expect, test } from "bun:test";
-import { missingIngestedReceiptBlocks, requireCompletedConsumerCatchup } from "../../../e2e/test/consensus/failureEvidence";
+import { missingIngestedReceiptBlocks, offlineCatchupRange, requireCompletedConsumerCatchup } from "../../../e2e/test/consensus/failureEvidence";
+
+test("offline recovery uses the saved height and current RPC head like the legacy poller", () => {
+  const blocks = Array.from({ length: 12 }, (_, i) => 2764 + i * 2);
+  expect(offlineCatchupRange(2733, 2788, blocks)).toEqual({ start: 2734, end: 2788 });
+  expect(offlineCatchupRange(null, 2788, blocks)).toEqual({ start: 1, end: 2788 });
+  // The queued pre-outage LIVE reference from CI cannot bound this workload.
+  expect(() => offlineCatchupRange(2733, 2732, blocks)).toThrow("all twelve");
+  expect(() => offlineCatchupRange(2733, 2785, blocks)).toThrow("all twelve");
+  expect(() => offlineCatchupRange(2764, 2788, blocks)).toThrow("all twelve");
+});
 
 test("offline replay requires a new completed non-finalized request overlapping workload receipts", () => {
   const blocks = Array.from({ length: 12 }, (_, i) => 100 + i);
