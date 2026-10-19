@@ -16,4 +16,4 @@ pub use kms::KMSGenerationProcessor;
 pub use kms_client::{KmsClient, KmsPollTarget};
 pub use processor::{DbEventProcessor, EventProcessor};
 pub use protocol_config::{ProtocolConfigProcessor, compute_anchor_event_hash};
-pub use rpc::HostRpcClient;
+pub use rpc::{AclMulticallResults, HostRpcClient};
