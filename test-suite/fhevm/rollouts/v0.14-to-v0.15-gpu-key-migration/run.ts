@@ -765,4 +765,17 @@ export default async function runMigration(ctx: RolloutRunContext) {
     await assertGreenForcedLegacy();
   }
 
+  logPhase("12 reshare the migrated key through a same-committee KMS epoch rotation");
+  // Each KMS node checks the getKeyInfo record the connector supplies against the migrated record it holds.
+  const readKmsEpoch = async () =>
+    parseContextAndEpoch(await castCall(target.rpcUrl, target.configAddress!, "getCurrentKmsContextAndEpoch()(uint256,uint256)"));
+  const beforeRotation = await readKmsEpoch();
+  await ctx.runHostContractTask("npx hardhat task:defineNewEpochForCurrentKmsContext --use-internal-proxy-address true");
+  await waitUntil("every KMS operator reshared the migrated key and activated the new epoch", async () => {
+    const current = await readKmsEpoch();
+    return current.contextId === beforeRotation.contextId && current.epochId > beforeRotation.epochId;
+  }, 600);
+  await migrationTest("public-decryption", { parallel: false });
+  await migrationTest("user-decryption", { parallel: false });
+  await runRetainedMaterial(await ctx.readState(), "verify", "release-migration");
 }
