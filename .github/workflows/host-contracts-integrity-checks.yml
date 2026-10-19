@@ -86,6 +86,14 @@ jobs:
         working-directory: host-contracts
         run: npm run prettier:check
 
+      - name: Check ts linting
+        working-directory: host-contracts
+        run: npm run lint:ts
+
+      - name: Check ts compilation (noEmit)
+        working-directory: host-contracts
+        run: npm run tsc
+
       - name: Check bindings are up-to-date
         working-directory: host-contracts
         run: make check-bindings
