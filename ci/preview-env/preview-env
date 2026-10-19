@@ -10,6 +10,7 @@ EXTEND_WORKFLOW="preview-env-extend.yml"
 TAILSCALE_HOSTNAME="tailscale-operator-zws-dev.diplodocus-boa.ts.net"
 
 ALLOWED_OVERRIDES=(
+  bcs_image_tag
   host_contracts_version
   gateway_contracts_version
   contracts_chart_version
