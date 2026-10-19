@@ -3,8 +3,8 @@
 //! that tx-sender key. A tx-sender only in a Pending or Created context is refused until that
 //! context is activated; the previous context stays Active, and accepted, until it is destroyed.
 //!
-//! A background task polls the finalized block every `poll_interval` and, when it has moved, reads
-//! the set again at that block; requests only read the last set. A request whose signer is not in
+//! A background task polls the finalized block every `poll_interval` and, when it is newer than the
+//! last read, reads the set again at that block; requests only read the last set. A request whose signer is not in
 //! the set wakes the task and waits, for a bounded time, for a poll that started after it, so a
 //! context activated since the last poll is accepted at once. Woken polls start at least
 //! [`WOKEN_POLL_SPACING`] apart, so unknown signers cost at most one poll a second. A failed poll
@@ -231,8 +231,9 @@ impl<P: Provider> KmsTxSenderReader<P> {
         }
     }
 
-    /// Reads the set at the finalized block, or nothing when that block is the one last read: the
-    /// set cannot have changed.
+    /// Reads the set at the finalized block, or nothing when that block is not newer than the one
+    /// last read: at the same block the set cannot have changed, and an older one, from an RPC node
+    /// that lags, would give an older set.
     async fn poll(&mut self) -> anyhow::Result<Option<KmsTxSenderSet>> {
         let finalized = self
             .protocol_config
@@ -243,7 +244,7 @@ impl<P: Provider> KmsTxSenderReader<P> {
             .ok_or_else(|| anyhow!("no finalized block"))?
             .header
             .number;
-        if self.read_at == Some(finalized) {
+        if self.read_at.is_some_and(|read_at| finalized <= read_at) {
             return Ok(None);
         }
         let set = self.read(BlockId::number(finalized)).await?;
@@ -657,6 +658,28 @@ mod tests {
             .map(|request| request.method().to_owned())
             .collect();
         assert_eq!(methods, ["eth_getBlockByNumber"]);
+    }
+
+    /// An older finalized block, from an RPC node behind the one last read, reads nothing, so the
+    /// set it would give is not published.
+    #[tokio::test]
+    async fn an_older_finalized_block_reads_nothing() {
+        let ledger = ledger(&[(State::Active, &[PREVIOUS])]);
+        let (mut reader, _) = reader(&ledger);
+        read(&mut reader).await;
+        ledger
+            .lock()
+            .unwrap()
+            .finalize(|contexts| contexts.push((State::Active, vec![NEXT])));
+        assert_eq!(read(&mut reader).await, HashSet::from([PREVIOUS, NEXT]));
+
+        // The lagging node answers with the block before, and the state there.
+        {
+            let mut lagging = ledger.lock().unwrap();
+            lagging.finalized -= 1;
+            lagging.contexts.pop();
+        }
+        assert_eq!(reader.poll().await.expect("poll"), None);
     }
 
     /// A context activated in a new finalized block is accepted at the next poll.

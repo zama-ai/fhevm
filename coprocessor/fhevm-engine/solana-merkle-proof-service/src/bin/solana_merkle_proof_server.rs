@@ -77,8 +77,8 @@ struct Args {
     #[arg(long)]
     protocol_config_address: Address,
 
-    /// How often the finalized block is polled; the KMS tx-senders are read again when it has
-    /// moved. A request from a signer outside the set also starts a poll.
+    /// How often the finalized block is polled; the KMS tx-senders are read again when it is newer
+    /// than the last read. A request from a signer outside the set also starts a poll.
     #[arg(long, default_value = "5s", value_parser = parse_duration)]
     kms_tx_sender_poll_interval: Duration,
 

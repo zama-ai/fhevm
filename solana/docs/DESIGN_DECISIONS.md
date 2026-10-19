@@ -2458,7 +2458,8 @@ leaves a query without a verified proof, or after `HEDGE_DELAY` (250 ms) without
 
 `solana_merkle_proof_server` recovers the signer and answers only the tx-senders of the Active KMS
 contexts (DD-076). It polls the finalized block of the canonical `ProtocolConfig`'s chain every 5
-seconds (`--kms-tx-sender-poll-interval`) and, when the block has moved, reads them at that block:
+seconds (`--kms-tx-sender-poll-interval`) and, when the block is newer than the last read, reads
+them at that block:
 `isValidKmsContext` for each context id up to `getCurrentKmsContextIdCounter`, then each Active
 context's nodes from `getKmsNodesForContext`. A request whose signer is not in the set wakes a poll
 and waits up to 3 seconds for it before it is refused (DD-076). A poll that fails, or takes more
@@ -3169,7 +3170,8 @@ Consequences:
   finalized block, `event_processor/context.rs`), so nothing is lost. Once the activation is
   finalized, the incoming node can take a request before a coprocessor has read the new context.
   So the server polls the finalized block every 5 seconds (`--kms-tx-sender-poll-interval`) and
-  reads the set again when the block has moved. A request whose recovered signer is not in the set
+  reads the set again when the block is newer than the last read. A request whose recovered signer
+  is not in the set
   wakes a poll, waits up to 3 seconds (`UNKNOWN_SIGNER_WAIT`) for a poll that started after it, and
   is checked again. The incoming node is accepted on its first request.
 - What remains: if a coprocessor's RPC node sees the activation's finalized block more than 3
@@ -3182,7 +3184,7 @@ Consequences:
   10 seconds for an answer (`host_rpc_call_timeout`). Polls woken this way start at least 1 second
   after the poll before them, and every request waiting when one starts shares it, so unknown
   signers cost at most one poll a second: one `eth_getBlockByNumber`, and the contract reads only
-  when the finalized block has moved. RFC 038 authenticates from the header before the body is
+  when the finalized block is newer. RFC 038 authenticates from the header before the body is
   read, so the wake comes before the body's digest is checked, and any header with a recoverable
   signature can cause one. A signature for another audience recovers an unrelated address and is
   such a case: it is refused after the wait.
@@ -3190,10 +3192,12 @@ Consequences:
   with `auth_unknown_signer`, and kms-worker treats that refusal as final (DD-067), as for a node
   outside every context.
 - `solana-merkle-proof-service/src/kms_tx_senders.rs` reads `getCurrentKmsContextIdCounter`,
-  `isValidKmsContext` and `getKmsNodesForContext` at one finalized block, when that block has moved
-  since its last read, and keeps each context's nodes, which never change once the context is
-  created. It reads no event logs and keeps no list of destroyed contexts: a read costs a handful of
-  calls, only when finality moves. It no longer reads `NewKmsContext` events.
+  `isValidKmsContext` and `getKmsNodesForContext` at one finalized block, when that block is newer
+  than its last read, and keeps each context's nodes, which never change once the context is
+  created. An equal block cannot have changed the set. An older one can only come from an RPC node
+  that lags, behind a load balancer for instance, and reading there would publish an older set, so
+  the server skips both. It reads no event logs and keeps no list of destroyed contexts: a read
+  costs a handful of calls, only when finality moves. It no longer reads `NewKmsContext` events.
   kms-worker still does, through `shared/kms-context`, for the previous context of a new MPC
   context.
 - Invariant #72 holds the rule. `accepts_an_active_contexts_tx_senders_and_reads_its_nodes_once`,

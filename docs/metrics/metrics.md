@@ -239,7 +239,7 @@ The store check compares every recorded store with its account on chain, once at
 
 #### Metric Name: `solana_merkle_proof_server_kms_tx_senders_read_timestamp_seconds`
  - **Type**: Gauge
- - **Description**: Unix time of the last successful poll of the KMS tx-senders. The server polls the finalized block every 5 seconds (`--kms-tx-sender-poll-interval`), reads the set again when the block has moved, and keeps the last set when a poll fails.
+ - **Description**: Unix time of the last successful poll of the KMS tx-senders. The server polls the finalized block every 5 seconds (`--kms-tx-sender-poll-interval`), reads the set again when the block is newer than the last read, and keeps the last set when a poll fails.
  - **Alarm**: Stale reads.
     - **Recommendation**: warning, `time() - gauge > 600`.
 
