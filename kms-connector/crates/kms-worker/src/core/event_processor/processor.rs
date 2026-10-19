@@ -168,17 +168,11 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 Ok(())
             }
             ProtocolEventKind::SolanaPublicDecryption(req) => {
-                tokio::try_join!(
-                    biased;
-                    async {
-                        self.solana_verifier
-                            .check_public_decryption(req)
-                            .await
-                            .map_err(RequestCheckError::record)
-                    },
-                    self.check_context(req.extra_data()),
-                )?;
-                Ok(())
+                self.check_context(req.extra_data()).await?;
+                self.solana_verifier
+                    .check_public_decryption(req)
+                    .await
+                    .map_err(RequestCheckError::record)
             }
             ProtocolEventKind::UserDecryption(req) => {
                 let tx_hash = event.tx_hash.ok_or_else(|| {
@@ -220,18 +214,11 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 Ok(())
             }
             ProtocolEventKind::SolanaUserDecryptionV1(req) => {
-                let extra_data = req.extra_data();
-                tokio::try_join!(
-                    biased;
-                    async {
-                        self.solana_verifier
-                            .check_user_decryption(req)
-                            .await
-                            .map_err(RequestCheckError::record)
-                    },
-                    self.check_context(&extra_data),
-                )?;
-                Ok(())
+                self.check_context(&req.extra_data()).await?;
+                self.solana_verifier
+                    .check_user_decryption(req)
+                    .await
+                    .map_err(RequestCheckError::record)
             }
             ProtocolEventKind::PrepKeygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Keygen(req) => self.check_context(&req.extraData).await,

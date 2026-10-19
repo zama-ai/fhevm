@@ -52,6 +52,8 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+# The request types of a scripted Ethereum node.
+alloy = { workspace = true, features = ["json-rpc"] }
 base64.workspace = true
 borsh.workspace = true
 ciphertext-attestation = { workspace = true, features = ["test-utils"] }
@@ -64,6 +66,7 @@ serial_test.workspace = true
 testcontainers.workspace = true
 # Paused time for the hedging tests.
 tokio = { workspace = true, features = ["test-util"] }
+tower.workspace = true
 toml.workspace = true
 tracing-test.workspace = true
 

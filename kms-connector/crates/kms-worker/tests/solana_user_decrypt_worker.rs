@@ -20,7 +20,9 @@ use connector_utils::{
         db::RequestSource,
         extra_data::{ExtraData, parse_extra_data},
         handle::extract_chain_id_from_handle,
-        solana_request::{SolanaUserDecryptFields, SolanaUserDecryptionRequestV1},
+        solana_request::{
+            SolanaPublicDecryptionRequest, SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
+        },
     },
 };
 use kms_connector_api::ErrorCode;
@@ -36,11 +38,11 @@ use kms_worker::core::{
         RequestCheckError, RequestCheckKind,
     },
     solana::{
-        SolanaDecryptionVerifier, failure::AuthorizationFailure, pipeline::authorize_request,
-        watermark::WatermarkFailure,
+        SolanaDecryptionVerifier, failure::AuthorizationFailure, membership::KmsContextMembers,
+        pipeline::authorize_request, watermark::WatermarkFailure,
     },
 };
-use mocktail::{Request, matchers::Matcher, server::MockServer};
+use mocktail::{Request, StatusCode, matchers::Matcher, server::MockServer};
 use prost::Message;
 use rstest::rstest;
 use solana_support::*;
@@ -51,6 +53,7 @@ use std::{
     time::Duration,
 };
 use tokio_util::sync::CancellationToken;
+use zama_solana_merkle_proofs::MERKLE_PROOFS_PATH;
 use zama_solana_permit::{Identity, KmsRouting, TRANSPORT_KEY_LEN};
 
 /// A Gateway registry with no ciphertext bucket, for requests that never fetch a ciphertext.
@@ -64,6 +67,9 @@ struct Scenario {
     fields: SolanaUserDecryptFields,
     host: HttpHost,
     chain_id: u64,
+    live: [u8; 32],
+    /// The KMS context nodes the worker checks its own node against: by default, its node is one.
+    members: KmsContextMembers,
 }
 
 impl Scenario {
@@ -85,7 +91,6 @@ impl Scenario {
             )
             .direct(&encrypted_store, live)
             .fields();
-        let query = encrypted_store.allowed_query(live, victim.pubkey());
 
         let mut scenario = Self {
             fields,
@@ -93,12 +98,21 @@ impl Scenario {
             victim,
             encrypted_store,
             chain_id,
+            live,
+            members: kms_context_members(true, Duration::ZERO).0,
         };
         scenario.serve_host(None);
+        scenario.serve_proofs();
         scenario
-            .host
-            .serve_proofs(&[(query, scenario.encrypted_store.outcome(&query))]);
-        scenario
+    }
+
+    /// The coprocessor's answer to the request: the proof of the victim's allow leaf.
+    fn serve_proofs(&mut self) {
+        let query = self
+            .encrypted_store
+            .allowed_query(self.live, self.victim.pubkey());
+        self.host
+            .serve_proofs(&[(query, self.encrypted_store.outcome(&query))]);
     }
 
     /// The first read of a direct request: the signer's invalidation record, holding
@@ -126,8 +140,40 @@ impl Scenario {
         self.request_with(self.fields.clone())
     }
 
+    /// A public decryption, in the user request's KMS context, of a handle its store made public.
+    /// The host then serves that store and its proof only.
+    fn public_request(&mut self) -> SolanaPublicDecryptionRequest {
+        let public = handle(0x20, FHE_TYPE_UINT64);
+        let mut store = EncryptedStoreFixture::new(public);
+        store.mark_public();
+        let query = store.public_query(public);
+        self.host
+            .serve_accounts(&[(store.account_key, Some(store.account()))]);
+        self.host.serve_proofs(&[(query, store.outcome(&query))]);
+        SolanaPublicDecryptionRequest::new(
+            U256::ONE,
+            &[B256::new(public)],
+            &[B256::new(store.account_key.to_bytes())],
+            self.request().extra_data(),
+        )
+        .unwrap()
+    }
+
+    /// The proof batches the coprocessor has answered.
+    fn proof_batches(&self) -> usize {
+        self.host
+            .coprocessor
+            .mocks()
+            .iter()
+            .map(|mock| mock.match_count())
+            .sum()
+    }
+
     fn verifier(&self) -> SolanaDecryptionVerifier {
-        SolanaDecryptionVerifier::new(HashMap::from([(self.chain_id, self.host.host())]))
+        SolanaDecryptionVerifier::new(
+            HashMap::from([(self.chain_id, self.host.host())]),
+            self.members.clone(),
+        )
     }
 
     /// A processor whose Gateway registry points at the ciphertext bucket `bucket_url`.
@@ -213,12 +259,17 @@ impl ContextManager for ValidContext {
     }
 }
 
-/// Rejects every KMS context as destroyed and records the routing it was asked about.
-struct DestroyedContext(Arc<Mutex<Vec<ExtraData>>>);
+/// Rejects every KMS context as destroyed, after `delay`, and records the routing it was asked
+/// about.
+struct DestroyedContext {
+    asked: Arc<Mutex<Vec<ExtraData>>>,
+    delay: Duration,
+}
 
 impl ContextManager for DestroyedContext {
     async fn validate_context(&self, extra_data: &ExtraData) -> Result<(), RequestCheckError> {
-        self.0.lock().unwrap().push(extra_data.clone());
+        tokio::time::sleep(self.delay).await;
+        self.asked.lock().unwrap().push(extra_data.clone());
         Err(RequestCheckError::irrecoverable(
             RequestCheckKind::KmsContext,
             ErrorCode::KmsContextDestroyed,
@@ -336,7 +387,10 @@ async fn a_solana_request_checks_its_signed_kms_context() {
     let asked = Arc::default();
 
     let error = scenario
-        .worker(DestroyedContext(Arc::clone(&asked)))
+        .worker(DestroyedContext {
+            asked: Arc::clone(&asked),
+            delay: Duration::ZERO,
+        })
         .await
         .process(&mut protocol_event(request.clone()))
         .await
@@ -347,6 +401,113 @@ async fn a_solana_request_checks_its_signed_kms_context() {
     assert_eq!(
         *asked.lock().unwrap(),
         vec![parse_extra_data(&request.extra_data()).unwrap()]
+    );
+}
+
+/// A request of either kind that the host authorizes, as its worker would process it. Checking it
+/// reads one proof batch.
+async fn authorized_event(scenario: &mut Scenario, public: bool) -> ProtocolEvent {
+    let kind = if public {
+        let request = scenario.public_request();
+        scenario
+            .verifier()
+            .check_public_decryption(&request)
+            .await
+            .expect("the host authorizes the request");
+        ProtocolEventKind::SolanaPublicDecryption(request)
+    } else {
+        let request = scenario.request();
+        scenario
+            .verifier()
+            .check_user_decryption(&request)
+            .await
+            .expect("the host authorizes the request");
+        ProtocolEventKind::SolanaUserDecryptionV1(request)
+    };
+    assert_eq!(scenario.proof_batches(), 1);
+    let mut event = ProtocolEvent::new(
+        kind,
+        None,
+        PropagationContext::default(),
+        RequestSource::Http,
+    );
+    // A poll runs only the checks: a send would also prepare the request, which fails first here
+    // without a ciphertext bucket.
+    event.already_sent = true;
+    event
+}
+
+/// A node outside the request's KMS context is refused for good by its own worker, as the
+/// tx-sender that signs its proof requests, and sends no proof request, even when the membership
+/// read is slower than the host.
+#[rstest]
+#[case::user_decryption(false)]
+#[case::public_decryption(true)]
+#[tokio::test]
+async fn a_node_outside_the_requests_context_sends_no_proof_request(#[case] public: bool) {
+    let mut scenario = Scenario::new().await;
+    let mut event = authorized_event(&mut scenario, public).await;
+    let calls;
+    (scenario.members, calls) = kms_context_members(false, Duration::from_millis(500));
+
+    let error = scenario
+        .worker(ValidContext)
+        .await
+        .process(&mut event)
+        .await
+        .expect_err("a node outside the context is refused");
+
+    assert_eq!(
+        (error.kind, error.code),
+        (ProcessingErrorKind::Irrecoverable, ErrorCode::Unprocessable),
+        "{error}"
+    );
+    let context_id = parse_extra_data(&scenario.request().extra_data())
+        .unwrap()
+        .context_id
+        .unwrap();
+    let asked: Vec<_> = calls
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|call| (call.kmsContextId, call.txSender))
+        .collect();
+    assert_eq!(
+        asked,
+        vec![(context_id, scenario.host.host().proofs.tx_sender())]
+    );
+    assert_eq!(
+        scenario.proof_batches(),
+        1,
+        "the worker sent a proof request"
+    );
+}
+
+/// The request's KMS context is checked before the verifier reads anything: a destroyed context
+/// stops the request with no proof request, even when the context check is slower than the host.
+#[rstest]
+#[case::user_decryption(false)]
+#[case::public_decryption(true)]
+#[tokio::test]
+async fn a_destroyed_context_sends_no_proof_request(#[case] public: bool) {
+    let mut scenario = Scenario::new().await;
+    let mut event = authorized_event(&mut scenario, public).await;
+
+    let error = scenario
+        .worker(DestroyedContext {
+            asked: Arc::default(),
+            delay: Duration::from_millis(500),
+        })
+        .await
+        .process(&mut event)
+        .await
+        .expect_err("a destroyed context stops the request");
+
+    assert_eq!(error.code, ErrorCode::KmsContextDestroyed, "{error}");
+    assert_eq!(
+        scenario.proof_batches(),
+        1,
+        "the worker sent a proof request"
     );
 }
 
@@ -373,6 +534,84 @@ impl Matcher for SolanaIdentity {
     }
 }
 
+/// Scripts `kms` to answer every poll with a user decryption result.
+fn serve_user_decryption_result(kms: &mut MockServer) {
+    kms.mock(|when, then| {
+        when.path("/kms_service.v1.CoreServiceEndpoint/GetUserDecryptionResult");
+        then.pb(UserDecryptionResponse {
+            payload: Some(UserDecryptionResponsePayload::default()),
+            signatures: vec![TypedSignature {
+                scheme: SigningSchemeType::Ecdsa256k1 as i32,
+                signature: vec![0; 65],
+            }],
+            ..Default::default()
+        });
+    });
+}
+
+/// A node whose coprocessor has not read its KMS context yet gets `upstream_transient`, which the
+/// worker records as recoverable, so a later attempt can run. Once the coprocessor has read the
+/// context, that attempt is answered. Here the test runs both attempts itself, as relayer-http's
+/// retry would. Both attempts are polls, which run every check: a send
+/// would also prepare the request, which needs a ciphertext bucket. Each attempt runs on its own
+/// worker, as the host's RPC mock answers only a client's first request id.
+#[tokio::test]
+async fn a_node_its_coprocessor_does_not_know_yet_is_answered_at_a_later_attempt() {
+    let mut scenario = Scenario::new().await;
+    let not_yet = serde_json::to_vec(&serde_json::json!({
+        "code": "upstream_transient",
+        "message": "not, or not yet, the tx-sender of a node in an Active KMS context",
+        "retryable": true,
+    }))
+    .unwrap();
+    scenario.host.coprocessor.mocks().clear();
+    scenario.host.coprocessor.mock(move |when, then| {
+        when.post().path(MERKLE_PROOFS_PATH);
+        then.status(StatusCode::BAD_GATEWAY).bytes(not_yet.clone());
+    });
+    let mut kms = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");
+    serve_user_decryption_result(&mut kms);
+    kms.start().await.unwrap();
+    let config = Config {
+        kms_core_endpoints: vec![kms.base_url().unwrap().to_string()],
+        ..config()
+    };
+    let worker = async |scenario: &Scenario| {
+        scenario
+            .worker_against(
+                ValidContext,
+                KmsClient::connect(&config).await.unwrap(),
+                &config,
+                NO_BUCKET,
+            )
+            .await
+    };
+    let mut event = protocol_event(scenario.request());
+    event.already_sent = true;
+
+    let error = worker(&scenario)
+        .await
+        .process(&mut event)
+        .await
+        .expect_err("the coprocessor does not know the node yet");
+    assert_eq!(
+        (error.kind, error.code),
+        (
+            ProcessingErrorKind::Recoverable,
+            ErrorCode::UpstreamTransient
+        ),
+        "{error}"
+    );
+
+    scenario.serve_proofs();
+    let response = worker(&scenario)
+        .await
+        .process(&mut event)
+        .await
+        .expect("the coprocessor has read the node's context");
+    assert!(matches!(response, Some(KmsResponseKind::UserDecryption(_))));
+}
+
 /// An authorized request reaches the KMS as its Solana signer: the signer's base58 public key as
 /// `client_address`, and the request's transport key. A poll of a request already sent
 /// authorizes it again and fetches the result without sending it twice.
@@ -394,17 +633,7 @@ async fn an_authorized_request_reaches_the_kms_as_its_signer(#[case] already_sen
             .matcher(identity);
         then.pb(Empty::default());
     });
-    kms.mock(|when, then| {
-        when.path("/kms_service.v1.CoreServiceEndpoint/GetUserDecryptionResult");
-        then.pb(UserDecryptionResponse {
-            payload: Some(UserDecryptionResponsePayload::default()),
-            signatures: vec![TypedSignature {
-                scheme: SigningSchemeType::Ecdsa256k1 as i32,
-                signature: vec![0; 65],
-            }],
-            ..Default::default()
-        });
-    });
+    serve_user_decryption_result(&mut kms);
     kms.start().await.unwrap();
     let config = Config {
         kms_core_endpoints: vec![kms.base_url().unwrap().to_string()],
