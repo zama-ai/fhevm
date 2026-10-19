@@ -93,9 +93,10 @@ case "${CHAIN_MODE}" in
       echo "HARDHAT_NETWORK_TESTS=sepolia"
       # 12s blocks stretch hardhat deploys and the keygen ceremony.
       echo "CONTRACTS_DEPLOY_TIMEOUT=30m"
-      # Test-parameter keygen + crsgen on Sepolia (~43 min + ~25 min) plus
-      # compile. GPU overwrites KEYGEN_TIMEOUT to 310m after this case.
-      echo "KEYGEN_TIMEOUT=110m"
+      # Test-parameter keygen + crsgen on Sepolia plus compile. Submission on a
+      # public testnet dominates: an observed run reached the keygen response at
+      # 136 min. GPU overwrites KEYGEN_TIMEOUT to 310m after this case.
+      echo "KEYGEN_TIMEOUT=200m"
     } >> "${GITHUB_ENV}"
       echo "Chain mode: testnets (host 11155111 Sepolia, polygon 80002 Amoy from AWS Secrets Manager, gateway ${NITRO_CHAIN_ID} Nitro)"
     ;;
