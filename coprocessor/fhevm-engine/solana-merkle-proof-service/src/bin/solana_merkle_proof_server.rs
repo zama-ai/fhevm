@@ -79,7 +79,7 @@ struct Args {
 
     /// How often the finalized block is polled; the KMS tx-senders are read again when it is newer
     /// than the last read. A request from a signer outside the set also starts a poll.
-    #[arg(long, default_value = "5s", value_parser = parse_duration)]
+    #[arg(long, default_value = "5s", value_parser = parse_poll_interval)]
     kms_tx_sender_poll_interval: Duration,
 
     /// This coprocessor's registered signer address, the audience a request must be
@@ -92,6 +92,15 @@ struct Args {
 
     #[arg(long, default_value = "solana-merkle-proof-server")]
     service_name: String,
+}
+
+/// A zero interval would poll the RPC without pause.
+fn parse_poll_interval(s: &str) -> Result<Duration, String> {
+    let interval = parse_duration(s).map_err(|err| err.to_string())?;
+    if interval.is_zero() {
+        return Err("must be more than zero".to_owned());
+    }
+    Ok(interval)
 }
 
 #[tokio::main]

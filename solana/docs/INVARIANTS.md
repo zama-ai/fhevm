@@ -596,7 +596,7 @@ started after it, or after 3 seconds. Polls woken this way start at least 1 seco
 before them, and concurrent requests share one. Pinned by
 `accepts_a_context_activated_in_a_new_finalized_block_at_the_next_poll`,
 `an_unchanged_finalized_block_reads_no_contract_state`, `an_older_finalized_block_reads_nothing`,
-`concurrent_misses_share_one_read`,
+`a_miss_during_a_poll_waits_for_the_next_poll`, `concurrent_misses_share_one_read`,
 `woken_polls_start_at_least_a_second_apart`, `a_miss_waits_at_most_its_bound` and
 `an_unknown_signer_waits_for_a_poll_after_its_request`.
 

@@ -2473,9 +2473,8 @@ the header's `digest` as `auth_body_mismatch`: a valid header replayed with anot
 connector that every coprocessor refuses with one of these four codes, in any mix, fails the request
 `unprocessable`, final: its signer is in no Active context the coprocessors have read, or its
 signature does not verify, and neither recovers within relayer-http's retries. A coprocessor
-refuses a signer only after a poll that started after the request, so the signer is in no Active
-context at the finalized block that coprocessor's RPC node knows, and a signature the connector
-builds wrongly stays wrong. For a node outside the KMS context, this is the EVM
+checks an unknown signer again after a poll that started after the request, or after 3 seconds
+(DD-076), and a signature the connector builds wrongly stays wrong. For a node outside the KMS context, this is the EVM
 outcome. kms-worker keys off the code, as RFC 038 asks, not the body's `retryable` flag.
 
 Request and success bodies are CBOR (RFC 8949) over HTTP/2 without TLS negotiation (prior
@@ -3173,11 +3172,13 @@ Consequences:
   reads the set again when the block is newer than the last read. A request whose recovered signer
   is not in the set
   wakes a poll, waits up to 3 seconds (`UNKNOWN_SIGNER_WAIT`) for a poll that started after it, and
-  is checked again. The incoming node is accepted on its first request.
+  is checked again. The incoming node is accepted on its first request, unless that poll fails or
+  takes more than 3 seconds.
 - What remains: if a coprocessor's RPC node sees the activation's finalized block more than 3
   seconds after kms-worker's node does, the incoming node's first requests to that coprocessor are
   refused with `auth_unknown_signer`, and kms-worker treats that refusal as final. That is RPC node
-  lag. A switch that keeps 2t+1 nodes of the previous context still answers then, since those nodes
+  lag. The same holds when the coprocessor's RPC fails, or answers in more than 3 seconds, during
+  the woken poll: the request is checked against the last set. A switch that keeps 2t+1 nodes of the previous context still answers then, since those nodes
   are in an Active context. RFC 038's rule had no such case: it accepted the new context from
   Pending.
 - A request from a signer outside the set waits up to 3 seconds, within kms-worker's default

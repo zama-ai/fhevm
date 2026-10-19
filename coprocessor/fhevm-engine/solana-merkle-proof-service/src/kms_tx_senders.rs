@@ -348,8 +348,8 @@ pub(crate) mod stub {
         pub finalized: u64,
         /// The KMS contexts from context 1 on: each one's state and its nodes' tx-senders.
         pub contexts: Vec<(State, Vec<Address>)>,
-        /// While false, every call stays unanswered.
-        pub answering: bool,
+        /// How long each answer takes to arrive. It holds the state at the call.
+        pub reply_delay: Duration,
     }
 
     impl Ledger {
@@ -374,7 +374,7 @@ pub(crate) mod stub {
                 .iter()
                 .map(|(state, tx_senders)| (*state, tx_senders.to_vec()))
                 .collect(),
-            answering: true,
+            reply_delay: Duration::ZERO,
         }))
     }
 
@@ -468,14 +468,14 @@ pub(crate) mod stub {
             let ledger = self.ledger.lock().unwrap();
             for each in request.requests() {
                 self.requests.lock().unwrap().push(each.clone());
-                if ledger.answering {
-                    self.answer(&ledger, each);
-                }
+                self.answer(&ledger, each);
             }
-            if !ledger.answering {
-                return Box::pin(std::future::pending());
-            }
-            self.answers.call(request)
+            let reply_delay = ledger.reply_delay;
+            let answer = self.answers.call(request);
+            Box::pin(async move {
+                tokio::time::sleep(reply_delay).await;
+                answer.await
+            })
         }
     }
 
@@ -748,13 +748,35 @@ mod tests {
         cancel.cancel();
     }
 
+    /// A miss during a poll waits for the next one: the running poll may have read the finalized
+    /// block before the change the request depends on.
+    #[tokio::test(start_paused = true)]
+    async fn a_miss_during_a_poll_waits_for_the_next_poll() {
+        let ledger = ledger(&[(State::Active, &[PREVIOUS])]);
+        let (senders, _, cancel) = follower(&ledger, POLL_INTERVAL).await;
+        // The poll at 5 s reads the finalized block, whose answer arrives at 7 s.
+        ledger.lock().unwrap().reply_delay = Duration::from_secs(2);
+        tokio::time::sleep(Duration::from_millis(5500)).await;
+        {
+            let mut ledger = ledger.lock().unwrap();
+            ledger.finalize(|contexts| {
+                contexts.push((State::Active, vec![NEXT]))
+            });
+            ledger.reply_delay = Duration::ZERO;
+        }
+
+        senders.refresh_after_miss(WAIT).await;
+        assert!(accepts(&senders, NEXT));
+        cancel.cancel();
+    }
+
     /// A miss waits at most its bound, even when the poll it woke never ends.
     #[tokio::test(start_paused = true)]
     async fn a_miss_waits_at_most_its_bound() {
         let ledger = ledger(&[(State::Active, &[PREVIOUS])]);
         let (senders, _, cancel) =
             follower(&ledger, Duration::from_secs(3600)).await;
-        ledger.lock().unwrap().answering = false;
+        ledger.lock().unwrap().reply_delay = Duration::from_secs(3600);
 
         let missed = tokio::time::Instant::now();
         tokio::time::timeout(WAIT * 2, senders.refresh_after_miss(WAIT))

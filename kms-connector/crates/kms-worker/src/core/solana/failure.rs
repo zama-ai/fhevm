@@ -169,8 +169,8 @@ impl ProofReadError {
     /// connector as a sender (an RFC 038 `auth_*` code other than `auth_expired`): its signer is in
     /// no Active KMS context the coprocessors have read, or its request signature does not verify.
     /// A coprocessor reads the KMS tx-senders of the Active contexts at the finalized block, and
-    /// again before it refuses an unknown signer, and a signature the connector builds wrongly
-    /// stays wrong, so
+    /// waits up to 3 s for a fresh read before it refuses an unknown signer, and a signature the
+    /// connector builds wrongly stays wrong, so
     /// neither recovers within relayer-http's retries and the refusal is final. For the first
     /// cause this is EVM's outcome: a node outside the KMS context answers `unprocessable`.
     pub fn class(&self) -> FailureClass {
