@@ -28,7 +28,8 @@ ethereum_rpc_url = "http://localhost:8545"
 
 # How often the latest finalized block is checked (optional, defaults to "5s"). The KMS tx-senders
 # are read again when it moved forward. A request signed by an unknown tx-sender makes the proxy
-# check it within a second. The role of RFC-038's `KMS_REGISTRY_REFRESH_INTERVAL`.
+# check it within a second. A failed poll retries at the next poll, so a long interval also delays
+# readiness after a failed first read. The role of RFC-038's `KMS_REGISTRY_REFRESH_INTERVAL`.
 # ENV: COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL (format: https://docs.rs/humantime/latest/humantime/)
 # kms_registry_poll_interval = "5s"
 

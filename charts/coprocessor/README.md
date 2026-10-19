@@ -49,7 +49,8 @@ The proxy reads the signers at the latest finalized block. It checks that block 
 (`COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL`) and reads the signers again when it moved forward,
 so a signer change takes effect within 5 s of its block being finalized (about 13 minutes on
 Ethereum). The KMS connector's gw-listener likewise reads Ethereum events only up to the finalized
-block.
+block. A failed poll retries at the next poll, so a long interval also delays readiness after a
+failed first read.
 
 The KMS connector serves a new context as soon as its activation is finalized, so a request signed
 by an unknown signer makes the proxy check the finalized block within a second, and read the
