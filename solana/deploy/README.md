@@ -45,7 +45,7 @@ the namespace. The human copy is the 1Password vault "Preview Env".
 | `zws-dev/preview-solana-host-keypairs` | `deployer`, `zama_host`, `confidential_token`, `demo_vault`, `confidential_batcher`, each a keypair JSON array | `solana-deployer`: `deployer.json`, `zama_host.json`, `confidential_token.json`, `demo_vault.json`, `confidential_batcher.json` | `values-solana-deployer.yaml` |
 
 The Merkle proof servers need no secret: each answers only requests signed by the tx-sender key
-of a live KMS context, which kms-worker reads from the party's `kms-connector-tx-sender` secret.
+of an Active KMS context, which kms-worker reads from the party's `kms-connector-tx-sender` secret.
 Program keypairs are read only for a program's first deployment; afterwards the deployer wallet is
 the upgrade authority.
 
@@ -57,7 +57,7 @@ with separate program keypairs, so its addresses never collide with the preview'
 
 The deployer must hold Solana devnet SOL. Cluster networking must reach the RPC/Yellowstone
 provider and allow connectors to reach `coprocessor-<party>-solana-merkle-proof-server:8080`.
-The proof API answers only requests signed by a live KMS context's tx-sender for that coprocessor's
+The proof API answers only requests signed by an Active KMS context's tx-sender for that coprocessor's
 signer address, through a ClusterIP Service with no public ingress.
 The listener stores computations and its checkpoint in its coprocessor's database. The Merkle
 indexer records the leaves in the `solana_merkle` database on the same Postgres server, and the

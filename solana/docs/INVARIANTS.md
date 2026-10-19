@@ -1,6 +1,6 @@
 # Protocol invariants — Solana fhevm
 
-Last synced: 2026-10-12.
+Last synced: 2026-10-19.
 
 Every entry carries a stable number and a tag. Numbers are never reused: an
 entry that dies is retired in place. The tags:
@@ -580,6 +580,14 @@ nothing downstream ever derives authorization, quotas, or identity from
 `caller` on Solana rows — authorization lives in the KMS connector (#42,
 #45). Any feature reading `caller` from these rows must branch on the
 chain type first.
+
+**72. [HOLDS]** The Merkle proof server answers a request only when it is signed by the tx-sender of
+a node of an Active KMS context of the canonical `ProtocolConfig`, read at one finalized block
+(DD-076). A tx-sender only in a Pending or a Created context is refused until that context is
+activated, and one only in a destroyed context is refused, although its nodes were read before.
+Pinned by `accepts_an_active_contexts_tx_senders_and_reads_its_nodes_once`,
+`refuses_a_pending_or_created_contexts_tx_senders`, `refuses_a_destroyed_contexts_tx_senders` and
+`a_refresh_reads_every_contract_value_at_one_block`.
 
 ## H. Reference confidential applications
 

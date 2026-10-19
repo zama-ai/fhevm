@@ -649,7 +649,7 @@ fn authenticate(
         return Err(HttpError::new(
             ErrorCode::AuthUnknownSigner,
             format!(
-                "{} is not the tx-sender of a node in a live KMS context of \
+                "{} is not the tx-sender of a node in an Active KMS context of \
                  ProtocolConfig {} on chain {}",
                 authorization.signer,
                 set.registry.contract,
@@ -812,7 +812,7 @@ impl Modify for FhevmSigScheme {
                          exactly these parameters in this order (RFC 038): an EIP-712 signature \
                          over this path, the body's keccak-256 `digest`, the expiry and this \
                          coprocessor's signer address as audience, by the tx-sender of a node \
-                         in a live KMS context of the canonical ProtocolConfig. The signer is \
+                         in an Active KMS context of the canonical ProtocolConfig. The signer is \
                          authenticated from the header before the body is read, then the body \
                          must match `digest`. Accepted up to {} s after expiry and at most {} s \
                          ahead. The `shared/request-authorization` crate defines the typed data.",

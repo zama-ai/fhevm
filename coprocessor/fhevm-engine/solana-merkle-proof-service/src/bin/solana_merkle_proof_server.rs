@@ -72,7 +72,7 @@ struct Args {
     #[arg(long)]
     ethereum_rpc_url: Url,
 
-    /// The canonical `ProtocolConfig`, whose live KMS contexts' tx-senders may call.
+    /// The canonical `ProtocolConfig`, whose Active KMS contexts' tx-senders may call.
     #[arg(long)]
     protocol_config_address: Address,
 

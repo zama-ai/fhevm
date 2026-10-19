@@ -224,7 +224,7 @@ The store check compares every recorded store with its account on chain, once at
 
 #### Metric Name: `solana_merkle_proof_server_requests_by_signer_total`
  - **Type**: Counter (labeled by `signer`)
- - **Description**: Authenticated requests, by the KMS tx-sender that signed them: each KMS node's load on this server. One series per KMS node of the live contexts.
+ - **Description**: Authenticated requests, by the KMS tx-sender that signed them: each KMS node's load on this server. One series per KMS node of the Active contexts.
 
 #### Metric Name: `solana_merkle_proof_server_leaves_total`
  - **Type**: Counter (labeled by `outcome`)

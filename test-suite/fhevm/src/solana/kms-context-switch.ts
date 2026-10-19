@@ -168,7 +168,7 @@ export const prepareSolanaKmsContextLeg = async (
    * relayer-http's log of the decrypts of the leg's values made after `before` (the request ids it
    * had logged until then): in each answered decrypt, each party in `outsideParties` was refused at
    * its first attempt, and the aggregation did not reach its deadline. One attempt, because every
-   * coprocessor's Merkle proof server refuses a worker whose tx-sender is in no live context, and
+   * coprocessor's Merkle proof server refuses a worker whose tx-sender is in no Active context, and
    * the worker records that as 422 unprocessable, a code relayer-http does not retry, as on EVM,
    * where a core with no role in the request's context answers NotFound. The SDK authenticates each
    * share against the signers of its permit's context and needs 2t+1 of them

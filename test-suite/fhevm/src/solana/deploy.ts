@@ -437,7 +437,7 @@ export const startMerkleIndexer = async (parameters: {
 
 /**
  * Builds and runs the Merkle proof server the KMS connector reads, apart from the indexer, as the
- * coprocessor chart deploys it. It answers only the tx-senders of the live KMS contexts of the
+ * coprocessor chart deploys it. It answers only the tx-senders of the Active KMS contexts of the
  * primary host chain's `ProtocolConfig`, which the local connector's wallet is.
  */
 export const startMerkleProofServer = async (parameters: {

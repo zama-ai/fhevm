@@ -1,6 +1,7 @@
-//! The callers the Merkle proof route accepts: the tx-sender address of every KMS node in a live
-//! KMS context of the canonical `ProtocolConfig`. The KMS connector signs its requests with that
-//! tx-sender key.
+//! The callers the Merkle proof route accepts: the tx-sender address of every KMS node in an Active
+//! KMS context of the canonical `ProtocolConfig` (DD-076). The KMS connector signs its requests with
+//! that tx-sender key. A tx-sender only in a Pending or Created context is refused until that
+//! context is activated; the previous context stays Active, and accepted, until it is destroyed.
 //!
 //! A background task reads the set at one finalized block and replaces it; requests only read the
 //! last set, so a forged signature costs no RPC call. A failed refresh keeps the last set. Until
@@ -20,7 +21,7 @@ use alloy::{
 };
 use anyhow::{anyhow, Context};
 use fhevm_host_bindings::protocol_config::ProtocolConfig::ProtocolConfigInstance;
-use kms_context::{read_kms_context, KMS_CONTEXT_COUNTER_BASE};
+use kms_context::KMS_CONTEXT_COUNTER_BASE;
 use prometheus::{register_int_gauge, IntGauge};
 use request_authorization::KeyRegistry;
 use solana_host_follower::url_origin;
@@ -164,8 +165,8 @@ impl<P: Provider> KmsTxSenderReader<P> {
             .await
             .context("eth_chainId")?;
         // Every ProtocolConfig read of a refresh uses this one block. Read at different blocks, the
-        // counter could predate a new context while a liveness flag already shows its predecessor
-        // destroyed.
+        // counter could predate a new context while `isValidKmsContext` already shows its
+        // predecessor destroyed.
         let finalized = self
             .protocol_config
             .provider()
@@ -186,24 +187,28 @@ impl<P: Provider> KmsTxSenderReader<P> {
         let mut senders = HashSet::new();
         let mut context_id = KMS_CONTEXT_COUNTER_BASE + U256::from(1);
         while context_id <= latest {
-            let live = self
+            let active = self
                 .protocol_config
-                .isLiveKmsContext(context_id)
+                .isValidKmsContext(context_id)
                 .block(at)
                 .call()
                 .await
-                .with_context(|| format!("isLiveKmsContext({context_id})"))?;
-            if live {
+                .with_context(|| format!("isValidKmsContext({context_id})"))?;
+            if active {
                 if !self.nodes_by_context.contains_key(&context_id) {
-                    let context =
-                        read_kms_context(&self.protocol_config, context_id, at)
-                            .await?;
-                    let nodes = context
-                        .kmsNodeParams
-                        .iter()
-                        .map(|node| node.txSenderAddress)
-                        .collect();
-                    self.nodes_by_context.insert(context_id, nodes);
+                    let nodes = self
+                        .protocol_config
+                        .getKmsNodesForContext(context_id)
+                        .block(at)
+                        .call()
+                        .await
+                        .with_context(|| {
+                            format!("getKmsNodesForContext({context_id})")
+                        })?;
+                    self.nodes_by_context.insert(
+                        context_id,
+                        nodes.iter().map(|node| node.txSenderAddress).collect(),
+                    );
                 }
                 senders.extend(&self.nodes_by_context[&context_id]);
             }
@@ -223,69 +228,125 @@ impl<P: Provider> KmsTxSenderReader<P> {
 mod tests {
     use super::*;
     use alloy::{
-        primitives::{Bytes, Log as PrimitiveLog, B256},
+        primitives::Bytes,
         providers::{mock::Asserter, ProviderBuilder},
         rpc::{
             client::RpcClient,
             json_rpc::{RequestPacket, ResponsePacket, SerializedRequest},
-            types::{Block, Log},
+            types::Block,
         },
-        sol_types::{SolEvent, SolValue},
+        sol_types::{SolCall, SolInterface},
         transports::{mock::MockTransport, TransportError, TransportFut},
     };
     use fhevm_host_bindings::protocol_config::ProtocolConfig::{
-        self, KmsNodeParams, KmsThresholds, NewKmsContext,
+        self, getCurrentKmsContextIdCounterCall, getKmsNodesForContextCall,
+        isValidKmsContextCall, KmsNode, ProtocolConfigCalls,
     };
-    use kms_context::context_info_hash;
     use std::sync::Mutex;
 
     const CONTRACT: Address = Address::repeat_byte(0xC0);
+    /// The finalized block every refresh resolves.
+    const FINALIZED: u64 = 0x7b;
+    const PREVIOUS: Address = Address::repeat_byte(0xA1);
+    const NEXT: Address = Address::repeat_byte(0xB2);
+
+    #[derive(Clone, Copy, PartialEq)]
+    enum State {
+        Pending,
+        Created,
+        Active,
+        Destroyed,
+    }
+
+    /// The KMS contexts of the stub `ProtocolConfig`, from context 1 on: each one's state and its
+    /// nodes' tx-senders.
+    type Contexts = Arc<Mutex<Vec<(State, Vec<Address>)>>>;
+
+    fn contexts(contexts: &[(State, &[Address])]) -> Contexts {
+        Arc::new(Mutex::new(
+            contexts
+                .iter()
+                .map(|(state, tx_senders)| (*state, tx_senders.to_vec()))
+                .collect(),
+        ))
+    }
 
     fn context(n: u64) -> U256 {
         KMS_CONTEXT_COUNTER_BASE + U256::from(n)
     }
 
-    fn node(tx_sender: Address) -> KmsNodeParams {
-        KmsNodeParams {
-            txSenderAddress: tx_sender,
-            signerAddress: Address::repeat_byte(0x51),
-            ..Default::default()
-        }
-    }
-
-    /// Answers the anchor read and the log read of a context created at `block`.
-    fn created(
-        asserter: &Asserter,
-        context_id: U256,
-        block: u64,
-        tx_senders: &[Address],
-    ) {
-        let event = NewKmsContext {
-            contextId: context_id,
-            previousContextId: context_id - U256::from(1),
-            kmsNodeParams: tx_senders.iter().copied().map(node).collect(),
-            thresholds: KmsThresholds::default(),
-            softwareVersion: String::new(),
-            pcrValues: vec![],
-        };
-        anchor(asserter, block, context_info_hash(&event));
-        asserter.push_success(&vec![Log {
-            inner: PrimitiveLog {
-                address: CONTRACT,
-                data: event.encode_log_data(),
-            },
-            ..Default::default()
-        }]);
-    }
-
-    /// Answers from an [`Asserter`] and keeps every request it was sent.
+    /// A node whose `ProtocolConfig` answers each call as the contract does for `contexts`:
+    /// `isValidKmsContext` is true only for an Active context, and `getKmsNodesForContext` reverts
+    /// for any other. It keeps every request.
     #[derive(Clone)]
-    struct Recording {
+    struct Chain {
+        contexts: Contexts,
         answers: MockTransport,
         requests: Arc<Mutex<Vec<SerializedRequest>>>,
     }
 
-    impl tower::Service<RequestPacket> for Recording {
+    impl Chain {
+        /// Queues the answer to `request` for the mock transport.
+        fn answer(&self, request: &SerializedRequest) {
+            let asserter = self.answers.asserter();
+            match request.method() {
+                "eth_chainId" => asserter.push_success(&"0x3039"),
+                "eth_getBlockByNumber" => {
+                    let mut block = Block::<()>::default();
+                    block.header.inner.number = FINALIZED;
+                    asserter.push_success(&block);
+                }
+                "eth_call" => {
+                    let contexts = self.contexts.lock().unwrap();
+                    let get = |id: U256| {
+                        let index: usize = (id - context(1)).to();
+                        &contexts[index]
+                    };
+                    let returned = match ProtocolConfigCalls::abi_decode(
+                        &call_input(request),
+                    )
+                    .unwrap()
+                    {
+                        ProtocolConfigCalls::getCurrentKmsContextIdCounter(_) => {
+                            Some(getCurrentKmsContextIdCounterCall::abi_encode_returns(
+                                &context(contexts.len() as u64),
+                            ))
+                        }
+                        ProtocolConfigCalls::isValidKmsContext(call) => {
+                            Some(isValidKmsContextCall::abi_encode_returns(
+                                &(get(call.kmsContextId).0 == State::Active),
+                            ))
+                        }
+                        ProtocolConfigCalls::getKmsNodesForContext(call) => {
+                            let (state, tx_senders) = get(call.kmsContextId);
+                            (*state == State::Active).then(|| {
+                                let nodes: Vec<KmsNode> = tx_senders
+                                    .iter()
+                                    .map(|&tx_sender| KmsNode {
+                                        txSenderAddress: tx_sender,
+                                        ..Default::default()
+                                    })
+                                    .collect();
+                                getKmsNodesForContextCall::abi_encode_returns(&nodes)
+                            })
+                        }
+                        call => panic!("unexpected call {:?}", call.selector()),
+                    };
+                    match returned {
+                        Some(returned) => {
+                            asserter.push_success(&Bytes::from(returned))
+                        }
+                        None => asserter.push_failure_msg(
+                            "execution reverted: InvalidKmsContext",
+                        ),
+                    }
+                }
+                method => panic!("unexpected RPC method {method}"),
+            }
+        }
+    }
+
+    impl tower::Service<RequestPacket> for Chain {
         type Response = ResponsePacket;
         type Error = TransportError;
         type Future = TransportFut<'static>;
@@ -298,70 +359,48 @@ mod tests {
         }
 
         fn call(&mut self, request: RequestPacket) -> Self::Future {
-            self.requests
-                .lock()
-                .unwrap()
-                .extend(request.requests().iter().cloned());
+            for each in request.requests() {
+                self.answer(each);
+                self.requests.lock().unwrap().push(each.clone());
+            }
             self.answers.call(request)
         }
     }
 
+    fn params(request: &SerializedRequest) -> serde_json::Value {
+        serde_json::from_str(request.params().unwrap().get()).unwrap()
+    }
+
+    fn call_input(request: &SerializedRequest) -> Bytes {
+        serde_json::from_value(params(request)[0]["input"].clone()).unwrap()
+    }
+
     fn reader(
-        asserter: &Asserter,
+        contexts: &Contexts,
     ) -> (
         KmsTxSenderReader<impl Provider>,
         Arc<Mutex<Vec<SerializedRequest>>>,
     ) {
         let requests = Arc::default();
-        let transport = Recording {
-            answers: MockTransport::new(asserter.clone()),
+        let chain = Chain {
+            contexts: Arc::clone(contexts),
+            answers: MockTransport::new(Asserter::new()),
             requests: Arc::clone(&requests),
         };
-        let provider = ProviderBuilder::new()
-            .connect_client(RpcClient::new(transport, true));
+        let provider =
+            ProviderBuilder::new().connect_client(RpcClient::new(chain, true));
         (
             KmsTxSenderReader::new(ProtocolConfig::new(CONTRACT, provider)),
             requests,
         )
     }
 
-    /// Answers `eth_chainId` and the finalized block, `finalized`.
-    fn start(asserter: &Asserter, finalized: u64) {
-        asserter.push_success(&"0x3039");
-        let mut block = Block::<()>::default();
-        block.header.inner.number = finalized;
-        asserter.push_success(&block);
-    }
-
-    fn anchor(asserter: &Asserter, block: u64, hash: B256) {
-        asserter.push_success(&Bytes::from(
-            (U256::from(block), hash).abi_encode_sequence(),
-        ));
-    }
-
-    fn abi(asserter: &Asserter, value: impl SolValue) {
-        asserter.push_success(&Bytes::from(value.abi_encode()));
-    }
-
-    /// Context 1 was destroyed; context 2 is Active and context 3 Pending. The second read finds
-    /// context 2 destroyed and reuses context 3's cached nodes.
+    /// An Active context's tx-senders are accepted. Its nodes are read once; the next refresh
+    /// reuses them.
     #[tokio::test]
-    async fn reads_every_live_context_and_caches_its_nodes() {
-        let (a, b, c) = (
-            Address::repeat_byte(0xA1),
-            Address::repeat_byte(0xB2),
-            Address::repeat_byte(0xC3),
-        );
-        let asserter = Asserter::new();
-        let (mut reader, _) = reader(&asserter);
-
-        start(&asserter, 100);
-        abi(&asserter, context(3));
-        abi(&asserter, false);
-        abi(&asserter, true);
-        created(&asserter, context(2), 20, &[a, b]);
-        abi(&asserter, true);
-        created(&asserter, context(3), 30, &[c]);
+    async fn accepts_an_active_contexts_tx_senders_and_reads_its_nodes_once() {
+        let contexts = contexts(&[(State::Active, &[PREVIOUS, NEXT])]);
+        let (mut reader, requests) = reader(&contexts);
         let set = reader.read().await.expect("first read");
         assert_eq!(
             set.registry,
@@ -370,28 +409,64 @@ mod tests {
                 contract: CONTRACT
             }
         );
-        assert_eq!(set.senders, HashSet::from([a, b, c]));
-
-        start(&asserter, 101);
-        abi(&asserter, context(3));
-        abi(&asserter, false);
-        abi(&asserter, false);
-        abi(&asserter, true);
+        assert_eq!(set.senders, HashSet::from([PREVIOUS, NEXT]));
         let set = reader.read().await.expect("second read");
-        assert_eq!(set.senders, HashSet::from([c]));
-        assert!(asserter.read_q().is_empty(), "no further RPC call");
+        assert_eq!(set.senders, HashSet::from([PREVIOUS, NEXT]));
+        let node_reads = requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|request| {
+                request.method() == "eth_call"
+                    && call_input(request)
+                        .starts_with(&getKmsNodesForContextCall::SELECTOR)
+            })
+            .count();
+        assert_eq!(node_reads, 1);
     }
 
-    /// The counter, the liveness flag and the new context's anchor are all read at the finalized
-    /// block the refresh resolved first.
+    /// A Pending context, defined by governance, and a Created one, whose nodes have not attested
+    /// their keys, are refused while the previous context stays accepted. Once the new context is
+    /// Active, both are accepted.
+    #[tokio::test]
+    async fn refuses_a_pending_or_created_contexts_tx_senders() {
+        let contexts = contexts(&[
+            (State::Active, &[PREVIOUS]),
+            (State::Pending, &[NEXT]),
+        ]);
+        let (mut reader, _) = reader(&contexts);
+        let set = reader.read().await.expect("read with a Pending context");
+        assert_eq!(set.senders, HashSet::from([PREVIOUS]));
+
+        contexts.lock().unwrap()[1].0 = State::Created;
+        let set = reader.read().await.expect("read with a Created context");
+        assert_eq!(set.senders, HashSet::from([PREVIOUS]));
+
+        contexts.lock().unwrap()[1].0 = State::Active;
+        let set = reader.read().await.expect("read after the activation");
+        assert_eq!(set.senders, HashSet::from([PREVIOUS, NEXT]));
+    }
+
+    /// Destroying a context refuses its tx-senders, although its nodes were read before.
+    #[tokio::test]
+    async fn refuses_a_destroyed_contexts_tx_senders() {
+        let contexts =
+            contexts(&[(State::Active, &[PREVIOUS]), (State::Active, &[NEXT])]);
+        let (mut reader, _) = reader(&contexts);
+        let set = reader.read().await.expect("read before the destruction");
+        assert_eq!(set.senders, HashSet::from([PREVIOUS, NEXT]));
+
+        contexts.lock().unwrap()[0].0 = State::Destroyed;
+        let set = reader.read().await.expect("read after the destruction");
+        assert_eq!(set.senders, HashSet::from([NEXT]));
+    }
+
+    /// The counter, the Active flag and the context's nodes are all read at the finalized block
+    /// the refresh resolved first.
     #[tokio::test]
     async fn a_refresh_reads_every_contract_value_at_one_block() {
-        let asserter = Asserter::new();
-        let (mut reader, requests) = reader(&asserter);
-        start(&asserter, 0x7b);
-        abi(&asserter, context(1));
-        abi(&asserter, true);
-        created(&asserter, context(1), 10, &[Address::repeat_byte(0xA1)]);
+        let contexts = contexts(&[(State::Active, &[PREVIOUS])]);
+        let (mut reader, requests) = reader(&contexts);
         reader.read().await.expect("read");
 
         let blocks: Vec<String> = requests
@@ -399,14 +474,9 @@ mod tests {
             .unwrap()
             .iter()
             .filter(|request| request.method() == "eth_call")
-            .map(|request| {
-                let params: serde_json::Value =
-                    serde_json::from_str(request.params().unwrap().get())
-                        .unwrap();
-                params[1].to_string()
-            })
+            .map(|request| params(request)[1].to_string())
             .collect();
-        assert_eq!(blocks, ["\"0x7b\""; 3]);
+        assert_eq!(blocks, vec![format!("\"{FINALIZED:#x}\""); 3]);
     }
 
     #[derive(Clone, Default)]
