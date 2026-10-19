@@ -66,9 +66,9 @@ pub struct HttpConfig {
     pub protocol_config_address: Address,
     /// Private key signing the `FhevmSig` headers.
     pub sender_private_key: String,
-    /// How long each `FhevmSig` header is valid for.
-    #[serde(with = "humantime_serde", default = "default_auth_validity")]
-    pub auth_validity: Duration,
+    /// How long each `FhevmSig` header is valid for. Defaults to `request_timeout`.
+    #[serde(with = "humantime_serde", default)]
+    pub auth_validity: Option<Duration>,
     /// Path of an additional PEM root certificate to trust (the proxies' self-signed test cert).
     #[serde(default)]
     pub tls_ca_cert: Option<PathBuf>,
@@ -110,10 +110,6 @@ fn default_id_counter_start() -> U256 {
 
 fn default_http_request_timeout() -> Duration {
     Duration::from_secs(120)
-}
-
-fn default_auth_validity() -> Duration {
-    Duration::from_secs(60)
 }
 
 fn default_pool_size() -> u32 {
