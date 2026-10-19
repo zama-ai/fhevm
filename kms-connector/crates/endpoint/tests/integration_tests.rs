@@ -288,6 +288,11 @@ async fn admitted_request_can_receive_result_after_expiry() -> anyhow::Result<()
     ErrorCode::Unprocessable,
     StatusCode::UNPROCESSABLE_ENTITY
 )]
+#[case(
+    "user_decryption_expired",
+    ErrorCode::UserDecryptionExpired,
+    StatusCode::FORBIDDEN
+)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_non_retryable_error_row_is_served(
