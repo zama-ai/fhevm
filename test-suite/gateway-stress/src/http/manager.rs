@@ -5,11 +5,14 @@ use crate::{
     decryption::{BurstResult, types::DecryptionType},
     http::{
         HttpConnector, HttpRequestBuilder,
+        client::FhevmSigAuth,
         types::{HttpDecryptionRequest, RequestOutcome},
     },
 };
+use alloy::signers::local::PrivateKeySigner;
 use anyhow::anyhow;
-use std::collections::BTreeMap;
+use fhevm_sig_auth::DEFAULT_MAX_AUTH_VALIDITY;
+use std::{collections::BTreeMap, sync::Arc};
 use tokio::{
     task::JoinSet,
     time::{Instant, interval},
@@ -33,13 +36,42 @@ impl HttpTestManager {
                 "`[http].urls` must list at least one connector URL"
             ));
         }
+        if http_config.tx_sender_addresses.len() != http_config.urls.len() {
+            return Err(anyhow!(
+                "`[http].tx_sender_addresses` must list one address per URL: got {} for {} URLs",
+                http_config.tx_sender_addresses.len(),
+                http_config.urls.len()
+            ));
+        }
+        if http_config.auth_validity.as_secs() == 0
+            || http_config.auth_validity > DEFAULT_MAX_AUTH_VALIDITY
+        {
+            return Err(anyhow!(
+                "`[http].auth_validity` must be between 1s and {DEFAULT_MAX_AUTH_VALIDITY:?} \
+                 (the proxies' limit)"
+            ));
+        }
+
+        let signer: PrivateKeySigner = http_config
+            .sender_private_key
+            .parse()
+            .map_err(|e| anyhow!("Invalid `[http].sender_private_key`: {e}"))?;
+        info!("Signing FhevmSig headers as {}", signer.address());
+        let auth = Arc::new(FhevmSigAuth {
+            signer,
+            domain: fhevm_sig_auth::domain(
+                http_config.ethereum_chain_id,
+                http_config.protocol_config_address,
+            ),
+            validity: http_config.auth_validity,
+        });
 
         info!(
             "Configuring HTTP clients for {} connectors...",
             http_config.urls.len()
         );
         let connectors = (0..http_config.urls.len())
-            .map(|i| HttpConnector::connect(http_config, i))
+            .map(|i| HttpConnector::connect(http_config, i, Arc::clone(&auth)))
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         let request_builder = HttpRequestBuilder::new(
@@ -272,11 +304,17 @@ async fn send_burst_to_party(
     connector: HttpConnector,
     requests: Vec<HttpDecryptionRequest>,
 ) -> anyhow::Result<HttpBurstResult> {
+    // Sign every request up front, so the client-side signing cost isn't part of the latency.
+    let mut signed_requests = Vec::with_capacity(requests.len());
+    for request in &requests {
+        signed_requests.push(connector.sign(request).await?);
+    }
+
     let burst_start = Instant::now();
     let mut tasks = JoinSet::new();
-    for request in requests {
+    for request in signed_requests {
         let connector = connector.clone();
-        tasks.spawn(async move { connector.send(&request).await }.in_current_span());
+        tasks.spawn(async move { connector.send_signed(request).await }.in_current_span());
     }
 
     let mut outcomes: Vec<RequestOutcome> = Vec::new();
