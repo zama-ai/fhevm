@@ -127,10 +127,11 @@ impl HealthCheckService for State {
 /// The healthcheck run against each endpoint: a `GET /healthz` over HTTP/2, the protocol of the
 /// proxied requests, must be answered with `200`.
 pub fn endpoint_health_check(config: &Config) -> anyhow::Result<HttpHealthCheck> {
-    // The endpoints answer whatever the `Host` header says, but HTTP/2 needs a non-empty
-    // `:authority`.
+    // The endpoints answer whatever the authority says, but HTTP/2 needs a non-empty `:authority`.
+    // It goes in the URI only: strict HTTP/2 servers refuse a `Host` header beside it.
     let mut health_check = HttpHealthCheck::new("localhost", false);
-    let health_uri = ENDPOINT_HEALTH_PATH
+    health_check.req.remove_header(&http::header::HOST);
+    let health_uri = format!("http://localhost{ENDPOINT_HEALTH_PATH}")
         .parse()
         .map_err(|e| anyhow!("Failed to build the endpoint healthcheck request: {e}"))?;
     health_check.req.set_uri(health_uri);
