@@ -128,14 +128,14 @@ impl HttpConnector {
 
     /// Serializes `request` and signs its `FhevmSig` header, ready to be sent to this party.
     pub async fn sign(&self, request: &HttpDecryptionRequest) -> anyhow::Result<SignedRequest> {
-        let route = match request {
-            HttpDecryptionRequest::Public(_) => PUBLIC_DECRYPTION_ROUTE,
-            HttpDecryptionRequest::UserV2(_) => USER_DECRYPTION_ROUTE,
-        };
         // The proxy checks the digest of the exact bytes received: sign the bytes that are sent.
-        let body = match request {
-            HttpDecryptionRequest::Public(body) => serde_json::to_vec(body)?,
-            HttpDecryptionRequest::UserV2(body) => serde_json::to_vec(body)?,
+        let (route, body) = match request {
+            HttpDecryptionRequest::Public(body) => {
+                (PUBLIC_DECRYPTION_ROUTE, serde_json::to_vec(body)?)
+            }
+            HttpDecryptionRequest::UserV2(body) => {
+                (USER_DECRYPTION_ROUTE, serde_json::to_vec(body)?)
+            }
         };
         let authorization = self.authorization(route, &body).await?;
         Ok(SignedRequest {

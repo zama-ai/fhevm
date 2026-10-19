@@ -43,12 +43,15 @@ impl HttpTestManager {
                 http_config.urls.len()
             ));
         }
-        if http_config.auth_validity.as_secs() == 0
-            || http_config.auth_validity > DEFAULT_MAX_AUTH_VALIDITY
-        {
+        // Defaults to `request_timeout`, so that a request can't be rejected as expired while the
+        // client still waits for it.
+        let auth_validity = http_config
+            .auth_validity
+            .unwrap_or(http_config.request_timeout);
+        if auth_validity.as_secs() == 0 || auth_validity > DEFAULT_MAX_AUTH_VALIDITY {
             return Err(anyhow!(
-                "`[http].auth_validity` must be between 1s and {DEFAULT_MAX_AUTH_VALIDITY:?} \
-                 (the proxies' limit)"
+                "`[http].auth_validity` (defaulting to `request_timeout`) must be between 1s and \
+                 {DEFAULT_MAX_AUTH_VALIDITY:?} (the proxies' limit): got {auth_validity:?}"
             ));
         }
 
@@ -63,7 +66,7 @@ impl HttpTestManager {
                 http_config.ethereum_chain_id,
                 http_config.protocol_config_address,
             ),
-            validity: http_config.auth_validity,
+            validity: auth_validity,
         });
 
         info!(
