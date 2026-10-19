@@ -688,7 +688,7 @@ mod operand_boundary_mask_tests {
     }
 
     /// Fairness regression: a chain whose whole window defers must not stay
-    /// at the front of oldest-first acquisition. query_for_work rotates it
+    /// at the front of oldest-first acquisition. The committed query rotates it
     /// to the FIFO back (status 'updated', fresh last_updated_at, no
     /// worker_id), so the next acquisition reaches the younger chain, the
     /// deferring rows stay unstamped, and the chain remains immediately
@@ -758,7 +758,7 @@ mod operand_boundary_mask_tests {
         let mut cooldown = DeferredTransactionCooldown::new();
 
         let mut trx = pool.begin().await?;
-        let (nodes, _, more, _) = query_for_work(
+        let (nodes, post_commit_action, more, _) = query_for_work(
             &args,
             &health_check,
             &mut trx,
@@ -768,7 +768,7 @@ mod operand_boundary_mask_tests {
             false,
         )
         .await?;
-        trx.commit().await?;
+        commit_computation_transaction(trx, &mut locks, post_commit_action).await?;
         assert!(more, "drained batch still reports work available");
         assert!(nodes.is_empty(), "older chain's window fully defers");
 
@@ -1223,7 +1223,7 @@ mod operand_boundary_mask_tests {
         let mut cooldown = DeferredTransactionCooldown::new();
 
         let mut trx = pool.begin().await?;
-        let (nodes, _, more, _) = query_for_work(
+        let (nodes, post_commit_action, more, _) = query_for_work(
             &args,
             &health_check,
             &mut trx,
@@ -1233,7 +1233,8 @@ mod operand_boundary_mask_tests {
             false,
         )
         .await?;
-        trx.commit().await?;
+        assert_eq!(post_commit_action, PostCommitChainAction::Keep);
+        commit_computation_transaction(trx, &mut locks, post_commit_action).await?;
         assert!(more && nodes.is_empty(), "window drains terminally");
         let is_error: bool =
             sqlx::query_scalar("SELECT is_error FROM computations WHERE output_handle = $1")
@@ -1251,6 +1252,16 @@ mod operand_boundary_mask_tests {
             status, "processing",
             "drain-only keeps ownership for retirement"
         );
+        let diagnostic: Option<String> = sqlx::query_scalar(
+            "SELECT error_message FROM dependence_chain WHERE dependence_chain_id = $1",
+        )
+        .bind(&chain)
+        .fetch_one(&pool)
+        .await?;
+        assert!(
+            diagnostic.is_some_and(|error| error.contains("Unknown fhe operation: 127")),
+            "a drain-only window must commit the chain diagnostic with its verdict"
+        );
 
         // Next cycle: nothing pending -> the no-work path retires the chain.
         let mut trx = pool.begin().await?;
@@ -1266,6 +1277,135 @@ mod operand_boundary_mask_tests {
         .await?;
         trx.commit().await?;
         assert!(nodes.is_empty() && !more, "empty window reports no work");
+        assert_eq!(locks.release_completed_locks().await?, 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn mixed_invalid_and_deferred_window_commits_diagnostics_before_rotation(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let db = setup_test_db(ImportMode::None).await?;
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(db.db_url())
+            .await?;
+        let chain = vec![0x34_u8; 32];
+        sqlx::query(
+            "INSERT INTO dependence_chain (dependence_chain_id, status) VALUES ($1, 'updated')",
+        )
+        .bind(&chain)
+        .execute(&pool)
+        .await?;
+        for (output, transaction, mask) in [
+            (handle(0x92), handle(0xC2), mask_with_bits(&[0])),
+            (handle(0x93), handle(0xC3), mask_with_bits(&[])),
+        ] {
+            seed_computation(
+                &pool,
+                &output,
+                vec![handle(0x90)],
+                mask,
+                Some(&chain),
+                &transaction,
+                120,
+            )
+            .await;
+        }
+        sqlx::query("UPDATE computations SET fhe_operation=127 WHERE output_handle=$1")
+            .bind(handle(0x92))
+            .execute(&pool)
+            .await?;
+        // The release uses another connection. Require that it sees both the
+        // committed verdict and its diagnostic before relinquishing ownership.
+        sqlx::raw_sql(
+            "CREATE FUNCTION assert_verdict_visible_on_release() RETURNS trigger
+             LANGUAGE plpgsql AS $$ BEGIN
+                 IF OLD.worker_id IS NOT NULL AND NEW.worker_id IS NULL THEN
+                     IF NEW.error_message IS NULL OR NOT EXISTS (
+                         SELECT 1 FROM computations c
+                         WHERE c.dependence_chain_id = OLD.dependence_chain_id
+                           AND c.fhe_operation = 127 AND c.is_error
+                     ) THEN
+                         RAISE EXCEPTION 'chain released before verdict and diagnostic committed';
+                     END IF;
+                 END IF;
+                 RETURN NEW;
+             END $$;
+             CREATE TRIGGER check_release_verdict BEFORE UPDATE ON dependence_chain
+             FOR EACH ROW EXECUTE FUNCTION assert_verdict_visible_on_release();",
+        )
+        .execute(&pool)
+        .await?;
+        let args = test_args("10", db.db_url());
+        let health_check = crate::health_check::HealthCheck::new(
+            db.db_url().to_owned().into(),
+            Duration::from_secs(300),
+        );
+        let mut locks = dependence_chain::LockMngr::new_with_conf(
+            Uuid::new_v4(),
+            pool.clone(),
+            30,
+            false,
+            None,
+            None,
+            None,
+            3,
+        );
+        let mut no_progress_cycles = 0;
+        let mut cooldown = DeferredTransactionCooldown::new();
+        let mut trx = pool.begin().await?;
+        let (nodes, action, more, _) = query_for_work(
+            &args,
+            &health_check,
+            &mut trx,
+            &mut locks,
+            &mut no_progress_cycles,
+            &mut cooldown,
+            false,
+        )
+        .await?;
+        assert!(nodes.is_empty() && more);
+        assert_eq!(action, PostCommitChainAction::Rotate);
+        let state: (String, bool, Option<String>) = sqlx::query_as(
+            "SELECT status, worker_id IS NOT NULL, error_message FROM dependence_chain
+             WHERE dependence_chain_id=$1",
+        )
+        .bind(&chain)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(state, ("processing".into(), true, None));
+        let persisted: bool =
+            sqlx::query_scalar("SELECT is_error FROM computations WHERE output_handle=$1")
+                .bind(handle(0x92))
+                .fetch_one(&pool)
+                .await?;
+        assert!(
+            !persisted,
+            "the verdict remains uncommitted until the cycle commits"
+        );
+
+        commit_computation_transaction(trx, &mut locks, action).await?;
+        let state: (String, bool, Option<String>) = sqlx::query_as(
+            "SELECT status, worker_id IS NULL, error_message FROM dependence_chain
+             WHERE dependence_chain_id=$1",
+        )
+        .bind(&chain)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(state.0, "updated");
+        assert!(state.1, "deferred work rotates after the verdict commits");
+        assert!(state
+            .2
+            .is_some_and(|error| error.contains("Unknown fhe operation: 127")));
+        for (output, expected_error) in [(handle(0x92), true), (handle(0x93), false)] {
+            let flags: (bool, bool) = sqlx::query_as(
+                "SELECT is_error, is_completed FROM computations WHERE output_handle=$1",
+            )
+            .bind(output)
+            .fetch_one(&pool)
+            .await?;
+            assert_eq!(flags, (expected_error, false));
+        }
         Ok(())
     }
 
@@ -2676,7 +2816,7 @@ async fn tfhe_worker_cycle(
         fhevm_engine_common::drift_containment::acquire_ct_computation_permit(&mut trx).await?;
 
         // Query for transactions to execute
-        let (mut transactions, _, has_more_work, mut freeze) = query_for_work(
+        let (mut transactions, post_commit_action, has_more_work, mut freeze) = query_for_work(
             args,
             &health_check,
             &mut trx,
@@ -2701,7 +2841,7 @@ async fn tfhe_worker_cycle(
                 // global no-progress counter is deliberately untouched: it
                 // gates the acquire_early_lock escalation, which must not
                 // be reachable through wedged chains alone.
-                trx.commit().await?;
+                commit_computation_transaction(trx, &mut dcid_mngr, post_commit_action).await?;
                 // Freeze penalty already moved those txs in schedule_order:
                 // pick again now, once. Defer/drain (frozen empty) and a
                 // repeated fully frozen pick must not hot-loop.
@@ -2720,7 +2860,7 @@ async fn tfhe_worker_cycle(
             // transaction before releasing individual terminal DCIDs: a
             // release must never become visible ahead of its computation
             // state on another connection.
-            trx.commit().await?;
+            commit_computation_transaction(trx, &mut dcid_mngr, post_commit_action).await?;
             // Whether this worker held anything going into the release
             // decides whether a refill can find anything new. With nothing
             // held, `query_for_work` has just run the acquisition itself and
@@ -2937,9 +3077,7 @@ async fn tfhe_worker_cycle(
         #[cfg(feature = "test-failpoints")]
         crate::test_failpoints::hit(&pool, "before-commit", batch_dependence_chain_ids.clone())
             .await?;
-        dcid_mngr.flush_processing_errors(&mut trx).await?;
-        trx.commit().await?;
-        dcid_mngr.clear_processing_errors();
+        commit_computation_transaction(trx, &mut dcid_mngr, post_commit_action).await?;
         WORK_BATCH_TRANSACTIONS.observe(batch_transactions as f64);
         #[cfg(feature = "test-failpoints")]
         crate::test_failpoints::hit(&pool, "after-commit", batch_dependence_chain_ids).await?;
@@ -3292,6 +3430,32 @@ async fn query_dead_boundary_handles<'a>(
     Ok(dead)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PostCommitChainAction {
+    Keep,
+    Rotate,
+}
+
+/// Persist diagnostics with the computation verdicts before releasing any
+/// ownership. In particular, a window can stamp invalid rows and defer every
+/// other row without producing an executable transaction.
+async fn commit_computation_transaction(
+    mut trx: sqlx::Transaction<'_, Postgres>,
+    locks: &mut dependence_chain::LockMngr,
+    action: PostCommitChainAction,
+) -> Result<(), sqlx::Error> {
+    locks.flush_processing_errors(&mut trx).await?;
+    trx.commit().await?;
+    locks.clear_processing_errors();
+    if action == PostCommitChainAction::Rotate {
+        let now = time::OffsetDateTime::now_utc();
+        locks
+            .release_current_lock(false, Some(PrimitiveDateTime::new(now.date(), now.time())))
+            .await?;
+    }
+    Ok(())
+}
+
 #[tracing::instrument(skip_all)]
 async fn query_for_work<'a>(
     args: &crate::daemon_cli::Args,
@@ -3304,7 +3468,7 @@ async fn query_for_work<'a>(
 ) -> Result<
     (
         Vec<ComponentNode>,
-        PrimitiveDateTime,
+        PostCommitChainAction,
         bool,
         frozen_computations::Freeze,
     ),
@@ -3414,7 +3578,7 @@ async fn query_for_work<'a>(
         info!(target: "tfhe_worker", "No dcid found to process");
         return Ok((
             vec![],
-            PrimitiveDateTime::MAX,
+            PostCommitChainAction::Keep,
             false,
             frozen_computations::Freeze::default(),
         ));
@@ -3788,17 +3952,17 @@ WHERE c.transaction_id IN (
         }
         health_check.update_activity();
         if freeze.frozen.is_empty() {
-            return Ok((vec![], PrimitiveDateTime::MAX, false, freeze));
+            return Ok((vec![], PostCommitChainAction::Keep, false, freeze));
         }
         // Fully dropped txs already had schedule_order bumped in this trx.
         // Re-poll so the caller does not retire the chain as no-work.
-        return Ok((vec![], PrimitiveDateTime::MAX, true, freeze));
+        return Ok((vec![], PostCommitChainAction::Keep, true, freeze));
     }
     WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
     info!(target: "tfhe_worker", count = the_work.len(), dcid_count = dependence_chain_ids.len(), locking_count = locking_reasons.len(), "Processing work items");
     let dead_boundary = query_dead_boundary_handles(trx, &the_work, gcs_mode).await?;
     let s_prep = tracing::info_span!("prepare_dataflow_graphs", work_items = the_work.len());
-    let (transactions, earliest_schedule_order, any_deferred) = async {
+    let (transactions, _earliest_schedule_order, any_deferred) = async {
         let mut earliest_schedule_order = PrimitiveDateTime::MAX;
         let mut any_deferred = false;
         let mut deferred_this_cycle: i64 = 0;
@@ -3875,7 +4039,7 @@ WHERE c.transaction_id IN (
     }
     .instrument(s_prep)
     .await?;
-    if transactions.is_empty() && any_deferred {
+    let post_commit_action = if transactions.is_empty() && any_deferred {
         // Deferrals in a non-empty window: rotate the chain to the BACK of
         // the acquisition FIFO (status 'updated', last_updated_at now), so
         // oldest-first acquisition moves on to younger chains instead of
@@ -3891,14 +4055,13 @@ WHERE c.transaction_id IN (
         // deferred) deliberately do NOT rotate: the next cycle finds the
         // window empty and retires the chain through the normal
         // no-work path.
-        let now = {
-            let offset = time::OffsetDateTime::now_utc();
-            PrimitiveDateTime::new(offset.date(), offset.time())
-        };
-        deps_chain_mngr
-            .release_current_lock(false, Some(now))
-            .await?;
-    }
+        // The caller flushes diagnostics and commits first. Releasing here
+        // would discard queued errors and release ownership before the
+        // corresponding computation verdicts become visible.
+        PostCommitChainAction::Rotate
+    } else {
+        PostCommitChainAction::Keep
+    };
     // `true` even when `transactions` is empty (everything deferred or
     // drained as invalid): the caller's no-work branch marks the chain
     // processed — which would silently retire a chain that still has
@@ -3907,7 +4070,7 @@ WHERE c.transaction_id IN (
     // distinguishes the empty case itself: it commits the stamps and moves
     // straight on to the next chain (or the next window slice, in
     // lockless mode).
-    Ok((transactions, earliest_schedule_order, true, freeze))
+    Ok((transactions, post_commit_action, true, freeze))
 }
 
 /// Ops of one transaction, ready for `build_component_nodes`.
