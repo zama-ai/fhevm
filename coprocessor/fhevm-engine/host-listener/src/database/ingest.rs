@@ -71,6 +71,28 @@ pub fn validate_block_logs(block: &BlockLogs<Log>) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
+/// Validate decoded executor metadata before admitting the event to ingestion.
+fn validate_tfhe_event(
+    event: &TfheContract::TfheContractEvents,
+    chain_id: u64,
+) -> Result<(), &'static str> {
+    validate_scalar_mode(event)?;
+    validate_collection_shape(event)?;
+    for handle in tfhe_result_handles(event) {
+        validate_computed_handle_metadata(&handle.0, chain_id)?;
+    }
+    if let TfheContract::TfheContractEvents::VerifyInput(verify) = event {
+        validate_verified_input_metadata(
+            &verify.inputHandle.0,
+            &verify.result.0,
+            verify.inputType,
+            verify.inputProof.as_ref(),
+            chain_id,
+        )?;
+    }
+    Ok(())
+}
+
 #[derive(Clone, Debug)]
 pub struct IngestOptions {
     pub dependence_by_connexity: bool,
@@ -600,36 +622,10 @@ pub async fn ingest_block_logs(
                 TfheContract::TfheContractEvents::SELECTORS,
             ) {
                 DecodedEvent::Decoded(event) => {
-                    validate_scalar_mode(&event.data).map_err(|reason| {
-                        sqlx::Error::Protocol(reason.into())
-                    })?;
-                    validate_collection_shape(&event.data).map_err(
-                        |reason| sqlx::Error::Protocol(reason.into()),
-                    )?;
-                    for handle in tfhe_result_handles(&event.data) {
-                        validate_computed_handle_metadata(
-                            &handle.0,
-                            chain_id.as_u64(),
-                        )
+                    validate_tfhe_event(&event.data, chain_id.as_u64())
                         .map_err(|reason| {
                             sqlx::Error::Protocol(reason.into())
                         })?;
-                    }
-                    if let TfheContract::TfheContractEvents::VerifyInput(
-                        verify,
-                    ) = &event.data
-                    {
-                        validate_verified_input_metadata(
-                            &verify.inputHandle.0,
-                            &verify.result.0,
-                            verify.inputType,
-                            verify.inputProof.as_ref(),
-                            chain_id.as_u64(),
-                        )
-                        .map_err(|reason| {
-                            sqlx::Error::Protocol(reason.into())
-                        })?;
-                    }
                     fhe_event_count = fhe_event_count.saturating_add(1);
                     let log = LogTfhe {
                         event,

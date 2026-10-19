@@ -2,6 +2,7 @@
 use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
 use alloy_primitives::FixedBytes;
+use fhevm_engine_common::handle_metadata::get_ct_type;
 
 type Handle = FixedBytes<32>;
 type ScalarByte = FixedBytes<1>;
@@ -50,7 +51,7 @@ pub fn validate_scalar_mode(
             // Later versions bounded it by the lhs type, then by uint8.
             // Without an activation height, either bound rejects valid replay.
             if binary_rhs_is_scalar(scalarByte)
-                && !matches!(lhs.0[30], 2..=6 | 8)
+                && !matches!(get_ct_type(lhs.as_slice()), Some(2..=6 | 8))
             {
                 Err("scalar shift has unsupported operand type")
             } else {
@@ -142,6 +143,12 @@ mod scalar_boundary_tests {
 /// Their function-only type arguments are not present in the event ABI, but
 /// are retained in the output (`FheSum`) or first operand (`FheIsIn`) handle.
 /// This checks the host event's application metadata, never TFHE values.
+///
+/// These limits mirror FHE_COLLECTION_{NARROW,WIDE}_MAX_SIZE in
+/// host-contracts/contracts/FHEVMExecutor.sol. Before increasing a contract
+/// limit, raise the matching listener limit and deploy compatible listeners
+/// to every operator; otherwise newly valid events will block ingestion.
+/// Keep accepting historical limits if the contract later lowers its caps.
 pub fn validate_collection_shape(
     op: &TfheContractEvents,
 ) -> Result<(), &'static str> {
@@ -149,9 +156,9 @@ pub fn validate_collection_shape(
     use TfheContractEvents as E;
     match op {
         E::FheSum(C::FheSum { values, result, .. }) => {
-            let limit = match result.0[30] {
-                2..=4 => 100,
-                5 | 6 => 60,
+            let limit = match get_ct_type(result.as_slice()) {
+                Some(2..=4) => 100,
+                Some(5 | 6) => 60,
                 _ => return Err("FheSum event has unsupported result type"),
             };
             if values.len() > limit {
@@ -161,9 +168,9 @@ pub fn validate_collection_shape(
             }
         }
         E::FheIsIn(C::FheIsIn { value, values, .. }) => {
-            let limit = match value.0[30] {
-                2..=4 => 100,
-                5..=8 => 60,
+            let limit = match get_ct_type(value.as_slice()) {
+                Some(2..=4) => 100,
+                Some(5..=8) => 60,
                 _ => return Err("FheIsIn event has unsupported value type"),
             };
             if values.len() > limit {
