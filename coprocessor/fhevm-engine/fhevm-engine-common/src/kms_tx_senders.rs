@@ -19,17 +19,17 @@
 //! effect within one poll interval of its block being finalized. A failed poll keeps the last set.
 //! Until the first read succeeds the set is empty and [`Loaded::is_loaded`] is false.
 //!
-//! A KMS connector serves a new context as soon as its activation is finalized, and treats a
-//! refusal as final. So a request signed by an unknown tx-sender wakes the loop
-//! ([`Follower::refresh_after_miss`]) and is checked again once a poll that started after it has
-//! finished, or once the caller's wait has passed, whichever comes first.
-//! Any header whose signature recovers an address can cause such a wake: a signature made for
-//! another audience, path or body recovers an unrelated address, and the body is read only after
-//! authentication. Woken polls start at least [`WOKEN_POLL_SPACING`] after the previous poll
-//! started, so unknown signers cost at most one finalized-block query a second. What remains: the
-//! first requests of a new context are refused when this RPC node sees the finalized block later
-//! than the connector's node by more than the caller's wait, or when the woken poll fails or takes
-//! longer than that wait.
+//! A KMS connector serves a new context as soon as its own RPC node reports the activation block
+//! finalized, and treats a refusal as final. So a request signed by an unknown tx-sender wakes the
+//! loop ([`Follower::refresh_after_miss`]) and is checked again after one poll that started after
+//! it, or after the caller's wait if that poll has not finished by then. The woken poll starts at
+//! once, or [`WOKEN_POLL_SPACING`] after the previous poll started if that is later. Any header
+//! whose signature recovers an address can cause such a wake: a signature made for another
+//! audience, path or body recovers an unrelated address, and the body is read only after
+//! authentication. The spacing bounds that cost at one finalized-block query a second. What
+//! remains: a first request of a new context is refused when that one poll does not yet see the
+//! activation block finalized, because this RPC node lags the connector's, or when the poll fails
+//! or does not finish within the caller's wait.
 
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},
