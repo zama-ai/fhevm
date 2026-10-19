@@ -1135,8 +1135,9 @@ impl LockMngr {
         owner: Option<&[u8]>,
     ) -> Result<u64, sqlx::Error> {
         // The caller can still hold computation rows in its output transaction.
-        // Queue this diagnostic until the output transaction commits, so we never wait for chain rows
-        // on another connection while an ingester waits for those computations.
+        // Queue this diagnostic for the output transaction's final flush, so we
+        // never request chain rows on another connection while an ingester waits
+        // for those computations.
         let mut count = 0;
         for id in self.get_current_lock_ids() {
             if owner.is_none_or(|owner| owner == id.as_slice()) {
@@ -1147,6 +1148,11 @@ impl LockMngr {
         Ok(count)
     }
 
+    /// Write informational diagnostics without waiting for another transaction.
+    /// Ingestion can lock cross-block parents before their children, so sorting
+    /// our IDs alone cannot prevent a cycle with its chain upserts. Skip busy
+    /// rows: their previous diagnostic remains, while the computation verdict
+    /// still commits. The caller clears these best-effort messages after commit.
     pub async fn flush_processing_errors(
         &self,
         tx: &mut sqlx::Transaction<'_, Postgres>,
@@ -1156,9 +1162,15 @@ impl LockMngr {
         for id in ids {
             if let Some(error) = self.pending_errors.get(id) {
                 sqlx::query(
-                    "UPDATE dependence_chain SET error_message = $3
-                     WHERE worker_id = $1 AND dependence_chain_id = $2
-                       AND status = 'processing'",
+                    "WITH writable AS (
+                         SELECT dependence_chain_id FROM dependence_chain
+                         WHERE worker_id = $1 AND dependence_chain_id = $2
+                           AND status = 'processing'
+                         FOR UPDATE SKIP LOCKED
+                     )
+                     UPDATE dependence_chain dc SET error_message = $3
+                     FROM writable
+                     WHERE dc.dependence_chain_id = writable.dependence_chain_id",
                 )
                 .bind(self.worker_id)
                 .bind(id)
