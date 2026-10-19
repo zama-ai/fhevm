@@ -4689,7 +4689,9 @@ async fn upload_transaction_graph_results<'a>(
                 transaction_id = %hex::encode(&result.transaction_id),
                 handles = ?result.handles.iter().map(hex::encode).collect::<Vec<_>>(),
                 "Discarding frozen computation result; leaving work pending");
-            cooldown_transactions.push(result.transaction_id.clone());
+            // The next pick filters still-frozen work and moves fully frozen
+            // transactions back via schedule_order. An extra lockless cooldown
+            // would also delay healthy siblings and work that has since healed.
             continue;
         }
         match result.compressed_ct {
