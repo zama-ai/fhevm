@@ -8123,9 +8123,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.6.3"
+version = "1.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65191ecd03bb34ac41df98958a8445d5e062de19843cde95ccad8deff2e22194"
+checksum = "37645753d9609e186d61d59d0c3126e5494f73af25c05ba653b8a3893f33e1c5"
 dependencies = [
  "aligned-vec",
  "bincode",
