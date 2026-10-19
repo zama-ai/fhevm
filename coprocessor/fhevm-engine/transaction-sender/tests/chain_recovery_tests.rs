@@ -66,6 +66,10 @@ async fn wait_for_submission(env: &TestEnvironment, id: u8) -> anyhow::Result<()
 async fn replay_allows_dispatch_while_confirmed_halt_waits_for_recovery() -> anyhow::Result<()> {
     let conf = ConfigSettings {
         db_polling_interval_secs: 1,
+        // Both pending queues fill a batch while contained; that must not
+        // prevent either operation from resuming after recovery.
+        add_ciphertexts_batch_limit: 1,
+        verify_proof_resp_batch_limit: 1,
         ..Default::default()
     };
     let env = TestEnvironment::new_with_config(SignerType::PrivateKey, conf, false).await?;
