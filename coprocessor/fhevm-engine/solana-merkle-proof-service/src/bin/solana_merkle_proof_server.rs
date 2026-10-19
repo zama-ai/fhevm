@@ -15,6 +15,7 @@ use alloy::{
 use anyhow::{Context, Result};
 use clap::Parser;
 use fhevm_host_bindings::protocol_config::ProtocolConfig;
+use humantime::parse_duration;
 use sqlx::postgres::PgPoolOptions;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
@@ -76,6 +77,11 @@ struct Args {
     #[arg(long)]
     protocol_config_address: Address,
 
+    /// How often the finalized block is polled; the KMS tx-senders are read again when it has
+    /// moved. A request from a signer outside the set also starts a poll.
+    #[arg(long, default_value = "5s", value_parser = parse_duration)]
+    kms_tx_sender_poll_interval: Duration,
+
     /// This coprocessor's registered signer address, the audience a request must be
     /// signed for (`FhevmSig`, RFC 038).
     #[arg(long)]
@@ -127,6 +133,7 @@ async fn main() -> Result<()> {
         .erased();
     let senders = kms_tx_senders::follow(
         ProtocolConfig::new(args.protocol_config_address, ethereum),
+        args.kms_tx_sender_poll_interval,
         cancel.clone(),
     );
 

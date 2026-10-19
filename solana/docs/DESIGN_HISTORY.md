@@ -1939,3 +1939,20 @@ replaced `sender_authentication_failed` with RFC 038's `auth_*` codes and a quer
 > coprocessor refuses this way fails the request `unprocessable`, final [...].
 
 > A request whose body does not decode is refused before the cache.
+
+### DD-067, replaced in part by DD-076
+
+DD-076 accepts the tx-senders of Active contexts only, read with `isValidKmsContext` and
+`getKmsNodesForContext`, and has the server poll the finalized block every 5 seconds and read again
+before it refuses an unknown signer.
+
+> `solana_merkle_proof_server` recovers the signer and answers only the tx-senders of the live KMS
+> contexts. It reads them from the canonical `ProtocolConfig` at the finalized block every 60 seconds:
+> the live context ids, then each context's nodes from its `NewKmsContext` event at the context's
+> anchor block, checked against the anchor's `contextInfoHash`. kms-worker reads a previous context
+> the same way, through `shared/kms-context`.
+
+> A coprocessor learns a new context's tx-senders only at the finalized block and up to 60 seconds
+> later, and a signature the connector builds wrongly stays wrong.
+
+> A new KMS context is answered once its creation is finalized, up to 60 seconds later.

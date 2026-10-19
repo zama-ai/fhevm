@@ -453,7 +453,7 @@ async fn answer_merkle_proofs(
     }
     let now = unix_now_secs();
     let authorization =
-        authenticate(&state.senders, state.audience, headers, now)?;
+        authenticate(&state.senders, state.audience, headers, now).await?;
     REQUESTS_BY_SIGNER
         .with_label_values(&[&authorization.signer.to_string()])
         .inc();
@@ -600,9 +600,14 @@ fn cbor_response(body: Bytes) -> Response {
     ([(header::CONTENT_TYPE, CBOR)], body).into_response()
 }
 
+/// How long a request whose signer is not in the KMS tx-sender set waits for a poll that started
+/// after it: a context activated since the last poll is accepted at once (DD-076). kms-worker
+/// waits 10 s for an answer by default (`host_rpc_call_timeout`).
+const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
+
 /// Returns what the KMS tx-sender that signed this request for this route and
 /// `audience` signed, from the `Authorization` header alone.
-fn authenticate(
+async fn authenticate(
     senders: &KmsTxSenders,
     audience: Address,
     headers: &HeaderMap,
@@ -646,6 +651,13 @@ fn authenticate(
             HttpError::new(code, err.to_string())
         })?;
     if !set.senders.contains(&authorization.signer) {
+        senders.refresh_after_miss(UNKNOWN_SIGNER_WAIT).await;
+        let known = senders
+            .current()
+            .is_some_and(|set| set.senders.contains(&authorization.signer));
+        if known {
+            return Ok(authorization);
+        }
         return Err(HttpError::new(
             ErrorCode::AuthUnknownSigner,
             format!(
@@ -852,7 +864,8 @@ pub struct ApiDoc;
 mod tests {
     use super::*;
     use crate::{
-        answer_cache::ENTRY_OVERHEAD_BYTES, kms_tx_senders::KmsTxSenderSet,
+        answer_cache::ENTRY_OVERHEAD_BYTES,
+        kms_tx_senders::{stub, KmsTxSenderSet},
     };
     use alloy::signers::local::PrivateKeySigner;
     use request_authorization::KeyRegistry;
@@ -1316,6 +1329,62 @@ mod tests {
             (401, ErrorCode::AuthExpired)
         );
 
+        cancel.cancel();
+        server.await.expect("join");
+    }
+
+    /// A signer outside the set waits for a poll that started after its request. One whose context
+    /// was activated since the last poll gets past authentication, here to the read of a database
+    /// that never connects; one in no Active context is refused within the wait.
+    #[tokio::test]
+    async fn an_unknown_signer_waits_for_a_poll_after_its_request() {
+        let connector = PrivateKeySigner::random();
+        let ledger = stub::ledger(&[(
+            stub::State::Active,
+            &[Address::repeat_byte(0xA1)],
+        )]);
+        let (senders, _, follower) =
+            stub::follower(&ledger, Duration::from_secs(3600)).await;
+        let (base, cancel, server) = spawn(senders, 1000, 1 << 20, 1).await;
+        ledger.lock().unwrap().finalize(|contexts| {
+            contexts.push((stub::State::Active, vec![connector.address()]))
+        });
+        let body = encode_cbor(&MerkleProofRequest {
+            leaves: vec![LeafQuery {
+                encrypted_store: [0xAC; 32],
+                handle: [0x10; 32],
+                kind: LeafQueryKind::Public,
+                key: None,
+            }],
+        });
+        let client = reqwest::Client::new();
+        let post = |authorization: String| {
+            client
+                .post(format!("{base}{MERKLE_PROOFS_PATH}"))
+                .header(header::AUTHORIZATION, authorization)
+                .body(body.clone())
+                .send()
+        };
+
+        let by_connector =
+            signed(&connector, &body, unix_now_secs() + 30).await;
+        let response = post(by_connector).await.expect("send");
+        assert_eq!(response.status(), 502);
+        let error = error_of(response).await;
+        assert_eq!(
+            (error.code, error.message.as_str()),
+            (ErrorCode::UpstreamTransient, "leaf record read failed")
+        );
+
+        let stranger = PrivateKeySigner::random();
+        let by_stranger = signed(&stranger, &body, unix_now_secs() + 30).await;
+        let sent = Instant::now();
+        let response = post(by_stranger).await.expect("send");
+        assert!(sent.elapsed() <= UNKNOWN_SIGNER_WAIT);
+        assert_eq!(response.status(), 401);
+        assert_eq!(error_of(response).await.code, ErrorCode::AuthUnknownSigner);
+
+        follower.cancel();
         cancel.cancel();
         server.await.expect("join");
     }

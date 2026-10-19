@@ -27,6 +27,7 @@ ciborium = "0.2.2"
 clap = { workspace = true }
 # Already in the tree through solana-streamer.
 governor = "0.6.3"
+humantime = { workspace = true }
 prometheus = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -64,6 +65,8 @@ test-harness = { path = "../test-harness" }
 # Names the JSON-RPC request packets the KMS tx-sender test records.
 alloy = { workspace = true, features = ["json-rpc"] }
 tower = "0.5"
+# Paused time for the KMS tx-sender follower's tests, which wait on its poll timers.
+tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber = { workspace = true }
 
 [lints]
