@@ -25,6 +25,9 @@ use crate::contracts::{
     AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
 };
 use crate::database::dependence_chains::dependence_chains;
+use crate::database::derived_history::{
+    CommittedInventory, COMMITTED_INVENTORY_CHANGED,
+};
 use crate::database::event_envelope::{classify, DecodedEvent};
 use crate::database::event_operands::{
     validate_collection_shape, validate_scalar_mode,
@@ -446,6 +449,14 @@ pub async fn ingest_block_logs(
         .await?;
         return Err(sqlx::Error::Protocol(conflict.reason.into()));
     }
+
+    let committed_inventory = CommittedInventory::capture(
+        &mut tx,
+        chain_id.as_i64(),
+        &[block_logs.summary.number as i64],
+        &touched_handles,
+    )
+    .await?;
 
     // Queue `pg_notify('event_new_block', ...)` at the top of the transaction so
     // postgres defers delivery until `tx.commit()` below succeeds. Same
@@ -1165,6 +1176,25 @@ pub async fn ingest_block_logs(
     } else {
         vec![]
     };
+    if let Some(block_number) =
+        committed_inventory.changed_block(&mut tx).await?
+    {
+        tx.rollback().await?;
+        record_halt(
+            &db.pool().await,
+            HistoryMismatch {
+                source: ListenerSource::Host,
+                gcs_mode: history_role,
+                chain_id: chain_id.as_i64(),
+                block_number,
+                expected_hash: None,
+                observed_hash: None,
+                reason: COMMITTED_INVENTORY_CHANGED,
+            },
+        )
+        .await?;
+        return Err(sqlx::Error::Protocol(COMMITTED_INVENTORY_CHANGED.into()));
+    }
     tx.commit().await?;
     if options.dependence_cross_block {
         // Merge only this batch's entries: replacing the entire snapshot could

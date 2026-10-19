@@ -20,6 +20,70 @@ use crate::manifest_consensus::{
     Config as ManifestConsensusConfig, ExecutionError,
 };
 
+#[tokio::test]
+#[serial(db)]
+async fn durable_history_halt_prevents_manifest_sealing() {
+    use fhevm_engine_common::chain_recovery::{record_halt, HistoryMismatch, ListenerSource};
+    let instance = setup_test_db(ImportMode::None).await.unwrap();
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .connect(instance.db_url())
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO block_manifest_state
+        (host_chain_id, block_number, block_hash, parent_block_hash, publication_cadence)
+        VALUES (42, 100, decode(repeat('01', 32), 'hex'), decode(repeat('02', 32), 'hex'), 1)",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    record_halt(
+        &pool,
+        HistoryMismatch {
+            source: ListenerSource::Host,
+            gcs_mode: false,
+            chain_id: 42,
+            block_number: 100,
+            expected_hash: None,
+            observed_hash: None,
+            reason: "committed inventory changed",
+        },
+    )
+    .await
+    .unwrap();
+    let client = Client::from_conf(
+        aws_sdk_s3::Config::builder()
+            .behavior_version_latest()
+            .region(aws_sdk_s3::config::Region::new("us-east-1"))
+            .build(),
+    );
+    let signer: CoproSigner = Arc::new(PrivateKeySigner::random());
+    let progress = progress_chain(
+        &pool,
+        &client,
+        "unused",
+        42,
+        &signer,
+        &ManifestConsensusConfig::default(),
+        &ManifestWorkGate::always_enabled(),
+        block_manifest::LEGACY_CONSENSUS_EPOCH,
+    )
+    .await
+    .unwrap();
+    assert_eq!(progress, PublicationProgress::Waiting);
+    let sealed: bool = sqlx::query_scalar(
+        "SELECT block_content_digest IS NOT NULL
+        FROM block_manifest_state WHERE host_chain_id = 42 AND block_number = 100",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(
+        !sealed,
+        "the durable halt is authoritative even before the runtime gate catches up"
+    );
+}
+
 fn payload(publisher: Address, context: U256) -> ManifestPayload {
     let block_number = U256::from(42);
     let block_hash = B256::repeat_byte(0xab);
@@ -675,7 +739,7 @@ async fn late_ciphertext_discards_unpublished_uncomputed_seal() {
 
     let unsealed = load_seeded_block(&pool, CHAIN_ID, block_hash).await;
     assert!(unsealed.block_content_digest.is_none());
-    assert!(unsealed.block_handle_count.is_none());
+    assert_eq!(unsealed.block_handle_count, sealed.block_handle_count);
     let error_count: i64 = sqlx::query_scalar(
         "SELECT publication_error_count FROM block_manifest_state
           WHERE host_chain_id = $1 AND block_hash = $2",
@@ -869,7 +933,7 @@ async fn readiness_and_preparation_reject_incomplete_or_corrupted_block_content(
     trx.commit().await.expect("commit discarded corrupted seal");
     let unsealed = load_seeded_block(&pool, CHAIN_ID, block_hash).await;
     assert!(unsealed.block_content_digest.is_none());
-    assert!(unsealed.block_handle_count.is_none());
+    assert_eq!(unsealed.block_handle_count, block.block_handle_count);
 
     let state = sqlx::query(
         "SELECT manifest_published,

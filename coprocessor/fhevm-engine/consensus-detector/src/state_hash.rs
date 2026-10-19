@@ -73,6 +73,16 @@ async fn compute_and_insert_gcs(
     batch_limit: i64,
     schema: &str,
 ) -> anyhow::Result<()> {
+    // A replay must observe this commitment before changing its inventory.
+    // The caller holds the cutover fence; acquire history before reading work,
+    // including when no hash row exists yet (row locks cannot cover that race).
+    fhevm_engine_common::chain_recovery::lock_history_tx(
+        tx,
+        fhevm_engine_common::chain_recovery::ListenerSource::Host,
+        schema != "public",
+        chain_id,
+    )
+    .await?;
     // This is the write path, so both the pending-scan read and the INSERT
     // explicitly qualify the versioned GCS schema (`GCS_SCHEMA_QUOTED`, e.g.
     // `"gcs-0.14.0"`) instead of relying on the connection search_path. An
@@ -480,6 +490,9 @@ async fn upload_stopped(
     cutoff: Duration,
     started: &Attempt,
 ) -> Result<bool, sqlx::Error> {
+    if fhevm_engine_common::chain_recovery::is_halted(pool).await? {
+        return Ok(true);
+    }
     let (current, closed) = upload_window(pool, cutoff).await?;
     Ok(closed || (started.is_some() && current != *started))
 }
@@ -742,8 +755,9 @@ async fn compute_and_upload_state_hashes(
     // gw_ready captures "GW track eligible this pass" (not anchored AND watermark past gw_start);
     // it gates compute AND upload.
     let mut gw_ready = false;
-    if let Some((_, _, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
+    if let Some((_, _, _, mut windows)) = crate::active_upgrade_windows(&mut *tx).await? {
         let skip_gw = gw_consensus_reached(&mut *tx).await?;
+        windows.sort_unstable_by_key(|(chain_id, _, _)| *chain_id);
         for (chain_id, start, end) in windows {
             compute_and_insert_gcs(
                 &mut tx,
@@ -896,6 +910,134 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn host_hash_waits_for_ingestion_before_reading_completion() -> anyhow::Result<()> {
+        use fhevm_engine_common::chain_recovery::{lock_history_tx, ListenerSource};
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await?;
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid
+            (chain_id, block_hash, block_number, block_status, fhe_event_count)
+            VALUES (42, '\\x10', 100, 'finalized', 2)",
+        )
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO computations
+            (output_handle, dependencies, fhe_operation, is_scalar, transaction_id,
+             host_chain_id, block_number, is_allowed, is_completed)
+            VALUES ('\\x01', '{}', 0, FALSE, '\\x01', 42, 100, TRUE, TRUE),
+                   ('\\x02', '{}', 0, FALSE, '\\x02', 42, 100, FALSE, TRUE)",
+        )
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO ciphertexts
+            (tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
+            VALUES (0, '\\x01', '\\xaa', 0, 5)",
+        )
+        .execute(&pool)
+        .await?;
+
+        let mut repair = pool.begin().await?;
+        lock_history_tx(&mut repair, ListenerSource::Host, false, 42).await?;
+        sqlx::query(
+            "UPDATE computations SET is_allowed = TRUE, is_completed = FALSE
+            WHERE output_handle = '\\x02'",
+        )
+        .execute(&mut *repair)
+        .await?;
+        let hash_pool = pool.clone();
+        let hash_task = tokio::spawn(async move {
+            let mut tx = hash_pool.begin().await?;
+            compute_and_insert_gcs(&mut tx, 42, 100, 100, 10, "public").await?;
+            tx.commit().await?;
+            anyhow::Ok(())
+        });
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM pg_locks
+                    WHERE locktype = 'advisory' AND NOT granted AND database =
+                        (SELECT oid FROM pg_database WHERE datname = current_database()))",
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+                if waiting {
+                    break;
+                }
+                assert!(
+                    !hash_task.is_finished(),
+                    "hashing bypassed ingestion's fence"
+                );
+                tokio::task::yield_now().await;
+            }
+        })
+        .await?;
+        repair.commit().await?;
+        tokio::time::timeout(Duration::from_secs(5), hash_task).await???;
+        let hashes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM state_hash")
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(hashes, 0, "repaired B is pending; do not freeze A alone");
+
+        sqlx::query("UPDATE computations SET is_completed = TRUE WHERE output_handle = '\\x02'")
+            .execute(&pool)
+            .await?;
+        sqlx::query(
+            "INSERT INTO ciphertexts
+            (tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
+            VALUES (0, '\\x02', '\\xbb', 0, 5)",
+        )
+        .execute(&pool)
+        .await?;
+        let mut tx = pool.begin().await?;
+        compute_and_insert_gcs(&mut tx, 42, 100, 100, 10, "public").await?;
+        tx.commit().await?;
+        let includes_b: bool = sqlx::query_scalar(
+            "SELECT state_hash = encode(sha256('\\xaabb'::bytea), 'hex')
+            FROM state_hash WHERE chain_id = 42 AND block_number = 100",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert!(includes_b);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn containment_stops_state_hash_uploads() -> anyhow::Result<()> {
+        use fhevm_engine_common::chain_recovery::{record_halt, HistoryMismatch, ListenerSource};
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect(instance.db_url())
+            .await?;
+        record_halt(
+            &pool,
+            HistoryMismatch {
+                source: ListenerSource::Host,
+                gcs_mode: false,
+                chain_id: 42,
+                block_number: 100,
+                expected_hash: None,
+                observed_hash: None,
+                reason: "committed inventory changed",
+            },
+        )
+        .await?;
+        assert!(upload_stopped(&pool, Duration::from_secs(60), &None).await?);
+        Ok(())
+    }
 
     #[tokio::test]
     async fn gw_hashes_skipped_until_watermark_reaches_gw_start() {

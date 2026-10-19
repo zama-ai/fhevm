@@ -23,9 +23,9 @@ Pending replay blocks upgrade readiness/promotion until repair completes. It
 an upgrade while existing workloads continue. Completion wakes both host and
 Gateway readiness gates without requiring another block; the gates also recheck
 every five seconds. The websocket listener does not
-perform the poller's bounded restart replay. It exits on rejected block data or
-exhausted database retries; restart refetches from durable progress rather than
-silently skipping the rejected block.
+perform the poller's bounded restart replay. It exits on rejected block data;
+exhausted database retries rewind the iterator and refetch in-process. Neither
+path acknowledges the failed block or silently skips it.
 
 ## Confirmed conflicts
 
@@ -37,12 +37,50 @@ parent hashes are not contradictions. Replay also checks immutable computation
 metadata. Legacy NULL operand-boundary masks remain NULL and retain the worker's
 legacy inference; replay compares masks only where a mask was already recorded.
 Other recorded execution metadata remains immutable for legacy rows too.
-A confirmed identity or execution-metadata contradiction records a durable halt
+A confirmed identity, execution-metadata or committed-inventory contradiction records a durable halt
 in `public.chain_recovery_halts`. A halt blocks guarded writes and submissions
 across this database, including both stacks: dependencies can cross host chains.
 It is not cleared by restarting a service. Automatic drift rollback also waits
 for audited recovery, preserving its pending signal for retry. SNS retains a dequeued upload while
 contained; Gateway ingestion fails without advancing its durable cursor.
+
+## Repairs after commitment
+
+An omitted computation or ACL event can be repaired automatically while the
+affected inventory has no upgrade state hash or manifest seal. Once either
+exists, a replay that adds computations, upgrades their eligibility or changes
+the sealed producer inventory rolls back and records a recovery halt. The halt
+names the affected producer block, including when its ACL arrives in a later
+block. Replaying unchanged events and repairing only dependency-chain scheduling
+remain permitted. Admitting a different unfinalized fork does not change the
+sealed inventory of its sibling.
+
+This deliberately contains at **hash creation / manifest sealing**, even if the
+database has not recorded successful publication. An S3 PUT can succeed before
+its database transaction fails. Upgrade peers cache fetched commitments, and a
+later manifest can already include a block that has no publication of its own.
+The existing schema has no durable publication-intent/revision protocol that
+would make an automatic rewrite safe. Original hashes, signed manifests and
+their history remain unchanged; the repair is not reported as successful.
+Refreshing an unpublished digest retains its previous descriptor count as
+evidence of sealing. Older rows whose seal was cleared are also protected when
+a published descendant includes them in its history.
+
+Hash creation, manifest selection/sealing and ingestion share the per-stack,
+per-host-chain history fence. Manifest selection skips a busy history fence;
+selected publication retains it through its bounded S3 operation. Publication
+also observes the database-wide recovery halt under the cutover fence. Deploy
+the listener and consensus-detector changes together before relying on this
+protection. No additional migration is introduced.
+
+Recovery must reconcile the commitment history as well as local ciphertexts.
+For an affected upgrade, use an audited fresh upgrade attempt/checkpoint rather
+than overwriting an S3 hash peers may have cached. For manifest history, retain
+the signed archives and use an audited rebuild of mutable publication state for
+a new verification epoch; changing the epoch alone does not release old
+commitments. Do not merely clear `manifest_published` or rewrite the existing
+immutable revision. A general manifest revision protocol remains outside this
+change.
 
 Gateway history containment, checkpoint bootstrapping and Gateway reorg detection
 are outside this change. No Gateway checkpoint insertion is required at rollout.

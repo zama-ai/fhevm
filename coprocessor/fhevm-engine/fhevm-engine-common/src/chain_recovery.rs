@@ -61,16 +61,33 @@ pub async fn lock_history_tx(
     gcs_mode: bool,
     chain_id: i64,
 ) -> Result<(), sqlx::Error> {
-    let key = format!(
-        "listener-history:{}:{}:{chain_id}",
-        source.as_str(),
-        stack_role(gcs_mode)
-    );
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
-        .bind(key)
+        .bind(history_lock_key(source, gcs_mode, chain_id))
         .execute(&mut **tx)
         .await?;
     Ok(())
+}
+
+/// Background publication skips a busy chain instead of retaining a connection
+/// while ingestion (or another publisher) owns its history.
+pub async fn try_lock_history_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    source: ListenerSource,
+    gcs_mode: bool,
+    chain_id: i64,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(history_lock_key(source, gcs_mode, chain_id))
+        .fetch_one(&mut **tx)
+        .await
+}
+
+fn history_lock_key(source: ListenerSource, gcs_mode: bool, chain_id: i64) -> String {
+    format!(
+        "listener-history:{}:{}:{chain_id}",
+        source.as_str(),
+        stack_role(gcs_mode)
+    )
 }
 
 pub struct HistoryConflict {

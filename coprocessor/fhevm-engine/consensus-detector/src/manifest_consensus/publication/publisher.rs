@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Duration};
 use alloy_primitives::U256;
 use aws_sdk_s3::{error::ProvideErrorMetadata, primitives::ByteStream, Client};
 use block_manifest::{SignedManifest, MAX_MANIFEST_BYTES};
+use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
 use fhevm_engine_common::{pg_pool::is_fatal_connection_error, types::CoproSigner};
 use sqlx::PgPool;
 use tokio::{task::JoinHandle, time::MissedTickBehavior};
@@ -255,7 +256,13 @@ async fn progress_chain(
         if !work_gate.work_enabled_for(consensus_epoch) {
             return Ok(PublicationProgress::Waiting);
         }
-        let mut trx = pool.begin().await?;
+        let mut trx =
+            match begin_write_guarded(pool, work_gate.mode.gcs_mode(), GcsRollbackPolicy::Skip)
+                .await?
+            {
+                WriteGuard::Proceed(tx) => tx,
+                WriteGuard::Stop | WriteGuard::Skip => return Ok(PublicationProgress::Waiting),
+            };
         let selected = match lock_next_block_to_progress_for_consensus_epoch(
             &mut trx,
             host_chain_id,
