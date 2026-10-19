@@ -428,6 +428,27 @@ where
 /// The in-progress attempt `(proposal_id, proposal_block)`, if any.
 type Attempt = Option<(Vec<u8>, i64)>;
 
+/// Blue ingested the `end_block` of this chain at least `cutoff` ago.
+pub(crate) async fn chain_upload_closed(
+    pool: &Pool<Postgres>,
+    chain_id: i64,
+    end_block: i64,
+    cutoff: Duration,
+) -> Result<bool, sqlx::Error> {
+    let (closed,): (bool,) = sqlx::query_as(
+        "SELECT EXISTS(
+            SELECT 1 FROM public.host_chain_blocks_valid b
+             WHERE b.chain_id = $1 AND b.block_number >= $2
+               AND b.created_at <= NOW() - make_interval(secs => $3))",
+    )
+    .bind(chain_id)
+    .bind(end_block)
+    .bind(cutoff.as_secs_f64())
+    .fetch_one(pool)
+    .await?;
+    Ok(closed)
+}
+
 /// `(in-progress attempt, every chain's end_block was ingested by Blue at least cutoff
 /// ago)`. Past the cutoff peers have decided, so a hash published now could only
 /// mislead a returning operator.
@@ -721,7 +742,7 @@ async fn compute_and_upload_state_hashes(
     // gw_ready captures "GW track eligible this pass" (not anchored AND watermark past gw_start);
     // it gates compute AND upload.
     let mut gw_ready = false;
-    if let Some((_, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
+    if let Some((_, _, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
         let skip_gw = gw_consensus_reached(&mut *tx).await?;
         for (chain_id, start, end) in windows {
             compute_and_insert_gcs(

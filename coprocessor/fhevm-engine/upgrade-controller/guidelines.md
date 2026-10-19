@@ -148,7 +148,7 @@ After the proposal activates, Green starts the dry-run: it replays host-chain wo
 
 Cutover is **automatic** once both tracks reach consensus inside the window - you do not run a command to switch. Each operator's upgrade-controller, seeing `host_consensus_reached` and `gw_consensus_reached` both `true`, runs `execute_cutover` under an exclusive advisory lock: it merges the `gcs` (green) rows into `public` green-wins, drops the `gcs` schema, bumps `versioning.consensus_version` to the new protocol version, and emits the `EVENT_STACK_VERSION_UPGRADED` notify. Every service's stack-version listener then flips `gcs_mode` and the new version is live.
 
-**Operator sovereignty:** each operator cuts over on its own. That is intended - consensus already proved they agree block-for-block. But it means a straggler (an operator that was down during the window and returns after `end_block`) <comment id='c58a2b5d-a0ce'/>can cut over alone and split the fleet; keep all operators healthy through the whole window.
+**Operator sovereignty:** each operator cuts over on its own, but a decision record gates the cutover. Each operator writes one signed record for the attempt into its bucket: `quorum` after both tracks agree, or `abort` after the deadline. An operator cuts over only after it reads `quorum` from every member, and it rolls back after it reads `abort` from one member. <comment id='c58a2b5d-a0ce'/>A straggler (an operator that was down during the window and returns after `end_block`) thus cannot cut over alone. Its record stays absent, and the other operators wait for it, so keep all operators healthy through the whole window.
 
 **What to verify after cutover:**
 
@@ -158,7 +158,7 @@ Cutover is **automatic** once both tracks reach consensus inside the window - yo
 - v0.15.0 Service logs show `gcs_mode` flipped and no `assert_not_retired` / write-guard stop spam.
 - v0.14.0 Service logs errors indicating that it's been retired.
 
-If some operators cut over and others do not inside a reasonable margin, treat it as a split: stop the lagging operators, do not let them rejoin on the old version, and go to rollback/recovery. There will be CLI tool that will facilitate the healing process.
+The records keep a late operator from a split, but a fault during `execute_cutover` can still stop one operator on the old version. If some operators cut over and others do not inside a reasonable margin, treat it as a split: stop the lagging operators, do not let them rejoin on the old version, and go to rollback/recovery. There will be CLI tool that will facilitate the healing process.
 
 ## Step 6 - Retire & scale down Blue (BCS)
 

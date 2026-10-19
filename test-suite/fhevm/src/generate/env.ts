@@ -17,6 +17,7 @@ import {
   KMS_NODE_WALLET_INDICES,
   KMS_STORAGE_PUBLISHED_URL,
   OBJECT_STORE_INTERNAL_URL,
+  objectStoreOperatorUrl,
   POSTGRES_HOST,
   coprocessorDatabaseName,
   hostChainRuntimes,
@@ -491,7 +492,10 @@ const buildInstanceEnvs = async (
     const opBucket = `coproc-${index}`;
     envs["gateway-sc"][`COPROCESSOR_TX_SENDER_ADDRESS_${index}`] = wallet.address;
     envs["gateway-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
-    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] = `${OBJECT_STORE_INTERNAL_URL}/${opBucket}`;
+    // Each operator publishes its bucket under its own hostname. A peer
+    // resolves every alias, so a normal run reads exactly as before.
+    envs["gateway-sc"][`COPROCESSOR_S3_BUCKET_URL_${index}`] =
+      `${objectStoreOperatorUrl(index)}/${opBucket}`;
     envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
     if (index === 0) {
       envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;
