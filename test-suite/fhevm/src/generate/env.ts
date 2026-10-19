@@ -443,6 +443,9 @@ const PRF_SERVICE_FAKE_COUNT_PORT = 9090;
 /** The coprocessor-proxy's default listen port. */
 const COPROCESSOR_PROXY_PORT = 8443;
 
+/** The coprocessor-proxy's default metrics port. */
+const COPROCESSOR_PROXY_METRICS_PORT = 9100;
+
 /** Points instance `index`'s proxy at its own fake prf-service, for requests signed for `signer`. */
 const setCoprocessorProxyEnv = (env: Record<string, string>, index: number, signer: string) => {
   env.COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS = signer;
@@ -534,6 +537,9 @@ const applyCoprocessorProxyTestSuiteEnv = (
     .join(",");
   envs["test-suite"].PRF_SERVICE_FAKE_COUNT_URLS = indices
     .map((index) => `http://${toServiceName("prf-service-fake", index)}:${PRF_SERVICE_FAKE_COUNT_PORT}/count`)
+    .join(",");
+  envs["test-suite"].COPROCESSOR_PROXY_METRICS_URLS = indices
+    .map((index) => `http://${toServiceName("proxy", index)}:${COPROCESSOR_PROXY_METRICS_PORT}/metrics`)
     .join(",");
   // The suite signs as party 1's connector, a KMS tx-sender of the active context.
   envs["test-suite"].KMS_CONNECTOR_PRIVATE_KEY = supported ? envs["kms-connector"].KMS_CONNECTOR_PRIVATE_KEY : "";

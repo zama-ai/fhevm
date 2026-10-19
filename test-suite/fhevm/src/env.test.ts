@@ -186,6 +186,9 @@ describe("env", () => {
     expect(suite.PRF_SERVICE_FAKE_COUNT_URLS).toBe(
       "http://coprocessor-prf-service-fake:9090/count,http://coprocessor1-prf-service-fake:9090/count",
     );
+    expect(suite.COPROCESSOR_PROXY_METRICS_URLS).toBe(
+      "http://coprocessor-proxy:9100/metrics,http://coprocessor1-proxy:9100/metrics",
+    );
     expect(suite.COPROCESSOR_PROXY_CA_CERT).toBe("/etc/coprocessor-proxy/tls.crt");
     // Party 1's connector key, whose address the host ProtocolConfig deploy lists as a KMS tx-sender.
     expect(suite.KMS_CONNECTOR_PRIVATE_KEY).not.toBe("");
@@ -204,7 +207,13 @@ describe("env", () => {
     };
     for (const state of [stateFor(2, ""), blueGreen]) {
       const gated = await renderEnvMaps({ discovery: undefined }, stackSpecForState(state), templateEnvs, deriveWallet);
-      for (const key of ["COPROCESSOR_PROXY_URLS", "COPROCESSOR_SIGNER_ADDRESSES", "PRF_SERVICE_FAKE_COUNT_URLS", "KMS_CONNECTOR_PRIVATE_KEY"]) {
+      for (const key of [
+        "COPROCESSOR_PROXY_URLS",
+        "COPROCESSOR_SIGNER_ADDRESSES",
+        "PRF_SERVICE_FAKE_COUNT_URLS",
+        "COPROCESSOR_PROXY_METRICS_URLS",
+        "KMS_CONNECTOR_PRIVATE_KEY",
+      ]) {
         expect(gated.componentEnvs["test-suite"][key]).toBe("");
       }
     }

@@ -20,7 +20,7 @@ import {
 import { consumerOnlyHostListeners } from "../host-listener-mode";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
-import { runKmsContextSwitchProfile } from "./kms-context-switch";
+import { type ProxyCheckRunner, runKmsContextSwitchProfile } from "./kms-context-switch";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 
 import { PreflightError, formatCliError } from "../errors";
@@ -190,7 +190,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "kms-generation-abort":
     "Abort an in-flight keygen and crsgen, prove the contract and every kms-connector retire the requests, then prove the pipeline recovers with a fresh keygen/crsgen to full activation. Disruptive: rotates the active key/CRS — run last or re-up afterwards.",
   "kms-context-switch":
-    "Drive the full KMS-context lifecycle on the host ProtocolConfig (requires --scenario five-party-swap-threshold-kms). Runs, in order: a same-committee context switch (NewKmsContext) and an epoch rotation (NewKmsEpoch), proving the KMS reshares, activates, and still decrypts under each; destruction of the retired context and epoch (destroyKmsContext / destroyKmsEpoch), proving every layer retires them — reverts for non-owner/current/unknown/already-destroyed ids, on-chain invalidation without moving the active pointer, per-party DestroyMpcContext/DestroyMpcEpoch forwarding and cache invalidation (the spare, which never held the material, acks the context destroy but fails the epoch destroy — both benign; the context-to-epoch cascade reaches committee caches only), and the current context/epoch still serving; a further switch after the destroy; a stuck-rotation abort (single-in-flight revert + Pending-epoch destroy) and recovery; and finally a genuine node swap — stop the dropped node's tx-sender before the switch, promote the spare, and force it into the 2t+1 quorum. The input-proof app smoke runs at baseline, while a switch is pending, and after each transition. Disruptive + single-run: it advances the context/epoch and destroys the retired ones, so it must start from a pristine stack — re-up between runs.",
+    "Drive the full KMS-context lifecycle on the host ProtocolConfig (requires --scenario five-party-swap-threshold-kms). Runs, in order: a same-committee context switch (NewKmsContext) and an epoch rotation (NewKmsEpoch), proving the KMS reshares, activates, and still decrypts under each; destruction of the retired context and epoch (destroyKmsContext / destroyKmsEpoch), proving every layer retires them — reverts for non-owner/current/unknown/already-destroyed ids, on-chain invalidation without moving the active pointer, per-party DestroyMpcContext/DestroyMpcEpoch forwarding and cache invalidation (the spare, which never held the material, acks the context destroy but fails the epoch destroy — both benign; the context-to-epoch cascade reaches committee caches only), and the current context/epoch still serving; a further switch after the destroy; a stuck-rotation abort (single-in-flight revert + Pending-epoch destroy) and recovery; and finally a genuine node swap — stop the dropped node's tx-sender before the switch, promote the spare, and force it into the 2t+1 quorum. When the stack runs coprocessor-proxy, every proxy then accepts the promoted spare once the swap is finalized and, after every pre-swap context is destroyed, refuses the dropped node. The input-proof app smoke runs at baseline, while a switch is pending, and after each transition. Disruptive + single-run: it advances the context/epoch and destroys the retired ones, so it must start from a pristine stack — re-up between runs.",
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -2034,6 +2034,25 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     await runNamedE2e(options, grep, label);
   };
 
+  // One test of the "Coprocessor proxy" suite for the kms-context-switch profile. The env reaches
+  // `docker exec` through its own environment, so no key is on an argv an error would print. A
+  // skipped test means the env did not arrive, so it fails the check like a failed one.
+  const runCoprocessorProxyCheck: ProxyCheckRunner = async (label, test, env) => {
+    console.log(`[test] ${label}`);
+    const result = await runWithHeartbeat(
+      buildTestContainerArgs(
+        runTestsArgs({ ...options, verbose: false, parallel: false, grep: test }),
+        Object.keys(env).flatMap((name) => ["-e", name]),
+      ),
+      label,
+      { env },
+    );
+    const output = result.stdout + result.stderr;
+    if (ZERO_TESTS_RE.test(output) || SOME_PENDING_RE.test(output)) {
+      throw new PreflightError(`${label}: the test did not run`);
+    }
+  };
+
   const runProfile = async (name: string) => {
     if (name === "manifest-healing-stress") {
       return runLogged(name, Date.now(), () => runManifestHealingStressProfile(
@@ -2082,7 +2101,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       return runKmsGenerationAbortProfile(state);
     }
     if (name === "kms-context-switch") {
-      return runKmsContextSwitchProfile(state, runUserDecryption, runInputProofSmoke);
+      return runKmsContextSwitchProfile(
+        state, runUserDecryption, runInputProofSmoke,
+        coprocessorProxySkipReason() ? undefined : runCoprocessorProxyCheck,
+      );
     }
     if (name === "blue-green") {
       return runBlueGreenProfile(state, options);

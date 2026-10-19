@@ -129,6 +129,13 @@ blue-green stacks).
 Run via the fhevm-cli profile `coprocessor-proxy` (part of `standard`), or
 directly with `npx hardhat test --grep "Coprocessor proxy" --network staging`.
 
+The `across a KMS context switch` tests run only from fhevm-cli's
+`kms-context-switch` profile, which passes a KMS node's tx-sender key in
+`COPROCESSOR_PROXY_SWITCH_SIGNER_KEY`: after the node swap, every proxy accepts
+the promoted spare, and once every pre-swap context is destroyed and each proxy
+has read the KMS tx-senders again (`COPROCESSOR_PROXY_METRICS_URLS`), every
+proxy refuses the dropped node with `502`. Without the key they skip.
+
 ## Operator edge-case suite
 
 Limit-case coverage for the arithmetic, shift, rotate and cast operators:
