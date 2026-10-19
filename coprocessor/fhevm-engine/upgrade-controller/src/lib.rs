@@ -774,31 +774,15 @@ async fn wait_until_dry_run_ready(
                 return Ok(true);
             }
             Ok(false) => match host_chain_tip(&pool, chain_id).await {
-                Ok(tip) if dry_run_readiness_is_stale(tip, start_block) => {
-                    warn!(
-                        chain_id,
-                        start_block,
-                        tip,
-                        stale_after = DRY_RUN_READINESS_STALE_BLOCKS,
-                        "dry-run readiness stalled too far behind the chain tip — \
-                             failing the attempt"
-                    );
-                    match rollback_dry_run(
-                        &pool,
-                        proposal_id,
-                        proposal_block,
-                        None,
-                        "dry_run_readiness_stalled",
-                    )
-                    .await
-                    {
-                        Ok(_) => return Ok(false),
-                        Err(e) => error!(
-                            error = %e,
-                            "failed to fail the stalled dry-run attempt; will retry"
-                        ),
-                    }
-                }
+                // A stall is not a decision. The attempt ends through the
+                // detector's abort record, so every operator ends the same way.
+                Ok(tip) if dry_run_readiness_is_stale(tip, start_block) => warn!(
+                    chain_id,
+                    start_block,
+                    tip,
+                    stale_after = DRY_RUN_READINESS_STALE_BLOCKS,
+                    "dry-run readiness stalled too far behind the chain tip"
+                ),
                 Ok(_) => debug!(
                     chain_id,
                     from_block,
@@ -2493,17 +2477,13 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
             .fetch_one(&mut *tx)
             .await?;
     if let Err(reason) = validate_cutover_release(&stack_version, &live_stack_version) {
-        warn!(reason, "proposal cannot cut over; failing the attempt");
-        sqlx::query(
-            "UPDATE upgrade_state
-                SET state = 'PAUSED', status = 'failed',
-                    last_error = $1, updated_at = NOW()
-              WHERE stack_role = 'GCS' AND state = 'UpgradeAuthorized'",
-        )
-        .bind(&reason)
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
+        // The fleet already authorized this cutover, and this operator's record
+        // says `quorum`. Failing the attempt here would end it on this operator
+        // alone, so refuse the run and keep the attempt for the right release.
+        error!(
+            reason,
+            "cutover refused: this controller cannot run the proposal's release"
+        );
         return Ok(());
     }
 
@@ -4413,12 +4393,11 @@ mod tests {
         );
     }
 
-    /// If the chain tip pulls more than [`DRY_RUN_READINESS_STALE_BLOCKS`] ahead of
-    /// `start_block` while readiness is still unmet, the loop itself fails the
-    /// attempt (PAUSED/failed, schema reset) instead of polling forever toward a
-    /// `start_block` row that will eventually be pruned out from under it.
+    /// A stalled attempt reports "not ready" and leaves the row alone. Failing it
+    /// here would be a terminal action on silence, which splits the fleet when a
+    /// peer decides otherwise. The detector's abort record ends the attempt.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn wait_until_dry_run_ready_fails_a_stalled_attempt() {
+    async fn wait_until_dry_run_ready_leaves_a_stalled_attempt_alone() {
         use sqlx::Row;
         use tokio::time::{timeout, Duration};
 
@@ -4441,25 +4420,26 @@ mod tests {
         .await
         .expect("seed host_chain_blocks_valid tip");
 
-        let ready = timeout(
-            Duration::from_secs(10),
-            wait_until_dry_run_ready(
-                pool.clone(),
-                CancellationToken::new(),
-                &[0x02; 32],
-                10,
-                1,
-                100,
-            ),
-        )
-        .await
-        .expect("readiness loop did not exit")
-        .expect("readiness loop failed");
-        assert!(!ready, "a stalled attempt must not report readiness");
+        assert!(
+            timeout(
+                Duration::from_secs(3),
+                wait_until_dry_run_ready(
+                    pool.clone(),
+                    CancellationToken::new(),
+                    &[0x02; 32],
+                    10,
+                    1,
+                    100,
+                ),
+            )
+            .await
+            .is_err(),
+            "a stalled attempt must keep waiting, not decide"
+        );
 
         assert!(
-            !marker_exists(&pool).await,
-            "a stalled attempt must reset the gcs schema like any other rollback"
+            marker_exists(&pool).await,
+            "a stalled attempt must not reset the gcs schema"
         );
 
         let row = sqlx::query(
@@ -4468,12 +4448,15 @@ mod tests {
         .fetch_one(&pool)
         .await
         .expect("GCS row");
-        assert_eq!(row.try_get::<String, _>("state").unwrap(), "PAUSED");
-        assert_eq!(row.try_get::<String, _>("status").unwrap(), "failed");
         assert_eq!(
-            row.try_get::<String, _>("last_error").unwrap(),
-            "dry_run_readiness_stalled"
+            row.try_get::<String, _>("state").unwrap(),
+            "UpgradeActivated"
         );
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
+        assert!(row
+            .try_get::<Option<String>, _>("last_error")
+            .unwrap()
+            .is_none());
     }
 
     /// A late timeout must never undo a cutover: rollback is refused once the row is `UpgradeAuthorized`.
@@ -5730,7 +5713,9 @@ mod tests {
     /// stand-in for the transient fault is a missing GCS schema, which makes
     /// A replacement controller joins at whatever state it finds, so it never runs the
     /// activation check. Cutover must refuse a proposal for another release itself,
-    /// before promoting versions or merging its own schema.
+    /// before promoting versions or merging its own schema. It must also leave the
+    /// attempt open: the fleet authorized this cutover, so a controller with the
+    /// right release still has to finish it.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn cutover_rejects_a_proposal_for_another_release() {
         let (_instance, pool) = test_pool().await;
@@ -5744,8 +5729,8 @@ mod tests {
 
         assert_eq!(
             gcs_state(&pool).await,
-            ("PAUSED".into(), "failed".into()),
-            "a proposal for another release must not cut over"
+            ("UpgradeAuthorized".into(), "in_progress".into()),
+            "a proposal for another release must not cut over, and must stay open"
         );
         assert_eq!(
             live_stack_version(&pool).await,
