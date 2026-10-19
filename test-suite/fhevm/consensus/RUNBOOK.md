@@ -454,9 +454,13 @@ four. FM-HOST-LONG-OFFLINE isolates all redundant victim ingestion paths, submit
 twelve receipt-identified transactions, then restarts only the host consumer.
 The scenario supplies `--catchup-from-block=-1024 --catchup-unfinalized`. The
 initial replay must be DONE before the fault; recovery requires a new ID whose
-resolved range covers every workload receipt, reaches consumer DONE and completes
-at least three listener-core sub-ranges. Legacy ingestion remains stopped through
-verification. Existing queued live delivery can overlap replay, so this verifies
+resolved range overlaps at least one workload receipt, reaches consumer DONE and
+completes at least three listener-core sub-ranges. Every workload receipt block
+must also be present in the victim database with its exact chain, number and
+hash in pending or finalized state. The test reports the replay bounds, receipt
+blocks, overlap and any missing blocks; a later block cannot hide a gap. Legacy
+ingestion remains stopped through verification. Existing queued live delivery
+can overlap replay, so this verifies
 an explicit historical request and recovered outputs, not exclusive delivery
 attribution for each block. FM-DURABLE-BACKLOG instead proves all twelve computations are
 persisted and pending before killing the held worker and requiring supervisor

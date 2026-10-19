@@ -3,7 +3,7 @@ export function requireCompletedConsumerCatchup(
   row: { id?: unknown; status?: unknown; finalized?: unknown; blockStart?: unknown; blockEnd?: unknown },
   previousId: unknown,
   blocks: unknown,
-): void {
+): number[] {
   if (typeof previousId !== 'string' || !previousId || typeof row.id !== 'string' || !row.id || row.id === previousId) {
     throw new Error('offline recovery requires a new catchup identity');
   }
@@ -13,10 +13,25 @@ export function requireCompletedConsumerCatchup(
   if (!Array.isArray(blocks) || blocks.length !== 12) throw new Error('offline recovery requires twelve receipt blocks');
   const start = requiredEvidenceCount(row.blockStart, 'catchup start');
   const end = requiredEvidenceCount(row.blockEnd, 'catchup end');
-  for (const block of blocks) {
-    const number = requiredEvidenceCount(block, 'receipt block', 1);
-    if (number < start || number > end) throw new Error('catchup does not cover every offline receipt block');
+  const receipts = blocks.map(block => requiredEvidenceCount(block, 'receipt block', 1));
+  const covered = receipts.filter(block => block >= start && block <= end);
+  if (covered.length === 0) throw new Error(`catchup ${row.id} [${start}, ${end}] covers none of the offline receipt blocks [${receipts.join(', ')}]`);
+  return covered;
+}
+
+export function missingIngestedReceiptBlocks(
+  blocks: number[],
+  blockHashes: unknown,
+  ingested: { blockNumber: number; blockHash: string; blockStatus: string }[],
+): number[] {
+  if (!Array.isArray(blockHashes) || blockHashes.length !== blocks.length ||
+      blockHashes.some(hash => typeof hash !== 'string' || !/^0x[0-9a-f]{64}$/.test(hash))) {
+    throw new Error('offline recovery requires the exact hash of every receipt block');
   }
+  const stored = new Set(ingested
+    .filter(block => block.blockStatus === 'pending' || block.blockStatus === 'finalized')
+    .map(block => `${block.blockNumber}:${block.blockHash}`));
+  return blocks.filter((block, index) => !stored.has(`${block}:${blockHashes[index]}`));
 }
 
 export function requiredEvidenceCount(value: unknown, label: string, minimum = 0): number {

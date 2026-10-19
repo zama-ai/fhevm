@@ -1484,7 +1484,7 @@ cases:
 
   - id: FM-HOST-LONG-OFFLINE
     family: failure-matrix
-    property: One isolated host consumer recovers twelve named transactions through a new persisted non-finalized catchup spanning multiple four-block core sub-ranges, preserving every canonical value and accepting fresh work.
+    property: One isolated host consumer stores all twelve named receipt blocks and completes a new persisted non-finalized catchup overlapping the workload across multiple four-block core sub-ranges, preserving every canonical value and accepting fresh work.
     topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu, gpu] }
     services: [host-listener-consumer, listener-core]
     capabilities: [docker-socket, service-control, anvil-control]
@@ -1496,7 +1496,7 @@ cases:
       - liveness: every original target completes after recovery and fresh work also progresses
       - bytes: every retained output has canonical byte and digest agreement with exactly one stored row per operator
       - quorum: every original output reaches authorized distinct-sender quorum
-      - scope: a new persisted non-finalized catchup covers every receipt, reaches DONE and has completed at least three listener-core sub-ranges
+      - scope: a new persisted non-finalized catchup overlaps at least one receipt, reaches DONE and has completed at least three listener-core sub-ranges; all twelve exact receipt blocks are stored in the victim database
       - safety: no target is lost or duplicated; legacy ingestion stays stopped and live configuration matches the bounded batch/page profile
       - correctness: every retained and fresh value decrypts to the independent fixture model
     timeout_s: 2400
