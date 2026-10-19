@@ -299,6 +299,210 @@ async fn delayed_live_forks_do_not_halt_or_insert_stale_work() -> Result<()> {
             .is_err());
             assert!(is_halted(&pool).await?);
         }
+        pool.close().await;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn poller_recovers_missing_canonical_height_before_restart_overlap(
+) -> Result<()> {
+    use alloy::providers::{ext::AnvilApi, Provider};
+
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow!("{err}"))?;
+    let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+    let anvil = alloy::node_bindings::Anvil::new().chain_id(42).spawn();
+    let provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());
+    provider.anvil_mine(Some(10), None).await?;
+    for number in [1_u64, 10] {
+        let header = provider
+            .get_block_by_number(number.into())
+            .await?
+            .unwrap()
+            .header;
+        sqlx::query("INSERT INTO host_chain_blocks_valid (chain_id, block_hash, parent_hash, block_number, block_status) VALUES (42, $1, $2, $3, 'finalized')")
+            .bind(header.hash.as_slice()).bind(header.parent_hash.as_slice())
+            .bind(number as i64).execute(&pool).await?;
+    }
+    sqlx::query("INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status) VALUES (42, $1, 2, 'pending')")
+        .bind(B256::repeat_byte(99).as_slice()).execute(&pool).await?;
+    sqlx::query("INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block) VALUES (42, 10)")
+        .execute(&pool).await?;
+    let config = PollerConfig {
+        url: anvil.endpoint(),
+        acl_address: Address::with_last_byte(1),
+        tfhe_address: Address::with_last_byte(2),
+        kms_generation_address: None,
+        protocol_config_address: None,
+        confidential_bridge_address: None,
+        database_url: instance.db_url.clone(),
+        finality_lag: 0,
+        batch_size: 100,
+        poll_interval: Duration::from_millis(10),
+        retry_interval: Duration::from_millis(10),
+        service_name: "missing-canonical-poller-test".into(),
+        max_http_retries: 0,
+        rpc_compute_units_per_second: 1000,
+        health_port: 0,
+        seed_start_block: None,
+        replay_window: 1,
+        dependence_cache_size: 64,
+        dependence_by_connexity: false,
+        dependence_cross_block: false,
+        dependent_ops_max_per_chain: 0,
+        gcs_mode: false,
+        disable_synthetic_ops: true,
+        canonical_protocol_config_chain_id: None,
+    };
+    let poller = run_poller(config);
+    tokio::pin!(poller);
+    tokio::select! {
+        result = &mut poller => panic!("poller exited during repair: {result:?}"),
+        result = tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let anchor: i64 = sqlx::query_scalar("SELECT last_caught_up_block FROM host_listener_poller_state WHERE chain_id=42")
+                    .fetch_one(&pool).await?;
+                assert!(anchor >= 10, "historical repair must not rewind the saved anchor");
+                let finalized: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM host_chain_blocks_valid WHERE chain_id=42 AND block_status='finalized'")
+                    .fetch_one(&pool).await?;
+                if finalized == 10 && !readiness_blocked(&pool).await? { break; }
+                sleep(Duration::from_millis(20)).await;
+            }
+            Ok::<_, anyhow::Error>(())
+        }) => result??,
+    }
+    let old_status: String = sqlx::query_scalar("SELECT block_status FROM host_chain_blocks_valid WHERE chain_id=42 AND block_hash=$1")
+        .bind(B256::repeat_byte(99).as_slice()).fetch_one(&pool).await?;
+    assert_eq!(old_status, "orphaned");
+    assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn missing_canonical_blocks_recover_across_gaps_in_observed_forks(
+) -> Result<()> {
+    use crate::contracts::TfheContract::TrivialEncrypt;
+    use alloy::primitives::{Log as PrimitiveLog, U256};
+    use alloy::sol_types::SolEvent;
+
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow!("{err}"))?;
+    for with_event in [false, true] {
+        let chain = ChainId::try_from(42_u64 + u64::from(with_event))?;
+        let mut db = Database::new(&instance.db_url, chain, 64).await?;
+        let pool = db.pool().await;
+        // The listener missed old height 102, so orphan marking at an earlier
+        // fork root cannot walk into the disconnected old 103 -> 104 segment.
+        sqlx::query("INSERT INTO host_chain_blocks_valid (chain_id, block_hash, parent_hash, block_number, block_status) VALUES ($1, $2, NULL, 100, 'finalized'), ($1, $3, NULL, 102, 'pending'), ($1, $4, $5, 103, 'pending'), ($1, $6, $4, 104, 'pending'), ($1, $7, $8, 104, 'pending')")
+            .bind(chain.as_i64())
+            .bind(B256::repeat_byte(1).as_slice())
+            .bind(B256::repeat_byte(2).as_slice())
+            .bind(B256::repeat_byte(13).as_slice())
+            .bind(B256::repeat_byte(12).as_slice())
+            .bind(B256::repeat_byte(14).as_slice())
+            .bind(B256::repeat_byte(4).as_slice())
+            .bind(B256::repeat_byte(3).as_slice())
+            .execute(&pool).await?;
+        let canonical_hash = |number| async move {
+            Ok(B256::repeat_byte(match number {
+                100 => 1,
+                102 => 2,
+                103 => 3,
+                104 => 4,
+                _ => panic!("unexpected height {number}"),
+            }))
+        };
+        let result =
+            update_finalized_blocks_aux(&mut db, 120, 10, canonical_hash).await;
+        assert_eq!(result.missing_canonical_block, Some(103));
+        let finalized: Vec<i64> = sqlx::query_scalar("SELECT block_number FROM host_chain_blocks_valid WHERE chain_id=$1 AND block_status='finalized' ORDER BY block_number")
+            .bind(chain.as_i64()).fetch_all(&pool).await?;
+        assert_eq!(finalized, vec![100, 102], "commit the safe prefix only");
+        let canonical_inserted: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM host_chain_blocks_valid WHERE chain_id=$1 AND block_hash=$2)")
+            .bind(chain.as_i64()).bind(B256::repeat_byte(3).as_slice())
+            .fetch_one(&pool).await?;
+        assert!(!canonical_inserted, "a bare RPC hash must not create a row");
+
+        let mut handle = [0_u8; 32];
+        handle[0] = 7;
+        handle[21] = 0xff;
+        handle[22..30].copy_from_slice(&chain.as_u64().to_be_bytes());
+        handle[30] = 5;
+        let logs = if with_event {
+            vec![Log {
+                inner: PrimitiveLog {
+                    address: Address::ZERO,
+                    data: TrivialEncrypt {
+                        caller: Address::ZERO,
+                        pt: U256::from(7),
+                        toType: 5,
+                        result: handle.into(),
+                    }
+                    .encode_log_data(),
+                },
+                block_hash: Some(B256::repeat_byte(3)),
+                block_number: Some(103),
+                transaction_hash: Some(B256::repeat_byte(30)),
+                log_index: Some(0),
+                ..Default::default()
+            }]
+        } else {
+            vec![]
+        };
+        ingest_block_logs(
+            chain,
+            &mut db,
+            &BlockLogs {
+                logs,
+                summary: BlockSummary {
+                    number: 103,
+                    hash: B256::repeat_byte(3),
+                    parent_hash: B256::repeat_byte(2),
+                    timestamp: 103,
+                },
+                catchup: true,
+                finalized: false,
+            },
+            &None,
+            &Some(Address::ZERO),
+            &None,
+            &None,
+            &None,
+            IngestOptions {
+                dependence_by_connexity: false,
+                dependence_cross_block: false,
+                dependent_ops_max_per_chain: 0,
+                is_protocol_config_listener: false,
+                disable_synthetic_ops: true,
+            },
+        )
+        .await?;
+        let result =
+            update_finalized_blocks_aux(&mut db, 120, 10, canonical_hash).await;
+        assert_eq!(result.missing_canonical_block, None);
+        let statuses: Vec<(Vec<u8>, String)> = sqlx::query_as("SELECT block_hash, block_status FROM host_chain_blocks_valid WHERE chain_id=$1 AND block_number >= 103 ORDER BY block_hash")
+            .bind(chain.as_i64()).fetch_all(&pool).await?;
+        assert_eq!(
+            statuses,
+            vec![
+                (B256::repeat_byte(3).to_vec(), "finalized".into()),
+                (B256::repeat_byte(4).to_vec(), "finalized".into()),
+                (B256::repeat_byte(13).to_vec(), "orphaned".into()),
+                (B256::repeat_byte(14).to_vec(), "orphaned".into()),
+            ]
+        );
+        let computations: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM computations WHERE host_chain_id=$1",
+        )
+        .bind(chain.as_i64())
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(computations, i64::from(with_event));
+        assert!(!is_halted(&pool).await?);
+        pool.close().await;
     }
     Ok(())
 }
@@ -419,15 +623,22 @@ async fn deferred_finalization_waits_for_an_unavailable_committed_tip(
 #[tokio::test]
 async fn deferred_finalization_checks_all_retained_neighbors() -> Result<()> {
     use crate::database::ingest::update_finalized_blocks_aux;
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .map_err(|e| anyhow!("{e}"))?;
+    let chain = ChainId::try_from(42_u64)?;
+    let mut db = Database::new(&instance.db_url, chain, 64).await?;
+    let pool = db.pool().await;
     for neighbor in [99_i64, 100, 101] {
-        let instance = setup_test_db(ImportMode::None)
-            .await
-            .map_err(|e| anyhow!("{e}"))?;
-        let chain = ChainId::try_from(42_u64)?;
-        let mut db =
-            Database::new(&instance.db_url().to_owned().into(), chain, 64)
-                .await?;
-        let pool = db.pool().await;
+        // Isolate the three contradictions within one fixture. Recreating the
+        // localhost DB while asynchronous pool teardown is still running races
+        // DROP DATABASE, even after closing the main pool.
+        sqlx::query("DELETE FROM public.chain_recovery_halts")
+            .execute(&pool)
+            .await?;
+        sqlx::query("DELETE FROM host_chain_blocks_valid")
+            .execute(&pool)
+            .await?;
         let candidate = B256::repeat_byte(10);
         sqlx::query("INSERT INTO host_chain_blocks_valid (chain_id,block_hash,parent_hash,block_number,block_status) VALUES (42,$1,$2,100,'pending'), (42,$3,$3,$4,'finalized')")
             .bind(candidate.as_slice()).bind(B256::repeat_byte(9).as_slice())
@@ -453,8 +664,8 @@ async fn deferred_finalization_checks_all_retained_neighbors() -> Result<()> {
         let retained: String = sqlx::query_scalar("SELECT block_status FROM host_chain_blocks_valid WHERE chain_id=42 AND block_hash=$1")
             .bind(B256::repeat_byte(20).as_slice()).fetch_one(&pool).await?;
         assert_eq!(retained, "finalized");
-        pool.close().await;
     }
+    pool.close().await;
     Ok(())
 }
 

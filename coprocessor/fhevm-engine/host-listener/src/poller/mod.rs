@@ -547,7 +547,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         };
         blockchain_timeout_tick.update();
         let client_ref = &client;
-        update_finalized_blocks_aux(
+        let finalization = update_finalized_blocks_aux(
             &mut db,
             latest,
             config.finality_lag,
@@ -559,6 +559,12 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             },
         )
         .await;
+        if let Some(missing) = finalization.missing_canonical_block {
+            // Recover disconnected pending forks even when they precede the
+            // restart overlap. Use the ordinary coherent block/log ingestion
+            // below; the saved high watermark remains monotonic.
+            next_block = next_block.min(missing);
+        }
 
         if safe_tip < next_block {
             info!(

@@ -1718,6 +1718,172 @@ async fn test_listener_restart_and_chain_reorg() -> Result<(), anyhow::Error> {
     test_listener_no_event_loss(true, true).await
 }
 
+type BlockVariants = std::collections::HashMap<i64, Vec<(Vec<u8>, String)>>;
+
+async fn finalization_mismatch<P: Provider>(
+    provider: &P,
+    blocks_by_number: &BlockVariants,
+    contract_addresses: &[Address],
+) -> anyhow::Result<Option<String>> {
+    for (block_number, block_variants) in blocks_by_number {
+        let finalized_count = block_variants
+            .iter()
+            .filter(|(_, status)| status == "finalized")
+            .count();
+        let orphan_count = block_variants
+            .iter()
+            .filter(|(_, status)| status == "orphaned")
+            .count();
+        let expected_hash = provider
+            .get_block_by_number((*block_number as u64).into())
+            .await?
+            .expect("canonical block exists")
+            .header
+            .hash;
+        if finalized_count == 0 && orphan_count == block_variants.len() {
+            // Range catchup emits only blocks with matching logs. Replaying
+            // a new fork's root can orphan its old descendants without storing
+            // their empty replacements. Accept that sparse history only after
+            // independently checking every configured contract on the canonical
+            // block; a missing event-bearing replacement must still fail.
+            let logs = provider
+                .get_logs(
+                    &Filter::new()
+                        .at_block_hash(expected_hash)
+                        .address(contract_addresses.to_vec()),
+                )
+                .await?;
+            if logs.is_empty() {
+                continue;
+            }
+        }
+        if finalized_count != 1 {
+            return Ok(Some(format!(
+                "Block {block_number} should have exactly one finalized variant, found {finalized_count}"
+            )));
+        }
+        if orphan_count != block_variants.len() - 1 {
+            return Ok(Some(format!(
+                "Block {block_number} should have remaining variants as orphan"
+            )));
+        }
+        let finalized_hash = block_variants
+            .iter()
+            .find(|(_, status)| status == "finalized")
+            .map(|(hash, _)| hash)
+            .unwrap();
+        if expected_hash.0 != finalized_hash.as_slice() {
+            return Ok(Some(format!(
+                "Finalized block hash for block {block_number} does not match expected"
+            )));
+        }
+    }
+    Ok(None)
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_finalization_assertion_distinguishes_empty_reorg_replacements(
+) -> anyhow::Result<()> {
+    let instance = test_harness::instance::setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let mut db = Database::new(&instance.db_url, chain_id, 16).await?;
+    let pool = db.pool().await;
+    let anvil = Anvil::new().chain_id(42).spawn();
+    let signer: PrivateKeySigner = anvil.first_key().clone().into();
+    let provider = ProviderBuilder::new()
+        .wallet(EthereumWallet::new(signer))
+        .connect_http(anvil.endpoint_url());
+    let tfhe = RawLog::deploy(provider.clone()).await?;
+    let acl = RawLog::deploy(provider.clone()).await?;
+    provider.anvil_mine(Some(3), None).await?;
+    for number in 1_u64..=5 {
+        let block = provider.get_block_by_number(number.into()).await?.unwrap();
+        sqlx::query("INSERT INTO host_chain_blocks_valid (chain_id, block_hash, parent_hash, block_number, block_status) VALUES (42, $1, $2, $3, $4)")
+            .bind(block.header.hash.as_slice())
+            .bind(block.header.parent_hash.as_slice())
+            .bind(number as i64)
+            .bind(if number <= 2 { "finalized" } else { "pending" })
+            .execute(&pool).await?;
+    }
+    let caller = provider.signer_addresses().next().unwrap();
+    let handle = mock_trivial_encrypt_result(U256::from(7), 4, 42);
+    provider
+        .anvil_reorg(ReorgOptions {
+            depth: 3,
+            tx_block_pairs: vec![
+                (
+                    TransactionData::JSON(trivial_encrypt_request(
+                        &tfhe,
+                        caller,
+                        U256::from(7),
+                        4,
+                        42,
+                    )),
+                    0,
+                ),
+                (
+                    TransactionData::JSON(allowed_request(
+                        &acl, caller, caller, handle,
+                    )),
+                    2,
+                ),
+            ],
+        })
+        .await?;
+    let root = provider.get_block_by_number(3_u64.into()).await?.unwrap();
+    let logs = provider
+        .get_logs(&Filter::new().at_block_hash(root.header.hash))
+        .await?;
+    ingest_block_logs(
+        chain_id,
+        &mut db,
+        &BlockLogs {
+            logs,
+            summary: root.into(),
+            catchup: true,
+            finalized: true,
+        },
+        &Some(*acl.address()),
+        &Some(*tfhe.address()),
+        &None,
+        &None,
+        &None,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: false,
+            dependent_ops_max_per_chain: 0,
+            is_protocol_config_listener: false,
+            disable_synthetic_ops: true,
+        },
+    )
+    .await?;
+    for (number, should_fail) in [(4_i64, false), (5, true)] {
+        let variants: Vec<(Vec<u8>, String)> = sqlx::query_as(
+            "SELECT block_hash, block_status FROM host_chain_blocks_valid WHERE block_number=$1",
+        )
+        .bind(number)
+        .fetch_all(&pool)
+        .await?;
+        assert_eq!(variants.len(), 1);
+        assert_eq!(variants[0].1, "orphaned");
+        let mismatch = finalization_mismatch(
+            &provider,
+            &BlockVariants::from([(number, variants)]),
+            &[*tfhe.address(), *acl.address()],
+        )
+        .await?;
+        assert_eq!(
+            mismatch.is_some(),
+            should_fail,
+            "height {number}: only the empty replacement may be omitted"
+        );
+    }
+    Ok(())
+}
+
 async fn check_finalization_status(setup: &Setup) {
     let provider = ProviderBuilder::new()
         .wallet(setup.wallets[0].clone())
@@ -1744,10 +1910,7 @@ async fn check_finalization_status(setup: &Setup) {
             .max()
             .expect("At least one block should be ingested");
 
-        let mut blocks_by_number: std::collections::HashMap<
-            i64,
-            Vec<(Vec<u8>, String)>,
-        > = std::collections::HashMap::new();
+        let mut blocks_by_number = BlockVariants::new();
         for block in blocks {
             if block.block_number
                 > block_max
@@ -1762,47 +1925,18 @@ async fn check_finalization_status(setup: &Setup) {
                 .push((block.block_hash, block.block_status));
         }
 
-        let mut mismatch = None;
-        for (block_number, block_variants) in blocks_by_number.iter() {
-            let finalized_count = block_variants
-                .iter()
-                .filter(|(_, status)| status == "finalized")
-                .count();
-            let orphan_count = block_variants
-                .iter()
-                .filter(|(_, status)| status == "orphaned")
-                .count();
-            if finalized_count != 1 {
-                mismatch = Some(format!(
-                    "Block {block_number} should have exactly one finalized variant, found {finalized_count}"
-                ));
-                break;
-            }
-            if orphan_count != block_variants.len() - 1 {
-                mismatch = Some(format!(
-                    "Block {block_number} should have remaining variants as orphan"
-                ));
-                break;
-            }
-            let finalized_hash = block_variants
-                .iter()
-                .find(|(_, status)| status == "finalized")
-                .map(|(hash, _)| hash)
-                .unwrap();
-            let expected_hash = provider
-                .get_block_by_number((*block_number as u64).into())
-                .await
-                .unwrap()
-                .unwrap()
-                .header
-                .hash;
-            if expected_hash.0 != finalized_hash.as_slice() {
-                mismatch = Some(format!(
-                    "Finalized block hash for block {block_number} does not match expected"
-                ));
-                break;
-            }
-        }
+        let mismatch = finalization_mismatch(
+            &provider,
+            &blocks_by_number,
+            &[
+                *setup.acl_contract.address(),
+                *setup.tfhe_contract.address(),
+                *setup.kms_generation_contract.address(),
+                *setup.protocol_config_contract.address(),
+            ],
+        )
+        .await
+        .expect("Failed to check canonical block history");
         if mismatch.is_none() {
             return;
         }

@@ -80,7 +80,7 @@ async fn finalization_refuses_mismatched_parent_and_stops_batch() {
 
     // The poisoned RPC serves the fork chain for both heights.
     let fork = [(1u64, a1.clone()), (2, c2.clone()), (3, c3.clone())];
-    update_finalized_blocks_aux(&mut db, 3, 0, |n| {
+    let result = update_finalized_blocks_aux(&mut db, 3, 0, |n| {
         let hash = fork
             .iter()
             .find(|(num, _)| *num == n)
@@ -89,6 +89,10 @@ async fn finalization_refuses_mismatched_parent_and_stops_batch() {
         async move { Ok(hash) }
     })
     .await;
+    assert_eq!(
+        result.missing_canonical_block, None,
+        "contradictory stored history must not be retried as a missing block"
+    );
 
     for (hash, what) in [
         (&c2, "contradicting sibling"),
@@ -125,16 +129,21 @@ async fn finalization_stops_batch_at_fetch_failure() {
 
     // Height 2 answers honestly, height 3 errors, height 4 serves the fork.
     let served = [(1u64, a1.clone()), (2, b2.clone()), (4, c4.clone())];
-    update_finalized_blocks_aux(&mut db, 4, 0, |n| {
-        let hash = served
-            .iter()
-            .find(|(num, _)| *num == n)
-            .map(|(_, h)| alloy::primitives::FixedBytes::<32>::from_slice(h));
-        async move {
-            hash.ok_or_else(|| anyhow::anyhow!("rpc unavailable for {n}"))
-        }
-    })
-    .await;
+    let result =
+        update_finalized_blocks_aux(&mut db, 4, 0, |n| {
+            let hash =
+                served.iter().find(|(num, _)| *num == n).map(|(_, h)| {
+                    alloy::primitives::FixedBytes::<32>::from_slice(h)
+                });
+            async move {
+                hash.ok_or_else(|| anyhow::anyhow!("rpc unavailable for {n}"))
+            }
+        })
+        .await;
+    assert_eq!(
+        result.missing_canonical_block, None,
+        "an unavailable canonical hash must not authorize a recovery block"
+    );
 
     assert_eq!(
         block_status(&db, &b2).await.as_deref(),

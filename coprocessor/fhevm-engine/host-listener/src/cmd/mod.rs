@@ -940,6 +940,33 @@ impl InfiniteLogIter {
         })
     }
 
+    pub(crate) async fn queue_canonical_block_for_retry(
+        &mut self,
+        number: u64,
+    ) -> Result<()> {
+        // This repair is queued after a live block's finalization pass, outside
+        // any range page. Keep its acknowledgement from consuming a page slot.
+        anyhow::ensure!(
+            self.pending_catchup_page.is_none(),
+            "cannot queue a finalization repair while a catchup page is pending"
+        );
+        let header = self.get_block_by_number(number).await?.header;
+        anyhow::ensure!(header.number == number, "wrong recovery block height");
+        let mut block_logs = self.attach_logs_to(header).await?;
+        let confirmed = self.get_block_by_number(number).await?.header;
+        anyhow::ensure!(
+            confirmed.number == number
+                && confirmed.hash == block_logs.summary.hash,
+            "canonical block changed during finalization recovery"
+        );
+        validate_block_logs(&block_logs)?;
+        // Let the normal ingestion path validate and commit all events. A later
+        // finalization pass independently checks the hash and finality boundary.
+        block_logs.catchup = true;
+        self.next_blocklogs.push_front(block_logs);
+        Ok(())
+    }
+
     async fn find_last_block_and_logs(&self) -> Result<BlockLogs<Log>> {
         let block = self.get_current_block().await?;
         self.attach_logs_to(block.header).await
@@ -1534,6 +1561,81 @@ mod tests {
         block.header.hash = BlockHash::with_last_byte(hash);
         block.header.inner.number = 42;
         block
+    }
+
+    #[tokio::test]
+    async fn finalization_repair_queues_empty_and_nonempty_blocks() {
+        use alloy::transports::mock::Asserter;
+        for with_event in [false, true] {
+            let canonical = rpc_block(2);
+            let logs: Vec<Log> = if with_event {
+                vec![Log {
+                    block_hash: Some(canonical.header.hash),
+                    block_number: Some(42),
+                    transaction_hash: Some(BlockHash::with_last_byte(3)),
+                    log_index: Some(0),
+                    ..Default::default()
+                }]
+            } else {
+                vec![]
+            };
+            let asserter = Asserter::new();
+            asserter.push_success(&canonical);
+            asserter.push_success(&logs);
+            asserter.push_success(&canonical);
+            let mut iter = new_test_iter(50);
+            iter.catchup_blocks = Some((100, None));
+            *iter.provider.write().await =
+                Some(ProviderBuilder::new().connect_mocked_client(asserter));
+            iter.queue_canonical_block_for_retry(42).await.unwrap();
+            let repair = iter.next_blocklogs.pop_front().unwrap();
+            assert_eq!(repair.summary.hash, canonical.header.hash);
+            assert_eq!(repair.logs.len(), usize::from(with_event));
+            assert!(repair.catchup);
+            assert!(!repair.finalized);
+            iter.acknowledge_catchup_block();
+            assert_eq!(iter.catchup_blocks, Some((100, None)));
+        }
+    }
+
+    #[tokio::test]
+    async fn finalization_repair_preserves_unrelated_page_acknowledgements() {
+        let mut iter = new_test_iter(50);
+        iter.catchup_blocks = Some((100, None));
+        iter.pending_catchup_page = Some(CatchupPage {
+            from_block: 100,
+            next_page: 105,
+            remaining_blocks: 2,
+        });
+        assert!(iter.queue_canonical_block_for_retry(42).await.is_err());
+        assert!(iter.next_blocklogs.is_empty());
+        assert_eq!(iter.pending_catchup_page.unwrap().remaining_blocks, 2);
+        assert_eq!(iter.catchup_blocks, Some((100, None)));
+    }
+
+    #[tokio::test]
+    async fn finalization_repair_rejects_changed_or_unavailable_headers() {
+        use alloy::transports::mock::Asserter;
+        for changed in [false, true] {
+            let asserter = Asserter::new();
+            if changed {
+                asserter.push_success(&rpc_block(2));
+                asserter.push_success(&Vec::<Log>::new());
+                asserter.push_success(&rpc_block(3));
+            } else {
+                for _ in 0..=REORG_RETRY_GET_BLOCK {
+                    asserter.push_success(&Option::<Block>::None);
+                }
+            }
+            let mut iter = new_test_iter(50);
+            iter.catchup_blocks = Some((100, None));
+            *iter.provider.write().await =
+                Some(ProviderBuilder::new().connect_mocked_client(asserter));
+            assert!(iter.queue_canonical_block_for_retry(42).await.is_err());
+            assert!(iter.next_blocklogs.is_empty());
+            assert!(iter.pending_catchup_page.is_none());
+            assert_eq!(iter.catchup_blocks, Some((100, None)));
+        }
     }
 
     #[tokio::test]

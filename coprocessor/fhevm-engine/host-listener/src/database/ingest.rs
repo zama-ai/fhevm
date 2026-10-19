@@ -2047,19 +2047,33 @@ pub async fn update_finalized_blocks(
     last_block_number: u64,
     finality_lag: u64,
 ) {
-    let log_iter = &*log_iter;
-    update_finalized_blocks_aux(
+    let iter_ref = &*log_iter;
+    let result = update_finalized_blocks_aux(
         db,
         last_block_number,
         finality_lag,
         |block_number| async move {
-            log_iter
+            iter_ref
                 .get_block_by_number(block_number)
                 .await
                 .map(|block| block.header.hash)
         },
     )
     .await;
+    if let Some(number) = result.missing_canonical_block {
+        if let Err(err) = log_iter.queue_canonical_block_for_retry(number).await
+        {
+            warn!(number, error = %err, "Cannot recover missing canonical block; finalization will retry");
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct FinalizationResult {
+    /// A pending fork exists at this height, but its canonical replacement
+    /// has never been ingested. Callers must recover the full block, including
+    /// its logs, before finalization can safely proceed.
+    pub missing_canonical_block: Option<u64>,
 }
 
 pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
@@ -2067,7 +2081,8 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     last_block_number: u64,
     finality_lag: u64,
     mut get_block_hash_by_number: GetBlockHash,
-) where
+) -> FinalizationResult
+where
     GetBlockHash: FnMut(u64) -> GetBlockHashFuture,
     GetBlockHashFuture: Future<Output = anyhow::Result<BlockHash>>,
 {
@@ -2085,14 +2100,14 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                 info!(
                     "cutover completed — skipping finalized-blocks lookup (retired stack)"
                 );
-                return;
+                return FinalizationResult::default();
             }
             Err(err) => {
                 error!(
                     ?err,
                     "Failed to create transaction for finalized blocks update"
                 );
-                return;
+                return FinalizationResult::default();
             }
         };
         let candidates = async {
@@ -2120,7 +2135,7 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                     last_finalized_block,
                     "Failed to fetch finalization candidates"
                 );
-                return;
+                return FinalizationResult::default();
             }
         }
     };
@@ -2161,21 +2176,21 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
         }
     }
     if canonical.is_empty() {
-        return;
+        return FinalizationResult::default();
     }
 
     let mut tx = match db.new_transaction().await {
         Ok(Some(tx)) => tx,
         Ok(None) => {
             info!("cutover completed — skipping finalized-blocks update (retired stack)");
-            return;
+            return FinalizationResult::default();
         }
         Err(err) => {
             error!(
                 ?err,
                 "Failed to create transaction for finalized blocks update"
             );
-            return;
+            return FinalizationResult::default();
         }
     };
     // Finalization changes committed identity just like ingestion. Resolve the
@@ -2200,11 +2215,12 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
         Ok(role) => role,
         Err(err) => {
             error!(?err, "Failed to lock host history for finalization");
-            return;
+            return FinalizationResult::default();
         }
     };
+    let mut result = FinalizationResult::default();
     for (block_number, block_hash) in canonical {
-        let conflict = async {
+        let admission = async {
             let parent: Option<Option<Vec<u8>>> = sqlx::query_scalar(
                 "SELECT parent_hash FROM host_chain_blocks_valid
                  WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3",
@@ -2214,49 +2230,48 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
             .bind(block_hash.as_slice())
             .fetch_optional(&mut *tx)
             .await?;
-            host_history_conflict(
+            let already_ingested = parent.is_some();
+            let conflict = host_history_conflict(
                 &mut tx,
                 db.chain_id,
                 block_number,
                 block_hash.as_slice(),
                 parent.flatten().as_deref(),
             )
-            .await
+            .await?;
+            Ok::<_, sqlx::Error>((already_ingested, conflict))
         }
         .await;
-        match conflict {
-            Ok(Some(conflict)) => {
-                // Never upgrade a shared lock while holding it. Roll back the
-                // batch first, then persist containment under the exclusive fence.
-                if let Err(err) = tx.rollback().await {
-                    error!(
-                        ?err,
-                        "Failed to roll back conflicting finalization"
-                    );
-                    return;
-                }
-                if let Err(err) = record_halt(
-                    &db.pool().await,
-                    conflict.observation(
-                        ListenerSource::Host,
-                        history_role,
-                        db.chain_id.as_i64(),
-                    ),
-                )
-                .await
-                {
-                    error!(?err, "Failed to contain conflicting finalization");
-                }
-                return;
-            }
-            Ok(None) => {}
+        let (already_ingested, conflict) = match admission {
+            Ok(admission) => admission,
             Err(err) => {
                 error!(
                     ?err,
                     "Failed to check committed history before finalization"
                 );
-                return;
+                return FinalizationResult::default();
             }
+        };
+        if let Some(conflict) = conflict {
+            // Never upgrade a shared lock while holding it. Roll back the
+            // batch first, then persist containment under the exclusive fence.
+            if let Err(err) = tx.rollback().await {
+                error!(?err, "Failed to roll back conflicting finalization");
+                return FinalizationResult::default();
+            }
+            if let Err(err) = record_halt(
+                &db.pool().await,
+                conflict.observation(
+                    ListenerSource::Host,
+                    history_role,
+                    db.chain_id.as_i64(),
+                ),
+            )
+            .await
+            {
+                error!(?err, "Failed to contain conflicting finalization");
+            }
+            return FinalizationResult::default();
         }
         if Some(block_number) == verify_only_tip {
             // This was a consistency check, not a new finalization. Avoid
@@ -2284,7 +2299,7 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                         ?err,
                         "Failed to retract orphaned event state during finalization"
                     );
-                    return;
+                    return FinalizationResult::default();
                 }
                 // The block just became final: materialize its deferred
                 // fallback grants in the same transaction, so the synthesis
@@ -2302,10 +2317,18 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                         ?err,
                         "Failed to synthesize finalized fallback grants"
                     );
-                    return;
+                    return FinalizationResult::default();
                 }
             }
             Ok(None) => {
+                if !already_ingested {
+                    // Range catchup omits empty canonical replacements. Gaps
+                    // in the old observed branch can leave disconnected pending
+                    // descendants that recursive orphan marking cannot reach.
+                    // Recover this exact block through normal ingestion instead
+                    // of finalizing an unseen hash or blocking the queue forever.
+                    result.missing_canonical_block = Some(block_number as u64);
+                }
                 // Finalization refused (missing row / orphaned / parent
                 // linkage contradiction). STOP the batch: the next height's
                 // linkage check would pass vacuously without a finalized
@@ -2324,13 +2347,13 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                     ?err,
                     "Failed to update block as finalized"
                 );
-                return;
+                return FinalizationResult::default();
             }
         }
     }
     if let Err(err) = tx.commit().await {
         error!(?err, "Failed to commit finalized blocks update");
-        return;
+        return FinalizationResult::default();
     }
     // Notify the database of the new block
     // Delayed delegation rely on this signal to reconsider ready delegation
@@ -2348,6 +2371,7 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
         Ok(pruned) => info!(pruned, "Pruned finalized block history"),
         Err(err) => error!(?err, "Failed to prune finalized block history"),
     }
+    result
 }
 
 #[cfg(test)]
