@@ -1,4 +1,6 @@
-use super::event_operands::fhe_mul_div_factor2_is_scalar;
+use super::event_operands::{
+    binary_rhs_is_scalar, fhe_mul_div_factor2_is_scalar,
+};
 pub use super::event_operands::{
     operand_boundary_mask_from_minted, tfhe_encrypted_operand_positions,
     tfhe_inputs_handle,
@@ -942,7 +944,7 @@ impl Database {
         output_count: i16,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
-        let is_scalar = !scalar_byte.is_zero();
+        let is_scalar = binary_rhs_is_scalar(scalar_byte);
         let output_handle = result.to_vec();
         // The producing log supplies the inventory identity. Eligibility can
         // come from this delivery or persisted ACL evidence discovered during
