@@ -1711,4 +1711,98 @@ mod tests {
         assert_eq!(status, "done");
         Ok(())
     }
+
+    #[tokio::test]
+    async fn missing_containment_migration_defers_revert_until_schema_is_ready(
+    ) -> anyhow::Result<()> {
+        use fhevm_engine_common::drift_revert;
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
+        let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+        let (chain, _) = test_harness::db_utils::insert_random_keys_and_host_chain(&pool).await?;
+        // Model an existing database whose new migration has not run yet.
+        sqlx::raw_sql("DROP TABLE public.chain_recovery_halts; DROP TABLE public.listener_replay_state; DELETE FROM _sqlx_migrations WHERE version=20261012150000")
+            .execute(&pool).await?;
+        let signal = drift_revert::create_revert_signal(&pool, chain, 10)
+            .await?
+            .unwrap();
+        let config = || drift_revert::RevertRunnerConfig {
+            grace_period: std::time::Duration::ZERO,
+            max_recent_attempts: 3,
+            recent_attempts_window: std::time::Duration::from_secs(60),
+        };
+        let token = tokio_util::sync::CancellationToken::new();
+        for initial_status in ["pending", "reverting"] {
+            sqlx::query("UPDATE drift_revert_signal SET status=$1 WHERE id=$2")
+                .bind(initial_status)
+                .bind(signal)
+                .execute(&pool)
+                .await?;
+            let error =
+                drift_revert::handle_pending_signal_on_startup(&pool, Some(config()), &token)
+                    .await
+                    .expect_err("an unreadable containment gate must block startup");
+            assert!(
+                error
+                    .to_string()
+                    .contains("could not check host history containment"),
+                "{error:#}"
+            );
+            let status: String =
+                sqlx::query_scalar("SELECT status FROM drift_revert_signal WHERE id=$1")
+                    .bind(signal)
+                    .fetch_one(&pool)
+                    .await?;
+            assert_eq!(
+                status, "pending",
+                "no destructive SQL ran; preserve retryability"
+            );
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(100),
+                    drift_revert::handle_pending_signal_on_startup(&pool, None, &token)
+                )
+                .await
+                .is_err(),
+                "other services must remain blocked while recovery is pending"
+            );
+        }
+        sqlx::migrate!("../db-migration/migrations")
+            .run(&pool)
+            .await?;
+        drift_revert::handle_pending_signal_on_startup(&pool, Some(config()), &token).await?;
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM drift_revert_signal WHERE id=$1")
+                .bind(signal)
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(
+            status, "done",
+            "migration completion must allow the same signal to recover"
+        );
+        drift_revert::handle_pending_signal_on_startup(&pool, None, &token).await?;
+
+        // A readable gate must not turn failures in the revert SQL itself
+        // into endlessly retried preflight deferrals. Its parameter check
+        // rejects a host chain that does not exist.
+        let missing_chain: i64 =
+            sqlx::query_scalar("SELECT COALESCE(MAX(chain_id), 0) + 1 FROM host_chains")
+                .fetch_one(&pool)
+                .await?;
+        let invalid = drift_revert::create_revert_signal(&pool, missing_chain, 10)
+            .await?
+            .unwrap();
+        let error = drift_revert::handle_pending_signal_on_startup(&pool, Some(config()), &token)
+            .await
+            .expect_err("failure inside the revert script must remain terminal");
+        assert!(error.to_string().contains("does not exist in host_chains"));
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM drift_revert_signal WHERE id=$1")
+                .bind(invalid)
+                .fetch_one(&pool)
+                .await?;
+        assert!(status.starts_with("failed: "), "{status}");
+        Ok(())
+    }
 }

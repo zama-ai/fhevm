@@ -540,8 +540,12 @@ fn prepare_revert_sql(chain_id: i64, to_block_number: i64) -> String {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("host history is contained; operator recovery must precede automatic drift revert")]
-struct HostHistoryContained;
+enum HostHistoryPreflightError {
+    #[error("host history is contained; operator recovery must precede automatic drift revert")]
+    Contained,
+    #[error("could not check host history containment before drift revert: {0}")]
+    Unavailable(#[source] sqlx::Error),
+}
 
 /// Execute the revert SQL script against the database.
 ///
@@ -583,8 +587,11 @@ pub async fn execute_revert(
         .bind(crate::versioning::CUTOVER_LOCK_ID)
         .execute(&mut *tx)
         .await?;
-    if crate::chain_recovery::is_halted_tx(&mut tx).await? {
-        return Err(HostHistoryContained.into());
+    let contained = crate::chain_recovery::is_halted_tx(&mut tx)
+        .await
+        .map_err(HostHistoryPreflightError::Unavailable)?;
+    if contained {
+        return Err(HostHistoryPreflightError::Contained.into());
     }
     sqlx::Executor::execute(&mut *tx, sql.as_str()).await?;
     tx.commit().await?;
@@ -806,9 +813,10 @@ async fn run_all_pending_as_runner(
         )
         .await
         {
-            if e.downcast_ref::<HostHistoryContained>().is_some() {
-                // No revert ran. Preserve retryability after audited recovery;
-                // containment is not a failed destructive recovery attempt.
+            if e.downcast_ref::<HostHistoryPreflightError>().is_some() {
+                // No revert ran. Preserve retryability after audited recovery
+                // or once the containment gate becomes readable (for example,
+                // when a migration finishes). An unreadable gate stays closed.
                 update_signal_status(pool, signal.id, &SignalStatus::Pending).await?;
                 return Err(e);
             }
