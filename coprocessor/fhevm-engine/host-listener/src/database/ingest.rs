@@ -422,6 +422,19 @@ pub async fn ingest_block_logs(
     .await?
     {
         tx.rollback().await?;
+        if !block_logs.finalized {
+            // Live subscriptions and the broker's independent live/final
+            // queues can deliver an old fork after its replacement finalized.
+            // This observation makes no new canonical claim: discard it
+            // without touching work or containing the already-consistent DB.
+            warn!(
+                block_number = block_logs.summary.number,
+                block_hash = ?block_logs.summary.hash,
+                conflict_height = conflict.block_number,
+                "Ignoring delayed non-finalized block outside committed history"
+            );
+            return Ok(());
+        }
         record_halt(
             &db.pool().await,
             conflict.observation(
@@ -558,12 +571,14 @@ pub async fn ingest_block_logs(
                     acl_event_log.push((event, log.transaction_hash));
                     continue;
                 }
-                DecodedEvent::MalformedKnown => {
+                DecodedEvent::MalformedKnown if is_acl_address => {
                     return Err(sqlx::Error::Protocol(
                         "malformed known ACL event envelope".into(),
                     ));
                 }
-                DecodedEvent::Unknown => {}
+                // Wildcard mode also sees unrelated contracts. A shared
+                // selector does not establish ownership of a failed decode.
+                DecodedEvent::MalformedKnown | DecodedEvent::Unknown => {}
             }
         }
 
@@ -624,12 +639,12 @@ pub async fn ingest_block_logs(
                     tfhe_event_log.push(log);
                     continue;
                 }
-                DecodedEvent::MalformedKnown => {
+                DecodedEvent::MalformedKnown if is_tfhe_address => {
                     return Err(sqlx::Error::Protocol(
                         "malformed known TFHE event envelope".into(),
                     ));
                 }
-                DecodedEvent::Unknown => {}
+                DecodedEvent::MalformedKnown | DecodedEvent::Unknown => {}
             }
         }
 
@@ -2063,7 +2078,7 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     // canonical hashes over RPC with NO transaction open: block fetches can
     // take seconds each, and holding the finalization transaction across the
     // round-trips kept its row locks pinned for the whole time.
-    let blocks_number = {
+    let (blocks_number, committed_tip) = {
         let mut tx = match db.new_transaction().await {
             Ok(Some(tx)) => tx,
             Ok(None) => {
@@ -2080,19 +2095,30 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                 return;
             }
         };
-        match Database::get_finalized_blocks_number(
-            &mut tx,
-            last_finalized_block as i64,
-            db.chain_id,
-        )
-        .await
-        {
-            Ok(numbers) => numbers,
+        let candidates = async {
+            let numbers = Database::get_finalized_blocks_number(
+                &mut tx,
+                last_finalized_block as i64,
+                db.chain_id,
+            )
+            .await?;
+            let tip: Option<i64> = sqlx::query_scalar(
+                "SELECT MAX(block_number) FROM host_chain_blocks_valid
+                 WHERE chain_id = $1 AND block_status = 'finalized'",
+            )
+            .bind(db.chain_id.as_i64())
+            .fetch_one(&mut *tx)
+            .await?;
+            Ok::<_, sqlx::Error>((numbers, tip))
+        }
+        .await;
+        match candidates {
+            Ok(candidates) => candidates,
             Err(err) => {
                 error!(
                     ?err,
                     last_finalized_block,
-                    "Failed to fetch finalized blocks number"
+                    "Failed to fetch finalization candidates"
                 );
                 return;
             }
@@ -2100,11 +2126,19 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     };
     info!(?blocks_number, "Finalizing blocks");
 
-    // Ascending: finalization verifies each block's parent linkage against
-    // its finalized predecessor, so within one batch the predecessor must be
-    // finalized first.
+    // Verify the committed tip even when no pending rows remain. A delayed
+    // non-final observation was safely discarded above, but a real canonical
+    // change must still be detected by a websocket-only deployment. Verify it
+    // first: an unavailable tip must prevent other finalizations this pass.
+    // Pending heights then stay ascending so predecessors finalize first.
+    let verify_only_tip =
+        committed_tip.filter(|tip| !blocks_number.contains(tip));
     let mut blocks_number: Vec<i64> = blocks_number.into_iter().collect();
     blocks_number.sort_unstable();
+    if let Some(tip) = committed_tip {
+        blocks_number.retain(|number| *number != tip);
+        blocks_number.insert(0, tip);
+    }
 
     let mut canonical = Vec::with_capacity(blocks_number.len());
     for block_number in blocks_number {
@@ -2223,6 +2257,12 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                 );
                 return;
             }
+        }
+        if Some(block_number) == verify_only_tip {
+            // This was a consistency check, not a new finalization. Avoid
+            // repeating side effects unless pending forks at this height need
+            // the existing finalization path to orphan and retract them.
+            continue;
         }
         match db
             .update_block_as_finalized(&mut tx, block_number, &block_hash)

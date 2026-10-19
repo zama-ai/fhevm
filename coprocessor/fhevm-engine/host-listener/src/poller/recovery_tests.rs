@@ -10,6 +10,412 @@ use fhevm_engine_common::versioning::{
 };
 use test_harness::instance::{setup_test_db, ImportMode};
 
+async fn assert_retired_poller_pauses(
+    dependent_ops_max_per_chain: u32,
+    retire_during_startup: bool,
+    has_paused: impl Fn() -> bool,
+) -> Result<()> {
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow!("{err}"))?;
+    let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+    sqlx::query("INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block) VALUES (42, 7)")
+        .execute(&pool).await?;
+    let mut cutover = if retire_during_startup {
+        let mut tx = pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(CUTOVER_LOCK_ID)
+            .execute(&mut *tx)
+            .await?;
+        Some(tx)
+    } else {
+        sqlx::query("UPDATE versioning SET consensus_version = 9999")
+            .execute(&pool)
+            .await?;
+        None
+    };
+    let anvil = alloy::node_bindings::Anvil::new().chain_id(42).spawn();
+    let config = PollerConfig {
+        url: anvil.endpoint(),
+        acl_address: Address::with_last_byte(1),
+        tfhe_address: Address::with_last_byte(2),
+        kms_generation_address: None,
+        protocol_config_address: None,
+        confidential_bridge_address: None,
+        database_url: instance.db_url.clone(),
+        finality_lag: 20,
+        batch_size: 100,
+        poll_interval: Duration::from_millis(100),
+        retry_interval: Duration::from_millis(10),
+        service_name: "retired-poller-test".into(),
+        max_http_retries: 0,
+        rpc_compute_units_per_second: 1000,
+        health_port: 0,
+        seed_start_block: None,
+        replay_window: 64,
+        dependence_cache_size: 64,
+        dependence_by_connexity: false,
+        dependence_cross_block: false,
+        dependent_ops_max_per_chain,
+        gcs_mode: false,
+        disable_synthetic_ops: true,
+        canonical_protocol_config_chain_id: None,
+    };
+    let poller = run_poller(config);
+    tokio::pin!(poller);
+    if let Some(mut tx) = cutover.take() {
+        // Retire while startup's promotion or replay transaction waits behind
+        // the fence, after its initial retirement check already passed.
+        tokio::select! {
+            result = &mut poller => panic!("poller exited before cutover: {result:?}"),
+            result = tokio::time::timeout(Duration::from_secs(10), async {
+                loop {
+                    let waiting: bool = sqlx::query_scalar(
+                        "SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+                         WHERE datname = current_database() AND wait_event = 'advisory')",
+                    ).fetch_one(&pool).await?;
+                    if waiting { break; }
+                    sleep(Duration::from_millis(10)).await;
+                }
+                Ok::<_, sqlx::Error>(())
+            }) => result??,
+        }
+        sqlx::query("UPDATE versioning SET consensus_version = 9999")
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+    }
+    tokio::select! {
+        result = &mut poller => panic!("retired poller exited: {result:?}"),
+        result = tokio::time::timeout(Duration::from_secs(10), async {
+            while !has_paused() {
+                sleep(Duration::from_millis(10)).await;
+            }
+        }) => result?,
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut poller)
+            .await
+            .is_err()
+    );
+    let replays: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM public.listener_replay_state")
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(replays, 0, "retired startup must not create replay state");
+    Ok(())
+}
+
+#[tokio::test]
+#[tracing_test::traced_test]
+async fn retired_poller_pauses_before_fast_lane_promotion() -> Result<()> {
+    assert_retired_poller_pauses(0, false, || {
+        logs_contain("Listener stack retired; pausing ingestion")
+    })
+    .await
+}
+
+#[tokio::test]
+#[tracing_test::traced_test]
+async fn retired_poller_pauses_before_replay_startup() -> Result<()> {
+    assert_retired_poller_pauses(100, false, || {
+        logs_contain("Listener stack retired; pausing ingestion")
+    })
+    .await
+}
+
+#[tokio::test]
+#[tracing_test::traced_test]
+async fn retired_poller_pauses_when_cutover_races_promotion() -> Result<()> {
+    assert_retired_poller_pauses(0, true, || {
+        logs_contain("Listener stack retired; pausing ingestion")
+    })
+    .await
+}
+
+#[tokio::test]
+#[tracing_test::traced_test]
+async fn retired_poller_pauses_when_cutover_races_replay_startup() -> Result<()>
+{
+    assert_retired_poller_pauses(100, true, || {
+        logs_contain("Listener stack retired; pausing ingestion")
+    })
+    .await
+}
+
+#[tokio::test]
+async fn delayed_live_forks_do_not_halt_or_insert_stale_work() -> Result<()> {
+    use crate::contracts::TfheContract;
+    use crate::database::ingest::{ingest_block_logs, IngestOptions};
+    use alloy::primitives::{Address, U256};
+    use alloy::sol_types::SolEvent;
+
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow!("{err}"))?;
+    let options = IngestOptions {
+        dependence_by_connexity: false,
+        dependence_cross_block: false,
+        dependent_ops_max_per_chain: 1,
+        is_protocol_config_listener: false,
+        disable_synthetic_ops: true,
+    };
+    // Cover a retained orphan, a previously unseen stale parent, and a child
+    // of an orphan. Live/final queues and pollers can finish in any order.
+    for (chain_number, stale_height) in [(42_u64, 100), (43, 99), (44, 101)] {
+        let chain = ChainId::try_from(chain_number)?;
+        let mut db = Database::new(&instance.db_url, chain, 64).await?;
+        let pool = db.pool().await;
+        let mut canonical = BlockLogs {
+            logs: vec![],
+            catchup: false,
+            finalized: false,
+            summary: BlockSummary {
+                number: 100,
+                hash: B256::repeat_byte(1),
+                parent_hash: B256::repeat_byte(99),
+                timestamp: 100,
+            },
+        };
+        if stale_height == 100 {
+            ingest_block_logs(
+                chain,
+                &mut db,
+                &canonical,
+                &None,
+                &None,
+                &None,
+                &None,
+                &None,
+                options.clone(),
+            )
+            .await?;
+        }
+        canonical.summary.hash = B256::repeat_byte(2);
+        canonical.finalized = true;
+        ingest_block_logs(
+            chain,
+            &mut db,
+            &canonical,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            options.clone(),
+        )
+        .await?;
+        let before: Vec<(Vec<u8>, String)> = sqlx::query_as(
+            "SELECT block_hash, block_status FROM host_chain_blocks_valid
+             WHERE chain_id = $1 ORDER BY block_hash",
+        )
+        .bind(chain.as_i64())
+        .fetch_all(&pool)
+        .await?;
+
+        let mut handle = B256::repeat_byte(chain_number as u8);
+        handle.0[21] = 0xff;
+        handle.0[22..30].copy_from_slice(&chain_number.to_be_bytes());
+        handle.0[30] = 4;
+        handle.0[31] = 0;
+        let event = TfheContract::TrivialEncrypt {
+            caller: Address::ZERO,
+            pt: U256::from(7),
+            toType: 4,
+            result: handle,
+        };
+        let stale_hash =
+            B256::repeat_byte(if stale_height == 101 { 3 } else { 1 });
+        let mut stale = BlockLogs {
+            logs: vec![Log {
+                inner: alloy::primitives::Log {
+                    address: Address::ZERO,
+                    data: event.encode_log_data(),
+                },
+                block_hash: Some(stale_hash),
+                block_number: Some(stale_height),
+                transaction_hash: Some(B256::repeat_byte(7)),
+                log_index: Some(0),
+                ..Default::default()
+            }],
+            catchup: false,
+            finalized: false,
+            summary: BlockSummary {
+                number: stale_height,
+                hash: stale_hash,
+                parent_hash: B256::repeat_byte(match stale_height {
+                    99 => 98,
+                    100 => 99,
+                    _ => 1,
+                }),
+                timestamp: stale_height,
+            },
+        };
+        ingest_block_logs(
+            chain,
+            &mut db,
+            &stale,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            options.clone(),
+        )
+        .await?;
+        assert!(!is_halted(&pool).await?);
+        let after: Vec<(Vec<u8>, String)> = sqlx::query_as(
+            "SELECT block_hash, block_status FROM host_chain_blocks_valid
+             WHERE chain_id = $1 ORDER BY block_hash",
+        )
+        .bind(chain.as_i64())
+        .fetch_all(&pool)
+        .await?;
+        assert_eq!(after, before, "stale delivery must not change history");
+        let work: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM computations WHERE output_handle = $1",
+        )
+        .bind(handle.as_slice())
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(work, 0, "stale delivery must not insert computations");
+
+        if stale_height == 101 {
+            // A finalized/canonical claim is different: retain fail-closed
+            // containment for the same contradiction once it is authoritative.
+            stale.finalized = true;
+            assert!(ingest_block_logs(
+                chain,
+                &mut db,
+                &stale,
+                &None,
+                &None,
+                &None,
+                &None,
+                &None,
+                options.clone()
+            )
+            .await
+            .is_err());
+            assert!(is_halted(&pool).await?);
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn deferred_finalization_checks_the_committed_tip_without_pending_work(
+) -> Result<()> {
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow!("{err}"))?;
+    let chain = ChainId::try_from(42_u64)?;
+    let mut db = Database::new(&instance.db_url, chain, 64).await?;
+    let pool = db.pool().await;
+    let canonical = B256::repeat_byte(2);
+    sqlx::query("INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status) VALUES (42, $1, 100, 'finalized')")
+        .bind(canonical.as_slice()).execute(&pool).await?;
+    let stale = BlockLogs {
+        logs: vec![],
+        catchup: false,
+        finalized: false,
+        summary: BlockSummary {
+            number: 100,
+            hash: B256::repeat_byte(1),
+            parent_hash: B256::repeat_byte(99),
+            timestamp: 100,
+        },
+    };
+    ingest_block_logs(
+        chain,
+        &mut db,
+        &stale,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: false,
+            dependent_ops_max_per_chain: 1,
+            is_protocol_config_listener: false,
+            disable_synthetic_ops: true,
+        },
+    )
+    .await?;
+    let mut requested = vec![];
+    update_finalized_blocks_aux(&mut db, 120, 20, |number| {
+        requested.push(number);
+        async move { Ok(canonical) }
+    })
+    .await;
+    assert_eq!(requested, vec![100]);
+    assert!(
+        !is_halted(&pool).await?,
+        "late live data is not a canonical change"
+    );
+
+    // An independent canonical read now confirms a real history change. There
+    // are no pending rows, including none from the discarded stale delivery.
+    let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM host_chain_blocks_valid WHERE block_status = 'pending'")
+        .fetch_one(&pool).await?;
+    assert_eq!(pending, 0);
+    update_finalized_blocks_aux(&mut db, 120, 20, |_| async {
+        Ok(B256::repeat_byte(3))
+    })
+    .await;
+    assert!(is_halted(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn deferred_finalization_waits_for_an_unavailable_committed_tip(
+) -> Result<()> {
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow!("{err}"))?;
+    let chain = ChainId::try_from(42_u64)?;
+    let mut db = Database::new(&instance.db_url, chain, 64).await?;
+    let pool = db.pool().await;
+    // An older listener may have left a pending fork at the committed tip.
+    // It still needs normal orphan cleanup when the provider becomes available.
+    sqlx::query("INSERT INTO host_chain_blocks_valid (chain_id, block_hash, parent_hash, block_number, block_status) VALUES (42, $1, NULL, 100, 'finalized'), (42, $2, $1, 101, 'pending'), (42, $3, NULL, 100, 'pending')")
+        .bind(B256::repeat_byte(2).as_slice())
+        .bind(B256::repeat_byte(3).as_slice())
+        .bind(B256::repeat_byte(1).as_slice()).execute(&pool).await?;
+    let mut requested = vec![];
+    update_finalized_blocks_aux(&mut db, 121, 20, |number| {
+        requested.push(number);
+        async { anyhow::bail!("canonical header temporarily unavailable") }
+    })
+    .await;
+    assert_eq!(
+        requested,
+        vec![100],
+        "verify the tip before pending heights"
+    );
+    let status: String = sqlx::query_scalar("SELECT block_status FROM host_chain_blocks_valid WHERE chain_id = 42 AND block_number = 101")
+        .fetch_one(&pool).await?;
+    assert_eq!(status, "pending");
+    assert!(!is_halted(&pool).await?);
+
+    requested.clear();
+    update_finalized_blocks_aux(&mut db, 121, 20, |number| {
+        requested.push(number);
+        async move { Ok(B256::repeat_byte(if number == 100 { 2 } else { 3 })) }
+    })
+    .await;
+    assert_eq!(requested, vec![100, 101]);
+    let status: String = sqlx::query_scalar("SELECT block_status FROM host_chain_blocks_valid WHERE chain_id = 42 AND block_number = 101")
+        .fetch_one(&pool).await?;
+    assert_eq!(status, "finalized");
+    let stale_status: String = sqlx::query_scalar("SELECT block_status FROM host_chain_blocks_valid WHERE chain_id = 42 AND block_hash = $1")
+        .bind(B256::repeat_byte(1).as_slice()).fetch_one(&pool).await?;
+    assert_eq!(stale_status, "orphaned");
+    Ok(())
+}
+
 #[tokio::test]
 async fn deferred_finalization_checks_all_retained_neighbors() -> Result<()> {
     use crate::database::ingest::update_finalized_blocks_aux;
@@ -26,8 +432,12 @@ async fn deferred_finalization_checks_all_retained_neighbors() -> Result<()> {
         sqlx::query("INSERT INTO host_chain_blocks_valid (chain_id,block_hash,parent_hash,block_number,block_status) VALUES (42,$1,$2,100,'pending'), (42,$3,$3,$4,'finalized')")
             .bind(candidate.as_slice()).bind(B256::repeat_byte(9).as_slice())
             .bind(B256::repeat_byte(20).as_slice()).bind(neighbor).execute(&pool).await?;
-        update_finalized_blocks_aux(&mut db, 100, 0, |_| async {
-            Ok(candidate)
+        update_finalized_blocks_aux(&mut db, 100, 0, |number| async move {
+            Ok(if number == 100 {
+                candidate
+            } else {
+                B256::repeat_byte(20)
+            })
         })
         .await;
         assert!(
@@ -43,6 +453,7 @@ async fn deferred_finalization_checks_all_retained_neighbors() -> Result<()> {
         let retained: String = sqlx::query_scalar("SELECT block_status FROM host_chain_blocks_valid WHERE chain_id=42 AND block_hash=$1")
             .bind(B256::repeat_byte(20).as_slice()).fetch_one(&pool).await?;
         assert_eq!(retained, "finalized");
+        pool.close().await;
     }
     Ok(())
 }
@@ -62,8 +473,8 @@ async fn deferred_finalization_accepts_unknown_legacy_parents() -> Result<()> {
             .bind(B256::with_last_byte(number as u8).as_slice()).bind(number)
             .bind(if number == 100 { "pending" } else { "finalized" }).execute(&pool).await?;
     }
-    update_finalized_blocks_aux(&mut db, 100, 0, |_| async {
-        Ok(B256::with_last_byte(100))
+    update_finalized_blocks_aux(&mut db, 100, 0, |number| async move {
+        Ok(B256::with_last_byte(number as u8))
     })
     .await;
     assert!(!is_halted(&pool).await?);

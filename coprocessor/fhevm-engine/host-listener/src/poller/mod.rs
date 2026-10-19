@@ -20,10 +20,11 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_pool_with_options;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
-use fhevm_engine_common::versioning::StackMode;
+use fhevm_engine_common::versioning::{reconcile_stack_mode, StackMode};
 use sqlx::postgres::PgPoolOptions;
 
 use crate::cmd::block_history::BlockSummary;
+use crate::cmd::wait_while_paused;
 use crate::database::ingest::{
     ingest_block_logs, update_finalized_blocks_aux, BlockLogs, IngestOptions,
 };
@@ -384,16 +385,6 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     )
     .await?;
 
-    if config.dependent_ops_max_per_chain == 0 {
-        let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
-        if promoted > 0 {
-            info!(
-                count = promoted,
-                "Slow-lane disabled: promoted all chains to fast on startup"
-            );
-        }
-    }
-
     // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
     // this (blue) stack is retired and `stack_mode` flips to paused, turning
     // the poll loop below into a no-op (stops polling/producing blocks).
@@ -407,25 +398,43 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     // the routed cursor, so promotion and concurrent initialization win over a
     // seed resolved before them. Replay ownership is returned with its token.
     let mut seed = None;
+    let mut promoted = config.dependent_ops_max_per_chain != 0;
     let (mut last_caught_up_block, replay) = loop {
         use fhevm_engine_common::chain_recovery::{
             prepare_host_replay, HostReplayStartup,
         };
         let pool = db.pool.read().await.clone();
-        match prepare_host_replay(
-            &pool,
-            db.gcs_mode(),
-            chain_id.as_i64(),
-            config.replay_window,
-            seed,
-        )
-        .await?
-        {
-            HostReplayStartup::Ready { cursor, replay } => {
+        // A retired process may start after the cutover notification. Pause
+        // before either guarded startup write, keeping liveness healthy.
+        reconcile_stack_mode(&pool, &stack_mode).await?;
+        wait_while_paused(&stack_mode, &blockchain_tick, &cancel_token).await;
+        if cancel_token.is_cancelled() {
+            return Ok(());
+        }
+        let startup: Result<HostReplayStartup> = async {
+            if !promoted {
+                let count = db.promote_all_dep_chains_to_fast_priority().await?;
+                if count > 0 {
+                    info!(count, "Slow-lane disabled: promoted all chains to fast on startup");
+                }
+                promoted = true;
+            }
+            prepare_host_replay(
+                &pool,
+                db.gcs_mode(),
+                chain_id.as_i64(),
+                config.replay_window,
+                seed,
+            )
+            .await
+        }
+        .await;
+        match startup {
+            Ok(HostReplayStartup::Ready { cursor, replay }) => {
                 db.tick.update();
                 break (u64::try_from(cursor)?, replay);
             }
-            HostReplayStartup::NeedsSeed => {
+            Ok(HostReplayStartup::NeedsSeed) => {
                 let initial = match resolve_start_anchor(
                     config.seed_start_block,
                 )? {
@@ -440,6 +449,15 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                     }
                 };
                 seed = Some(initial);
+            }
+            Err(err) => {
+                // Retirement can also race the check above while a write is
+                // waiting for the cutover fence. Only retirement becomes a
+                // pause; containment and other startup errors still fail.
+                reconcile_stack_mode(&pool, &stack_mode).await?;
+                if !stack_mode.is_paused() {
+                    return Err(err);
+                }
             }
         }
     };
@@ -465,10 +483,9 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
     let mut consecutive_rpc_failures: u64 = 0;
 
     loop {
-        // Paused (retired blue stack after cutover): no-op — stop polling.
-        if stack_mode.is_paused() {
-            sleep(config.poll_interval).await;
-            continue;
+        wait_while_paused(&stack_mode, &blockchain_tick, &cancel_token).await;
+        if cancel_token.is_cancelled() {
+            return Ok(());
         }
         let pool = db.pool.read().await.clone();
         if fhevm_engine_common::chain_recovery::is_halted(&pool).await? {

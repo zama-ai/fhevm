@@ -24,6 +24,13 @@ const OPTIONS: IngestOptions = IngestOptions {
     disable_synthetic_ops: true,
 };
 
+alloy::sol! {
+    interface OtherContract {
+        // The selector is identical to Ownable's event, but indexing differs.
+        event OwnershipTransferred(address previousOwner, address newOwner);
+    }
+}
+
 fn rpc_log<E: SolEvent>(
     event: &E,
     block: &BlockSummary,
@@ -78,8 +85,8 @@ async fn ingest(
         ChainId::try_from(42_u64)?,
         db,
         &block_logs,
-        &None,
-        &None,
+        &Some(Address::ZERO),
+        &Some(Address::ZERO),
         &None,
         &None,
         &None,
@@ -415,6 +422,57 @@ async fn replay_repairs_counts_without_duplicate_or_finalization_regression(
 
 #[tokio::test]
 #[serial(db)]
+async fn wildcard_envelope_collision_does_not_reject_an_unrelated_event(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    let block = block();
+    let event = OtherContract::OwnershipTransferred {
+        previousOwner: Address::with_last_byte(1),
+        newOwner: Address::with_last_byte(2),
+    };
+    assert_eq!(
+        OtherContract::OwnershipTransferred::SIGNATURE_HASH,
+        AclContract::OwnershipTransferred::SIGNATURE_HASH,
+    );
+    let log = rpc_log(&event, &block, FixedBytes::with_last_byte(0x90), 0);
+
+    // With an explicitly matched ACL address, this remains a malformed known
+    // event and must stop ingestion. Wildcard mode cannot claim that ownership.
+    assert!(ingest(&mut db, &block, vec![log.clone()], false)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("malformed known ACL"));
+    ingest_block_logs(
+        ChainId::try_from(42_u64)?,
+        &mut db,
+        &BlockLogs {
+            logs: vec![log],
+            summary: block,
+            catchup: false,
+            finalized: false,
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        OPTIONS,
+    )
+    .await?;
+    let counts: (i64, i64) = sqlx::query_as(
+        "SELECT fhe_event_count::bigint, allow_event_count::bigint
+         FROM host_chain_blocks_valid WHERE chain_id = 42 AND block_hash = $1",
+    )
+    .bind(block.hash.as_slice())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(counts, (0, 0));
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn malformed_known_envelopes_rollback_and_allow_valid_retry(
 ) -> anyhow::Result<()> {
     let (mut db, pool, _instance) = setup().await?;
@@ -596,6 +654,8 @@ async fn restart_replay_preserves_migrated_legacy_masks_and_ciphertexts(
         .await
         .is_err());
         assert!(is_halted(&pool).await?);
+        db.pool().await.close().await;
+        pool.close().await;
     }
     Ok(())
 }
@@ -673,6 +733,8 @@ async fn replay_contains_changed_operand_origin_before_releasing_work(
         let pending: bool = sqlx::query_scalar("SELECT pending FROM public.listener_replay_state WHERE source='host' AND chain_id=42")
             .fetch_one(&pool).await?;
         assert!(pending, "failed replay must not release derived work");
+        db.pool().await.close().await;
+        pool.close().await;
     }
     Ok(())
 }

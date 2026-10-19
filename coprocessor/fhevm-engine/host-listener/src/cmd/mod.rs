@@ -1164,7 +1164,7 @@ async fn db_insert_block(
 }
 
 /// Pause without consuming catchup pages or failing the liveness check.
-async fn wait_while_paused(
+pub(crate) async fn wait_while_paused(
     stack_mode: &StackMode,
     heartbeat: &HeartBeat,
     cancel: &CancellationToken,
