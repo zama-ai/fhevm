@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import { renderEnvMaps } from "./generate/env";
 import { COMPONENTS, TEMPLATE_ENV_DIR } from "./layout";
 import { presetBundle } from "./resolve/target";
+import { parseBlueGreenScenario, resolveBlueGreenScenario } from "./scenario/resolve";
 import { stackSpecForState } from "./stack-spec/stack-spec";
 import { testDefaultScenario } from "./test-fixtures";
 import type { State } from "./types";
@@ -150,6 +151,63 @@ describe("env", () => {
     expect(pair.componentEnvs.coprocessor.COPROCESSOR_PROXY_ENDPOINT_ADDRESSES).toBe("coprocessor-prf-service-fake:8080");
     expect(pair.instanceEnvs["coprocessor.1"].COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS).toBe(signers.COPROCESSOR_SIGNER_ADDRESS_1);
     expect(pair.instanceEnvs["coprocessor.1"].COPROCESSOR_PROXY_ENDPOINT_ADDRESSES).toBe("coprocessor1-prf-service-fake:8080");
+  });
+
+  test("points the e2e suite at every coprocessor's proxy, signing as KMS party 1's connector", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const bundle = presetBundle("latest-main", "abcdef0", "latest-main.json");
+    const stateFor = (count: number, proxyVersion: string): State => ({
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: { ...bundle, env: { ...bundle.env, COPROCESSOR_PROXY_VERSION: proxyVersion } },
+      overrides: [],
+      scenario: testDefaultScenario({ topology: { count, threshold: count } }),
+      completedSteps: [],
+      updatedAt: "2026-03-30T00:00:00.000Z",
+    });
+
+    const pair = await renderEnvMaps({ discovery: undefined }, stackSpecForState(stateFor(2, "v0.15.0")), templateEnvs, deriveWallet);
+    const suite = pair.componentEnvs["test-suite"];
+    expect(suite.COPROCESSOR_PROXY_URLS).toBe("https://coprocessor-proxy:8443,https://coprocessor1-proxy:8443");
+    expect(suite.COPROCESSOR_SIGNER_ADDRESSES).toBe(
+      [
+        pair.componentEnvs.coprocessor.COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS,
+        pair.instanceEnvs["coprocessor.1"].COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS,
+      ].join(","),
+    );
+    expect(suite.PRF_SERVICE_FAKE_COUNT_URLS).toBe(
+      "http://coprocessor-prf-service-fake:9090/count,http://coprocessor1-prf-service-fake:9090/count",
+    );
+    expect(suite.COPROCESSOR_PROXY_CA_CERT).toBe("/etc/coprocessor-proxy/tls.crt");
+    // Party 1's connector key, whose address the host ProtocolConfig deploy lists as a KMS tx-sender.
+    expect(suite.KMS_CONNECTOR_PRIVATE_KEY).not.toBe("");
+    expect(suite.KMS_CONNECTOR_PRIVATE_KEY).toBe(pair.componentEnvs["kms-connector"].KMS_CONNECTOR_PRIVATE_KEY);
+    expect(pair.componentEnvs["kms-connector"].KMS_CONNECTOR_TX_SENDER_ADDRESS).toBe(
+      pair.componentEnvs["host-sc"].KMS_TX_SENDER_ADDRESS_0,
+    );
+
+    // Bundles without the proxy image, and blue-green stacks, run no proxy.
+    const blueGreen: State = {
+      ...stateFor(1, "v0.15.0"),
+      scenario: resolveBlueGreenScenario(
+        "/tmp/blue-green-test.yaml",
+        parseBlueGreenScenario("version: 1\nkind: blue-green\ngcs:\n  source: { mode: local }\n"),
+      ),
+    };
+    for (const state of [stateFor(2, ""), blueGreen]) {
+      const gated = await renderEnvMaps({ discovery: undefined }, stackSpecForState(state), templateEnvs, deriveWallet);
+      for (const key of ["COPROCESSOR_PROXY_URLS", "COPROCESSOR_SIGNER_ADDRESSES", "PRF_SERVICE_FAKE_COUNT_URLS", "KMS_CONNECTOR_PRIVATE_KEY"]) {
+        expect(gated.componentEnvs["test-suite"][key]).toBe("");
+      }
+    }
   });
 
   test("projects custom primary host settings into runtime envs", async () => {

@@ -351,6 +351,7 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli test decryption-signature-invalidation
 ./fhevm-cli test connector-http-public-decrypt
 ./fhevm-cli test connector-http
+./fhevm-cli test coprocessor-proxy
 ./fhevm-cli test light
 ./fhevm-cli test standard
 ./fhevm-cli test heavy

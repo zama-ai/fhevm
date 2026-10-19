@@ -11,7 +11,12 @@ import { syntheticTrackReadinessSql, syntheticEvidenceAuditSql, SYNTHETIC_EVIDEN
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
-import { compatPolicyForState, supportsConnectorHttp, supportsCoprocessorDbStateRevert } from "../compat/compat";
+import {
+  compatPolicyForState,
+  supportsConnectorHttp,
+  supportsCoprocessorDbStateRevert,
+  supportsCoprocessorProxy,
+} from "../compat/compat";
 import { consumerOnlyHostListeners } from "../host-listener-mode";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
@@ -156,6 +161,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
     "Run kms-connector HTTP endpoint rejections.",
   "connector-http":
     "Run the three connector-http-* suites (public decrypt, user decrypt, negative) in one go.",
+  "coprocessor-proxy":
+    "Sign as KMS party 1's connector against every coprocessor-proxy and its fake prf-service.",
   random: "Run random generation coverage.",
   "random-subset": "Run a narrower random generation subset.",
   operators: "Run manual operator workflows.",
@@ -1948,6 +1955,15 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ? undefined
       : "CONNECTOR_ENDPOINT_VERSION / CONNECTOR_PROXY_VERSION are not part of the resolved bundle (no kms-connector-endpoint / -proxy containers)";
 
+  const coprocessorProxySkipReason = () => {
+    if (state.scenario.kind === "blue-green") {
+      return "blue-green stacks run without coprocessor-proxy";
+    }
+    return supportsCoprocessorProxy(state)
+      ? undefined
+      : "COPROCESSOR_PROXY_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
+  };
+
   const dbStateRevertSkipReason = () =>
     supportsCoprocessorDbStateRevert(state)
       ? undefined
@@ -2314,6 +2330,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         throw new PreflightError(`${name}: ${precondition}`);
       }
     }
+    if (name === "coprocessor-proxy") {
+      const precondition = coprocessorProxySkipReason();
+      if (precondition) {
+        throw new PreflightError(`${name}: ${precondition}`);
+      }
+    }
 
     const filter = TEST_GREP[name];
     if (!filter) {
@@ -2388,6 +2410,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         }
         if (profile.startsWith("connector-http")) {
           const skipReason = connectorEndpointSkipReason();
+          if (skipReason) {
+            console.log(`[test] skipping ${profile}: ${skipReason}`);
+            continue;
+          }
+        }
+        if (profile === "coprocessor-proxy") {
+          const skipReason = coprocessorProxySkipReason();
           if (skipReason) {
             console.log(`[test] skipping ${profile}: ${skipReason}`);
             continue;
