@@ -71,8 +71,8 @@ A service that facilitates communication between applications and the rest of th
 ### 3a. High-level client methods `[high]`
 
 **Encryption** `[high]`
-SDK term: `encryptValue()`, `encryptValues()`
-Encrypts plaintext values client-side — `encryptValue()` for a single value, `encryptValues()` for a batch under one shared proof. Both return external encrypted values plus an `inputProof` to pass to a contract. The FHE public encryption key is fetched and cached on first use; internally orchestrates the proof machinery (§3b).
+SDK term: `encryptValue()`, `encryptValues()`, `encryptValueTransci()`, `encryptValuesTransci()`
+Encrypts plaintext values client-side — `encryptValue()` for a single value, `encryptValues()` for a batch under one shared proof. Both return external encrypted values plus an `inputProof` to pass to a contract. The FHE public encryption key is fetched and cached on first use; internally orchestrates the proof machinery (§3c). The experimental `encryptValueTransci()` / `encryptValuesTransci()` (encrypt-transciphering client) instead use RFC-030 pad-based inputs: they require a v2 signed permit and return an `inputPackage`; internally they orchestrate the pad machinery (§3c).
 *Source: SDK*
 
 **Decryption** `[high]`
@@ -111,7 +111,7 @@ Encrypted value types used inside smart contracts (`ebool`, `euint8`, `euint16`,
 
 **External encrypted types** `[high]`
 SDK term: `ExternalEbool`, `ExternalEuint8`, … `ExternalEaddress`
-Types used when encrypted values are provided as inputs from outside the blockchain, such as `externalEuint32`. These must be verified with an inputProof before conversion into internal encrypted types via `FHE.fromExternal()`. In the SDK, the corresponding TypeScript types are aliases of `ExternalEncryptedValue<T>`.
+Types used when encrypted values are provided as inputs from outside the blockchain, such as `externalEuint32`. These must be verified with an inputProof (or checked against their pad-based inputPackage) before conversion into internal encrypted types via `FHE.fromExternal()`. In the SDK, the corresponding TypeScript types are aliases of `ExternalEncryptedValue<T>`.
 *Source: `encrypted-types`*
 
 **FheType** `[high]`
@@ -134,8 +134,14 @@ The result of decrypting an encrypted value. Pairs the original `EncryptedValue`
 The same operations as 3a, imported from `@fhevm/sdk/actions/*` and taking the `fhevm` client as the first argument — plus the building blocks the high-level methods orchestrate internally.
 
 **Proof machinery** `[low]`
-SDK term: `generateZkProof()`, `fetchVerifiedInputProof()`, `ZkProof`, `VerifiedInputProof`, `inputProofgenerateZkProof()` produces the `ZkProof` (also: ZKPoK — Zero-Knowledge Proof of Knowledge, the fhevm-whitepaper term) of correct encryption — proving the user encrypted their plaintext under the FHE public key and knows the underlying value, without revealing it. `fetchVerifiedInputProof()` exchanges it for a `VerifiedInputProof` with coprocessor signatures (the `inputProof`) that proves the ciphertext is well-formed.
+SDK term: `generateZkProof()`, `fetchVerifiedInputProof()`, `ZkProof`, `VerifiedInputProof`, `inputProof`
+`generateZkProof()` produces the `ZkProof` (also: ZKPoK — Zero-Knowledge Proof of Knowledge, the fhevm-whitepaper term) of correct encryption — proving the user encrypted their plaintext under the FHE public key and knows the underlying value, without revealing it. `fetchVerifiedInputProof()` exchanges it for a `VerifiedInputProof` with coprocessor signatures (the `inputProof`) that proves the ciphertext is well-formed.
 *Source: SDK, TFHE WASM, fhevm-whitepaper, Solidity*
+
+**Pad machinery** `[low]`
+SDK term: `fetchPadShares()` (relayer module, internal), `reconstructPads()` (encryptTransci module, internal), `inputPackage`
+RFC-030 pad-based inputs ("transciphering"), used by `encryptValuesTransci()`. The SDK builds a witness (submitter, consumer, chain, expiration, nonce) whose hash is the pad *label*, fetches the one-time pad for that label from the KMS with a pad decryption request authenticated by a v2 permit, verifies and reconstructs the pad from the KMS shares, and XOR-masks the packed values. The witness, type information, and masked values form the `inputPackage`, the second argument of `FHE.fromExternal()`.
+*Source: SDK, RFC-030*
 
 **KMS share flow** `[low]`
 SDK term: `KmsSigncryptedShares` (internal only as of the RFC-016 unified permit rework; not exported from the public API)
