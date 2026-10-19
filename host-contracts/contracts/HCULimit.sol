@@ -35,7 +35,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned when a pauser tries to raise a quota's cap or assign a contract to a quota other than the paused one.
     error QuotaNotTighter(uint16 quotaId);
 
-    /// @notice Returned when setting the cap of the paused quota, which stays 0.
+    /// @notice Returned when setting the paused quota's cap, which stays 0, or when assigning a contract to
+    ///         a quota whose cap is 0, which would pause it without saying so.
     error InvalidQuota(uint16 quotaId);
 
     /// @notice Returned if the transaction exceeds the maximum allowed homomorphic complexity units.
@@ -67,7 +68,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     error CrossTxDepthBelowMaxDepthPerTx();
 
     /// @notice Returned when an operation's depth carried across transactions exceeds the limit.
-    /// @param retryAfterBlocks Blocks of decay after which the same operation fits, if nothing else extends its chain.
+    /// @param retryAfterBlocks Blocks of decay after which this operation fits, if nothing else extends its chain.
+    ///        Later operations of the same transaction can need more, so clients simulate again after waiting.
     error HCUCrossTxDepthLimitExceeded(uint256 retryAfterBlocks);
 
     /// @notice Emitted when the cross-transaction depth limit is updated.
@@ -1701,10 +1703,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Assigns a contract to a quota: its FHE operations then spend that quota's budget.
-     * @dev The ACL owner assigns to any quota; a pauser can only assign to the paused quota.
+     * @dev The ACL owner assigns to any quota with a cap; a pauser can only assign to the paused quota.
      */
     function assignQuota(address account, uint16 quotaId) external {
         if (!_isOwnerElseRequirePauser() && quotaId != PAUSED_QUOTA) revert QuotaNotTighter(quotaId);
+        if (quotaId != PAUSED_QUOTA && _getHCULimitStorage().quotas[quotaId].capPerBlock == 0) {
+            revert InvalidQuota(quotaId);
+        }
         _getHCULimitStorage().contractQuota[account] = quotaId;
         emit ContractQuotaAssigned(account, quotaId, msg.sender);
     }

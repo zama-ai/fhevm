@@ -8,11 +8,12 @@ FHE operations in FHEVM are computationally intensive compared to standard Ether
 
 To represent this complexity, we introduced the **Homomorphic Complexity Unit ("HCU")**. In Solidity, each FHE operation consumes a set amount of HCU based on the operational computational complexity for hardware computation. Since FHE transactions are symbolic, this helps preventing resource exhaustion outside of the blockchain.
 
-To do so, there is a contract named `HCULimit`, which monitors HCU consumption and enforces three key limits:
+To do so, there is a contract named `HCULimit`, which monitors HCU consumption and enforces these limits:
 
 - **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order. Exceeding it reverts with `HCUTransactionDepthLimitExceeded`.
 - **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel. Exceeding it reverts with `HCUTransactionLimitExceeded`.
 - **HCU quota per block**: Caps the total HCU that the contracts sharing a quota consume in one block. Exceeding it reverts with `HCUQuotaExceeded`.
+- **Depth across transactions** (off unless governance enables it): Caps the sequential HCU depth that builds up over a chain of dependent transactions. Exceeding it reverts with `HCUCrossTxDepthLimitExceeded`.
 
 If any of these limits is exceeded, the transaction will revert.
 
@@ -34,13 +35,29 @@ Unlike the per-transaction limits, a quota depends on the **other transactions i
 - A transaction that estimates successfully (e.g. via `eth_estimateGas` or a static call) can still revert with `HCUQuotaExceeded` at execution time if other FHE-heavy transactions in the same quota are mined in the same block ahead of it.
 - This revert is **non-deterministic from the sender's perspective**: it is a function of block-inclusion ordering, not of the transaction's own payload.
 
-If you hit `HCUQuotaExceeded`, options include:
+If you hit `HCUQuotaExceeded(account, quotaId)`, first check whether a retry can succeed:
+
+- If `quotaId` is `PAUSED_QUOTA`, the contract is paused; retrying fails until governance assigns it to another quota.
+- If the quota's cap (`getQuota(quotaId)`) is below the transaction's HCU, the transaction never fits; retrying fails until the cap is raised.
+
+Otherwise, options include:
 
 - **Retry** the transaction in a later block, when the quota has room again.
 - **Reduce the HCU footprint** of the transaction so it is more likely to fit alongside others (same techniques as for per-transaction reverts).
 - **Request a dedicated quota** for contracts that have a justified need for more HCU per block; this is governed on-chain and is not available to arbitrary callers.
 
 Pausers can lower quota caps and move a contract to the paused quota (`PAUSED_QUOTA`), whose cap is zero: every FHE operation from a paused contract reverts with `HCUQuotaExceeded`.
+
+### Depth across transactions
+
+The per-transaction depth limit restarts at every transaction. A chain of dependent transactions, each under that limit, can still build an arbitrarily long sequence of operations that the coprocessor must run one after another. When governance enables it (`setCrossTxDepthLimit(maxDepth, decayPerBlock)`), `HCULimit` carries each handle's depth from one transaction to the next:
+
+- A handle's carried depth is stored with each permission granted on it (`FHE.allow`). The ACL returns it with `getStoredDepth(handle, account)`.
+- Carried depth decays by `decayPerBlock` every block, as the coprocessor works through the chain.
+- Verified inputs and bridged handles start at depth 0.
+- An operation whose result would exceed `maxDepth` reverts with `HCUCrossTxDepthLimitExceeded(retryAfterBlocks)`.
+
+`retryAfterBlocks` is the wait for the operation that failed. Later operations of the same transaction can need more, so wait at least that many blocks, simulate again, and repeat until the simulation passes. As with quotas, a transaction that simulates successfully can still revert if another transaction extends the same chain first.
 
 ## HCU costs for common operations
 

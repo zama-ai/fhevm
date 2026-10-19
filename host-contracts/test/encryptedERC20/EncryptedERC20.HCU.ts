@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import { ethers } from 'hardhat';
 
 import { getTxHCUFromTxReceipt } from '../coprocessorUtils';
 import { createInstances } from '../instance';
@@ -23,7 +24,9 @@ describe('EncryptedERC20:HCU', function () {
   });
 
   afterEach(async function () {
-    await this.hcuLimit.connect(this.signers.fred).setQuotaCap(0, MAX_UINT48);
+    const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
+    await ownerHcuLimit.setQuotaCap(0, MAX_UINT48);
+    await ownerHcuLimit.setCrossTxDepthLimit(0, 0);
   });
 
   it('should transfer tokens between two users', async function () {
@@ -141,5 +144,60 @@ describe('EncryptedERC20:HCU', function () {
     const [, uncappedUsedHCU] = await this.hcuLimit.getQuota(1);
     expect(defaultUsedHCU).to.eq(0n);
     expect(uncappedUsedHCU).to.eq(0n);
+  });
+
+  it('should refuse dependent transfers at the cross-transaction depth limit until decay frees room', async function () {
+    await (await this.hcuLimit.connect(this.signers.fred).setCrossTxDepthLimit(5_000_000, 1)).wait();
+    await (await this.erc20.mint(10000)).wait();
+
+    // Each transfer computes on the balances left by the previous one, so the chain deepens every time.
+    const encryptAmount = async () => {
+      const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
+      input.add64(1);
+      return input.encrypt();
+    };
+    const transfer = (amount: { handles: Uint8Array[]; inputProof: Uint8Array }) =>
+      this.erc20['transfer(address,bytes32,bytes)'](this.signers.bob.address, amount.handles[0], amount.inputProof);
+    // Returns the blocks to wait reported by the depth limit, or 0 when the transfer would pass.
+    const simulate = async (amount: { handles: Uint8Array[]; inputProof: Uint8Array }) => {
+      try {
+        await this.erc20['transfer(address,bytes32,bytes)'].staticCall(
+          this.signers.bob.address,
+          amount.handles[0],
+          amount.inputProof,
+        );
+        return 0n;
+      } catch (error: any) {
+        const decoded = this.hcuLimit.interface.parseError(error.data);
+        expect(decoded?.name).to.eq('HCUCrossTxDepthLimitExceeded');
+        return decoded!.args[0] as bigint;
+      }
+    };
+
+    let refusals = 0;
+    for (let sent = 0; sent < 40 && refusals === 0; sent++) {
+      const amount = await encryptAmount();
+      if ((await simulate(amount)) > 0n) {
+        await expect(transfer(amount)).to.be.revertedWithCustomError(this.hcuLimit, 'HCUCrossTxDepthLimitExceeded');
+        refusals++;
+      } else {
+        await (await transfer(amount)).wait();
+      }
+    }
+    expect(refusals).to.eq(1, 'the chain should reach the limit');
+
+    // The reported wait covers the first operation that does not fit; later operations of the same
+    // transaction can need more, so a client waits, simulates again, and repeats.
+    for (let round = 0; round < 5; round++) {
+      const amount = await encryptAmount();
+      const retryAfterBlocks = await simulate(amount);
+      if (retryAfterBlocks === 0n) {
+        const receipt = await (await transfer(amount)).wait();
+        expect(receipt?.status).to.eq(1);
+        return;
+      }
+      await ethers.provider.send('hardhat_mine', ['0x' + retryAfterBlocks.toString(16)]);
+    }
+    expect.fail('the transfer should pass once decay frees room');
   });
 });

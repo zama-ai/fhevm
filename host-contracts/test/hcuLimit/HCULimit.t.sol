@@ -1296,6 +1296,12 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.checkHCUForCast(FheType.Uint8, mockLHS, mockResult, account);
     }
 
+    function test_assignQuotaRefusesAQuotaWithoutCap() public {
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidQuota.selector, uint16(7)));
+        hcuLimit.assignQuota(address(0xBEEF), 7);
+    }
+
     function test_pausedQuotaCapCannotBeSet() public {
         uint16 paused = hcuLimit.PAUSED_QUOTA();
         vm.prank(owner);
