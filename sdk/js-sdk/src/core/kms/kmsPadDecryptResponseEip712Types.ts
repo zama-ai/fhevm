@@ -17,15 +17,15 @@ export const kmsPadDecryptResponseEip712Types = {
     { name: 'verifyingContract', type: 'address' },
   ] as const,
   PadDecryptResponsePayload: [
-    { name: 'shareFormat', type: 'uint8' },
+    { name: 'packingFactor', type: 'uint32' },
     { name: 'extraData', type: 'bytes' },
-    { name: 'sessionId', type: 'bytes32' },
     { name: 'degree', type: 'uint32' },
     { name: 'partyId', type: 'uint32' },
     { name: 'pad_shares', type: 'PadShare[]' },
   ] as const,
   PadShare: [
     { name: 'label', type: 'bytes32' },
+    { name: 'sessionId', type: 'bytes16' },
     { name: 'share', type: 'bytes' },
   ] as const,
 } as const;
