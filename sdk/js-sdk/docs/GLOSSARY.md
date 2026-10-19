@@ -101,7 +101,7 @@ The everyday types an app developer passes and receives.
 
 **Encrypted value** `[high]`
 SDK term: `EncryptedValue<T>` (alias `Handle<T>`)
-A deterministic identifier (`bytes32`) representing an encrypted value in the FHEVM system. Encrypted values (called "handles" in `FHE.sol` and the FHEVM whitepaper) are used inside smart contracts instead of actual ciphertexts; each references exactly one ciphertext stored and processed by coprocessors. Prefer "encrypted value" over "handle" in prose. Subtypes: `ComputedEncryptedValue` (verified, on-chain result of FHE operations) and `ExternalEncryptedValue` (unverified input from `encryptValue()`/`encryptValues()`; typed aliases `ExternalEbool`, `ExternalEuint8`, etc.; `InputHandle` is a secondary alias).
+A deterministic identifier (`bytes32`) representing an encrypted value in the FHEVM system. Encrypted values (called "handles" in `FHE.sol` and the FHEVM whitepaper) are used inside smart contracts instead of actual ciphertexts; each references exactly one ciphertext stored and processed by coprocessors. Prefer "encrypted value" over "handle" in prose. Subtypes: `ComputedEncryptedValue` (verified, on-chain result of FHE operations) and `ExternalEncryptedValue` (unverified input from `encryptValue()`/`encryptValues()`; typed aliases `ExternalEbool`, `ExternalEuint8`, etc.; `ExternalHandle` is a secondary alias).
 *Source: fhevm-whitepaper, Solidity, SDKDeprecated terms (do not use): fhevmHandle, fheHandle, FhevmHandle (for the value itself); ExternalFhevmHandle, inputHandle (for ExternalEncryptedValue)*
 
 **Encrypted types** `[high]`

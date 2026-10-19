@@ -54,7 +54,8 @@ struct PadDecryptRequest {
 /// @notice A pad share keyed by label (`PadShare` in RFC-030).
 struct PadShare {
     bytes32 label; // which pad this share belongs to
-    bytes share; // the (mock-encrypted) pad bytes
+    bytes16 sessionId; // the MPC session that produced this share
+    bytes share; // the (mock-encrypted) pad blocks
 }
 
 /**
@@ -68,6 +69,12 @@ contract CleartextInputVerifier is InputVerifier {
 
     /// @notice Domain tag of the cleartext PRF (stand-in for `PRF_{FHE(k)}`, cleartext mode only).
     bytes8 private constant CLEARTEXT_PAD_DOMAIN_SEPARATOR = "FHE_cpad";
+
+    /// @notice Domain tag of the cleartext session id (stand-in for the MPC session, cleartext mode only).
+    bytes8 private constant CLEARTEXT_SESSION_DOMAIN_SEPARATOR = "FHE_csid";
+
+    /// @notice Bits per block of the cleartext PRF (one keccak256 output).
+    uint256 public constant CLEARTEXT_PAD_BLOCK_BITS = 256;
 
     /// @notice The only witness format currently defined.
     uint8 public constant PAD_WITNESS_VERSION = 0x00;
@@ -148,10 +155,14 @@ contract CleartextInputVerifier is InputVerifier {
      *      - Every PRF instance id is accepted (there is no `PaddedInputter` registry yet); `prf`
      *        is still bound into both the label and the cleartext pad.
      *      - Instead of per-node threshold shares encrypted with ML-KEM + AES-GCM, each share is the
-     *        whole pad XOR-masked with the first 32 bytes of `auth.publicKey` (repeated), the same
-     *        mock as `CleartextKMSVerifier`. The client unmasks it with the same 32 bytes. The
-     *        context signers, user-decryption threshold and `extraData` are returned so the SDK can
-     *        sign `PadDecryptResponsePayload` with its local KMS keys.
+     *        whole encrypted pad — ⌈padLength/256⌉ cleartext PRF blocks of 32 bytes, i.e. one ring
+     *        element per block (packing factor 1) — XOR-masked with the first 32 bytes of
+     *        `auth.publicKey` (repeated), the same mock as `CleartextKMSVerifier`. The client unmasks
+     *        it with the same 32 bytes and keeps the first `padLength` bits. The context signers,
+     *        user-decryption threshold and `extraData` are returned so the SDK can sign
+     *        `PadDecryptResponsePayload` with its local KMS keys.
+     *      - Each share's `sessionId` is a deterministic function of `(prf, label)`: one mock
+     *        "session" per label, shared by every node and every requester of that label.
      *      - `auth.startTimestamp <= block.timestamp` is not enforced: a view call on anvil can
      *        observe a block timestamp older than the client's wall clock. Expiry is enforced.
      *
@@ -200,6 +211,7 @@ contract CleartextInputVerifier is InputVerifier {
             PadWitness calldata w = payload.witnesses[i];
             padShares[i] = PadShare({
                 label: w.label,
+                sessionId: bytes16(keccak256(abi.encodePacked(CLEARTEXT_SESSION_DOMAIN_SEPARATOR, payload.prf, w.label))),
                 share: _xorMask(_cleartextPad(payload.prf, w.label, w.padLength), mask)
             });
         }
@@ -356,42 +368,27 @@ contract CleartextInputVerifier is InputVerifier {
             if (user == w.decryptors[i]) return;
         }
 
-        // Delegation fallback (RFC-030 `isLiveDelegation`, built from existing ACL views).
-        if (_isLiveDelegation(acl, w.submitter, user, w.consumer)) return;
+        // Delegation fallback (RFC-030: the ACL's handle-free `isDelegatedForUserDecryption` view).
+        if (acl.isDelegatedForUserDecryption(w.submitter, user, w.consumer)) return;
         for (uint256 i = 0; i < w.decryptors.length; ++i) {
-            if (_isLiveDelegation(acl, w.decryptors[i], user, w.consumer)) return;
+            if (acl.isDelegatedForUserDecryption(w.decryptors[i], user, w.consumer)) return;
         }
         revert PadUserNotAuthorized(w.label, user);
-    }
-
-    function _isLiveDelegation(
-        CleartextACL acl,
-        address delegator,
-        address delegate,
-        address contractAddress
-    ) private view returns (bool) {
-        return
-            acl.getUserDecryptionDelegationExpirationDate(delegator, delegate, contractAddress) > block.timestamp ||
-            acl.getUserDecryptionDelegationExpirationDate(delegator, delegate, acl.WILDCARD_DELEGATION_ADDRESS()) >
-            block.timestamp;
     }
 
     /// @dev Cleartext stand-in for `PRF_{FHE(k)}(label)` in counter mode: block `i` is
     ///      keccak256("FHE_cpad" ‖ prf ‖ label ‖ uint32(i)) (256 bits); the stream is the blocks'
     ///      bytes concatenated, and stream bit `j` is bit `j % 8` (least significant first) of
-    ///      byte `j / 8`. Returns ⌈padLength/8⌉ bytes with the bits past `padLength` cleared.
+    ///      byte `j / 8`. Returns the ⌈padLength/256⌉ whole blocks covering `padLength` bits; the
+    ///      client keeps the first `padLength` bits.
     function _cleartextPad(uint16 prf, bytes32 label, uint16 padLength) private pure returns (bytes memory pad) {
-        uint256 numBytes = (uint256(padLength) + 7) / 8;
-        pad = new bytes(numBytes);
-        for (uint256 i = 0; i * 32 < numBytes; ++i) {
+        uint256 numBlocks = (uint256(padLength) + CLEARTEXT_PAD_BLOCK_BITS - 1) / CLEARTEXT_PAD_BLOCK_BITS;
+        pad = new bytes(numBlocks * 32);
+        for (uint256 i = 0; i < numBlocks; ++i) {
             bytes32 blockBits = keccak256(abi.encodePacked(CLEARTEXT_PAD_DOMAIN_SEPARATOR, prf, label, uint32(i)));
-            for (uint256 k = 0; k < 32 && i * 32 + k < numBytes; ++k) {
-                pad[i * 32 + k] = blockBits[k];
+            assembly {
+                mstore(add(add(pad, 32), mul(i, 32)), blockBits)
             }
-        }
-        uint256 extraBits = numBytes * 8 - padLength;
-        if (extraBits != 0) {
-            pad[numBytes - 1] &= bytes1(uint8(0xff >> extraBits));
         }
     }
 

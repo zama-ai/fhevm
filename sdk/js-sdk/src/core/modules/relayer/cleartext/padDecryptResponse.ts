@@ -1,8 +1,8 @@
-import type { Bytes32Hex, Bytes65Hex, BytesHex, Uint32Number, Uint8Number } from '../../../types/primitives.js';
+import type { Bytes65Hex, BytesHex, Uint32Number } from '../../../types/primitives.js';
 import type { EthereumModule } from '../../ethereum/types.js';
 import type { PadShare } from '../types.js';
 import { assertIsBytes32Hex, assertIsBytes65Hex, assertIsBytesHex } from '../../../base/bytes.js';
-import { asUint32Number, asUint8Number } from '../../../base/uint.js';
+import { asUint32Number } from '../../../base/uint.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -11,30 +11,34 @@ import { asUint32Number, asUint8Number } from '../../../base/uint.js';
 // The real KMS returns `HybridEncrypt_user(PadDecryptResponsePayload ‖ signature)`
 // (ML-KEM + AES-128-GCM). Cleartext mode has no hybrid encryption, so the
 // payload and its EIP-712 signature travel as a plain ABI encoding, and each
-// share is instead the whole pad XOR-masked with the first 32 bytes of the
-// request's public key (`CleartextInputVerifier.getPadShares`).
+// share is instead the whole encrypted pad — one 32-byte cleartext PRF block
+// per ring element — XOR-masked with the first 32 bytes of the request's public
+// key (`CleartextInputVerifier.getPadShares`).
 //
 // Flat layout (no tuples, so ethers and viem encode it identically):
-//   abi.encode(uint8 shareFormat, bytes extraData, bytes32 sessionId,
-//              uint32 degree, uint32 partyId, bytes32[] labels, bytes[] shares,
-//              bytes signature)
+//   abi.encode(uint32 packingFactor, bytes extraData, uint32 degree,
+//              uint32 partyId, bytes32[] labels, bytes16[] sessionIds,
+//              bytes[] shares, bytes signature)
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-/** `shareFormat` of the cleartext mock: each share is the whole pad, XOR-masked. */
-export const CLEARTEXT_PAD_SHARE_FORMAT = 0xff as Uint8Number;
+/** Bytes per PRF block of the cleartext mock (one keccak256 output). */
+export const CLEARTEXT_PAD_BLOCK_BYTES = 32;
+
+/** `packingFactor` of the cleartext mock: one PRF block per ring element. */
+export const CLEARTEXT_PAD_PACKING_FACTOR = 1 as Uint32Number;
 
 export type CleartextPadDecryptResponsePayload = {
-  readonly shareFormat: Uint8Number;
+  /** PRF blocks per ring element. */
+  readonly packingFactor: Uint32Number;
   readonly extraData: BytesHex;
-  readonly sessionId: Bytes32Hex;
   /** Sharing degree `t`; 0 in cleartext mode, since every share is the whole pad. */
   readonly degree: Uint32Number;
   readonly partyId: Uint32Number;
   readonly padShares: readonly PadShare[];
 };
 
-const ENCRYPTED_TYPES = ['uint8', 'bytes', 'bytes32', 'uint32', 'uint32', 'bytes32[]', 'bytes[]', 'bytes'] as const;
+const ENCRYPTED_TYPES = ['uint32', 'bytes', 'uint32', 'uint32', 'bytes32[]', 'bytes16[]', 'bytes[]', 'bytes'] as const;
 
 export function encodeCleartextPadDecryptResponse(
   ethereum: Pick<EthereumModule, 'encode'>,
@@ -44,12 +48,12 @@ export function encodeCleartextPadDecryptResponse(
   return ethereum.encode({
     types: ENCRYPTED_TYPES,
     values: [
-      payload.shareFormat,
+      payload.packingFactor,
       payload.extraData,
-      payload.sessionId,
       payload.degree,
       payload.partyId,
       payload.padShares.map((s) => s.label),
+      payload.padShares.map((s) => s.sessionId),
       payload.padShares.map((s) => s.share),
       signature,
     ],
@@ -63,32 +67,37 @@ export function decodeCleartextPadDecryptResponse(
   const values = ethereum.decode({ types: ENCRYPTED_TYPES, encodedData: encrypted });
 
   const extraData: unknown = values[1];
-  const sessionId: unknown = values[2];
-  const labels = Array.from(values[5] as readonly unknown[]);
+  const labels = Array.from(values[4] as readonly unknown[]);
+  const sessionIds = Array.from(values[5] as readonly unknown[]);
   const shares = Array.from(values[6] as readonly unknown[]);
   const signature: unknown = values[7];
 
   assertIsBytesHex(extraData, { subject: 'extraData' });
-  assertIsBytes32Hex(sessionId, { subject: 'sessionId' });
   assertIsBytes65Hex(signature, { subject: 'signature' });
-  if (labels.length !== shares.length) {
-    throw new Error(`Malformed pad decryption response: ${labels.length} labels for ${shares.length} shares.`);
+  if (labels.length !== sessionIds.length || labels.length !== shares.length) {
+    throw new Error(
+      `Malformed pad decryption response: ${labels.length} labels, ${sessionIds.length} session ids, ${shares.length} shares.`,
+    );
   }
 
   const padShares: PadShare[] = labels.map((label, i) => {
+    const sessionId: unknown = sessionIds[i];
     const share: unknown = shares[i];
     assertIsBytes32Hex(label, { subject: `padShares[${i}].label` });
+    assertIsBytesHex(sessionId, { subject: `padShares[${i}].sessionId` });
+    if (sessionId.length !== 2 + 2 * 16) {
+      throw new Error(`Malformed pad decryption response: padShares[${i}].sessionId is not 16 bytes.`);
+    }
     assertIsBytesHex(share, { subject: `padShares[${i}].share` });
-    return Object.freeze({ label, share });
+    return Object.freeze({ label, sessionId, share });
   });
 
   return Object.freeze({
     payload: Object.freeze({
-      shareFormat: asUint8Number(_toNumber(values[0]), { subject: 'shareFormat' }),
+      packingFactor: asUint32Number(_toNumber(values[0]), { subject: 'packingFactor' }),
       extraData,
-      sessionId,
-      degree: asUint32Number(_toNumber(values[3]), { subject: 'degree' }),
-      partyId: asUint32Number(_toNumber(values[4]), { subject: 'partyId' }),
+      degree: asUint32Number(_toNumber(values[2]), { subject: 'degree' }),
+      partyId: asUint32Number(_toNumber(values[3]), { subject: 'partyId' }),
       padShares: Object.freeze(padShares),
     }),
     signature,

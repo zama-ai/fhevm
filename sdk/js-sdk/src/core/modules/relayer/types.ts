@@ -256,6 +256,9 @@ export type PadWitness = {
 /** One pad share, keyed by label (`PadShare`). */
 export type PadShare = {
   readonly label: Bytes32Hex;
+  /** 16 bytes: the MPC session that produced this share. */
+  readonly sessionId: BytesHex;
+  /** This node's share of the label's encrypted pad: a sequence of ring elements. */
   readonly share: BytesHex;
 };
 

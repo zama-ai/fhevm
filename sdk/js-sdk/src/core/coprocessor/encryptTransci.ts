@@ -1,4 +1,4 @@
-import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
+import type { WithEncryptTransci } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type {
   Bytes32Hex,
@@ -11,23 +11,22 @@ import type {
 } from '../types/primitives.js';
 import type { RelayerCommonOptions } from '../types/relayer.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import type { ExternalHandle } from '../types/encryptedTypes-p.js';
 import type { SignedDecryptionPermit, SignedDecryptionPermitV2 } from '../types/signedDecryptionPermit.js';
 import type { PadWitness } from '../modules/relayer/types.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { bytes32ToHex, bytesToHex, hexToBytes } from '../base/bytes.js';
 import { encryptionBitsFromFheType, fheTypeIdFromName, fheTypeNameFromTypeName } from '../handle/FheType.js';
-import { FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION } from '../handle/FhevmHandle.js';
+import { buildExternalHandle } from '../handle/FhevmHandle.js';
 import { assertIsSignedDecryptionPermit } from '../kms/SignedDecryptionPermit-p.js';
 import { createKmsExtraDataFromBytesHex } from '../kms/kmsExtraData-p.js';
-import { reconstructPads } from '../kms/reconstructPads-p.js';
 import { readKmsSignersContextFromPermitExtraData } from '../host-contracts/readKmsSignersContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
 // RFC-030 pad-based input encryption ("transciphering").
 //
-// Will replace `encrypt()` (ZKPoK input proofs). Each call masks one input
-// package with a fresh one-time pad: it forms a witness with a fresh nonce,
+// Each call masks one input package with a fresh one-time pad: it forms a witness with a fresh nonce,
 // derives the witness label, and requests the pad bits from the KMS via a pad
 // decryption request authenticated by an RFC-016 (v2) decryption permit.
 //
@@ -61,7 +60,7 @@ const PAD_PACKAGE_TYPE = 0x00;
 
 type Context = {
   readonly chain: FhevmChain;
-  readonly runtime: WithEncrypt;
+  readonly runtime: WithEncryptTransci;
   readonly client: NonNullable<object>;
   readonly options: { readonly batchRpcCalls: boolean };
 };
@@ -81,13 +80,11 @@ type Parameters = {
 type ReturnType = {
   /**
    * External handles, one per value, in order. These are RFC-030 typed indices
-   * into the package (`packageDigest` with bytes 29..31 = index, type, version),
-   * not ZKPoK-style input handles: byte 21 is digest data, not an index, and
-   * bytes 22..29 are not a chain id.
+   * into the package (`packageDigest` with bytes 29..31 = index, type, version).
    */
-  readonly inputHandles: readonly Bytes32Hex[];
+  readonly externalHandles: readonly ExternalHandle[];
   /** The RFC-030 input package; the second argument of `fromExternal`. */
-  readonly inputProof: BytesHex;
+  readonly inputPackage: BytesHex;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -150,7 +147,7 @@ export async function encryptTransci(context: Context, parameters: Parameters): 
     fhevmContext,
     extraData: createKmsExtraDataFromBytesHex(extraData),
   });
-  const pads = await reconstructPads(context.runtime.ethereum, {
+  const pads = await context.runtime.encryptTransci.reconstructPads({
     responses: padDecryptResponses,
     witnesses: [witness],
     extraData,
@@ -191,17 +188,12 @@ export async function encryptTransci(context: Context, parameters: Parameters): 
   ]);
 
   const packageDigest = keccak_256(_concatBytes([PAD_PACKAGE_DOMAIN_SEPARATOR, inputPackage]));
-  const inputHandles = parts.map((fheTypeId, inputIndex) => {
-    const handle = Uint8Array.from(packageDigest);
-    handle[29] = inputIndex;
-    handle[30] = fheTypeId;
-    handle[31] = FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION;
-    return bytes32ToHex(handle);
-  });
+  const hash29 = bytesToHex(packageDigest.subarray(0, 29));
+  const externalHandles = parts.map((fheTypeId, index) => buildExternalHandle({ hash29, index, fheTypeId }));
 
   return {
-    inputHandles: Object.freeze(inputHandles),
-    inputProof: bytesToHex(inputPackage),
+    externalHandles: Object.freeze(externalHandles),
+    inputPackage: bytesToHex(inputPackage),
   };
 }
 

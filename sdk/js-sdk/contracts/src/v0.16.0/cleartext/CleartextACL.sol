@@ -279,6 +279,26 @@ contract CleartextACL is ACL {
         $.handleSaved[inputHandle] = true;
     }
 
+    /**
+     * @notice Returns whether an account is delegated for user decryption on `contractAddress` or on all contracts.
+     * @dev Backport of the handle-free ACL view added by fhevm#4536 (newer than this v0.16.0 snapshot),
+     *      read by the RFC-030 pad decryption delegation fallback.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The app contract to check the delegation for.
+     * @return isDelegated Whether the delegation is active.
+     */
+    function isDelegatedForUserDecryption(
+        address delegator,
+        address delegate,
+        address contractAddress
+    ) external view virtual returns (bool) {
+        return
+            getUserDecryptionDelegationExpirationDate(delegator, delegate, WILDCARD_DELEGATION_ADDRESS) >
+            block.timestamp ||
+            getUserDecryptionDelegationExpirationDate(delegator, delegate, contractAddress) > block.timestamp;
+    }
+
     function requireNotPaused() public view virtual {
         _requireNotPaused();
     }

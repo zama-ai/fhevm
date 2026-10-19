@@ -18,7 +18,7 @@ import {
   kmsPadDecryptResponseEip712Types,
 } from '../../../kms/kmsPadDecryptResponseEip712Types.js';
 import { getKmsSignersPrivateKeyMap } from './signers.js';
-import { CLEARTEXT_PAD_SHARE_FORMAT, encodeCleartextPadDecryptResponse } from './padDecryptResponse.js';
+import { CLEARTEXT_PAD_PACKING_FACTOR, encodeCleartextPadDecryptResponse } from './padDecryptResponse.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // CleartextInputVerifier.getPadShares(PadDecryptRequest)
@@ -82,6 +82,7 @@ const getPadSharesAbi = [
         internalType: 'struct PadShare[]',
         components: [
           { name: 'label', type: 'bytes32', internalType: 'bytes32' },
+          { name: 'sessionId', type: 'bytes16', internalType: 'bytes16' },
           { name: 'share', type: 'bytes', internalType: 'bytes' },
         ],
       },
@@ -102,7 +103,8 @@ const getPadSharesAbi = [
  *
  * `CleartextInputVerifier.getPadShares` runs the KMS authentication and
  * authorization checks on-chain and returns each pad XOR-masked with the first
- * 32 bytes of the request's public key. This function then plays every KMS
+ * 32 bytes of the request's public key, with a per-label session id. This
+ * function then plays every KMS
  * node of the request's context: each node EIP-712-signs a
  * `PadDecryptResponsePayload` with its local key and returns it as a
  * {@link PadDecryptResponse}, exactly the shape the real relayer will return.
@@ -116,8 +118,6 @@ export async function fetchPadShares(
   const { padShares, signers, extraData } = await _readPadShares(relayerClient, parameters);
 
   const requestId = _computeRequestId(parameters, extraData);
-  // One MPC "session" per request: every node's shares carry the same id.
-  const sessionId = bytes32ToHex(keccak_256(hexToBytes(requestId)));
 
   const domain = createKmsEip712Domain({
     chainId: relayerClient.chain.id,
@@ -137,9 +137,8 @@ export async function fetchPadShares(
     // Party ids are 1-based, matching the deployed KMS node set.
     const partyId = (i + 1) as Uint32Number;
     const payload = {
-      shareFormat: CLEARTEXT_PAD_SHARE_FORMAT,
+      packingFactor: CLEARTEXT_PAD_PACKING_FACTOR,
       extraData,
-      sessionId,
       // Each share is the whole pad, so a single share reconstructs it.
       degree: 0 as Uint32Number,
       partyId,
@@ -151,12 +150,11 @@ export async function fetchPadShares(
       types: kmsPadDecryptResponseEip712Types,
       primaryType: kmsPadDecryptResponseEip712PrimaryType,
       message: {
-        shareFormat: payload.shareFormat,
+        packingFactor: payload.packingFactor,
         extraData: payload.extraData,
-        sessionId: payload.sessionId,
         degree: payload.degree,
         partyId: payload.partyId,
-        pad_shares: payload.padShares.map((s) => ({ label: s.label, share: s.share })),
+        pad_shares: payload.padShares.map((s) => ({ label: s.label, sessionId: s.sessionId, share: s.share })),
       },
     });
     const signature = await cleartextEthereumModule.sign({ hash: digest, privateKey });
@@ -220,13 +218,19 @@ async function _readPadShares(
 
   // Tuple entries are read by name: viem returns plain objects, ethers returns
   // `Result`s, and both expose the component names.
-  const rawPadShares = res[0] as ReadonlyArray<{ readonly label: unknown; readonly share: unknown }>;
+  const rawPadShares = res[0] as ReadonlyArray<{
+    readonly label: unknown;
+    readonly sessionId: unknown;
+    readonly share: unknown;
+  }>;
   const padShares: PadShare[] = Array.from(rawPadShares, (item, i) => {
     const label: unknown = item.label;
+    const sessionId: unknown = item.sessionId;
     const share: unknown = item.share;
     assertIsBytes32Hex(label, { subject: `padShares[${i}].label` });
+    assertIsBytesHex(sessionId, { subject: `padShares[${i}].sessionId` });
     assertIsBytesHex(share, { subject: `padShares[${i}].share` });
-    return Object.freeze({ label, share });
+    return Object.freeze({ label, sessionId, share });
   });
 
   const signers = Array.from(res[1] as readonly string[], (a) => addressToChecksummedAddress(a as ChecksummedAddress));

@@ -1,5 +1,5 @@
 import type { EthereumModule } from '../modules/ethereum/types.js';
-import type { PadDecryptResponse, PadWitness } from '../modules/relayer/types.js';
+import type { PadDecryptResponse, PadShare, PadWitness } from '../modules/relayer/types.js';
 import type { Bytes32Hex, BytesHex, ChecksummedAddress, Uint64BigInt } from '../types/primitives.js';
 import { bytesToHex, hexToBytes } from '../base/bytes.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
@@ -8,7 +8,7 @@ import {
   kmsPadDecryptResponseEip712Types,
 } from './kmsPadDecryptResponseEip712Types.js';
 import {
-  CLEARTEXT_PAD_SHARE_FORMAT,
+  CLEARTEXT_PAD_BLOCK_BYTES,
   decodeCleartextPadDecryptResponse,
   type CleartextPadDecryptResponsePayload,
 } from '../modules/relayer/cleartext/padDecryptResponse.js';
@@ -19,17 +19,20 @@ import {
 //
 // For each response: open it, verify its EIP-712 signature against the KMS
 // signers of the request's context, and check its structure against the
-// request. Then select at least 2t+1 responses sharing one `sessionId` with
-// distinct parties, and reconstruct each pad by label.
+// request. Then, label by label, select at least 2t+1 responses whose shares
+// for that label carry the same `sessionId` and whose payloads carry the same
+// `packingFactor`, from distinct parties, and reconstruct that label's pad.
+// The selection may differ from label to label.
 //
-// Only the cleartext share format (`CLEARTEXT_PAD_SHARE_FORMAT`) is supported:
-// opening a real response needs the ML-KEM + AES-GCM hybrid decryption of
-// `encrypted`, and reconstruction needs the threshold share decoding, neither
-// of which exists in the SDK yet.
+// Only the cleartext share encoding is supported: opening a real response
+// needs the ML-KEM + AES-GCM hybrid decryption of `encrypted`, and
+// reconstruction needs the threshold share decoding, neither of which exists
+// in the SDK yet. In the cleartext encoding a ring element is `packingFactor`
+// PRF blocks of `CLEARTEXT_PAD_BLOCK_BYTES` bytes.
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-type Parameters = {
+export type ReconstructPadsParameters = {
   readonly responses: readonly PadDecryptResponse[];
   /** The witnesses of the request, i.e. the client's own local record. */
   readonly witnesses: readonly PadWitness[];
@@ -56,7 +59,7 @@ type VerifiedResponse = {
 
 export async function reconstructPads(
   ethereum: Pick<EthereumModule, 'decode' | 'recoverTypedDataAddress'>,
-  parameters: Parameters,
+  parameters: ReconstructPadsParameters,
 ): Promise<ReconstructedPads> {
   const { responses, witnesses } = parameters;
 
@@ -77,33 +80,34 @@ export async function reconstructPads(
     }
   }
 
-  // 2. Select a session with at least 2t+1 responses from distinct parties and signers.
-  const bySession = new Map<string, VerifiedResponse[]>();
-  for (const v of verified) {
-    const key = v.payload.sessionId.toLowerCase();
-    const group = bySession.get(key) ?? [];
-    if (
-      !group.some((g) => g.payload.partyId === v.payload.partyId || g.signer.toLowerCase() === v.signer.toLowerCase())
-    ) {
-      group.push(v);
+  // 2. Per label: select at least 2t+1 responses agreeing on that label's
+  //    session, on the packing factor and on the degree, from distinct parties
+  //    and signers, then reconstruct the label's pad from them.
+  const pads = new Map<Bytes32Hex, Uint8Array>();
+  for (const w of witnesses) {
+    const label = w.label.toLowerCase();
+    const groups = new Map<string, VerifiedResponse[]>();
+    for (const v of verified) {
+      const key = `${_padShareOf(v, label).sessionId.toLowerCase()}|${v.payload.packingFactor}|${v.payload.degree}`;
+      const group = groups.get(key) ?? [];
+      if (
+        !group.some((g) => g.payload.partyId === v.payload.partyId || g.signer.toLowerCase() === v.signer.toLowerCase())
+      ) {
+        group.push(v);
+      }
+      groups.set(key, group);
     }
-    bySession.set(key, group);
-  }
 
-  for (const group of bySession.values()) {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const degree = group[0]!.payload.degree;
-    if (group.some((g) => g.payload.degree !== degree)) {
-      throw new Error('Pad decryption responses of one session disagree on the sharing degree.');
+    const selected = Array.from(groups.values()).find((group) => group.length >= 2 * group[0]!.payload.degree + 1);
+    if (selected === undefined) {
+      throw new Error(
+        `Not enough consistent pad decryption responses for label ${w.label}: got ${verified.length}, no (session, packing factor) reaches 2t+1 distinct parties.`,
+      );
     }
-    if (group.length >= 2 * degree + 1) {
-      return _reconstruct(group, witnesses);
-    }
+    pads.set(w.label, _reconstruct(selected, w));
   }
-
-  throw new Error(
-    `Not enough consistent pad decryption responses: got ${verified.length}, no session reaches 2t+1 distinct parties.`,
-  );
+  return pads;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -111,7 +115,7 @@ export async function reconstructPads(
 async function _verifyResponse(
   ethereum: Pick<EthereumModule, 'decode' | 'recoverTypedDataAddress'>,
   response: PadDecryptResponse,
-  parameters: Parameters,
+  parameters: ReconstructPadsParameters,
   kmsSigners: ReadonlySet<string>,
   padLengthByLabel: ReadonlyMap<string, number>,
 ): Promise<VerifiedResponse> {
@@ -130,12 +134,11 @@ async function _verifyResponse(
     },
     primaryType: kmsPadDecryptResponseEip712PrimaryType,
     message: {
-      shareFormat: payload.shareFormat,
+      packingFactor: payload.packingFactor,
       extraData: payload.extraData,
-      sessionId: payload.sessionId,
       degree: payload.degree,
       partyId: payload.partyId,
-      pad_shares: payload.padShares.map((s) => ({ label: s.label, share: s.share })),
+      pad_shares: payload.padShares.map((s) => ({ label: s.label, sessionId: s.sessionId, share: s.share })),
     },
     signature,
   });
@@ -148,7 +151,12 @@ async function _verifyResponse(
     throw new Error(`extraData ${payload.extraData} does not match the request's ${parameters.extraData}`);
   }
 
-  // Exactly the requested labels, once each, with the requested length.
+  if (payload.packingFactor < 1) {
+    throw new Error(`invalid packing factor ${payload.packingFactor}`);
+  }
+
+  // Exactly the requested labels, once each, each decoding to the number of
+  // ring elements that `packingFactor` implies for the requested length.
   const seen = new Set<string>();
   for (const s of payload.padShares) {
     const label = s.label.toLowerCase();
@@ -160,7 +168,7 @@ async function _verifyResponse(
     if (padLength === undefined) {
       throw new Error(`label ${s.label} was not requested`);
     }
-    const expectedBytes = Math.ceil(padLength / 8);
+    const expectedBytes = _expectedRingElements(padLength, payload.packingFactor) * _ringElementBytes(payload);
     if (hexToBytes(s.share).length !== expectedBytes) {
       throw new Error(`share for label ${s.label} is not ${expectedBytes} bytes`);
     }
@@ -178,7 +186,7 @@ async function _verifyResponse(
     const masked = hexToBytes(s.share);
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const pad = masked.map((b, k) => b ^ mask[k % 32]!);
-    return { label: s.label, share: bytesToHex(pad) };
+    return { label: s.label, sessionId: s.sessionId, share: bytesToHex(pad) };
   });
 
   return { payload: { ...payload, padShares }, signer };
@@ -189,38 +197,54 @@ function _openResponse(
   ethereum: Pick<EthereumModule, 'decode'>,
   encrypted: BytesHex,
 ): ReturnType<typeof decodeCleartextPadDecryptResponse> {
-  let opened: ReturnType<typeof decodeCleartextPadDecryptResponse>;
   try {
-    opened = decodeCleartextPadDecryptResponse(ethereum, encrypted);
+    return decodeCleartextPadDecryptResponse(ethereum, encrypted);
   } catch {
     throw new Error('hybrid-encrypted pad decryption responses are not supported yet');
   }
-  if (opened.payload.shareFormat !== CLEARTEXT_PAD_SHARE_FORMAT) {
-    throw new Error(`unsupported share format ${opened.payload.shareFormat}`);
-  }
-  return opened;
+}
+
+/** PRF blocks covering `padLength` bits, grouped `packingFactor` per ring element. */
+function _expectedRingElements(padLength: number, packingFactor: number): number {
+  return Math.ceil(Math.ceil(padLength / (8 * CLEARTEXT_PAD_BLOCK_BYTES)) / packingFactor);
+}
+
+/** Bytes of one ring element in the cleartext encoding. */
+function _ringElementBytes(payload: CleartextPadDecryptResponsePayload): number {
+  return payload.packingFactor * CLEARTEXT_PAD_BLOCK_BYTES;
+}
+
+/** The (already verified to exist) share of `label` in a response. */
+function _padShareOf(v: VerifiedResponse, label: string): PadShare {
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  return v.payload.padShares.find((s) => s.label.toLowerCase() === label)!;
 }
 
 /**
- * Cleartext share format: every share is the whole pad, so reconstruction is
- * a consistency check — all selected shares of a label must be identical.
+ * Cleartext share encoding: every share is the whole encrypted pad, so
+ * reconstruction is a consistency check — all selected shares of the label
+ * must be identical. The ring elements are then unpacked into the pad stream,
+ * of which the first `padLength` bits are kept (bits past it cleared).
  */
-function _reconstruct(group: readonly VerifiedResponse[], witnesses: readonly PadWitness[]): ReconstructedPads {
-  const pads = new Map<Bytes32Hex, Uint8Array>();
-  for (const w of witnesses) {
-    const label = w.label.toLowerCase();
-    let pad: BytesHex | undefined;
-    for (const v of group) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const share = v.payload.padShares.find((s) => s.label.toLowerCase() === label)!.share;
-      if (pad === undefined) {
-        pad = share;
-      } else if (pad.toLowerCase() !== share.toLowerCase()) {
-        throw new Error(`Inconsistent pad shares for label ${w.label}; refusing to reconstruct.`);
-      }
+function _reconstruct(group: readonly VerifiedResponse[], witness: PadWitness): Uint8Array {
+  const label = witness.label.toLowerCase();
+  let elements: BytesHex | undefined;
+  for (const v of group) {
+    const share = _padShareOf(v, label).share;
+    if (elements === undefined) {
+      elements = share;
+    } else if (elements.toLowerCase() !== share.toLowerCase()) {
+      throw new Error(`Inconsistent pad shares for label ${witness.label}; refusing to reconstruct.`);
     }
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    pads.set(w.label, hexToBytes(pad!));
   }
-  return pads;
+
+  const numBytes = Math.ceil(witness.padLength / 8);
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const pad = hexToBytes(elements!).slice(0, numBytes);
+  const extraBits = numBytes * 8 - witness.padLength;
+  if (extraBits !== 0) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    pad[numBytes - 1]! &= 0xff >> extraBits;
+  }
+  return pad;
 }
