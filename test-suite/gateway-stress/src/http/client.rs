@@ -2,44 +2,64 @@ use crate::{
     config::HttpConfig,
     http::types::{HttpDecryptionRequest, RequestOutcome},
 };
+use alloy::{
+    primitives::{Address, B256},
+    signers::local::PrivateKeySigner,
+    sol_types::Eip712Domain,
+};
 use anyhow::{Context, anyhow};
+use fhevm_sig_auth::PathAndQuery;
 use kms_connector_api::{
     ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE, VersionResponse,
 };
 use reqwest::{
     Certificate, Client, StatusCode, Url,
-    header::{AUTHORIZATION, HeaderMap, HeaderValue},
+    header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue},
 };
-use serde::Serialize;
-use std::{fmt::Display, time::Duration};
+use std::{fmt::Display, sync::Arc, time::Duration};
 use tokio::time::Instant;
 use tracing::{debug, trace, warn};
 
 /// Timeout used for connection establishment and health checks.
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// HTTP client of one KMS party's connector, reached through its proxy (or endpoint).
+/// The `FhevmSig` material shared by the clients of every party.
+pub struct FhevmSigAuth {
+    pub signer: PrivateKeySigner,
+    pub domain: Eip712Domain,
+    pub validity: Duration,
+}
+
+/// A decryption request serialized and signed for one party, ready to be sent.
+pub struct SignedRequest {
+    route: &'static str,
+    body: Vec<u8>,
+    authorization: HeaderValue,
+    decryption_id: B256,
+    handle_count: usize,
+}
+
+/// HTTP client of one KMS party's connector, reached through its proxy.
 #[derive(Clone)]
 pub struct HttpConnector {
     base_url: Url,
     client: Client,
+    auth: Arc<FhevmSigAuth>,
+    /// This party's KMS tx-sender address, the `audience` its proxy accepts.
+    audience: Address,
 }
 
 impl HttpConnector {
-    pub fn connect(http_config: &HttpConfig, index: usize) -> anyhow::Result<Self> {
+    pub fn connect(
+        http_config: &HttpConfig,
+        index: usize,
+        auth: Arc<FhevmSigAuth>,
+    ) -> anyhow::Result<Self> {
         let base_url = http_config.urls[index].clone();
-
-        let mut headers = HeaderMap::new();
-        if let Some(api_key) = http_config.api_key.as_deref().filter(|k| !k.is_empty()) {
-            let mut value = HeaderValue::from_str(&format!("Bearer {api_key}"))
-                .map_err(|e| anyhow!("Invalid API key: {e}"))?;
-            value.set_sensitive(true);
-            headers.insert(AUTHORIZATION, value);
-        }
+        let audience = http_config.tx_sender_addresses[index];
 
         let mut builder = Client::builder()
             .use_rustls_tls()
-            .default_headers(headers)
             .timeout(http_config.request_timeout)
             .connect_timeout(CONNECTION_TIMEOUT)
             .danger_accept_invalid_certs(http_config.danger_accept_invalid_certs);
@@ -52,11 +72,28 @@ impl HttpConnector {
             builder = builder.tls_certs_merge(certs);
         }
 
-        debug!("Configured HTTP client #{index} ({base_url})");
+        debug!("Configured HTTP client #{index} ({base_url}, audience {audience})");
         Ok(Self {
             base_url,
             client: builder.build()?,
+            auth,
+            audience,
         })
+    }
+
+    /// The `FhevmSig` `Authorization` value for `body` sent to `route`.
+    async fn authorization(&self, route: &'static str, body: &[u8]) -> anyhow::Result<HeaderValue> {
+        let header = fhevm_sig_auth::sign_valid_for(
+            &self.auth.signer,
+            &self.auth.domain,
+            self.audience,
+            &PathAndQuery::from_static(route),
+            body,
+            self.auth.validity,
+        )
+        .await
+        .with_context(|| format!("{}: failed to sign {route}", self.base_url))?;
+        Ok(header.to_header_value())
     }
 
     fn route(&self, route: &str) -> anyhow::Result<Url> {
@@ -67,9 +104,11 @@ impl HttpConnector {
 
     /// `GET /version`: checks the party is reachable.
     pub async fn health_check(&self) -> anyhow::Result<()> {
+        let authorization = self.authorization(VERSION_ROUTE, &[]).await?;
         let resp = self
             .client
             .get(self.route(VERSION_ROUTE)?)
+            .header(AUTHORIZATION, authorization)
             .timeout(CONNECTION_TIMEOUT)
             .send()
             .await
@@ -87,34 +126,44 @@ impl HttpConnector {
         Ok(())
     }
 
-    /// Sends one decryption request and waits for the party's answer.
-    pub async fn send(&self, request: &HttpDecryptionRequest) -> anyhow::Result<RequestOutcome> {
-        let id = request.id();
-        let handle_count = request.handle_count();
-        match request {
-            HttpDecryptionRequest::Public(body) => {
-                self.post(PUBLIC_DECRYPTION_ROUTE, body, id, handle_count)
-                    .await
-            }
-            HttpDecryptionRequest::UserV2(body) => {
-                self.post(USER_DECRYPTION_ROUTE, body, id, handle_count)
-                    .await
-            }
-        }
+    /// Serializes `request` and signs its `FhevmSig` header, ready to be sent to this party.
+    pub async fn sign(&self, request: &HttpDecryptionRequest) -> anyhow::Result<SignedRequest> {
+        let route = match request {
+            HttpDecryptionRequest::Public(_) => PUBLIC_DECRYPTION_ROUTE,
+            HttpDecryptionRequest::UserV2(_) => USER_DECRYPTION_ROUTE,
+        };
+        // The proxy checks the digest of the exact bytes received: sign the bytes that are sent.
+        let body = match request {
+            HttpDecryptionRequest::Public(body) => serde_json::to_vec(body)?,
+            HttpDecryptionRequest::UserV2(body) => serde_json::to_vec(body)?,
+        };
+        let authorization = self.authorization(route, &body).await?;
+        Ok(SignedRequest {
+            route,
+            body,
+            authorization,
+            decryption_id: request.id(),
+            handle_count: request.handle_count(),
+        })
     }
 
-    async fn post<B: Serialize>(
-        &self,
-        route: &str,
-        body: &B,
-        decryption_id: alloy::primitives::B256,
-        handle_count: usize,
-    ) -> anyhow::Result<RequestOutcome> {
+    /// Sends one signed decryption request and waits for the party's answer.
+    pub async fn send_signed(&self, request: SignedRequest) -> anyhow::Result<RequestOutcome> {
+        let SignedRequest {
+            route,
+            body,
+            authorization,
+            decryption_id,
+            handle_count,
+        } = request;
+
         let started = Instant::now();
         let resp = self
             .client
             .post(self.route(route)?)
-            .json(body)
+            .header(AUTHORIZATION, authorization)
+            .header(CONTENT_TYPE, "application/json")
+            .body(body)
             .send()
             .await
             .with_context(|| {
