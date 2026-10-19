@@ -170,12 +170,17 @@ for f in "${root}/coprocessor/values-coprocessor-bcs-e2e.yaml" \
 done
 GATEWAY_WS="${GATEWAY_WS}" yq -i '.commonConfig.gatewayUrl.value = strenv(GATEWAY_WS)' \
   "${root}/coprocessor/values-coprocessor-e2e.yaml"
-# The tx-sender needs HTTP from 0.15 on - it fails fast on a ws:// URL ("Gateway URL is not usable
-# by this build") - while commonConfig stays ws:// for the gw-listener. The BCS overlay pins the
-# previous release's sender back to ws://, since that build speaks WebSocket.
+# The tx-sender fails fast on a ws:// URL ("Gateway URL is not usable by this build") while
+# commonConfig stays ws:// for the gw-listener. Only v0.14.1 speaks WebSocket, so the BCS overlay
+# follows BCS_IMAGE_TAG rather than assuming the blue fleet is that release.
 GATEWAY_HTTP="${GATEWAY_HTTP}" yq -i '.txSender.config.gatewayUrl.value = strenv(GATEWAY_HTTP)' \
   "${root}/coprocessor/values-coprocessor-e2e.yaml"
-GATEWAY_WS="${GATEWAY_WS}" yq -i '.txSender.config.gatewayUrl.value = strenv(GATEWAY_WS)' \
+if [[ "${BCS_IMAGE_TAG:-v0.14.1}" == "v0.14.1" ]]; then
+  BCS_GATEWAY="${GATEWAY_WS}"
+else
+  BCS_GATEWAY="${GATEWAY_HTTP}"
+fi
+BCS_GATEWAY="${BCS_GATEWAY}" yq -i '.txSender.config.gatewayUrl.value = strenv(BCS_GATEWAY)' \
   "${root}/coprocessor/values-coprocessor-bcs-e2e.yaml"
 if rpc_from_secret; then
   for f in "${root}/coprocessor/values-coprocessor-e2e.yaml" "${root}/coprocessor/values-coprocessor-poller-e2e.yaml"; do
