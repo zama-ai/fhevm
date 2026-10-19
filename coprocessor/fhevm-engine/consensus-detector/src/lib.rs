@@ -837,6 +837,11 @@ where
             let anchors = own
                 .map(|r| r.payload.anchors)
                 .unwrap_or_else(|| unanimity_notifications(host_tracks, gateway));
+            info!(
+                members = members.len(),
+                anchors = anchors.len(),
+                "every member decided quorum — emitting event_unanimity_consensus"
+            );
             for (chain_id, block) in anchors {
                 notify_unanimity(
                     pool,
@@ -852,7 +857,15 @@ where
                 .await?;
             }
         }
-        None => {}
+        None => {
+            let waiting: Vec<&str> = members
+                .iter()
+                .zip(&decisions)
+                .filter(|(_, decision)| decision.is_none())
+                .map(|(member, _)| member.address.as_str())
+                .collect();
+            info!(waiting = ?waiting, "waiting for a decision from every member");
+        }
     }
 
     Ok(())

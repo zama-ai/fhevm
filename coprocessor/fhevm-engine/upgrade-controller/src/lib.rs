@@ -2478,7 +2478,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
             .await?;
     if let Err(reason) = validate_cutover_release(&stack_version, &live_stack_version) {
         // The fleet already authorized this cutover, and this operator's record
-        // says `prepared`. Failing the attempt here would end it on this operator
+        // says `quorum`. Failing the attempt here would end it on this operator
         // alone, so refuse the run and keep the attempt for the right release.
         error!(
             reason,
