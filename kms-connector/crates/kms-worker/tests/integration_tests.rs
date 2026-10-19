@@ -134,7 +134,8 @@ async fn test_processing_request(
 
     // Mocking Host chain. ACL call counts per variant:
     //   - Public:            1 `isAllowedForDecryption`
-    //   - Legacy user:       2 `isAllowed` (user + contract)
+    //   - Legacy user:       1 U256 (`decryptionSignatureInvalidatedBefore`) + 2 `isAllowed`
+    //                        (user + contract)
     //   - RFC016 user (V2):  1 `isValidSignature` (RFC-012, ERC-1271 fallback — random fixture
     //                        signature can't ecrecover to userAddress so the call always fires)
     //                        + 1 U256 (`decryptionSignatureInvalidatedBefore`) + 1 `isAllowed`
@@ -149,7 +150,13 @@ async fn test_processing_request(
             U256::ZERO.abi_encode(),
             true.abi_encode(),
         ],
-        TestEventType::UserDecryption => vec![true.abi_encode(); 2],
+        TestEventType::UserDecryption => {
+            vec![
+                U256::ZERO.abi_encode(),
+                true.abi_encode(),
+                true.abi_encode(),
+            ]
+        }
         _ => vec![],
     };
     let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
