@@ -342,7 +342,9 @@ export async function inspectKmsContextSwitch(
 
   const checksum = (address: string) => ethers.getAddress(address);
 
-  const committee = await fetchActiveCommittee(pc, activeContextId, checksum);
+  // A proxy that is not initialized has context 0 and no destruction to report.
+  const committee: ActiveCommittee =
+    activeContextId > 0n ? await fetchActiveCommittee(pc, activeContextId, checksum) : { signers: [], threshold: 0 };
 
   const status: KmsContextSwitchStatus = {
     protocolConfig: protocolConfigAddress,
@@ -427,7 +429,14 @@ export async function inspectKmsContextSwitch(
       checksum,
     ),
   );
-  status.epochDestructions = destroyedEpochEvents.map((event) =>
+  // `destroyedEpochs` exists since v0.4.0 (reinitializer 5), so an epoch destroyed before it collects no confirmation.
+  const upgrade = (await pc.queryFilter(pc.filters.Initialized(), 0, toBlock)).find(
+    (event) => event.args.version >= 5n,
+  );
+  const confirmableEpochEvents = destroyedEpochEvents.filter(
+    (event) => upgrade && event.blockNumber >= upgrade.blockNumber,
+  );
+  status.epochDestructions = confirmableEpochEvents.map((event) =>
     destructionConfirmationStatus(
       event.args.epochId,
       epochConfirmations.filter((confirmation) => confirmation.args.destroyedEpochId === event.args.epochId),
