@@ -166,13 +166,16 @@ export const prepareSolanaKmsContextLeg = async (
 
   /**
    * relayer-http's log of the decrypts of the leg's values made after `before` (the request ids it
-   * had logged until then): in each answered decrypt, each party in `outsideParties` was refused at
-   * its first attempt, and the aggregation did not reach its deadline. One attempt, because every
-   * coprocessor's Merkle proof server refuses a worker whose tx-sender is in no live context, and
-   * the worker records that as 422 unprocessable, a code relayer-http does not retry, as on EVM,
-   * where a core with no role in the request's context answers NotFound. The SDK authenticates each
-   * share against the signers of its permit's context and needs 2t+1 of them
-   * (userDecrypt/response.ts), so a share from outside that context could never count.
+   * had logged until then): in each answered decrypt, each party in `outsideParties` was refused with
+   * 422 unprocessable at its first attempt, and the aggregation did not reach its deadline. The
+   * worker answers 422 for either of two final refusals, and relayer-http does not retry it:
+   * - every coprocessor's Merkle proof server refuses a worker whose tx-sender is in no Active
+   *   context (auth_unknown_signer). This refuses the spares after the switch.
+   * - a KMS core with no role in the request's context answers NotFound, as on EVM. This refuses the
+   *   dropped node after the swap: it is still in the earlier Active contexts, so the proof servers
+   *   accept its tx-sender.
+   * The SDK authenticates each share against the signers of its permit's context and needs 2t+1 of
+   * them (userDecrypt/response.ts), so a share from outside that context could never count.
    */
   const assertOutsidePartiesRefusedAtOnce = async (before: ReadonlySet<string>, outsideParties: readonly number[]) => {
     const handles = [bytesToHex(supplyHandle), balance.currentHandle.toLowerCase()];
@@ -198,10 +201,11 @@ export const prepareSolanaKmsContextLeg = async (
       }
       for (const party of outsideParties) {
         const node = nodeOutcomes(lines).find((outcomeOfNode) => outcomeOfNode.node === relayerHttpNodeName(party));
-        if (node?.message !== 'call failed' || node.attempts !== 1) {
+        if (node?.message !== 'call failed' || node.attempts !== 1 || node.code !== 'unprocessable') {
           throw new Error(
             `party ${party}, outside the context, ended its ${String(started.fields.flow)} call with ` +
-              `${node === undefined ? 'no line' : `"${node.message}" after ${node.attempts} attempt(s)`}, expected one refused attempt`,
+              `${node === undefined ? 'no line' : `"${node.message}" (${node.code}) after ${node.attempts} attempt(s)`}, ` +
+              'expected one attempt refused as unprocessable',
           );
         }
         console.log(

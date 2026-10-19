@@ -103,6 +103,7 @@ are written as one narrative instead.
 | [DD-073](#dd-073-the-sdk-reads-decryption-trust-from-zama-host)                                                                           | adopted                                  | The SDK reads decryption trust from zama-host                                                                                   |
 | [DD-074](#dd-074-solana-decryption-goes-only-over-http)                                                                                   | adopted                                  | Solana decryption goes only over HTTP                                                                                           |
 | [DD-075](#dd-075-shared-callees-have-their-own-error-code-range)                                                                          | adopted                                  | Shared callees have their own error-code range                                                                                  |
+| [DD-076](#dd-076-a-coprocessor-accepts-the-kms-tx-senders-of-active-contexts-only)                                                        | adopted                                  | A coprocessor accepts the KMS tx-senders of Active contexts only                                                                |
 
 ## DD-002: Keep App Store And Host ACL Store Separate
 
@@ -2266,7 +2267,7 @@ Decision:
 `solana_merkle_proof_server` serves `POST /v1/solana/merkle-proofs` and the health routes as its own
 Deployment and ClusterIP Service, `<release>-solana-merkle-proof-server`, from the host-listener
 image and with its own pool (`--database-pool-size`, 8 by default). It answers only requests signed
-by the tx-sender of a live KMS context (DD-067). It only reads the Merkle proof service's database
+by the tx-sender of an Active KMS context (DD-067, DD-076). It only reads the Merkle proof service's database
 (DD-066), so it can run several replicas and roll without downtime. The Merkle indexer, which writes
 that database, and the listener, which serves only `/healthz` and `/liveness`, roll like the EVM
 listeners: one replica by default, `RollingUpdate` with `maxSurge: 1` and `maxUnavailable: 0`, and
@@ -2455,23 +2456,25 @@ the signatures.
 It asks the coprocessors one after another in a random order: the next one as soon as an answer
 leaves a query without a verified proof, or after `HEDGE_DELAY` (250 ms) without an answer.
 
-`solana_merkle_proof_server` recovers the signer and answers only the tx-senders of the live KMS
-contexts. It reads them from the canonical `ProtocolConfig` at the finalized block every 60 seconds:
-the live context ids, then each context's nodes from its `NewKmsContext` event at the context's
-anchor block, checked against the anchor's `contextInfoHash`. kms-worker reads a previous context
-the same way, through `shared/kms-context`. A refresh that fails, or takes more than 30 seconds,
-keeps the last set. Until the first read succeeds, every request gets `upstream_transient` (502,
+`solana_merkle_proof_server` recovers the signer and answers only the tx-senders of the Active KMS
+contexts (DD-076). It polls the finalized block of the canonical `ProtocolConfig`'s chain every 5
+seconds (`--kms-tx-sender-poll-interval`) and, when the block is newer than the last read, reads
+them at that block:
+`isValidKmsContext` for each context id up to `getCurrentKmsContextIdCounter`, then each Active
+context's nodes from `getKmsNodesForContext`. A request whose signer is not in the set wakes a poll
+and waits up to 3 seconds for it before it is refused (DD-076). A poll that fails, or takes more
+than 30 seconds, keeps the last set. Until the first read succeeds, every request gets `upstream_transient` (502,
 retryable) and `/healthz` answers 503. The server authenticates the signer from the header before it
 reads the body, with RFC 038's codes (401, not retryable): no header is `auth_missing`, a header of
-any other form `auth_malformed`, and a signature that recovers no address, or one that is not a live
-tx-sender, `auth_unknown_signer`. A signature for another audience recovers an unrelated address
+any other form `auth_malformed`, and a signature that recovers no address, or one that is not the
+tx-sender of an Active context, `auth_unknown_signer`. A signature for another audience recovers an unrelated address
 and lands there too. Then it reads the body, up to 64 KiB, and refuses one whose keccak-256 is not
 the header's `digest` as `auth_body_mismatch`: a valid header replayed with another body. A KMS
 connector that every coprocessor refuses with one of these four codes, in any mix, fails the request
-`unprocessable`, final: its signer is in no live context the coprocessors have read, or its
-signature does not verify, and neither recovers within relayer-http's retries. A coprocessor learns
-a new context's tx-senders only at the finalized block and up to 60 seconds later, and a signature
-the connector builds wrongly stays wrong. For a node outside the KMS context, this is the EVM
+`unprocessable`, final: its signer is in no Active context the coprocessors have read, or its
+signature does not verify, and neither recovers within relayer-http's retries. A coprocessor
+checks an unknown signer again after a poll that started after the request, or after 3 seconds
+(DD-076), and a signature the connector builds wrongly stays wrong. For a node outside the KMS context, this is the EVM
 outcome. kms-worker keys off the code, as RFC 038 asks, not the body's `retryable` flag.
 
 Request and success bodies are CBOR (RFC 8949) over HTTP/2 without TLS negotiation (prior
@@ -2543,7 +2546,7 @@ signature before it asks the first coprocessor, so one failed or late signing ca
 and the worker loop retries it later. A coprocessor's signer address is
 configured twice, in its proof server and in every connector's `solana_proof_servers` entry for it;
 a wrong address makes every read of that server fail with 401, and the connector asks the next. A
-new KMS context is answered once its creation is finalized, up to 60 seconds later. The proof
+new KMS context is answered once its activation is finalized (DD-076). The proof
 server reads the canonical `ProtocolConfig` over the RPC of the coprocessor's `chains[]` entry
 named by `commonConfig.canonicalProtocolConfigChainId`, and the chart refuses to render without it
 or without `solanaHostListener.proofServer.coprocessorSignerAddress`. The preview mints no proof
@@ -2555,7 +2558,7 @@ kms-worker shuffles the coprocessors for each batch, so one server sees about it
 batches that the first coprocessor asked resolves; a batch with a query left unresolved, such as
 one whose leaf is not recorded yet, reaches every coprocessor. A tx-sender past its budget is
 refused until older requests expire, and the connector asks another coprocessor. 13 KMS nodes in
-two live contexts hold at most 416 MiB, inside the chart's 512 MiB limit. The cache and the rate
+two Active contexts hold at most 416 MiB, inside the chart's 512 MiB limit. The cache and the rate
 are per replica, so a copy that reaches another replica of the same server is charged there again.
 
 ## DD-068: The Merkle indexer checks its record against the chain and quarantines a store that disagrees
@@ -3108,3 +3111,97 @@ Consequences:
   every committed IDL and of the zama-fhe error table when `check-zama-host-idl.sh` runs and before
   `sync-zama-host-idl.sh` copies a build. The cleartext row is `CleartextError`'s
   `#[error_code(offset = 7000)]`.
+
+## DD-076: A coprocessor accepts the KMS tx-senders of Active contexts only
+
+Status: adopted
+
+Context:
+
+A coprocessor service that a KMS connector calls authenticates each request with `FhevmSig`
+(DD-067) and accepts it only from the tx-sender of a KMS node that `ProtocolConfig` lists. A KMS
+context goes through four states in `host-contracts/contracts/ProtocolConfig.sol`:
+
+- Pending, once governance defines it (`defineNewKmsContextAndEpoch`);
+- Created, once every new node and n - t nodes of the previous context confirm it
+  (`confirmKmsContextCreation`);
+- Active, once every new node attests the same keys and CRS on-chain (`confirmEpochActivation`);
+- destroyed, by governance (`destroyKmsContext`, which refuses the latest Active context).
+
+RFC 038 accepts the tx-senders of every context that is not destroyed: Pending, Created and Active.
+The Merkle proof server did the same, through `isLiveKmsContext` and each context's `NewKmsContext`
+event.
+
+Decision:
+
+A coprocessor accepts a request only from the tx-sender of a node of an Active KMS context, read at
+one finalized block: the contexts for which `isValidKmsContext` is true, with their nodes from
+`getKmsNodesForContext`, which reverts unless the context is Active
+(`host-contracts/contracts/ProtocolConfigBase.sol:176-179`, `:273-281`). The rule holds for every
+coprocessor service that authenticates a KMS connector with `FhevmSig`: the Merkle proof server
+here, and the coprocessor proxy and the PRF service, neither of which is merged yet. Not chosen:
+RFC 038's wording, every context that is not destroyed.
+
+Rationale:
+
+- Active is the first state in which a node can do the work a request serves. Until every new node
+  has attested its keys and CRS, a new node holds no usable key share and takes no part in a
+  threshold decryption. A connector fetches a Merkle proof only to serve a decryption, so a Pending
+  or Created node has no request it could use.
+- Fewer signers are accepted. Governance defines a Pending set before the outgoing committee
+  confirms it, and a Created set has not proven its keys. Neither can make a coprocessor spend work.
+- The outgoing committee keeps access through the whole switch: its context stays Active until
+  governance destroys it.
+- The read is simpler: one getter per Active context, and no log read at an anchor block.
+- `ProtocolConfig.isKmsTxSenderForContext` accepts every context that is not destroyed, Pending
+  and Created included (`ProtocolConfigBase.sol:182-188`), so that a context's nodes are readable
+  during resharing (its comment, `:183`). It serves the KMS protocol's own on-chain steps:
+  `KMSGeneration` authorizes each generation response through it, against the context the request
+  was pinned to (`KMSGeneration.sol:192-201`). The switch's confirmations,
+  `confirmKmsContextCreation` and `confirmEpochActivation`, check the stored membership directly.
+  An HTTP request to a coprocessor is not one of those steps, so this rule does not follow that
+  function.
+
+Consequences:
+
+- A node only in the incoming context is refused until the activation is finalized. Before then,
+  kms-worker refuses a request that names the new context itself (`isValidKmsContext` at the
+  finalized block, `event_processor/context.rs`), so nothing is lost. Once the activation is
+  finalized, the incoming node can take a request before a coprocessor has read the new context.
+  So the server polls the finalized block every 5 seconds (`--kms-tx-sender-poll-interval`) and
+  reads the set again when the block is newer than the last read. A request whose recovered signer
+  is not in the set
+  wakes a poll, waits up to 3 seconds (`UNKNOWN_SIGNER_WAIT`) for a poll that started after it, and
+  is checked again. The incoming node is accepted on its first request, unless that poll fails or
+  takes more than 3 seconds.
+- What remains: if a coprocessor's RPC node sees the activation's finalized block more than 3
+  seconds after kms-worker's node does, the incoming node's first requests to that coprocessor are
+  refused with `auth_unknown_signer`, and kms-worker treats that refusal as final. That is RPC node
+  lag. The same holds when the coprocessor's RPC fails, or answers in more than 3 seconds, during
+  the woken poll: the request is checked against the last set. A switch that keeps 2t+1 nodes of the previous context still answers then, since those nodes
+  are in an Active context. RFC 038's rule had no such case: it accepted the new context from
+  Pending.
+- A request from a signer outside the set waits up to 3 seconds, within kms-worker's default
+  10 seconds for an answer (`host_rpc_call_timeout`). Polls woken this way start at least 1 second
+  after the poll before them, and every request waiting when one starts shares it, so unknown
+  signers cost at most one poll a second: one `eth_getBlockByNumber`, and the contract reads only
+  when the finalized block is newer. RFC 038 authenticates from the header before the body is
+  read, so the wake comes before the body's digest is checked, and any header with a recoverable
+  signature can cause one. A signature for another audience recovers an unrelated address and is
+  such a case: it is refused after the wait.
+- Every coprocessor refuses a connector whose tx-sender is only in a Pending or Created context
+  with `auth_unknown_signer`, and kms-worker treats that refusal as final (DD-067), as for a node
+  outside every context.
+- `solana-merkle-proof-service/src/kms_tx_senders.rs` reads `getCurrentKmsContextIdCounter`,
+  `isValidKmsContext` and `getKmsNodesForContext` at one finalized block, when that block is newer
+  than its last read, and keeps each context's nodes, which never change once the context is
+  created. An equal block cannot have changed the set. An older one can only come from an RPC node
+  that lags, behind a load balancer for instance, and reading there would publish an older set, so
+  the server skips both. It reads no event logs and keeps no list of destroyed contexts: a read
+  costs a handful of calls, only when finality moves. It no longer reads `NewKmsContext` events.
+  kms-worker still does, through `shared/kms-context`, for the previous context of a new MPC
+  context.
+- Invariant #72 holds the rule. `accepts_an_active_contexts_tx_senders_and_reads_its_nodes_once`,
+  `refuses_a_pending_or_created_contexts_tx_senders` and `refuses_a_destroyed_contexts_tx_senders`
+  pin it against a stub that answers each call as the contract does. Invariant #73 holds the poll
+  and the re-read on an unknown signer.

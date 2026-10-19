@@ -15,6 +15,7 @@ use alloy::{
 use anyhow::{Context, Result};
 use clap::Parser;
 use fhevm_host_bindings::protocol_config::ProtocolConfig;
+use humantime::parse_duration;
 use sqlx::postgres::PgPoolOptions;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
@@ -72,9 +73,14 @@ struct Args {
     #[arg(long)]
     ethereum_rpc_url: Url,
 
-    /// The canonical `ProtocolConfig`, whose live KMS contexts' tx-senders may call.
+    /// The canonical `ProtocolConfig`, whose Active KMS contexts' tx-senders may call.
     #[arg(long)]
     protocol_config_address: Address,
+
+    /// How often the finalized block is polled; the KMS tx-senders are read again when it is newer
+    /// than the last read. A request from a signer outside the set also starts a poll.
+    #[arg(long, default_value = "5s", value_parser = parse_poll_interval)]
+    kms_tx_sender_poll_interval: Duration,
 
     /// This coprocessor's registered signer address, the audience a request must be
     /// signed for (`FhevmSig`, RFC 038).
@@ -86,6 +92,15 @@ struct Args {
 
     #[arg(long, default_value = "solana-merkle-proof-server")]
     service_name: String,
+}
+
+/// A zero interval would poll the RPC without pause.
+fn parse_poll_interval(s: &str) -> Result<Duration, String> {
+    let interval = parse_duration(s).map_err(|err| err.to_string())?;
+    if interval.is_zero() {
+        return Err("must be more than zero".to_owned());
+    }
+    Ok(interval)
 }
 
 #[tokio::main]
@@ -127,6 +142,7 @@ async fn main() -> Result<()> {
         .erased();
     let senders = kms_tx_senders::follow(
         ProtocolConfig::new(args.protocol_config_address, ethereum),
+        args.kms_tx_sender_poll_interval,
         cancel.clone(),
     );
 

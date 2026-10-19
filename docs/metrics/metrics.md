@@ -224,7 +224,7 @@ The store check compares every recorded store with its account on chain, once at
 
 #### Metric Name: `solana_merkle_proof_server_requests_by_signer_total`
  - **Type**: Counter (labeled by `signer`)
- - **Description**: Authenticated requests, by the KMS tx-sender that signed them: each KMS node's load on this server. One series per KMS node of the live contexts.
+ - **Description**: Authenticated requests, by the KMS tx-sender that signed them: each KMS node's load on this server. One series per KMS node of the Active contexts.
 
 #### Metric Name: `solana_merkle_proof_server_leaves_total`
  - **Type**: Counter (labeled by `outcome`)
@@ -239,7 +239,7 @@ The store check compares every recorded store with its account on chain, once at
 
 #### Metric Name: `solana_merkle_proof_server_kms_tx_senders_read_timestamp_seconds`
  - **Type**: Gauge
- - **Description**: Unix time of the last successful read of the KMS tx-senders. The server reads every 60 seconds and keeps the last set when a read fails.
+ - **Description**: Unix time of the last successful poll of the KMS tx-senders. The server polls the finalized block every 5 seconds (`--kms-tx-sender-poll-interval`), reads the set again when the block is newer than the last read, and keeps the last set when a poll fails.
  - **Alarm**: Stale reads.
     - **Recommendation**: warning, `time() - gauge > 600`.
 

@@ -1,10 +1,14 @@
-//! The callers the Merkle proof route accepts: the tx-sender address of every KMS node in a live
-//! KMS context of the canonical `ProtocolConfig`. The KMS connector signs its requests with that
-//! tx-sender key.
+//! The callers the Merkle proof route accepts: the tx-sender address of every KMS node in an Active
+//! KMS context of the canonical `ProtocolConfig` (DD-076). The KMS connector signs its requests with
+//! that tx-sender key. A tx-sender only in a Pending or Created context is refused until that
+//! context is activated; the previous context stays Active, and accepted, until it is destroyed.
 //!
-//! A background task reads the set at one finalized block and replaces it; requests only read the
-//! last set, so a forged signature costs no RPC call. A failed refresh keeps the last set. Until
-//! the first read succeeds the route refuses every request.
+//! A background task polls the finalized block every `poll_interval` and, when it is newer than the
+//! last read, reads the set again at that block; requests only read the last set. A request whose signer is not in
+//! the set wakes the task and waits, for a bounded time, for a poll that started after it, so a
+//! context activated since the last poll is accepted at once. Woken polls start at least
+//! [`WOKEN_POLL_SPACING`] apart, so unknown signers cost at most one poll a second. A failed poll
+//! keeps the last set. Until the first read succeeds the route refuses every request.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -20,7 +24,7 @@ use alloy::{
 };
 use anyhow::{anyhow, Context};
 use fhevm_host_bindings::protocol_config::ProtocolConfig::ProtocolConfigInstance;
-use kms_context::{read_kms_context, KMS_CONTEXT_COUNTER_BASE};
+use kms_context::KMS_CONTEXT_COUNTER_BASE;
 use prometheus::{register_int_gauge, IntGauge};
 use request_authorization::KeyRegistry;
 use solana_host_follower::url_origin;
@@ -30,9 +34,9 @@ use tracing::{info, warn};
 
 use crate::{gauge_value, unix_now_secs};
 
-const REFRESH_INTERVAL: Duration = Duration::from_secs(60);
-const RETRY_INTERVAL: Duration = Duration::from_secs(5);
-/// The RPC client has no request timeout, so a hung call would stall every later refresh.
+/// The shortest time between the start of a poll and the start of a poll woken after it.
+const WOKEN_POLL_SPACING: Duration = Duration::from_secs(1);
+/// The RPC client has no request timeout, so a hung call would stall every later poll.
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The accepted callers and the registry their signatures name, once read.
@@ -54,79 +58,147 @@ static KMS_TX_SENDERS_READ_TIMESTAMP: LazyLock<IntGauge> = LazyLock::new(
     || {
         register_int_gauge!(
         "solana_merkle_proof_server_kms_tx_senders_read_timestamp_seconds",
-        "Unix time of the last successful read of the KMS tx-senders from ProtocolConfig"
+        "Unix time of the last successful poll of the KMS tx-senders from ProtocolConfig"
     )
     .unwrap()
     },
 );
 
+/// The follower's polls so far: how many started, and how many finished.
+#[derive(Clone, Copy, Debug, Default)]
+struct Polls {
+    started: u64,
+    finished: u64,
+}
+
 /// The latest [`KmsTxSenderSet`]; `None` until the first read succeeds.
 #[derive(Clone)]
-pub struct KmsTxSenders(watch::Receiver<Option<Arc<KmsTxSenderSet>>>);
+pub struct KmsTxSenders {
+    set: watch::Receiver<Option<Arc<KmsTxSenderSet>>>,
+    polls: watch::Receiver<Polls>,
+    /// The number of the poll a request waits for; the follower polls early while it has not
+    /// started that one.
+    wanted: Arc<watch::Sender<u64>>,
+}
 
 impl KmsTxSenders {
+    /// No follower publishes polls, so [`Self::refresh_after_miss`] returns at once.
+    fn without_follower(set: Option<KmsTxSenderSet>) -> Self {
+        Self {
+            set: watch::channel(set.map(Arc::new)).1,
+            polls: watch::channel(Polls::default()).1,
+            wanted: Arc::new(watch::channel(0).0),
+        }
+    }
+
     /// A set that never changes.
     pub fn fixed(set: KmsTxSenderSet) -> Self {
-        Self(watch::channel(Some(Arc::new(set))).1)
+        Self::without_follower(Some(set))
     }
 
     /// A set that is never read.
     #[cfg(test)]
     pub(crate) fn unread() -> Self {
-        Self(watch::channel(None).1)
+        Self::without_follower(None)
     }
 
     pub fn current(&self) -> Option<Arc<KmsTxSenderSet>> {
-        self.0.borrow().clone()
+        self.set.borrow().clone()
     }
 
     pub fn is_loaded(&self) -> bool {
-        self.0.borrow().is_some()
+        self.set.borrow().is_some()
+    }
+
+    /// Wakes the follower, and waits at most `wait` for a poll that started after this call to
+    /// finish. Many concurrent callers share that poll.
+    pub async fn refresh_after_miss(&self, wait: Duration) {
+        let mut polls = self.polls.clone();
+        let needed = polls.borrow().started + 1;
+        self.wanted.send_if_modified(|wanted| {
+            let earlier = *wanted < needed;
+            if earlier {
+                *wanted = needed;
+            }
+            earlier
+        });
+        // Ends at once when no follower publishes polls.
+        let _ = tokio::time::timeout(
+            wait,
+            polls.wait_for(|polls| polls.finished >= needed),
+        )
+        .await;
     }
 }
 
-/// Reads the set from `protocol_config` every [`REFRESH_INTERVAL`] until `cancel` fires.
+/// Polls `protocol_config` every `poll_interval`, and early when a request waits for a poll, until
+/// `cancel` fires or no [`KmsTxSenders`] remains.
 pub fn follow<P: Provider + 'static>(
     protocol_config: ProtocolConfigInstance<P>,
+    poll_interval: Duration,
     cancel: CancellationToken,
 ) -> KmsTxSenders {
-    let (publish, senders) = watch::channel(None);
+    let (publish, set) = watch::channel(None);
+    let (publish_polls, polls) = watch::channel(Polls::default());
+    let (wanted, mut wanted_poll) = watch::channel(0);
     // An allowlist never read shows as no tx-senders, not as a missing series.
     KMS_TX_SENDERS.set(0);
     tokio::spawn(async move {
         let mut reader = KmsTxSenderReader::new(protocol_config);
+        let mut count = Polls::default();
         loop {
-            let read = tokio::time::timeout(READ_TIMEOUT, reader.read())
+            count.started += 1;
+            publish_polls.send_replace(count);
+            let started = tokio::time::Instant::now();
+            let poll = tokio::time::timeout(READ_TIMEOUT, reader.poll())
                 .await
                 .unwrap_or_else(|_| {
                     Err(anyhow!("no answer within {READ_TIMEOUT:?}"))
                 });
-            let delay = match read {
-                Ok(set) => {
-                    if publish.borrow().as_deref() != Some(&set) {
-                        info!(
-                            senders = set.senders.len(),
-                            "KMS tx-sender set updated"
-                        );
+            match poll {
+                Ok(read) => {
+                    if let Some(set) = read {
+                        if publish.borrow().as_deref() != Some(&set) {
+                            info!(
+                                senders = set.senders.len(),
+                                "KMS tx-sender set updated"
+                            );
+                        }
+                        KMS_TX_SENDERS
+                            .set(gauge_value(set.senders.len() as u64));
+                        publish.send_replace(Some(Arc::new(set)));
                     }
-                    KMS_TX_SENDERS.set(gauge_value(set.senders.len() as u64));
                     KMS_TX_SENDERS_READ_TIMESTAMP
                         .set(gauge_value(unix_now_secs()));
-                    publish.send_replace(Some(Arc::new(set)));
-                    REFRESH_INTERVAL
                 }
                 Err(err) => {
                     warn!(error = %without_rpc_url_secrets(&err), "KMS tx-sender read failed; keeping the last set");
-                    RETRY_INTERVAL
                 }
-            };
+            }
+            count.finished = count.started;
+            publish_polls.send_replace(count);
             tokio::select! {
                 _ = cancel.cancelled() => return,
-                _ = tokio::time::sleep(delay) => {}
+                _ = tokio::time::sleep(poll_interval) => {}
+                woken = async {
+                    wanted_poll.wait_for(|&wanted| wanted > count.started).await.is_ok()
+                } => {
+                    if !woken {
+                        return;
+                    }
+                    tokio::select! {
+                        _ = cancel.cancelled() => return,
+                        _ = tokio::time::sleep_until(started + WOKEN_POLL_SPACING) => {}
+                    }
+                }
             }
         }
     });
-    KmsTxSenders(senders)
+    KmsTxSenders {
+        set,
+        polls,
+        wanted: Arc::new(wanted),
+    }
 }
 
 /// `err` as text, with each request URL cut to its [`url_origin`]: `reqwest` prints the full URL.
@@ -146,6 +218,8 @@ struct KmsTxSenderReader<P> {
     protocol_config: ProtocolConfigInstance<P>,
     /// A context's nodes never change once it is created.
     nodes_by_context: HashMap<U256, Vec<Address>>,
+    /// The finalized block of the last successful read.
+    read_at: Option<u64>,
 }
 
 impl<P: Provider> KmsTxSenderReader<P> {
@@ -153,19 +227,14 @@ impl<P: Provider> KmsTxSenderReader<P> {
         Self {
             protocol_config,
             nodes_by_context: HashMap::new(),
+            read_at: None,
         }
     }
 
-    async fn read(&mut self) -> anyhow::Result<KmsTxSenderSet> {
-        let chain_id = self
-            .protocol_config
-            .provider()
-            .get_chain_id()
-            .await
-            .context("eth_chainId")?;
-        // Every ProtocolConfig read of a refresh uses this one block. Read at different blocks, the
-        // counter could predate a new context while a liveness flag already shows its predecessor
-        // destroyed.
+    /// Reads the set at the finalized block, or nothing when that block is not newer than the one
+    /// last read: at the same block the set cannot have changed, and an older one, from an RPC node
+    /// that lags, would give an older set.
+    async fn poll(&mut self) -> anyhow::Result<Option<KmsTxSenderSet>> {
         let finalized = self
             .protocol_config
             .provider()
@@ -175,7 +244,24 @@ impl<P: Provider> KmsTxSenderReader<P> {
             .ok_or_else(|| anyhow!("no finalized block"))?
             .header
             .number;
-        let at = BlockId::number(finalized);
+        if self.read_at.is_some_and(|read_at| finalized <= read_at) {
+            return Ok(None);
+        }
+        let set = self.read(BlockId::number(finalized)).await?;
+        self.read_at = Some(finalized);
+        Ok(Some(set))
+    }
+
+    /// Every `ProtocolConfig` read of a poll uses the one block `at`. Read at different blocks, the
+    /// counter could predate a new context while `isValidKmsContext` already shows its predecessor
+    /// destroyed.
+    async fn read(&mut self, at: BlockId) -> anyhow::Result<KmsTxSenderSet> {
+        let chain_id = self
+            .protocol_config
+            .provider()
+            .get_chain_id()
+            .await
+            .context("eth_chainId")?;
         let latest = self
             .protocol_config
             .getCurrentKmsContextIdCounter()
@@ -186,24 +272,28 @@ impl<P: Provider> KmsTxSenderReader<P> {
         let mut senders = HashSet::new();
         let mut context_id = KMS_CONTEXT_COUNTER_BASE + U256::from(1);
         while context_id <= latest {
-            let live = self
+            let active = self
                 .protocol_config
-                .isLiveKmsContext(context_id)
+                .isValidKmsContext(context_id)
                 .block(at)
                 .call()
                 .await
-                .with_context(|| format!("isLiveKmsContext({context_id})"))?;
-            if live {
+                .with_context(|| format!("isValidKmsContext({context_id})"))?;
+            if active {
                 if !self.nodes_by_context.contains_key(&context_id) {
-                    let context =
-                        read_kms_context(&self.protocol_config, context_id, at)
-                            .await?;
-                    let nodes = context
-                        .kmsNodeParams
-                        .iter()
-                        .map(|node| node.txSenderAddress)
-                        .collect();
-                    self.nodes_by_context.insert(context_id, nodes);
+                    let nodes = self
+                        .protocol_config
+                        .getKmsNodesForContext(context_id)
+                        .block(at)
+                        .call()
+                        .await
+                        .with_context(|| {
+                            format!("getKmsNodesForContext({context_id})")
+                        })?;
+                    self.nodes_by_context.insert(
+                        context_id,
+                        nodes.iter().map(|node| node.txSenderAddress).collect(),
+                    );
                 }
                 senders.extend(&self.nodes_by_context[&context_id]);
             }
@@ -219,73 +309,150 @@ impl<P: Provider> KmsTxSenderReader<P> {
     }
 }
 
+/// A node whose `ProtocolConfig` answers as the contract does, for this module's tests and the
+/// server's.
 #[cfg(test)]
-mod tests {
+pub(crate) mod stub {
     use super::*;
     use alloy::{
-        primitives::{Bytes, Log as PrimitiveLog, B256},
+        primitives::Bytes,
         providers::{mock::Asserter, ProviderBuilder},
         rpc::{
             client::RpcClient,
             json_rpc::{RequestPacket, ResponsePacket, SerializedRequest},
-            types::{Block, Log},
+            types::Block,
         },
-        sol_types::{SolEvent, SolValue},
+        sol_types::{SolCall, SolInterface},
         transports::{mock::MockTransport, TransportError, TransportFut},
     };
     use fhevm_host_bindings::protocol_config::ProtocolConfig::{
-        self, KmsNodeParams, KmsThresholds, NewKmsContext,
+        self, getCurrentKmsContextIdCounterCall, getKmsNodesForContextCall,
+        isValidKmsContextCall, KmsNode, ProtocolConfigCalls,
     };
-    use kms_context::context_info_hash;
     use std::sync::Mutex;
 
-    const CONTRACT: Address = Address::repeat_byte(0xC0);
+    pub(crate) const CONTRACT: Address = Address::repeat_byte(0xC0);
+    /// The finalized block before any [`Ledger::finalize`].
+    pub(crate) const FINALIZED: u64 = 0x7b;
 
-    fn context(n: u64) -> U256 {
-        KMS_CONTEXT_COUNTER_BASE + U256::from(n)
+    #[derive(Clone, Copy, PartialEq)]
+    pub(crate) enum State {
+        Pending,
+        Created,
+        Active,
+        Destroyed,
     }
 
-    fn node(tx_sender: Address) -> KmsNodeParams {
-        KmsNodeParams {
-            txSenderAddress: tx_sender,
-            signerAddress: Address::repeat_byte(0x51),
-            ..Default::default()
+    /// What the stub node answers from.
+    pub(crate) struct Ledger {
+        pub finalized: u64,
+        /// The KMS contexts from context 1 on: each one's state and its nodes' tx-senders.
+        pub contexts: Vec<(State, Vec<Address>)>,
+        /// How long each answer takes to arrive. It holds the state at the call.
+        pub reply_delay: Duration,
+    }
+
+    impl Ledger {
+        /// Applies `change` to the contexts in a new finalized block.
+        pub(crate) fn finalize(
+            &mut self,
+            change: impl FnOnce(&mut Vec<(State, Vec<Address>)>),
+        ) {
+            change(&mut self.contexts);
+            self.finalized += 1;
         }
     }
 
-    /// Answers the anchor read and the log read of a context created at `block`.
-    fn created(
-        asserter: &Asserter,
-        context_id: U256,
-        block: u64,
-        tx_senders: &[Address],
-    ) {
-        let event = NewKmsContext {
-            contextId: context_id,
-            previousContextId: context_id - U256::from(1),
-            kmsNodeParams: tx_senders.iter().copied().map(node).collect(),
-            thresholds: KmsThresholds::default(),
-            softwareVersion: String::new(),
-            pcrValues: vec![],
-        };
-        anchor(asserter, block, context_info_hash(&event));
-        asserter.push_success(&vec![Log {
-            inner: PrimitiveLog {
-                address: CONTRACT,
-                data: event.encode_log_data(),
-            },
-            ..Default::default()
-        }]);
+    pub(crate) type Requests = Arc<Mutex<Vec<SerializedRequest>>>;
+
+    pub(crate) fn ledger(
+        contexts: &[(State, &[Address])],
+    ) -> Arc<Mutex<Ledger>> {
+        Arc::new(Mutex::new(Ledger {
+            finalized: FINALIZED,
+            contexts: contexts
+                .iter()
+                .map(|(state, tx_senders)| (*state, tx_senders.to_vec()))
+                .collect(),
+            reply_delay: Duration::ZERO,
+        }))
     }
 
-    /// Answers from an [`Asserter`] and keeps every request it was sent.
+    pub(crate) fn context(n: u64) -> U256 {
+        KMS_CONTEXT_COUNTER_BASE + U256::from(n)
+    }
+
+    /// `isValidKmsContext` is true only for an Active context, and `getKmsNodesForContext` reverts
+    /// for any other. It keeps every request.
     #[derive(Clone)]
-    struct Recording {
+    struct Node {
+        ledger: Arc<Mutex<Ledger>>,
         answers: MockTransport,
-        requests: Arc<Mutex<Vec<SerializedRequest>>>,
+        requests: Requests,
     }
 
-    impl tower::Service<RequestPacket> for Recording {
+    impl Node {
+        /// Queues the answer to `request` for the mock transport.
+        fn answer(&self, ledger: &Ledger, request: &SerializedRequest) {
+            let asserter = self.answers.asserter();
+            match request.method() {
+                "eth_chainId" => asserter.push_success(&"0x3039"),
+                "eth_getBlockByNumber" => {
+                    let mut block = Block::<()>::default();
+                    block.header.inner.number = ledger.finalized;
+                    asserter.push_success(&block);
+                }
+                "eth_call" => {
+                    let contexts = &ledger.contexts;
+                    let get = |id: U256| {
+                        let index: usize = (id - context(1)).to();
+                        &contexts[index]
+                    };
+                    let returned = match ProtocolConfigCalls::abi_decode(
+                        &call_input(request),
+                    )
+                    .unwrap()
+                    {
+                        ProtocolConfigCalls::getCurrentKmsContextIdCounter(_) => {
+                            Some(getCurrentKmsContextIdCounterCall::abi_encode_returns(
+                                &context(contexts.len() as u64),
+                            ))
+                        }
+                        ProtocolConfigCalls::isValidKmsContext(call) => {
+                            Some(isValidKmsContextCall::abi_encode_returns(
+                                &(get(call.kmsContextId).0 == State::Active),
+                            ))
+                        }
+                        ProtocolConfigCalls::getKmsNodesForContext(call) => {
+                            let (state, tx_senders) = get(call.kmsContextId);
+                            (*state == State::Active).then(|| {
+                                let nodes: Vec<KmsNode> = tx_senders
+                                    .iter()
+                                    .map(|&tx_sender| KmsNode {
+                                        txSenderAddress: tx_sender,
+                                        ..Default::default()
+                                    })
+                                    .collect();
+                                getKmsNodesForContextCall::abi_encode_returns(&nodes)
+                            })
+                        }
+                        call => panic!("unexpected call {:?}", call.selector()),
+                    };
+                    match returned {
+                        Some(returned) => {
+                            asserter.push_success(&Bytes::from(returned))
+                        }
+                        None => asserter.push_failure_msg(
+                            "execution reverted: InvalidKmsContext",
+                        ),
+                    }
+                }
+                method => panic!("unexpected RPC method {method}"),
+            }
+        }
+    }
+
+    impl tower::Service<RequestPacket> for Node {
         type Response = ResponsePacket;
         type Error = TransportError;
         type Future = TransportFut<'static>;
@@ -298,71 +465,116 @@ mod tests {
         }
 
         fn call(&mut self, request: RequestPacket) -> Self::Future {
-            self.requests
-                .lock()
-                .unwrap()
-                .extend(request.requests().iter().cloned());
-            self.answers.call(request)
+            let ledger = self.ledger.lock().unwrap();
+            for each in request.requests() {
+                self.requests.lock().unwrap().push(each.clone());
+                self.answer(&ledger, each);
+            }
+            let reply_delay = ledger.reply_delay;
+            let answer = self.answers.call(request);
+            Box::pin(async move {
+                tokio::time::sleep(reply_delay).await;
+                answer.await
+            })
         }
     }
 
-    fn reader(
-        asserter: &Asserter,
-    ) -> (
-        KmsTxSenderReader<impl Provider>,
-        Arc<Mutex<Vec<SerializedRequest>>>,
-    ) {
-        let requests = Arc::default();
-        let transport = Recording {
-            answers: MockTransport::new(asserter.clone()),
+    pub(crate) fn params(request: &SerializedRequest) -> serde_json::Value {
+        serde_json::from_str(request.params().unwrap().get()).unwrap()
+    }
+
+    pub(crate) fn call_input(request: &SerializedRequest) -> Bytes {
+        serde_json::from_value(params(request)[0]["input"].clone()).unwrap()
+    }
+
+    /// The `ProtocolConfig` at [`CONTRACT`] of a node answering from `ledger`, and the requests
+    /// it receives.
+    pub(crate) fn protocol_config(
+        ledger: &Arc<Mutex<Ledger>>,
+    ) -> (ProtocolConfigInstance<impl Provider>, Requests) {
+        let requests = Requests::default();
+        let node = Node {
+            ledger: Arc::clone(ledger),
+            answers: MockTransport::new(Asserter::new()),
             requests: Arc::clone(&requests),
         };
-        let provider = ProviderBuilder::new()
-            .connect_client(RpcClient::new(transport, true));
-        (
-            KmsTxSenderReader::new(ProtocolConfig::new(CONTRACT, provider)),
-            requests,
-        )
+        let provider =
+            ProviderBuilder::new().connect_client(RpcClient::new(node, true));
+        (ProtocolConfig::new(CONTRACT, provider), requests)
     }
 
-    /// Answers `eth_chainId` and the finalized block, `finalized`.
-    fn start(asserter: &Asserter, finalized: u64) {
-        asserter.push_success(&"0x3039");
-        let mut block = Block::<()>::default();
-        block.header.inner.number = finalized;
-        asserter.push_success(&block);
+    /// A follower of `ledger` polling every `poll_interval`, once its first read is published.
+    pub(crate) async fn follower(
+        ledger: &Arc<Mutex<Ledger>>,
+        poll_interval: Duration,
+    ) -> (KmsTxSenders, Requests, CancellationToken) {
+        let (protocol_config, requests) = protocol_config(ledger);
+        let cancel = CancellationToken::new();
+        let senders = follow(protocol_config, poll_interval, cancel.clone());
+        while !senders.is_loaded() {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        (senders, requests, cancel)
     }
 
-    fn anchor(asserter: &Asserter, block: u64, hash: B256) {
-        asserter.push_success(&Bytes::from(
-            (U256::from(block), hash).abi_encode_sequence(),
-        ));
+    /// How many requests in `requests` call `selector`.
+    pub(crate) fn calls(requests: &Requests, selector: [u8; 4]) -> usize {
+        requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|request| {
+                request.method() == "eth_call"
+                    && call_input(request).starts_with(&selector)
+            })
+            .count()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{stub::*, *};
+    use alloy::{providers::ProviderBuilder, sol_types::SolCall};
+    use fhevm_host_bindings::protocol_config::ProtocolConfig::{
+        self, getCurrentKmsContextIdCounterCall, getKmsNodesForContextCall,
+    };
+    use std::sync::Mutex;
+
+    const PREVIOUS: Address = Address::repeat_byte(0xA1);
+    const NEXT: Address = Address::repeat_byte(0xB2);
+    /// The binary's default.
+    const POLL_INTERVAL: Duration = Duration::from_secs(5);
+    const WAIT: Duration = Duration::from_secs(3);
+
+    fn reader(
+        ledger: &Arc<Mutex<Ledger>>,
+    ) -> (KmsTxSenderReader<impl Provider>, Requests) {
+        let (protocol_config, requests) = protocol_config(ledger);
+        (KmsTxSenderReader::new(protocol_config), requests)
     }
 
-    fn abi(asserter: &Asserter, value: impl SolValue) {
-        asserter.push_success(&Bytes::from(value.abi_encode()));
+    async fn read<P: Provider>(
+        reader: &mut KmsTxSenderReader<P>,
+    ) -> HashSet<Address> {
+        reader
+            .poll()
+            .await
+            .expect("poll")
+            .expect("a new finalized block")
+            .senders
     }
 
-    /// Context 1 was destroyed; context 2 is Active and context 3 Pending. The second read finds
-    /// context 2 destroyed and reuses context 3's cached nodes.
+    fn accepts(senders: &KmsTxSenders, tx_sender: Address) -> bool {
+        senders.current().unwrap().senders.contains(&tx_sender)
+    }
+
+    /// An Active context's tx-senders are accepted. Its nodes are read once; the next read
+    /// reuses them.
     #[tokio::test]
-    async fn reads_every_live_context_and_caches_its_nodes() {
-        let (a, b, c) = (
-            Address::repeat_byte(0xA1),
-            Address::repeat_byte(0xB2),
-            Address::repeat_byte(0xC3),
-        );
-        let asserter = Asserter::new();
-        let (mut reader, _) = reader(&asserter);
-
-        start(&asserter, 100);
-        abi(&asserter, context(3));
-        abi(&asserter, false);
-        abi(&asserter, true);
-        created(&asserter, context(2), 20, &[a, b]);
-        abi(&asserter, true);
-        created(&asserter, context(3), 30, &[c]);
-        let set = reader.read().await.expect("first read");
+    async fn accepts_an_active_contexts_tx_senders_and_reads_its_nodes_once() {
+        let ledger = ledger(&[(State::Active, &[PREVIOUS, NEXT])]);
+        let (mut reader, requests) = reader(&ledger);
+        let set = reader.poll().await.expect("poll").expect("first read");
         assert_eq!(
             set.registry,
             KeyRegistry {
@@ -370,43 +582,208 @@ mod tests {
                 contract: CONTRACT
             }
         );
-        assert_eq!(set.senders, HashSet::from([a, b, c]));
-
-        start(&asserter, 101);
-        abi(&asserter, context(3));
-        abi(&asserter, false);
-        abi(&asserter, false);
-        abi(&asserter, true);
-        let set = reader.read().await.expect("second read");
-        assert_eq!(set.senders, HashSet::from([c]));
-        assert!(asserter.read_q().is_empty(), "no further RPC call");
+        assert_eq!(set.senders, HashSet::from([PREVIOUS, NEXT]));
+        ledger.lock().unwrap().finalize(|_| {});
+        assert_eq!(read(&mut reader).await, HashSet::from([PREVIOUS, NEXT]));
+        assert_eq!(calls(&requests, getKmsNodesForContextCall::SELECTOR), 1);
     }
 
-    /// The counter, the liveness flag and the new context's anchor are all read at the finalized
-    /// block the refresh resolved first.
+    /// A Pending context, defined by governance, and a Created one, whose nodes have not attested
+    /// their keys, are refused while the previous context stays accepted. Once the new context is
+    /// Active, both are accepted.
+    #[tokio::test]
+    async fn refuses_a_pending_or_created_contexts_tx_senders() {
+        let ledger =
+            ledger(&[(State::Active, &[PREVIOUS]), (State::Pending, &[NEXT])]);
+        let (mut reader, _) = reader(&ledger);
+        assert_eq!(read(&mut reader).await, HashSet::from([PREVIOUS]));
+
+        ledger
+            .lock()
+            .unwrap()
+            .finalize(|contexts| contexts[1].0 = State::Created);
+        assert_eq!(read(&mut reader).await, HashSet::from([PREVIOUS]));
+
+        ledger
+            .lock()
+            .unwrap()
+            .finalize(|contexts| contexts[1].0 = State::Active);
+        assert_eq!(read(&mut reader).await, HashSet::from([PREVIOUS, NEXT]));
+    }
+
+    /// Destroying a context refuses its tx-senders, although its nodes were read before.
+    #[tokio::test]
+    async fn refuses_a_destroyed_contexts_tx_senders() {
+        let ledger =
+            ledger(&[(State::Active, &[PREVIOUS]), (State::Active, &[NEXT])]);
+        let (mut reader, _) = reader(&ledger);
+        assert_eq!(read(&mut reader).await, HashSet::from([PREVIOUS, NEXT]));
+
+        ledger
+            .lock()
+            .unwrap()
+            .finalize(|contexts| contexts[0].0 = State::Destroyed);
+        assert_eq!(read(&mut reader).await, HashSet::from([NEXT]));
+    }
+
+    /// The counter, the Active flag and the context's nodes are all read at the finalized block
+    /// the poll resolved first.
     #[tokio::test]
     async fn a_refresh_reads_every_contract_value_at_one_block() {
-        let asserter = Asserter::new();
-        let (mut reader, requests) = reader(&asserter);
-        start(&asserter, 0x7b);
-        abi(&asserter, context(1));
-        abi(&asserter, true);
-        created(&asserter, context(1), 10, &[Address::repeat_byte(0xA1)]);
-        reader.read().await.expect("read");
+        let ledger = ledger(&[(State::Active, &[PREVIOUS])]);
+        let (mut reader, requests) = reader(&ledger);
+        read(&mut reader).await;
 
         let blocks: Vec<String> = requests
             .lock()
             .unwrap()
             .iter()
             .filter(|request| request.method() == "eth_call")
-            .map(|request| {
-                let params: serde_json::Value =
-                    serde_json::from_str(request.params().unwrap().get())
-                        .unwrap();
-                params[1].to_string()
-            })
+            .map(|request| params(request)[1].to_string())
             .collect();
-        assert_eq!(blocks, ["\"0x7b\""; 3]);
+        assert_eq!(blocks, vec![format!("\"{FINALIZED:#x}\""); 3]);
+    }
+
+    /// A poll that finds the finalized block of the last read reads nothing else.
+    #[tokio::test]
+    async fn an_unchanged_finalized_block_reads_no_contract_state() {
+        let ledger = ledger(&[(State::Active, &[PREVIOUS])]);
+        let (mut reader, requests) = reader(&ledger);
+        read(&mut reader).await;
+        let before = requests.lock().unwrap().len();
+
+        assert_eq!(reader.poll().await.expect("poll"), None);
+        let methods: Vec<String> = requests.lock().unwrap()[before..]
+            .iter()
+            .map(|request| request.method().to_owned())
+            .collect();
+        assert_eq!(methods, ["eth_getBlockByNumber"]);
+    }
+
+    /// An older finalized block, from an RPC node behind the one last read, reads nothing, so the
+    /// set it would give is not published.
+    #[tokio::test]
+    async fn an_older_finalized_block_reads_nothing() {
+        let ledger = ledger(&[(State::Active, &[PREVIOUS])]);
+        let (mut reader, _) = reader(&ledger);
+        read(&mut reader).await;
+        ledger
+            .lock()
+            .unwrap()
+            .finalize(|contexts| contexts.push((State::Active, vec![NEXT])));
+        assert_eq!(read(&mut reader).await, HashSet::from([PREVIOUS, NEXT]));
+
+        // The lagging node answers with the block before, and the state there.
+        {
+            let mut lagging = ledger.lock().unwrap();
+            lagging.finalized -= 1;
+            lagging.contexts.pop();
+        }
+        assert_eq!(reader.poll().await.expect("poll"), None);
+    }
+
+    /// A context activated in a new finalized block is accepted at the next poll.
+    #[tokio::test(start_paused = true)]
+    async fn accepts_a_context_activated_in_a_new_finalized_block_at_the_next_poll(
+    ) {
+        let ledger = ledger(&[(State::Active, &[PREVIOUS])]);
+        let (senders, _, cancel) = follower(&ledger, POLL_INTERVAL).await;
+        ledger
+            .lock()
+            .unwrap()
+            .finalize(|contexts| contexts.push((State::Active, vec![NEXT])));
+
+        tokio::time::sleep(POLL_INTERVAL + Duration::from_millis(1)).await;
+        assert!(accepts(&senders, NEXT));
+        cancel.cancel();
+    }
+
+    /// Concurrent misses before a poll starts share that one poll.
+    #[tokio::test(start_paused = true)]
+    async fn concurrent_misses_share_one_read() {
+        let ledger = ledger(&[(State::Active, &[PREVIOUS])]);
+        let (senders, requests, cancel) =
+            follower(&ledger, Duration::from_secs(3600)).await;
+        ledger
+            .lock()
+            .unwrap()
+            .finalize(|contexts| contexts.push((State::Active, vec![NEXT])));
+
+        let mut misses = tokio::task::JoinSet::new();
+        for _ in 0..10 {
+            let senders = senders.clone();
+            misses.spawn(async move { senders.refresh_after_miss(WAIT).await });
+        }
+        misses.join_all().await;
+        assert!(accepts(&senders, NEXT));
+        // Long enough for any further woken poll.
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        let polls = requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|request| request.method() == "eth_getBlockByNumber")
+            .count();
+        assert_eq!(polls, 2);
+        assert_eq!(
+            calls(&requests, getCurrentKmsContextIdCounterCall::SELECTOR),
+            2
+        );
+        cancel.cancel();
+    }
+
+    /// A woken poll starts at least `WOKEN_POLL_SPACING` after the poll before it started.
+    #[tokio::test(start_paused = true)]
+    async fn woken_polls_start_at_least_a_second_apart() {
+        let ledger = ledger(&[(State::Active, &[PREVIOUS])]);
+        let (senders, _, cancel) =
+            follower(&ledger, Duration::from_secs(3600)).await;
+        // Each miss below comes as the poll before it starts.
+        senders.refresh_after_miss(WAIT).await;
+        for _ in 0..2 {
+            let missed = tokio::time::Instant::now();
+            senders.refresh_after_miss(WAIT).await;
+            assert!(missed.elapsed() >= WOKEN_POLL_SPACING);
+        }
+        cancel.cancel();
+    }
+
+    /// A miss during a poll waits for the next one: the running poll may have read the finalized
+    /// block before the change the request depends on.
+    #[tokio::test(start_paused = true)]
+    async fn a_miss_during_a_poll_waits_for_the_next_poll() {
+        let ledger = ledger(&[(State::Active, &[PREVIOUS])]);
+        let (senders, _, cancel) = follower(&ledger, POLL_INTERVAL).await;
+        // The poll at 5 s reads the finalized block, whose answer arrives at 7 s.
+        ledger.lock().unwrap().reply_delay = Duration::from_secs(2);
+        tokio::time::sleep(Duration::from_millis(5500)).await;
+        {
+            let mut ledger = ledger.lock().unwrap();
+            ledger.finalize(|contexts| {
+                contexts.push((State::Active, vec![NEXT]))
+            });
+            ledger.reply_delay = Duration::ZERO;
+        }
+
+        senders.refresh_after_miss(WAIT).await;
+        assert!(accepts(&senders, NEXT));
+        cancel.cancel();
+    }
+
+    /// A miss waits at most its bound, even when the poll it woke never ends.
+    #[tokio::test(start_paused = true)]
+    async fn a_miss_waits_at_most_its_bound() {
+        let ledger = ledger(&[(State::Active, &[PREVIOUS])]);
+        let (senders, _, cancel) =
+            follower(&ledger, Duration::from_secs(3600)).await;
+        ledger.lock().unwrap().reply_delay = Duration::from_secs(3600);
+
+        let missed = tokio::time::Instant::now();
+        tokio::time::timeout(WAIT * 2, senders.refresh_after_miss(WAIT))
+            .await
+            .expect("the miss stopped waiting");
+        assert!(missed.elapsed() >= WAIT);
+        cancel.cancel();
     }
 
     #[derive(Clone, Default)]
@@ -451,8 +828,11 @@ mod tests {
         let provider =
             ProviderBuilder::new().connect_http(rpc.parse().unwrap());
         let cancel = CancellationToken::new();
-        let _senders =
-            follow(ProtocolConfig::new(CONTRACT, provider), cancel.clone());
+        let _senders = follow(
+            ProtocolConfig::new(CONTRACT, provider),
+            POLL_INTERVAL,
+            cancel.clone(),
+        );
 
         let deadline =
             tokio::time::Instant::now() + std::time::Duration::from_secs(10);

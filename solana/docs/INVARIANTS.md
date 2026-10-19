@@ -1,6 +1,6 @@
 # Protocol invariants — Solana fhevm
 
-Last synced: 2026-10-12.
+Last synced: 2026-10-19.
 
 Every entry carries a stable number and a tag. Numbers are never reused: an
 entry that dies is retired in place. The tags:
@@ -580,6 +580,25 @@ nothing downstream ever derives authorization, quotas, or identity from
 `caller` on Solana rows — authorization lives in the KMS connector (#42,
 #45). Any feature reading `caller` from these rows must branch on the
 chain type first.
+
+**72. [HOLDS]** The Merkle proof server answers a request only when it is signed by the tx-sender of
+a node of an Active KMS context of the canonical `ProtocolConfig`, read at one finalized block
+(DD-076). A tx-sender only in a Pending or a Created context is refused until that context is
+activated, and one only in a destroyed context is refused, although its nodes were read before.
+Pinned by `accepts_an_active_contexts_tx_senders_and_reads_its_nodes_once`,
+`refuses_a_pending_or_created_contexts_tx_senders`, `refuses_a_destroyed_contexts_tx_senders` and
+`a_refresh_reads_every_contract_value_at_one_block`.
+
+**73. [HOLDS]** The Merkle proof server reads the KMS tx-sender set again only when the finalized
+block is newer than its last read, and polls that block every `--kms-tx-sender-poll-interval`
+(DD-076). A request whose recovered signer is not in the set is refused only after a poll that
+started after it, or after 3 seconds. Polls woken this way start at least 1 second after the poll
+before them, and concurrent requests share one. Pinned by
+`accepts_a_context_activated_in_a_new_finalized_block_at_the_next_poll`,
+`an_unchanged_finalized_block_reads_no_contract_state`, `an_older_finalized_block_reads_nothing`,
+`a_miss_during_a_poll_waits_for_the_next_poll`, `concurrent_misses_share_one_read`,
+`woken_polls_start_at_least_a_second_apart`, `a_miss_waits_at_most_its_bound` and
+`an_unknown_signer_waits_for_a_poll_after_its_request`.
 
 ## H. Reference confidential applications
 
