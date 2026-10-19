@@ -21,7 +21,10 @@ use pingora::{
     proxy::{FailToProxy, ProxyHttp, Session},
 };
 use prometheus::{IntCounterVec, register_int_counter_vec};
-use std::{sync::LazyLock, time::Instant};
+use std::{
+    sync::LazyLock,
+    time::{Duration, Instant},
+};
 use tracing::{error, info};
 
 static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
@@ -45,6 +48,10 @@ const PROXY_CONNECTION: HeaderName = HeaderName::from_static("proxy-connection")
 // Set on every answer the proxy writes. Pingora answers a few requests before any hook runs, and
 // those lack it: an unparsable request head (`400`) and `CONNECT` (`405`).
 const NO_STORE: &str = "no-store";
+
+/// How long a request signed by an unknown signer waits for a read of the KMS tx-senders that
+/// started after it, before it is refused.
+pub const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
 
 /// Error message for oversized request bodies.
 const BODY_TOO_LARGE: &str = "request body too large";
@@ -161,7 +168,19 @@ impl ProxyHttp for Proxy {
         ctx.route = Some(route);
 
         let authorization = req.headers.get(AUTHORIZATION).map(HeaderValue::as_bytes);
-        let (sender, body_digest) = match self.verifier.verify_header(authorization, target) {
+        let verified = match self.verifier.verify_header(authorization, target) {
+            // The signer can be a node of a KMS context whose activation is finalized but not read
+            // yet: its connector already serves that context and takes a refusal as final.
+            Err(AuthError::UnknownSigner(_)) => {
+                self.kms_tx_senders
+                    .0
+                    .refresh_after_miss(UNKNOWN_SIGNER_WAIT)
+                    .await;
+                self.verifier.verify_header(authorization, target)
+            }
+            verified => verified,
+        };
+        let (sender, body_digest) = match verified {
             Ok(signed) => signed,
             Err(e) => {
                 self.respond_with_error(session, auth_error_response(&e), None)

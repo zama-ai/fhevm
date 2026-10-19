@@ -13,8 +13,9 @@ use common::{
     auth_header_for, free_addr, now, prf_path, rate_limited_path, sender, stub_attestation,
     stub_output,
 };
+use coprocessor_proxy::core::UNKNOWN_SIGNER_WAIT;
 use serde_json::{Value, json};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Checks an error the proxy wrote itself: its status, RFC-033 body, and that it is not cached.
 async fn assert_proxy_error(response: Response, status: StatusCode, code: &str, retryable: bool) {
@@ -523,7 +524,7 @@ async fn test_accepted_signers_follow_protocol_config() {
 
     // A failed read keeps the last set.
     t.rpc.set_failing(true);
-    tokio::time::sleep(5 * common::REFRESH_INTERVAL).await;
+    tokio::time::sleep(5 * common::POLL_INTERVAL).await;
     assert_eq!(t.auth_code(&next).await, ACCEPTED);
     assert_eq!(t.auth_code(&sender()).await, "auth_unknown_signer");
 }
@@ -535,12 +536,76 @@ async fn test_refuses_everything_before_the_first_read() {
     rpc.set_failing(true);
     let t = TestProxy::launch(rpc, vec![endpoint], |_| {}).await;
 
-    tokio::time::sleep(3 * common::REFRESH_INTERVAL).await;
+    tokio::time::sleep(3 * common::POLL_INTERVAL).await;
     assert_eq!(t.auth_code(&sender()).await, "auth_unknown_signer");
     assert_eq!(t.endpoints[0].hits(), 0);
 
     t.rpc.set_failing(false);
     t.wait_until_accepted(&sender()).await;
+}
+
+/// Starts the proxy with a poll interval no test waits for: only an unknown signer makes it read.
+async fn start_without_polls() -> TestProxy {
+    TestProxy::start_with_config(vec![StubEndpoint::start().await], |config| {
+        config.kms_registry_poll_interval = Duration::from_secs(600);
+    })
+    .await
+}
+
+#[tokio::test]
+async fn test_reads_again_for_an_unknown_signer() {
+    let t = start_without_polls().await;
+    let next = PrivateKeySigner::random();
+    t.rpc.set_contexts(vec![
+        KmsContext::active(&[sender().address()]),
+        KmsContext::active(&[next.address()]),
+    ]);
+
+    let path = prf_path(1);
+    let response = t
+        .client
+        .get(t.url(&path))
+        .header("authorization", auth_header(&next, &path, b"").await)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(t.endpoints[0].hits(), 1);
+}
+
+#[tokio::test]
+async fn test_refuses_an_unknown_signer_within_the_wait() {
+    let t = start_without_polls().await;
+    t.rpc.set_stalled(true);
+
+    let started = Instant::now();
+    assert_eq!(
+        t.auth_code(&PrivateKeySigner::random()).await,
+        "auth_unknown_signer"
+    );
+    let waited = started.elapsed();
+    assert!(
+        waited >= UNKNOWN_SIGNER_WAIT && waited < UNKNOWN_SIGNER_WAIT + Duration::from_secs(1),
+        "{waited:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_concurrent_unknown_signers_share_one_read() {
+    let t = start_without_polls().await;
+    let unknown = PrivateKeySigner::random();
+    // A woken read starts a second after the previous one: the requests below all arrive before.
+    assert_eq!(t.auth_code(&unknown).await, "auth_unknown_signer");
+    let polls = t.rpc.finalized_polls();
+
+    let codes = futures_util::future::join_all((0..10).map(|_| t.auth_code(&unknown))).await;
+    assert!(
+        codes.iter().all(|code| code == "auth_unknown_signer"),
+        "{codes:?}"
+    );
+    // Long enough for the woken reads that would follow the first one.
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    assert_eq!(t.rpc.finalized_polls(), polls + 1);
 }
 
 #[tokio::test]

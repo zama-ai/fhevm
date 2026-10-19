@@ -26,11 +26,11 @@ pub struct Proxy {
     pub(super) config: Config,
     pub(super) verifier: FhevmSigVerifier<RefreshableSigners>,
     pub(super) endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
-    kms_tx_senders: Arc<KmsTxSenders>,
+    pub(super) kms_tx_senders: Arc<KmsTxSenders>,
 }
 
 /// Runs the [`Follower`] that keeps the verifier's signers equal to the KMS tx-senders.
-struct KmsTxSenders(Follower<DynProvider>);
+pub(super) struct KmsTxSenders(pub(super) Follower<DynProvider>);
 
 #[async_trait]
 impl BackgroundService for KmsTxSenders {
@@ -74,7 +74,7 @@ impl Proxy {
                 .erased(),
             config.protocol_config_address,
             signers.clone(),
-            config.kms_registry_refresh_interval,
+            config.kms_registry_poll_interval,
         );
         let state = health::State::new(
             config.bind_address,

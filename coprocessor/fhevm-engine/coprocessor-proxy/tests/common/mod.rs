@@ -49,7 +49,7 @@ pub const AUDIENCE: Address = Address::repeat_byte(0xa1);
 pub const CHAIN_ID: u64 = 12345;
 pub const PROTOCOL_CONFIG: Address = Address::repeat_byte(0xc0);
 /// How often the test proxy reads the KMS tx-senders.
-pub const REFRESH_INTERVAL: Duration = Duration::from_millis(200);
+pub const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 /// The KMS tx-sender of the first KMS context.
 pub fn sender() -> PrivateKeySigner {
@@ -288,14 +288,18 @@ impl KmsContext {
     }
 }
 
-#[derive(Default)]
 struct RpcState {
     contexts: Vec<KmsContext>,
+    /// The number of the finalized block, the only block the contexts are known at.
+    finalized: u64,
+    /// How many times the finalized block was asked for.
+    finalized_polls: usize,
     failing: bool,
+    stalled: bool,
 }
 
 /// An Ethereum JSON-RPC answering the `ProtocolConfig` reads of the proxy from a list of KMS
-/// contexts, or failing every call.
+/// contexts, or failing every call, or never answering.
 pub struct FakeRpc {
     pub url: Url,
     state: Arc<Mutex<RpcState>>,
@@ -305,7 +309,10 @@ impl FakeRpc {
     pub async fn start(contexts: Vec<KmsContext>) -> Self {
         let state = Arc::new(Mutex::new(RpcState {
             contexts,
+            finalized: 100,
+            finalized_polls: 0,
             failing: false,
+            stalled: false,
         }));
         let app = Router::new()
             .route("/", post(rpc))
@@ -319,17 +326,27 @@ impl FakeRpc {
         }
     }
 
+    /// Replaces the contexts, as of a new finalized block.
     pub fn set_contexts(&self, contexts: Vec<KmsContext>) {
-        self.state.lock().unwrap().contexts = contexts;
+        let mut state = self.state.lock().unwrap();
+        state.contexts = contexts;
+        state.finalized += 1;
     }
 
     pub fn set_failing(&self, failing: bool) {
         self.state.lock().unwrap().failing = failing;
     }
-}
 
-/// The number of the finalized block, the only block the contexts are known at.
-const FINALIZED: u64 = 100;
+    /// Makes every later call hang without an answer.
+    pub fn set_stalled(&self, stalled: bool) {
+        self.state.lock().unwrap().stalled = stalled;
+    }
+
+    /// How many times the finalized block was asked for: one per poll of the proxy.
+    pub fn finalized_polls(&self) -> usize {
+        self.state.lock().unwrap().finalized_polls
+    }
+}
 
 /// Context ids as `ProtocolConfig` allocates them: the type tag 0x07 in the top byte.
 fn context_id(index: usize) -> U256 {
@@ -337,21 +354,26 @@ fn context_id(index: usize) -> U256 {
 }
 
 async fn rpc(State(state): State<Arc<Mutex<RpcState>>>, Json(call): Json<Value>) -> Response {
-    let state = state.lock().unwrap();
+    let stalled = state.lock().unwrap().stalled;
+    if stalled {
+        std::future::pending::<()>().await;
+    }
+    let mut state = state.lock().unwrap();
     if state.failing {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
     let id = &call["id"];
     if call["method"] == "eth_getBlockByNumber" && call["params"][0] == "finalized" {
+        state.finalized_polls += 1;
         let mut block: Block = Block::default();
-        block.header.inner.number = FINALIZED;
+        block.header.inner.number = state.finalized;
         return Json(json!({"jsonrpc": "2.0", "id": id, "result": block})).into_response();
     }
     assert_eq!(call["method"], "eth_call", "unexpected RPC {call}");
     let tx = &call["params"][0];
     let to: Option<Address> = tx["to"].as_str().and_then(|to| to.parse().ok());
     // Only `ProtocolConfig` at the finalized block's number knows the contexts.
-    if to != Some(PROTOCOL_CONFIG) || call["params"][1] != format!("{FINALIZED:#x}") {
+    if to != Some(PROTOCOL_CONFIG) || call["params"][1] != format!("{:#x}", state.finalized) {
         return Json(json!({"jsonrpc": "2.0", "id": id,
             "error": {"code": -32000, "message": format!("unexpected call {call}")}}))
         .into_response();
@@ -481,7 +503,7 @@ impl TestProxy {
             ethereum_chain_id: CHAIN_ID,
             protocol_config_address: PROTOCOL_CONFIG,
             ethereum_rpc_url: rpc.url.clone(),
-            kms_registry_refresh_interval: REFRESH_INTERVAL,
+            kms_registry_poll_interval: POLL_INTERVAL,
             coprocessor_signer_address: AUDIENCE,
             endpoint_addresses,
             endpoint_connect_timeout: Duration::from_millis(500),
@@ -531,7 +553,7 @@ impl TestProxy {
     }
 
     async fn wait_for_auth_code(&self, signer: &PrivateKeySigner, expected: &str) {
-        let deadline = Instant::now() + 50 * REFRESH_INTERVAL;
+        let deadline = Instant::now() + 50 * POLL_INTERVAL;
         loop {
             let code = self.auth_code(signer).await;
             if code == expected {
@@ -542,7 +564,7 @@ impl TestProxy {
                 "{}: {code}, not {expected}",
                 signer.address()
             );
-            tokio::time::sleep(REFRESH_INTERVAL / 2).await;
+            tokio::time::sleep(POLL_INTERVAL / 2).await;
         }
     }
 }

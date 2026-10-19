@@ -35,13 +35,14 @@ pub struct Config {
     /// The Ethereum RPC the KMS tx-senders are read through. Never logged.
     #[serde(deserialize_with = "deserialize_secret_url")]
     pub ethereum_rpc_url: Url,
-    /// How often the KMS tx-senders are read again (RFC-038 `KMS_REGISTRY_REFRESH_INTERVAL`).
+    /// How often the latest finalized block is checked; the KMS tx-senders are read again when it
+    /// moved forward (RFC-038 `KMS_REGISTRY_REFRESH_INTERVAL`).
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
-        default = "default_kms_registry_refresh_interval"
+        default = "default_kms_registry_poll_interval"
     )]
     #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
-    pub kms_registry_refresh_interval: Duration,
+    pub kms_registry_poll_interval: Duration,
     /// This coprocessor's registered signer address: the `audience` the accepted headers are
     /// signed for.
     pub coprocessor_signer_address: Address,
@@ -212,8 +213,8 @@ pub fn default_bind_address() -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8443)
 }
 
-fn default_kms_registry_refresh_interval() -> Duration {
-    Duration::from_secs(60)
+fn default_kms_registry_poll_interval() -> Duration {
+    Duration::from_secs(5)
 }
 
 fn default_endpoint_connect_timeout() -> Duration {
@@ -280,7 +281,7 @@ impl Default for Config {
             ethereum_chain_id: 11155111,
             protocol_config_address: Address::ZERO,
             ethereum_rpc_url: "http://localhost:8545".parse().unwrap(),
-            kms_registry_refresh_interval: default_kms_registry_refresh_interval(),
+            kms_registry_poll_interval: default_kms_registry_poll_interval(),
             coprocessor_signer_address: Address::ZERO,
             endpoint_addresses: vec!["endpoint:8080".parse().unwrap()],
             endpoint_connect_timeout: default_endpoint_connect_timeout(),
@@ -334,7 +335,7 @@ mod tests {
             env::remove_var("COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID");
             env::remove_var("COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS");
             env::remove_var("COPROCESSOR_PROXY_ETHEREUM_RPC_URL");
-            env::remove_var("COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL");
+            env::remove_var("COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL");
             env::remove_var("COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS");
             env::remove_var("COPROCESSOR_PROXY_ENDPOINT_ADDRESSES");
             env::remove_var("COPROCESSOR_PROXY_ENDPOINT_CONNECT_TIMEOUT");
@@ -385,7 +386,7 @@ mod tests {
                 "COPROCESSOR_PROXY_ETHEREUM_RPC_URL",
                 "https://rpc.example/v1/key",
             );
-            env::set_var("COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL", "2m");
+            env::set_var("COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL", "2m");
             env::set_var(
                 "COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS",
                 "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
@@ -425,10 +426,7 @@ mod tests {
             config.ethereum_rpc_url,
             "https://rpc.example/v1/key".parse().unwrap()
         );
-        assert_eq!(
-            config.kms_registry_refresh_interval,
-            Duration::from_secs(120)
-        );
+        assert_eq!(config.kms_registry_poll_interval, Duration::from_secs(120));
         assert_eq!(
             config.coprocessor_signer_address,
             Address::repeat_byte(0xa1)

@@ -12,7 +12,7 @@ proxy checks the shape of the path. prf-service checks the encoding of its param
 the `FhevmSig` header again.
 
 The accepted signers are the KMS tx-senders of the Active KMS contexts that the `ProtocolConfig`
-contract lists. The proxy reads them every minute. A context becomes Active once all its nodes have
+contract lists. A context becomes Active once all its nodes have
 attested the same keys and CRS, the first state in which they can serve a decryption, and PRF
 requests serve only decryptions. The outgoing context stays Active until it is destroyed, so its
 connectors keep working through a context switch. The chart takes the chain that hosts
@@ -45,9 +45,18 @@ A NetworkPolicy admits only the proxy pods to the pods that `endpointNetworkPoli
 selects, so no caller reaches prf-service without the proxy's checks. Add any other ingress those
 pods need, such as metrics scraping, to `endpointNetworkPolicy.extraIngress`.
 
-The proxy reads the signers at the latest finalized block, so a signer change takes effect once
-its block is finalized (about 13 minutes on Ethereum) and the next read has run. The KMS
-connector's gw-listener likewise reads Ethereum events only up to the finalized block.
+The proxy reads the signers at the latest finalized block. It checks that block every 5 s
+(`COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL`) and reads the signers again when it moved forward,
+so a signer change takes effect within 5 s of its block being finalized (about 13 minutes on
+Ethereum). The KMS connector's gw-listener likewise reads Ethereum events only up to the finalized
+block.
+
+The KMS connector serves a new context as soon as its activation is finalized, so a request signed
+by an unknown signer makes the proxy check at once and wait up to 3 s for that check before it
+refuses. A first request of a new context is still refused when the proxy's RPC node sees the
+finalized block more than 3 s after the connector's node does. Any request whose signature
+recovers an address the proxy does not know causes such a check, whatever audience or body it was
+signed for. The checks start at least 1 s apart, so they cost at most one RPC call a second.
 
 The NetworkPolicy matches the proxy pods in the release namespace only. When prf-service runs in
 another namespace, add its own policy there.

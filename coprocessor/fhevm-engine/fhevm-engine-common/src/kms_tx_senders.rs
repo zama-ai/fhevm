@@ -12,9 +12,22 @@
 //! confirmation transactions during resharing. A request to a coprocessor is not part of the
 //! switch.
 //!
-//! A [`Follower`] reads the set at one finalized block and replaces the content of a
-//! [`RefreshableSigners`]. A failed read keeps the last set. Until the first read succeeds the set
-//! is empty and [`Loaded::is_loaded`] is false.
+//! A [`Follower`] polls every poll interval: it reads the number of the latest finalized block and,
+//! when that block is newer than the one of the last successful read, reads the set at that block
+//! and replaces the content of a [`RefreshableSigners`]. An older block comes from a lagging or
+//! load-balanced RPC node, and reading at it could bring back an older set. A context switch takes
+//! effect within one poll interval of its block being finalized. A failed poll keeps the last set.
+//! Until the first read succeeds the set is empty and [`Loaded::is_loaded`] is false.
+//!
+//! A KMS connector serves a new context as soon as its activation is finalized, and treats a
+//! refusal as final. So a request signed by an unknown tx-sender wakes the loop
+//! ([`Follower::refresh_after_miss`]) and is checked again after a poll that started after it.
+//! Any header whose signature recovers an address can cause such a wake: a signature made for
+//! another audience, path or body recovers an unrelated address, and the body is read only after
+//! authentication. Woken polls start at least [`WOKEN_POLL_SPACING`] after the previous poll
+//! started, so unknown signers cost at most one finalized-block query a second. What remains: the
+//! first requests of a new context are refused when this RPC node sees the finalized block later
+//! than the connector's node by more than the caller's wait.
 
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},
@@ -37,13 +50,16 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::Mutex;
+use tokio::{
+    sync::{watch, Mutex},
+    time::Instant,
+};
 use tracing::{info, warn};
 
-/// How soon a failed read is retried, unless the refresh interval is shorter.
-const RETRY_INTERVAL: Duration = Duration::from_secs(5);
-/// The RPC client has no request timeout, so a hung call would stall every later refresh.
+/// The RPC client has no request timeout, so a hung call would stall every later poll.
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
+/// The least time from the start of a poll to the start of a poll woken by a miss.
+pub const WOKEN_POLL_SPACING: Duration = Duration::from_secs(1);
 
 static KMS_TX_SENDERS: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
@@ -56,7 +72,7 @@ static KMS_TX_SENDERS: LazyLock<IntGauge> = LazyLock::new(|| {
 static KMS_TX_SENDERS_READ_TIMESTAMP: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
         "coprocessor_kms_tx_senders_read_timestamp_seconds",
-        "Unix time of the last successful read of the KMS tx-senders from ProtocolConfig"
+        "Unix time of the last successful poll of the KMS tx-senders in ProtocolConfig"
     )
     .unwrap()
 });
@@ -71,22 +87,34 @@ impl Loaded {
     }
 }
 
+/// The polls of a [`Follower`], numbered from 1.
+#[derive(Clone, Copy, Debug, Default)]
+struct Polls {
+    /// The number of the last poll started.
+    started: u64,
+    /// The number of the last poll finished.
+    finished: u64,
+    /// The number of the poll a miss is waiting for: it starts as soon as the spacing allows.
+    wanted: u64,
+}
+
 /// Keeps a [`RefreshableSigners`] equal to the set `ProtocolConfig` lists.
 pub struct Follower<P> {
     reader: Mutex<Reader<P>>,
     signers: RefreshableSigners,
-    interval: Duration,
+    poll_interval: Duration,
     loaded: Loaded,
+    polls: watch::Sender<Polls>,
 }
 
 impl<P: Provider> Follower<P> {
-    /// Reads the `ProtocolConfig` contract at `protocol_config` through `provider` every
-    /// `interval`.
+    /// Polls the `ProtocolConfig` contract at `protocol_config` through `provider` every
+    /// `poll_interval`.
     pub fn new(
         provider: P,
         protocol_config: Address,
         signers: RefreshableSigners,
-        interval: Duration,
+        poll_interval: Duration,
     ) -> Self {
         Self {
             reader: Mutex::new(Reader::new(IProtocolConfigBase::new(
@@ -94,8 +122,9 @@ impl<P: Provider> Follower<P> {
                 provider,
             ))),
             signers,
-            interval,
+            poll_interval,
             loaded: Loaded::default(),
+            polls: watch::Sender::new(Polls::default()),
         }
     }
 
@@ -103,42 +132,68 @@ impl<P: Provider> Follower<P> {
         self.loaded.clone()
     }
 
-    /// Reads the set into the signers every `interval` until `stop` completes.
+    /// Polls every `poll_interval`, and sooner for a miss, until `stop` completes.
     pub async fn run(&self, stop: impl Future<Output = ()>) {
         // A set never read shows as no tx-senders, not as a missing series.
         KMS_TX_SENDERS.set(0);
         let mut reader = self.reader.lock().await;
+        let mut polls = self.polls.subscribe();
         let mut last = None;
         tokio::pin!(stop);
         loop {
-            let read = tokio::time::timeout(READ_TIMEOUT, reader.read())
+            let started_at = Instant::now();
+            self.polls.send_modify(|polls| polls.started += 1);
+            let poll = tokio::time::timeout(READ_TIMEOUT, reader.poll())
                 .await
                 .unwrap_or_else(|_| Err(anyhow!("no answer within {READ_TIMEOUT:?}")));
-            let delay = match read {
-                Ok(senders) => {
-                    if last.as_ref() != Some(&senders) {
-                        info!(senders = senders.len(), "KMS tx-sender set updated");
+            match poll {
+                Ok(read) => {
+                    if let Some(senders) = read {
+                        if last.as_ref() != Some(&senders) {
+                            info!(senders = senders.len(), "KMS tx-sender set updated");
+                        }
+                        KMS_TX_SENDERS.set(senders.len() as i64);
+                        self.signers.replace(senders.iter().copied());
+                        self.loaded.0.store(true, Ordering::Relaxed);
+                        last = Some(senders);
                     }
-                    KMS_TX_SENDERS.set(senders.len() as i64);
                     KMS_TX_SENDERS_READ_TIMESTAMP.set(fhevm_sig_auth::unix_now() as i64);
-                    self.signers.replace(senders.iter().copied());
-                    self.loaded.0.store(true, Ordering::Relaxed);
-                    last = Some(senders);
-                    self.interval
                 }
-                Err(err) => {
-                    warn!(
-                        error = describe_read_error(&err),
-                        "KMS tx-sender read failed; keeping the last set"
-                    );
-                    RETRY_INTERVAL.min(self.interval)
-                }
-            };
+                Err(err) => warn!(
+                    error = describe_read_error(&err),
+                    "KMS tx-sender read failed; keeping the last set"
+                ),
+            }
+            self.polls
+                .send_modify(|polls| polls.finished = polls.started);
             tokio::select! {
                 _ = &mut stop => return,
-                _ = tokio::time::sleep(delay) => {}
+                _ = tokio::time::sleep(self.poll_interval) => {}
+                _ = async {
+                    let _ = polls.wait_for(|polls| polls.wanted > polls.started).await;
+                } => {
+                    tokio::select! {
+                        _ = &mut stop => return,
+                        _ = tokio::time::sleep_until(started_at + WOKEN_POLL_SPACING) => {}
+                    }
+                }
             }
         }
+    }
+
+    /// Wakes the poll loop for a request signed by an unknown tx-sender, and waits at most `wait`
+    /// for a poll that started after this call to finish. Concurrent misses share that poll.
+    pub async fn refresh_after_miss(&self, wait: Duration) {
+        let mut polls = self.polls.subscribe();
+        let mut after = 0;
+        self.polls.send_modify(|polls| {
+            after = polls.started;
+            polls.wanted = polls.started + 1;
+        });
+        let _ = tokio::time::timeout(wait, async {
+            let _ = polls.wait_for(|polls| polls.finished > after).await;
+        })
+        .await;
     }
 }
 
@@ -146,6 +201,8 @@ struct Reader<P> {
     protocol_config: IProtocolConfigBaseInstance<P>,
     /// A context's nodes never change once it is created.
     nodes_by_context: HashMap<U256, Vec<Address>>,
+    /// The finalized block of the last successful read.
+    read_at: Option<u64>,
 }
 
 impl<P: Provider> Reader<P> {
@@ -153,19 +210,33 @@ impl<P: Provider> Reader<P> {
         Self {
             protocol_config,
             nodes_by_context: HashMap::new(),
+            read_at: None,
         }
     }
 
-    async fn read(&mut self) -> anyhow::Result<HashSet<Address>> {
-        // Every call reads the same block, so the set is one state of `ProtocolConfig`.
+    /// The set at the latest finalized block, or `None` when that block is not newer than the one
+    /// last read.
+    async fn poll(&mut self) -> anyhow::Result<Option<HashSet<Address>>> {
         let finalized = self
             .protocol_config
             .provider()
             .get_block_by_number(BlockNumberOrTag::Finalized)
             .await
             .context("finalized block")?
-            .context("no finalized block")?;
-        let block = BlockId::number(finalized.header.number);
+            .context("no finalized block")?
+            .header
+            .number;
+        if self.read_at.is_some_and(|read_at| finalized <= read_at) {
+            return Ok(None);
+        }
+        let senders = self.read(finalized).await?;
+        self.read_at = Some(finalized);
+        Ok(Some(senders))
+    }
+
+    async fn read(&mut self, finalized: u64) -> anyhow::Result<HashSet<Address>> {
+        // Every call reads the same block, so the set is one state of `ProtocolConfig`.
+        let block = BlockId::number(finalized);
         let counter = self
             .protocol_config
             .getCurrentKmsContextIdCounter()
@@ -279,10 +350,14 @@ mod tests {
         (U256::from(7) << 248) + U256::from(n)
     }
 
-    fn finalized() -> Block {
+    fn finalized_at(number: u64) -> Block {
         let mut block: Block = Block::default();
-        block.header.inner.number = 100;
+        block.header.inner.number = number;
         block
+    }
+
+    fn finalized() -> Block {
+        finalized_at(100)
     }
 
     fn counter(n: u64) -> Bytes {
@@ -342,16 +417,19 @@ mod tests {
             nodes(&[b, c]),
             valid(false),
         ]);
-        assert_eq!(reader.read().await.unwrap(), HashSet::from([a, b, c]));
+        assert_eq!(
+            reader.poll().await.unwrap().unwrap(),
+            HashSet::from([a, b, c])
+        );
         assert!(asserter.read_q().is_empty());
 
         // Context 2 destroyed since: its nodes leave the set, and no node list is read again.
-        asserter.push_success(&finalized());
+        asserter.push_success(&finalized_at(101));
         asserter.push_success(&counter(4));
         for active in [false, false, true, false] {
             asserter.push_success(&valid(active));
         }
-        assert_eq!(reader.read().await.unwrap(), HashSet::from([b, c]));
+        assert_eq!(reader.poll().await.unwrap().unwrap(), HashSet::from([b, c]));
         assert!(asserter.read_q().is_empty());
     }
 
@@ -359,7 +437,7 @@ mod tests {
     async fn no_context_is_no_tx_sender() {
         let (mut reader, asserter) =
             reader(&[getCurrentKmsContextIdCounterCall::abi_encode_returns(&U256::ZERO).into()]);
-        assert!(reader.read().await.unwrap().is_empty());
+        assert!(reader.poll().await.unwrap().unwrap().is_empty());
         assert!(asserter.read_q().is_empty());
     }
 
@@ -367,7 +445,7 @@ mod tests {
     async fn a_failed_call_fails_the_whole_read() {
         let (mut reader, asserter) = reader(&[counter(1)]);
         asserter.push_failure_msg("execution reverted");
-        assert!(reader.read().await.is_err());
+        assert!(reader.poll().await.is_err());
     }
 
     /// The mocked RPC, recording the parameters of each `eth_call` it answers.
@@ -399,6 +477,16 @@ mod tests {
         }
     }
 
+    /// A provider answering `asserter`'s answers in order, and the record of its `eth_call`s.
+    fn recorded_provider(asserter: Asserter) -> (impl Provider + use<>, RecordedCalls) {
+        let recorded = RecordedCalls {
+            transport: MockTransport::new(asserter),
+            params: Arc::default(),
+        };
+        let client = ClientBuilder::default().transport(recorded.clone(), true);
+        (ProviderBuilder::new().connect_client(client), recorded)
+    }
+
     #[tokio::test]
     async fn every_call_reads_the_finalized_block() {
         let a = Address::repeat_byte(1);
@@ -407,15 +495,10 @@ mod tests {
         for answer in [counter(1), valid(true), nodes(&[a])] {
             asserter.push_success(&answer);
         }
-        let recorded = RecordedCalls {
-            transport: MockTransport::new(asserter),
-            params: Arc::default(),
-        };
-        let client = ClientBuilder::default().transport(recorded.clone(), true);
-        let provider = ProviderBuilder::new().connect_client(client);
+        let (provider, recorded) = recorded_provider(asserter);
         let mut reader = Reader::new(IProtocolConfigBase::new(Address::ZERO, provider));
 
-        assert_eq!(reader.read().await.unwrap(), HashSet::from([a]));
+        assert_eq!(reader.poll().await.unwrap().unwrap(), HashSet::from([a]));
         let params = recorded.params.lock().unwrap();
         assert_eq!(params.len(), 3, "{params:?}");
         // The finalized block is number 100.
@@ -425,9 +508,81 @@ mod tests {
         );
     }
 
-    /// Runs `follower` until the RPC answers are consumed and one more refresh is due.
-    async fn run_once_more<P: Provider>(follower: &Follower<P>, interval: Duration) {
-        follower.run(tokio::time::sleep(interval * 5)).await;
+    /// Runs `follower` until the RPC answers are consumed and a few more polls are due.
+    async fn run_once_more<P: Provider>(follower: &Follower<P>, poll_interval: Duration) {
+        follower.run(tokio::time::sleep(poll_interval * 5)).await;
+    }
+
+    #[tokio::test]
+    async fn a_context_activated_at_a_new_finalized_block_is_read_at_the_next_poll() {
+        let (a, b) = (Address::repeat_byte(1), Address::repeat_byte(2));
+        let asserter = Asserter::new();
+        asserter.push_success(&finalized_at(100));
+        for answer in [counter(1), valid(true), nodes(&[a])] {
+            asserter.push_success(&answer);
+        }
+        // Context 2 is Active at block 101; context 1 still is, its nodes already known.
+        asserter.push_success(&finalized_at(101));
+        for answer in [counter(2), valid(true), valid(true), nodes(&[b])] {
+            asserter.push_success(&answer);
+        }
+        let provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
+        let poll_interval = Duration::from_millis(20);
+        let signers = RefreshableSigners::default();
+        let follower = Follower::new(provider, Address::ZERO, signers.clone(), poll_interval);
+
+        run_once_more(&follower, poll_interval).await;
+
+        assert!(signers.allows(a));
+        assert!(signers.allows(b));
+    }
+
+    #[tokio::test]
+    async fn an_unchanged_finalized_block_reads_no_contract_state() {
+        let a = Address::repeat_byte(1);
+        let asserter = Asserter::new();
+        asserter.push_success(&finalized());
+        for answer in [counter(1), valid(true), nodes(&[a])] {
+            asserter.push_success(&answer);
+        }
+        for _ in 0..3 {
+            asserter.push_success(&finalized());
+        }
+        let (provider, recorded) = recorded_provider(asserter.clone());
+        let poll_interval = Duration::from_millis(20);
+        let signers = RefreshableSigners::default();
+        let follower = Follower::new(provider, Address::ZERO, signers.clone(), poll_interval);
+
+        run_once_more(&follower, poll_interval).await;
+
+        // All four polls answered: the first read the set, the three others only the block.
+        assert!(asserter.read_q().is_empty());
+        assert_eq!(recorded.params.lock().unwrap().len(), 3);
+        assert!(signers.allows(a));
+    }
+
+    #[tokio::test]
+    async fn an_older_finalized_block_reads_no_contract_state() {
+        let a = Address::repeat_byte(1);
+        let asserter = Asserter::new();
+        asserter.push_success(&finalized_at(100));
+        for answer in [counter(1), valid(true), nodes(&[a])] {
+            asserter.push_success(&answer);
+        }
+        // A lagging RPC node, at a block before the context's activation.
+        asserter.push_success(&finalized_at(99));
+        for answer in [counter(1), valid(false)] {
+            asserter.push_success(&answer);
+        }
+        let (provider, recorded) = recorded_provider(asserter);
+        let poll_interval = Duration::from_millis(20);
+        let signers = RefreshableSigners::default();
+        let follower = Follower::new(provider, Address::ZERO, signers.clone(), poll_interval);
+
+        run_once_more(&follower, poll_interval).await;
+
+        assert_eq!(recorded.params.lock().unwrap().len(), 3);
+        assert!(signers.allows(a));
     }
 
     #[tokio::test]
@@ -465,7 +620,7 @@ mod tests {
 
         let (mut finalized_fails, asserter) = reader(&[]);
         asserter.push_failure_msg(echo);
-        let err = finalized_fails.read().await.unwrap_err();
+        let err = finalized_fails.poll().await.unwrap_err();
         assert_eq!(
             describe_read_error(&err),
             "finalized block: JSON-RPC error -32603"
@@ -475,7 +630,7 @@ mod tests {
         let (mut counter_fails, asserter) = reader(&[]);
         asserter.push_success(&finalized());
         asserter.push_failure_msg(echo);
-        let err = counter_fails.read().await.unwrap_err();
+        let err = counter_fails.poll().await.unwrap_err();
         assert_eq!(
             describe_read_error(&err),
             "getCurrentKmsContextIdCounter: JSON-RPC error -32603"
@@ -483,7 +638,7 @@ mod tests {
 
         // No contract at the address: the call returns no data.
         let (mut no_contract, _asserter) = reader(&[Bytes::new()]);
-        let err = no_contract.read().await.unwrap_err();
+        let err = no_contract.poll().await.unwrap_err();
         assert_eq!(
             describe_read_error(&err),
             "getCurrentKmsContextIdCounter: no contract at the address"
