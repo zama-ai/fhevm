@@ -1,10 +1,16 @@
 //! The KMS tx-senders that `ProtocolConfig` lists: the callers whose `FhevmSig` requests a
 //! coprocessor accepts.
 //!
-//! A tx-sender is accepted while its KMS context is Active: from the context's activation until it
-//! is destroyed. Activating a new context leaves the previous one Active, so both node sets are
-//! accepted during a switch. A Pending or Created context is not read, because
-//! `getKmsNodesForContext` reverts until the context is Active.
+//! A tx-sender is accepted only while its KMS context is Active, from the context's activation
+//! until it is destroyed: the contexts for which `getKmsNodesForContext` returns the nodes. Active
+//! is the first state in which a context's nodes can serve a decryption: every node has attested
+//! the same keys and CRS on chain (`confirmEpochActivation`, unanimous). The requests a coprocessor
+//! authenticates this way are made only to serve a decryption, so a Pending or Created context has
+//! none to make, and its nodes cannot make a coprocessor spend work. The outgoing context stays
+//! Active until it is destroyed, so both node sets are accepted during a switch. The contract's
+//! own `isKmsTxSenderForContext` also accepts Created contexts, because their nodes send
+//! confirmation transactions during resharing. A request to a coprocessor is not part of the
+//! switch.
 //!
 //! A [`Follower`] reads the set at one finalized block and replaces the content of a
 //! [`RefreshableSigners`]. A failed read keeps the last set. Until the first read succeeds the set
