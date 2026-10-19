@@ -67,15 +67,11 @@ fn start_runtime_inner(
                 info!(target: "main_wchannel", "Service stopped voluntarily");
                 shutdown.cancel();
             });
-        } else if let Err(e) = install_signal_handlers(shutdown.clone()) {
-            error!(target: "main", { error = %e }, "Failed to install signal handlers");
-            return true;
+        } else {
+            install_signal_handlers(shutdown.clone()).expect("install SIGTERM/SIGINT handlers");
         }
         let result = tokio::select! {
             result = async_main_inner(args, readiness, shutdown.clone()) => result,
-            // Startup steps (pool connects, schema waits) do not watch the
-            // token; a stopping worker must not wait on them for the whole
-            // termination grace period.
             _ = async {
                 shutdown.cancelled().await;
                 tokio::time::sleep(SHUTDOWN_DEADLINE).await;
@@ -85,17 +81,16 @@ fn start_runtime_inner(
             }
         };
         match result {
-            Err(e) if !embedded => {
+            Ok(()) => false,
+            Err(e) => {
                 error!(target: "main", { error = e }, "Runtime error");
+                if embedded {
+                    return false;
+                }
                 // Export the fatal event while its async runtime is still alive.
                 telemetry::flush();
                 true
             }
-            Err(e) => {
-                error!(target: "main_wchannel", { error = e }, "Runtime error");
-                false
-            }
-            Ok(()) => false,
         }
     });
     // An abandoned batch keeps its FHE threads busy, and waiting for them would
@@ -109,25 +104,16 @@ fn start_runtime_inner(
     }
 }
 
-/// How long a stopping worker may take to hand back its chains and return.
-/// A step that does not watch the token (a commit, a key load, a cutover or
-/// containment lock wait) finishes inside it; one that outlasts it leaves its
-/// chains to the lock TTL. Both timeouts fit Kubernetes' default 30 s grace period.
+/// Bounds the steps that do not watch the shutdown token. A worker still busy
+/// after it exits without releasing, and its chains wait for `--dcid-ttl-sec`.
+/// Both timeouts fit Kubernetes' default 30 s grace period.
 const SHUTDOWN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(10);
 const RUNTIME_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 
-// Used for testing as we would call `async_main()` multiple times.
+// Tests start the worker more than once per process.
 static TRACING_INIT: Once = Once::new();
 static OTEL_GUARD: OnceLock<Option<telemetry::TracerProviderGuard>> = OnceLock::new();
 
-pub async fn async_main(
-    args: daemon_cli::Args,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    async_main_inner(args, tfhe_worker::NO_READINESS, CancellationToken::new()).await
-}
-
-/// SIGTERM (Kubernetes scale-in, rollout) and SIGINT stop the worker: it
-/// abandons its open batch, hands its chains back and exits.
 fn install_signal_handlers(shutdown: CancellationToken) -> std::io::Result<()> {
     use tokio::signal::unix::{signal, SignalKind};
     let mut sigint = signal(SignalKind::interrupt())?;

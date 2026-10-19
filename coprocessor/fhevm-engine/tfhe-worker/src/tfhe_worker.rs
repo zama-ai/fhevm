@@ -2233,13 +2233,10 @@ async fn run_tfhe_worker_inner(
     .await?;
     {
         let listener_mode = stack_mode.clone();
+        let listener_shutdown = shutdown.child_token();
         tokio::spawn(async move {
-            if let Err(err) = run_stack_version_listener(
-                listener_pool,
-                listener_mode,
-                tokio_util::sync::CancellationToken::new(),
-            )
-            .await
+            if let Err(err) =
+                run_stack_version_listener(listener_pool, listener_mode, listener_shutdown).await
             {
                 error!(target: "tfhe_worker", error = %err, "stack-version listener exited with error");
             }
@@ -2271,9 +2268,8 @@ async fn run_tfhe_worker_inner(
         });
     }
 
-    loop {
-        // here we log the errors and make sure we retry
-        if let Err(cycle_error) = tfhe_worker_cycle(
+    while !shutdown.is_cancelled() {
+        let cycle_result = tfhe_worker_cycle(
             &args,
             worker_id,
             stack_mode.clone(),
@@ -2282,15 +2278,18 @@ async fn run_tfhe_worker_inner(
             &mut readiness,
             &shutdown,
         )
-        .await
-        {
-            WORKER_ERRORS_COUNTER.inc();
-            // Already stopping: return instead of exiting for a restart. This
-            // also keeps embedded callers alive while their database is dropped.
-            if shutdown.is_cancelled() {
+        .await;
+        // A stopping worker returns instead of exiting for a restart: embedded
+        // callers drop their database while it stops.
+        if shutdown.is_cancelled() {
+            if let Err(cycle_error) = cycle_result {
                 warn!(target: "tfhe_worker", error = %cycle_error, "Error while shutting down; owned chains expire with the lock TTL");
-                return Ok(());
             }
+            break;
+        }
+        // here we log the errors and make sure we retry
+        if let Err(cycle_error) = cycle_result {
+            WORKER_ERRORS_COUNTER.inc();
             if cycle_error.is_fatal_connection() {
                 error!(target: "tfhe_worker", error = %cycle_error, "Fatal DB connection error; exiting for k8s restart");
                 fhevm_engine_common::telemetry::flush();
@@ -2298,22 +2297,17 @@ async fn run_tfhe_worker_inner(
             }
             error!(target: "tfhe_worker", { error = %cycle_error }, "Error in background worker, retrying shortly");
         }
-        if shutdown.is_cancelled() {
-            return Ok(());
-        }
-        // A stop during the wait still runs the next cycle, whose startup
-        // release and shutdown check hand back what the failed cycle held.
         tokio::select! {
             _ = shutdown.cancelled() => {}
             _ = tokio::time::sleep(tokio::time::Duration::from_millis(5000)) => {}
         }
     }
+    Ok(())
 }
 
 /// Hands this worker's chains back so other workers can take them now
-/// instead of after `--dcid-ttl-sec`. The startup release cannot cover this:
-/// it filters on `worker_id`, a fresh UUID per process unless `--worker-id`
-/// is configured.
+/// instead of after `--dcid-ttl-sec`. A replacement process cannot release
+/// them at its startup: it gets a fresh `worker_id` unless `--worker-id` is set.
 async fn release_owned_locks_on_exit(dcid_mngr: &mut dependence_chain::LockMngr) {
     if let Err(error) = dcid_mngr.release_all_owned_locks().await {
         warn!(target: "tfhe_worker", { error = %error },
@@ -2707,11 +2701,9 @@ async fn tfhe_worker_cycle(
         let executed = tokio::select! {
             biased;
             _ = shutdown.cancelled() => {
-                // Roll back before the release, so the next worker does not wait
-                // on this transaction's row locks. Dropping `trx` would only
-                // queue the rollback until `conn` is reused. If the rollback
-                // fails, the release still runs and the next worker waits until
-                // this process exits.
+                // Roll back now rather than when the pool recycles `conn`, so the
+                // cutover and containment locks this transaction holds are freed
+                // before the chains are released.
                 if let Err(error) = trx.rollback().await {
                     warn!(target: "tfhe_worker", { error = %error }, "rollback of the abandoned batch failed");
                 }
