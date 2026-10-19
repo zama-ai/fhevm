@@ -452,15 +452,19 @@ The CPU `backlog` leg boots `three-of-three-backlog`, where the live worker
 acquisition limit, poller page limit and listener-core catchup sub-range size are
 four. FM-HOST-LONG-OFFLINE isolates all redundant victim ingestion paths, submits
 twelve receipt-identified transactions, then restarts only the host consumer.
-The scenario supplies `--catchup-from-block=-1024 --catchup-unfinalized`. The
-initial replay must be DONE before the fault; recovery requires a new ID whose
-resolved range overlaps at least one workload receipt, reaches consumer DONE and
-completes at least three listener-core sub-ranges. Every workload receipt block
-must also be present in the victim database with its exact chain, number and
-hash in pending or finalized state. The test reports the replay bounds, receipt
-blocks, overlap and any missing blocks; a later block cannot hide a gap. Legacy
-ingestion remains stopped through verification. Existing queued live delivery
-can overlap replay, so this verifies
+The scenario supplies `--catchup-from-block=-1024 --catchup-unfinalized` and
+`--no-override-catchup`. The initial replay must be DONE before the fault. Like
+the legacy poller, the recovery request starts after the saved database height
+and ends at the current RPC head, sampled after arming the workload. The test
+persists this unowned request while the consumer is stopped and requires that
+exact ID to be resumed, reach DONE, cover all twelve receipts and complete at
+least three listener-core sub-ranges. The no-override flag preserves this
+request when the consumer also creates its relative startup replay.
+Every receipt block must be present in the victim database with its exact chain,
+number and hash in pending or finalized state. The test reports the replay
+bounds, receipt blocks, overlap and any missing blocks; a later block cannot
+hide a gap. Legacy ingestion remains stopped through verification. Existing
+queued live delivery can overlap replay, so this verifies
 an explicit historical request and recovered outputs, not exclusive delivery
 attribution for each block. FM-DURABLE-BACKLOG instead proves all twelve computations are
 persisted and pending before killing the held worker and requiring supervisor
