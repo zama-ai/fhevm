@@ -2,16 +2,22 @@ use alloy::{
     hex,
     primitives::{Address, FixedBytes, U256},
     providers::{Provider, mock::Asserter},
-    rpc::types::Transaction,
+    rpc::types::{Block, Transaction},
     sol_types::{SolCall, SolValue},
 };
-use connector_utils::tests::{
-    rand::rand_address,
-    setup::{S3_CT_BUCKET, s3_ct_attestation_signer},
+use connector_utils::{
+    tests::{
+        rand::rand_address,
+        setup::{S3_CT_BUCKET, s3_ct_attestation_signer},
+    },
+    types::handle::extract_chain_id_from_handle,
 };
 use fhevm_gateway_bindings::{
-    decryption::Decryption::{
-        CtHandleContractPair, userDecryptionRequest_1Call as userDecryptionRequestCall,
+    decryption::{
+        Decryption::{
+            CtHandleContractPair, userDecryptionRequest_1Call as userDecryptionRequestCall,
+        },
+        IDecryption::ContractsInfo,
     },
     gateway_config::GatewayConfig::Coprocessor,
 };
@@ -35,6 +41,8 @@ pub fn mock_copro_registry_load(asserter: &Asserter, s3_url: &str) -> Address {
     // `CoprocessorRegistry::connect` first checks the contract has code deployed; any non-empty
     // response satisfies that check.
     asserter.push_success(&vec![0xffu8]);
+    // The latest block, which the load pins every registry read to.
+    asserter.push_success(&Block::<Transaction>::default());
     asserter.push_success(&vec![copro_tx_sender].abi_encode());
     asserter.push_success(&U256::ONE.abi_encode());
     let coprocessor = Coprocessor {
@@ -101,6 +109,10 @@ pub fn create_mock_user_decryption_request_tx(
             ctHandle: handle,
             contractAddress: rand_address(),
         }],
+        contractsInfo: ContractsInfo {
+            chainId: U256::from(extract_chain_id_from_handle(&handle).unwrap()),
+            addresses: vec![rand_address()],
+        },
         ..Default::default()
     }
     .abi_encode();

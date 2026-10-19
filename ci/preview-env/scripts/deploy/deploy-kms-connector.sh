@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Install one kms-connector release per KMS party.
 # Env: NAMESPACE, NB_KMS_CORE, DEPLOY_POLYGON, OBSERVABILITY, OTLP_ENDPOINT,
-# KMS_CONNECTOR_CHART, TAGS_JSON, WALLETS_JSON (the KMS tx-sender wallets).
+# KMS_CONNECTOR_CHART, TAGS_JSON, WALLETS_JSON (the KMS tx-sender wallets), KEYGEN,
+# COMMON_CHART, COMMON_CHART_VERSION.
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -124,6 +125,35 @@ kubectl create configmap "${http_configmap}" -n "${NAMESPACE}" \
 rm -f "${ca_file}"
 echo "Connector HTTP: urls=${urls} tx-senders=${tx_senders} threshold=${threshold}"
 
+kms_core_url() { echo "http://kms-core-${1}-core-${1}:50100"; }
+keygen_redirect() { echo "kms-insecure-keygen-redirect-${1}"; }
+keygen_redirect_port=3000 # the script's default; service.ports in values-kms-insecure-keygen-redirect-e2e.yaml
+kms_worker_endpoint() {
+  if [[ "${KEYGEN:?}" == "insecure" ]]; then
+    echo "http://$(keygen_redirect "${1}"):${keygen_redirect_port}"
+  else
+    kms_core_url "${1}"
+  fi
+}
+
+# KEYGEN=insecure: each kms-worker reaches its kms-core through a redirect that
+# switches keygen to the Insecure* RPCs (see values-kms-insecure-keygen-redirect-e2e.yaml).
+if [[ "${KEYGEN}" == "insecure" ]]; then
+  pids=()
+  for i in $(seq 1 "${NB_KMS_CORE}"); do
+    helm upgrade --install "$(keygen_redirect "${i}")" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+      -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-kms-insecure-keygen-redirect-e2e.yaml \
+      --set-string "fullnameOverride=$(keygen_redirect "${i}")" \
+      --set-file "configmapFiles.files.kms-test-keygen-proxy\.cjs=test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs" \
+      --set-json "args=[\"$(kms_core_url "${i}")\"]" \
+      --wait &
+    pids+=($!)
+  done
+  for pid in "${pids[@]}"; do
+    wait "${pid}"
+  done
+fi
+
 for i in $(seq 1 "${NB_KMS_CORE}"); do
   helm upgrade --install "kms-connector-${i}" "${KMS_CONNECTOR_CHART}" \
     -n "${NAMESPACE}" -f "${kms_values}" \
@@ -133,7 +163,7 @@ for i in $(seq 1 "${NB_KMS_CORE}"); do
     --set-string "commonConfig.ethereumContractAddresses.kmsGeneration=${kms_generation}" \
     --set-string "commonConfig.ethereumContractAddresses.protocolConfig=${protocol_config}" \
     --set-string "commonConfig.databaseUrl=postgresql://zama:zama@postgres-connector-${i}:5432/connector" \
-    --set-string "kmsConnectorKmsWorker.config.kmsCoreEndpoints=http://kms-core-${i}-core-${i}:50100" \
+    --set-string "kmsConnectorKmsWorker.config.kmsCoreEndpoints=$(kms_worker_endpoint "${i}")" \
     --set-string "kmsConnectorTxSender.wallet.secret.name=kms-connector-tx-sender-${i}" \
     --set-string "kmsConnectorProxy.txSenderAddress=$(tx_sender "${i}")" \
     --set-string "kmsConnectorDbMigration.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/db-migration" \

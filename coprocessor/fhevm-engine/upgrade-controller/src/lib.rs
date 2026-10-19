@@ -118,6 +118,11 @@ const RETRYABLE_STAMP_MARKER: &str = "RETRYABLE";
 const CUTOVER_RETRY_ATTEMPTS: u32 = 10;
 const CUTOVER_RETRY_BASE_DELAY: Duration = Duration::from_millis(500);
 const CUTOVER_RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
+/// The maximum time a cutover waits for the dry-run probe's final descriptor, counted
+/// from the authorization. SNS on one ciphertext takes a few seconds. Once this time has
+/// passed, the cutover copies the probe as it is, so a broken sns-worker cannot keep the
+/// operator out of the upgrade.
+const SYNTHETIC_PROBE_WAIT: Duration = Duration::from_secs(300);
 
 struct GcsReadinessAttempt {
     proposal_id: Vec<u8>,
@@ -2084,7 +2089,9 @@ async fn delete_synthetic_rows_by_handle(
 /// produced asynchronously by the sns-worker. Copying before it lands would freeze the probe
 /// as uncomputed on that operator only, a permanent manifest disagreement between healthy
 /// peers that synthetic filtering keeps healing from resolving. A probe on an orphaned branch
-/// is never published, so it does not hold cutover back.
+/// is never published, so it does not hold cutover back. The wait is capped at
+/// [`SYNTHETIC_PROBE_WAIT`] after authorization, so a broken sns-worker costs one probe
+/// block's agreement, not the operator's upgrade.
 async fn assert_synthetic_probes_final(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
     let sql = format!(
         "SELECT COUNT(*)
@@ -2115,14 +2122,32 @@ async fn assert_synthetic_probes_final(tx: &mut Transaction<'_, Postgres>) -> Re
         .bind(RETRYABLE_STAMP_MARKER)
         .fetch_one(&mut **tx)
         .await?;
-    if pending > 0 {
+    if pending == 0 {
+        return Ok(());
+    }
+    // A deferred cutover rolls back without touching the authorized rows, so their
+    // `updated_at` still marks the authorization.
+    let waited_secs: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(EXTRACT(EPOCH FROM NOW() - MIN(updated_at))::float8, 0)
+           FROM upgrade_state
+          WHERE stack_role = 'GCS' AND state = 'UpgradeAuthorized'",
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+    if waited_secs >= SYNTHETIC_PROBE_WAIT.as_secs_f64() {
         warn!(
             pending,
-            "cutover deferred: a dry-run probe's ct128 is still pending"
+            waited_secs,
+            "cutover proceeds without a final dry-run probe descriptor: its ct128 never \
+             came; that probe block will disagree across operators, detected only"
         );
-        return Err(Error::PendingSyntheticProbe { pending });
+        return Ok(());
     }
-    Ok(())
+    warn!(
+        pending,
+        waited_secs, "cutover deferred: a dry-run probe's ct128 is still pending"
+    );
+    Err(Error::PendingSyntheticProbe { pending })
 }
 
 /// Copies the dry-run probe's manifest descriptor material into
@@ -3750,6 +3775,49 @@ mod tests {
         .await
         .expect("ct128 lands");
         check().await.expect("a digested probe is final");
+    }
+
+    /// A probe whose ct128 never comes (a broken sns-worker) holds cutover only for
+    /// `SYNTHETIC_PROBE_WAIT` after authorization; then cutover proceeds with the probe as
+    /// it is, instead of leaving the operator outside the upgrade.
+    #[tokio::test]
+    async fn cutover_stops_waiting_for_the_probe_past_the_cap() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        sqlx::query(&format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.handle_producer_block
+                  (host_chain_id, handle, producer_block_number, producer_block_hash, synthetic)
+                  VALUES (12345, $1, 101, $2, TRUE)"
+        ))
+        .bind(vec![0x11u8; 32])
+        .bind(vec![0xB1u8; 32])
+        .execute(&pool)
+        .await
+        .expect("seed probe producer row without any digest");
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
+
+        let check = || async {
+            let mut tx = pool.begin().await.expect("begin");
+            let result = assert_synthetic_probes_final(&mut tx).await;
+            tx.rollback().await.expect("rollback");
+            result
+        };
+        assert!(matches!(
+            check().await,
+            Err(Error::PendingSyntheticProbe { pending: 1 })
+        ));
+
+        sqlx::query(
+            "UPDATE upgrade_state SET updated_at = NOW() - $1::float8 * INTERVAL '1 second'
+              WHERE stack_role = 'GCS'",
+        )
+        .bind(SYNTHETIC_PROBE_WAIT.as_secs_f64() + 1.0)
+        .execute(&pool)
+        .await
+        .expect("age the authorization past the cap");
+        check()
+            .await
+            .expect("past the cap, cutover proceeds with the probe as it is");
     }
 
     /// Cutover deletes the probe's digest row, yet its block may seal after cutover: the
