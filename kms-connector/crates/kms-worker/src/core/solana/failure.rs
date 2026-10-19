@@ -166,13 +166,11 @@ impl SnapshotError {
 
 impl ProofReadError {
     /// A proof read failure is the coprocessors', except when every coprocessor refused this
-    /// connector as a sender (an RFC 038 `auth_*` code other than `auth_expired`): its signer is in
-    /// no Active KMS context the coprocessors have read, or its request signature does not verify.
-    /// A coprocessor reads the KMS tx-senders of the Active contexts at the finalized block, and
-    /// waits up to 3 s for a fresh read before it refuses an unknown signer, and a signature the
-    /// connector builds wrongly stays wrong, so
-    /// neither recovers within relayer-http's retries and the refusal is final. For the first
-    /// cause this is EVM's outcome: a node outside the KMS context answers `unprocessable`.
+    /// connector as a sender (an RFC 038 `auth_*` code other than `auth_expired`): its request
+    /// signature does not verify, or its header or body is built wrongly, which stays wrong, so the
+    /// refusal is final. A coprocessor answers a signer it does not know yet with a retryable
+    /// `upstream_transient`: the worker has already checked that its node is a node of the
+    /// request's KMS context (DD-076).
     pub fn class(&self) -> FailureClass {
         match self {
             Self::Refused { code, .. } if refuses_the_sender(*code) => REFUSED_AS_SENDER,

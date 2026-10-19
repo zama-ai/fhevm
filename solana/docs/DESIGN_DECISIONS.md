@@ -2462,20 +2462,22 @@ seconds (`--kms-tx-sender-poll-interval`) and, when the block is newer than the 
 them at that block:
 `isValidKmsContext` for each context id up to `getCurrentKmsContextIdCounter`, then each Active
 context's nodes from `getKmsNodesForContext`. A request whose signer is not in the set wakes a poll
-and waits up to 3 seconds for it before it is refused (DD-076). A poll that fails, or takes more
+and waits up to 3 seconds for it. If the signer is still unknown, the request gets
+`upstream_transient` (502, retryable) (DD-076). A poll that fails, or takes more
 than 30 seconds, keeps the last set. Until the first read succeeds, every request gets `upstream_transient` (502,
 retryable) and `/healthz` answers 503. The server authenticates the signer from the header before it
 reads the body, with RFC 038's codes (401, not retryable): no header is `auth_missing`, a header of
-any other form `auth_malformed`, and a signature that recovers no address, or one that is not the
-tx-sender of an Active context, `auth_unknown_signer`. A signature for another audience recovers an unrelated address
-and lands there too. Then it reads the body, up to 64 KiB, and refuses one whose keccak-256 is not
-the header's `digest` as `auth_body_mismatch`: a valid header replayed with another body. A KMS
-connector that every coprocessor refuses with one of these four codes, in any mix, fails the request
-`unprocessable`, final: its signer is in no Active context the coprocessors have read, or its
-signature does not verify, and neither recovers within relayer-http's retries. A coprocessor
-checks an unknown signer again after a poll that started after the request, or after 3 seconds
-(DD-076), and a signature the connector builds wrongly stays wrong. For a node outside the KMS context, this is the EVM
-outcome. kms-worker keys off the code, as RFC 038 asks, not the body's `retryable` flag.
+any other form `auth_malformed`, and a signature that recovers no address `auth_unknown_signer`.
+A signature for another audience recovers an unrelated address, so it is answered as an unknown
+signer, `upstream_transient`: a connector configured with a wrong `signer_address` for one
+coprocessor reads its proofs from the others, and one with a wrong `signer_address` for every
+coprocessor gets `upstream_transient` until relayer-http's deadline. Then the server reads the body, up to 64 KiB, and
+refuses one whose keccak-256 is not the header's `digest` as `auth_body_mismatch`: a valid header
+replayed with another body. A KMS connector that every coprocessor refuses with one of these four
+codes, in any mix, fails the request `unprocessable`, final: its signature or its request is built
+wrongly, and stays wrong within relayer-http's retries. A node outside the request's KMS context
+asks no coprocessor: its kms-worker refuses the request first, `unprocessable`, the EVM outcome
+(DD-076). kms-worker keys off the code, as RFC 038 asks, not the body's `retryable` flag.
 
 Request and success bodies are CBOR (RFC 8949) over HTTP/2 without TLS negotiation (prior
 knowledge). Hashes and keys travel as 32-byte byte strings, and the requests kms-worker sends one
@@ -3160,7 +3162,8 @@ Rationale:
   was pinned to (`KMSGeneration.sol:192-201`). The switch's confirmations,
   `confirmKmsContextCreation` and `confirmEpochActivation`, check the stored membership directly.
   An HTTP request to a coprocessor is not one of those steps, so this rule does not follow that
-  function.
+  function. kms-worker's membership check below calls it after its context check, to ask only
+  whether its node is a node of the request's context.
 
 Consequences:
 
@@ -3174,13 +3177,28 @@ Consequences:
   wakes a poll, waits up to 3 seconds (`UNKNOWN_SIGNER_WAIT`) for a poll that started after it, and
   is checked again. The incoming node is accepted on its first request, unless that poll fails or
   takes more than 3 seconds.
-- What remains: if a coprocessor's RPC node sees the activation's finalized block more than 3
-  seconds after kms-worker's node does, the incoming node's first requests to that coprocessor are
-  refused with `auth_unknown_signer`, and kms-worker treats that refusal as final. That is RPC node
-  lag. The same holds when the coprocessor's RPC fails, or answers in more than 3 seconds, during
-  the woken poll: the request is checked against the last set. A switch that keeps 2t+1 nodes of the previous context still answers then, since those nodes
-  are in an Active context. RFC 038's rule had no such case: it accepted the new context from
-  Pending.
+- A signer still unknown after the wait gets `upstream_transient` (502, retryable), never a final
+  refusal. kms-worker refuses a Solana request itself, as final `unprocessable`, before it asks any
+  coprocessor, when its tx-sender is not a node of the request's KMS context: after the context
+  check, it reads `isKmsTxSenderForContext` at the finalized block and keeps the answer, since a
+  context's nodes never change (`kms-worker/src/core/solana/membership.rs`, invariant #74). A node outside the
+  request's context, such as a spare after a switch or a node dropped by a swap, ends there at its
+  first attempt, as a node with no role in the context ends at its KMS core on EVM. So a node that
+  reaches a coprocessor is a node of the request's context at kms-worker's finalized block, and an
+  unknown signer there means the coprocessor's RPC node is behind kms-worker's, or failed or took
+  more than 3 seconds during the woken poll. relayer-http retries `upstream_transient`, and each
+  retry runs a new kms-worker attempt that asks the coprocessors again, until relayer-http's
+  deadline.
+- The retries are relayer-http's, and they are bounded. With the example config
+  `relayer-http/config/config.yaml`, which the e2e and the preview deploy from (`call.timeout`
+  5 seconds, `max_retries` 5, a backoff from 200 ms, and a retry only when its delay fits before
+  the deadline), a node makes at most 5 attempts per decryption. A config without `retries` makes
+  none (`RetryConfig::default`, `max_retries: 0`): a node whose coprocessors lag then gives no
+  share for that request, and the other nodes can still reach the threshold. Each kms-worker attempt sends one batch for every
+  handle of the request and asks each coprocessor at most once. So a coprocessor receives at most 5
+  requests per decryption from each node it does not know yet, and its RPC load stays at most one
+  woken poll a second. A caller that is not a KMS node gets the same answers, and is held only by
+  the wait.
 - A request from a signer outside the set waits up to 3 seconds, within kms-worker's default
   10 seconds for an answer (`host_rpc_call_timeout`). Polls woken this way start at least 1 second
   after the poll before them, and every request waiting when one starts shares it, so unknown
@@ -3188,10 +3206,10 @@ Consequences:
   when the finalized block is newer. RFC 038 authenticates from the header before the body is
   read, so the wake comes before the body's digest is checked, and any header with a recoverable
   signature can cause one. A signature for another audience recovers an unrelated address and is
-  such a case: it is refused after the wait.
-- Every coprocessor refuses a connector whose tx-sender is only in a Pending or Created context
-  with `auth_unknown_signer`, and kms-worker treats that refusal as final (DD-067), as for a node
-  outside every context.
+  such a case: it gets `upstream_transient` after the wait.
+- A connector whose tx-sender is only in a Pending or Created context gets `upstream_transient` from
+  every coprocessor. Its kms-worker refuses a request in an Active context before that, as its node
+  is not a node of that context.
 - `solana-merkle-proof-service/src/kms_tx_senders.rs` reads `getCurrentKmsContextIdCounter`,
   `isValidKmsContext` and `getKmsNodesForContext` at one finalized block, when that block is newer
   than its last read, and keeps each context's nodes, which never change once the context is
@@ -3203,5 +3221,6 @@ Consequences:
   context.
 - Invariant #72 holds the rule. `accepts_an_active_contexts_tx_senders_and_reads_its_nodes_once`,
   `refuses_a_pending_or_created_contexts_tx_senders` and `refuses_a_destroyed_contexts_tx_senders`
-  pin it against a stub that answers each call as the contract does. Invariant #73 holds the poll
-  and the re-read on an unknown signer.
+  pin it against a stub that answers each call as the contract does. Invariant #73 holds the poll,
+  the re-read on an unknown signer and its retryable answer. Invariant #74 holds kms-worker's
+  membership check.

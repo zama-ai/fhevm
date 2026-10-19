@@ -104,13 +104,14 @@ pub enum ErrorCode {
     AuthMalformed,
     /// The `FhevmSig` signature expired; sign again.
     AuthExpired,
-    /// The signature recovers no address, or one that is not the tx-sender of a node in a live
-    /// KMS context. A signature for another recipient recovers an unrelated address.
+    /// The signature recovers no address.
     AuthUnknownSigner,
     /// The body's keccak-256 is not the signed `digest`.
     AuthBodyMismatch,
-    /// The leaf record could not be read, or the KMS tx-sender set is not read
-    /// yet; retry later.
+    /// The leaf record could not be read, the KMS tx-sender set is not read
+    /// yet, or the signer is not among the tx-senders of the Active KMS contexts
+    /// after a fresh read; retry later. A signature for another recipient
+    /// recovers an unrelated address.
     UpstreamTransient,
     /// The signer is over its leaves per second or holds as many signed
     /// requests as it may; ask another coprocessor or retry later.

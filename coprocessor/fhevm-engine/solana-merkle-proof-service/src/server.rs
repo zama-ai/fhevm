@@ -398,9 +398,9 @@ fn decode_cbor<T: DeserializeOwned>(body: &[u8]) -> Result<T, HttpError> {
     responses(
         (status = 200, description = "One answer per queried leaf, in request order", body = MerkleProofResponse, content_type = "application/cbor"),
         (status = 400, description = "Malformed or oversized body (`malformed`), or a query string (`non_canonical_path`)", body = ErrorResponse, content_type = "application/json"),
-        (status = 401, description = "`FhevmSig` refused before the body is read: missing (`auth_missing`), malformed or too long-lived (`auth_malformed`), expired (`auth_expired`, retryable), or not by a KMS tx-sender (`auth_unknown_signer`). Then the body: not the signed digest (`auth_body_mismatch`)", body = ErrorResponse, content_type = "application/json"),
+        (status = 401, description = "`FhevmSig` refused before the body is read: missing (`auth_missing`), malformed or too long-lived (`auth_malformed`), expired (`auth_expired`, retryable), or a signature that recovers no address (`auth_unknown_signer`). Then the body: not the signed digest (`auth_body_mismatch`)", body = ErrorResponse, content_type = "application/json"),
         (status = 429, description = "Signer over its rate or holding as many signed requests as it may; `Retry-After` set", body = ErrorResponse, content_type = "application/json"),
-        (status = 502, description = "Leaf record or KMS tx-sender set unavailable", body = ErrorResponse, content_type = "application/json"),
+        (status = 502, description = "Leaf record or KMS tx-sender set unavailable, or a signer not among the tx-senders of the Active KMS contexts after a fresh read (`upstream_transient`)", body = ErrorResponse, content_type = "application/json"),
         (status = 503, description = "No database connection free in time; `Retry-After` set", body = ErrorResponse, content_type = "application/json"),
     ),
     security(("fhevm_sig" = [])),
@@ -658,10 +658,13 @@ async fn authenticate(
         if known {
             return Ok(authorization);
         }
+        // kms-worker refuses a request itself when its node is outside the request's KMS context
+        // (DD-076). A signer still unknown here is then normally a node that this coprocessor's
+        // RPC has not caught up with, and relayer-http's retries must be able to reach it.
         return Err(HttpError::new(
-            ErrorCode::AuthUnknownSigner,
+            ErrorCode::UpstreamTransient,
             format!(
-                "{} is not the tx-sender of a node in an Active KMS context of \
+                "{} is not, or not yet, the tx-sender of a node in an Active KMS context of \
                  ProtocolConfig {} on chain {}",
                 authorization.signer,
                 set.registry.contract,
@@ -1098,6 +1101,13 @@ mod tests {
             assert_eq!(error.code, code);
             assert!(!error.retryable);
         };
+        let not_a_sender = |response: reqwest::Response| async move {
+            assert_eq!(response.status(), 502);
+            let error = error_of(response).await;
+            assert_eq!(error.code, ErrorCode::UpstreamTransient);
+            assert!(error.retryable);
+            assert!(error.message.contains("not yet"), "{}", error.message);
+        };
 
         refused(
             post(None, body.clone()).await.expect("send"),
@@ -1106,9 +1116,8 @@ mod tests {
         .await;
         let stranger = PrivateKeySigner::random();
         let by_stranger = signed(&stranger, &body, unix_now_secs() + 30).await;
-        refused(
+        not_a_sender(
             post(Some(by_stranger), body.clone()).await.expect("send"),
-            ErrorCode::AuthUnknownSigner,
         )
         .await;
         // Signed for another coprocessor: recovers an unrelated address.
@@ -1119,11 +1128,10 @@ mod tests {
             Address::repeat_byte(0xCD),
         )
         .await;
-        refused(
+        not_a_sender(
             post(Some(for_other_audience), body.clone())
                 .await
                 .expect("send"),
-            ErrorCode::AuthUnknownSigner,
         )
         .await;
         let too_long_lived = signed(
@@ -1296,7 +1304,7 @@ mod tests {
     }
 
     /// The signer is authenticated from the header before the body is read (RFC 038): an unknown
-    /// signer, or an expired signature, is refused while the body has not arrived.
+    /// signer, or an expired signature, is answered while the body has not arrived.
     #[tokio::test]
     async fn a_request_is_authenticated_before_its_body_is_read() {
         let connector = PrivateKeySigner::random();
@@ -1316,7 +1324,7 @@ mod tests {
         let by_stranger = signed(&stranger, &body, unix_now_secs() + 30).await;
         assert_eq!(
             answer_to_an_unfinished_body(&base, &by_stranger).await,
-            (401, ErrorCode::AuthUnknownSigner)
+            (502, ErrorCode::UpstreamTransient)
         );
         let expired = signed(
             &connector,
@@ -1335,7 +1343,7 @@ mod tests {
 
     /// A signer outside the set waits for a poll that started after its request. One whose context
     /// was activated since the last poll gets past authentication, here to the read of a database
-    /// that never connects; one in no Active context is refused within the wait.
+    /// that never connects; one in no Active context gets a retryable answer within the wait.
     #[tokio::test]
     async fn an_unknown_signer_waits_for_a_poll_after_its_request() {
         let connector = PrivateKeySigner::random();
@@ -1381,8 +1389,54 @@ mod tests {
         let sent = Instant::now();
         let response = post(by_stranger).await.expect("send");
         assert!(sent.elapsed() <= UNKNOWN_SIGNER_WAIT);
+        assert_eq!(response.status(), 502);
+        let error = error_of(response).await;
+        assert_eq!(
+            (error.code, error.retryable),
+            (ErrorCode::UpstreamTransient, true),
+            "{}",
+            error.message
+        );
+
+        follower.cancel();
+        cancel.cancel();
+        server.await.expect("join");
+    }
+
+    /// A signature that recovers no address names no signer to wait for: it is refused at once,
+    /// with no poll woken.
+    #[tokio::test]
+    async fn a_signature_that_recovers_no_address_is_refused_at_once() {
+        let ledger = stub::ledger(&[(
+            stub::State::Active,
+            &[Address::repeat_byte(0xA1)],
+        )]);
+        let (senders, requests, follower) =
+            stub::follower(&ledger, Duration::from_secs(3600)).await;
+        let (base, cancel, server) = spawn(senders, 1000, 1 << 20, 1).await;
+        let body = [0xA0];
+        let valid =
+            signed(&PrivateKeySigner::random(), &body, unix_now_secs() + 30)
+                .await;
+        let (header, _) = valid.split_once(", sig=").expect("sig last");
+        let unrecoverable = format!("{header}, sig=0x{}1b", "00".repeat(64));
+        let reads = requests.lock().unwrap().len();
+
+        let response = reqwest::Client::new()
+            .post(format!("{base}{MERKLE_PROOFS_PATH}"))
+            .header(header::AUTHORIZATION, unrecoverable)
+            .body(body.to_vec())
+            .send()
+            .await
+            .expect("send");
+
         assert_eq!(response.status(), 401);
-        assert_eq!(error_of(response).await.code, ErrorCode::AuthUnknownSigner);
+        let error = error_of(response).await;
+        assert_eq!(
+            (error.code, error.retryable),
+            (ErrorCode::AuthUnknownSigner, false)
+        );
+        assert_eq!(requests.lock().unwrap().len(), reads, "a poll was woken");
 
         follower.cancel();
         cancel.cancel();

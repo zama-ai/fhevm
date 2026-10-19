@@ -52,7 +52,7 @@
             }
           },
           "401": {
-            "description": "`FhevmSig` refused before the body is read: missing (`auth_missing`), malformed or too long-lived (`auth_malformed`), expired (`auth_expired`, retryable), or not by a KMS tx-sender (`auth_unknown_signer`). Then the body: not the signed digest (`auth_body_mismatch`)",
+            "description": "`FhevmSig` refused before the body is read: missing (`auth_missing`), malformed or too long-lived (`auth_malformed`), expired (`auth_expired`, retryable), or a signature that recovers no address (`auth_unknown_signer`). Then the body: not the signed digest (`auth_body_mismatch`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -72,7 +72,7 @@
             }
           },
           "502": {
-            "description": "Leaf record or KMS tx-sender set unavailable",
+            "description": "Leaf record or KMS tx-sender set unavailable, or a signer not among the tx-senders of the Active KMS contexts after a fresh read (`upstream_transient`)",
             "content": {
               "application/json": {
                 "schema": {

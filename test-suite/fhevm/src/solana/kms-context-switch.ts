@@ -168,12 +168,11 @@ export const prepareSolanaKmsContextLeg = async (
    * relayer-http's log of the decrypts of the leg's values made after `before` (the request ids it
    * had logged until then): in each answered decrypt, each party in `outsideParties` was refused with
    * 422 unprocessable at its first attempt, and the aggregation did not reach its deadline. The
-   * worker answers 422 for either of two final refusals, and relayer-http does not retry it:
-   * - every coprocessor's Merkle proof server refuses a worker whose tx-sender is in no Active
-   *   context (auth_unknown_signer). This refuses the spares after the switch.
-   * - a KMS core with no role in the request's context answers NotFound, as on EVM. This refuses the
-   *   dropped node after the swap: it is still in the earlier Active contexts, so the proof servers
-   *   accept its tx-sender.
+   * party's own worker refuses the request for good, before it asks any coprocessor, as its node is
+   * not a node of the request's KMS context, and relayer-http does not retry the refusal. This
+   * refuses the spares after the switch, and the dropped node after the swap, which is still in the
+   * earlier Active contexts. On EVM, a KMS core with no role in the context answers NotFound, which
+   * the worker also answers as 422.
    * The SDK authenticates each share against the signers of its permit's context and needs 2t+1 of
    * them (userDecrypt/response.ts), so a share from outside that context could never count.
    */
