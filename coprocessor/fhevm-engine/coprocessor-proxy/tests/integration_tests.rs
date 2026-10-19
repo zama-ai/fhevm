@@ -574,6 +574,34 @@ async fn test_reads_again_for_an_unknown_signer() {
 }
 
 #[tokio::test]
+async fn test_a_miss_during_a_poll_waits_for_the_next_poll() {
+    let t = start_without_polls().await;
+    let next = PrivateKeySigner::random();
+    let polls = t.rpc.finalized_polls();
+    t.rpc.set_reply_delay(Duration::from_secs(1));
+
+    let during_the_poll = async {
+        // The poll woken below has the finalized block from before `next`'s context.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while t.rpc.finalized_polls() == polls {
+            assert!(Instant::now() < deadline, "the miss woke no poll");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        // The next poll's five calls end about 1 s after this poll: a request checked when this
+        // poll ends is refused.
+        t.rpc.set_reply_delay(Duration::from_millis(200));
+        t.rpc.set_contexts(vec![
+            KmsContext::active(&[sender().address()]),
+            KmsContext::active(&[next.address()]),
+        ]);
+        t.auth_code(&next).await
+    };
+    let unknown = PrivateKeySigner::random();
+    let (_, code) = tokio::join!(t.auth_code(&unknown), during_the_poll);
+    assert_eq!(code, ACCEPTED);
+}
+
+#[tokio::test]
 async fn test_refuses_an_unknown_signer_within_the_wait() {
     let t = start_without_polls().await;
     t.rpc.set_stalled(true);

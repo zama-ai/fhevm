@@ -52,11 +52,12 @@ Ethereum). The KMS connector's gw-listener likewise reads Ethereum events only u
 block.
 
 The KMS connector serves a new context as soon as its activation is finalized, so a request signed
-by an unknown signer makes the proxy check at once and wait up to 3 s for that check before it
-refuses. A first request of a new context is still refused when the proxy's RPC node sees the
-finalized block more than 3 s after the connector's node does. Any request whose signature
-recovers an address the proxy does not know causes such a check, whatever audience or body it was
-signed for. The checks start at least 1 s apart, so they cost at most one RPC call a second.
+by an unknown signer makes the proxy read the signers at once, and check the request again after
+that read or after 3 s, whichever comes first. A first request of a new context is still refused
+when the proxy's RPC node sees the finalized block more than 3 s after the connector's node does,
+or when that RPC node fails or takes more than 3 s to answer. Any request whose signature
+recovers an address the proxy does not know causes such a read, whatever audience or body it was
+signed for. These reads start at least 1 s apart, so they cost at most one RPC call a second.
 
 The NetworkPolicy matches the proxy pods in the release namespace only. When prf-service runs in
 another namespace, add its own policy there.

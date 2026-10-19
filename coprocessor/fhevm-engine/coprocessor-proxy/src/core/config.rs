@@ -488,4 +488,20 @@ mod tests {
         assert!(!message.contains("SECRET-KEY"), "{message}");
         cleanup_env_vars();
     }
+
+    #[test]
+    #[serial(config_tests)]
+    fn test_zero_poll_interval_is_refused() {
+        cleanup_env_vars();
+        unsafe {
+            // The reader would poll the RPC without pause.
+            env::set_var("COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL", "0s");
+        }
+        let Err(err) = Config::from_env_and_file(Some(example_config_path())) else {
+            panic!("a zero poll interval must be refused");
+        };
+        let message = format!("{err:#}");
+        assert!(message.contains("greater than 0"), "{message}");
+        cleanup_env_vars();
+    }
 }

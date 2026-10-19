@@ -296,6 +296,8 @@ struct RpcState {
     finalized_polls: usize,
     failing: bool,
     stalled: bool,
+    /// How long each answer is held after it is computed.
+    reply_delay: Duration,
 }
 
 /// An Ethereum JSON-RPC answering the `ProtocolConfig` reads of the proxy from a list of KMS
@@ -313,6 +315,7 @@ impl FakeRpc {
             finalized_polls: 0,
             failing: false,
             stalled: false,
+            reply_delay: Duration::ZERO,
         }));
         let app = Router::new()
             .route("/", post(rpc))
@@ -342,6 +345,12 @@ impl FakeRpc {
         self.state.lock().unwrap().stalled = stalled;
     }
 
+    /// Holds every later answer for `delay` after computing it: the answer is the state at the
+    /// time of the call.
+    pub fn set_reply_delay(&self, delay: Duration) {
+        self.state.lock().unwrap().reply_delay = delay;
+    }
+
     /// How many times the finalized block was asked for: one per poll of the proxy.
     pub fn finalized_polls(&self) -> usize {
         self.state.lock().unwrap().finalized_polls
@@ -358,7 +367,15 @@ async fn rpc(State(state): State<Arc<Mutex<RpcState>>>, Json(call): Json<Value>)
     if stalled {
         std::future::pending::<()>().await;
     }
-    let mut state = state.lock().unwrap();
+    let (reply, delay) = {
+        let mut state = state.lock().unwrap();
+        (answer(&mut state, &call), state.reply_delay)
+    };
+    tokio::time::sleep(delay).await;
+    reply
+}
+
+fn answer(state: &mut RpcState, call: &Value) -> Response {
     if state.failing {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
