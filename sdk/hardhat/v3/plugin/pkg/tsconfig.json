@@ -1,0 +1,13 @@
+{
+  "//": "Typechecks the payload sources without emitting; tsconfig.build.esm.json is the emitting twin.",
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "noEmit": true,
+    "types": ["node"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext"
+  },
+  "include": ["src/**/*.ts"]
+}
