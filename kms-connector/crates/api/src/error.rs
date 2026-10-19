@@ -27,6 +27,8 @@ pub enum ErrorCode {
     AclDenied,
     /// The user's EIP-712 / ERC-1271 signature was rejected per RFC 016 (kms_worker row).
     UserSignatureRejected,
+    /// The signed user-decryption validity interval has ended; a new signed request is needed.
+    UserDecryptionExpired,
     /// Ciphertext material not found (kms_worker row).
     CiphertextNotFound,
     /// Coprocessor ciphertext-attestation consensus could not confirm the material.
@@ -53,7 +55,7 @@ impl ErrorCode {
         match self {
             Self::Malformed | Self::UnsupportedAttestationType => 400,
             Self::SenderAuthenticationFailed | Self::AuthExpired => 401,
-            Self::AclDenied | Self::UserSignatureRejected => 403,
+            Self::AclDenied | Self::UserSignatureRejected | Self::UserDecryptionExpired => 403,
             Self::CiphertextNotFound => 404,
             Self::KmsContextDestroyed => 410,
             Self::KmsContextInvalid => 412,
@@ -77,6 +79,7 @@ impl ErrorCode {
             Self::Malformed
             | Self::UnsupportedAttestationType
             | Self::SenderAuthenticationFailed
+            | Self::UserDecryptionExpired
             | Self::KmsContextDestroyed
             | Self::Unprocessable => false,
             Self::AuthExpired
