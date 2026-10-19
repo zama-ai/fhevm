@@ -60,7 +60,7 @@ async fn check_entries(
         .iter()
         .map(|(_, s)| B256::new(s.to_bytes()))
         .collect();
-    let request = SolanaPublicDecryptionRequest::new(U256::ONE, &handles, &stores, vec![0x00])
+    let request = SolanaPublicDecryptionRequest::new(U256::ONE, &handles, &stores, vec![0x02; 65])
         .expect("a well-formed request");
     check_public_decrypt(host, &request)
         .await

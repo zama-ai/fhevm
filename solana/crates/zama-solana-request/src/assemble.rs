@@ -51,6 +51,10 @@ pub enum SolanaRequestError {
     /// The handles name a chain that is not a Solana host chain.
     #[error("solana request handles are on chain {0}, which is not a Solana host chain")]
     NotSolanaChain(u64),
+    /// A public decryption names its KMS context, which the connector checks its node against:
+    /// `extraData` v1 (0x01 ‖ context id) or v2 (0x02 ‖ context id ‖ epoch id).
+    #[error("solana public decryption names no KMS context: extraData must be v1 or v2")]
+    NoKmsContext,
     #[error("permit: {0}")]
     Permit(#[from] PermitError),
 }
@@ -83,10 +87,13 @@ impl SolanaUserDecryptRequest {
 }
 
 /// Checks a Solana public decryption: one encrypted store per handle, within the cap, every
-/// handle on one Solana chain. Returns that chain.
+/// handle on one Solana chain, and `extra_data` naming a KMS context. Returns that chain.
+///
+/// Only the version byte is checked here; each side's `extraData` format check checks the length.
 pub fn public_request_chain_id(
     handles: &[[u8; 32]],
     encrypted_stores: usize,
+    extra_data: &[u8],
 ) -> Result<u64, SolanaRequestError> {
     check_handle_count(handles.len())?;
     if handles.len() != encrypted_stores {
@@ -95,7 +102,11 @@ pub fn public_request_chain_id(
             stores: encrypted_stores,
         });
     }
-    solana_chain_id(handles.iter().copied())
+    let chain_id = solana_chain_id(handles.iter().copied())?;
+    if !matches!(extra_data.first(), Some(1 | 2)) {
+        return Err(SolanaRequestError::NoKmsContext);
+    }
+    Ok(chain_id)
 }
 
 fn check_handle_count(handles: usize) -> Result<(), SolanaRequestError> {
@@ -232,8 +243,9 @@ mod tests {
     #[test]
     fn a_public_request_names_one_store_per_handle_on_one_solana_chain() {
         let chain = solana_host_chain_id(7);
+        let v2 = [[0x02].as_slice(), &[0xaa; 64]].concat();
         assert_eq!(
-            public_request_chain_id(&[handle(chain, 1), handle(chain, 2)], 2),
+            public_request_chain_id(&[handle(chain, 1), handle(chain, 2)], 2, &v2),
             Ok(chain)
         );
         let cases = [
@@ -267,7 +279,29 @@ mod tests {
             ),
         ];
         for (handles, stores, expected) in cases {
-            assert_eq!(public_request_chain_id(&handles, stores), Err(expected));
+            assert_eq!(
+                public_request_chain_id(&handles, stores, &v2),
+                Err(expected)
+            );
+        }
+    }
+
+    /// `extraData` v1 or v2 names the KMS context; empty or v0 names none.
+    #[test]
+    fn a_public_request_names_its_kms_context() {
+        let chain = solana_host_chain_id(7);
+        let handles = [handle(chain, 1)];
+        for extra_data in [vec![], vec![0x00]] {
+            assert_eq!(
+                public_request_chain_id(&handles, 1, &extra_data),
+                Err(SolanaRequestError::NoKmsContext)
+            );
+        }
+        for extra_data in [
+            [[0x01].as_slice(), &[0xaa; 32]].concat(),
+            [[0x02].as_slice(), &[0xaa; 64]].concat(),
+        ] {
+            assert_eq!(public_request_chain_id(&handles, 1, &extra_data), Ok(chain));
         }
     }
 }

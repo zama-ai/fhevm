@@ -219,7 +219,10 @@ mod tests {
         assert_eq!(body["status"], "succeeded");
         assert_eq!(body["requestId"], request_id);
         assert_eq!(body["result"]["signatures"].as_array().unwrap().len(), 13);
-        assert_eq!(body["result"]["extraData"], "0x00");
+        assert_eq!(
+            body["result"]["extraData"],
+            serde_json::to_value(public_body().extraData).unwrap()
+        );
     }
 
     /// A public body mixing EVM and Solana handles is malformed in either body and either order; a

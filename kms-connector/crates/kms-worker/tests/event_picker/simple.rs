@@ -67,7 +67,7 @@ async fn test_pick_solana_public_decryption_with_its_stores() -> anyhow::Result<
         U256::ONE,
         &[first, second],
         &[rand_digest(), rand_digest()],
-        vec![0x00],
+        vec![0x02; 65],
     )?;
     insert_solana_public_decryption(
         test_instance.db(),

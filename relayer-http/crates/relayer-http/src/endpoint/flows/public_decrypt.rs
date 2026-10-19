@@ -61,13 +61,16 @@ pub fn validate_solana(
     validate::handles("ctHandles", request.ctHandles.iter(), chain_ids)?;
     validate::extra_data("extraData", &request.extraData)?;
     let handles: Vec<[u8; 32]> = request.ctHandles.iter().map(|h| h.0).collect();
-    public_request_chain_id(&handles, request.encryptedStores.len()).map_err(|e| {
-        let field = match e {
-            SolanaRequestError::StoreCount { .. } => "encryptedStores",
-            _ => "ctHandles",
-        };
-        Invalid::new(field, e.to_string())
-    })?;
+    public_request_chain_id(&handles, request.encryptedStores.len(), &request.extraData).map_err(
+        |e| {
+            let field = match e {
+                SolanaRequestError::StoreCount { .. } => "encryptedStores",
+                SolanaRequestError::NoKmsContext => "extraData",
+                _ => "ctHandles",
+            };
+            Invalid::new(field, e.to_string())
+        },
+    )?;
     Ok(())
 }
 
@@ -130,7 +133,7 @@ pub(crate) mod tests {
     pub(crate) fn public_body() -> SolanaPublicDecryptionRequest {
         SolanaPublicDecryptionRequest {
             ctHandles: vec![handle(SOLANA, 0), handle(SOLANA, 5)],
-            extraData: Bytes::from_static(&[0]),
+            extraData: Bytes::from([[0x02].as_slice(), &[0xaa; 64]].concat()),
             encryptedStores: vec![B256::repeat_byte(0x30), B256::repeat_byte(0x31)],
         }
     }
@@ -159,6 +162,11 @@ pub(crate) mod tests {
             ),
             (
                 Box::new(|r| r.extraData = Bytes::from_static(&[9])),
+                "extraData",
+            ),
+            // Valid v0 names no KMS context.
+            (
+                Box::new(|r| r.extraData = Bytes::from_static(&[0])),
                 "extraData",
             ),
             (

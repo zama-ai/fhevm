@@ -170,7 +170,8 @@ mod tests {
     }
 
     fn public_request(handle: B256) -> SolanaPublicDecryptionRequest {
-        SolanaPublicDecryptionRequest::new(U256::ONE, &[handle], &[B256::ZERO], vec![]).unwrap()
+        SolanaPublicDecryptionRequest::new(U256::ONE, &[handle], &[B256::ZERO], vec![0x02; 65])
+            .unwrap()
     }
 
     fn user_request(handle: B256) -> SolanaUserDecryptionRequestV1 {
