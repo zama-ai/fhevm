@@ -668,10 +668,11 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     function getKeyInfo(uint256 keyId) external view virtual returns (KeyInfo memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         _checkGeneratedKeyId(keyId);
-        uint256 requestId = _migrationOrKeygenRequestId(keyId);
-        uint256 prepKeygenId = $.keygenIdPairs[requestId];
+        uint256 materialRequestId = _migrationOrKeygenRequestId(keyId);
+        uint256 prepKeygenId = $.keygenIdPairs[materialRequestId];
         KeyDigest[] memory keyDigests = $.keyDigests[keyId];
-        if (requestId != keyId) {
+        bool isMigrated = materialRequestId != keyId;
+        if (isMigrated) {
             keyDigests = _withoutServerDigests(keyDigests);
         }
         return
