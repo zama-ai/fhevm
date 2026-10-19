@@ -20,6 +20,7 @@ import {
   requiresModernHostAddressArtifacts,
   replaceRegistrySourceTag,
   supportsCanonicalProtocolConfigSeeding,
+  supportsConnectorHttp,
   supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "../compat/compat";
@@ -2801,6 +2802,12 @@ export const upgradeThresholdKmsOperator = async (
   await operations.composeUp("kms-connector", [connector.migration], { noDeps: true, forceRecreate: true });
   await operations.waitForContainer(connector.migration, "complete");
   await operations.composeUp("kms-connector", connector.runtime, { noDeps: true, forceRecreate: true });
+  // The last upgraded operator moves the fleet to the full connector override, which also ships the HTTP endpoint and proxy.
+  if (supportsConnectorHttp(nextState) && !supportsConnectorHttp(state)) {
+    const httpServices = Array.from({ length: state.scenario.kms.parties }, (_, index) => kmsConnectorPrefix(index + 1))
+      .flatMap((prefix) => [`${prefix}-endpoint`, `${prefix}-proxy`]);
+    await operations.composeUp("kms-connector", httpServices, { noDeps: true, forceRecreate: true });
+  }
   await operations.waitForKmsConnectorParty(nextState, operatorId);
   await operations.postBootHealthGate(connector.runtime);
   await operations.saveState(nextState);
