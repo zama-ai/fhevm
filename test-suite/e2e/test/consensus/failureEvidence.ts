@@ -1,4 +1,13 @@
 /** Required fault evidence must never turn absent observations into defaults. */
+export function offlineCatchupRange(watermark: number | null, head: number, blocks: number[]): { start: number; end: number } {
+  const start = requiredEvidenceCount(watermark ?? 0, 'offline ingestion watermark') + 1;
+  const end = requiredEvidenceCount(head, 'current RPC head', 1);
+  if (blocks.length !== 12 || start > end || blocks.some(block => block < start || block > end)) {
+    throw new Error(`offline catchup [${start}, ${end}] must cover all twelve receipt blocks [${blocks.join(', ')}]`);
+  }
+  return { start, end };
+}
+
 export function requireCompletedConsumerCatchup(
   row: { id?: unknown; status?: unknown; finalized?: unknown; blockStart?: unknown; blockEnd?: unknown },
   previousId: unknown,

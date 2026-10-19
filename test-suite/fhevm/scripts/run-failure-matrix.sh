@@ -618,6 +618,10 @@ run_cell_body() {
         cr_record "$case_id" INVALID cleanup=not_required started_at="$started" detail="offline replay requires non-finalized consumer catchup"
         return 1
       }
+      grep -Fxq -- '--no-override-catchup' <<<"$arguments" || {
+        cr_record "$case_id" INVALID cleanup=not_required started_at="$started" detail="offline replay requires preserving the persisted recovery request"
+        return 1
+      }
       local publisher=listener-publisher-for-anvil page_size config
       [[ "$VICTIM" == 0 ]] || publisher="listener${VICTIM}-publisher-for-anvil"
       config="$(docker cp "$publisher:/config.yaml" - | tar -xO)" || return 1
