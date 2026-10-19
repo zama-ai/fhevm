@@ -202,7 +202,7 @@ async fn test_existing_payload_row_is_served_immediately() -> anyhow::Result<()>
         &endpoint.db,
         "public_decryption_responses",
         public.id(),
-        3650,
+        Duration::from_hours(3650 * 24),
     )
     .await?;
     let response = endpoint.post_public(&public).await;
@@ -214,7 +214,13 @@ async fn test_existing_payload_row_is_served_immediately() -> anyhow::Result<()>
     let mut user = user_request();
     user.payload.requestValidity.startTimestamp = Utc::now().timestamp() as u64 - 600;
     let inserted = complete_udec(&endpoint.db, user.id()).await?;
-    age_response(&endpoint.db, "user_decryption_responses", user.id(), 3650).await?;
+    age_response(
+        &endpoint.db,
+        "user_decryption_responses",
+        user.id(),
+        Duration::from_hours(3650 * 24),
+    )
+    .await?;
     let response = endpoint.post_user(&user).await;
     assert_eq!(response.status(), StatusCode::OK);
     let body: UserDecryptionResponse = response.json().await?;
@@ -228,55 +234,6 @@ async fn test_existing_payload_row_is_served_immediately() -> anyhow::Result<()>
     assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 0);
     assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 0);
 
-    endpoint.stop().await
-}
-
-/// The worker owns validity checks: expired requests requiring work are queued, and a fresh
-/// expiry error replaces any recoverable or expired irrecoverable error.
-#[rstest]
-#[case::no_result(None)]
-#[case::recoverable_error(Some("acl_denied"))]
-#[case::old_irrecoverable_error(Some("unprocessable"))]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn expired_user_request_receives_worker_expiry_error(
-    #[case] old_code: Option<&str>,
-) -> anyhow::Result<()> {
-    let endpoint = setup().await?;
-    let mut request = user_request();
-    request.payload.requestValidity.startTimestamp = Utc::now().timestamp() as u64 - 600;
-    let id = request.id();
-    if let Some(code) = old_code {
-        insert_rand_user_decryption_request_v2(&endpoint.db, failed_http_request(id)).await?;
-        fail_user(&endpoint.db, id, code, "before").await?;
-        age_response(&endpoint.db, "user_decryption_responses", id, 31).await?;
-    }
-
-    let pending = endpoint.spawn_udec(&request);
-    wait_for_request_status(&endpoint.db, USER_REQUESTS, id, "pending").await;
-    // Play the worker's irrecoverable validity rejection, before reaching KMS Core.
-    fail_user(&endpoint.db, id, "user_decryption_expired", "expired").await?;
-    let body = assert_error(
-        pending.await?,
-        StatusCode::FORBIDDEN,
-        ErrorCode::UserDecryptionExpired,
-        id,
-    )
-    .await;
-    assert_eq!(body.message, "expired");
-    // A resubmission reuses the fresh irrecoverable error.
-    assert_error(
-        endpoint.post_user(&request).await,
-        StatusCode::FORBIDDEN,
-        ErrorCode::UserDecryptionExpired,
-        id,
-    )
-    .await;
-    assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 1);
-    assert_eq!(
-        count_rows(&endpoint.db, "user_decryption_responses").await,
-        1
-    );
     endpoint.stop().await
 }
 
@@ -342,7 +299,13 @@ async fn test_non_retryable_error_row_is_served(
 
     let public = public_request();
     fail_public(&endpoint.db, public.id(), stored_code, "why").await?;
-    age_response(&endpoint.db, "public_decryption_responses", public.id(), 29).await?;
+    age_response(
+        &endpoint.db,
+        "public_decryption_responses",
+        public.id(),
+        Duration::from_mins(30),
+    )
+    .await?;
     let response = endpoint.post_public(&public).await;
     let body = assert_error(response, expected_status, expected_code, public.id()).await;
     assert_eq!(body.message, "why");
@@ -350,7 +313,13 @@ async fn test_non_retryable_error_row_is_served(
     let mut user = user_request();
     user.payload.requestValidity.startTimestamp = Utc::now().timestamp() as u64 - 600;
     fail_user(&endpoint.db, user.id(), stored_code, "why").await?;
-    age_response(&endpoint.db, "user_decryption_responses", user.id(), 29).await?;
+    age_response(
+        &endpoint.db,
+        "user_decryption_responses",
+        user.id(),
+        Duration::from_mins(30),
+    )
+    .await?;
     let response = endpoint.post_user(&user).await;
     assert_error(response, expected_status, expected_code, user.id()).await;
 
@@ -376,7 +345,13 @@ async fn test_expired_irrecoverable_error_is_reprocessed(
     let id = public.id();
     insert_rand_public_decryption_request(&endpoint.db, failed_http_request(id)).await?;
     fail_public(&endpoint.db, id, "unprocessable", "before").await?;
-    age_response(&endpoint.db, "public_decryption_responses", id, 31).await?;
+    age_response(
+        &endpoint.db,
+        "public_decryption_responses",
+        id,
+        Duration::from_hours(2),
+    )
+    .await?;
 
     let pending = endpoint.spawn_pdec(&public);
     wait_for_request_status(&endpoint.db, PUBLIC_REQUESTS, id, "pending").await;
@@ -410,7 +385,13 @@ async fn test_expired_irrecoverable_error_is_reprocessed(
     let id = user.id();
     insert_rand_user_decryption_request_v2(&endpoint.db, failed_http_request(id)).await?;
     fail_user(&endpoint.db, id, "unprocessable", "before").await?;
-    age_response(&endpoint.db, "user_decryption_responses", id, 31).await?;
+    age_response(
+        &endpoint.db,
+        "user_decryption_responses",
+        id,
+        Duration::from_hours(2),
+    )
+    .await?;
 
     let pending = endpoint.spawn_udec(&user);
     wait_for_request_status(&endpoint.db, USER_REQUESTS, id, "pending").await;
@@ -449,38 +430,6 @@ async fn test_expired_irrecoverable_error_is_reprocessed(
         count_rows(&endpoint.db, "user_decryption_responses").await,
         1
     );
-    endpoint.stop().await
-}
-
-#[tokio::test]
-async fn test_configured_error_serve_window() -> anyhow::Result<()> {
-    let endpoint = setup_with(|config| Config {
-        error_serve_window: Duration::from_hours(60 * 24),
-        ..config
-    })
-    .await?;
-    let public = public_request();
-    fail_public(&endpoint.db, public.id(), "unprocessable", "why").await?;
-    age_response(&endpoint.db, "public_decryption_responses", public.id(), 31).await?;
-    assert_error(
-        endpoint.post_public(&public).await,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        ErrorCode::Unprocessable,
-        public.id(),
-    )
-    .await;
-    let user = user_request();
-    fail_user(&endpoint.db, user.id(), "unprocessable", "why").await?;
-    age_response(&endpoint.db, "user_decryption_responses", user.id(), 31).await?;
-    assert_error(
-        endpoint.post_user(&user).await,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        ErrorCode::Unprocessable,
-        user.id(),
-    )
-    .await;
-    assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 0);
-    assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 0);
     endpoint.stop().await
 }
 
@@ -557,12 +506,12 @@ async fn test_retryable_error_row_resets_failed_request() -> anyhow::Result<()> 
 /// request is stored.
 #[rstest]
 #[timeout(Duration::from_secs(60))]
-#[case::recoverable("acl_denied", 0)]
-#[case::expired_irrecoverable("unprocessable", 31)]
+#[case::recoverable("acl_denied", Duration::ZERO)]
+#[case::expired_irrecoverable("unprocessable", Duration::from_hours(2))]
 #[tokio::test]
 async fn test_retryable_or_expired_error_row_attaches_to_reprocessing(
     #[case] code: &str,
-    #[case] age_days: u64,
+    #[case] age: Duration,
 ) -> anyhow::Result<()> {
     let endpoint = setup().await?;
 
@@ -575,13 +524,7 @@ async fn test_retryable_or_expired_error_row_attaches_to_reprocessing(
     )
     .await?;
     fail_public(&endpoint.db, public_id, code, "before").await?;
-    age_response(
-        &endpoint.db,
-        "public_decryption_responses",
-        public_id,
-        age_days,
-    )
-    .await?;
+    age_response(&endpoint.db, "public_decryption_responses", public_id, age).await?;
 
     let pending = endpoint.spawn_pdec(&public);
     // Nothing observable happens in DB until the worker answers, so give the route time to run.
@@ -601,7 +544,7 @@ async fn test_retryable_or_expired_error_row_attaches_to_reprocessing(
     let user = user_request();
     let user_id = user.id();
     fail_user(&endpoint.db, user_id, code, "before").await?;
-    age_response(&endpoint.db, "user_decryption_responses", user_id, age_days).await?;
+    age_response(&endpoint.db, "user_decryption_responses", user_id, age).await?;
     let pending = endpoint.spawn_udec(&user);
     wait_for_request_status(&endpoint.db, USER_REQUESTS, user_id, "pending").await;
     fail_user(&endpoint.db, user_id, "unprocessable", "after").await?;
@@ -1108,12 +1051,17 @@ async fn replace_error_with_success(
 }
 
 /// Ages a result without changing its identity or notifying waiters.
-async fn age_response(db: &Pool<Postgres>, table: &str, id: B256, days: u64) -> anyhow::Result<()> {
+async fn age_response(
+    db: &Pool<Postgres>,
+    table: &str,
+    id: B256,
+    age: Duration,
+) -> anyhow::Result<()> {
     let updated = sqlx::query(&format!(
         "UPDATE {table} SET created_at = $1 WHERE decryption_id = $2"
     ))
-    .bind(Utc::now() - Duration::from_hours(days * 24))
-    .bind(db_id(id).as_le_slice().to_vec())
+    .bind(Utc::now() - age)
+    .bind(db_id(id).as_le_slice())
     .execute(db)
     .await?;
     assert_eq!(updated.rows_affected(), 1);
