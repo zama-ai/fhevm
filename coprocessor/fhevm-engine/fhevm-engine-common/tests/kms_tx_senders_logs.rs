@@ -1,9 +1,10 @@
 //! The log output of a failed `ProtocolConfig` read, in a test binary of its own: the subscriber
 //! capturing it is global.
-#![cfg(feature = "protocol-config")]
+#![cfg(feature = "kms-tx-senders")]
 
 use alloy::{primitives::Address, providers::ProviderBuilder};
-use fhevm_sig_auth::{RefreshableSigners, protocol_config::Follower};
+use fhevm_engine_common::kms_tx_senders::Follower;
+use fhevm_sig_auth::RefreshableSigners;
 use std::{
     sync::{Arc, Mutex},
     time::Duration,

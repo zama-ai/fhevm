@@ -7,7 +7,8 @@ use crate::{
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
-use fhevm_sig_auth::{FhevmSigVerifier, RefreshableSigners, protocol_config::Follower};
+use fhevm_engine_common::kms_tx_senders::Follower;
+use fhevm_sig_auth::{FhevmSigVerifier, RefreshableSigners};
 use http::uri::Authority;
 use pingora::{
     lb::{LoadBalancer, selection::RoundRobin},

@@ -37,6 +37,9 @@ thiserror = { workspace = true }
 prometheus = { workspace = true }
 url = { workspace = true }
 
+fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-features = false, optional = true }
+fhevm-sig-auth = { path = "../../../shared/fhevm-sig-auth", optional = true }
+
 
 # crates.io dependencies
 lazy_static = "1.5.0"
@@ -50,6 +53,9 @@ opentelemetry_sdk = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true }
 
 [features]
+# The KMS tx-senders a coprocessor service accepts `FhevmSig` requests from, read from the
+# `ProtocolConfig` contract.
+kms-tx-senders = ["dep:fhevm_host_bindings", "dep:fhevm-sig-auth"]
 # Isolated reservation-pressure campaign only; absent from production builds.
 test-failpoints = []
 nightly-avx512 = ["tfhe/nightly-avx512"]
@@ -62,6 +68,10 @@ compact-hex = []
 # needs both to move, so they are normally used together.
 consensus-version-override = []
 stack-version-override = []
+
+[dev-dependencies]
+alloy = { workspace = true, features = ["json-rpc"] }
+tower = { version = "0.5", default-features = false }
 
 [build-dependencies]
 tonic-build = { workspace = true }

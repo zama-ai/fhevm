@@ -2,7 +2,7 @@ use crate::core::Config;
 use alloy::transports::http::reqwest::{self, Url};
 use anyhow::{Context, anyhow};
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
-use fhevm_sig_auth::protocol_config::Loaded;
+use fhevm_engine_common::kms_tx_senders::Loaded;
 use pingora::lb::{Backend, LoadBalancer, health_check::HttpHealthCheck, selection::RoundRobin};
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},

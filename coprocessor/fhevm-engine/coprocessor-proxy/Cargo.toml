@@ -6,8 +6,8 @@ license.workspace = true
 version = "0.1.0"
 
 [dependencies]
-fhevm-engine-common = { path = "../fhevm-engine-common" }
-fhevm-sig-auth = { path = "../../../shared/fhevm-sig-auth", features = ["protocol-config"] }
+fhevm-engine-common = { path = "../fhevm-engine-common", features = ["kms-tx-senders"] }
+fhevm-sig-auth = { path = "../../../shared/fhevm-sig-auth" }
 
 alloy.workspace = true
 anyhow.workspace = true

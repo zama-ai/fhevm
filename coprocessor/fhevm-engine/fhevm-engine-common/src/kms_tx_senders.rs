@@ -16,23 +16,24 @@
 //! [`RefreshableSigners`]. A failed read keeps the last set. Until the first read succeeds the set
 //! is empty and [`Loaded::is_loaded`] is false.
 
-use crate::RefreshableSigners;
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},
     primitives::{Address, U256},
     providers::Provider,
     transports::{RpcError, TransportError, TransportErrorKind},
 };
-use anyhow::{Context, anyhow};
+use anyhow::{anyhow, Context};
 use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::{
     self, IProtocolConfigBaseInstance,
 };
-use prometheus::{IntGauge, register_int_gauge};
+use fhevm_sig_auth::RefreshableSigners;
+use prometheus::{register_int_gauge, IntGauge};
 use std::{
     collections::{HashMap, HashSet},
+    future::Future,
     sync::{
-        Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
+        Arc, LazyLock,
     },
     time::Duration,
 };
@@ -46,7 +47,7 @@ const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 static KMS_TX_SENDERS: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
-        "fhevm_sig_auth_kms_tx_senders",
+        "coprocessor_kms_tx_senders",
         "KMS tx-senders the last successful read of ProtocolConfig allows"
     )
     .unwrap()
@@ -54,7 +55,7 @@ static KMS_TX_SENDERS: LazyLock<IntGauge> = LazyLock::new(|| {
 
 static KMS_TX_SENDERS_READ_TIMESTAMP: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
-        "fhevm_sig_auth_kms_tx_senders_read_timestamp_seconds",
+        "coprocessor_kms_tx_senders_read_timestamp_seconds",
         "Unix time of the last successful read of the KMS tx-senders from ProtocolConfig"
     )
     .unwrap()
@@ -119,7 +120,7 @@ impl<P: Provider> Follower<P> {
                         info!(senders = senders.len(), "KMS tx-sender set updated");
                     }
                     KMS_TX_SENDERS.set(senders.len() as i64);
-                    KMS_TX_SENDERS_READ_TIMESTAMP.set(crate::unix_now() as i64);
+                    KMS_TX_SENDERS_READ_TIMESTAMP.set(fhevm_sig_auth::unix_now() as i64);
                     self.signers.replace(senders.iter().copied());
                     self.loaded.0.store(true, Ordering::Relaxed);
                     last = Some(senders);
@@ -250,7 +251,6 @@ fn first_context_id(counter: U256) -> Option<U256> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::SignerAllowlist;
     use alloy::{
         primitives::Bytes,
         providers::ProviderBuilder,
@@ -261,14 +261,15 @@ mod tests {
         },
         sol_types::SolCall,
         transports::{
-            TransportError, TransportFut,
             mock::{Asserter, MockTransport},
+            TransportError, TransportFut,
         },
     };
     use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::{
-        KmsNode, getCurrentKmsContextIdCounterCall, getKmsNodesForContextCall,
-        isValidKmsContextCall,
+        getCurrentKmsContextIdCounterCall, getKmsNodesForContextCall, isValidKmsContextCall,
+        KmsNode,
     };
+    use fhevm_sig_auth::SignerAllowlist;
     use std::{
         sync::Arc,
         task::{Context, Poll},
@@ -386,13 +387,13 @@ mod tests {
         }
 
         fn call(&mut self, request: RequestPacket) -> Self::Future {
-            if let RequestPacket::Single(call) = &request
-                && call.method() == "eth_call"
-            {
-                let params = call
-                    .params()
-                    .map_or_else(String::new, |p| p.get().to_owned());
-                self.params.lock().unwrap().push(params);
+            if let RequestPacket::Single(call) = &request {
+                if call.method() == "eth_call" {
+                    let params = call
+                        .params()
+                        .map_or_else(String::new, |p| p.get().to_owned());
+                    self.params.lock().unwrap().push(params);
+                }
             }
             self.transport.call(request)
         }

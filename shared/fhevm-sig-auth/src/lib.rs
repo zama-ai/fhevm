@@ -10,8 +10,6 @@
 //! The crate is framework-agnostic.
 
 mod header;
-#[cfg(feature = "protocol-config")]
-pub mod protocol_config;
 mod sign;
 mod verify;
 
