@@ -2233,10 +2233,13 @@ async fn run_tfhe_worker_inner(
     .await?;
     {
         let listener_mode = stack_mode.clone();
-        let listener_shutdown = shutdown.child_token();
         tokio::spawn(async move {
-            if let Err(err) =
-                run_stack_version_listener(listener_pool, listener_mode, listener_shutdown).await
+            if let Err(err) = run_stack_version_listener(
+                listener_pool,
+                listener_mode,
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
             {
                 error!(target: "tfhe_worker", error = %err, "stack-version listener exited with error");
             }
@@ -2269,7 +2272,8 @@ async fn run_tfhe_worker_inner(
     }
 
     while !shutdown.is_cancelled() {
-        let cycle_result = tfhe_worker_cycle(
+        // here we log the errors and make sure we retry
+        if let Err(cycle_error) = tfhe_worker_cycle(
             &args,
             worker_id,
             stack_mode.clone(),
@@ -2278,17 +2282,14 @@ async fn run_tfhe_worker_inner(
             &mut readiness,
             &shutdown,
         )
-        .await;
-        // A stopping worker returns instead of exiting for a restart: embedded
-        // callers drop their database while it stops.
-        if shutdown.is_cancelled() {
-            if let Err(cycle_error) = cycle_result {
+        .await
+        {
+            // A stopping worker returns instead of exiting for a restart:
+            // embedded callers drop their database while it stops.
+            if shutdown.is_cancelled() {
                 warn!(target: "tfhe_worker", error = %cycle_error, "Error while shutting down; owned chains expire with the lock TTL");
+                break;
             }
-            break;
-        }
-        // here we log the errors and make sure we retry
-        if let Err(cycle_error) = cycle_result {
             WORKER_ERRORS_COUNTER.inc();
             if cycle_error.is_fatal_connection() {
                 error!(target: "tfhe_worker", error = %cycle_error, "Fatal DB connection error; exiting for k8s restart");
@@ -2500,6 +2501,9 @@ async fn tfhe_worker_cycle(
         if !immediately_poll_more_work {
             consecutive_fully_frozen_picks = 0;
             tokio::select! {
+                // A stop wins over a notification that is ready at the same time.
+                biased;
+                _ = shutdown.cancelled() => continue,
                 notification = listener.try_recv() => {
                     match notification? {
                         Some(_) => {
@@ -2516,7 +2520,6 @@ async fn tfhe_worker_cycle(
                     WORK_ITEMS_POLL_COUNTER.inc();
                     debug!(target: "tfhe_worker", "Polling the database for more work on timer");
                 },
-                _ = shutdown.cancelled() => continue,
             };
         }
 
@@ -2695,34 +2698,19 @@ async fn tfhe_worker_cycle(
         .bind(&batch_transaction_ids)
         .fetch_all(&mut *trx)
         .await?;
-        // Shutdown abandons the batch: a scale-in should not wait for a long
-        // batch to finish, and its results are deterministic, so the worker
-        // that takes the chains next recomputes the same values.
-        let executed = tokio::select! {
-            biased;
-            _ = shutdown.cancelled() => {
-                // Roll back now rather than when the pool recycles `conn`, so the
-                // cutover and containment locks this transaction holds are freed
-                // before the chains are released.
-                if let Err(error) = trx.rollback().await {
-                    warn!(target: "tfhe_worker", { error = %error }, "rollback of the abandoned batch failed");
-                }
-                info!(target: "tfhe_worker", "Shutting down — abandoned the open batch");
-                continue; // the shutdown check at the top releases the chains
-            }
-            executed = build_transaction_graph_and_execute(
-                &mut transactions,
-                db_key_cache.clone(),
-                &health_check,
-                &mut trx,
-                &dcid_mngr,
-                stack_mode.gcs_mode(),
-                gpu_reservation_timeout,
-                args.gpu_streams_per_device,
-            )
-            .instrument(loop_span.clone()) => executed,
-        };
-        let mut tx_graph = match executed {
+        let mut tx_graph = match build_transaction_graph_and_execute(
+            &mut transactions,
+            db_key_cache.clone(),
+            &health_check,
+            &mut trx,
+            &dcid_mngr,
+            stack_mode.gcs_mode(),
+            gpu_reservation_timeout,
+            args.gpu_streams_per_device,
+        )
+        .instrument(loop_span.clone())
+        .await
+        {
             Ok(tx_graph) => {
                 consecutive_batch_failures = 0;
                 tx_graph
@@ -2806,7 +2794,10 @@ async fn tfhe_worker_cycle(
                 // notifications pending the select below would return
                 // immediately — hammering a Postgres whose distress caused
                 // the failure.
-                tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
+                tokio::select! {
+                    _ = shutdown.cancelled() => {}
+                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(5000)) => {}
+                }
                 immediately_poll_more_work = false;
                 continue;
             }

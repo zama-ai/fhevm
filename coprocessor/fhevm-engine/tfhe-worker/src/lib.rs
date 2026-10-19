@@ -93,8 +93,8 @@ fn start_runtime_inner(
             }
         }
     });
-    // An abandoned batch keeps its FHE threads busy, and waiting for them would
-    // run past the termination grace period. Its writes are already rolled back.
+    // A batch still running at the deadline keeps its FHE threads busy, and
+    // waiting for them would run past the termination grace period.
     runtime.shutdown_timeout(RUNTIME_SHUTDOWN_TIMEOUT);
 
     // Supervisors using restart-on-failure need a nonzero status. The runtime
@@ -104,7 +104,8 @@ fn start_runtime_inner(
     }
 }
 
-/// Bounds the steps that do not watch the shutdown token. A worker still busy
+/// How long a stopping worker may take to finish its running batch (and any
+/// other step that does not watch the shutdown token). A worker still busy
 /// after it exits without releasing, and its chains wait for `--dcid-ttl-sec`.
 /// Both timeouts fit Kubernetes' default 30 s grace period.
 const SHUTDOWN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(10);
