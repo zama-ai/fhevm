@@ -212,8 +212,24 @@ const waitForRollback = async (ctx: RollbackCaseContext, database: string, timeo
       )) === "rolled-back",
   });
 
-const highestIndexedBlock = async (ctx: RollbackCaseContext, database: string) =>
-  Number(await ctx.psqlQuery(database, "SELECT COALESCE(MAX(block_number), 0) FROM host_chain_blocks_valid;"));
+/** The highest block each host chain holds. One chain can lag while another is at the tip. */
+const indexedTips = async (ctx: RollbackCaseContext, database: string) =>
+  new Map(
+    (
+      await ctx.psqlQuery(
+        database,
+        "SELECT COALESCE(string_agg(chain_id||':'||tip, ',' ORDER BY chain_id), '') FROM " +
+          "(SELECT chain_id, MAX(block_number) AS tip FROM host_chain_blocks_valid GROUP BY chain_id) t;",
+      )
+    )
+      .split(",")
+      .filter(Boolean)
+      .map(pair => pair.split(":").map(Number) as [number, number]),
+  );
+
+/** How far the target operator is behind the healthy one, on its slowest chain. */
+const blocksBehind = (healthy: Map<number, number>, target: Map<number, number>) =>
+  Math.max(0, ...[...healthy].map(([chain, tip]) => tip - (target.get(chain) ?? 0)));
 
 /**
  * Wait until the target operator indexes what the healthy one holds.
@@ -228,8 +244,7 @@ const waitForCatchUp = async (ctx: RollbackCaseContext) => {
     label: `${target}  caught up with ${healthy}`,
     timeoutSecs: 600,
     check: async () =>
-      (await highestIndexedBlock(ctx, target)) + CATCH_UP_TOLERANCE >=
-      (await highestIndexedBlock(ctx, healthy)),
+      blocksBehind(await indexedTips(ctx, healthy), await indexedTips(ctx, target)) <= CATCH_UP_TOLERANCE,
   });
 };
 
@@ -308,9 +323,10 @@ const runRollbackCaseBody = async (ctx: RollbackCaseContext, item: RollbackCase)
 
   if (item.rollsBackUnderFault) {
     const target = ctx.operatorDatabases[TARGET_OPERATOR]!;
-    const behind =
-      (await highestIndexedBlock(ctx, ctx.operatorDatabases[0]!)) -
-      (await highestIndexedBlock(ctx, target));
+    const behind = blocksBehind(
+      await indexedTips(ctx, ctx.operatorDatabases[0]!),
+      await indexedTips(ctx, target),
+    );
     await waitForRollback(ctx, target, 600);
     console.log(`OK:   the target operator cancelled the upgrade ${behind} block(s) behind`);
   }

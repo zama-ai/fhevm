@@ -725,9 +725,10 @@ where
             if window_state.deadlines.contains_key(&chain_id) {
                 continue;
             }
-            // A stuck listener still ends once uploads are closed; by then peers have decided.
+            // A stuck listener still ends once Blue passed the window. The peers
+            // decided before that moment.
             if gcs_host_watermark(pool, chain_id).await? >= end
-                || state_hash::upload_window(pool, commitment_timeout).await?.1
+                || state_hash::chain_upload_closed(pool, chain_id, end, commitment_timeout).await?
             {
                 window_state
                     .deadlines
