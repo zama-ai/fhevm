@@ -306,7 +306,7 @@ export interface DestructionConfirmationStatus {
   signersOutstanding: string[];
   largestDigestGroup: number; // most active signers that share one digest, compared with the threshold
   threshold: number; // n - t of the active committee, floored at 1
-  // Signers that confirmed different destroyedEpochIds or extraData sign different digests.
+  // Signers that confirmed different extraData sign different digests.
   diverged: boolean;
 }
 
@@ -422,7 +422,7 @@ export async function inspectKmsContextSwitch(
     destructionConfirmationStatus(
       contextId,
       contextConfirmations.filter((confirmation) => confirmation.args.destroyedContextId === contextId),
-      (confirmation) => `${confirmation.args.destroyedEpochIds.join(',')}:${confirmation.args.extraData}`,
+      (confirmation) => confirmation.args.extraData,
       committee,
       checksum,
     ),
@@ -648,7 +648,7 @@ function printDestruction(destruction: DestructionConfirmationStatus): void {
     console.log('  outstanding active signers:', destruction.signersOutstanding.join(', '));
   }
   if (destruction.diverged) {
-    console.log('  ⚠ signers confirmed different destroyedEpochIds or extraData');
+    console.log('  ⚠ signers confirmed different extraData');
   }
 }
 

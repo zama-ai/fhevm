@@ -128,14 +128,12 @@ interface IProtocolConfig is IProtocolConfigBase {
     /**
      * @notice Emitted on every successful KMS context destruction confirmation.
      * @param destroyedContextId The destroyed context ID.
-     * @param destroyedEpochIds The epochs the KMS nodes destroyed with the context.
      * @param signer The active-committee KMS signer that confirmed.
      * @param signature The signer's EIP-712 ContextDestructionConfirmation signature.
      * @param extraData The extra data bound into the signature.
      */
     event KmsContextDestructionConfirmed(
         uint256 indexed destroyedContextId,
-        uint256[] destroyedEpochIds,
         address indexed signer,
         bytes signature,
         bytes extraData
@@ -343,13 +341,11 @@ interface IProtocolConfig is IProtocolConfigBase {
      * @notice Submit an active-committee signer's ContextDestructionConfirmation signature.
      * @dev Anyone may call. The context must be destroyed with destroyKmsContext first.
      * @param destroyedContextId The destroyed context ID.
-     * @param destroyedEpochIds The epochs the KMS nodes destroyed with the context.
      * @param signature The signer's EIP-712 ContextDestructionConfirmation signature.
      * @param extraData The extra data bound into the signature.
      */
     function confirmKmsContextDestruction(
         uint256 destroyedContextId,
-        uint256[] calldata destroyedEpochIds,
         bytes calldata signature,
         bytes calldata extraData
     ) external;

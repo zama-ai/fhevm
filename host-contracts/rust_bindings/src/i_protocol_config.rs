@@ -584,7 +584,7 @@ interface IProtocolConfig {
     event EpochActivationConfirmation(uint256 indexed epochId, address indexed signer, bytes32 epochMaterialHash, bytes signature, bytes extraData);
     event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address indexed signer, bytes signature, bytes extraData);
     event KmsContextDestroyed(uint256 indexed kmsContextId);
-    event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, uint256[] destroyedEpochIds, address indexed signer, bytes signature, bytes extraData);
+    event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, address indexed signer, bytes signature, bytes extraData);
     event KmsEpochDestroyed(uint256 indexed epochId);
     event KmsEpochDestructionConfirmed(uint256 indexed destroyedEpochId, address indexed signer, bytes signature, bytes extraData);
     event NewKmsContext(uint256 indexed contextId, uint256 indexed previousContextId, KmsNodeParams[] kmsNodeParams, KmsThresholds thresholds, string softwareVersion, PcrValues[] pcrValues);
@@ -592,7 +592,7 @@ interface IProtocolConfig {
 
     function confirmEpochActivation(uint256 epochId, EpochKeyResult[] memory keys, EpochCrsResult[] memory crsList, bytes memory signature, bytes memory extraData) external;
     function confirmKmsContextCreation(uint256 kmsContextId, bytes memory signature, bytes memory extraData) external;
-    function confirmKmsContextDestruction(uint256 destroyedContextId, uint256[] memory destroyedEpochIds, bytes memory signature, bytes memory extraData) external;
+    function confirmKmsContextDestruction(uint256 destroyedContextId, bytes memory signature, bytes memory extraData) external;
     function confirmKmsEpochDestruction(uint256 destroyedEpochId, bytes memory signature, bytes memory extraData) external;
     function defineNewEpochForCurrentKmsContext() external;
     function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
@@ -738,11 +738,6 @@ interface IProtocolConfig {
         "name": "destroyedContextId",
         "type": "uint256",
         "internalType": "uint256"
-      },
-      {
-        "name": "destroyedEpochIds",
-        "type": "uint256[]",
-        "internalType": "uint256[]"
       },
       {
         "name": "signature",
@@ -1646,12 +1641,6 @@ interface IProtocolConfig {
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
-      },
-      {
-        "name": "destroyedEpochIds",
-        "type": "uint256[]",
-        "indexed": false,
-        "internalType": "uint256[]"
       },
       {
         "name": "signer",
@@ -7491,9 +7480,9 @@ event KmsContextDestroyed(uint256 indexed kmsContextId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `KmsContextDestructionConfirmed(uint256,uint256[],address,bytes,bytes)` and selector `0x1dbe618bd2b9084233a4a3a281b0102cbd496e0ccafae867829c8da8d3d9949d`.
+    /**Event with signature `KmsContextDestructionConfirmed(uint256,address,bytes,bytes)` and selector `0x791fc926ff44a9522265cb0f972b761435c4ee37ab6ca0141ee2746199ed7cf4`.
 ```solidity
-event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, uint256[] destroyedEpochIds, address indexed signer, bytes signature, bytes extraData);
+event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, address indexed signer, bytes signature, bytes extraData);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -7505,10 +7494,6 @@ event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, uint256
     pub struct KmsContextDestructionConfirmed {
         #[allow(missing_docs)]
         pub destroyedContextId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub destroyedEpochIds: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::primitives::aliases::U256,
-        >,
         #[allow(missing_docs)]
         pub signer: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
@@ -7527,7 +7512,6 @@ event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, uint256
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for KmsContextDestructionConfirmed {
             type DataTuple<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Uint<256>>,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
@@ -7539,11 +7523,11 @@ event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, uint256
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "KmsContextDestructionConfirmed(uint256,uint256[],address,bytes,bytes)";
+            const SIGNATURE: &'static str = "KmsContextDestructionConfirmed(uint256,address,bytes,bytes)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                29u8, 190u8, 97u8, 139u8, 210u8, 185u8, 8u8, 66u8, 51u8, 164u8, 163u8,
-                162u8, 129u8, 176u8, 16u8, 44u8, 189u8, 73u8, 110u8, 12u8, 202u8, 250u8,
-                232u8, 103u8, 130u8, 156u8, 141u8, 168u8, 211u8, 217u8, 148u8, 157u8,
+                121u8, 31u8, 201u8, 38u8, 255u8, 68u8, 169u8, 82u8, 34u8, 101u8, 203u8,
+                15u8, 151u8, 43u8, 118u8, 20u8, 53u8, 196u8, 238u8, 55u8, 171u8, 108u8,
+                160u8, 20u8, 30u8, 226u8, 116u8, 97u8, 153u8, 237u8, 124u8, 244u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -7554,10 +7538,9 @@ event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, uint256
             ) -> Self {
                 Self {
                     destroyedContextId: topics.1,
-                    destroyedEpochIds: data.0,
                     signer: topics.2,
-                    signature: data.1,
-                    extraData: data.2,
+                    signature: data.0,
+                    extraData: data.1,
                 }
             }
             #[inline]
@@ -7578,9 +7561,6 @@ event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, uint256
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.destroyedEpochIds),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.signature,
                     ),
@@ -8567,9 +8547,9 @@ function confirmKmsContextCreation(uint256 kmsContextId, bytes memory signature,
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `confirmKmsContextDestruction(uint256,uint256[],bytes,bytes)` and selector `0x756e8652`.
+    /**Function with signature `confirmKmsContextDestruction(uint256,bytes,bytes)` and selector `0x79958fc6`.
 ```solidity
-function confirmKmsContextDestruction(uint256 destroyedContextId, uint256[] memory destroyedEpochIds, bytes memory signature, bytes memory extraData) external;
+function confirmKmsContextDestruction(uint256 destroyedContextId, bytes memory signature, bytes memory extraData) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -8577,15 +8557,11 @@ function confirmKmsContextDestruction(uint256 destroyedContextId, uint256[] memo
         #[allow(missing_docs)]
         pub destroyedContextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub destroyedEpochIds: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::primitives::aliases::U256,
-        >,
-        #[allow(missing_docs)]
         pub signature: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
         pub extraData: alloy::sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the [`confirmKmsContextDestruction(uint256,uint256[],bytes,bytes)`](confirmKmsContextDestructionCall) function.
+    ///Container type for the return parameters of the [`confirmKmsContextDestruction(uint256,bytes,bytes)`](confirmKmsContextDestructionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct confirmKmsContextDestructionReturn {}
@@ -8602,16 +8578,12 @@ function confirmKmsContextDestruction(uint256 destroyedContextId, uint256[] memo
             #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Uint<256>>,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
                 alloy::sol_types::private::primitives::aliases::U256,
-                alloy::sol_types::private::Vec<
-                    alloy::sol_types::private::primitives::aliases::U256,
-                >,
                 alloy::sol_types::private::Bytes,
                 alloy::sol_types::private::Bytes,
             );
@@ -8631,12 +8603,7 @@ function confirmKmsContextDestruction(uint256 destroyedContextId, uint256[] memo
             impl ::core::convert::From<confirmKmsContextDestructionCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: confirmKmsContextDestructionCall) -> Self {
-                    (
-                        value.destroyedContextId,
-                        value.destroyedEpochIds,
-                        value.signature,
-                        value.extraData,
-                    )
+                    (value.destroyedContextId, value.signature, value.extraData)
                 }
             }
             #[automatically_derived]
@@ -8646,9 +8613,8 @@ function confirmKmsContextDestruction(uint256 destroyedContextId, uint256[] memo
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         destroyedContextId: tuple.0,
-                        destroyedEpochIds: tuple.1,
-                        signature: tuple.2,
-                        extraData: tuple.3,
+                        signature: tuple.1,
+                        extraData: tuple.2,
                     }
                 }
             }
@@ -8700,7 +8666,6 @@ function confirmKmsContextDestruction(uint256 destroyedContextId, uint256[] memo
         impl alloy_sol_types::SolCall for confirmKmsContextDestructionCall {
             type Parameters<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Uint<256>>,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
@@ -8712,8 +8677,8 @@ function confirmKmsContextDestruction(uint256 destroyedContextId, uint256[] memo
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "confirmKmsContextDestruction(uint256,uint256[],bytes,bytes)";
-            const SELECTOR: [u8; 4] = [117u8, 110u8, 134u8, 82u8];
+            const SIGNATURE: &'static str = "confirmKmsContextDestruction(uint256,bytes,bytes)";
+            const SELECTOR: [u8; 4] = [121u8, 149u8, 143u8, 198u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -8726,9 +8691,6 @@ function confirmKmsContextDestruction(uint256 destroyedContextId, uint256[] memo
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.destroyedContextId),
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::Uint<256>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.destroyedEpochIds),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.signature,
                     ),
@@ -13539,7 +13501,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [101u8, 179u8, 148u8, 175u8],
             [110u8, 192u8, 242u8, 63u8],
             [113u8, 215u8, 109u8, 174u8],
-            [117u8, 110u8, 134u8, 82u8],
+            [121u8, 149u8, 143u8, 198u8],
             [126u8, 170u8, 200u8, 242u8],
             [148u8, 71u8, 207u8, 212u8],
             [151u8, 108u8, 152u8, 181u8],
@@ -16317,11 +16279,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 119u8, 202u8, 9u8, 239u8, 196u8, 69u8, 186u8, 64u8, 238u8, 247u8,
             ],
             [
-                29u8, 190u8, 97u8, 139u8, 210u8, 185u8, 8u8, 66u8, 51u8, 164u8, 163u8,
-                162u8, 129u8, 176u8, 16u8, 44u8, 189u8, 73u8, 110u8, 12u8, 202u8, 250u8,
-                232u8, 103u8, 130u8, 156u8, 141u8, 168u8, 211u8, 217u8, 148u8, 157u8,
-            ],
-            [
                 32u8, 77u8, 107u8, 128u8, 18u8, 17u8, 84u8, 205u8, 135u8, 217u8, 156u8,
                 245u8, 76u8, 99u8, 154u8, 61u8, 208u8, 165u8, 59u8, 48u8, 132u8, 39u8,
                 112u8, 152u8, 222u8, 151u8, 46u8, 189u8, 211u8, 76u8, 107u8, 233u8,
@@ -16335,6 +16292,11 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 108u8, 110u8, 179u8, 88u8, 129u8, 248u8, 5u8, 242u8, 132u8, 190u8, 89u8,
                 184u8, 64u8, 180u8, 234u8, 153u8, 15u8, 150u8, 177u8, 61u8, 217u8, 231u8,
                 25u8, 44u8, 69u8, 129u8, 225u8, 188u8, 129u8, 192u8, 175u8, 152u8,
+            ],
+            [
+                121u8, 31u8, 201u8, 38u8, 255u8, 68u8, 169u8, 82u8, 34u8, 101u8, 203u8,
+                15u8, 151u8, 43u8, 118u8, 20u8, 53u8, 196u8, 238u8, 55u8, 171u8, 108u8,
+                160u8, 20u8, 30u8, 226u8, 116u8, 97u8, 153u8, 237u8, 124u8, 244u8,
             ],
             [
                 127u8, 174u8, 247u8, 69u8, 175u8, 121u8, 163u8, 175u8, 35u8, 212u8, 25u8,
@@ -16361,10 +16323,10 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(KmsEpochDestroyed),
             ::core::stringify!(NewKmsEpoch),
-            ::core::stringify!(KmsContextDestructionConfirmed),
             ::core::stringify!(NewKmsContext),
             ::core::stringify!(KmsContextCreationConfirmation),
             ::core::stringify!(ActivateEpoch),
+            ::core::stringify!(KmsContextDestructionConfirmed),
             ::core::stringify!(EpochActivationConfirmation),
             ::core::stringify!(CoprocessorUpgradeProposed),
             ::core::stringify!(KmsEpochDestructionConfirmed),
@@ -16374,10 +16336,10 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         pub const SIGNATURES: &'static [&'static str] = &[
             <KmsEpochDestroyed as alloy_sol_types::SolEvent>::SIGNATURE,
             <NewKmsEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
-            <KmsContextDestructionConfirmed as alloy_sol_types::SolEvent>::SIGNATURE,
             <NewKmsContext as alloy_sol_types::SolEvent>::SIGNATURE,
             <KmsContextCreationConfirmation as alloy_sol_types::SolEvent>::SIGNATURE,
             <ActivateEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
+            <KmsContextDestructionConfirmed as alloy_sol_types::SolEvent>::SIGNATURE,
             <EpochActivationConfirmation as alloy_sol_types::SolEvent>::SIGNATURE,
             <CoprocessorUpgradeProposed as alloy_sol_types::SolEvent>::SIGNATURE,
             <KmsEpochDestructionConfirmed as alloy_sol_types::SolEvent>::SIGNATURE,
@@ -16781,16 +16743,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn confirmKmsContextDestruction(
             &self,
             destroyedContextId: alloy::sol_types::private::primitives::aliases::U256,
-            destroyedEpochIds: alloy::sol_types::private::Vec<
-                alloy::sol_types::private::primitives::aliases::U256,
-            >,
             signature: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<&P, confirmKmsContextDestructionCall, N> {
             self.call_builder(
                 &confirmKmsContextDestructionCall {
                     destroyedContextId,
-                    destroyedEpochIds,
                     signature,
                     extraData,
                 },

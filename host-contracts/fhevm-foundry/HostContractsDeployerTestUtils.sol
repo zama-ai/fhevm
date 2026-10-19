@@ -62,9 +62,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
             "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)"
         );
     bytes32 internal constant EIP712_CONTEXT_DESTRUCTION_TYPE_HASH =
-        keccak256(
-            "ContextDestructionConfirmation(uint256 destroyedContextId,uint256[] destroyedEpochIds,bytes extraData)"
-        );
+        keccak256("ContextDestructionConfirmation(uint256 destroyedContextId,bytes extraData)");
     bytes32 internal constant EIP712_EPOCH_DESTRUCTION_TYPE_HASH =
         keccak256("EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)");
 
@@ -484,20 +482,12 @@ abstract contract HostContractsDeployerTestUtils is Test {
 
     function _hashContextDestruction(
         uint256 destroyedContextId,
-        uint256[] memory destroyedEpochIds,
         bytes memory extraData
     ) internal view returns (bytes32) {
         return
             MessageHashUtils.toTypedDataHash(
                 _computeProtocolConfigDomainSeparator(),
-                keccak256(
-                    abi.encode(
-                        EIP712_CONTEXT_DESTRUCTION_TYPE_HASH,
-                        destroyedContextId,
-                        keccak256(abi.encodePacked(destroyedEpochIds)),
-                        keccak256(extraData)
-                    )
-                )
+                keccak256(abi.encode(EIP712_CONTEXT_DESTRUCTION_TYPE_HASH, destroyedContextId, keccak256(extraData)))
             );
     }
 

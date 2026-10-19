@@ -260,7 +260,6 @@ export async function confirmContextDestructionBySigner(
   proxyAddress: string,
   signerSigner: Signer,
   destroyedContextId: bigint,
-  destroyedEpochIds: bigint[],
   extraData = '0x',
 ): Promise<ContractTransactionReceipt> {
   const pc = await ethers.getContractAt('ProtocolConfig', proxyAddress, signerSigner);
@@ -270,13 +269,10 @@ export async function confirmContextDestructionBySigner(
     'ContextDestructionConfirmation',
     {
       destroyedContextId,
-      destroyedEpochIds,
       extraData,
     },
   );
-  return (await (
-    await pc.confirmKmsContextDestruction(destroyedContextId, destroyedEpochIds, signature, extraData)
-  ).wait())!;
+  return (await (await pc.confirmKmsContextDestruction(destroyedContextId, signature, extraData)).wait())!;
 }
 
 // Signs the signer's EpochDestructionConfirmation and submits it from the signer account.

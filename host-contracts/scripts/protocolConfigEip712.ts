@@ -38,7 +38,6 @@ export const CONFIRMATION_TYPES = {
   ContextDestructionConfirmation: {
     ContextDestructionConfirmation: [
       { name: 'destroyedContextId', type: 'uint256' },
-      { name: 'destroyedEpochIds', type: 'uint256[]' },
       { name: 'extraData', type: 'bytes' },
     ],
   },
@@ -66,7 +65,7 @@ export type ConfirmationValue = {
     epochMaterialHash: string;
     extraData: string;
   };
-  ContextDestructionConfirmation: { destroyedContextId: bigint; destroyedEpochIds: bigint[]; extraData: string };
+  ContextDestructionConfirmation: { destroyedContextId: bigint; extraData: string };
   EpochDestructionConfirmation: { destroyedEpochId: bigint; extraData: string };
 };
 

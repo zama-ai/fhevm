@@ -65,9 +65,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /// @dev Hash of the ContextDestructionConfirmation type.
     bytes32 private constant EIP712_CONTEXT_DESTRUCTION_TYPE_HASH =
-        keccak256(
-            "ContextDestructionConfirmation(uint256 destroyedContextId,uint256[] destroyedEpochIds,bytes extraData)"
-        );
+        keccak256("ContextDestructionConfirmation(uint256 destroyedContextId,bytes extraData)");
 
     /// @dev Hash of the EpochDestructionConfirmation type.
     bytes32 private constant EIP712_EPOCH_DESTRUCTION_TYPE_HASH =
@@ -421,7 +419,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     ///      the next rotation.
     function confirmKmsContextDestruction(
         uint256 destroyedContextId,
-        uint256[] calldata destroyedEpochIds,
         bytes calldata signature,
         bytes calldata extraData
     ) external virtual {
@@ -432,18 +429,11 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         address signer = _confirmDestruction(
             _getProtocolConfigCanonicalStorage().contextDestructionConfirmedBySigner[destroyedContextId],
             destroyedContextId,
-            keccak256(
-                abi.encode(
-                    EIP712_CONTEXT_DESTRUCTION_TYPE_HASH,
-                    destroyedContextId,
-                    keccak256(abi.encodePacked(destroyedEpochIds)),
-                    keccak256(extraData)
-                )
-            ),
+            keccak256(abi.encode(EIP712_CONTEXT_DESTRUCTION_TYPE_HASH, destroyedContextId, keccak256(extraData))),
             signature
         );
 
-        emit KmsContextDestructionConfirmed(destroyedContextId, destroyedEpochIds, signer, signature, extraData);
+        emit KmsContextDestructionConfirmed(destroyedContextId, signer, signature, extraData);
     }
 
     /// @inheritdoc IProtocolConfig

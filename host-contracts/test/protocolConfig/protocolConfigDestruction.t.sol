@@ -31,48 +31,38 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
 
-        uint256[] memory destroyedEpochIds = new uint256[](0);
-        bytes memory signature = _computeSignature(kmsPk0, _hashContextDestruction(contextId, destroyedEpochIds, ""));
+        bytes memory signature = _computeSignature(kmsPk0, _hashContextDestruction(contextId, ""));
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotDestroyed.selector, contextId));
-        protocolConfig.confirmKmsContextDestruction(contextId, destroyedEpochIds, signature, "");
+        protocolConfig.confirmKmsContextDestruction(contextId, signature, "");
     }
 
-    /// @dev Only the active committee confirms, once per signer, from any sender. destroyedEpochIds is
-    ///      digest material only, so both the cleared epoch and an empty list are accepted.
+    /// @dev Only the active committee confirms, once per signer, from any sender. extraData is
+    ///      digest material only, so signers may confirm different extraData.
     function test_confirmKmsContextDestruction() public {
         _setupEpochLifecycle();
-        (uint256 contextId, uint256 epochId) = _destroyCreatedDisjointContext();
-        uint256[] memory destroyedEpochIds = new uint256[](1);
-        destroyedEpochIds[0] = epochId;
+        (uint256 contextId, ) = _destroyCreatedDisjointContext();
 
         // signer2 belongs to the destroyed committee only.
-        bytes memory signature = _computeSignature(kmsPk2, _hashContextDestruction(contextId, destroyedEpochIds, ""));
+        bytes memory signature = _computeSignature(kmsPk2, _hashContextDestruction(contextId, ""));
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfig.KmsDestructionUnauthorized.selector, vm.addr(kmsPk2), contextId)
         );
-        protocolConfig.confirmKmsContextDestruction(contextId, destroyedEpochIds, signature, "");
+        protocolConfig.confirmKmsContextDestruction(contextId, signature, "");
 
         bytes memory extraData = hex"01ab";
-        signature = _computeSignature(kmsPk0, _hashContextDestruction(contextId, destroyedEpochIds, extraData));
+        signature = _computeSignature(kmsPk0, _hashContextDestruction(contextId, extraData));
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextDestructionConfirmed(
-            contextId,
-            destroyedEpochIds,
-            vm.addr(kmsPk0),
-            signature,
-            extraData
-        );
+        emit IProtocolConfig.KmsContextDestructionConfirmed(contextId, vm.addr(kmsPk0), signature, extraData);
         vm.prank(address(0x999));
-        protocolConfig.confirmKmsContextDestruction(contextId, destroyedEpochIds, signature, extraData);
+        protocolConfig.confirmKmsContextDestruction(contextId, signature, extraData);
 
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfig.KmsDestructionAlreadyConfirmed.selector, vm.addr(kmsPk0), contextId)
         );
-        protocolConfig.confirmKmsContextDestruction(contextId, destroyedEpochIds, signature, extraData);
+        protocolConfig.confirmKmsContextDestruction(contextId, signature, extraData);
 
-        uint256[] memory noEpochIds = new uint256[](0);
-        signature = _computeSignature(kmsPk1, _hashContextDestruction(contextId, noEpochIds, ""));
-        protocolConfig.confirmKmsContextDestruction(contextId, noEpochIds, signature, "");
+        signature = _computeSignature(kmsPk1, _hashContextDestruction(contextId, ""));
+        protocolConfig.confirmKmsContextDestruction(contextId, signature, "");
     }
 
     /// @dev An epoch cleared by destroyKmsContext is confirmed through the context destruction.
@@ -158,35 +148,27 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
     ///      An A-only signer is rejected. A signer of both committees confirms once.
     function test_confirmKmsContextDestructionAcrossRotation() public {
         _setupEpochLifecycle();
-        (uint256 contextId, uint256 epochId) = _destroyCreatedDisjointContext();
-        uint256[] memory destroyedEpochIds = new uint256[](1);
-        destroyedEpochIds[0] = epochId;
-        bytes memory signature1 = _computeSignature(kmsPk1, _hashContextDestruction(contextId, destroyedEpochIds, ""));
-        protocolConfig.confirmKmsContextDestruction(contextId, destroyedEpochIds, signature1, "");
+        (uint256 contextId, ) = _destroyCreatedDisjointContext();
+        bytes memory signature1 = _computeSignature(kmsPk1, _hashContextDestruction(contextId, ""));
+        protocolConfig.confirmKmsContextDestruction(contextId, signature1, "");
 
         _rotateToSharedCommittee(EPOCH_COUNTER_BASE + 3);
 
-        bytes memory signature = _computeSignature(kmsPk0, _hashContextDestruction(contextId, destroyedEpochIds, ""));
+        bytes memory signature = _computeSignature(kmsPk0, _hashContextDestruction(contextId, ""));
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfig.KmsDestructionUnauthorized.selector, vm.addr(kmsPk0), contextId)
         );
-        protocolConfig.confirmKmsContextDestruction(contextId, destroyedEpochIds, signature, "");
+        protocolConfig.confirmKmsContextDestruction(contextId, signature, "");
 
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfig.KmsDestructionAlreadyConfirmed.selector, vm.addr(kmsPk1), contextId)
         );
-        protocolConfig.confirmKmsContextDestruction(contextId, destroyedEpochIds, signature1, "");
+        protocolConfig.confirmKmsContextDestruction(contextId, signature1, "");
 
-        signature = _computeSignature(kmsPk2, _hashContextDestruction(contextId, destroyedEpochIds, ""));
+        signature = _computeSignature(kmsPk2, _hashContextDestruction(contextId, ""));
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextDestructionConfirmed(
-            contextId,
-            destroyedEpochIds,
-            vm.addr(kmsPk2),
-            signature,
-            ""
-        );
-        protocolConfig.confirmKmsContextDestruction(contextId, destroyedEpochIds, signature, "");
+        emit IProtocolConfig.KmsContextDestructionConfirmed(contextId, vm.addr(kmsPk2), signature, "");
+        protocolConfig.confirmKmsContextDestruction(contextId, signature, "");
     }
 
     /// @dev An epoch destroyed under committee A is confirmed by committee B after the rotation.

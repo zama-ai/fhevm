@@ -445,7 +445,7 @@ describe('KMS context tasks', function () {
     it('reports partial destruction confirmations of an aborted switch against the active committee', async function () {
       const contextId = await defineSwitch();
       await (await (await asOwner()).destroyKmsContext(contextId)).wait();
-      await confirmContextDestructionBySigner(proxyAddress, oldSigners[0], contextId, []);
+      await confirmContextDestructionBySigner(proxyAddress, oldSigners[0], contextId);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.contextDestructions).to.have.lengthOf(1);
@@ -459,7 +459,7 @@ describe('KMS context tasks', function () {
       expect(result.contextDestructions![0].threshold).to.equal(1);
       expect(result.contextDestructions![0].diverged).to.equal(false);
 
-      await confirmContextDestructionBySigner(proxyAddress, oldSigners[1], contextId, [], '0x01');
+      await confirmContextDestructionBySigner(proxyAddress, oldSigners[1], contextId, '0x01');
       const diverged = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(diverged.contextDestructions![0].diverged).to.equal(true);
       expect(diverged.contextDestructions![0].largestDigestGroup).to.equal(1);
@@ -472,7 +472,7 @@ describe('KMS context tasks', function () {
       const contextId = await defineSwitch();
       const epochId = await confirmCreation(contextId, [...newSigners, oldSigners[0]]);
       await confirmActivation(contextId, epochId!, newSigners);
-      await confirmContextDestructionBySigner(proxyAddress, newSigners[0], destroyedContextId, []);
+      await confirmContextDestructionBySigner(proxyAddress, newSigners[0], destroyedContextId);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.flow).to.equal('idle');
