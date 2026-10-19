@@ -40,7 +40,6 @@ url = { workspace = true }
 fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-features = false, optional = true }
 fhevm-sig-auth = { path = "../../../shared/fhevm-sig-auth", optional = true }
 
-
 # crates.io dependencies
 lazy_static = "1.5.0"
 rand_chacha = "0.3.1"
@@ -71,6 +70,7 @@ stack-version-override = []
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["json-rpc"] }
+tokio = { workspace = true, features = ["test-util"] }
 tower = { version = "0.5", default-features = false }
 
 [build-dependencies]

@@ -74,7 +74,7 @@ static KMS_TX_SENDERS: LazyLock<IntGauge> = LazyLock::new(|| {
 static KMS_TX_SENDERS_READ_TIMESTAMP: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
         "coprocessor_kms_tx_senders_read_timestamp_seconds",
-        "Unix time of the last successful poll of the KMS tx-senders in ProtocolConfig"
+        "Unix time the KMS tx-sender set was last confirmed current at the finalized block"
     )
     .unwrap()
 });
@@ -173,12 +173,8 @@ impl<P: Provider> Follower<P> {
                 _ = tokio::time::sleep(self.poll_interval) => {}
                 _ = async {
                     let _ = polls.wait_for(|polls| polls.wanted > polls.started).await;
-                } => {
-                    tokio::select! {
-                        _ = &mut stop => return,
-                        _ = tokio::time::sleep_until(started_at + WOKEN_POLL_SPACING) => {}
-                    }
-                }
+                    tokio::time::sleep_until(started_at + WOKEN_POLL_SPACING).await;
+                } => {}
             }
         }
     }
@@ -188,9 +184,12 @@ impl<P: Provider> Follower<P> {
     pub async fn refresh_after_miss(&self, wait: Duration) {
         let mut polls = self.polls.subscribe();
         let mut after = 0;
-        self.polls.send_modify(|polls| {
+        // Only the first miss for the next poll notifies: each notification wakes every waiter.
+        self.polls.send_if_modified(|polls| {
             after = polls.started;
+            let first = polls.wanted <= polls.started;
             polls.wanted = polls.started + 1;
+            first
         });
         let _ = tokio::time::timeout(wait, async {
             let _ = polls.wait_for(|polls| polls.finished > after).await;
@@ -489,15 +488,20 @@ mod tests {
         (ProviderBuilder::new().connect_client(client), recorded)
     }
 
-    #[tokio::test]
-    async fn every_call_reads_the_finalized_block() {
-        let a = Address::repeat_byte(1);
+    /// Answers a first poll that finds context 1 Active at block 100, with the node `a`.
+    fn first_read(a: Address) -> Asserter {
         let asserter = Asserter::new();
         asserter.push_success(&finalized());
         for answer in [counter(1), valid(true), nodes(&[a])] {
             asserter.push_success(&answer);
         }
-        let (provider, recorded) = recorded_provider(asserter);
+        asserter
+    }
+
+    #[tokio::test]
+    async fn every_call_reads_the_finalized_block() {
+        let a = Address::repeat_byte(1);
+        let (provider, recorded) = recorded_provider(first_read(a));
         let mut reader = Reader::new(IProtocolConfigBase::new(Address::ZERO, provider));
 
         assert_eq!(reader.poll().await.unwrap().unwrap(), HashSet::from([a]));
@@ -510,107 +514,114 @@ mod tests {
         );
     }
 
-    /// Runs `follower` until the RPC answers are consumed and a few more polls are due.
-    async fn run_once_more<P: Provider>(follower: &Follower<P>, poll_interval: Duration) {
-        follower.run(tokio::time::sleep(poll_interval * 5)).await;
+    const POLL_INTERVAL: Duration = Duration::from_millis(20);
+
+    /// Runs `follower` for `polls` polls, in paused time: no answer takes time.
+    async fn run_polls<P: Provider>(follower: &Follower<P>, polls: u32) {
+        let stop = POLL_INTERVAL * (polls - 1) + POLL_INTERVAL / 2;
+        follower.run(tokio::time::sleep(stop)).await;
     }
 
-    #[tokio::test]
+    fn follower<P: Provider>(provider: P, signers: &RefreshableSigners) -> Follower<P> {
+        Follower::new(provider, Address::ZERO, signers.clone(), POLL_INTERVAL)
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn a_context_activated_at_a_new_finalized_block_is_read_at_the_next_poll() {
         let (a, b) = (Address::repeat_byte(1), Address::repeat_byte(2));
-        let asserter = Asserter::new();
-        asserter.push_success(&finalized_at(100));
-        for answer in [counter(1), valid(true), nodes(&[a])] {
-            asserter.push_success(&answer);
-        }
+        let asserter = first_read(a);
         // Context 2 is Active at block 101; context 1 still is, its nodes already known.
         asserter.push_success(&finalized_at(101));
         for answer in [counter(2), valid(true), valid(true), nodes(&[b])] {
             asserter.push_success(&answer);
         }
         let provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
-        let poll_interval = Duration::from_millis(20);
         let signers = RefreshableSigners::default();
-        let follower = Follower::new(provider, Address::ZERO, signers.clone(), poll_interval);
 
-        run_once_more(&follower, poll_interval).await;
+        run_polls(&follower(provider, &signers), 2).await;
 
         assert!(signers.allows(a));
         assert!(signers.allows(b));
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn an_unchanged_finalized_block_reads_no_contract_state() {
         let a = Address::repeat_byte(1);
-        let asserter = Asserter::new();
-        asserter.push_success(&finalized());
-        for answer in [counter(1), valid(true), nodes(&[a])] {
-            asserter.push_success(&answer);
-        }
+        let asserter = first_read(a);
         for _ in 0..3 {
             asserter.push_success(&finalized());
         }
         let (provider, recorded) = recorded_provider(asserter.clone());
-        let poll_interval = Duration::from_millis(20);
         let signers = RefreshableSigners::default();
-        let follower = Follower::new(provider, Address::ZERO, signers.clone(), poll_interval);
 
-        run_once_more(&follower, poll_interval).await;
+        run_polls(&follower(provider, &signers), 4).await;
 
-        // All four polls answered: the first read the set, the three others only the block.
+        // The first poll read the set, the three others only the block.
         assert!(asserter.read_q().is_empty());
         assert_eq!(recorded.params.lock().unwrap().len(), 3);
         assert!(signers.allows(a));
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn an_older_finalized_block_reads_no_contract_state() {
         let a = Address::repeat_byte(1);
-        let asserter = Asserter::new();
-        asserter.push_success(&finalized_at(100));
-        for answer in [counter(1), valid(true), nodes(&[a])] {
-            asserter.push_success(&answer);
-        }
+        let asserter = first_read(a);
         // A lagging RPC node, at a block before the context's activation.
         asserter.push_success(&finalized_at(99));
         for answer in [counter(1), valid(false)] {
             asserter.push_success(&answer);
         }
         let (provider, recorded) = recorded_provider(asserter);
-        let poll_interval = Duration::from_millis(20);
         let signers = RefreshableSigners::default();
-        let follower = Follower::new(provider, Address::ZERO, signers.clone(), poll_interval);
 
-        run_once_more(&follower, poll_interval).await;
+        run_polls(&follower(provider, &signers), 2).await;
 
         assert_eq!(recorded.params.lock().unwrap().len(), 3);
         assert!(signers.allows(a));
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
+    async fn a_read_that_fails_at_a_new_block_is_retried_at_that_block() {
+        let (a, b) = (Address::repeat_byte(1), Address::repeat_byte(2));
+        let asserter = first_read(a);
+        // Block 101, where context 2 is Active: the first read of it fails after the block number.
+        asserter.push_success(&finalized_at(101));
+        asserter.push_failure_msg("connection refused");
+        asserter.push_success(&finalized_at(101));
+        for answer in [counter(2), valid(true), valid(true), nodes(&[b])] {
+            asserter.push_success(&answer);
+        }
+        let provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
+        let signers = RefreshableSigners::default();
+
+        run_polls(&follower(provider, &signers), 3).await;
+
+        assert!(asserter.read_q().is_empty());
+        assert!(signers.allows(b));
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn a_failed_read_keeps_the_last_set() {
         let a = Address::repeat_byte(1);
         let (provider, asserter) = provider(&[counter(1), valid(true), nodes(&[a])]);
         asserter.push_failure_msg("connection refused");
-        let interval = Duration::from_millis(20);
         let signers = RefreshableSigners::default();
-        let follower = Follower::new(provider, Address::ZERO, signers.clone(), interval);
+        let follower = follower(provider, &signers);
 
-        run_once_more(&follower, interval).await;
+        run_polls(&follower, 2).await;
 
         assert!(follower.loaded().is_loaded());
         assert!(signers.allows(a));
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn nothing_is_loaded_before_the_first_successful_read() {
         let (provider, asserter) = provider(&[]);
         asserter.push_failure_msg("connection refused");
-        let interval = Duration::from_millis(20);
         let signers = RefreshableSigners::default();
-        let follower = Follower::new(provider, Address::ZERO, signers.clone(), interval);
+        let follower = follower(provider, &signers);
 
-        run_once_more(&follower, interval).await;
+        run_polls(&follower, 1).await;
 
         assert!(!follower.loaded().is_loaded());
         assert!(!signers.allows(Address::repeat_byte(1)));

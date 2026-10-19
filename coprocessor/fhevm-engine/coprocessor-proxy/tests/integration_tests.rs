@@ -14,6 +14,7 @@ use common::{
     stub_output,
 };
 use coprocessor_proxy::core::UNKNOWN_SIGNER_WAIT;
+use fhevm_engine_common::kms_tx_senders::WOKEN_POLL_SPACING;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
@@ -562,6 +563,7 @@ async fn test_reads_again_for_an_unknown_signer() {
     ]);
 
     let path = prf_path(1);
+    let started = Instant::now();
     let response = t
         .client
         .get(t.url(&path))
@@ -571,6 +573,40 @@ async fn test_reads_again_for_an_unknown_signer() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(t.endpoints[0].hits(), 1);
+    // Released when the poll ended, within the spacing and one read.
+    let waited = started.elapsed();
+    assert!(
+        waited < UNKNOWN_SIGNER_WAIT - Duration::from_secs(1),
+        "{waited:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_reads_again_only_for_an_unknown_signer() {
+    let t = start_without_polls().await;
+    let polls = t.rpc.finalized_polls();
+    let path = prf_path(1);
+    let expired = auth_header_expiring(&sender(), &path, b"", now() - 120).await;
+
+    for (authorization, code) in [
+        (expired.as_str(), "auth_expired"),
+        ("FhevmSig garbage", "auth_malformed"),
+    ] {
+        let started = Instant::now();
+        let response = t
+            .client
+            .get(t.url(&path))
+            .header("authorization", authorization)
+            .send()
+            .await
+            .unwrap();
+        let error: Value = response.json().await.unwrap();
+        assert_eq!(error["code"], code, "{error}");
+        assert!(started.elapsed() < Duration::from_millis(500));
+    }
+    // Long enough for a woken poll to have started.
+    tokio::time::sleep(2 * WOKEN_POLL_SPACING).await;
+    assert_eq!(t.rpc.finalized_polls(), polls);
 }
 
 #[tokio::test]
@@ -604,7 +640,8 @@ async fn test_a_miss_during_a_poll_waits_for_the_next_poll() {
 #[tokio::test]
 async fn test_refuses_an_unknown_signer_within_the_wait() {
     let t = start_without_polls().await;
-    t.rpc.set_stalled(true);
+    // Longer than the wait: the reader gives up on the poll after 30 s.
+    t.rpc.set_reply_delay(Duration::from_secs(60));
 
     let started = Instant::now();
     assert_eq!(
@@ -632,8 +669,30 @@ async fn test_concurrent_unknown_signers_share_one_read() {
         "{codes:?}"
     );
     // Long enough for the woken reads that would follow the first one.
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    tokio::time::sleep(3 * WOKEN_POLL_SPACING).await;
     assert_eq!(t.rpc.finalized_polls(), polls + 1);
+}
+
+#[tokio::test]
+async fn test_woken_polls_start_a_second_apart() {
+    let t = start_without_polls().await;
+    let unknown = PrivateKeySigner::random();
+
+    // Each miss wakes a poll, which starts once the previous poll is a second old.
+    for _ in 0..2 {
+        assert_eq!(t.auth_code(&unknown).await, "auth_unknown_signer");
+    }
+
+    let times = t.rpc.finalized_poll_times();
+    assert_eq!(times.len(), 3);
+    for pair in times.windows(2) {
+        // The RPC sees a poll a few milliseconds after it starts.
+        let gap = pair[1] - pair[0];
+        assert!(
+            gap > WOKEN_POLL_SPACING - Duration::from_millis(50),
+            "{gap:?}"
+        );
+    }
 }
 
 #[tokio::test]

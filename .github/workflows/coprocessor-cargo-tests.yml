@@ -33,7 +33,7 @@ jobs:
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
               - host-contracts/rust_bindings/**
-              # consensus-detector and fhevm-engine-common depend on these crates by path.
+              # consensus-detector and coprocessor-proxy depend on these crates by path.
               - shared/block-manifest/**
               - shared/ciphertext-attestation/**
               - shared/fhevm-sig-auth/**

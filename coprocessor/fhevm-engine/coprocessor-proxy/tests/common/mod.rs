@@ -48,7 +48,7 @@ pub const ACCEPTED: &str = "auth_body_mismatch";
 pub const AUDIENCE: Address = Address::repeat_byte(0xa1);
 pub const CHAIN_ID: u64 = 12345;
 pub const PROTOCOL_CONFIG: Address = Address::repeat_byte(0xc0);
-/// How often the test proxy reads the KMS tx-senders.
+/// How often the test proxy checks the finalized block.
 pub const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 /// The KMS tx-sender of the first KMS context.
@@ -292,16 +292,15 @@ struct RpcState {
     contexts: Vec<KmsContext>,
     /// The number of the finalized block, the only block the contexts are known at.
     finalized: u64,
-    /// How many times the finalized block was asked for.
-    finalized_polls: usize,
+    /// When the finalized block was asked for: one entry per poll of the proxy.
+    finalized_polls: Vec<Instant>,
     failing: bool,
-    stalled: bool,
     /// How long each answer is held after it is computed.
     reply_delay: Duration,
 }
 
 /// An Ethereum JSON-RPC answering the `ProtocolConfig` reads of the proxy from a list of KMS
-/// contexts, or failing every call, or never answering.
+/// contexts, or failing every call.
 pub struct FakeRpc {
     pub url: Url,
     state: Arc<Mutex<RpcState>>,
@@ -312,9 +311,8 @@ impl FakeRpc {
         let state = Arc::new(Mutex::new(RpcState {
             contexts,
             finalized: 100,
-            finalized_polls: 0,
+            finalized_polls: Vec::new(),
             failing: false,
-            stalled: false,
             reply_delay: Duration::ZERO,
         }));
         let app = Router::new()
@@ -340,11 +338,6 @@ impl FakeRpc {
         self.state.lock().unwrap().failing = failing;
     }
 
-    /// Makes every later call hang without an answer.
-    pub fn set_stalled(&self, stalled: bool) {
-        self.state.lock().unwrap().stalled = stalled;
-    }
-
     /// Holds every later answer for `delay` after computing it: the answer is the state at the
     /// time of the call.
     pub fn set_reply_delay(&self, delay: Duration) {
@@ -353,7 +346,12 @@ impl FakeRpc {
 
     /// How many times the finalized block was asked for: one per poll of the proxy.
     pub fn finalized_polls(&self) -> usize {
-        self.state.lock().unwrap().finalized_polls
+        self.state.lock().unwrap().finalized_polls.len()
+    }
+
+    /// When the finalized block was asked for, in order.
+    pub fn finalized_poll_times(&self) -> Vec<Instant> {
+        self.state.lock().unwrap().finalized_polls.clone()
     }
 }
 
@@ -363,10 +361,6 @@ fn context_id(index: usize) -> U256 {
 }
 
 async fn rpc(State(state): State<Arc<Mutex<RpcState>>>, Json(call): Json<Value>) -> Response {
-    let stalled = state.lock().unwrap().stalled;
-    if stalled {
-        std::future::pending::<()>().await;
-    }
     let (reply, delay) = {
         let mut state = state.lock().unwrap();
         (answer(&mut state, &call), state.reply_delay)
@@ -381,7 +375,7 @@ fn answer(state: &mut RpcState, call: &Value) -> Response {
     }
     let id = &call["id"];
     if call["method"] == "eth_getBlockByNumber" && call["params"][0] == "finalized" {
-        state.finalized_polls += 1;
+        state.finalized_polls.push(Instant::now());
         let mut block: Block = Block::default();
         block.header.inner.number = state.finalized;
         return Json(json!({"jsonrpc": "2.0", "id": id, "result": block})).into_response();

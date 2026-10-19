@@ -36,7 +36,7 @@ pub struct Config {
     #[serde(deserialize_with = "deserialize_secret_url")]
     pub ethereum_rpc_url: Url,
     /// How often the latest finalized block is checked; the KMS tx-senders are read again when it
-    /// moved forward (RFC-038 `KMS_REGISTRY_REFRESH_INTERVAL`).
+    /// moved forward. The role of RFC-038's `KMS_REGISTRY_REFRESH_INTERVAL`.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_kms_registry_poll_interval"

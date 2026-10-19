@@ -49,8 +49,8 @@ const PROXY_CONNECTION: HeaderName = HeaderName::from_static("proxy-connection")
 // those lack it: an unparsable request head (`400`) and `CONNECT` (`405`).
 const NO_STORE: &str = "no-store";
 
-/// How long a request signed by an unknown signer waits for a read of the KMS tx-senders that
-/// started after it, before it is refused.
+/// How long a request signed by an unknown signer waits for a poll of the KMS tx-senders that
+/// started after it, before it is checked again.
 pub const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
 
 /// Error message for oversized request bodies.
