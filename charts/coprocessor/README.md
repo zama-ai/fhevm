@@ -12,7 +12,10 @@ proxy checks the shape of the path. prf-service checks the encoding of its param
 the `FhevmSig` header again.
 
 The accepted signers are the KMS tx-senders of the Active KMS contexts that the `ProtocolConfig`
-contract lists. The proxy reads them every minute. The chart takes the chain that hosts
+contract lists. The proxy reads them every minute. A context becomes Active once all its nodes have
+attested the same keys and CRS, the first state in which they can serve a decryption, and PRF
+requests serve only decryptions. The outgoing context stays Active until it is destroyed, so its
+connectors keep working through a context switch. The chart takes the chain that hosts
 `ProtocolConfig` from the `chains` entry whose `chainId` is
 `commonConfig.canonicalProtocolConfigChainId`. That entry gives the chain id and the
 `ProtocolConfig` address of the signature's EIP-712 domain, and the RPC URL the signers are read
