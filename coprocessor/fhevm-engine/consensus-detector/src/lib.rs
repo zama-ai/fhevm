@@ -525,27 +525,28 @@ async fn gcs_window_fully_hashed(
     Ok(ok)
 }
 
-/// Timeout state machine for the tracked window.
-enum WindowTimeout {
-    /// No deadline running.
-    NotArmed,
-    /// Give up at this instant, then re-emit each poll until the row is rolled back.
-    Armed(Instant),
-}
-
 struct WindowState {
     /// Tracked proposal + per-chain window set; a change resets every track.
     tracked_window: Option<HostWindows>,
-    timeout: WindowTimeout,
+    /// One deadline per host chain, armed after the window of that chain.
+    deadlines: HashMap<i64, Instant>,
     /// The attempt's member set, resolved once from `gw_start_block`.
     members: Vec<decision::Member>,
 }
 
-/// Every chain finished its window.
-fn should_arm_timeout(windows: &[(i64, i64, i64)], watermarks: &HashMap<i64, i64>) -> bool {
-    windows
-        .iter()
-        .all(|&(chain_id, _, end)| watermarks.get(&chain_id).is_some_and(|&w| w >= end))
+/// The attempt is over: a chain passed its deadline with no anchor, or every
+/// chain passed its deadline. The second rule ends an all-quiet window.
+fn window_expired(
+    windows: &[(i64, i64, i64)],
+    host_tracks: &HashMap<i64, ConsensusTrack>,
+    deadlines: &HashMap<i64, Instant>,
+    now: Instant,
+) -> bool {
+    let passed = |chain_id: &i64| deadlines.get(chain_id).is_some_and(|&d| now >= d);
+    windows.iter().all(|(chain_id, _, _)| passed(chain_id))
+        || host_tracks
+            .iter()
+            .any(|(chain_id, track)| track.anchored.is_none() && passed(chain_id))
 }
 
 /// Host side is ready: every chain anchored and at least one anchor is non-trivial.
@@ -628,7 +629,7 @@ where
         // Window set changed: reset all tracks + timeout so no prior anchor carries over.
         host_tracks.clear();
         gateway.reset();
-        window_state.timeout = WindowTimeout::NotArmed;
+        window_state.deadlines.clear();
         window_state.members.clear();
         window_state.tracked_window = active.clone();
     }
@@ -716,56 +717,58 @@ where
 
     let own_name = fleet.signer.map(|s| decision::name_of(s.address()));
 
-    // One global deadline, armed once every host chain reached its end_block
-    // without agreeing, so the upgrade can be rerun.
+    // One deadline per chain, so an early chain ends the attempt without a wait
+    // for a later window.
     let mut expired = false;
     if !both_anchored {
-        match window_state.timeout {
-            WindowTimeout::NotArmed => {
-                let mut watermarks = HashMap::with_capacity(windows.len());
-                for &(chain_id, _, _) in &windows {
-                    watermarks.insert(chain_id, gcs_host_watermark(pool, chain_id).await?);
-                }
-                // A stuck listener still ends once uploads are closed; by then peers have decided.
-                if should_arm_timeout(&windows, &watermarks)
-                    || state_hash::upload_window(pool, commitment_timeout).await?.1
-                {
-                    window_state.timeout =
-                        WindowTimeout::Armed(Instant::now() + commitment_timeout);
-                    info!(
-                        chains = windows.len(),
-                        max_end_block = max_end,
-                        timeout_secs = commitment_timeout.as_secs(),
-                        "arming consensus timeout (all chains reached end_block, or uploads closed)"
-                    );
-                }
+        for &(chain_id, _, end) in &windows {
+            if window_state.deadlines.contains_key(&chain_id) {
+                continue;
             }
-            // Past the deadline this operator records `abort`. It still acts only
-            // on the records, so no peer rolls back on this operator's silence.
-            WindowTimeout::Armed(deadline) if Instant::now() >= deadline => {
-                expired = true;
-                if own.is_none() && fleet.writes {
-                    let mut unanchored: Vec<i64> = host_tracks
-                        .iter()
-                        .filter(|(_, t)| t.anchored.is_none())
-                        .map(|(&c, _)| c)
-                        .collect();
-                    unanchored.sort_unstable();
-                    if gateway.anchored.is_none() {
-                        unanchored.push(gateway.chain_id);
-                    }
-                    warn!(
-                        chains = windows.len(),
-                        max_end_block = max_end,
-                        all_host_anchored,
-                        nontrivial_anchored = host_tracks.values().any(|t| t.anchored_nontrivial),
-                        gateway_anchored = gateway.anchored.is_some(),
-                        unanchored_chains = ?unanchored,
-                        "consensus timeout elapsed without unanimity on all tracks — recording abort"
-                    );
-                }
+            // A stuck listener still ends once uploads are closed; by then peers have decided.
+            if gcs_host_watermark(pool, chain_id).await? >= end
+                || state_hash::upload_window(pool, commitment_timeout).await?.1
+            {
+                window_state
+                    .deadlines
+                    .insert(chain_id, Instant::now() + commitment_timeout);
+                info!(
+                    chain_id,
+                    end_block = end,
+                    timeout_secs = commitment_timeout.as_secs(),
+                    "arming consensus timeout (the chain reached end_block, or uploads closed)"
+                );
             }
-            WindowTimeout::Armed(_) => {}
+        }
+        // Past the deadline this operator records `abort`. It still acts only
+        // on the records, so no peer rolls back on this operator's silence.
+        if window_expired(
+            &windows,
+            host_tracks,
+            &window_state.deadlines,
+            Instant::now(),
+        ) {
+            expired = true;
+            if own.is_none() && fleet.writes {
+                let mut unanchored: Vec<i64> = host_tracks
+                    .iter()
+                    .filter(|(_, t)| t.anchored.is_none())
+                    .map(|(&c, _)| c)
+                    .collect();
+                unanchored.sort_unstable();
+                if gateway.anchored.is_none() {
+                    unanchored.push(gateway.chain_id);
+                }
+                warn!(
+                    chains = windows.len(),
+                    max_end_block = max_end,
+                    all_host_anchored,
+                    nontrivial_anchored = host_tracks.values().any(|t| t.anchored_nontrivial),
+                    gateway_anchored = gateway.anchored.is_some(),
+                    unanchored_chains = ?unanchored,
+                    "consensus timeout elapsed without unanimity on all tracks — recording abort"
+                );
+            }
         }
     }
 
@@ -1102,7 +1105,7 @@ where
     // Tracked window + its timeout state.
     let mut window_state = WindowState {
         tracked_window: None,
-        timeout: WindowTimeout::NotArmed,
+        deadlines: HashMap::new(),
         members: Vec::new(),
     };
 
@@ -1278,22 +1281,41 @@ mod tests {
     }
 
     #[test]
-    fn arm_timeout_when_all_chains_reached_end_block() {
+    fn a_chain_ends_the_attempt_on_its_own_deadline() {
+        let now = Instant::now();
+        let past = now - Duration::from_secs(1);
+        let future = now + Duration::from_secs(60);
         let windows = vec![(1, 0, 100), (2, 0, 200)];
-        assert!(should_arm_timeout(
-            &windows,
-            &HashMap::from([(1, 100), (2, 200)])
-        ));
+        let host = HashMap::from([(1, track(1, None, false)), (2, track(2, None, false))]);
+
+        // Chain 1 ends first, and chain 2 is still inside its window.
+        let deadlines = HashMap::from([(1, past)]);
+        assert!(window_expired(&windows, &host, &deadlines, now));
+
+        let deadlines = HashMap::from([(1, future)]);
+        assert!(!window_expired(&windows, &host, &deadlines, now));
     }
 
     #[test]
-    fn wait_while_a_chain_is_below_end_or_unseen() {
+    fn the_last_deadline_ends_an_attempt_that_anchored_every_chain() {
+        let now = Instant::now();
+        let past = now - Duration::from_secs(1);
+        let future = now + Duration::from_secs(60);
         let windows = vec![(1, 0, 100), (2, 0, 200)];
-        assert!(!should_arm_timeout(
+        let host = HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(9), false))]);
+
+        assert!(window_expired(
             &windows,
-            &HashMap::from([(1, 100), (2, 150)])
+            &host,
+            &HashMap::from([(1, past), (2, past)]),
+            now
         ));
-        assert!(!should_arm_timeout(&windows, &HashMap::from([(1, 100)])));
+        assert!(!window_expired(
+            &windows,
+            &host,
+            &HashMap::from([(1, past), (2, future)]),
+            now
+        ));
     }
 
     #[test]
