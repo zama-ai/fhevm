@@ -117,6 +117,41 @@ describe("env", () => {
     expect(rendered.instanceEnvs["kms-connector.3"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-3-endpoint:8080");
   });
 
+  test("points each coprocessor's proxy at its own fake prf-service, for requests signed for that coprocessor", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const stateFor = (count: number): State => ({
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      scenario: testDefaultScenario({ topology: { count, threshold: count } }),
+      completedSteps: [],
+      updatedAt: "2026-03-30T00:00:00.000Z",
+    });
+
+    const solo = await renderEnvMaps({ discovery: undefined }, stackSpecForState(stateFor(1)), templateEnvs, deriveWallet);
+    expect(solo.componentEnvs.coprocessor.COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS).toBe(
+      templateEnvs["host-sc"].COPROCESSOR_SIGNER_ADDRESS_0,
+    );
+    expect(solo.componentEnvs.coprocessor.COPROCESSOR_PROXY_ENDPOINT_ADDRESSES).toBe("coprocessor-prf-service-fake:8080");
+
+    const pair = await renderEnvMaps({ discovery: undefined }, stackSpecForState(stateFor(2)), templateEnvs, deriveWallet);
+    const signers = pair.componentEnvs["host-sc"];
+    expect(signers.COPROCESSOR_SIGNER_ADDRESS_0).not.toBe(signers.COPROCESSOR_SIGNER_ADDRESS_1);
+    expect(pair.componentEnvs.coprocessor.COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS).toBe(signers.COPROCESSOR_SIGNER_ADDRESS_0);
+    expect(pair.componentEnvs.coprocessor.COPROCESSOR_PROXY_ENDPOINT_ADDRESSES).toBe("coprocessor-prf-service-fake:8080");
+    expect(pair.instanceEnvs["coprocessor.1"].COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS).toBe(signers.COPROCESSOR_SIGNER_ADDRESS_1);
+    expect(pair.instanceEnvs["coprocessor.1"].COPROCESSOR_PROXY_ENDPOINT_ADDRESSES).toBe("coprocessor1-prf-service-fake:8080");
+  });
+
   test("projects custom primary host settings into runtime envs", async () => {
     const templateEnvs = Object.fromEntries(
       await Promise.all(

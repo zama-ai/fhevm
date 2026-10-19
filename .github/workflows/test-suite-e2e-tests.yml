@@ -67,6 +67,10 @@ on:
         description: "Coprocessor Upgrade Controller Image Version"
         default: ""
         type: string
+      coprocessor-proxy-version:
+        description: "Coprocessor Proxy Image Version"
+        default: ""
+        type: string
       listener-core-version:
         description: "Listener Core Image Version"
         default: ""
@@ -166,6 +170,7 @@ jobs:
       COPROCESSOR_ZKPROOF_WORKER_VERSION: ${{ inputs.coprocessor-zkproof-worker-version }}
       COPROCESSOR_CONSENSUS_DETECTOR_VERSION: ${{ inputs.coprocessor-consensus-detector-version }}
       COPROCESSOR_UPGRADE_CONTROLLER_VERSION: ${{ inputs.coprocessor-upgrade-controller-version }}
+      COPROCESSOR_PROXY_VERSION: ${{ inputs.coprocessor-proxy-version }}
       LISTENER_CORE_VERSION: ${{ inputs.listener-core-version }}
       GATEWAY_VERSION: ${{ inputs.gateway-version }}
       HOST_VERSION: ${{ inputs.host-version }}
@@ -441,6 +446,7 @@ jobs:
             snapshot_logs "${label} - TFHE Worker" "${prefix}-tfhe-worker"
             snapshot_logs "${label} - Consensus Detector" "${prefix}-consensus-detector" "" all
             snapshot_logs "${label} - Upgrade Controller" "${prefix}-upgrade-controller" "" all
+            snapshot_logs "${label} - Proxy" "${prefix}-proxy"
           done
           # Party 1 of the KMS cluster is the bare `kms-core` / `kms-connector-*` already
           # captured above; parties 2..N use the `-{i}-` suffix. Use `docker ps -a` so a crashed

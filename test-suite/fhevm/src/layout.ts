@@ -193,6 +193,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "coprocessor-transaction-sender",
     "coprocessor-consensus-detector",
     "coprocessor-upgrade-controller",
+    "coprocessor-proxy",
   ],
   "kms-connector": [
     "kms-connector-db-migration",
@@ -250,6 +251,19 @@ export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fr
 
 /** The kms-connector services `supportsConnectorHttp` gates as a pair: HTTP endpoint + proxy. */
 export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-connector-proxy"];
+
+/**
+ * The coprocessor services `supportsCoprocessorProxy` gates as a pair: the proxy and the fake
+ * prf-service it forwards to, in start order. The fake runs the test-suite image, so it is not a
+ * coprocessor build service.
+ */
+export const COPROCESSOR_PROXY_SUFFIXES = ["prf-service-fake", "proxy"];
+
+/** `suffixes` without the proxy pair, then the pair in start order when `includeProxy`. */
+export const withCoprocessorProxySuffixes = (suffixes: readonly string[], includeProxy: boolean) => [
+  ...suffixes.filter((suffix) => !COPROCESSOR_PROXY_SUFFIXES.includes(suffix)),
+  ...(includeProxy ? COPROCESSOR_PROXY_SUFFIXES : []),
+];
 
 /** Services that run the same image and therefore must be built together by an override. */
 const IMAGE_SIBLINGS: Record<string, string[]> = {

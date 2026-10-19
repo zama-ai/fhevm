@@ -35,7 +35,7 @@ import {
   reconstructionThreshold,
 } from "../kms-party";
 import type { State } from "../types";
-import { predictedCrsId, predictedKeyId } from "../utils/fs";
+import { predictedCrsId, predictedKeyId, toServiceName } from "../utils/fs";
 
 export type WalletMaterial = {
   address: string;
@@ -433,6 +433,15 @@ const connectorEndpointPort = (envs: Record<string, Record<string, string>>) =>
 const connectorEndpointAddress = (envs: Record<string, Record<string, string>>, party: number) =>
   `${kmsConnectorPrefix(party)}-endpoint:${connectorEndpointPort(envs)}`;
 
+/** Port the fake prf-service (`test-suite/e2e/scripts/fake-prf-service.ts`) serves HTTP/2 on. */
+const PRF_SERVICE_FAKE_PORT = 8080;
+
+/** Points instance `index`'s proxy at its own fake prf-service, for requests signed for `signer`. */
+const setCoprocessorProxyEnv = (env: Record<string, string>, index: number, signer: string) => {
+  env.COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS = signer;
+  env.COPROCESSOR_PROXY_ENDPOINT_ADDRESSES = `${toServiceName("prf-service-fake", index)}:${PRF_SERVICE_FAKE_PORT}`;
+};
+
 /** Builds per-instance coprocessor env maps and injects derived signer addresses. */
 const buildInstanceEnvs = async (
   envs: Record<string, Record<string, string>>,
@@ -445,6 +454,7 @@ const buildInstanceEnvs = async (
   }
   const baseInstance = plan.coprocessor.instances.find((instance) => instance.index === 0);
   if (plan.topology.count === 1) {
+    setCoprocessorProxyEnv(envs["coprocessor"], 0, envs["host-sc"].COPROCESSOR_SIGNER_ADDRESS_0);
     if (baseInstance) {
       Object.assign(envs["coprocessor"], baseInstance.env);
     }
@@ -468,6 +478,7 @@ const buildInstanceEnvs = async (
     envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
     if (index === 0) {
       envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;
+      setCoprocessorProxyEnv(envs["coprocessor"], index, wallet.address);
       Object.assign(envs["coprocessor"], baseInstance?.env ?? {});
       envs["coprocessor"].BUCKET_NAME = opBucket;
       continue;
@@ -478,6 +489,7 @@ const buildInstanceEnvs = async (
     next.DATABASE_URL = `postgresql://${dbCreds}@${POSTGRES_HOST}/${dbName}`;
     next.TX_SENDER_PRIVATE_KEY = wallet.privateKey;
     next.BUCKET_NAME = opBucket;
+    setCoprocessorProxyEnv(next, index, wallet.address);
     const instance = plan.coprocessor.instances.find((item) => item.index === index);
     Object.assign(next, instance?.env ?? {});
     instanceEnvs[`coprocessor.${index}`] = next;
