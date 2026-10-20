@@ -164,7 +164,7 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
     )
     .execute(test_instance.db())
     .await?;
-    info!("Context #{TESTING_KMS_CONTEXT} marked as invalid!");
+    info!("Context #{TESTING_KMS_CONTEXT:#066x} marked as invalid!");
 
     // The registry mocks are only consumed by its initial load — this suite fails at the
     // context-validation stage, before any ciphertext interaction.
