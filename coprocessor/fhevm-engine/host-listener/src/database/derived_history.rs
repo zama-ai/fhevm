@@ -88,7 +88,9 @@ async fn load(
     // These counts therefore detect every inventory change it can make. Do not
     // include completion timestamps or ciphertexts: workers can legitimately
     // finish already-admitted work concurrently. Manifest inventory is fork-
-    // specific, so admitting another unfinalized variant does not cause a halt.
+    // specific. Finalized admission may orphan a sealed sibling and retract its
+    // fallback observations. That is legitimate fork retirement, not a repair
+    // of committed canonical inventory: omit orphaned roots from both snapshots.
     // Unqualified names intentionally follow the listener's BCS/GCS routing.
     // A recorded fallback grant already admits its producer, even while its
     // computation is deferred until finality. Count that eligibility from the
@@ -110,6 +112,9 @@ async fn load(
                      OR b.manifest_published) AS committed
              FROM block_manifest_state b
              WHERE b.host_chain_id = $1 AND b.block_number = ANY($2)
+               AND NOT EXISTS (SELECT 1 FROM host_chain_blocks_valid h
+                   WHERE h.chain_id = b.host_chain_id AND h.block_hash = b.block_hash
+                     AND h.block_status = 'orphaned')
                AND (b.block_handle_count IS NOT NULL OR b.block_content_digest IS NOT NULL
                     OR EXISTS(SELECT 1 FROM block_manifest_state published
                         WHERE published.host_chain_id = $1

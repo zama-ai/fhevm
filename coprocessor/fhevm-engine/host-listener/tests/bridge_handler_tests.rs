@@ -1871,6 +1871,61 @@ async fn seed_sealed_fallback(
     (db, instance, handle, hash)
 }
 
+async fn assert_sealed_fallback_can_be_orphaned(published: bool) {
+    let (mut db, _instance, handle, orphan) =
+        seed_sealed_fallback(published).await;
+    let canonical = FixedBytes::from([0xCD; 32]);
+    // The canonical replacement is empty; its admission retracts the orphan's
+    // unmaterialized grant, without changing any surviving committed inventory.
+    try_ingest_fallback_block_at(&mut db, &[], BLOCK_NUMBER, canonical, true)
+        .await
+        .unwrap();
+    let pool = db.pool().await;
+    assert!(!fhevm_engine_common::chain_recovery::is_halted(&pool)
+        .await
+        .unwrap());
+    let status: String = sqlx::query_scalar(
+        "SELECT block_status FROM host_chain_blocks_valid WHERE block_hash = $1",
+    )
+    .bind(orphan.to_vec())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(status, "orphaned");
+    let grants: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM fallback_granted_events")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(grants, 0);
+    assert_eq!(computation_count(&db, handle).await, 0);
+    let retained: (i64, bool) = sqlx::query_as(
+        "SELECT block_handle_count, manifest_published FROM block_manifest_state
+         WHERE block_hash = $1",
+    )
+    .bind(orphan.to_vec())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        retained,
+        (1, published),
+        "retain the orphan's signed history"
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn finalized_sibling_can_orphan_a_sealed_fallback() {
+    assert_sealed_fallback_can_be_orphaned(false).await;
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn finalized_sibling_can_orphan_a_published_fallback() {
+    assert_sealed_fallback_can_be_orphaned(true).await;
+}
+
 async fn assert_finalized_fallback_preserves_inventory(published: bool) {
     let (mut db, _instance, handle, hash) =
         seed_sealed_fallback(published).await;
