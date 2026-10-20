@@ -331,3 +331,222 @@ async fn losing_the_verified_tip_invalidates_cached_segments(
     );
     Ok(())
 }
+
+fn numbered_hash(number: u64) -> FixedBytes<32> {
+    let mut bytes = [0; 32];
+    bytes[24..].copy_from_slice(&number.to_be_bytes());
+    FixedBytes::from(bytes)
+}
+
+async fn seed_verification_history(
+    pool: &sqlx::PgPool,
+    count: i64,
+    stride: i64,
+    legacy: bool,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid
+             (chain_id, block_number, block_hash, parent_hash, block_status)
+         SELECT 42, n * $2, decode(lpad(to_hex(n * $2), 64, '0'), 'hex'),
+                CASE WHEN NOT $3 THEN decode(lpad(to_hex(n * $2 - 1), 64, '0'), 'hex')
+                     WHEN n % 2 = 0 THEN NULL
+                     ELSE decode('', 'hex') END,
+                'finalized'
+         FROM generate_series(1::bigint, $1) n",
+    )
+    .bind(count)
+    .bind(stride)
+    .bind(legacy)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn legacy_null_and_empty_parents_do_not_split_contiguous_history(
+) -> anyhow::Result<()> {
+    let (db, pool, _instance) = setup().await?;
+    seed_verification_history(&pool, 6000, 1, true).await?;
+    let mut checked = vec![];
+    verify_finalized_history(&db, |n| {
+        checked.push(n);
+        async move { Ok(numbered_hash(n)) }
+    })
+    .await?;
+    assert_eq!(
+        checked,
+        [6000],
+        "cold upgrades must not fetch every legacy header"
+    );
+    assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn legacy_unknown_parents_preserve_gaps_and_known_mismatches(
+) -> anyhow::Result<()> {
+    let (db, pool, _instance) = setup().await?;
+    seed_verification_history(&pool, 10, 1, true).await?;
+    sqlx::query("DELETE FROM host_chain_blocks_valid WHERE block_number = 5")
+        .execute(&pool)
+        .await?;
+    sqlx::query("UPDATE host_chain_blocks_valid SET parent_hash = $1 WHERE block_number = 8")
+        .bind(numbered_hash(99).to_vec())
+        .execute(&pool)
+        .await?;
+    let mut checked = vec![];
+    let error = verify_finalized_history(&db, |n| {
+        checked.push(n);
+        async move { Ok(numbered_hash(if n == 4 { 44 } else { n })) }
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(checked, [10, 7, 4]);
+    assert!(error.to_string().contains("committed canonical history"));
+    assert!(is_halted(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn sparse_verification_keeps_successful_work_after_a_late_rpc_error(
+) -> anyhow::Result<()> {
+    let (db, pool, _instance) = setup().await?;
+    seed_verification_history(&pool, 257, 2, false).await?;
+    let error = verify_finalized_history(&db, |n| async move {
+        anyhow::ensure!(n != 2, "injected RPC failure");
+        Ok(numbered_hash(n))
+    })
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("injected RPC failure"));
+    let mut checked = vec![];
+    verify_finalized_history(&db, |n| {
+        checked.push(n);
+        async move { Ok(numbered_hash(n)) }
+    })
+    .await?;
+    assert_eq!(
+        checked,
+        [514, 2],
+        "retry only the newest tip and unfinished work"
+    );
+    assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn sparse_verification_keeps_progress_when_another_replica_extends_history(
+) -> anyhow::Result<()> {
+    let (db, pool, _instance) = setup().await?;
+    seed_verification_history(&pool, 257, 2, false).await?;
+    let error = verify_finalized_history(&db, |n| {
+        let pool = pool.clone();
+        async move {
+            if n == 2 {
+                sqlx::query(
+                    "INSERT INTO host_chain_blocks_valid
+                     (chain_id, block_number, block_hash, parent_hash, block_status)
+                     VALUES (42, 516, $1, $2, 'finalized')",
+                )
+                .bind(numbered_hash(516).to_vec())
+                .bind(numbered_hash(515).to_vec())
+                .execute(&pool)
+                .await?;
+            }
+            Ok(numbered_hash(n))
+        }
+    })
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("changed during verification"));
+    let mut checked = vec![];
+    verify_finalized_history(&db, |n| {
+        checked.push(n);
+        async move { Ok(numbered_hash(n)) }
+    })
+    .await?;
+    assert_eq!(
+        checked,
+        [516, 514],
+        "the former newest tip must still be rechecked"
+    );
+    assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn interrupted_sparse_verification_keeps_completed_batches(
+) -> anyhow::Result<()> {
+    let (db, pool, _instance) = setup().await?;
+    seed_verification_history(&pool, 257, 2, false).await?;
+    let reached = tokio::sync::Notify::new();
+    {
+        let pending = verify_finalized_history(&db, |n| {
+            let reached = &reached;
+            async move {
+                if n == 114 {
+                    reached.notify_one();
+                    std::future::pending::<()>().await;
+                }
+                Ok(numbered_hash(n))
+            }
+        });
+        tokio::pin!(pending);
+        tokio::select! {
+            result = &mut pending => panic!("verification unexpectedly finished: {result:?}"),
+            result = tokio::time::timeout(std::time::Duration::from_secs(10), reached.notified()) => result?,
+        }
+        // Drop the verification future mid-scan, without returning an RPC error.
+    }
+    let mut checked = vec![];
+    verify_finalized_history(&db, |n| {
+        checked.push(n);
+        async move { Ok(numbered_hash(n)) }
+    })
+    .await?;
+    assert_eq!(checked[0], 514, "the newest tip is never cached");
+    assert!(
+        checked.contains(&114),
+        "unfinished work must still be checked"
+    );
+    assert!(
+        checked.len() < 100,
+        "completed batches must survive cancellation: {} RPCs",
+        checked.len()
+    );
+    assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn removing_a_partially_verified_tip_invalidates_cached_work(
+) -> anyhow::Result<()> {
+    let (db, pool, _instance) = setup().await?;
+    seed_verification_history(&pool, 257, 2, false).await?;
+    assert!(verify_finalized_history(&db, |n| async move {
+        anyhow::ensure!(n != 2, "injected RPC failure");
+        Ok(numbered_hash(n))
+    })
+    .await
+    .is_err());
+    sqlx::query("DELETE FROM host_chain_blocks_valid WHERE block_number = 514")
+        .execute(&pool)
+        .await?;
+    let mut checked = vec![];
+    let error = verify_finalized_history(&db, |n| {
+        checked.push(n);
+        async move { Ok(numbered_hash(if n == 510 { 99 } else { n })) }
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(checked, [512, 510]);
+    assert!(error.to_string().contains("committed canonical history"));
+    assert!(is_halted(&pool).await?);
+    Ok(())
+}

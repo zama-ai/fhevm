@@ -2096,10 +2096,9 @@ pub async fn update_finalized_blocks(
         last_block_number,
         finality_lag,
         |block_number| async move {
-            iter_ref
-                .get_block_by_number(block_number)
-                .await
-                .map(|block| block.header.hash)
+            let block = iter_ref.get_block_by_number(block_number).await?;
+            iter_ref.tick_block.update();
+            Ok(block.header.hash)
         },
     )
     .await;

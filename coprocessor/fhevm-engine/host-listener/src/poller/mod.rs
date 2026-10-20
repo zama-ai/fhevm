@@ -584,15 +584,16 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             };
             blockchain_timeout_tick.update();
             let client_ref = &client;
+            let tick_ref = &blockchain_tick;
             let finalization = update_finalized_blocks_aux(
                 &mut db,
                 latest,
                 config.finality_lag,
                 |block_number| async move {
-                    client_ref
-                        .header_for_block(block_number)
-                        .await
-                        .map(|header| header.hash)
+                    let header =
+                        client_ref.header_for_block(block_number).await?;
+                    tick_ref.update();
+                    Ok(header.hash)
                 },
             )
             .await;

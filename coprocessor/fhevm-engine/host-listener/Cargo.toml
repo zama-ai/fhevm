@@ -76,6 +76,7 @@ anyhow = { workspace = true }
 aws-smithy-mocks = "0.1.1"
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
+tokio = { workspace = true, features = ["test-util"] }
 tracing-test = { workspace = true }
 
 # Enable test bypass features for integration tests

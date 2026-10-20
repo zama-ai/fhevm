@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
+use anyhow::Context;
 use fhevm_engine_common::utils::HeartBeat;
 use tokio::sync::RwLock;
 
@@ -21,6 +22,7 @@ static RECOVERY_PAUSED: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
 
 const IS_ALIVE_TICK_FRESHNESS: Duration = Duration::from_secs(20); // Not alive if tick is older
 const CONNECTED_TICK_FRESHNESS: Duration = Duration::from_secs(5); // Need to check connection if tick is older
+const RECOVERY_OBSERVATION_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Represents the health status of the host-listener service
 #[derive(Clone, Debug)]
@@ -38,19 +40,23 @@ impl HealthCheck {
     /// A reconnect replaces and then closes the old pool. An observer can
     /// already be waiting on that old pool: retry from the shared slot instead
     /// of terminating ingestion on PoolClosed (or a transient database error).
-    /// Readiness independently fails when it cannot read recovery state.
-    async fn containment_status(&self) -> bool {
-        loop {
-            let pool = self.database_pool.read().await.clone();
-            match fhevm_engine_common::chain_recovery::is_halted(&pool).await {
-                Ok(halted) => return halted,
-                Err(error) => {
-                    tracing::warn!(%error, "Cannot observe chain recovery state; retrying");
-                    self.blockchain_timeout_tick.update();
-                    tokio::time::sleep(Duration::from_secs(5)).await;
+    /// Failed reads are not ingestion progress and must not sustain liveness.
+    /// Bound both retries and hung reads, including when probes are disabled.
+    async fn containment_status(&self) -> anyhow::Result<bool> {
+        tokio::time::timeout(RECOVERY_OBSERVATION_TIMEOUT, async {
+            loop {
+                let pool = self.database_pool.read().await.clone();
+                match fhevm_engine_common::chain_recovery::is_halted(&pool).await {
+                    Ok(halted) => return halted,
+                    Err(error) => {
+                        tracing::warn!(%error, "Cannot observe chain recovery state; retrying");
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
                 }
             }
-        }
+        })
+        .await
+        .context("Timed out observing chain recovery state")
     }
 
     /// Observe containment before startup, while idle, and after a failed write.
@@ -65,7 +71,7 @@ impl HealthCheck {
         let halted = tokio::select! {
             biased;
             _ = cancel.cancelled() => return Ok(()),
-            halted = self.containment_status() => halted,
+            halted = self.containment_status() => halted?,
         };
         let result = if halted {
             drop(work);
@@ -75,8 +81,8 @@ impl HealthCheck {
             let observe = async {
                 loop {
                     tokio::time::sleep(Duration::from_secs(5)).await;
-                    if self.containment_status().await {
-                        return;
+                    if self.containment_status().await? {
+                        return Ok::<(), anyhow::Error>(());
                     }
                 }
             };
@@ -85,7 +91,10 @@ impl HealthCheck {
             tokio::select! {
                 biased;
                 _ = cancel.cancelled() => return Ok(()),
-                _ = observe => None,
+                result = observe => {
+                    result?;
+                    None
+                },
                 result = &mut work => Some(result),
             }
         };
@@ -200,6 +209,110 @@ mod tests {
 
     fn stale_tick() -> HeartBeat {
         HeartBeat::with_elapsed_secs(30)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn failed_containment_reads_do_not_sustain_liveness_and_expire() {
+        let health =
+            build_test_health_check(stale_tick(), stale_tick(), stale_tick());
+        health.database_pool.read().await.close().await;
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let started = AtomicBool::new(false);
+        let listener = health.run_with_containment(&cancel, async {
+            started.store(true, Ordering::Relaxed);
+            std::future::pending::<anyhow::Result<()>>().await
+        });
+        tokio::pin!(listener);
+        assert!(futures_util::poll!(&mut listener).is_pending());
+        assert!(!health.is_alive().await);
+        tokio::time::advance(Duration::from_secs(5)).await;
+        assert!(futures_util::poll!(&mut listener).is_pending());
+        assert!(!health.is_alive().await, "a retry is not progress");
+        assert!(!health.recovery_paused.load(Ordering::Acquire));
+        assert!(!started.load(Ordering::Relaxed));
+        let error = tokio::time::timeout(
+            RECOVERY_OBSERVATION_TIMEOUT + Duration::from_secs(1),
+            listener,
+        )
+        .await
+        .expect("persistent observation errors must terminate")
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Timed out observing chain recovery state"),
+            "{error:#}"
+        );
+        assert!(!health.is_alive().await);
+        assert!(!health.health_check().await.is_healthy());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_hung_containment_observation_is_bounded() {
+        let health =
+            build_test_health_check(stale_tick(), stale_tick(), stale_tick());
+        // A pool-slot replacement may itself be stuck; the deadline covers
+        // waiting for the slot as well as an acquired connection/query.
+        let _slot = health.database_pool.write().await;
+        let error = tokio::time::timeout(
+            RECOVERY_OBSERVATION_TIMEOUT + Duration::from_secs(1),
+            health.containment_status(),
+        )
+        .await
+        .expect("hung observations must terminate")
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("Timed out observing chain recovery state"));
+        assert!(!health.is_alive().await);
+        assert!(!health.recovery_paused.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn persistent_observer_failure_exits_pending_ingestion(
+    ) -> anyhow::Result<()> {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+        let mut health =
+            build_test_health_check(stale_tick(), stale_tick(), stale_tick());
+        health.database_pool = Arc::new(RwLock::new(pool.clone()));
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let started = tokio::sync::Notify::new();
+        let listener = health.run_with_containment(&cancel, async {
+            // Startup observed a healthy database. Fail it only once work is
+            // running, to exercise the periodic observer's error propagation.
+            pool.close().await;
+            started.notify_one();
+            std::future::pending::<anyhow::Result<()>>().await
+        });
+        tokio::pin!(listener);
+        tokio::select! {
+            result = &mut listener => panic!("listener exited before work started: {result:?}"),
+            result = tokio::time::timeout(Duration::from_secs(10), started.notified()) => result?,
+        }
+        // There is no more database I/O after closing the pool. Advance only
+        // Tokio's timers; heartbeat timestamps deliberately remain stale.
+        tokio::time::pause();
+        let error = tokio::time::timeout(
+            RECOVERY_OBSERVATION_TIMEOUT + Duration::from_secs(6),
+            listener,
+        )
+        .await
+        .expect("the periodic observer must propagate its timeout")
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("Timed out observing chain recovery state"));
+        assert!(!health.is_alive().await);
+        assert!(
+            !health.recovery_paused.load(Ordering::Acquire),
+            "an observation error is not a confirmed halt"
+        );
+        Ok(())
     }
 
     #[tokio::test]
@@ -485,7 +598,7 @@ mod tests {
         tokio::pin!(observe);
         assert!(futures_util::poll!(&mut observe).is_pending());
         *health.database_pool.write().await = replacement;
-        assert!(tokio::time::timeout(Duration::from_secs(10), observe).await?);
+        assert!(tokio::time::timeout(Duration::from_secs(10), observe).await??);
         Ok(())
     }
 }

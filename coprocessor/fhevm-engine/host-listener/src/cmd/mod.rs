@@ -638,9 +638,11 @@ impl InfiniteLogIter {
 
     async fn verify_committed_history(&self, db: &Database) -> Result<()> {
         verify_finalized_history(db, |number| async move {
-            self.get_block_by_number(number)
-                .await
-                .map(|b| b.header.hash)
+            let block = self.get_block_by_number(number).await?;
+            // A cold scan may outlast the probe interval. Successful header
+            // reads are progress; failed reads must not sustain liveness.
+            self.tick_block.update();
+            Ok(block.header.hash)
         })
         .await
         .map(|_| ())
@@ -2439,6 +2441,58 @@ mod tests {
         assert_eq!(iter.catchup_block_from(&provider).await.unwrap(), 1);
         iter.catchup_margin = 0;
         assert_eq!(iter.catchup_block_from(&provider).await.unwrap(), 6);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn history_verification_refreshes_liveness_during_successful_rpc_work(
+    ) -> Result<()> {
+        use alloy::transports::mock::Asserter;
+        use fhevm_engine_common::chain_recovery::{
+            lock_history_tx, ListenerSource,
+        };
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow!("{e}"))?;
+        let db =
+            Database::new(&instance.db_url, ChainId::try_from(42_u64)?, 128)
+                .await?;
+        let pool = db.pool().await;
+        let block = rpc_block(1);
+        sqlx::query("INSERT INTO host_chain_blocks_valid (chain_id, block_number, block_hash, block_status) VALUES (42, $1, $2, 'finalized')")
+            .bind(block.header.inner.number as i64)
+            .bind(block.header.hash.to_vec())
+            .execute(&pool).await?;
+        let mut iter = new_test_iter(50);
+        iter.tick_block = HeartBeat::with_elapsed_secs(30);
+        assert!(iter.verify_committed_history(&db).await.is_err());
+        assert!(
+            !iter.tick_block.is_recent(&Duration::from_secs(20)),
+            "failed RPC is not progress"
+        );
+
+        let asserter = Asserter::new();
+        asserter.push_success(&block);
+        *iter.provider.write().await =
+            Some(ProviderBuilder::new().connect_mocked_client(asserter));
+        // Keep verification pending after the successful RPC, so a heartbeat
+        // only at the end of the full scan cannot satisfy this assertion.
+        let mut gate = pool.begin().await?;
+        lock_history_tx(&mut gate, ListenerSource::Host, false, 42).await?;
+        let verification = iter.verify_committed_history(&db);
+        tokio::pin!(verification);
+        tokio::select! {
+            result = &mut verification => panic!("verification bypassed admission lock: {result:?}"),
+            result = tokio::time::timeout(Duration::from_secs(10), async {
+                while !iter.tick_block.is_recent(&Duration::from_secs(20)) {
+                    tokio::task::yield_now().await;
+                }
+            }) => result?,
+        }
+        gate.rollback().await?;
+        verification.await?;
+        Ok(())
     }
 
     #[tokio::test]

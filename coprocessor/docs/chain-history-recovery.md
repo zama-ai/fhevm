@@ -42,11 +42,20 @@ observations below the confirmation boundary, so contradictions are contained
 rather than discarded as delayed live forks. Startup, finalized catchup admission
 and deferred finalization also verify the tips of disconnected retained finalized
 segments, including gaps with no pending row. A newer tip cannot hide an older fork.
+Adjacent legacy rows with NULL or empty parent hashes remain one segment, using
+the same unknown-parent compatibility policy as admission; upgrading does not
+require fetching every pre-migration header. Missing heights and known parent
+mismatches still split segments.
 Previously verified older segments are cached in memory, but the newest segment
 is always rechecked, including when a later sparse delivery makes it an older
 segment. Losing that checkpoint or changing stack roles invalidates the cache.
-RPC verification holds no database transaction; a concurrent history change
-invalidates its snapshot and requires retry. Replay also checks immutable computation
+RPC verification holds no database transaction. Successful checks are retained
+in batches of at most 64, after validating their retained identities and stack
+role under the history lock. An RPC error or concurrent tip extension therefore
+does not discard the entire scan; a changed snapshot still requires retry before
+admission. Successful header reads refresh liveness during long scans. Restart
+discards this cache and rechecks the retained segments.
+Replay also checks immutable computation
 metadata. Legacy NULL operand-boundary masks remain NULL and retain the worker's
 legacy inference; replay compares masks only where a mask was already recorded.
 Other recorded execution metadata remains immutable for legacy rows too.
@@ -63,8 +72,11 @@ failed writes, and with a five-second polling interval while idle. They pause wi
 listener requires restart after audited recovery, even after the halt is
 resolved: it must reload cursors and discard cached or buffered history.
 Transient observer errors, including a pool closed during reconnect, are retried
-against the current pool. Database errors fail readiness; they are not evidence
-of a history conflict.
+against the current pool, with a 20-second deadline covering retries and hung
+reads. Failed observations do not refresh ingestion liveness. Expiring the
+deadline exits the listener even when probes are disabled. Database errors fail
+readiness; they are not evidence of a history conflict. A confirmed halt still
+keeps liveness healthy while awaiting audited recovery.
 
 For ordinary host work, "finalized" is the application's configured confirmation
 depth (`--finality-lag` for the poller), not the RPC's Ethereum finalized tag.

@@ -10,6 +10,10 @@ use crate::cmd::block_history::BlockHash;
 
 type Anchor = (i64, Vec<u8>);
 
+// Checkpoint a bounded amount of RPC work. A late RPC failure or concurrent
+// admission must not discard an entire cold scan of genuinely sparse history.
+const VERIFICATION_BATCH_SIZE: usize = 64;
+
 /// Earlier disconnected segments only need a new RPC check when first seen.
 /// The newest segment is NEVER cached: if it becomes an older segment across
 /// a gap, it must be checked again before trusting the new tip. Contiguous
@@ -25,6 +29,10 @@ async fn segment_tips(
     tx: &mut Transaction<'_>,
     chain_id: i64,
 ) -> Result<Vec<Anchor>, sqlx::Error> {
+    // v0.13 did not persist parents; the later nullable migration had no
+    // backfill. As in admission, an absent parent is unknown linkage, not a
+    // contradiction. Do not split every adjacent legacy row into a segment.
+    // Missing heights and recorded parent mismatches still form boundaries.
     sqlx::query_as(
         "SELECT b.block_number, b.block_hash
          FROM host_chain_blocks_valid b
@@ -34,7 +42,9 @@ async fn segment_tips(
              WHERE child.chain_id = b.chain_id
                AND child.block_number = b.block_number + 1
                AND child.block_status = 'finalized'
-               AND child.parent_hash = b.block_hash)
+               AND (child.parent_hash = b.block_hash
+                    OR child.parent_hash IS NULL
+                    OR octet_length(child.parent_hash) = 0))
          ORDER BY b.block_number DESC, b.block_hash",
     )
     .bind(chain_id)
@@ -42,10 +52,65 @@ async fn segment_tips(
     .await
 }
 
+/// Retain successful work even if a later RPC fails or another replica extends
+/// the tip. Check only the bounded batch's identities under the admission lock;
+/// rescanning the entire history after each batch would make cold scans quadratic.
+/// The snapshot's newest tip is deliberately excluded from the reusable cache.
+async fn cache_verified_batch(
+    db: &Database,
+    verified: &mut VerifiedHistory,
+    role: bool,
+    tip: &Anchor,
+    checked: &[Anchor],
+) -> anyhow::Result<bool> {
+    let Some(mut tx) = db.new_transaction().await? else {
+        return Ok(false);
+    };
+    let current_role = host_role_tx(&mut tx).await?;
+    lock_history_tx(
+        &mut tx,
+        ListenerSource::Host,
+        current_role,
+        db.chain_id.as_i64(),
+    )
+    .await?;
+    let hashes: Vec<_> = checked
+        .iter()
+        .chain(std::iter::once(tip))
+        .map(|(_, hash)| hash.clone())
+        .collect();
+    let retained: HashSet<Anchor> = sqlx::query_as(
+        "SELECT block_number, block_hash FROM host_chain_blocks_valid
+         WHERE chain_id = $1 AND block_hash = ANY($2)
+           AND block_status = 'finalized'",
+    )
+    .bind(db.chain_id.as_i64())
+    .bind(hashes)
+    .fetch_all(&mut *tx)
+    .await?
+    .into_iter()
+    .collect();
+    tx.rollback().await?;
+    if current_role != role || !retained.contains(tip) {
+        *verified = VerifiedHistory::default();
+        anyhow::bail!("committed history changed during verification; retry before advancing");
+    }
+    verified.role = Some(role);
+    verified.tip = Some(tip.clone());
+    verified.older_segments.extend(
+        checked
+            .iter()
+            .filter(|anchor| anchor.0 != tip.0 && retained.contains(*anchor))
+            .cloned(),
+    );
+    Ok(true)
+}
+
 /// Check every disconnected committed segment, including empty heights that
 /// range catchup never stored. MAX(block_number) alone can hide an older fork.
 /// RPC runs outside database transactions; recheck the snapshot and stack role
-/// under the history lock before recording a halt or caching verification.
+/// under the history lock before recording a halt or completing verification.
+/// Successful batches survive retries in memory; process restart rechecks them.
 /// Return this pass's RPC observations for reuse by deferred finalization.
 pub async fn verify_finalized_history<GetHash, HashFuture>(
     db: &Database,
@@ -80,10 +145,16 @@ where
     if verified.role != Some(role) || !previous_tip_retained {
         *verified = VerifiedHistory::default();
     }
+    let tip_set: HashSet<_> = tips.iter().collect();
+    verified
+        .older_segments
+        .retain(|anchor| tip_set.contains(anchor));
 
     let newest_height = tips.first().map(|(height, _)| *height);
     let mut conflict = None;
+    let mut rpc_error = None;
     let mut observations = vec![];
+    let mut checked = Vec::with_capacity(VERIFICATION_BATCH_SIZE);
     for (height, expected) in &tips {
         if Some(*height) != newest_height
             && verified
@@ -92,7 +163,13 @@ where
         {
             continue;
         }
-        let observed = get_hash(u64::try_from(*height)?).await?;
+        let observed = match get_hash(u64::try_from(*height)?).await {
+            Ok(hash) => hash,
+            Err(error) => {
+                rpc_error = Some(error);
+                break;
+            }
+        };
         observations.push((*height as u64, observed));
         if observed.as_slice() != expected {
             conflict = Some(HistoryConflict {
@@ -104,6 +181,30 @@ where
             });
             break;
         }
+        checked.push((*height, expected.clone()));
+        if checked.len() == VERIFICATION_BATCH_SIZE {
+            if !cache_verified_batch(
+                db,
+                &mut verified,
+                role,
+                &tips[0],
+                &checked,
+            )
+            .await?
+            {
+                return Ok(vec![]);
+            }
+            checked.clear();
+        }
+    }
+    if !checked.is_empty()
+        && !cache_verified_batch(db, &mut verified, role, &tips[0], &checked)
+            .await?
+    {
+        return Ok(vec![]);
+    }
+    if let Some(error) = rpc_error {
+        return Err(error);
     }
 
     let Some(mut tx) = db.new_transaction().await? else {
