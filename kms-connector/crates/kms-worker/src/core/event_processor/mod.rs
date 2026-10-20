@@ -11,7 +11,7 @@ mod rpc;
 
 pub use acl::AclCheck;
 pub use ciphertext::CiphertextManager;
-pub use context::{ContextManager, DbContextManager};
+pub use context::{ContextManager, DbContextManager, KmsContextCache};
 pub use decryption::DecryptionProcessor;
 pub use error::{ProcessingError, ProcessingErrorKind, RequestCheckError, RequestCheckKind};
 pub use kms::KMSGenerationProcessor;
