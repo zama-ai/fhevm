@@ -474,7 +474,7 @@ interface IDecryption {
     /**
      * @notice Indicates if ciphertext material exists for public decryption.
      * @custom:deprecated Always returns `true`. Ciphertext material availability is checked off-chain
-     * by the Relayer since RFC-023 Part 2; this function is only kept to preserve the ABI.
+     * by the Relayer since v0.15; this function is only kept to preserve the ABI.
      * @param ctHandles The ciphertext handles.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
@@ -486,7 +486,7 @@ interface IDecryption {
     /**
      * @notice Indicates if ciphertext material exists for user decryption (legacy path input shape).
      * @custom:deprecated Always returns `true`. Ciphertext material availability is checked off-chain
-     * by the Relayer since RFC-023 Part 2; this function is only kept to preserve the ABI.
+     * by the Relayer since v0.15; this function is only kept to preserve the ABI.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      * @custom:deprecated Used only by the legacy user decryption path. Removed when the
@@ -501,7 +501,7 @@ interface IDecryption {
     /**
      * @notice Indicates if ciphertext material exists for user decryption (unified EIP-712 input shape).
      * @custom:deprecated Always returns `true`. Ciphertext material availability is checked off-chain
-     * by the Relayer since RFC-023 Part 2; this function is only kept to preserve the ABI.
+     * by the Relayer since v0.15; this function is only kept to preserve the ABI.
      * @param handles The handle entries as submitted to the unified `userDecryptionRequest`.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
@@ -513,7 +513,7 @@ interface IDecryption {
     /**
      * @notice Indicates if ciphertext material exists for user decryption.
      * @custom:deprecated Always returns `true`. Ciphertext material availability is checked off-chain
-     * by the Relayer since RFC-023 Part 2; this function is only kept to preserve the ABI.
+     * by the Relayer since v0.15; this function is only kept to preserve the ABI.
      * @param userAddress The user's address (unused, kept for backward compatibility).
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
@@ -528,7 +528,7 @@ interface IDecryption {
     /**
      * @notice Indicates if ciphertext material exists for delegated user decryption.
      * @custom:deprecated Always returns `true`. Ciphertext material availability is checked off-chain
-     * by the Relayer since RFC-023 Part 2; this function is only kept to preserve the ABI.
+     * by the Relayer since v0.15; this function is only kept to preserve the ABI.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      * @custom:deprecated Used only by the legacy delegated user decryption path. Removed when the

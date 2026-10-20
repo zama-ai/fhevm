@@ -110,7 +110,7 @@ describe('Decryption', function () {
 
   // Full event signatures. `UserDecryptionRequest` is overloaded (legacy paths vs unified EIP-712
   // path), which makes bare-name lookups ambiguous in ethers/hardhat, so request events are always
-  // addressed by their full signature. Only the handles-only variants (RFC-023) remain.
+  // addressed by their full signature. Since v0.16, only the handles-only variants remain.
   const PUBLIC_DECRYPTION_REQUEST_SIG = 'PublicDecryptionRequest(uint256,bytes32[],bytes)';
   const USER_DECRYPTION_REQUEST_SIG = 'UserDecryptionRequest(uint256,bytes32[],address,bytes,bytes)';
 
@@ -276,7 +276,7 @@ describe('Decryption', function () {
     });
 
     it('Should request a public decryption without on-chain ciphertext material', async function () {
-      // Ciphertext material availability is checked off-chain (RFC-023), not by the gateway
+      // Ciphertext material availability is checked off-chain (since v0.15), not by the gateway
       await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(newCtHandles, extraDataV0))
         .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_SIG)
         .withArgs(decryptionId, newCtHandles, extraDataV0);
@@ -1197,7 +1197,7 @@ describe('Decryption', function () {
     });
 
     it('Should request a user decryption without on-chain ciphertext material', async function () {
-      // Ciphertext material availability is checked off-chain (RFC-023), not by the gateway
+      // Ciphertext material availability is checked off-chain (since v0.15), not by the gateway
       await expect(
         decryption
           .connect(tokenFundedTxSender)
@@ -2261,7 +2261,7 @@ describe('Decryption', function () {
     });
 
     it('Should request a delegated user decryption without on-chain ciphertext material', async function () {
-      // Ciphertext material availability is checked off-chain (RFC-023), not by the gateway
+      // Ciphertext material availability is checked off-chain (since v0.15), not by the gateway
       await expect(
         decryption
           .connect(tokenFundedTxSender)
