@@ -4,8 +4,9 @@
 //! 2. derive the content id,
 //! 3. backpressure: take an in-flight permit or answer `503 overloaded`,
 //! 4. register the waiter *before* reading the DB so no response can be missed,
-//! 5. in one transaction: serve an existing payload or non-retryable error row, otherwise store the
-//!    request (insert it, or reset its status to `pending` if it previously `failed`; any other
+//! 5. in one transaction: serve an existing payload or an irrecoverable error within its serve window,
+//!    otherwise store the request (insert it, or reset its status to `pending` if it previously
+//!    `failed`; any other
 //!    conflict means the kms-worker is already on it and we attach),
 //! 6. wait for the response listener to wake the waiter, then read the response row.
 
@@ -56,11 +57,11 @@ pub trait DecryptionRoute {
 
 /// Outcome of the lookup transaction of [`find_response_or_store_request`].
 enum LookupOutcome<Row> {
-    /// A payload or non-retryable error row to serve as is.
+    /// A payload or an irrecoverable error within its serve window to serve as is.
     Serve(Row),
     /// The request is stored for processing, its response has to be waited for.
     Stored,
-    /// The request is stored for reprocessing, after a retryable error row was skipped.
+    /// The request is stored for reprocessing, after a recoverable or expired error was skipped.
     Retry {
         old_response_created_at: DateTime<Utc>,
     },
@@ -115,8 +116,14 @@ async fn find_response_or_store_request<R: DecryptionRoute>(
     let mut old_response_created_at = None;
     if let Some(row) = R::read_response(&mut *tx, id).await? {
         match R::error_code(&row) {
-            Some(code) if code.retryable() => {
-                debug!(decryption_id = %id, "Ignoring retryable `{}` error row", code.as_str());
+            Some(code)
+                if code.retryable()
+                    || Utc::now()
+                        .signed_duration_since(R::created_at(&row))
+                        .to_std()
+                        .is_ok_and(|age| age >= state.config.error_serve_window) =>
+            {
+                debug!(decryption_id = %id, "Reprocessing recoverable or expired `{}` error row", code.as_str());
                 old_response_created_at = Some(R::created_at(&row));
             }
             _ => {
