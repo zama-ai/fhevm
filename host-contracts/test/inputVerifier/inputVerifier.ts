@@ -8,7 +8,7 @@ import { InputVerifier, InputVerifier__factory, TestInput } from '../../types';
 import { createInstances } from '../instance';
 import { Signers, getSigners, initSigners } from '../signers';
 import { FhevmInstances } from '../types';
-import { userDecryptSingleHandle } from '../utils';
+import { userDecryptSingleEuint } from '../utils';
 
 describe('InputVerifier', function () {
   let signers: Signers;
@@ -64,7 +64,7 @@ describe('InputVerifier', function () {
 
   async function getClearUint64(keypair: { privateKey: string; publicKey: string }): Promise<bigint> {
     const encUint64 = await testInputContract.getEuint64();
-    const clearUint64 = await userDecryptSingleHandle(
+    const clearUint64 = await userDecryptSingleEuint(
       encUint64,
       testInputContractAddress,
       instances.alice,
