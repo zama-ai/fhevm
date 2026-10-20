@@ -7,7 +7,7 @@ use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy_primitives::LogData;
 use anyhow::Result;
-use futures_util::{stream::FuturesUnordered, StreamExt};
+use futures_util::{stream::FuturesUnordered, StreamExt, TryFutureExt};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tokio::time::{interval_at, sleep, Instant, MissedTickBehavior};
@@ -528,7 +528,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     let last_known_drift = Arc::new(RwLock::new(STARTING_DRIFT));
     let chain_id_str = config.chain_id.to_string();
-    let stats_task = tokio::spawn(run_consumer_stats_observer(
+    let mut stats_task = tokio::spawn(run_consumer_stats_observer(
         db.clone(),
         chain_id_str.clone(),
         client.cancel_token.clone(),
@@ -556,17 +556,18 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         None
     } else {
         Some(tokio::spawn(async move {
-            if let Err(error) = catchup::run(
+            let result = catchup::run(
                 catchup_db,
                 catchup_client,
                 manual_catchup,
                 reference_rx,
                 catchup_mode,
             )
-            .await
-            {
+            .await;
+            if let Err(error) = &result {
                 error!(%error, "Catchup request worker stopped");
             }
+            result
         }))
     };
     let catchup_ends = Arc::new(RwLock::new(HashMap::new()));
@@ -751,13 +752,30 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     } else {
         wait_for_flows(
             vec![
-                tokio::spawn(client.consume(handle_block.clone())),
-                tokio::spawn(client.consume_final(handle_block.clone())),
+                tokio::spawn(
+                    client
+                        .consume(handle_block.clone())
+                        .map_err(anyhow::Error::from),
+                ),
+                tokio::spawn(
+                    client
+                        .consume_final(handle_block.clone())
+                        .map_err(anyhow::Error::from),
+                ),
             ],
             vec![
-                tokio::spawn(client.consume_catchup(handle_block.clone())),
-                tokio::spawn(client.consume_final_catchup(handle_block)),
+                tokio::spawn(
+                    client
+                        .consume_catchup(handle_block.clone())
+                        .map_err(anyhow::Error::from),
+                ),
+                tokio::spawn(
+                    client
+                        .consume_final_catchup(handle_block)
+                        .map_err(anyhow::Error::from),
+                ),
             ],
+            catchup_task,
             &client.cancel_token,
             SHUTDOWN_TIMEOUT,
         )
@@ -768,32 +786,21 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         "Host listener consumer graceful stop"
     );
     client.cancel();
-    let background_abort_handles = catchup_task
-        .iter()
-        .map(JoinHandle::abort_handle)
-        .chain(std::iter::once(stats_task.abort_handle()))
-        .collect::<Vec<_>>();
-    let background_shutdown = async {
-        if let Some(catchup_task) = catchup_task {
-            if let Err(error) = catchup_task.await {
-                error!(%error, "Catchup request worker panicked");
-            }
-        }
-        if let Err(err) = stats_task.await {
+    match tokio::time::timeout(SHUTDOWN_TIMEOUT, &mut stats_task).await {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => {
             error!(error = %err, "Consumer stats background task failed");
         }
-    };
-    if tokio::time::timeout(SHUTDOWN_TIMEOUT, background_shutdown)
-        .await
-        .is_err()
-    {
-        for task in background_abort_handles {
-            task.abort();
-        }
-        error!("Consumer background tasks did not stop before the shutdown timeout");
-        if consumer_result.is_ok() {
-            consumer_result =
-                Err(anyhow::anyhow!("Consumer background shutdown timed out"));
+        Err(_) => {
+            stats_task.abort();
+            error!(
+                "Consumer stats task did not stop before the shutdown timeout"
+            );
+            if consumer_result.is_ok() {
+                consumer_result = Err(anyhow::anyhow!(
+                    "Consumer background shutdown timed out"
+                ));
+            }
         }
     }
 
@@ -1014,37 +1021,38 @@ fn spawn_retirement_watcher(
     });
 }
 
-/// Live and finalized readers must run until shutdown. Catchup readers may
-/// finish successfully. Any failure stops the remaining readers, with a bounded
-/// grace period before they are aborted. Groups are released only on success.
-async fn wait_for_flows<E: Into<anyhow::Error>>(
-    live_flows: Vec<JoinHandle<Result<(), E>>>,
-    catchup_flows: Vec<JoinHandle<Result<(), E>>>,
+/// Live/finalized readers and the coordinator must run until shutdown. Catchup
+/// readers may finish successfully. Any failure stops the remaining tasks, with
+/// a bounded grace period before they are aborted. Groups are released only on
+/// success.
+async fn wait_for_flows(
+    mut continuous_tasks: Vec<JoinHandle<Result<()>>>,
+    catchup_flows: Vec<JoinHandle<Result<()>>>,
+    coordinator: Option<JoinHandle<Result<()>>>,
     cancel: &CancellationToken,
     shutdown_timeout: Duration,
 ) -> Result<()> {
-    let abort_handles = live_flows
+    continuous_tasks.extend(coordinator);
+    let abort_handles = continuous_tasks
         .iter()
         .chain(&catchup_flows)
         .map(JoinHandle::abort_handle)
         .collect::<Vec<_>>();
-    let mut flows: FuturesUnordered<_> = live_flows
+    let mut flows: FuturesUnordered<_> = continuous_tasks
         .into_iter()
         .map(|flow| (true, flow))
         .chain(catchup_flows.into_iter().map(|flow| (false, flow)))
-        .map(|(is_live, flow)| async move {
+        .map(|(must_keep_running, flow)| async move {
             let result = flow.await.map_err(|err| {
                 error!(error = %err, "Consumer spawn error");
                 anyhow::anyhow!("Consumer spawn error: {err}")
             })?;
-            result.map_err(|err| {
-                let err = err.into();
-                error!(error = %err, "Consumer broker error");
-                err
+            result.inspect_err(|err| {
+                error!(error = %err, "Consumer task error");
             })?;
             anyhow::ensure!(
-                !is_live || cancel.is_cancelled(),
-                "Live or finalized consumer flow ended unexpectedly"
+                !must_keep_running || cancel.is_cancelled(),
+                "Continuous consumer task ended unexpectedly"
             );
             Ok(())
         })
@@ -1078,7 +1086,7 @@ async fn wait_for_flows<E: Into<anyhow::Error>>(
                 anyhow::anyhow!("Consumer shutdown requested")
             });
             Err(error.context(
-                "Consumer read flow shutdown timeout; remaining tasks aborted",
+                "Consumer task shutdown timeout; remaining tasks aborted",
             ))
         }
     }
@@ -1347,6 +1355,7 @@ mod tests {
         let mut flows = Box::pin(wait_for_flows(
             vec![live],
             vec![catchup],
+            None,
             &cancel,
             Duration::from_secs(1),
         ));
@@ -1387,6 +1396,7 @@ mod tests {
                 wait_for_flows(
                     live_flows,
                     vec![],
+                    None,
                     &cancel,
                     Duration::from_secs(1),
                 ),
@@ -1432,6 +1442,7 @@ mod tests {
                     wait_for_flows(
                         live,
                         catchup,
+                        None,
                         &cancel,
                         Duration::from_secs(1),
                     ),
@@ -1446,6 +1457,80 @@ mod tests {
                 } else {
                     "flow failed"
                 }));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn coordinator_failure_or_panic_stops_readers_and_propagates() {
+        for panics in [false, true] {
+            let cancel = CancellationToken::new();
+            let finished = Arc::new(AtomicBool::new(false));
+            let reader = {
+                let cancel = cancel.clone();
+                let finished = finished.clone();
+                tokio::spawn(async move {
+                    cancel.cancelled().await;
+                    sleep(TICK * 4).await;
+                    finished.store(true, Ordering::SeqCst);
+                    Ok(())
+                })
+            };
+            let coordinator = tokio::spawn(async move {
+                assert!(!panics, "coordinator panicked");
+                anyhow::bail!("coordinator database failure")
+            });
+            let error = tokio::time::timeout(
+                Duration::from_secs(5),
+                wait_for_flows(
+                    vec![reader],
+                    vec![],
+                    Some(coordinator),
+                    &cancel,
+                    Duration::from_secs(1),
+                ),
+            )
+            .await
+            .expect("coordinator failure must stop the consumer")
+            .expect_err("coordinator failure must reach the caller");
+            assert!(cancel.is_cancelled());
+            assert!(finished.load(Ordering::SeqCst));
+            assert!(error.to_string().contains(if panics {
+                "coordinator panicked"
+            } else {
+                "coordinator database failure"
+            }));
+        }
+    }
+
+    #[tokio::test]
+    async fn coordinator_exit_is_successful_only_during_shutdown() {
+        for shutting_down in [false, true] {
+            let cancel = CancellationToken::new();
+            let coordinator = {
+                let cancel = cancel.clone();
+                tokio::spawn(async move {
+                    if shutting_down {
+                        cancel.cancel();
+                    }
+                    Ok(())
+                })
+            };
+            let result = wait_for_flows(
+                vec![],
+                vec![],
+                Some(coordinator),
+                &cancel,
+                Duration::from_secs(1),
+            )
+            .await;
+            if shutting_down {
+                result.expect("expected coordinator shutdown is successful");
+            } else {
+                assert!(result
+                    .expect_err("unexpected coordinator exit must fail")
+                    .to_string()
+                    .contains("ended unexpectedly"));
             }
         }
     }
@@ -1467,7 +1552,7 @@ mod tests {
             };
             let error = tokio::time::timeout(
                 Duration::from_secs(5),
-                wait_for_flows(live, vec![], &cancel, TICK * 4),
+                wait_for_flows(live, vec![], None, &cancel, TICK * 4),
             )
             .await
             .expect("shutdown wait must be bounded")

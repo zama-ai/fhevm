@@ -95,8 +95,9 @@ reacquisition prevents older callbacks from becoming valid again.
 A stopped or stalled process cannot react until it runs again. A command already
 sent to the broker cannot be recalled; retries retain the same idempotent
 catchup ID. Broker publication is bounded to 15 seconds, and publication or
-database errors stop the worker rather than allowing indefinite work without
-renewal. On shutdown, leases expire naturally; takeover happens after expiry
+database errors trigger bounded consumer shutdown and return an error so the
+process supervisor can restart it. Coordinator panics or unexpected exits do
+the same. On shutdown, leases expire naturally; takeover happens after expiry
 on a subsequent poll.
 
 Leases govern request coordination. They do not restrict
