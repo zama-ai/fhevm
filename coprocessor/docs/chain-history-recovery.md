@@ -39,22 +39,40 @@ per-chain transaction lock, including deferred finalization. Unknown legacy
 parent hashes are not contradictions. Sparse catchup may require recovery of an
 empty canonical replacement. These finalizer-requested repairs are authoritative
 observations below the confirmation boundary, so contradictions are contained
-rather than discarded as delayed live forks. Startup, finalized catchup admission
-and deferred finalization also verify the tips of disconnected retained finalized
-segments, including gaps with no pending row. A newer tip cannot hide an older fork.
-Adjacent legacy rows with NULL or empty parent hashes remain one segment, using
-the same unknown-parent compatibility policy as admission; upgrading does not
-require fetching every pre-migration header. Missing heights and known parent
-mismatches still split segments.
-Previously verified older segments are cached in memory, but the newest segment
-is always rechecked, including when a later sparse delivery makes it an older
-segment. Losing that checkpoint or changing stack roles invalidates the cache.
-RPC verification holds no database transaction. Successful checks are retained
-in batches of at most 64, after validating their retained identities and stack
-role under the history lock. An RPC error or concurrent tip extension therefore
-does not discard the entire scan; a changed snapshot still requires retry before
-admission. Successful header reads refresh liveness during long scans. Restart
-discards this cache and rechecks the retained segments.
+rather than discarded as delayed live forks.
+
+The websocket listener and HTTP poller inspect disconnected finalized segments
+once at startup, limited to the 1,000 block heights ending at the database's
+finalized tip (not the RPC head). Both sides of the discovery query are bounded.
+Adjacent legacy rows with NULL or empty parent hashes remain one segment;
+missing heights and known parent mismatches still split segments. Older
+disconnected history is explicitly trusted until replay touches it. This is
+not a whole-database integrity audit.
+
+After that audit, verification reads only the current committed tip and checks
+its RPC hash; it does not repeat segment discovery on each block. Losing the
+verified tip, changing stack roles or replacing the history relation invalidates
+the baseline and repeats the bounded audit. Process restart also repeats it.
+RPC verification holds no database transaction. Successful startup checks survive
+retries in batches of at most 64, with identities checked under the history lock.
+Successful header reads refresh liveness; failed reads do not.
+
+All finalized admissions, including broker deliveries and deferred finalization,
+must attach to an adjacent finalized header under the per-chain history lock.
+Only an empty chain can establish an independent initial anchor. An exact replay
+of an existing finalized row remains allowed. A historical backfill can attach
+backwards to a known successor; unknown linkage must first be recovered from a
+coherent header. Missing history returns an explicit recovery request without
+inserting the original block or acknowledging its delivery.
+
+Websocket and HTTP recovery ingest complete canonical blocks, including empty
+ones, in batches of at most 32 before yielding. A long gap may span more than
+1,000 blocks: the audit limit does not cap actual gap recovery. The original
+cursor/page acknowledgement advances only once its block commits. Broker
+consumers request missing finalized blocks on their separate final-catchup queue
+and retry the original delivery. This prevents sparse traffic from establishing
+new disconnected finalized anchors without repeatedly scanning retained history.
+
 Replay also checks immutable computation
 metadata. Legacy NULL operand-boundary masks remain NULL and retain the worker's
 legacy inference; replay compares masks only where a mask was already recorded.

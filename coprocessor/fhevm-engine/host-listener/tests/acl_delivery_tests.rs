@@ -540,7 +540,8 @@ async fn bridge_replay_preserves_transient_materialization_permission(
         &Some(Address::ZERO),
         OPTIONS,
     )
-    .await?;
+    .await?
+    .require_complete()?;
     assert_eq!(computation_flags(&pool, handle).await?, (true, false));
     assert_eq!(schedulable(&pool, tx_hash).await?, 1);
     let acl_count: i64 =

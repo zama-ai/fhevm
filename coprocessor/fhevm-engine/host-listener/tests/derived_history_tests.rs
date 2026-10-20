@@ -70,7 +70,8 @@ async fn finalized_replay(
         &None,
         OPTIONS,
     )
-    .await?;
+    .await?
+    .require_complete()?;
     Ok(())
 }
 

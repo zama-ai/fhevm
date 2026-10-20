@@ -28,8 +28,7 @@ use sqlx::postgres::PgPoolOptions;
 
 use crate::database::history_verification::verify_finalized_history;
 use crate::database::ingest::{
-    ingest_block_logs, update_finalized_blocks, validate_block_logs, BlockLogs,
-    IngestOptions,
+    update_finalized_blocks, validate_block_logs, BlockLogs, IngestOptions,
 };
 use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
@@ -963,6 +962,15 @@ impl InfiniteLogIter {
             self.pending_catchup_page.is_none(),
             "cannot queue a finalization repair while a catchup page is pending"
         );
+        let block_logs = self.canonical_block_for_recovery(number).await?;
+        self.next_blocklogs.push_front(block_logs);
+        Ok(())
+    }
+
+    async fn canonical_block_for_recovery(
+        &self,
+        number: u64,
+    ) -> Result<BlockLogs<Log>> {
         let header = self.get_block_by_number(number).await?.header;
         anyhow::ensure!(header.number == number, "wrong recovery block height");
         let mut block_logs = self.attach_logs_to(header).await?;
@@ -979,8 +987,8 @@ impl InfiniteLogIter {
         // is contained rather than silently discarded as a delayed live fork.
         block_logs.catchup = true;
         block_logs.finalized = true;
-        self.next_blocklogs.push_front(block_logs);
-        Ok(())
+        self.tick_block.update();
+        Ok(block_logs)
     }
 
     async fn find_last_block_and_logs(&self) -> Result<BlockLogs<Log>> {
@@ -1149,7 +1157,8 @@ async fn db_insert_block(
     confidential_bridge_address: &Option<Address>,
     args: &Args,
     is_protocol_config_listener: bool,
-) -> anyhow::Result<()> {
+    log_iter: &InfiniteLogIter,
+) -> anyhow::Result<crate::database::ingest::IngestResult> {
     // An inconsistent RPC snapshot must be fetched again; retrying the same
     // immutable batch against the database cannot repair it.
     validate_block_logs(block_logs)?;
@@ -1161,7 +1170,7 @@ async fn db_insert_block(
     );
     let mut retries = 10;
     loop {
-        let res = ingest_block_logs(
+        let res = crate::database::ingest::ingest_with_history_recovery(
             chain_id,
             db,
             block_logs,
@@ -1177,18 +1186,27 @@ async fn db_insert_block(
                 is_protocol_config_listener,
                 disable_synthetic_ops: args.disable_synthetic_ops,
             },
+            |number| log_iter.canonical_block_for_recovery(number),
         )
         .await;
-        let Err(err) = res else {
-            return Ok(());
+        let err = match res {
+            Ok(result) => return Ok(result),
+            Err(err) => err,
         };
         // Repeating rejected event bytes cannot repair them. Exit so restart
         // refetches from durable progress; never advance past this block.
-        if matches!(err, sqlx::Error::Protocol(_)) {
-            return Err(anyhow::Error::new(err).context(format!(
+        if matches!(
+            err.downcast_ref::<sqlx::Error>(),
+            Some(sqlx::Error::Protocol(_))
+        ) {
+            return Err(err.context(format!(
                 "Rejected block {}; refetch required",
                 block_logs.summary.number
             )));
+        }
+        // RPC recovery must refetch later, without rebuilding the DB pool.
+        if err.downcast_ref::<sqlx::Error>().is_none() {
+            return Err(err);
         }
         if retries == 0 {
             error!(error = %err, block = ?block_logs.summary, "Error inserting block");
@@ -1503,8 +1521,19 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                     &confidential_bridge_address,
                     &args,
                     is_protocol_config_listener,
+                    &log_iter,
                 )
                 .await;
+                if matches!(
+                    status,
+                    Ok(crate::database::ingest::IngestResult::NeedsHistory(_))
+                ) {
+                    // Recovery committed a bounded batch. Preserve this exact
+                    // delivery and its page acknowledgement until it can attach.
+                    log_iter.next_blocklogs.push_front(block_logs);
+                    tokio::task::yield_now().await;
+                    continue;
+                }
                 if let Err(err) = status {
                     // Keep CFI fail-closed admission: rejected event metadata and
                     // committed-history conflicts must not be skipped.
@@ -2550,7 +2579,8 @@ mod tests {
                 &None,
                 options.clone(),
             )
-            .await?;
+            .await?
+            .require_complete()?;
         }
         let canonical = make(82, true);
         let mut handle = BlockHash::with_last_byte(0);

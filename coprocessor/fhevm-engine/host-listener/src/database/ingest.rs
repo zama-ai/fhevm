@@ -52,6 +52,92 @@ pub struct BlockLogs<T> {
     pub finalized: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HistoryGap {
+    pub block_number: u64,
+}
+
+impl std::fmt::Display for HistoryGap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "finalized history needs block {}", self.block_number)
+    }
+}
+
+impl std::error::Error for HistoryGap {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use = "a history gap must be recovered before advancing ingestion"]
+pub enum IngestResult {
+    Complete,
+    NeedsHistory(HistoryGap),
+}
+
+impl IngestResult {
+    pub fn require_complete(self) -> Result<(), HistoryGap> {
+        match self {
+            Self::Complete => Ok(()),
+            Self::NeedsHistory(gap) => Err(gap),
+        }
+    }
+}
+
+/// Bound recovery work per attempt without limiting the size of a real gap.
+/// The original delivery is not complete until every required link commits.
+pub const HISTORY_RECOVERY_BATCH: usize = 32;
+
+#[allow(clippy::too_many_arguments)]
+pub async fn ingest_with_history_recovery<GetBlock, BlockFuture>(
+    chain_id: ChainId,
+    db: &mut Database,
+    block: &BlockLogs<Log>,
+    acl: &Option<Address>,
+    tfhe: &Option<Address>,
+    kms: &Option<Address>,
+    protocol: &Option<Address>,
+    bridge: &Option<Address>,
+    options: IngestOptions,
+    mut get_block: GetBlock,
+) -> anyhow::Result<IngestResult>
+where
+    GetBlock: FnMut(u64) -> BlockFuture,
+    BlockFuture: Future<Output = anyhow::Result<BlockLogs<Log>>>,
+{
+    let mut repair = None;
+    let mut fetched = 0;
+    loop {
+        let result = ingest_block_logs(
+            chain_id,
+            db,
+            repair.as_ref().unwrap_or(block),
+            acl,
+            tfhe,
+            kms,
+            protocol,
+            bridge,
+            options.clone(),
+        )
+        .await?;
+        match result {
+            IngestResult::Complete if repair.take().is_some() => continue,
+            IngestResult::Complete => return Ok(result),
+            IngestResult::NeedsHistory(gap)
+                if fetched < HISTORY_RECOVERY_BATCH =>
+            {
+                let recovered = get_block(gap.block_number).await?;
+                anyhow::ensure!(
+                    recovered.summary.number == gap.block_number && recovered.finalized,
+                    "history recovery returned the wrong height or a non-final block"
+                );
+                validate_block_logs(&recovered)?;
+                repair = Some(recovered);
+                fetched += 1;
+                db.tick.update();
+            }
+            IngestResult::NeedsHistory(_) => return Ok(result),
+        }
+    }
+}
+
 /// Refuse to commit logs under a header from another fork, or logs whose
 /// identity/order cannot be established. The caller must refetch the batch.
 pub fn validate_block_logs(block: &BlockLogs<Log>) -> Result<(), sqlx::Error> {
@@ -368,10 +454,10 @@ pub async fn ingest_block_logs(
     protocol_config_contract_address: &Option<Address>,
     confidential_bridge_address: &Option<Address>,
     options: IngestOptions,
-) -> Result<(), sqlx::Error> {
+) -> Result<IngestResult, sqlx::Error> {
     let Some(mut tx) = db.new_transaction().await? else {
         info!("cutover completed — host-listener skipping block ingest (retired stack)");
-        return Ok(());
+        return Ok(IngestResult::Complete);
     };
     validate_block_logs(block_logs)?;
 
@@ -458,7 +544,7 @@ pub async fn ingest_block_logs(
                 conflict_height = conflict.block_number,
                 "Ignoring delayed non-finalized block outside committed history"
             );
-            return Ok(());
+            return Ok(IngestResult::Complete);
         }
         record_halt(
             &db.pool().await,
@@ -470,6 +556,21 @@ pub async fn ingest_block_logs(
         )
         .await?;
         return Err(sqlx::Error::Protocol(conflict.reason.into()));
+    }
+    if block_logs.finalized {
+        if let Some(block_number) =
+            super::history_verification::missing_finalized_link(
+                &mut tx,
+                chain_id.as_i64(),
+                block_logs.summary.number as i64,
+                block_logs.summary.hash.as_slice(),
+                Some(block_logs.summary.parent_hash.as_slice()),
+            )
+            .await?
+        {
+            tx.rollback().await?;
+            return Ok(IngestResult::NeedsHistory(HistoryGap { block_number }));
+        }
     }
 
     let committed_inventory = CommittedInventory::capture(
@@ -1222,13 +1323,12 @@ pub async fn ingest_block_logs(
             }
         }
     }
-    Ok(())
+    Ok(IngestResult::Complete)
 }
 
 /// Check both adjacent committed identities: replicas can finish neighboring
-/// heights out of order. Sparse deliveries may lack a predecessor; the history
-/// verifier checks each disconnected committed segment against RPC instead of
-/// trusting only the highest finalized row. Pending forks are left to the
+/// heights out of order. Missing links are recovered before finalization;
+/// a gap never permits a second independent anchor. Pending forks are left to the
 /// existing finalizer. Admission and deferred finalization both call this while
 /// holding the same history lock. An absent legacy parent is unknown, so only
 /// the same-height and successor checks apply in that case.
@@ -2119,8 +2219,8 @@ pub async fn update_finalized_blocks(
 
 #[derive(Debug, Default)]
 pub struct FinalizationResult {
-    /// A pending fork exists at this height, but its canonical replacement
-    /// has never been ingested. Callers must recover the full block, including
+    /// A canonical replacement or ancestry link is missing at this height.
+    /// Callers must recover the full block, including
     /// its logs, before finalization can safely proceed.
     pub missing_canonical_block: Option<u64>,
 }
@@ -2304,13 +2404,25 @@ where
                 db.chain_id,
                 block_number,
                 block_hash.as_slice(),
-                parent.flatten().as_deref(),
+                parent.as_ref().and_then(|p| p.as_deref()),
             )
             .await?;
-            Ok::<_, sqlx::Error>((already_ingested, conflict))
+            let missing = if conflict.is_none() {
+                super::history_verification::missing_finalized_link(
+                    &mut tx,
+                    db.chain_id.as_i64(),
+                    block_number,
+                    block_hash.as_slice(),
+                    parent.as_ref().and_then(|p| p.as_deref()),
+                )
+                .await?
+            } else {
+                None
+            };
+            Ok::<_, sqlx::Error>((already_ingested, conflict, missing))
         }
         .await;
-        let (already_ingested, conflict) = match admission {
+        let (already_ingested, conflict, missing) = match admission {
             Ok(admission) => admission,
             Err(err) => {
                 error!(
@@ -2347,6 +2459,10 @@ where
             // repeating side effects unless pending forks at this height need
             // the existing finalization path to orphan and retract them.
             continue;
+        }
+        if let Some(number) = missing {
+            result.missing_canonical_block = Some(number);
+            break;
         }
         match db
             .update_block_as_finalized(&mut tx, block_number, &block_hash)

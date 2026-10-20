@@ -70,7 +70,8 @@ async fn ingest(db: &mut Database, logs: Vec<LogData>) -> anyhow::Result<()> {
             disable_synthetic_ops: true,
         },
     )
-    .await?;
+    .await?
+    .require_complete()?;
     Ok(())
 }
 

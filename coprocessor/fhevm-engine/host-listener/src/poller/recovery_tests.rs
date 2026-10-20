@@ -201,7 +201,8 @@ async fn delayed_live_forks_do_not_halt_or_insert_stale_work() -> Result<()> {
                 &None,
                 options.clone(),
             )
-            .await?;
+            .await?
+            .require_complete()?;
         }
         canonical.summary.hash = B256::repeat_byte(2);
         canonical.finalized = true;
@@ -216,7 +217,8 @@ async fn delayed_live_forks_do_not_halt_or_insert_stale_work() -> Result<()> {
             &None,
             options.clone(),
         )
-        .await?;
+        .await?
+        .require_complete()?;
         let before: Vec<(Vec<u8>, String)> = sqlx::query_as(
             "SELECT block_hash, block_status FROM host_chain_blocks_valid
              WHERE chain_id = $1 ORDER BY block_hash",
@@ -274,7 +276,8 @@ async fn delayed_live_forks_do_not_halt_or_insert_stale_work() -> Result<()> {
             &None,
             options.clone(),
         )
-        .await?;
+        .await?
+        .require_complete()?;
         assert!(!is_halted(&pool).await?);
         let after: Vec<(Vec<u8>, String)> = sqlx::query_as(
             "SELECT block_hash, block_status FROM host_chain_blocks_valid
@@ -472,10 +475,51 @@ async fn missing_canonical_blocks_recover_across_gaps_in_observed_forks(
         let result =
             update_finalized_blocks_aux(&mut db, 120, 10, canonical_hash)
                 .await?;
+        assert_eq!(result.missing_canonical_block, Some(102));
+        // The legacy pending row has no parent. Recover its header and the
+        // empty height 101 before treating it as a new finalized anchor.
+        for (number, hash, parent) in [(101, 9, 1), (102, 2, 9)] {
+            ingest_block_logs(
+                chain,
+                &mut db,
+                &BlockLogs {
+                    logs: vec![],
+                    summary: BlockSummary {
+                        number,
+                        hash: B256::repeat_byte(hash),
+                        parent_hash: B256::repeat_byte(parent),
+                        timestamp: number,
+                    },
+                    catchup: true,
+                    finalized: true,
+                },
+                &None,
+                &None,
+                &None,
+                &None,
+                &None,
+                IngestOptions {
+                    dependence_by_connexity: false,
+                    dependence_cross_block: false,
+                    dependent_ops_max_per_chain: 0,
+                    is_protocol_config_listener: false,
+                    disable_synthetic_ops: true,
+                },
+            )
+            .await?
+            .require_complete()?;
+        }
+        let result =
+            update_finalized_blocks_aux(&mut db, 120, 10, canonical_hash)
+                .await?;
         assert_eq!(result.missing_canonical_block, Some(103));
         let finalized: Vec<i64> = sqlx::query_scalar("SELECT block_number FROM host_chain_blocks_valid WHERE chain_id=$1 AND block_status='finalized' ORDER BY block_number")
             .bind(chain.as_i64()).fetch_all(&pool).await?;
-        assert_eq!(finalized, vec![100, 102], "commit the safe prefix only");
+        assert_eq!(
+            finalized,
+            vec![100, 101, 102],
+            "commit the connected prefix only"
+        );
         let canonical_inserted: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM host_chain_blocks_valid WHERE chain_id=$1 AND block_hash=$2)")
             .bind(chain.as_i64()).bind(B256::repeat_byte(3).as_slice())
             .fetch_one(&pool).await?;
@@ -534,7 +578,8 @@ async fn missing_canonical_blocks_recover_across_gaps_in_observed_forks(
                 disable_synthetic_ops: true,
             },
         )
-        .await?;
+        .await?
+        .require_complete()?;
         let result =
             update_finalized_blocks_aux(&mut db, 120, 10, canonical_hash)
                 .await?;
@@ -603,7 +648,8 @@ async fn deferred_finalization_checks_the_committed_tip_without_pending_work(
             disable_synthetic_ops: true,
         },
     )
-    .await?;
+    .await?
+    .require_complete()?;
     let mut requested = vec![];
     update_finalized_blocks_aux(&mut db, 120, 20, |number| {
         requested.push(number);
@@ -729,7 +775,7 @@ async fn deferred_finalization_checks_all_retained_neighbors() -> Result<()> {
 }
 
 #[tokio::test]
-async fn deferred_finalization_accepts_unknown_legacy_parents() -> Result<()> {
+async fn deferred_finalization_recovers_unknown_legacy_parents() -> Result<()> {
     use crate::database::ingest::update_finalized_blocks_aux;
     let instance = setup_test_db(ImportMode::None)
         .await
@@ -743,14 +789,52 @@ async fn deferred_finalization_accepts_unknown_legacy_parents() -> Result<()> {
             .bind(B256::with_last_byte(number as u8).as_slice()).bind(number)
             .bind(if number == 100 { "pending" } else { "finalized" }).execute(&pool).await?;
     }
-    update_finalized_blocks_aux(&mut db, 100, 0, |number| async move {
-        Ok(B256::with_last_byte(number as u8))
-    })
-    .await?;
+    let result =
+        update_finalized_blocks_aux(&mut db, 100, 0, |number| async move {
+            Ok(B256::with_last_byte(number as u8))
+        })
+        .await?;
+    assert_eq!(result.missing_canonical_block, Some(100));
     assert!(!is_halted(&pool).await?);
     let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM host_chain_blocks_valid WHERE chain_id=42 AND block_status='pending'")
         .fetch_one(&pool).await?;
-    assert_eq!(pending, 0, "unknown parents must not wedge finalization");
+    assert_eq!(
+        pending, 1,
+        "unknown parents must be recovered before finalization"
+    );
+    ingest_block_logs(
+        chain,
+        &mut db,
+        &BlockLogs {
+            summary: BlockSummary {
+                number: 100,
+                hash: B256::with_last_byte(100),
+                parent_hash: B256::with_last_byte(99),
+                timestamp: 100,
+            },
+            logs: vec![],
+            catchup: true,
+            finalized: true,
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: false,
+            dependent_ops_max_per_chain: 0,
+            is_protocol_config_listener: false,
+            disable_synthetic_ops: true,
+        },
+    )
+    .await?
+    .require_complete()?;
+    let pending: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM host_chain_blocks_valid WHERE chain_id=42 AND block_status='pending'"
+    ).fetch_one(&pool).await?;
+    assert_eq!(pending, 0, "coherent replay completes the pending block");
     Ok(())
 }
 
@@ -870,7 +954,8 @@ async fn finalized_admission_preserves_parent_identity_across_batches(
             &None,
             options.clone(),
         )
-        .await?;
+        .await?
+        .require_complete()?;
     }
     let inconsistent = BlockLogs {
         logs: vec![],
@@ -1545,7 +1630,9 @@ async fn host_admission_queued_at_promotion_uses_live_replica_lock(
         "stale Green mode must not bypass the live lock"
     );
     live_replica.rollback().await?;
-    tokio::time::timeout(Duration::from_secs(5), admission).await???;
+    tokio::time::timeout(Duration::from_secs(5), admission)
+        .await???
+        .require_complete()?;
 
     let mut live_db =
         Database::new(&instance.db_url().to_owned().into(), chain, 64).await?;
@@ -1622,7 +1709,8 @@ async fn legacy_pending_fork_below_cursor_does_not_false_halt() -> Result<()> {
             disable_synthetic_ops: true,
         },
     )
-    .await?;
+    .await?
+    .require_complete()?;
     assert!(!is_halted(&pool).await?);
     // The canonical row is now explicitly finalized; subsequent replacement
     // must still be contained even though the legacy pending sibling remains.

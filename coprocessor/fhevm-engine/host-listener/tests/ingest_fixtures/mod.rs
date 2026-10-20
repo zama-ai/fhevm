@@ -177,6 +177,7 @@ pub async fn ingest_filtered(
         &None,
         options,
     )
-    .await?;
+    .await?
+    .require_complete()?;
     Ok(())
 }

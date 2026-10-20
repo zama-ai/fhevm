@@ -447,7 +447,8 @@ async fn test_restart_lookback_before_genesis() -> Result<(), anyhow::Error> {
             disable_synthetic_ops: true,
         },
     )
-    .await?;
+    .await?
+    .require_complete()?;
     assert_eq!(db.read_last_valid_block().await, Some(watermark as i64));
 
     // New events arrive after the persisted watermark while the listener
@@ -711,7 +712,8 @@ async fn ingest_blocks_for_receipts(
             &None,
             options.clone(),
         )
-        .await?;
+        .await?
+        .require_complete()?;
     }
     Ok(())
 }
@@ -1860,7 +1862,8 @@ async fn test_finalization_assertion_distinguishes_empty_reorg_replacements(
             disable_synthetic_ops: true,
         },
     )
-    .await?;
+    .await?
+    .require_complete()?;
     for (number, should_fail) in [(4_i64, false), (5, true)] {
         let variants: Vec<(Vec<u8>, String)> = sqlx::query_as(
             "SELECT block_hash, block_status FROM host_chain_blocks_valid WHERE block_number=$1",

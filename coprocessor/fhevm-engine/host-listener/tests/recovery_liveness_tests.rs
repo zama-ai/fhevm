@@ -60,8 +60,28 @@ async fn admit(
         &None,
         OPTIONS,
     )
-    .await?;
+    .await?
+    .require_complete()?;
     Ok(())
+}
+
+/// Model pre-upgrade sparse history explicitly: new admission must no longer
+/// be able to construct disconnected finalized segments.
+async fn legacy_admit(
+    db: &mut Database,
+    summary: BlockSummary,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "INSERT INTO host_chain_blocks_valid
+         (chain_id, block_number, block_hash, parent_hash, block_status)
+         VALUES (42, $1, $2, $3, 'finalized')",
+    )
+    .bind(summary.number as i64)
+    .bind(summary.hash.to_vec())
+    .bind(summary.parent_hash.to_vec())
+    .execute(&db.pool().await)
+    .await?;
+    admit(db, summary, true).await
 }
 
 #[tokio::test]
@@ -75,7 +95,7 @@ async fn sparse_catchup_repair_contains_a_contradiction_instead_of_repeating(
     admit(&mut db, header(81, false), false).await?;
     // Sparse historical delivery can retain disconnected finalized segments.
     // The latest segment alone does not prove that the older one is canonical.
-    admit(&mut db, header(82, true), true).await?;
+    legacy_admit(&mut db, header(82, true)).await?;
     let error = update_finalized_blocks_aux(&mut db, 100, 10, |n| async move {
         Ok(header(n, true).hash)
     })
@@ -183,7 +203,7 @@ async fn sparse_finalized_gap_without_pending_rows_is_detected(
     }
     // No row for 81: it has never carried an event and the old listener was
     // disconnected. Range catchup jumps straight to the first logged block.
-    admit(&mut db, header(82, true), true).await?;
+    legacy_admit(&mut db, header(82, true)).await?;
     let error = update_finalized_blocks_aux(&mut db, 100, 10, |n| async move {
         Ok(header(n, true).hash)
     })
@@ -200,7 +220,7 @@ async fn verified_sparse_history_only_rechecks_the_newest_segment(
 ) -> anyhow::Result<()> {
     let (mut db, pool, _instance) = setup().await?;
     for n in [74, 76, 78] {
-        admit(&mut db, header(n, true), true).await?;
+        legacy_admit(&mut db, header(n, true)).await?;
     }
     let mut checked = vec![];
     verify_finalized_history(&db, |n| {
@@ -216,6 +236,7 @@ async fn verified_sparse_history_only_rechecks_the_newest_segment(
     })
     .await?;
     assert_eq!(checked, [78], "stable older segments need no repeated RPC");
+    admit(&mut db, header(79, true), true).await?;
     admit(&mut db, header(80, true), true).await?;
     checked.clear();
     verify_finalized_history(&db, |n| {
@@ -225,8 +246,8 @@ async fn verified_sparse_history_only_rechecks_the_newest_segment(
     .await?;
     assert_eq!(
         checked,
-        [80, 78],
-        "a previous tip must not become trusted across a new gap"
+        [80],
+        "linked extensions need no repeated segment discovery"
     );
     assert!(!is_halted(&pool).await?);
     Ok(())
@@ -242,7 +263,13 @@ async fn a_verified_tip_is_rechecked_after_a_sparse_reorg() -> anyhow::Result<()
     }
     verify_finalized_history(&db, |n| async move { Ok(header(n, false).hash) })
         .await?;
-    admit(&mut db, header(82, true), true).await?;
+    let gap = admit(&mut db, header(82, true), true).await.unwrap_err();
+    assert_eq!(
+        gap.downcast_ref::<host_listener::database::ingest::HistoryGap>()
+            .unwrap()
+            .block_number,
+        81
+    );
     let error =
         verify_finalized_history(
             &db,
@@ -349,9 +376,8 @@ async fn concurrent_extensions_do_not_mask_a_retained_history_conflict(
         async move {
             // Production admission by another replica, while the verifier has
             // no database lock open. The old tip becomes an interior block
-            // and a newer disconnected segment is added; neither removes it.
+            // without removing the conflicting anchor.
             admit(&mut other, header(81, false), true).await?;
-            admit(&mut other, header(84, true), true).await?;
             Ok(header(n, true).hash)
         }
     })
@@ -382,7 +408,7 @@ async fn removing_an_unrelated_tip_does_not_mask_a_retained_conflict(
 ) -> anyhow::Result<()> {
     let (mut db, pool, _instance) = setup().await?;
     for n in [80, 84] {
-        admit(&mut db, header(n, false), true).await?;
+        legacy_admit(&mut db, header(n, false)).await?;
     }
     let error = verify_finalized_history(&db, |n| {
         let pool = pool.clone();
@@ -408,7 +434,7 @@ async fn removing_an_unrelated_tip_does_not_mask_a_retained_conflict(
 async fn an_unavailable_segment_does_not_get_cached() -> anyhow::Result<()> {
     let (mut db, pool, _instance) = setup().await?;
     for n in [74, 80, 82] {
-        admit(&mut db, header(n, false), true).await?;
+        legacy_admit(&mut db, header(n, false)).await?;
     }
     let result = verify_finalized_history(&db, |n| async move {
         anyhow::ensure!(n != 80, "RPC unavailable");
@@ -433,14 +459,14 @@ async fn losing_the_verified_tip_invalidates_cached_segments(
 ) -> anyhow::Result<()> {
     let (mut db, pool, _instance) = setup().await?;
     for n in [74, 80, 82] {
-        admit(&mut db, header(n, false), true).await?;
+        legacy_admit(&mut db, header(n, false)).await?;
     }
     verify_finalized_history(&db, |n| async move { Ok(header(n, false).hash) })
         .await?;
     sqlx::query("DELETE FROM host_chain_blocks_valid WHERE block_number = 82")
         .execute(&pool)
         .await?;
-    admit(&mut db, header(84, true), true).await?;
+    legacy_admit(&mut db, header(84, true)).await?;
     let result =
         verify_finalized_history(
             &db,

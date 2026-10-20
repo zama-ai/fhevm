@@ -330,7 +330,8 @@ async fn wildcard_envelope_collision_does_not_reject_an_unrelated_event(
         &None,
         OPTIONS,
     )
-    .await?;
+    .await?
+    .require_complete()?;
     let counts: (i64, i64) = sqlx::query_as(
         "SELECT fhe_event_count::bigint, allow_event_count::bigint
          FROM host_chain_blocks_valid WHERE chain_id = 42 AND block_hash = $1",

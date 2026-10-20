@@ -145,7 +145,8 @@ async fn replay(
         &None,
         OPTIONS,
     )
-    .await?;
+    .await?
+    .require_complete()?;
     Ok(())
 }
 

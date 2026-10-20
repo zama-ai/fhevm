@@ -27,8 +27,11 @@ use sqlx::postgres::PgPoolOptions;
 
 use crate::cmd::block_history::BlockSummary;
 use crate::cmd::wait_while_paused;
+#[cfg(test)]
+use crate::database::ingest::ingest_block_logs;
 use crate::database::ingest::{
-    ingest_block_logs, update_finalized_blocks_aux, BlockLogs, IngestOptions,
+    ingest_with_history_recovery, update_finalized_blocks_aux, BlockLogs,
+    IngestOptions, IngestResult,
 };
 use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
@@ -689,14 +692,22 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                     confidential_bridge_address,
                     config.retry_interval,
                     ingest_options,
+                    &client,
+                    &blockchain_tick,
                 )
                 .await
                 {
-                    Ok(retries) => {
+                    Ok((IngestResult::Complete, retries)) => {
                         db_errors += retries;
                         processed_blocks += 1;
                         next_block = block.saturating_add(1);
                         db.tick.update();
+                    }
+                    Ok((IngestResult::NeedsHistory(_), retries)) => {
+                        db_errors += retries;
+                        // A bounded recovery batch committed, but the original
+                        // block and replay range still need acknowledgement.
+                        break;
                     }
                     Err((err, retries)) => {
                         db_errors += retries;
@@ -796,13 +807,15 @@ async fn ingest_with_retry(
     confidential_bridge_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
-) -> Result<u64, (sqlx::Error, u64)> {
+    client: &HttpChainClient,
+    heartbeat: &HeartBeat,
+) -> Result<(IngestResult, u64), (anyhow::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
     let protocol_config = protocol_config_address;
     loop {
-        match ingest_block_logs(
+        match ingest_with_history_recovery(
             chain_id,
             db,
             block_logs,
@@ -812,11 +825,19 @@ async fn ingest_with_retry(
             &protocol_config,
             &confidential_bridge_address,
             options.clone(),
+            |number| async move {
+                let block = client.block_logs_for_number(number).await?;
+                heartbeat.update();
+                Ok(block)
+            },
         )
         .await
         {
-            Ok(_) => return Ok(errors),
+            Ok(result) => return Ok((result, errors)),
             Err(err) => {
+                if err.downcast_ref::<sqlx::Error>().is_none() {
+                    return Err((err, errors));
+                }
                 errors += 1;
                 if errors > MAX_DB_RETRIES {
                     return Err((err, errors));

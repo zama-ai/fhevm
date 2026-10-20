@@ -548,7 +548,9 @@ async fn try_ingest_fallback_block_at(
         &Some(Address::from(BRIDGE)),
         options,
     )
-    .await
+    .await?
+    .require_complete()
+    .map_err(|gap| sqlx::Error::Protocol(gap.to_string()))
 }
 
 // Single-event convenience wrapper around `ingest_fallback_block`.
@@ -1497,7 +1499,9 @@ async fn ingest_logs(db: &mut Database, logs: Vec<alloy::rpc::types::Log>) {
         options,
     )
     .await
-    .expect("ingest_block_logs");
+    .expect("ingest_block_logs")
+    .require_complete()
+    .expect("complete block history");
 }
 
 /// One log emitted by `address`, in transaction `tx` at position `log_index`.
