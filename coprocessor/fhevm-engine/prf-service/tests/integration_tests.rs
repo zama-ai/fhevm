@@ -1,0 +1,148 @@
+use alloy::primitives::{keccak256, Address};
+use ciphertext_attestation::{prf::PRF_ATTESTATION_HEADER, PrfOutputAttestation};
+use prf_service::{Config, PrfService};
+use reqwest::{Client, Method, Response, StatusCode};
+use std::net::TcpListener;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
+
+const LABEL: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
+
+struct TestService {
+    base_url: String,
+    cancel_token: CancellationToken,
+    task: JoinHandle<anyhow::Result<()>>,
+}
+
+impl TestService {
+    fn start() -> Self {
+        let port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let cancel_token = CancellationToken::new();
+        let service = PrfService::new(
+            Config {
+                http_endpoint: ([127, 0, 0, 1], port).into(),
+            },
+            cancel_token.clone(),
+        )
+        .unwrap();
+        let task = tokio::spawn(service.start());
+        Self {
+            base_url: format!("http://127.0.0.1:{port}"),
+            cancel_token,
+            task,
+        }
+    }
+
+    async fn request(&self, client: &Client, method: Method, path: &str) -> Response {
+        client
+            .request(method, format!("{}{path}", self.base_url))
+            .send()
+            .await
+            .unwrap()
+    }
+
+    async fn stop(self) {
+        self.cancel_token.cancel();
+        self.task.await.unwrap().unwrap();
+    }
+}
+
+fn prf_path(prf: &str, label: &str, pad_length: &str) -> String {
+    format!("/v1/prf/{prf}/labels/{label}/{pad_length}")
+}
+
+fn attestation(response: &Response) -> PrfOutputAttestation {
+    serde_json::from_str(response.headers()[PRF_ATTESTATION_HEADER].to_str().unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn get_returns_body_and_attestation() {
+    let service = TestService::start();
+    let response = service
+        .request(&Client::new(), Method::GET, &prf_path("0", LABEL, "64"))
+        .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/octet-stream"
+    );
+    let attestation = attestation(&response);
+    let body = response.bytes().await.unwrap();
+    assert_eq!(body.len(), 32 * 32);
+    assert_eq!(attestation.sns_ciphertext_digest, keccak256(&body));
+    assert_eq!(attestation.signer, Address::ZERO);
+    assert_eq!(attestation.signature, vec![0; 65]);
+
+    service.stop().await;
+}
+
+#[tokio::test]
+async fn head_returns_same_headers_without_body() {
+    let service = TestService::start();
+    let client = Client::new();
+    let path = prf_path("0", LABEL, "7");
+    let get = service.request(&client, Method::GET, &path).await;
+    let head = service.request(&client, Method::HEAD, &path).await;
+
+    assert_eq!(head.status(), StatusCode::OK);
+    assert_eq!(
+        head.headers()["content-length"],
+        get.headers()["content-length"]
+    );
+    assert_eq!(attestation(&head), attestation(&get));
+    assert!(head.bytes().await.unwrap().is_empty());
+
+    drop(client);
+    service.stop().await;
+}
+
+#[tokio::test]
+async fn returns_rfc_errors() {
+    let service = TestService::start();
+    let client = Client::new();
+    for (path, status, code, retryable) in [
+        (
+            prf_path("00", LABEL, "64"),
+            400,
+            "non_canonical_path",
+            false,
+        ),
+        (
+            prf_path("0", LABEL, "2049"),
+            400,
+            "non_canonical_path",
+            false,
+        ),
+        (prf_path("1", LABEL, "64"), 404, "unknown_prf", false),
+        (
+            format!("{}/", prf_path("0", LABEL, "64")),
+            400,
+            "non_canonical_path",
+            false,
+        ),
+        ("/v1/prf/0".to_string(), 400, "non_canonical_path", false),
+    ] {
+        let response = service.request(&client, Method::GET, &path).await;
+        assert_eq!(response.status().as_u16(), status, "{path}");
+        let body: serde_json::Value = response.json().await.unwrap();
+        assert_eq!(body["code"], code, "{path}");
+        assert_eq!(body["retryable"], retryable, "{path}");
+    }
+
+    for (path, status) in [
+        (prf_path("0", LABEL, "64"), StatusCode::METHOD_NOT_ALLOWED),
+        ("/v1/prf/0".to_string(), StatusCode::NOT_FOUND),
+    ] {
+        let response = service.request(&client, Method::POST, &path).await;
+        assert_eq!(response.status(), status, "{path}");
+        assert!(response.bytes().await.unwrap().is_empty(), "{path}");
+    }
+
+    drop(client);
+    service.stop().await;
+}
