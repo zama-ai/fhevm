@@ -118,6 +118,11 @@ const RETRYABLE_STAMP_MARKER: &str = "RETRYABLE";
 const CUTOVER_RETRY_ATTEMPTS: u32 = 10;
 const CUTOVER_RETRY_BASE_DELAY: Duration = Duration::from_millis(500);
 const CUTOVER_RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
+/// The maximum time a cutover waits for the dry-run probe's final descriptor, counted
+/// from the authorization. SNS on one ciphertext takes a few seconds. Once this time has
+/// passed, the cutover copies the probe as it is, so a broken sns-worker cannot keep the
+/// operator out of the upgrade.
+const SYNTHETIC_PROBE_WAIT: Duration = Duration::from_secs(300);
 
 struct GcsReadinessAttempt {
     proposal_id: Vec<u8>,
@@ -769,31 +774,15 @@ async fn wait_until_dry_run_ready(
                 return Ok(true);
             }
             Ok(false) => match host_chain_tip(&pool, chain_id).await {
-                Ok(tip) if dry_run_readiness_is_stale(tip, start_block) => {
-                    warn!(
-                        chain_id,
-                        start_block,
-                        tip,
-                        stale_after = DRY_RUN_READINESS_STALE_BLOCKS,
-                        "dry-run readiness stalled too far behind the chain tip — \
-                             failing the attempt"
-                    );
-                    match rollback_dry_run(
-                        &pool,
-                        proposal_id,
-                        proposal_block,
-                        None,
-                        "dry_run_readiness_stalled",
-                    )
-                    .await
-                    {
-                        Ok(_) => return Ok(false),
-                        Err(e) => error!(
-                            error = %e,
-                            "failed to fail the stalled dry-run attempt; will retry"
-                        ),
-                    }
-                }
+                // A stall is not a decision. The attempt ends through the
+                // detector's abort record, so every operator ends the same way.
+                Ok(tip) if dry_run_readiness_is_stale(tip, start_block) => warn!(
+                    chain_id,
+                    start_block,
+                    tip,
+                    stale_after = DRY_RUN_READINESS_STALE_BLOCKS,
+                    "dry-run readiness stalled too far behind the chain tip"
+                ),
                 Ok(_) => debug!(
                     chain_id,
                     from_block,
@@ -2084,7 +2073,9 @@ async fn delete_synthetic_rows_by_handle(
 /// produced asynchronously by the sns-worker. Copying before it lands would freeze the probe
 /// as uncomputed on that operator only, a permanent manifest disagreement between healthy
 /// peers that synthetic filtering keeps healing from resolving. A probe on an orphaned branch
-/// is never published, so it does not hold cutover back.
+/// is never published, so it does not hold cutover back. The wait is capped at
+/// [`SYNTHETIC_PROBE_WAIT`] after authorization, so a broken sns-worker costs one probe
+/// block's agreement, not the operator's upgrade.
 async fn assert_synthetic_probes_final(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
     let sql = format!(
         "SELECT COUNT(*)
@@ -2115,14 +2106,32 @@ async fn assert_synthetic_probes_final(tx: &mut Transaction<'_, Postgres>) -> Re
         .bind(RETRYABLE_STAMP_MARKER)
         .fetch_one(&mut **tx)
         .await?;
-    if pending > 0 {
+    if pending == 0 {
+        return Ok(());
+    }
+    // A deferred cutover rolls back without touching the authorized rows, so their
+    // `updated_at` still marks the authorization.
+    let waited_secs: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(EXTRACT(EPOCH FROM NOW() - MIN(updated_at))::float8, 0)
+           FROM upgrade_state
+          WHERE stack_role = 'GCS' AND state = 'UpgradeAuthorized'",
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+    if waited_secs >= SYNTHETIC_PROBE_WAIT.as_secs_f64() {
         warn!(
             pending,
-            "cutover deferred: a dry-run probe's ct128 is still pending"
+            waited_secs,
+            "cutover proceeds without a final dry-run probe descriptor: its ct128 never \
+             came; that probe block will disagree across operators, detected only"
         );
-        return Err(Error::PendingSyntheticProbe { pending });
+        return Ok(());
     }
-    Ok(())
+    warn!(
+        pending,
+        waited_secs, "cutover deferred: a dry-run probe's ct128 is still pending"
+    );
+    Err(Error::PendingSyntheticProbe { pending })
 }
 
 /// Copies the dry-run probe's manifest descriptor material into
@@ -2468,17 +2477,13 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
             .fetch_one(&mut *tx)
             .await?;
     if let Err(reason) = validate_cutover_release(&stack_version, &live_stack_version) {
-        warn!(reason, "proposal cannot cut over; failing the attempt");
-        sqlx::query(
-            "UPDATE upgrade_state
-                SET state = 'PAUSED', status = 'failed',
-                    last_error = $1, updated_at = NOW()
-              WHERE stack_role = 'GCS' AND state = 'UpgradeAuthorized'",
-        )
-        .bind(&reason)
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
+        // The fleet already authorized this cutover, and this operator's record
+        // says `quorum`. Failing the attempt here would end it on this operator
+        // alone, so refuse the run and keep the attempt for the right release.
+        error!(
+            reason,
+            "cutover refused: this controller cannot run the proposal's release"
+        );
         return Ok(());
     }
 
@@ -3752,6 +3757,49 @@ mod tests {
         check().await.expect("a digested probe is final");
     }
 
+    /// A probe whose ct128 never comes (a broken sns-worker) holds cutover only for
+    /// `SYNTHETIC_PROBE_WAIT` after authorization; then cutover proceeds with the probe as
+    /// it is, instead of leaving the operator outside the upgrade.
+    #[tokio::test]
+    async fn cutover_stops_waiting_for_the_probe_past_the_cap() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        sqlx::query(&format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.handle_producer_block
+                  (host_chain_id, handle, producer_block_number, producer_block_hash, synthetic)
+                  VALUES (12345, $1, 101, $2, TRUE)"
+        ))
+        .bind(vec![0x11u8; 32])
+        .bind(vec![0xB1u8; 32])
+        .execute(&pool)
+        .await
+        .expect("seed probe producer row without any digest");
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
+
+        let check = || async {
+            let mut tx = pool.begin().await.expect("begin");
+            let result = assert_synthetic_probes_final(&mut tx).await;
+            tx.rollback().await.expect("rollback");
+            result
+        };
+        assert!(matches!(
+            check().await,
+            Err(Error::PendingSyntheticProbe { pending: 1 })
+        ));
+
+        sqlx::query(
+            "UPDATE upgrade_state SET updated_at = NOW() - $1::float8 * INTERVAL '1 second'
+              WHERE stack_role = 'GCS'",
+        )
+        .bind(SYNTHETIC_PROBE_WAIT.as_secs_f64() + 1.0)
+        .execute(&pool)
+        .await
+        .expect("age the authorization past the cap");
+        check()
+            .await
+            .expect("past the cap, cutover proceeds with the probe as it is");
+    }
+
     /// Cutover deletes the probe's digest row, yet its block may seal after cutover: the
     /// descriptor material is copied to `public.synthetic_handle_digest` first, for the
     /// manifest builder only. A real handle of the same block is not copied, and the copy
@@ -4345,12 +4393,11 @@ mod tests {
         );
     }
 
-    /// If the chain tip pulls more than [`DRY_RUN_READINESS_STALE_BLOCKS`] ahead of
-    /// `start_block` while readiness is still unmet, the loop itself fails the
-    /// attempt (PAUSED/failed, schema reset) instead of polling forever toward a
-    /// `start_block` row that will eventually be pruned out from under it.
+    /// A stalled attempt reports "not ready" and leaves the row alone. Failing it
+    /// here would be a terminal action on silence, which splits the fleet when a
+    /// peer decides otherwise. The detector's abort record ends the attempt.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn wait_until_dry_run_ready_fails_a_stalled_attempt() {
+    async fn wait_until_dry_run_ready_leaves_a_stalled_attempt_alone() {
         use sqlx::Row;
         use tokio::time::{timeout, Duration};
 
@@ -4373,25 +4420,26 @@ mod tests {
         .await
         .expect("seed host_chain_blocks_valid tip");
 
-        let ready = timeout(
-            Duration::from_secs(10),
-            wait_until_dry_run_ready(
-                pool.clone(),
-                CancellationToken::new(),
-                &[0x02; 32],
-                10,
-                1,
-                100,
-            ),
-        )
-        .await
-        .expect("readiness loop did not exit")
-        .expect("readiness loop failed");
-        assert!(!ready, "a stalled attempt must not report readiness");
+        assert!(
+            timeout(
+                Duration::from_secs(3),
+                wait_until_dry_run_ready(
+                    pool.clone(),
+                    CancellationToken::new(),
+                    &[0x02; 32],
+                    10,
+                    1,
+                    100,
+                ),
+            )
+            .await
+            .is_err(),
+            "a stalled attempt must keep waiting, not decide"
+        );
 
         assert!(
-            !marker_exists(&pool).await,
-            "a stalled attempt must reset the gcs schema like any other rollback"
+            marker_exists(&pool).await,
+            "a stalled attempt must not reset the gcs schema"
         );
 
         let row = sqlx::query(
@@ -4400,12 +4448,15 @@ mod tests {
         .fetch_one(&pool)
         .await
         .expect("GCS row");
-        assert_eq!(row.try_get::<String, _>("state").unwrap(), "PAUSED");
-        assert_eq!(row.try_get::<String, _>("status").unwrap(), "failed");
         assert_eq!(
-            row.try_get::<String, _>("last_error").unwrap(),
-            "dry_run_readiness_stalled"
+            row.try_get::<String, _>("state").unwrap(),
+            "UpgradeActivated"
         );
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
+        assert!(row
+            .try_get::<Option<String>, _>("last_error")
+            .unwrap()
+            .is_none());
     }
 
     /// A late timeout must never undo a cutover: rollback is refused once the row is `UpgradeAuthorized`.
@@ -5662,7 +5713,9 @@ mod tests {
     /// stand-in for the transient fault is a missing GCS schema, which makes
     /// A replacement controller joins at whatever state it finds, so it never runs the
     /// activation check. Cutover must refuse a proposal for another release itself,
-    /// before promoting versions or merging its own schema.
+    /// before promoting versions or merging its own schema. It must also leave the
+    /// attempt open: the fleet authorized this cutover, so a controller with the
+    /// right release still has to finish it.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn cutover_rejects_a_proposal_for_another_release() {
         let (_instance, pool) = test_pool().await;
@@ -5676,8 +5729,8 @@ mod tests {
 
         assert_eq!(
             gcs_state(&pool).await,
-            ("PAUSED".into(), "failed".into()),
-            "a proposal for another release must not cut over"
+            ("UpgradeAuthorized".into(), "in_progress".into()),
+            "a proposal for another release must not cut over, and must stay open"
         );
         assert_eq!(
             live_stack_version(&pool).await,
