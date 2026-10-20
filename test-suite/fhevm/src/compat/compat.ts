@@ -462,6 +462,14 @@ export const supportsConnectorHttp = (state: Pick<CompatState, "versions" | "ove
   );
 };
 
+/** Detects when the resolved coprocessor bundle includes coprocessor-proxy. */
+export const supportsCoprocessorProxy = (state: Pick<CompatState, "versions" | "overrides">) =>
+  Boolean(state.versions.env.COPROCESSOR_PROXY_VERSION) ||
+  state.overrides.some(
+    (override) =>
+      override.group === "coprocessor" && (!override.services?.length || override.services.includes("coprocessor-proxy")),
+  );
+
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });

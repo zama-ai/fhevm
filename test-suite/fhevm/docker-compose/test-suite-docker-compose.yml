@@ -12,8 +12,10 @@ services:
     network_mode: "container:fhevm-object-store"
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/test-suite.env
-    # The kms-connector proxies' self-signed test certificate, trusted through NODE_EXTRA_CA_CERTS.
+    # The kms-connector proxies' self-signed test certificate, trusted through NODE_EXTRA_CA_CERTS,
+    # and the coprocessor proxies' one, read through COPROCESSOR_PROXY_CA_CERT.
     volumes:
       - ../static/config/kms-connector-proxy/tls.crt:/etc/kms-connector/proxy/tls.crt:ro
+      - ../static/config/coprocessor-proxy/tls.crt:/etc/coprocessor-proxy/tls.crt:ro
     command:
       - tail -f /dev/null
