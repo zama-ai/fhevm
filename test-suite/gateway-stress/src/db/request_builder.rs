@@ -13,9 +13,8 @@ use alloy::{
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
-        HandleEntry, PublicDecryptionRequest_1 as PublicDecryptionRequest,
-        UserDecryptionRequest_2 as UserDecryptionRequest,
-        UserDecryptionRequest_3 as UserDecryptionRequestV2,
+        HandleEntry, PublicDecryptionRequest, UserDecryptionRequest_0 as UserDecryptionRequest,
+        UserDecryptionRequest_1 as UserDecryptionRequestV2,
     },
     IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
 };
