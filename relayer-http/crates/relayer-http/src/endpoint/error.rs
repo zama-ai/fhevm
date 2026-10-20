@@ -258,6 +258,7 @@ mod tests {
             ErrorCode::Overloaded,
             ErrorCode::AclDenied,
             ErrorCode::UserSignatureRejected,
+            ErrorCode::UserDecryptionExpired,
             ErrorCode::UnsupportedAttestationType,
             ErrorCode::CiphertextNotFound,
             ErrorCode::CoproConsensusFailed,

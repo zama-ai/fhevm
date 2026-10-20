@@ -174,6 +174,7 @@ export const RETRYABLE_BY_CODE: Record<string, boolean> = {
   upstream_transient: true,
   timeout: true,
   unknown: true,
+  user_decryption_expired: false,
 };
 
 /** Worker/endpoint outcomes a client re-submits: the same body may succeed a moment later. */
