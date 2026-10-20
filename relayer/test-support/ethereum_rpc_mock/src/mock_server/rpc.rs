@@ -85,9 +85,9 @@ pub trait EthRpcApi {
     #[method(name = "eth_getLogs")]
     async fn get_logs(&self, filter: Value) -> RpcResult<Vec<Value>>;
 
-    /// Executes a message call transaction
+    /// Executes a message call transaction. `block` is a tag, a number or an EIP-1898 object.
     #[method(name = "eth_call")]
-    async fn call(&self, tx: Value, block: Option<String>) -> RpcResult<String>;
+    async fn call(&self, tx: Value, block: Option<Value>) -> RpcResult<String>;
 
     /// Submits a raw transaction to the network
     #[method(name = "eth_sendRawTransaction")]

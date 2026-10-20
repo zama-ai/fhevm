@@ -13,8 +13,9 @@ pub mod version;
 pub use attestation::AttestationType;
 pub use error::{ErrorCode, ErrorResponse};
 pub use types::{
-    HandleEntry, PublicDecryptionRequest, PublicDecryptionResponse, RequestValidity,
-    UserDecryptionPayload, UserDecryptionRequest, UserDecryptionResponse,
+    HandleEntry, MAX_USER_DECRYPTION_DURATION_SECONDS, PublicDecryptionRequest,
+    PublicDecryptionResponse, RequestValidity, UserDecryptionPayload, UserDecryptionRequest,
+    UserDecryptionResponse,
 };
 pub use version::{
     INTERFACE_VERSION, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,

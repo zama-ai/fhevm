@@ -61,6 +61,13 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "function isDelegatedUserDecryptionReady((address,address),(bytes32,address)[],bytes) returns (bool)",
       "error NotCustodianSigner(address)",
       "error NotCustodianTxSender(address)",
+      // RFC-023 Part 3: the legacy SnsCiphertextMaterial[] request events are dropped after the
+      // v0.15 dual-emission window; consumers read the handles-only overloads. DifferentKeyIdsNotAllowed
+      // is unreachable since ciphertext materials are no longer fetched on-chain.
+      "event PublicDecryptionRequest(uint256 indexed,(bytes32,uint256,bytes32,address[])[],bytes)",
+      "event UserDecryptionRequest(uint256 indexed,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)",
+      "event UserDecryptionRequest(uint256 indexed,(bytes32,uint256,bytes32,address[])[],(bytes32,address,address)[],(address,bytes,address[],(uint256,uint256),bytes,bytes))",
+      "error DifferentKeyIdsNotAllowed((bytes32,uint256,bytes32,address[]),(bytes32,uint256,bytes32,address[]))",
     ],
     InputVerification: ["error NotCustodianSigner(address)", "error NotCustodianTxSender(address)"],
     GatewayConfig: [
@@ -86,6 +93,15 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "event UpdatePublicDecryptionThreshold(uint256)",
       "event UpdateUserDecryptionThreshold(uint256)",
       "event UpdateKmsGenThreshold(uint256)",
+      // Thresholds are fixed at KMS context creation, matching the host. Changing one requires a new context.
+      "function updateMpcThresholdForContext(uint256,uint256)",
+      "function updatePublicDecryptionThresholdForContext(uint256,uint256)",
+      "function updateUserDecryptionThresholdForContext(uint256,uint256)",
+      "function updateKmsGenThresholdForContext(uint256,uint256)",
+      "event UpdateMpcThresholdForContext(uint256 indexed,uint256)",
+      "event UpdatePublicDecryptionThresholdForContext(uint256 indexed,uint256)",
+      "event UpdateUserDecryptionThresholdForContext(uint256 indexed,uint256)",
+      "event UpdateKmsGenThresholdForContext(uint256 indexed,uint256)",
     ],
     // KMSGeneration was frozen to a view-only implementation after the move of key generation to
     // Ethereum. State-changing entrypoints and the errors/events they emitted were removed from

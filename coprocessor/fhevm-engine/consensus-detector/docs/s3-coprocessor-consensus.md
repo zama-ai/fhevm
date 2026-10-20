@@ -601,8 +601,18 @@ material to `synthetic_handle_digest`, which only the manifest builder reads: th
 probe block seals the same way whether it seals before or after cutover. Cutover
 first waits for that descriptor to be final (ct128 included, or a terminal
 error): the state hash covers ct64 only, and an operator whose SNS lagged would
-otherwise copy, and publish, a different descriptor than its peers. JSON
-omits the field when false.
+otherwise copy, and publish, a different descriptor than its peers. A Green
+worker that missed the dry-run release (restart, lost notification) is released
+once it finds the upgrade authorized, so that SNS can still complete; and the
+wait is capped five minutes after authorization, after which the probe is
+copied as it is and only that block's agreement is lost. That loss is not a
+single report: the operator's later manifests of the epoch keep the block in
+their signed history, so every later verification whose history covers it
+still reports `differs_from_quorum` for that operator
+(`coprocessor_manifest_verification_total{outcome=...}`), which can trigger
+alerts. Synthetic filtering only keeps the probe out of the handle findings, so
+the disagreement is never contained or healed; it lasts until the next epoch.
+JSON omits the field when false.
 
 `keyset_id` identifies the compatible FHE key generation. It participates in
 consensus because different key generations can explain otherwise valid but

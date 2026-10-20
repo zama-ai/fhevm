@@ -52,7 +52,7 @@ Additionally, a MPC threshold needs to be attached to a set of KMS nodes. This `
 
 The MPC threshold should be strictly less than the number of registered KMS nodes.
 
-This threshold is set at deployment and can be updated by the owner later on, as long as the above conditions are met.
+This threshold is fixed when the KMS context is created. Changing it requires a new KMS context.
 
 #### Decryption thresholds
 
@@ -68,7 +68,7 @@ Both thresholds should be :
 - non-null: decryption consensuses should require at least one vote
 - less or equal to the number of registered KMS nodes: decryption consensuses should not require more than the number of registered KMS nodes
 
-These thresholds are set at deployment and can be updated by the owner later on, as long as the above conditions are met.
+These thresholds are fixed when the KMS context is created. Changing them requires a new KMS context.
 
 #### KMS generation threshold
 
@@ -79,7 +79,7 @@ This threshold should be :
 - non-null: it should require at least one vote
 - less or equal to the number of registered KMS nodes: it should not require more than the number of registered KMS nodes
 
-This threshold is set at deployment and can be updated by the owner later on, as long as the above conditions are met.
+This threshold is fixed when the KMS context is created. Changing it requires a new KMS context.
 
 ### Coprocessor
 
