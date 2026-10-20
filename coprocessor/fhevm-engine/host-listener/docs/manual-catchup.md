@@ -72,6 +72,11 @@ worker runs separately; the consumer waits for all four read flows before cleanu
 
 ## Ownership and takeover
 
+At startup, the consumer waits ten seconds after publishing WATCH for its live
+and finalized filters, before starting any readers or catchup coordination.
+This gives listener-core time to activate filters; it is a propagation grace
+period, not an activation acknowledgement.
+
 `owner_id` and `lease_until` form a renewable coordination lease. Unowned rows
 have both fields null. Each acquisition batch receives a fresh UUID owner token,
 including reacquisition by the same process. A token identifies an ownership
