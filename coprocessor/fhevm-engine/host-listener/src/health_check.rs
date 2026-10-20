@@ -35,6 +35,24 @@ pub struct HealthCheck {
 }
 
 impl HealthCheck {
+    /// A reconnect replaces and then closes the old pool. An observer can
+    /// already be waiting on that old pool: retry from the shared slot instead
+    /// of terminating ingestion on PoolClosed (or a transient database error).
+    /// Readiness independently fails when it cannot read recovery state.
+    async fn containment_status(&self) -> bool {
+        loop {
+            let pool = self.database_pool.read().await.clone();
+            match fhevm_engine_common::chain_recovery::is_halted(&pool).await {
+                Ok(halted) => return halted,
+                Err(error) => {
+                    tracing::warn!(%error, "Cannot observe chain recovery state; retrying");
+                    self.blockchain_timeout_tick.update();
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+            }
+        }
+    }
+
     /// Observe containment before startup, while idle, and after a failed write.
     /// Drop ingestion before pausing so its pending transactions are rolled back.
     /// Recovery can replace cursors/history: only a fresh process may resume.
@@ -44,33 +62,33 @@ impl HealthCheck {
         work: impl Future<Output = anyhow::Result<()>>,
     ) -> anyhow::Result<()> {
         RECOVERY_PAUSED.set(0);
-        let pool = self.database_pool.read().await.clone();
-        let result =
-            if fhevm_engine_common::chain_recovery::is_halted(&pool).await? {
-                drop(work);
-                None
-            } else {
-                tokio::pin!(work);
-                let observe = async {
-                    loop {
-                        tokio::time::sleep(Duration::from_secs(5)).await;
-                        let pool = self.database_pool.read().await.clone();
-                        if fhevm_engine_common::chain_recovery::is_halted(&pool)
-                            .await?
-                        {
-                            return Ok::<_, sqlx::Error>(());
-                        }
+        let halted = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Ok(()),
+            halted = self.containment_status() => halted,
+        };
+        let result = if halted {
+            drop(work);
+            None
+        } else {
+            tokio::pin!(work);
+            let observe = async {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    if self.containment_status().await {
+                        return;
                     }
-                };
-                // Keep polling ingestion while an observation waits for a DB
-                // connection: ingestion may itself need to release that connection.
-                tokio::select! {
-                    biased;
-                    _ = cancel.cancelled() => return Ok(()),
-                    observed = observe => { observed?; None }
-                    result = &mut work => Some(result),
                 }
             };
+            // Keep polling ingestion while an observation waits for a DB
+            // connection: ingestion may itself need to release that connection.
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Ok(()),
+                _ = observe => None,
+                result = &mut work => Some(result),
+            }
+        };
         if let Some(result) = result {
             // Preserve ordinary errors (including malformed events). A write
             // may discover/record a halt between the periodic observations.
@@ -82,7 +100,11 @@ impl HealthCheck {
                 return result;
             }
         }
-        self.recovery_paused.store(true, Ordering::Relaxed);
+        // Publish the healthy paused state only after its heartbeat is ready.
+        // interval.tick() can yield even on the first tick, so doing this in
+        // the loop below races both the liveness endpoint and pause observers.
+        self.blockchain_timeout_tick.update();
+        self.recovery_paused.store(true, Ordering::Release);
         RECOVERY_PAUSED.set(1);
         tracing::error!(
             event = "chain_recovery_paused",
@@ -102,7 +124,7 @@ impl HealthCheckService for HealthCheck {
     async fn health_check(&self) -> HealthStatus {
         let mut status = HealthStatus::default();
         let pool = self.database_pool.read().await.clone();
-        let recovery_ready = !self.recovery_paused.load(Ordering::Relaxed)
+        let recovery_ready = !self.recovery_paused.load(Ordering::Acquire)
             && matches!(
                 fhevm_engine_common::chain_recovery::readiness_blocked(&pool)
                     .await,
@@ -136,6 +158,11 @@ impl HealthCheckService for HealthCheck {
     }
 
     async fn is_alive(&self) -> bool {
+        if self.recovery_paused.load(Ordering::Acquire) {
+            return self
+                .blockchain_timeout_tick
+                .is_recent(&IS_ALIVE_TICK_FRESHNESS);
+        }
         self.blockchain_tick.is_recent(&IS_ALIVE_TICK_FRESHNESS)
             || self
                 .blockchain_timeout_tick
@@ -292,7 +319,7 @@ mod tests {
         tokio::select! {
             result = &mut listener => panic!("contained listener exited: {result:?}"),
             result = tokio::time::timeout(Duration::from_secs(10), async {
-                while !health.recovery_paused.load(Ordering::Relaxed) {
+                while !health.recovery_paused.load(Ordering::Acquire) {
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
             }) => result?,
@@ -395,6 +422,70 @@ mod tests {
         )
         .await??;
         assert!(!health.recovery_paused.load(Ordering::Relaxed));
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn containment_observer_survives_pool_replacement(
+    ) -> anyhow::Result<()> {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(instance.db_url())
+            .await?;
+        let replacement = sqlx::PgPool::connect(instance.db_url()).await?;
+        let mut health =
+            build_test_health_check(stale_tick(), stale_tick(), stale_tick());
+        health.database_pool = Arc::new(RwLock::new(pool.clone()));
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let pool_slot = health.database_pool.clone();
+        let close_pool = pool.clone();
+        let stop = cancel.clone();
+        let (began, ready) = tokio::sync::oneshot::channel();
+        let swap = tokio::spawn(async move {
+            ready.await.unwrap();
+            // Let the observer wait on the connection retained by ingestion.
+            tokio::time::sleep(Duration::from_secs(6)).await;
+            *pool_slot.write().await = replacement;
+            // This is Database::reconnect's swap-then-close order.
+            let closing = tokio::spawn(async move { close_pool.close().await });
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            stop.cancel();
+            closing.await.unwrap();
+        });
+        let result = health
+            .run_with_containment(&cancel, async {
+                let _connection = pool.acquire().await?;
+                began.send(()).unwrap();
+                std::future::pending::<anyhow::Result<()>>().await
+            })
+            .await;
+        swap.await?;
+        assert!(result.is_ok(), "reconnecting a healthy database must not terminate ingestion: {result:?}");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn containment_observer_retries_with_the_current_pool(
+    ) -> anyhow::Result<()> {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let replacement = sqlx::PgPool::connect(instance.db_url()).await?;
+        record_test_halt(&replacement).await?;
+        let health =
+            build_test_health_check(stale_tick(), stale_tick(), stale_tick());
+        health.database_pool.read().await.close().await;
+        let observe = health.containment_status();
+        tokio::pin!(observe);
+        assert!(futures_util::poll!(&mut observe).is_pending());
+        *health.database_pool.write().await = replacement;
+        assert!(tokio::time::timeout(Duration::from_secs(10), observe).await?);
         Ok(())
     }
 }
