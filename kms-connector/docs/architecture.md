@@ -27,13 +27,13 @@ In order to achieve this, the KMS Connector has been divided into 3 components:
     - But we should be able to scale the number of workers to handle more events if required
   - Gets notified by the Postgres DB when new events are stored
   - Forwards the events' requests to the KMS Core, and stores its responses to DB
-  - Removes the events from the DB once handled
+  - Marks handled events as completed; DB rows are retained permanently
 
 - **TransactionSender**
   - Only one tx sender
   - Gets notified by the Postgres DB when new KMS Core responses are stored
   - Forwards the KMS Core responses to the Gateway by submitting transactions
-  - Removes the responses from the DB once forwarded
+  - Marks forwarded responses as completed; DB rows are retained permanently
 
 Here is an overview of the architecture:
 
@@ -82,6 +82,32 @@ block-beta
 ```
 
 ## KMS Connector flow
+
+### HTTP decryption result reuse
+
+The HTTP endpoint derives a request ID from the request contents. An identical submission
+can reuse a stored result without repeating the worker's authorization checks. The proxy
+still authenticates the sender on every HTTP request.
+
+- Successful public and user decryption results are served indefinitely, including after the
+  user-signed validity interval expires. Stored results are returned without rechecking ACL
+  access, delegation, signature invalidation, or ERC-1271 account state, matching the Gateway path.
+- Recoverable error rows are not served if the request is submitted again. They trigger another processing
+  attempt, or attachment to work already in progress.
+- Irrecoverable error rows are served while their age is less than `error_serve_window`
+  (default: 30 days, configurable via `KMS_CONNECTOR_ERROR_SERVE_WINDOW`). At or past that
+  age, resubmission triggers reprocessing with all worker checks against current state.
+- The endpoint validates request structure. The worker checks the user-signed validity interval
+- when executing a request; expiry does not prevent serving a stored success. An expired
+  user request without a successful stored result is rejected by the worker with `403 user_decryption_expired`,
+  `retryable: false`. A request that is not yet valid yields `403 user_signature_rejected`, `retryable: true`.
+  Reprocessing an expired user request therefore replaces an old error with the expiry error;
+  it does not run decryption again. Gateway-originated user decryption requests stop retrying when a
+  processing attempt detects expiry.
+
+Connector DB rows are retained permanently. Reprocessing a request updates the existing response under the same
+decryption ID. If the result is a new error, its 30 day serve window starts then; if reprocessing is successful, it is
+served infedinitely. Successful payloads are never overwritten.
 
 Here is an overview of the KMS Connector flow from the Gateway request event emitted to the
 transaction response:
