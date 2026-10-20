@@ -419,7 +419,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         // seed resolved before them. Replay ownership is returned with its token.
         let mut seed = None;
         let mut promoted = config.dependent_ops_max_per_chain != 0;
-        let (mut last_caught_up_block, replay) = loop {
+        let (mut last_caught_up_block, mut replay) = loop {
             use fhevm_engine_common::chain_recovery::{
                 prepare_host_replay, HostReplayStartup,
             };
@@ -482,7 +482,6 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 }
             }
         };
-        let mut replay_pending = replay.is_some();
         let mut next_block = match &replay {
             Some(replay) => u64::try_from(replay.progress.from_block)?,
             None => last_caught_up_block.saturating_add(1),
@@ -514,6 +513,27 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 anyhow::bail!(
                     "Chain history is contained; operator recovery is required"
                 );
+            }
+            // A different pod can start a generation and then disappear. Adopt
+            // its outstanding prefix without creating another generation (which
+            // would make healthy replicas continually supersede each other).
+            let pending =
+                fhevm_engine_common::chain_recovery::pending_host_replay(
+                    &pool,
+                    db.gcs_mode(),
+                    chain_id.as_i64(),
+                )
+                .await?;
+            if let Some(pending) = pending {
+                if !replay
+                    .as_ref()
+                    .is_some_and(|current| current.same_chunk(&pending))
+                {
+                    next_block = u64::try_from(pending.progress.from_block)?;
+                    replay = Some(pending);
+                }
+            } else {
+                replay = None;
             }
             let latest = match client.latest_block_number().await {
                 Ok(block) => block,
@@ -596,9 +616,12 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             }
 
             let iteration_start = next_block;
-            let target = safe_tip.min(
+            let mut target = safe_tip.min(
                 next_block.saturating_add(config.batch_size.saturating_sub(1)),
             );
+            if let Some(replay) = &replay {
+                target = target.min(replay.progress.to_block as u64);
+            }
             let blocks_to_process = target - next_block + 1;
 
             let mut processed_blocks = 0;
@@ -703,10 +726,11 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                 db.tick.update();
                 last_caught_up_block = new_anchor;
             }
-            if let Some(replay) = replay.as_ref().filter(|replay| {
-                replay_pending && next_block > replay.progress.to_block as u64
-            }) {
-                replay_pending = replay
+            if let Some(replay) = replay
+                .as_ref()
+                .filter(|replay| next_block > replay.progress.to_block as u64)
+            {
+                replay
                     .complete(
                         &pool,
                         i64::try_from(next_block.saturating_sub(1))?,

@@ -209,7 +209,7 @@ pub async fn record_halt(pool: &PgPool, mismatch: HistoryMismatch<'_>) -> Result
     Ok(())
 }
 
-#[derive(sqlx::FromRow)]
+#[derive(Debug, PartialEq, Eq, sqlx::FromRow)]
 pub struct ReplayProgress {
     pub from_block: i64,
     pub to_block: i64,
@@ -226,6 +226,24 @@ pub struct HostReplay {
 }
 
 impl HostReplay {
+    fn new(mut progress: ReplayProgress, gcs_mode: bool, chain_id: i64) -> Self {
+        // Keep the full obligation durable; an adopter works a bounded prefix.
+        progress.to_block = progress
+            .to_block
+            .min(progress.from_block.saturating_add(9_999));
+        Self {
+            progress,
+            gcs_mode,
+            chain_id,
+        }
+    }
+
+    pub fn same_chunk(&self, other: &Self) -> bool {
+        self.gcs_mode == other.gcs_mode
+            && self.chain_id == other.chain_id
+            && self.progress == other.progress
+    }
+
     /// Returns whether this generation still owns an unfinished obligation.
     pub async fn complete(&self, pool: &PgPool, through_block: i64) -> anyhow::Result<bool> {
         let progress = complete_replay(
@@ -320,8 +338,8 @@ pub async fn prepare_host_replay(
         pending.map(|progress| (progress.from_block, progress.to_block))
     };
     let replay = if let Some((from_block, to_block)) = window {
-        Some(HostReplay {
-            progress: begin_replay_tx(
+        Some(HostReplay::new(
+            begin_replay_tx(
                 &mut tx,
                 ListenerSource::Host,
                 gcs_mode,
@@ -332,12 +350,39 @@ pub async fn prepare_host_replay(
             .await?,
             gcs_mode,
             chain_id,
-        })
+        ))
     } else {
         None
     };
     tx.commit().await?;
     Ok(HostReplayStartup::Ready { cursor, replay })
+}
+
+/// Join an existing generation without superseding another replica. Running
+/// pollers must observe new obligations too: the pod that started one may die.
+/// Namespace resolution and inspection use the same fence as startup.
+pub async fn pending_host_replay(
+    pool: &PgPool,
+    gcs_hint: bool,
+    chain_id: i64,
+) -> anyhow::Result<Option<HostReplay>> {
+    let Some(mut tx) = begin_write_guarded(pool, gcs_hint, GcsRollbackPolicy::Continue)
+        .await?
+        .into_tx()
+    else {
+        anyhow::bail!("chain recovery or stack lifecycle blocks replay adoption");
+    };
+    let gcs_mode = host_role_tx(&mut tx).await?;
+    let progress: Option<ReplayProgress> = sqlx::query_as(
+        "SELECT from_block, to_block, pending, generation FROM public.listener_replay_state
+         WHERE source = 'host' AND stack_role = $1 AND chain_id = $2 AND pending",
+    )
+    .bind(stack_role(gcs_mode))
+    .bind(chain_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(progress.map(|progress| HostReplay::new(progress, gcs_mode, chain_id)))
 }
 
 pub async fn pending_replay(
@@ -393,10 +438,6 @@ async fn replay_progress(
     .bind(chain_id)
     .fetch_one(&mut **tx)
     .await?;
-    anyhow::ensure!(
-        progress.to_block - progress.from_block < 10_000,
-        "unfinished replay exceeds 10000 blocks; operator recovery required"
-    );
     Ok(progress)
 }
 
@@ -472,9 +513,12 @@ pub async fn complete_replay(
         anyhow::bail!("chain recovery or stack lifecycle blocks replay progress");
     };
     let changed = sqlx::query(
-        "UPDATE public.listener_replay_state SET pending = FALSE, updated_at = NOW()
+        "UPDATE public.listener_replay_state
+         SET pending = to_block > $5,
+             from_block = CASE WHEN to_block > $5 THEN $5 + 1 ELSE from_block END,
+             updated_at = NOW()
          WHERE source = $1 AND stack_role = $2 AND chain_id = $3
-           AND from_block >= $4 AND to_block <= $5 AND generation = $6 AND pending",
+           AND from_block >= $4 AND from_block <= $5 AND generation = $6 AND pending",
     )
     .bind(source.as_str())
     .bind(stack_role(gcs_mode))
@@ -486,8 +530,8 @@ pub async fn complete_replay(
     .await?
     .rows_affected();
     if changed > 0 {
-        // Transactional delivery: both host and Gateway waiters must observe
-        // the cleared obligation, even when neither chain produces another block.
+        // Transactional delivery: adopters observe the remaining range, and
+        // host/Gateway waiters observe completion even without another block.
         sqlx::query("SELECT pg_notify($1, '')")
             .bind(EVENT_RECOVERY_CHANGED)
             .execute(&mut *tx)

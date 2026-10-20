@@ -960,9 +960,12 @@ impl InfiniteLogIter {
             "canonical block changed during finalization recovery"
         );
         validate_block_logs(&block_logs)?;
-        // Let the normal ingestion path validate and commit all events. A later
-        // finalization pass independently checks the hash and finality boundary.
+        // Only the finalizer requests these repairs, for heights already below
+        // its confirmation boundary. Treat the coherent canonical observation
+        // as authoritative so a contradiction with retained finalized history
+        // is contained rather than silently discarded as a delayed live fork.
         block_logs.catchup = true;
+        block_logs.finalized = true;
         self.next_blocklogs.push_front(block_logs);
         Ok(())
     }
@@ -1606,7 +1609,7 @@ mod tests {
             assert_eq!(repair.summary.hash, canonical.header.hash);
             assert_eq!(repair.logs.len(), usize::from(with_event));
             assert!(repair.catchup);
-            assert!(!repair.finalized);
+            assert!(repair.finalized);
             iter.acknowledge_catchup_block();
             assert_eq!(iter.catchup_blocks, Some((100, None)));
         }

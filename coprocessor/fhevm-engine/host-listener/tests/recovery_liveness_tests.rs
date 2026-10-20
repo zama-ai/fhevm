@@ -1,0 +1,176 @@
+//! Regression coverage for sparse finality and replay takeover.
+mod ingest_fixtures;
+use alloy::primitives::FixedBytes;
+use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::chain_recovery::{
+    is_halted, pending_host_replay, pending_replay, prepare_host_replay,
+    readiness_blocked, HostReplayStartup, ListenerSource,
+};
+use host_listener::cmd::block_history::BlockSummary;
+use host_listener::database::ingest::{
+    ingest_block_logs, update_finalized_blocks_aux, BlockLogs,
+};
+use host_listener::database::tfhe_event_propagate::Database;
+use ingest_fixtures::*;
+use serial_test::serial;
+
+fn header(number: u64, canonical: bool) -> BlockSummary {
+    let hash = |n| {
+        FixedBytes::from(
+            [n as u8 + if canonical && n >= 75 { 100 } else { 0 }; 32],
+        )
+    };
+    BlockSummary {
+        number,
+        hash: hash(number),
+        parent_hash: hash(number - 1),
+        timestamp: 1_790_000_000 + number,
+    }
+}
+
+async fn admit(
+    db: &mut Database,
+    summary: BlockSummary,
+    finalized: bool,
+) -> anyhow::Result<()> {
+    let logs = if summary.hash == header(82, true).hash {
+        let output = computed_handle(0x51);
+        let transaction = computed_handle(0xE1);
+        vec![
+            rpc_log(&trivial_encrypt(output), &summary, transaction, 0),
+            rpc_log(&allowed(output), &summary, transaction, 1),
+        ]
+    } else {
+        vec![]
+    };
+    ingest_block_logs(
+        ChainId::try_from(42_u64)?,
+        db,
+        &BlockLogs {
+            logs,
+            summary,
+            catchup: true,
+            finalized,
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        OPTIONS,
+    )
+    .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn sparse_catchup_repair_contains_a_contradiction_instead_of_repeating(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    for number in 74..=80 {
+        admit(&mut db, header(number, false), true).await?;
+    }
+    admit(&mut db, header(81, false), false).await?;
+    // Sparse historical delivery can retain disconnected finalized segments.
+    // The latest segment alone does not prove that the older one is canonical.
+    admit(&mut db, header(82, true), true).await?;
+    let result =
+        update_finalized_blocks_aux(&mut db, 100, 10, |n| async move {
+            Ok(header(n, true).hash)
+        })
+        .await;
+    assert_eq!(result.missing_canonical_block, Some(81));
+    assert!(!is_halted(&pool).await?);
+    // queue_canonical_block_for_retry now retains this finality claim. Its
+    // iterator regression separately checks the flag on the actual queued block.
+    let err = admit(&mut db, header(81, true), true).await.unwrap_err();
+    assert!(err.to_string().contains("committed canonical history"));
+    assert!(is_halted(&pool).await?);
+    let repaired: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM host_chain_blocks_valid WHERE block_hash=$1",
+    )
+    .bind(header(81, true).hash.to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(repaired, 0, "contradictory work must not be admitted");
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn surviving_poller_adopts_dead_starters_generation() -> anyhow::Result<()>
+{
+    let (db, pool, _instance) = setup().await?;
+    db.poller_set_last_caught_up_block(ChainId::try_from(42_u64)?, 100)
+        .await?;
+    let HostReplayStartup::Ready {
+        replay: Some(first),
+        ..
+    } = prepare_host_replay(&pool, false, 42, 10, None).await?
+    else {
+        panic!("first replay")
+    };
+    let HostReplayStartup::Ready {
+        replay: Some(second),
+        ..
+    } = prepare_host_replay(&pool, false, 42, 10, None).await?
+    else {
+        panic!("second replay")
+    };
+    let generation = second.progress.generation;
+    assert!(!first.complete(&pool, 100).await?);
+    assert!(readiness_blocked(&pool).await?);
+    let adopted = pending_host_replay(&pool, false, 42).await?.unwrap();
+    assert_eq!(adopted.progress.generation, generation);
+    assert!(!first.same_chunk(&adopted));
+    assert!(!adopted.complete(&pool, 100).await?);
+    assert!(!readiness_blocked(&pool).await?);
+    assert!(pending_host_replay(&pool, false, 42).await?.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn long_abandoned_replay_is_adopted_in_bounded_chunks_without_loss(
+) -> anyhow::Result<()> {
+    let (db, pool, _instance) = setup().await?;
+    db.poller_set_last_caught_up_block(ChainId::try_from(42_u64)?, 100)
+        .await?;
+    prepare_host_replay(&pool, false, 42, 10, None).await?;
+    db.poller_set_last_caught_up_block(ChainId::try_from(42_u64)?, 20_150)
+        .await?;
+    let HostReplayStartup::Ready {
+        replay: Some(first_chunk),
+        ..
+    } = prepare_host_replay(&pool, false, 42, 10, None).await?
+    else {
+        panic!("adopt replay")
+    };
+    assert_eq!(
+        (
+            first_chunk.progress.from_block,
+            first_chunk.progress.to_block
+        ),
+        (91, 10_090)
+    );
+    let generation = first_chunk.progress.generation;
+    assert!(first_chunk.complete(&pool, 10_090).await?);
+    let durable = pending_replay(&pool, ListenerSource::Host, false, 42)
+        .await?
+        .unwrap();
+    assert_eq!((durable.from_block, durable.to_block), (10_091, 20_150));
+    assert!(readiness_blocked(&pool).await?);
+    let second = pending_host_replay(&pool, false, 42).await?.unwrap();
+    assert_eq!(second.progress.generation, generation);
+    assert_eq!(second.progress.to_block, 20_090);
+    assert!(second.complete(&pool, 20_090).await?);
+    let last = pending_host_replay(&pool, false, 42).await?.unwrap();
+    assert_eq!(
+        (last.progress.from_block, last.progress.to_block),
+        (20_091, 20_150)
+    );
+    assert!(!last.complete(&pool, 20_150).await?);
+    assert!(!readiness_blocked(&pool).await?);
+    Ok(())
+}

@@ -393,6 +393,48 @@ async fn poller_recovers_missing_canonical_height_before_restart_overlap(
 }
 
 #[tokio::test]
+async fn idle_poller_adopts_replay_started_by_a_dead_replica() -> Result<()> {
+    use alloy::providers::ext::AnvilApi;
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow!("{err}"))?;
+    let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+    let anvil = alloy::node_bindings::Anvil::new().chain_id(42).spawn();
+    let provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());
+    provider.anvil_mine(Some(20), None).await?;
+    sqlx::query("INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block) VALUES (42, 10)")
+        .execute(&pool).await?;
+    let mut config = pause_test_config(instance.db_url.clone(), &anvil, 1);
+    config.finality_lag = 0;
+    config.replay_window = 1;
+    let poller = run_poller(config);
+    tokio::pin!(poller);
+    tokio::select! {
+        result = &mut poller => panic!("poller exited: {result:?}"),
+        result = tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let cursor: i64 = sqlx::query_scalar(
+                    "SELECT last_caught_up_block FROM host_listener_poller_state WHERE chain_id=42"
+                ).fetch_one(&pool).await?;
+                if cursor == 20 && !readiness_blocked(&pool).await? { break; }
+                sleep(Duration::from_millis(20)).await;
+            }
+            // Simulate a second startup that persists a generation and exits
+            // without reading any blocks. No new host block will wake the survivor.
+            let HostReplayStartup::Ready { replay: Some(_), .. } =
+                prepare_host_replay(&pool, false, 42, 5, None).await?
+            else { panic!("second startup must create replay"); };
+            assert!(readiness_blocked(&pool).await?);
+            while readiness_blocked(&pool).await? {
+                sleep(Duration::from_millis(20)).await;
+            }
+            Ok::<_, anyhow::Error>(())
+        }) => result??,
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn missing_canonical_blocks_recover_across_gaps_in_observed_forks(
 ) -> Result<()> {
     use crate::contracts::TfheContract::TrivialEncrypt;
@@ -1080,16 +1122,10 @@ async fn overlapping_restart_adopts_pending_range_and_rejects_stale_completion(
         begin_replay(&restarted, ListenerSource::Host, false, 42, 104, 167)
             .await?;
     assert_eq!((resumed.from_block, resumed.to_block), (102, 167));
-    assert!(begin_replay(
-        &restarted,
-        ListenerSource::Host,
-        false,
-        42,
-        1,
-        10001
-    )
-    .await
-    .is_err());
+    let extended =
+        begin_replay(&restarted, ListenerSource::Host, false, 42, 1, 10001)
+            .await?;
+    assert_eq!((extended.from_block, extended.to_block), (1, 10001));
     assert!(readiness_blocked(&pool).await?);
     Ok(())
 }
