@@ -26,6 +26,10 @@ tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+opentelemetry.workspace = true
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true
 rcgen.workspace = true
 rstest.workspace = true
 rustls.workspace = true

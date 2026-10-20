@@ -11,7 +11,10 @@ use connector_utils::monitoring::{
 use kms_connector_api::{ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE};
 use proxy::{
     core::Proxy,
-    monitoring::health::{HealthStatus, State},
+    monitoring::{
+        health::{HealthStatus, State},
+        metrics,
+    },
 };
 use rstest::rstest;
 use std::{str::FromStr, time::Duration};
@@ -24,6 +27,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     // Start the `Proxy` with two endpoints, and its monitoring server
     let endpoints = vec![StubEndpoint::start().await, StubEndpoint::start().await];
     let t = TestProxy::start(endpoints).await;
+    metrics::init();
 
     let monitoring_endpoint = free_addr();
     let monitoring_url = Url::from_str(&format!("http://{}/healthz", monitoring_endpoint))?;
@@ -31,6 +35,21 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     let monitoring_server_task =
         start_monitoring_server(monitoring_endpoint, t.state.clone(), cancel_token.clone())?;
     wait_for_listener(monitoring_endpoint).await;
+
+    let metrics = reqwest::get(format!("http://{monitoring_endpoint}/metrics"))
+        .await?
+        .text()
+        .await?;
+    for name in [
+        "kms_connector_proxy_http_requests_counter",
+        "kms_connector_proxy_http_request_duration_seconds",
+        "kms_connector_proxy_http_requests_in_flight",
+    ] {
+        assert!(
+            metrics.contains(name),
+            "metric not exposed at startup: {name}"
+        );
+    }
 
     // Test `liveness` endpoint
     let url = format!("http://{}/liveness", monitoring_endpoint);

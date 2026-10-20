@@ -39,6 +39,7 @@ pub async fn user_decrypt(
 pub struct UserRoute;
 
 impl DecryptionRoute for UserRoute {
+    const LABEL: &'static str = "user_decrypt";
     type Request = UserDecryptionRequest;
     type ResponseRow = UserDecryptionResponseRow;
 

@@ -51,6 +51,7 @@ impl ResponseListener {
                 // `sqlx` already reconnected and re-issued the `LISTEN`s. Notifications emitted
                 // during the gap are lost, so the in-flight waiters are failed fast.
                 Ok(None) => {
+                    crate::monitoring::metrics::RECONNECTIONS.inc();
                     warn!("Postgres listener connection was lost and re-established");
                     self.fail_in_flight_waiters();
                 }

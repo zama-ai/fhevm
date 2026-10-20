@@ -5,20 +5,27 @@ pub mod public_decrypt;
 pub mod user_decrypt;
 pub mod version;
 
-use crate::core::{Config, WaiterRegistry};
+use crate::{
+    core::{Config, WaiterRegistry},
+    monitoring::metrics,
+};
 use actix_web::{
     App, HttpRequest, HttpResponse, HttpServer,
-    dev::Server,
+    body::MessageBody,
+    dev::{Server, ServiceRequest, ServiceResponse},
     error::{InternalError, JsonPayloadError},
+    middleware::{Next, from_fn},
     web::{self, Data, JsonConfig},
 };
 use anyhow::anyhow;
+use connector_utils::monitoring::http as telemetry;
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
 };
 use sqlx::{Pool, Postgres};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::Semaphore;
+use tracing::Instrument;
 
 /// Shared state of the HTTP handlers.
 #[derive(Clone)]
@@ -48,7 +55,7 @@ impl AppState {
 
 pub fn run_server(state: AppState, endpoint: SocketAddr) -> anyhow::Result<Server> {
     HttpServer::new(move || {
-        App::new().configure(|cfg| {
+        App::new().wrap(from_fn(observe_request)).configure(|cfg| {
             cfg.app_data(json_config(state.config.max_body_bytes))
                 .app_data(Data::new(state.clone()))
                 .route(VERSION_ROUTE, web::get().to(version::version))
@@ -67,6 +74,50 @@ pub fn run_server(state: AppState, endpoint: SocketAddr) -> anyhow::Result<Serve
     .bind(endpoint)
     .map_err(|e| anyhow!("Failed to bind HTTP server to {endpoint}: {e}"))
     .map(|server| server.run())
+}
+
+/// `code` label of a response matching no API error code nor known status.
+const UNCLASSIFIED: &str = "unclassified";
+
+/// Traces and counts every request, including routing and JSON extraction failures.
+async fn observe_request<B: MessageBody>(
+    req: ServiceRequest,
+    next: Next<B>,
+) -> Result<ServiceResponse<B>, actix_web::Error> {
+    let path = req.path();
+    let incoming =
+        telemetry::extract_context(|name| req.headers().get(name).and_then(|v| v.to_str().ok()));
+    let span = telemetry::endpoint_span(req.method().as_str(), path, incoming);
+    let mut observation = metrics::HTTP.start(telemetry::route_label(path));
+    let response = next.call(req).instrument(span.clone()).await;
+    let (status, code) = match &response {
+        Ok(response) => (response.status(), response_code(response.response())),
+        // Handler and extractor errors arrive as responses: only the service stack fails here.
+        Err(error) => (
+            error.as_response_error().status_code(),
+            error
+                .as_error::<ErrorResponse>()
+                .map_or(UNCLASSIFIED, |e| e.code.as_str()),
+        ),
+    };
+    observation.finish(status.as_u16(), code, &span);
+    response
+}
+
+fn response_code<B>(response: &HttpResponse<B>) -> &'static str {
+    if let Some(error) = response
+        .error()
+        .and_then(|error| error.as_error::<ErrorResponse>())
+    {
+        return error.code.as_str();
+    }
+    match response.status().as_u16() {
+        200..=299 => "success",
+        400 => "malformed", // Includes the JSON extractor's InternalError.
+        404 => "not_found",
+        405 => "method_not_allowed",
+        _ => UNCLASSIFIED,
+    }
 }
 
 /// JSON extractor configuration: body size limit and `400 malformed` error body.

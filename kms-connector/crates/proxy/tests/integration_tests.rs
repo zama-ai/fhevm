@@ -12,10 +12,23 @@ use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
     VersionResponse,
 };
-use std::time::Duration;
+use proxy::monitoring::metrics::HTTP;
+use std::time::{Duration, Instant};
 
 #[tokio::test]
 async fn test_forwards_authenticated_requests_untouched() {
+    use opentelemetry::trace::{SpanId, TracerProvider};
+    use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+    use tracing_subscriber::layer::SubscriberExt;
+    let exporter = InMemorySpanExporter::default();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("proxy-test"))),
+    )
+    .unwrap();
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
 
     let response = t.get(VERSION_ROUTE).await.send().await.unwrap();
@@ -32,6 +45,12 @@ async fn test_forwards_authenticated_requests_untouched() {
         .await
         .header("content-type", "application/json")
         .header("x-forwarded-for", "9.9.9.9")
+        .header(
+            "traceparent",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00",
+        )
+        .header("tracestate", "vendor=client")
+        .header("baggage", "client=untrusted")
         .send()
         .await
         .unwrap();
@@ -41,6 +60,14 @@ async fn test_forwards_authenticated_requests_untouched() {
     assert_eq!(echo["authorization"], serde_json::Value::Null);
     assert_eq!(echo["x-forwarded-for"], "127.0.0.1");
     assert_eq!(echo["x-forwarded-proto"], "https");
+    let traceparent = echo["traceparent"].as_str().unwrap();
+    assert!(!traceparent.contains("4bf92f3577b34da6a3ce929d0e0e4736"));
+    assert!(
+        traceparent.ends_with("-01"),
+        "caller sampling must not control the edge trace"
+    );
+    assert!(echo["tracestate"].is_null());
+    assert!(echo["baggage"].is_null());
 
     let response = t
         .post(USER_DECRYPTION_ROUTE, "{}")
@@ -49,6 +76,21 @@ async fn test_forwards_authenticated_requests_untouched() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+    assert_requests("public_decrypt", "200", "upstream", 1).await;
+    assert_requests("user_decrypt", "200", "upstream", 1).await;
+    provider.force_flush().unwrap();
+    let spans = exporter.get_finished_spans().unwrap();
+    assert_eq!(spans.len(), 2, "version requests must not export spans");
+    assert!(
+        spans
+            .iter()
+            .all(|span| span.parent_span_id == SpanId::INVALID)
+    );
+    let linked = spans
+        .iter()
+        .find(|span| !span.links.links.is_empty())
+        .unwrap();
+    assert_eq!(linked.links.links.len(), 1);
 }
 
 #[tokio::test]
@@ -173,6 +215,7 @@ async fn test_rejects_expired_headers_as_retryable() {
     assert_eq!(error.code, ErrorCode::AuthExpired);
     assert!(error.retryable);
     assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
+    assert_requests("public_decrypt", "401", "auth_expired", 1).await;
 }
 
 #[tokio::test]
@@ -216,6 +259,9 @@ async fn test_default_deny_routing() {
         );
     }
     assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
+    assert_requests("unmatched", "404", "not_found", 4).await;
+    assert_requests("public_decrypt", "405", "method_not_allowed", 1).await;
+    assert_requests("version", "405", "method_not_allowed", 1).await;
 }
 
 #[tokio::test]
@@ -252,6 +298,8 @@ async fn test_rejects_oversized_bodies() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+    assert_requests("public_decrypt", "400", "malformed", 2).await;
+    assert_requests("public_decrypt", "401", "sender_authentication_failed", 1).await;
 }
 
 #[tokio::test]
@@ -270,6 +318,7 @@ async fn test_passes_endpoint_errors_through() {
     let error: ErrorResponse = response.json().await.unwrap();
     assert_eq!(error.code, ErrorCode::Overloaded);
     assert!(error.retryable);
+    assert_requests("public_decrypt", "503", "upstream", 1).await;
 }
 
 #[tokio::test]
@@ -311,6 +360,7 @@ async fn test_upstream_timeout() {
     let error: ErrorResponse = response.json().await.unwrap();
     assert_eq!(error.code, ErrorCode::Timeout);
     assert!(error.retryable);
+    assert_requests("public_decrypt", "504", "timeout", 1).await;
 }
 
 #[tokio::test]
@@ -330,6 +380,7 @@ async fn test_unreachable_endpoint() {
     let error: ErrorResponse = response.json().await.unwrap();
     assert_eq!(error.code, ErrorCode::UpstreamTransient);
     assert!(error.retryable);
+    assert_requests("public_decrypt", "502", "upstream_transient", 1).await;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -381,4 +432,24 @@ async fn send_raw(t: &TestProxy, request: &[u8]) -> StatusCode {
         .nth(1)
         .and_then(|status| StatusCode::from_bytes(status.as_bytes()).ok())
         .unwrap_or_else(|| panic!("unexpected response: {response}"))
+}
+
+// Check that we see `expected` requests in the metrics within a 5s window.
+async fn assert_requests(route: &str, status: &str, code: &str, expected: u64) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let count = HTTP
+            .requests
+            .with_label_values(&[route, status, code])
+            .get();
+        if count >= expected {
+            assert_eq!(count, expected);
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "missing metric {route}/{status}/{code}: {count} < {expected}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
