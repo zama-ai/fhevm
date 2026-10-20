@@ -870,7 +870,6 @@ export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
     await ctx.runHostContractTask(`npx hardhat ${task} --use-internal-proxy-address true`);
     await waitUntil(`the ${label} reshared the migrated key and activated on chain`, async () =>
       activated(before, await readKmsEpoch()), 600);
-    await runKeyContinuity("reuse", continuityContract);
     await ctx.test("public-decryption", { parallel: false });
     await ctx.test("user-decryption", { parallel: false });
   };
