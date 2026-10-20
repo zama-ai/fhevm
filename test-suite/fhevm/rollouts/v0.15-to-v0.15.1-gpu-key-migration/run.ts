@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import type { RolloutRunContext } from "../../src/commands/rollout-run";
-import { waitForContainer } from "../../src/flow/readiness";
+import { type ContextAndEpoch, parseContextAndEpoch } from "../../src/commands/kms-context-switch";
+import { castCall, resolveKmsGenerationTarget, waitForContainer } from "../../src/flow/readiness";
 import {
   CANONICAL_HOST_CONTRACT_UPGRADES,
   CONNECTOR_OPTIONAL_VERSION_KEYS,
@@ -852,4 +853,29 @@ export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
   await ctx.test("public-decryption", { parallel: false });
   await ctx.test("user-decryption", { parallel: false });
   await assertWorkerRepresentation("Green", ["tfhe-worker"], "compressed-xof", greenStartedAt);
+
+  logPhase("15 reshare the migrated key through an epoch rotation, then a context switch");
+  // KMS nodes check the getKeyInfo record the connector supplies against the migrated record they hold.
+  const target = resolveKmsGenerationTarget(await ctx.readState());
+  const protocolConfig = target.configAddress;
+  if (!protocolConfig) throw new Error("KMS resharing checks require ProtocolConfig discovery");
+  const readKmsEpoch = async () =>
+    parseContextAndEpoch(await castCall(target.rpcUrl, protocolConfig, "getCurrentKmsContextAndEpoch()(uint256,uint256)"));
+  const reshare = async (
+    label: string,
+    task: string,
+    activated: (before: ContextAndEpoch, current: ContextAndEpoch) => boolean,
+  ) => {
+    const before = await readKmsEpoch();
+    await ctx.runHostContractTask(`npx hardhat ${task} --use-internal-proxy-address true`);
+    await waitUntil(`the ${label} reshared the migrated key and activated on chain`, async () =>
+      activated(before, await readKmsEpoch()), 600);
+    await runKeyContinuity("reuse", continuityContract);
+    await ctx.test("public-decryption", { parallel: false });
+    await ctx.test("user-decryption", { parallel: false });
+  };
+  await reshare("epoch rotation", "task:defineNewEpochForCurrentKmsContext", (before, current) =>
+    current.contextId === before.contextId && current.epochId !== before.epochId);
+  await reshare("context switch", "task:defineNewKmsContextAndEpoch", (before, current) =>
+    current.contextId !== before.contextId);
 }
