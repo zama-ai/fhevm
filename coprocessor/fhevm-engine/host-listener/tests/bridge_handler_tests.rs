@@ -475,6 +475,24 @@ async fn ingest_fallback_block_at(
     block_hash: FixedBytes<32>,
     finalized: bool,
 ) {
+    try_ingest_fallback_block_at(
+        db,
+        events,
+        block_number,
+        block_hash,
+        finalized,
+    )
+    .await
+    .expect("ingest_block_logs");
+}
+
+async fn try_ingest_fallback_block_at(
+    db: &mut Database,
+    events: &[(FixedBytes<32>, U256, u8)],
+    block_number: u64,
+    block_hash: FixedBytes<32>,
+    finalized: bool,
+) -> Result<(), sqlx::Error> {
     let logs = events
         .iter()
         .enumerate()
@@ -531,7 +549,6 @@ async fn ingest_fallback_block_at(
         options,
     )
     .await
-    .expect("ingest_block_logs");
 }
 
 // Single-event convenience wrapper around `ingest_fallback_block`.
@@ -1809,5 +1826,136 @@ async fn fallback_grant_materializes_once_the_bridged_source_approval_is_orphane
         computation_count(&db, dst_handle).await,
         1,
         "only the grant can still materialize the destination"
+    );
+}
+
+async fn seed_sealed_fallback(
+    published: bool,
+) -> (Database, DBInstance, FixedBytes<32>, FixedBytes<32>) {
+    let (mut db, instance) = fresh_db(DST_CHAIN_ID).await;
+    let handle = fallback_dst_handle(DST_CHAIN_ID, 5);
+    let hash = FixedBytes::from([0xAB; 32]);
+    ingest_fallback_block_at(
+        &mut db,
+        &[(handle, U256::from(123_u64), 0x77)],
+        BLOCK_NUMBER,
+        hash,
+        false,
+    )
+    .await;
+    assert_eq!(computation_count(&db, handle).await, 0);
+    assert_eq!(producer_rows(&db, handle).await.len(), 1);
+
+    // Model the publisher's durable uncomputed seal. The publisher has no
+    // finality gate: once the incomplete-manifest lag/timeout elapse, the
+    // producer already admitted above is sealed as is_uncomputed.
+    sqlx::query(
+        "INSERT INTO block_manifest_state
+            (host_chain_id, block_number, block_hash, parent_block_hash,
+             publication_cadence, block_content_digest, block_handle_count,
+             manifest_published, manifest_digest, manifest_publisher, manifest_published_at)
+         VALUES ($1, $2, $3, $4, 1, $5, 1, $6,
+                 CASE WHEN $6 THEN $5 END,
+                 CASE WHEN $6 THEN decode(repeat('11', 20), 'hex') END,
+                 CASE WHEN $6 THEN NOW() END)",
+    )
+    .bind(DST_CHAIN_ID as i64)
+    .bind(BLOCK_NUMBER as i64)
+    .bind(hash.to_vec())
+    .bind(vec![(BLOCK_NUMBER - 1) as u8; 32])
+    .bind(vec![0x33_u8; 32])
+    .bind(published)
+    .execute(&db.pool().await)
+    .await
+    .unwrap();
+    (db, instance, handle, hash)
+}
+
+async fn assert_finalized_fallback_preserves_inventory(published: bool) {
+    let (mut db, _instance, handle, hash) =
+        seed_sealed_fallback(published).await;
+    // The exact same event is delivered by the finalized HTTP poller. No
+    // omitted event or permission is introduced; synthesis is merely due now.
+    ingest_fallback_block_at(
+        &mut db,
+        &[(handle, U256::from(123_u64), 0x77)],
+        BLOCK_NUMBER,
+        hash,
+        true,
+    )
+    .await;
+    assert_eq!(computation_count(&db, handle).await, 1);
+    assert!(
+        !fhevm_engine_common::chain_recovery::is_halted(&db.pool().await)
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn finalized_replay_of_known_fallback_preserves_sealed_inventory() {
+    assert_finalized_fallback_preserves_inventory(false).await;
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn finalized_replay_of_known_fallback_preserves_published_inventory() {
+    assert_finalized_fallback_preserves_inventory(true).await;
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn deferred_synthesis_of_sealed_fallback_preserves_inventory() {
+    let (db, _instance, handle, hash) = seed_sealed_fallback(false).await;
+    let mut tx = db.new_transaction().await.unwrap().unwrap();
+    synthesize_finalized_fallback_grants(
+        &db,
+        &mut tx,
+        BLOCK_NUMBER as i64,
+        &hash,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(computation_count(&db, handle).await, 1);
+    assert!(
+        !fhevm_engine_common::chain_recovery::is_halted(&db.pool().await)
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn fallback_observation_on_another_fork_does_not_exempt_inventory_repair()
+{
+    let (mut db, _instance, handle, hash) = seed_sealed_fallback(false).await;
+    // Model a sealed producer whose grant has only been observed on a sibling.
+    // A new grant on this fork changes eligibility; it is not completion of an
+    // already-admitted fallback.
+    sqlx::query(
+        "UPDATE fallback_granted_events SET block_hash = $1 WHERE dst_handle = $2",
+    )
+    .bind(vec![0xCDu8; 32])
+    .bind(handle.to_vec())
+    .execute(&db.pool().await)
+    .await
+    .unwrap();
+    let error = try_ingest_fallback_block_at(
+        &mut db,
+        &[(handle, U256::from(123_u64), 0x77)],
+        BLOCK_NUMBER,
+        hash,
+        true,
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("inventory already committed"));
+    assert_eq!(computation_count(&db, handle).await, 0);
+    assert!(
+        fhevm_engine_common::chain_recovery::is_halted(&db.pool().await)
+            .await
+            .unwrap()
     );
 }

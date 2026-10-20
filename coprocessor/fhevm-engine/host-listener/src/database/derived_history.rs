@@ -90,6 +90,11 @@ async fn load(
     // finish already-admitted work concurrently. Manifest inventory is fork-
     // specific, so admitting another unfinalized variant does not cause a halt.
     // Unqualified names intentionally follow the listener's BCS/GCS routing.
+    // A recorded fallback grant already admits its producer, even while its
+    // computation is deferred until finality. Count that eligibility from the
+    // observation, not the eventual computation row: synthesis is completion
+    // of known work, including after an uncomputed manifest seal. A new grant
+    // or an observation on a different fork must still change this inventory.
     //
     // A non-empty state hash already proves FHE activity: finalized headers can
     // be pruned, then restored by a full or ACL-only replay. Losing/restoring
@@ -131,11 +136,15 @@ async fn load(
          FROM state_hash sh WHERE sh.chain_id = $1 AND sh.block_number = ANY($2)
          UNION
          SELECT b.block_number, b.block_hash, 0::bigint,
-                (SELECT COUNT(*) FROM handle_producer_block p JOIN computations c
-                    ON c.output_handle = p.handle AND c.host_chain_id = p.host_chain_id
-                    AND c.block_number = p.producer_block_number
+                (SELECT COUNT(*) FROM handle_producer_block p
                  WHERE p.host_chain_id = $1 AND p.producer_block_hash = b.block_hash
-                    AND c.is_allowed),
+                   AND (EXISTS (SELECT 1 FROM computations c
+                            WHERE c.output_handle = p.handle AND c.host_chain_id = p.host_chain_id
+                              AND c.block_number = p.producer_block_number AND c.is_allowed)
+                        OR EXISTS (SELECT 1 FROM fallback_granted_events f
+                            WHERE f.dst_chain_id = p.host_chain_id AND f.dst_handle = p.handle
+                              AND f.block_number = p.producer_block_number
+                              AND f.block_hash = p.producer_block_hash))),
                 (SELECT COUNT(*) FROM handle_producer_block p
                  WHERE p.host_chain_id = $1 AND p.producer_block_hash = b.block_hash),
                 FALSE
