@@ -3,7 +3,7 @@ use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use futures_util::FutureExt;
 use sqlx::{postgres::PgListener, Pool, Postgres};
 use std::{sync::Arc, time::Duration};
-use tokio::task::JoinSet;
+use tokio::{sync::Semaphore, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
@@ -41,6 +41,22 @@ where
         conf: ConfigSettings,
         gas: Option<u64>,
     ) -> anyhow::Result<Self> {
+        // Three PgListeners retain connections (one per operation plus stack
+        // versioning). Reserve another for health checks and other short queries.
+        // Both operations share the remaining capacity: waiting for admission
+        // must not consume a connection or its pool-acquisition timeout.
+        let pool_size = db_pool.options().get_max_connections();
+        anyhow::ensure!(
+            pool_size >= 5,
+            "transaction sender database pool must have at least 5 connections \
+             (3 listeners, 1 query reserve, and at least 1 submission)"
+        );
+        let submission_limit = (pool_size - 4) as usize;
+        let submission_slots = Arc::new(Semaphore::new(submission_limit));
+        info!(
+            pool_size,
+            submission_limit, "Configured Gateway submission concurrency"
+        );
         let operations: Vec<Arc<dyn ops::TransactionOperation<P>>> = vec![
             Arc::new(
                 ops::verify_proof::VerifyProofOperation::new(
@@ -50,6 +66,7 @@ where
                     conf.clone(),
                     gas,
                     db_pool.clone(),
+                    submission_slots.clone(),
                 )
                 .await?,
             ),
@@ -59,6 +76,7 @@ where
                 conf.clone(),
                 gas,
                 db_pool.clone(),
+                submission_slots,
             )),
         ];
         Ok(Self {
@@ -350,8 +368,35 @@ where
 mod tests {
     use super::*;
     use alloy::providers::ProviderBuilder;
+    use alloy::signers::local::PrivateKeySigner;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use test_harness::instance::{setup_test_db, ImportMode};
+
+    #[tokio::test]
+    async fn rejects_pool_without_submission_headroom() -> anyhow::Result<()> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(4)
+            .connect_lazy("postgresql://localhost/unused")?;
+        // Validation must fail before contacting either database or Gateway.
+        let provider = ProviderBuilder::default().connect_http("http://127.0.0.1:1".parse()?);
+        let result = TransactionSender::new(
+            pool,
+            Address::ZERO,
+            Address::ZERO,
+            crate::make_abstract_signer(PrivateKeySigner::random()),
+            NonceManagedProvider::new(provider, None),
+            CancellationToken::new(),
+            ConfigSettings::default(),
+            None,
+        )
+        .await;
+        let error = result.err().expect("undersized pool must be rejected");
+        assert!(
+            error.to_string().contains("at least 5 connections"),
+            "{error}"
+        );
+        Ok(())
+    }
 
     struct FullBatchOperation(AtomicUsize);
 

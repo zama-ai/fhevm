@@ -7,9 +7,11 @@ use common::{CiphertextCommits, InputVerification, SignerType, TestEnvironment};
 use fhevm_engine_common::chain_recovery::{
     begin_replay, complete_replay, record_halt, HistoryMismatch, ListenerSource,
 };
+use fhevm_engine_common::versioning::CUTOVER_LOCK_ID;
 use serial_test::serial;
+use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
-use support::FaultProxy;
+use support::{Fault, FaultProxy};
 use test_harness::db_utils::{insert_ciphertext_digest, insert_random_keys_and_host_chain};
 use transaction_sender::{
     gateway_http_client, ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider,
@@ -58,6 +60,165 @@ async fn wait_for_submission(env: &TestEnvironment, id: u8) -> anyhow::Result<()
         Ok::<_, anyhow::Error>(())
     })
     .await??;
+    Ok(())
+}
+
+async fn resolve_halt(env: &TestEnvironment) -> anyhow::Result<()> {
+    // Disposable-fixture equivalent of an operator accepting a verified baseline.
+    let mut recovery = env.db_pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(CUTOVER_LOCK_ID)
+        .execute(&mut *recovery)
+        .await?;
+    sqlx::query("UPDATE public.chain_recovery_halts SET resolved_at=NOW(), recovery_note='test baseline verified' WHERE resolved_at IS NULL")
+        .execute(&mut *recovery).await?;
+    recovery.commit().await?;
+    Ok(())
+}
+
+#[rstest::rstest]
+#[case(5, "eth_estimateGas")]
+#[case(10, "eth_sendRawTransactionSync")]
+#[tokio::test]
+#[serial(db)]
+async fn slow_mixed_submissions_reserve_pool_capacity_and_obey_halt(
+    #[case] pool_size: u32,
+    #[case] stalled_method: &str,
+) -> anyhow::Result<()> {
+    let conf = ConfigSettings {
+        db_polling_interval_secs: 1,
+        send_txn_sync_timeout_secs: 60,
+        ..Default::default()
+    };
+    let env = TestEnvironment::new_with_config(SignerType::PrivateKey, conf, false).await?;
+    let _cancel_on_exit = env.cancel_token.clone().drop_guard();
+    // Exercise both the minimum supported pool and the default. Monitoring and
+    // fixture writes use a separate pool, as they would from another process.
+    let pool = PgPoolOptions::new()
+        .max_connections(pool_size)
+        .acquire_timeout(Duration::from_secs(1))
+        .connect_with((*env.db_pool.connect_options()).clone())
+        .await?;
+    let deploy = env.http_provider()?;
+    let input = InputVerification::deploy(&deploy, false, false, false, false).await?;
+    let ciphertext = CiphertextCommits::deploy(&deploy, false).await?;
+    let proxy = FaultProxy::start(env.http_endpoint_url()).await?;
+    let url = proxy.url();
+    let inner = ProviderBuilder::default()
+        .filler(FillersWithoutNonceManagement::default())
+        .wallet(env.wallet.clone())
+        .connect_reqwest(gateway_http_client(&url)?, url);
+    let provider = NonceManagedProvider::new(inner, Some(env.wallet.default_signer().address()));
+    let sender = TransactionSender::new(
+        pool.clone(),
+        *input.address(),
+        *ciphertext.address(),
+        env.signer.clone(),
+        provider,
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+    let (chain, key) = insert_random_keys_and_host_chain(&env.db_pool).await?;
+    // More work in each queue than either pool can admit; batch sizes retain
+    // their production defaults (128 proofs and 10 ciphertexts).
+    for id in 1..=12 {
+        queue_work(&env, chain, key, id).await?;
+    }
+    proxy.set_fault(stalled_method, Fault::Blackhole, None);
+    let running_sender = sender.clone();
+    let run = tokio::spawn(async move { running_sender.run().await });
+    let limit = (pool_size - 4) as usize;
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while proxy.calls(stalled_method) < limit {
+            assert!(!run.is_finished());
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await?;
+    // Hold all admission slots longer than the pool-acquisition timeout. A
+    // waiter for submission admission must not take the connection needed by
+    // the real health check, nor open an extra fence.
+    let until = tokio::time::Instant::now() + Duration::from_secs(2);
+    while tokio::time::Instant::now() < until {
+        let health = tokio::time::timeout(Duration::from_secs(3), sender.health_check()).await?;
+        assert!(health.healthy, "{health:?}");
+        assert_eq!(proxy.calls(stalled_method), limit);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let halt_pool = env.db_pool.clone();
+    let halt = tokio::spawn(async move {
+        record_halt(
+            &halt_pool,
+            HistoryMismatch {
+                source: ListenerSource::Host,
+                gcs_mode: false,
+                chain_id: chain,
+                block_number: 1,
+                expected_hash: None,
+                observed_hash: None,
+                reason: "halt while submissions wait for admission",
+            },
+        )
+        .await
+    });
+    // Observe the exclusive fence actually waiting behind the active sends
+    // before releasing the Gateway; admission must not weaken that fence.
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM pg_locks
+                 WHERE locktype = 'advisory' AND NOT granted AND mode = 'ExclusiveLock'
+                   AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                   AND classid = $1::bigint::oid AND objid = $2::bigint::oid)",
+            )
+            .bind(CUTOVER_LOCK_ID >> 32)
+            .bind(CUTOVER_LOCK_ID & 0xffff_ffff)
+            .fetch_one(&env.db_pool)
+            .await?;
+            if waiting {
+                break;
+            }
+            assert!(
+                !halt.is_finished(),
+                "halt did not wait for in-flight submissions"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        Ok::<_, anyhow::Error>(())
+    })
+    .await??;
+    proxy.clear_fault(stalled_method);
+    tokio::time::timeout(Duration::from_secs(20), halt).await???;
+    let sends = proxy.calls("eth_sendRawTransactionSync");
+    assert_eq!(sends, limit);
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    assert_eq!(proxy.calls("eth_sendRawTransactionSync"), sends);
+    assert!(
+        pending(&env, 12).await?,
+        "queued work was lost during the halt"
+    );
+    assert!(!run.is_finished());
+
+    resolve_halt(&env).await?;
+    // Also exercise sustained slow responses and bookkeeping across multiple
+    // waves after recovery, rather than just the initially stalled requests.
+    proxy.set_fault(
+        "eth_sendRawTransactionSync",
+        Fault::DelayResponse(Duration::from_millis(100)),
+        None,
+    );
+    for id in 1..=12 {
+        wait_for_submission(&env, id).await?;
+    }
+    assert!(proxy.max_concurrency("eth_estimateGas") <= limit);
+    assert!(proxy.max_concurrency("eth_sendRawTransactionSync") <= limit);
+    let health = sender.health_check().await;
+    assert!(health.healthy, "{health:?}");
+    env.cancel_token.cancel();
+    tokio::time::timeout(Duration::from_secs(10), run).await???;
+    pool.close().await;
     Ok(())
 }
 
@@ -150,15 +311,7 @@ async fn replay_allows_dispatch_while_confirmed_halt_waits_for_recovery() -> any
         before + 2
     );
 
-    // Disposable-fixture equivalent of an operator accepting a verified baseline.
-    let mut recovery = env.db_pool.begin().await?;
-    sqlx::query("SELECT pg_advisory_xact_lock($1)")
-        .bind(fhevm_engine_common::versioning::CUTOVER_LOCK_ID)
-        .execute(&mut *recovery)
-        .await?;
-    sqlx::query("UPDATE public.chain_recovery_halts SET resolved_at=NOW(), recovery_note='test baseline verified' WHERE resolved_at IS NULL")
-        .execute(&mut *recovery).await?;
-    recovery.commit().await?;
+    resolve_halt(&env).await?;
     wait_for_submission(&env, 2).await?;
     assert_eq!(
         deploy

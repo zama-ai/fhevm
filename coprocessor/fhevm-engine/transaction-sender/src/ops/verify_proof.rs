@@ -14,8 +14,9 @@ use fhevm_engine_common::synthetic_input::SYNTHETIC_ZK_PROOF_ID_BASE;
 use fhevm_engine_common::telemetry;
 use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::task::JoinSet;
+use tokio::{sync::Semaphore, task::JoinSet};
 use tracing::{debug, error, info, warn, Instrument};
 
 use fhevm_gateway_bindings::input_verification::InputVerification;
@@ -43,6 +44,7 @@ where
     gas: Option<u64>,
     gw_chain_id: u64,
     db_pool: Pool<Postgres>,
+    submission_slots: Arc<Semaphore>,
 }
 
 impl<P> VerifyProofOperation<P>
@@ -56,6 +58,7 @@ where
         conf: crate::ConfigSettings,
         gas: Option<u64>,
         db_pool: Pool<Postgres>,
+        submission_slots: Arc<Semaphore>,
     ) -> anyhow::Result<Self> {
         let gw_chain_id = provider.get_chain_id().await?;
         Ok(Self {
@@ -66,6 +69,7 @@ where
             gas,
             gw_chain_id,
             db_pool,
+            submission_slots,
         })
     }
 
@@ -175,6 +179,9 @@ where
         );
         info!(zk_proof_id = txn_request.0, "Processing transaction");
 
+        // Wait outside the pool, retaining admission through bookkeeping so a
+        // completed send can record its result before more work is admitted.
+        let _permit = self.submission_slots.acquire().await?;
         // Keep the acceptance fence across submission. Release it before the
         // bookkeeping helpers open their own guarded transactions.
         let Some(submission_fence) = begin_live_write(&self.db_pool).await? else {
