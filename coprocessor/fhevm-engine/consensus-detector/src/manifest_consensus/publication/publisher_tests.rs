@@ -1598,7 +1598,6 @@ async fn invalid_descriptor_or_failed_upload_does_not_block_competing_lineages()
     const CHAIN_ID: i64 = 9;
     const BLOCK_NUMBER: i64 = 42;
     const WORKER_COUNT: usize = 4;
-    const ATTEMPTS_PER_WORKER: usize = 8;
     let context = U256::ONE;
     let blocked_hash = B256::repeat_byte(0x20);
     let invalid_descriptor_hash = B256::repeat_byte(0x25);
@@ -1744,49 +1743,77 @@ async fn invalid_descriptor_or_failed_upload_does_not_block_competing_lineages()
         .expect("seed conflicting immutable manifest object");
 
     let consensus = ManifestConsensusConfig::default();
-    let mut workers = Vec::with_capacity(WORKER_COUNT);
+    // Force an initial busy period. A fixed number of immediate polls can all
+    // return WorkBusy while this fence (or another worker's S3 upload) is held.
+    use fhevm_engine_common::chain_recovery::{lock_history_tx, ListenerSource};
+    let mut busy_history = pool.begin().await.expect("hold history for contention");
+    lock_history_tx(&mut busy_history, ListenerSource::Host, false, CHAIN_ID)
+        .await
+        .expect("lock publication history");
+    let mut workers = tokio::task::JoinSet::new();
     for _ in 0..WORKER_COUNT {
         let pool = pool.clone();
         let client = client.clone();
         let signer = Arc::clone(&signer);
         let consensus = consensus.clone();
-        workers.push(tokio::spawn(async move {
-            let mut outcomes = Vec::new();
-            // Lock contention is an expected outcome: all workers may race on
-            // the same first candidate. Keep polling long enough for a later
-            // wave to reach the ready sibling after the failing siblings.
-            for _ in 0..ATTEMPTS_PER_WORKER {
-                outcomes.push(
-                    progress_chain(
-                        &pool,
-                        &client,
-                        bucket,
-                        CHAIN_ID,
-                        &signer,
-                        &consensus,
-                        &ManifestWorkGate::always_enabled(),
-                        block_manifest::LEGACY_CONSENSUS_EPOCH,
-                    )
-                    .await
-                    .expect("progress competing manifest lineages"),
-                );
+        workers.spawn(async move {
+            loop {
+                progress_chain(
+                    &pool,
+                    &client,
+                    bucket,
+                    CHAIN_ID,
+                    &signer,
+                    &consensus,
+                    &ManifestWorkGate::always_enabled(),
+                    block_manifest::LEGACY_CONSENSUS_EPOCH,
+                )
+                .await
+                .expect("progress competing manifest lineages");
+                let published: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM block_manifest_state
+                     WHERE host_chain_id = $1 AND block_number = $2
+                       AND block_hash = ANY($3) AND manifest_published",
+                )
+                .bind(CHAIN_ID)
+                .bind(BLOCK_NUMBER)
+                .bind(vec![ready_hash.to_vec(), invalid_descriptor_hash.to_vec()])
+                .fetch_one(&pool)
+                .await
+                .expect("check competing-lineage publication progress");
+                if published == 2 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
-            outcomes
-        }));
+        });
     }
-    let mut advanced = 0;
-    for worker in workers {
-        advanced += worker
-            .await
-            .expect("join competing-lineage publisher")
-            .into_iter()
-            .filter(|outcome| *outcome == PublicationProgress::Advanced)
-            .count();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    busy_history
+        .rollback()
+        .await
+        .expect("release publication history");
+    let completed = tokio::time::timeout(Duration::from_secs(60), async {
+        while let Some(worker) = workers.join_next().await {
+            worker.expect("join competing-lineage publisher");
+        }
+    })
+    .await;
+    if completed.is_err() {
+        // JoinSet also aborts on panic; explicitly drain here before inspecting
+        // the database so no task can retain a row/history lock after timeout.
+        workers.shutdown().await;
+        let states: Vec<(String, bool, bool, i64, Option<String>)> = sqlx::query_as(
+            "SELECT encode(block_hash, 'hex'), block_content_digest IS NOT NULL,
+                    manifest_published, publication_error_count, publication_last_error
+             FROM block_manifest_state WHERE host_chain_id = $1 ORDER BY block_number, block_hash",
+        )
+        .bind(CHAIN_ID)
+        .fetch_all(&pool)
+        .await
+        .expect("inspect stalled competing lineages");
+        panic!("ready forks did not publish within 60s; states: {states:?}");
     }
-    assert!(
-        advanced >= 2,
-        "one worker must seal and publish the ready fork"
-    );
 
     let states = sqlx::query(
         "SELECT block_hash, manifest_published
