@@ -17,8 +17,8 @@ use crate::{
 use alloy_primitives::{Address, B256, Signature};
 use alloy_signer::Signer;
 
-/// V1 canonical-bytes length: `bytes8 + uint8 + uint16 + bytes32 + uint16 + bytes32 = 77`.
-const V1_PAYLOAD_LEN: usize = 8 + 1 + 2 + 32 + 2 + 32;
+/// V1 canonical-bytes length: `bytes8 + uint8 + uint16 + bytes32 + uint16 + bytes32 + bytes32 = 109`.
+const V1_PAYLOAD_LEN: usize = 8 + 1 + 2 + 32 + 2 + 32 + 32;
 
 impl PrfOutputAttestationPayload {
     /// Canonical `abi.encodePacked`-equivalent bytes for this payload. The
@@ -32,7 +32,8 @@ impl PrfOutputAttestationPayload {
                 out.extend_from_slice(&self.prf_id.to_be_bytes());
                 out.extend_from_slice(self.label.as_slice());
                 out.extend_from_slice(&self.pad_length.to_be_bytes());
-                out.extend_from_slice(self.digest.as_slice());
+                out.extend_from_slice(self.ciphertext_digest.as_slice());
+                out.extend_from_slice(self.sns_ciphertext_digest.as_slice());
                 out
             }
         }
@@ -53,7 +54,8 @@ impl PrfOutputAttestationPayload {
         let sig = signer.sign_hash(&self.canonical_digest()).await?;
         Ok(PrfOutputAttestation {
             version: self.version,
-            digest: self.digest,
+            ciphertext_digest: self.ciphertext_digest,
+            sns_ciphertext_digest: self.sns_ciphertext_digest,
             signer: signer.address(),
             signature: sig.as_bytes().to_vec(),
         })
@@ -82,7 +84,8 @@ impl Attestation for PrfOutputAttestation {
             prf_id: subject.prf_id,
             label: subject.label,
             pad_length: subject.pad_length,
-            digest: self.digest,
+            ciphertext_digest: self.ciphertext_digest,
+            sns_ciphertext_digest: self.sns_ciphertext_digest,
         };
         let digest = payload.canonical_digest();
 
@@ -101,7 +104,7 @@ impl Attestation for PrfOutputAttestation {
     }
 
     fn material(&self) -> PrfMaterial {
-        self.digest
+        self.sns_ciphertext_digest
     }
 }
 
@@ -114,10 +117,20 @@ mod tests {
     const PRF_ID: u16 = 3;
     const LABEL: B256 = b256!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     const PAD_LENGTH: u16 = 256;
-    const DIGEST: B256 = b256!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    const CT_DIGEST: B256 =
+        b256!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    const SNS_DIGEST: B256 =
+        b256!("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
 
     fn sample_payload() -> PrfOutputAttestationPayload {
-        PrfOutputAttestationPayload::new(Version::V1, PRF_ID, LABEL, PAD_LENGTH, DIGEST)
+        PrfOutputAttestationPayload::new(
+            Version::V1,
+            PRF_ID,
+            LABEL,
+            PAD_LENGTH,
+            CT_DIGEST,
+            SNS_DIGEST,
+        )
     }
 
     async fn signed(signer: &PrivateKeySigner) -> PrfOutputAttestation {
@@ -138,17 +151,28 @@ mod tests {
         let signer = PrivateKeySigner::random();
         let att = signed(&signer).await;
         assert_eq!(att.signer, signer.address());
-        assert_eq!(att.material(), DIGEST);
+        assert_eq!(att.material(), SNS_DIGEST);
         att.verify(&subject(), signer.address()).unwrap();
     }
 
     #[tokio::test]
-    async fn rejects_flipped_digest() {
+    async fn rejects_replaced_ciphertext_digest() {
         let signer = PrivateKeySigner::random();
         let mut att = signed(&signer).await;
-        let mut bytes = att.digest.0;
+        let mut bytes = att.ciphertext_digest.0;
         bytes[0] ^= 0x01;
-        att.digest = B256::from(bytes);
+        att.ciphertext_digest = B256::from(bytes);
+        let err = att.verify(&subject(), signer.address()).unwrap_err();
+        assert!(matches!(err, AttestationError::SignerMismatch { .. }));
+    }
+
+    #[tokio::test]
+    async fn rejects_replaced_sns_digest() {
+        let signer = PrivateKeySigner::random();
+        let mut att = signed(&signer).await;
+        let mut bytes = att.sns_ciphertext_digest.0;
+        bytes[0] ^= 0x01;
+        att.sns_ciphertext_digest = B256::from(bytes);
         let err = att.verify(&subject(), signer.address()).unwrap_err();
         assert!(matches!(err, AttestationError::SignerMismatch { .. }));
     }
@@ -232,11 +256,17 @@ mod tests {
                 .is_none()
         );
 
-        let other_label =
-            PrfOutputAttestationPayload::new(Version::V1, PRF_ID, B256::ZERO, PAD_LENGTH, DIGEST)
-                .sign(&s2)
-                .await
-                .unwrap();
+        let other_label = PrfOutputAttestationPayload::new(
+            Version::V1,
+            PRF_ID,
+            B256::ZERO,
+            PAD_LENGTH,
+            CT_DIGEST,
+            SNS_DIGEST,
+        )
+        .sign(&s2)
+        .await
+        .unwrap();
         assert!(
             round
                 .record_attestation(s2.address(), &other_label)
@@ -246,7 +276,7 @@ mod tests {
 
         match round.record_attestation(s3.address(), &signed(&s3).await) {
             Some(Ok(resolved)) => {
-                assert_eq!(resolved.material, DIGEST);
+                assert_eq!(resolved.material, SNS_DIGEST);
                 let winners: Vec<_> = resolved.winners.iter().map(|e| e.signer).collect();
                 assert_eq!(winners, vec![s1.address(), s3.address()]);
             }
@@ -264,14 +294,15 @@ mod tests {
             b256!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
             0x0800,
             b256!("1111111111111111111111111111111111111111111111111111111111111111"),
+            b256!("2222222222222222222222222222222222222222222222222222222222222222"),
         );
         assert_eq!(
             hex::encode(payload.canonical_bytes()),
-            "464845564d505246010003aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa08001111111111111111111111111111111111111111111111111111111111111111",
+            "464845564d505246010003aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa080011111111111111111111111111111111111111111111111111111111111111112222222222222222222222222222222222222222222222222222222222222222",
         );
         assert_eq!(
             hex::encode(payload.canonical_digest().as_slice()),
-            "62894022546d27680bdc6aaac8a8459bd37d0f7dd72a9ca7d750e2cebc837dcc",
+            "218dc88ae0721faabc1e249ae25d670d8961b9944e31e49e3c71bbcfc37dcab3",
         );
     }
 }

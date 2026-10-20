@@ -33,5 +33,5 @@ impl std::fmt::Display for PrfOutputRef {
     }
 }
 
-/// The PRF output material a consensus group agreed on: the digest of the PRF output.
+/// The PRF output material a consensus group agreed on: the digest of the SnS PRF output.
 pub type PrfMaterial = B256;

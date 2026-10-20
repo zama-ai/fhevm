@@ -52,18 +52,28 @@ pub struct PrfOutputAttestationPayload {
     pub prf_id: u16,
     pub label: B256,
     pub pad_length: u16,
-    /// Keccak-256 of the raw PRF output, as served in the response body.
-    pub digest: B256,
+    /// Keccak-256 of the pre-SnS PRF output (the form used by `Unmask`).
+    pub ciphertext_digest: B256,
+    /// Keccak-256 of the SnS PRF output, as served in the response body.
+    pub sns_ciphertext_digest: B256,
 }
 
 impl PrfOutputAttestationPayload {
-    pub fn new(version: Version, prf_id: u16, label: B256, pad_length: u16, digest: B256) -> Self {
+    pub fn new(
+        version: Version,
+        prf_id: u16,
+        label: B256,
+        pad_length: u16,
+        ciphertext_digest: B256,
+        sns_ciphertext_digest: B256,
+    ) -> Self {
         Self {
             version,
             prf_id,
             label,
             pad_length,
-            digest,
+            ciphertext_digest,
+            sns_ciphertext_digest,
         }
     }
 }
@@ -76,7 +86,8 @@ impl PrfOutputAttestationPayload {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PrfOutputAttestation {
     pub version: Version,
-    pub digest: B256,
+    pub ciphertext_digest: B256,
+    pub sns_ciphertext_digest: B256,
     pub signer: Address,
     #[serde(with = "hex_bytes")]
     pub signature: Vec<u8>,
@@ -90,7 +101,12 @@ mod tests {
     fn sample_attestation() -> PrfOutputAttestation {
         PrfOutputAttestation {
             version: Version::V1,
-            digest: b256!("1111111111111111111111111111111111111111111111111111111111111111"),
+            ciphertext_digest: b256!(
+                "1111111111111111111111111111111111111111111111111111111111111111"
+            ),
+            sns_ciphertext_digest: b256!(
+                "2222222222222222222222222222222222222222222222222222222222222222"
+            ),
             signer: address!("00112233445566778899aabbccddeeff00112233"),
             signature: vec![0xab; 65],
         }
@@ -111,7 +127,8 @@ mod tests {
             json,
             serde_json::json!({
                 "version": 1,
-                "digest": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                "ciphertext_digest": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                "sns_ciphertext_digest": "0x2222222222222222222222222222222222222222222222222222222222222222",
                 "signer": "0x00112233445566778899aabbccddeeff00112233",
                 "signature": format!("0x{}", "ab".repeat(65)),
             })
