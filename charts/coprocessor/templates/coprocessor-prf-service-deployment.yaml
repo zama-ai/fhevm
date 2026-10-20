@@ -1,0 +1,110 @@
+{{- if .Values.prfService.enabled -}}
+{{- $component := .Values.prfService -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-prf-service
+    app.kubernetes.io/name: {{ include "prfServiceName" . }}
+  name: {{ include "prfServiceName" . }}
+spec:
+  replicas: {{ $component.replicas }}
+  selector:
+    matchLabels:
+      app: coprocessor-prf-service
+      {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
+  {{- with $component.updateStrategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: coprocessor-prf-service
+        app.kubernetes.io/name: {{ include "prfServiceName" . }}
+        {{- include "coprocessor.extraSelectorLabels" . | nindent 8 }}
+        {{- with .Values.commonConfig.stackVersion }}
+        app.kubernetes.io/version: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $component.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      {{- with $component.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $component.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $component.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $component.serviceAccountName }}
+      serviceAccountName: {{ . }}
+      {{- end }}
+      containers:
+        - name: coprocessor-prf-service
+          image: {{ $component.image.name }}:{{ $component.image.tag }}
+          command: ["prf-service"]
+          {{- if .Values.commonConfig.stackVersionProbe.enabled }}
+          startupProbe:
+            exec:
+              command: ["prf-service", "--stack-version"]
+            periodSeconds: {{ .Values.commonConfig.stackVersionProbe.periodSeconds | default 10 }}
+            failureThreshold: {{ .Values.commonConfig.stackVersionProbe.failureThreshold | default 30 }}
+          {{- end }}
+          args:
+            - --http-endpoint=0.0.0.0:{{ $component.ports.http }}
+            - --health-check-port={{ $component.ports.healthcheck }}
+            - --metrics-addr=0.0.0.0:{{ $component.ports.metrics }}
+            {{- with $component.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+          {{- if default .Values.commonConfig.tracing.enabled $component.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              {{- if $component.tracing.service }}
+              value: {{ $component.tracing.service | quote }}
+              {{- else }}
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+              {{- end }}
+          {{- end }}
+          {{- with .Values.commonConfig.env }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
+          {{- end }}
+          {{- with $component.env }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
+          {{- end }}
+          ports:
+            {{- range $portName, $portValue := $component.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
+          {{- include "coprocessor.containerResources" $component.resources | nindent 10 }}
+          {{- if $component.probes.liveness.enabled }}
+          livenessProbe:
+            {{- toYaml (omit $component.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if $component.probes.readiness.enabled }}
+          readinessProbe:
+            {{- toYaml (omit $component.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
+{{- end -}}
