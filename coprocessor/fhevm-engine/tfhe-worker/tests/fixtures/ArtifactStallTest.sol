@@ -30,6 +30,19 @@ contract ArtifactStallTest is FHEEvents {
         acl.allow(result, msg.sender);
     }
 
+    // Exact trivialEncrypt preimage and metadata from FHEVMExecutor. Unlike the
+    // nonce fixture, this changes across a same-height reorg with a new timestamp.
+    function seedBlock(uint64 value) external returns (bytes32 result) {
+        uint256 digest = uint256(keccak256(abi.encodePacked(
+            bytes8("FHE_comp"), uint8(24), uint256(value), FheType.Uint64,
+            address(acl), block.chainid, blockhash(block.number - 1), block.timestamp
+        )));
+        uint256 metadata = (uint256(0xff) << 80) | (block.chainid << 16) | (uint256(FheType.Uint64) << 8);
+        result = bytes32((digest & (type(uint256).max << 88)) | metadata);
+        emit TrivialEncrypt(msg.sender, value, FheType.Uint64, result);
+        acl.allow(result, msg.sender);
+    }
+
     function add(bytes32 lhs, uint64 rhs, uint64 nonce) external returns (bytes32 result) {
         result = handle(nonce);
         emit FheAdd(msg.sender, lhs, bytes32(uint256(rhs)), 0x01, result);

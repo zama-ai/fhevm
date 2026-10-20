@@ -34,9 +34,15 @@ filter = 'test(/^tests::(operators_from_events|scheduling_bench|random|errors|in
 test-group = "fhe-keys"
 
 [[profile.default.overrides]]
+# These hold two server keys simultaneously. Run alone on the 32 GB CI runner.
+filter = 'test(/^artifact_parallel_workers_/)'
+threads-required = "num-test-threads"
+priority = 30
+
+[[profile.default.overrides]]
 # These spawn a real CPU worker. They stop it before loading the decryption
 # key, so each case holds only one server key at a time.
-filter = 'test(/^artifact_/)'
+filter = 'test(/^artifact_/) and not test(/^artifact_parallel_workers_/)'
 test-group = "fhe-keys"
 
 # Used by CI, which also wants a JUnit report for per-test timings.

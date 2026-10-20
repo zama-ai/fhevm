@@ -2058,3 +2058,59 @@ async fn invalid_descriptor_or_failed_upload_does_not_block_competing_lineages()
 mod support;
 
 use support::*;
+
+/// Produce and upload a real signed manifest, then attempt the late ACL repair.
+/// Directly seeding manifest_published would miss the seal/upload boundary.
+#[tokio::test]
+#[serial(db)]
+async fn published_manifest_contains_replay_that_would_add_a_producer() -> anyhow::Result<()> {
+    use crate::ingestion_recovery_tests::{
+        fixtures::*, object_store, partial_block, repair_is_contained,
+    };
+    let (mut db, pool, _instance) = partial_block().await?;
+    let b = block();
+    let a = computed_handle(1);
+    sqlx::query("INSERT INTO keys (key_id_gw,key_id,pks_key,sks_key,chain_id,block_hash) VALUES ($1,$2,''::bytea,''::bytea,42,$3)")
+        .bind(computed_handle(0xa1).as_slice()).bind(computed_handle(0xa2).as_slice()).bind(b.hash.as_slice()).execute(&pool).await?;
+    sqlx::query("INSERT INTO ciphertext_digest (host_chain_id,key_id_gw,handle,ciphertext,ciphertext128,ciphertext128_format) VALUES (42,$1,$2,$3,$4,11)")
+        .bind(computed_handle(0xa1).as_slice()).bind(a.as_slice()).bind(computed_handle(0xa3).as_slice()).bind(computed_handle(0xa4).as_slice()).execute(&pool).await?;
+    discover_blocks_for_consensus_epoch(
+        &pool,
+        block_manifest::LEGACY_CONSENSUS_EPOCH,
+        &[(42, 1)].into(),
+    )
+    .await?;
+    let (client, uploaded) = object_store().await?;
+    let signer: CoproSigner = Arc::new(PrivateKeySigner::random());
+    for _ in 0..2 {
+        assert_eq!(
+            progress_chain(
+                &pool,
+                &client,
+                "test",
+                42,
+                &signer,
+                &ManifestConsensusConfig::default(),
+                &ManifestWorkGate::always_enabled(),
+                block_manifest::LEGACY_CONSENSUS_EPOCH
+            )
+            .await?,
+            PublicationProgress::Advanced
+        );
+    }
+    let body = tokio::time::timeout(Duration::from_secs(10), uploaded).await??;
+    let signed: SignedManifest = serde_json::from_slice(&body)?;
+    signed.verify()?;
+    let local = load_local_revision(&pool, signer.address(), U256::ONE, 42, 100, b.hash, 0).await;
+    assert_eq!(signed, local.signed);
+    let published: (bool,i64)=sqlx::query_as("SELECT manifest_published,block_handle_count FROM block_manifest_state WHERE host_chain_id=42").fetch_one(&pool).await?;
+    assert_eq!(published, (true, 1));
+    repair_is_contained(&mut db, &pool).await?;
+    let retained =
+        load_local_revision(&pool, signer.address(), U256::ONE, 42, 100, b.hash, 0).await;
+    assert_eq!(
+        retained.signed, signed,
+        "repair must preserve signed historical evidence"
+    );
+    Ok(())
+}

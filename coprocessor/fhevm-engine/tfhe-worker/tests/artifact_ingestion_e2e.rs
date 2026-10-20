@@ -4,18 +4,20 @@
 //! Drop only the producer's ACL log on first delivery. Its computation is then
 //! considered completed without a persisted ciphertext; downstream transactions
 //! cannot run. Replay must repair that existing row and wake the dependency graph.
-//! No computation, ciphertext, or scheduler flags are written by this test.
+//! ACL delivery cases do not write computation or scheduler flags. The legacy
+//! unreachable-chain cases explicitly inject only the old scheduler failure.
 
 #![cfg(not(feature = "gpu"))]
 
 use alloy::{
     network::EthereumWallet,
     node_bindings::Anvil,
-    primitives::{Address, B256},
-    providers::{Provider, ProviderBuilder},
+    primitives::{Address, B256, U256},
+    providers::{ext::AnvilApi, Provider, ProviderBuilder},
     rpc::types::{Filter, Log, TransactionReceipt},
     signers::local::PrivateKeySigner,
     sol,
+    sol_types::SolEvent,
 };
 use fhevm_engine_common::{
     chain_id::ChainId, db_keys::DbKeyCache, tfhe_ops::current_ciphertext_version,
@@ -32,7 +34,10 @@ use serial_test::serial;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{error::Error, process::Stdio, time::Duration};
 use test_harness::instance::{setup_test_db, ImportMode};
-use tokio::{process::Command, time::timeout};
+use tokio::{
+    process::{Child, Command},
+    time::timeout,
+};
 
 sol!(
     #[sol(rpc)]
@@ -63,6 +68,45 @@ enum Replay {
     ColdFullBlock,
     ColdAclOnly,
     FailedThenRetried,
+}
+
+fn start_worker(url: &str) -> Result<Child> {
+    Ok(Command::new(env!("CARGO_BIN_EXE_tfhe_worker"))
+        .args([
+            "--run-bg-worker",
+            "--database-url",
+            url,
+            "--worker-polling-interval-ms",
+            "50",
+            "--coprocessor-fhe-threads",
+            "16",
+            "--pg-pool-max-connections",
+            "8",
+            "--metrics-addr",
+            "127.0.0.1:0",
+            "--health-check-port",
+            "0",
+            "--dcid-ignore-dependency-count-threshold",
+            "2",
+            "--log-level",
+            "warn",
+        ])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()?)
+}
+
+async fn stop_workers(workers: &mut [Child]) -> Result {
+    for worker in workers {
+        assert!(
+            worker.try_wait()?.is_none(),
+            "worker exited during recovery"
+        );
+        worker.kill().await?;
+        worker.wait().await?;
+    }
+    Ok(())
 }
 
 async fn block_logs<P: Provider>(
@@ -473,4 +517,279 @@ async fn artifact_acl_only_replay_after_listener_restart_unblocks_descendants() 
 #[serial(db)]
 async fn artifact_failed_acl_replay_then_retry_unblocks_descendants() -> Result {
     reproduce_and_recover(Replay::FailedThenRetried).await
+}
+
+async fn recover_unreachable_with_parallel_workers(missing: bool) -> Result {
+    let instance = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let pool = PgPoolOptions::new()
+        .max_connections(8)
+        .connect(instance.db_url())
+        .await?;
+    let mut warm = Database::new(&instance.db_url, ChainId::try_from(CHAIN)?, 128).await?;
+    let anvil = Anvil::new().chain_id(CHAIN).spawn();
+    let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
+    let provider = ProviderBuilder::new()
+        .wallet(EthereumWallet::from(signer))
+        .connect_http(anvil.endpoint_url());
+    let acl = ACLTest::deploy(provider.clone()).await?;
+    let executor = ArtifactStallTest::deploy(provider.clone(), *acl.address()).await?;
+    let (exe, acl) = (*executor.address(), *acl.address());
+    let root = executor.seed(7, 1).call().await?;
+    let receipt = executor.seed(7, 1).send().await?.get_receipt().await?;
+    let stored_chain = receipt.transaction_hash;
+    ingest(
+        &mut warm,
+        &block_logs(&provider, &receipt, exe, acl).await?,
+        exe,
+        acl,
+    )
+    .await?;
+    let producer = executor.add(root, 13, 2).call().await?;
+    let receipt = executor
+        .add(root, 13, 2)
+        .send()
+        .await?
+        .get_receipt()
+        .await?;
+    let inferred_chain = receipt.transaction_hash;
+    let mut replay = block_logs(&provider, &receipt, exe, acl).await?;
+    ingest(&mut warm, &replay, exe, acl).await?;
+    let stored: Vec<u8> =
+        sqlx::query_scalar("SELECT dependence_chain_id FROM computations WHERE output_handle=$1")
+            .bind(producer.as_slice())
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(stored, stored_chain.as_slice());
+    assert_ne!(
+        stored_chain, inferred_chain,
+        "cold replay must infer a different chain"
+    );
+    let mut expected = vec![(root, 7), (producer, 20)];
+    for (parent, scalar, nonce, value) in [(producer, 5, 3, 25), (root, 19, 4, 26)] {
+        let handle = executor.add(parent, scalar, nonce).call().await?;
+        let receipt = executor
+            .add(parent, scalar, nonce)
+            .send()
+            .await?
+            .get_receipt()
+            .await?;
+        let mut cold = Database::new(&instance.db_url, ChainId::try_from(CHAIN)?, 128).await?;
+        ingest(
+            &mut cold,
+            &block_logs(&provider, &receipt, exe, acl).await?,
+            exe,
+            acl,
+        )
+        .await?;
+        expected.push((handle, value));
+    }
+    // Upgrade fixture: inject precisely the pre-fix scheduler state, leaving
+    // every actual event, computation, permission and ciphertext untouched.
+    let query = if missing {
+        "DELETE FROM dependence_chain WHERE dependence_chain_id=$1"
+    } else {
+        "UPDATE dependence_chain SET status='processed' WHERE dependence_chain_id=$1"
+    };
+    assert_eq!(
+        sqlx::query(query)
+            .bind(stored_chain.as_slice())
+            .execute(&pool)
+            .await?
+            .rows_affected(),
+        1
+    );
+    let mut workers = [
+        start_worker(instance.db_url())?,
+        start_worker(instance.db_url())?,
+    ];
+    let canary = executor.seed(99, 5).call().await?;
+    let receipt = executor.seed(99, 5).send().await?.get_receipt().await?;
+    ingest(
+        &mut warm,
+        &block_logs(&provider, &receipt, exe, acl).await?,
+        exe,
+        acl,
+    )
+    .await?;
+    wait_for_ciphertexts(&pool, &[canary.to_vec()]).await?;
+    let graph: Vec<_> = expected.iter().map(|(h, _)| h.to_vec()).collect();
+    assert_eq!(
+        ciphertext_count(&pool, &graph).await?,
+        0,
+        "legacy chain must be unreachable before repair"
+    );
+    for (handle, _) in &expected {
+        assert_eq!(flags(&pool, *handle).await?, (true, false, false));
+    }
+    replay.catchup = true;
+    let mut cold = Database::new(&instance.db_url, ChainId::try_from(CHAIN)?, 128).await?;
+    // Cold replay alone must find/recreate the stored chain; its inferred chain
+    // is distinct, so upserting only the inferred chain cannot pass this test.
+    ingest(&mut cold, &replay, exe, acl).await?;
+    let reachable: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM dependence_chain d WHERE dependence_chain_id=$1
+         AND (status != 'processed' OR NOT EXISTS (
+             SELECT 1 FROM computations c WHERE c.dependence_chain_id=d.dependence_chain_id
+             AND c.is_allowed AND NOT c.is_completed)))",
+    )
+    .bind(stored_chain.as_slice())
+    .fetch_one(&pool)
+    .await?;
+    assert!(reachable, "cold replay did not re-arm the stored chain");
+    // Concurrent duplicate deliveries while two workers run must preserve leases
+    // and immutable execution metadata despite divergent cache grouping.
+    let (a, b) = tokio::join!(
+        ingest(&mut warm, &replay, exe, acl),
+        ingest(&mut cold, &replay, exe, acl)
+    );
+    a?;
+    b?;
+    wait_for_ciphertexts(&pool, &graph).await?;
+    for (handle, _) in &expected {
+        assert_eq!(flags(&pool, *handle).await?, (true, true, false));
+    }
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM computations")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(count, 5);
+    stop_workers(&mut workers).await?;
+    expected.push((canary, 99));
+    assert_plaintexts(&pool, &expected).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn artifact_parallel_workers_repair_processed_stored_chain() -> Result {
+    recover_unreachable_with_parallel_workers(false).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn artifact_parallel_workers_recreate_missing_stored_chain() -> Result {
+    recover_unreachable_with_parallel_workers(true).await
+}
+
+fn emitted_seed(logs: &BlockLogs<Log>) -> Result<B256> {
+    for log in &logs.logs {
+        if let Ok(event) =
+            host_listener::contracts::TfheContract::TrivialEncrypt::decode_log(&log.inner)
+        {
+            return Ok(event.data.result);
+        }
+    }
+    Err("missing TrivialEncrypt event".into())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn artifact_orphan_completes_before_same_transaction_on_canonical_fork() -> Result {
+    let instance = setup_test_db(ImportMode::WithKeysNoSns).await?;
+    let pool = PgPoolOptions::new()
+        .max_connections(4)
+        .connect(instance.db_url())
+        .await?;
+    let mut db = Database::new(&instance.db_url, ChainId::try_from(CHAIN)?, 128).await?;
+    let anvil = Anvil::new().chain_id(CHAIN).spawn();
+    let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
+    let provider = ProviderBuilder::new()
+        .wallet(EthereumWallet::from(signer))
+        .connect_http(anvil.endpoint_url());
+    let acl = ACLTest::deploy(provider.clone()).await?;
+    let executor = ArtifactStallTest::deploy(provider.clone(), *acl.address()).await?;
+    let (exe, acl) = (*executor.address(), *acl.address());
+    let snapshot: U256 = provider.raw_request("evm_snapshot".into(), ()).await?;
+    let receipt = executor.seedBlock(7).send().await?.get_receipt().await?;
+    let raw = provider
+        .get_raw_transaction_by_hash(receipt.transaction_hash)
+        .await?
+        .ok_or("missing raw transaction")?;
+    let orphan = block_logs(&provider, &receipt, exe, acl).await?;
+    let orphan_handle = emitted_seed(&orphan)?;
+    ingest(&mut db, &orphan, exe, acl).await?;
+    let mut workers = [start_worker(instance.db_url())?];
+    wait_for_ciphertexts(&pool, &[orphan_handle.to_vec()]).await?;
+    timeout(WAIT, async {
+        loop {
+            let processed: bool = sqlx::query_scalar(
+                "SELECT status='processed' FROM dependence_chain WHERE dependence_chain_id=$1",
+            )
+            .bind(receipt.transaction_hash.as_slice())
+            .fetch_one(&pool)
+            .await?;
+            if processed {
+                return Ok::<_, Box<dyn Error>>(());
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await??;
+    let reverted: bool = provider
+        .raw_request("evm_revert".into(), (snapshot,))
+        .await?;
+    assert!(reverted);
+    provider
+        .anvil_set_next_block_timestamp(orphan.summary.timestamp + 2)
+        .await?;
+    let canonical_receipt = provider
+        .send_raw_transaction(&raw)
+        .await?
+        .get_receipt()
+        .await?;
+    assert_eq!(canonical_receipt.transaction_hash, receipt.transaction_hash);
+    let mut canonical = block_logs(&provider, &canonical_receipt, exe, acl).await?;
+    let canonical_handle = emitted_seed(&canonical)?;
+    assert_eq!(canonical.summary.number, orphan.summary.number);
+    assert_ne!(canonical.summary.hash, orphan.summary.hash);
+    assert_ne!(canonical_handle, orphan_handle);
+    // Deliver the consumer before the canonical producer, after the orphan's
+    // work really completed. The independently runnable canary proves liveness.
+    let child = executor.add(canonical_handle, 13, 9).call().await?;
+    let child_receipt = executor
+        .add(canonical_handle, 13, 9)
+        .send()
+        .await?
+        .get_receipt()
+        .await?;
+    ingest(
+        &mut db,
+        &block_logs(&provider, &child_receipt, exe, acl).await?,
+        exe,
+        acl,
+    )
+    .await?;
+    let canary = executor.seed(99, 10).call().await?;
+    let canary_receipt = executor.seed(99, 10).send().await?.get_receipt().await?;
+    ingest(
+        &mut db,
+        &block_logs(&provider, &canary_receipt, exe, acl).await?,
+        exe,
+        acl,
+    )
+    .await?;
+    wait_for_ciphertexts(&pool, &[canary.to_vec()]).await?;
+    assert_eq!(
+        ciphertext_count(&pool, &[canonical_handle.to_vec(), child.to_vec()]).await?,
+        0
+    );
+    canonical.catchup = true;
+    canonical.finalized = true;
+    ingest(&mut db, &canonical, exe, acl).await?;
+    wait_for_ciphertexts(&pool, &[canonical_handle.to_vec(), child.to_vec()]).await?;
+    assert_eq!(block_state(&pool, orphan.summary.hash).await?.2, "orphaned");
+    assert_eq!(
+        block_state(&pool, canonical.summary.hash).await?.2,
+        "finalized"
+    );
+    assert!(!fhevm_engine_common::chain_recovery::is_halted(&pool).await?);
+    stop_workers(&mut workers).await?;
+    assert_plaintexts(
+        &pool,
+        &[
+            (orphan_handle, 7),
+            (canonical_handle, 7),
+            (child, 20),
+            (canary, 99),
+        ],
+    )
+    .await
 }

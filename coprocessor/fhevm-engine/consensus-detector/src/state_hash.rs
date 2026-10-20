@@ -912,6 +912,30 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn uploaded_upgrade_hash_contains_replay_that_would_add_work() -> anyhow::Result<()> {
+        use crate::ingestion_recovery_tests::{object_store, partial_block, repair_is_contained};
+        let (mut db, pool, _instance) = partial_block().await?;
+        let mut tx = pool.begin().await?;
+        compute_and_insert_gcs(&mut tx, 42, 100, 100, 10, "public").await?;
+        tx.commit().await?;
+        let hash: String = sqlx::query_scalar(
+            "SELECT state_hash FROM state_hash WHERE chain_id=42 AND block_number=100",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert_ne!(hash, EMPTY_BLOCK_STATE_HASH);
+        let (s3, uploaded) = object_store().await?;
+        upload_pending_state_hashes(&pool, &s3, "test", 10, Duration::from_secs(3600)).await?;
+        let body = tokio::time::timeout(Duration::from_secs(10), uploaded).await??;
+        assert_eq!(body, hex::decode(&hash)?);
+        repair_is_contained(&mut db, &pool).await?;
+        let retained: (String, bool) = sqlx::query_as("SELECT state_hash, s3_uploaded_at IS NOT NULL FROM state_hash WHERE chain_id=42 AND block_number=100").fetch_one(&pool).await?;
+        assert_eq!(retained, (hash, true));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn host_hash_waits_for_ingestion_before_reading_completion() -> anyhow::Result<()> {
         use fhevm_engine_common::chain_recovery::{lock_history_tx, ListenerSource};
         use test_harness::instance::{setup_test_db, ImportMode};
