@@ -1226,8 +1226,9 @@ pub async fn ingest_block_logs(
 }
 
 /// Check both adjacent committed identities: replicas can finish neighboring
-/// heights out of order. A missing predecessor is permitted only as an initial
-/// anchor; an existing committed row must agree. Pending forks are left to the
+/// heights out of order. Sparse deliveries may lack a predecessor; the history
+/// verifier checks each disconnected committed segment against RPC instead of
+/// trusting only the highest finalized row. Pending forks are left to the
 /// existing finalizer. Admission and deferred finalization both call this while
 /// holding the same history lock. An absent legacy parent is unknown, so only
 /// the same-height and successor checks apply in that case.
@@ -2129,6 +2130,22 @@ where
     GetBlockHashFuture: Future<Output = anyhow::Result<BlockHash>>,
 {
     info!(last_block_number, finality_lag, "Updating finalized blocks");
+    let verified_hashes =
+        match super::history_verification::verify_finalized_history(
+            db,
+            &mut get_block_hash_by_number,
+        )
+        .await
+        {
+            Ok(hashes) => hashes,
+            Err(err) => {
+                error!(
+                    ?err,
+                    "Cannot verify committed history before finalization"
+                );
+                return FinalizationResult::default();
+            }
+        };
     let last_finalized_block = last_block_number.saturating_sub(finality_lag);
 
     // Read the candidate numbers in a short transaction, then resolve the
@@ -2199,6 +2216,15 @@ where
 
     let mut canonical = Vec::with_capacity(blocks_number.len());
     for block_number in blocks_number {
+        // The segment verifier already fetched the tip for this pass. Reuse
+        // that observation; newly finalized tips still require their own RPC.
+        if let Some((_, hash)) = verified_hashes
+            .iter()
+            .find(|(n, _)| *n == block_number as u64)
+        {
+            canonical.push((block_number, *hash));
+            continue;
+        }
         match get_block_hash_by_number(block_number as u64).await {
             Ok(block_hash) => canonical.push((block_number, block_hash)),
             Err(err) => {

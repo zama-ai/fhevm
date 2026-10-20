@@ -39,7 +39,14 @@ per-chain transaction lock, including deferred finalization. Unknown legacy
 parent hashes are not contradictions. Sparse catchup may require recovery of an
 empty canonical replacement. These finalizer-requested repairs are authoritative
 observations below the confirmation boundary, so contradictions are contained
-rather than discarded as delayed live forks. Replay also checks immutable computation
+rather than discarded as delayed live forks. Startup, finalized catchup admission
+and deferred finalization also verify the tips of disconnected retained finalized
+segments, including gaps with no pending row. A newer tip cannot hide an older fork.
+Previously verified older segments are cached in memory, but the newest segment
+is always rechecked, including when a later sparse delivery makes it an older
+segment. Losing that checkpoint or changing stack roles invalidates the cache.
+RPC verification holds no database transaction; a concurrent history change
+invalidates its snapshot and requires retry. Replay also checks immutable computation
 metadata. Legacy NULL operand-boundary masks remain NULL and retain the worker's
 legacy inference; replay compares masks only where a mask was already recorded.
 Other recorded execution metadata remains immutable for legacy rows too.
@@ -55,6 +62,9 @@ failed writes, and with a five-second polling interval while idle. They pause wi
 `/liveness` and failing `/healthz`, rather than repeatedly exiting. A paused
 listener requires restart after audited recovery, even after the halt is
 resolved: it must reload cursors and discard cached or buffered history.
+Transient observer errors, including a pool closed during reconnect, are retried
+against the current pool. Database errors fail readiness; they are not evidence
+of a history conflict.
 
 For ordinary host work, "finalized" is the application's configured confirmation
 depth (`--finality-lag` for the poller), not the RPC's Ethereum finalized tag.

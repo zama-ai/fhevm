@@ -2,6 +2,7 @@ pub mod dependence_chains;
 mod derived_history;
 pub mod event_envelope;
 pub mod event_operands;
+pub mod history_verification;
 pub mod ingest;
 mod legacy_executor;
 pub mod synthetic_ops;

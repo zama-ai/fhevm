@@ -307,6 +307,8 @@ pub struct Database {
     pub consumed_boundaries: ConsumedBoundaryGuard,
     pub sealed_chains: SealedChainGuard,
     pub tick: HeartBeat,
+    pub(crate) verified_history:
+        Arc<tokio::sync::Mutex<super::history_verification::VerifiedHistory>>,
     stack_mode: Arc<StackMode>,
 }
 
@@ -429,6 +431,7 @@ impl Database {
             consumed_boundaries,
             sealed_chains,
             tick: HeartBeat::default(),
+            verified_history: Default::default(),
             stack_mode,
         };
         db.reload_sealed_chains(dependence_cache_size).await;

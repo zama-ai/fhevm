@@ -7,6 +7,7 @@ use fhevm_engine_common::chain_recovery::{
     readiness_blocked, HostReplayStartup, ListenerSource,
 };
 use host_listener::cmd::block_history::BlockSummary;
+use host_listener::database::history_verification::verify_finalized_history;
 use host_listener::database::ingest::{
     ingest_block_logs, update_finalized_blocks_aux, BlockLogs,
 };
@@ -80,12 +81,8 @@ async fn sparse_catchup_repair_contains_a_contradiction_instead_of_repeating(
             Ok(header(n, true).hash)
         })
         .await;
-    assert_eq!(result.missing_canonical_block, Some(81));
-    assert!(!is_halted(&pool).await?);
-    // queue_canonical_block_for_retry now retains this finality claim. Its
-    // iterator regression separately checks the flag on the actual queued block.
-    let err = admit(&mut db, header(81, true), true).await.unwrap_err();
-    assert!(err.to_string().contains("committed canonical history"));
+    // Verify the disconnected older segment before queuing any gap repair.
+    assert_eq!(result.missing_canonical_block, None);
     assert!(is_halted(&pool).await?);
     let repaired: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM host_chain_blocks_valid WHERE block_hash=$1",
@@ -172,5 +169,165 @@ async fn long_abandoned_replay_is_adopted_in_bounded_chunks_without_loss(
     );
     assert!(!last.complete(&pool, 20_150).await?);
     assert!(!readiness_blocked(&pool).await?);
+    Ok(())
+}
+
+// A range response need not include an empty height at all.
+#[tokio::test]
+#[serial(db)]
+async fn sparse_finalized_gap_without_pending_rows_is_detected(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    for number in 74..=80 {
+        admit(&mut db, header(number, false), true).await?;
+    }
+    // No row for 81: it has never carried an event and the old listener was
+    // disconnected. Range catchup jumps straight to the first logged block.
+    admit(&mut db, header(82, true), true).await?;
+    let result =
+        update_finalized_blocks_aux(&mut db, 100, 10, |n| async move {
+            Ok(header(n, true).hash)
+        })
+        .await;
+    assert!(is_halted(&pool).await?);
+    assert_eq!(result.missing_canonical_block, None);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn verified_sparse_history_only_rechecks_the_newest_segment(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    for n in [74, 76, 78] {
+        admit(&mut db, header(n, true), true).await?;
+    }
+    let mut checked = vec![];
+    verify_finalized_history(&db, |n| {
+        checked.push(n);
+        async move { Ok(header(n, true).hash) }
+    })
+    .await?;
+    assert_eq!(checked, [78, 76, 74]);
+    checked.clear();
+    verify_finalized_history(&db, |n| {
+        checked.push(n);
+        async move { Ok(header(n, true).hash) }
+    })
+    .await?;
+    assert_eq!(checked, [78], "stable older segments need no repeated RPC");
+    admit(&mut db, header(80, true), true).await?;
+    checked.clear();
+    verify_finalized_history(&db, |n| {
+        checked.push(n);
+        async move { Ok(header(n, true).hash) }
+    })
+    .await?;
+    assert_eq!(
+        checked,
+        [80, 78],
+        "a previous tip must not become trusted across a new gap"
+    );
+    assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn a_verified_tip_is_rechecked_after_a_sparse_reorg() -> anyhow::Result<()>
+{
+    let (mut db, pool, _instance) = setup().await?;
+    for n in 74..=80 {
+        admit(&mut db, header(n, false), true).await?;
+    }
+    verify_finalized_history(&db, |n| async move { Ok(header(n, false).hash) })
+        .await?;
+    admit(&mut db, header(82, true), true).await?;
+    let error =
+        verify_finalized_history(
+            &db,
+            |n| async move { Ok(header(n, true).hash) },
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("committed canonical history"));
+    assert!(is_halted(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn history_changed_during_rpc_is_retried_without_containment(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    admit(&mut db, header(80, false), true).await?;
+    let other = db.clone();
+    let error = verify_finalized_history(&db, |n| {
+        let mut other = other.clone();
+        async move {
+            // No admission lock is held over RPC. Simulate another replica's
+            // commit after the snapshot, with an obsolete conflicting answer.
+            admit(&mut other, header(82, false), true).await?;
+            Ok(header(n, true).hash)
+        }
+    })
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("changed during verification"));
+    assert!(!is_halted(&pool).await?);
+    verify_finalized_history(&db, |n| async move { Ok(header(n, false).hash) })
+        .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn an_unavailable_segment_does_not_get_cached() -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    for n in [74, 80, 82] {
+        admit(&mut db, header(n, false), true).await?;
+    }
+    let result = verify_finalized_history(&db, |n| async move {
+        anyhow::ensure!(n != 80, "RPC unavailable");
+        Ok(header(n, false).hash)
+    })
+    .await;
+    assert!(result.is_err());
+    assert!(!is_halted(&pool).await?);
+    let mut checked = vec![];
+    verify_finalized_history(&db, |n| {
+        checked.push(n);
+        async move { Ok(header(n, false).hash) }
+    })
+    .await?;
+    assert_eq!(checked, [82, 80, 74]);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn losing_the_verified_tip_invalidates_cached_segments(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    for n in [74, 80, 82] {
+        admit(&mut db, header(n, false), true).await?;
+    }
+    verify_finalized_history(&db, |n| async move { Ok(header(n, false).hash) })
+        .await?;
+    sqlx::query("DELETE FROM host_chain_blocks_valid WHERE block_number = 82")
+        .execute(&pool)
+        .await?;
+    admit(&mut db, header(84, true), true).await?;
+    let result =
+        verify_finalized_history(
+            &db,
+            |n| async move { Ok(header(n, true).hash) },
+        )
+        .await;
+    assert!(result.is_err());
+    assert!(
+        is_halted(&pool).await?,
+        "a removed checkpoint cannot justify skipping older history"
+    );
     Ok(())
 }

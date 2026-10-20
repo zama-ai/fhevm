@@ -769,8 +769,9 @@ async fn deferred_finalization_serializes_with_host_admission() -> Result<()> {
             .into_tx()
             .unwrap();
     lock_history_tx(&mut admission, ListenerSource::Host, false, 42).await?;
+    let mut finalizer_db = db.clone();
     let finalizer = tokio::spawn(async move {
-        update_finalized_blocks_aux(&mut db, 100, 0, |_| async {
+        update_finalized_blocks_aux(&mut finalizer_db, 100, 0, |_| async {
             Ok(candidate)
         })
         .await;
@@ -795,6 +796,21 @@ async fn deferred_finalization_serializes_with_host_admission() -> Result<()> {
         .execute(&mut *admission).await?;
     admission.commit().await?;
     tokio::time::timeout(Duration::from_secs(5), finalizer).await??;
+    // The new committed segment invalidates the verifier's initial snapshot.
+    // The first pass must leave the candidate pending, then a fresh pass can
+    // establish the contradiction against the successor without racing RPC.
+    assert!(!is_halted(&pool).await?);
+    let status: String = sqlx::query_scalar("SELECT block_status FROM host_chain_blocks_valid WHERE chain_id=42 AND block_hash=$1")
+        .bind(candidate.as_slice()).fetch_one(&pool).await?;
+    assert_eq!(status, "pending");
+    update_finalized_blocks_aux(&mut db, 100, 0, |number| async move {
+        Ok(if number == 101 {
+            B256::repeat_byte(11)
+        } else {
+            candidate
+        })
+    })
+    .await;
     assert!(is_halted(&pool).await?);
     let status: String = sqlx::query_scalar("SELECT block_status FROM host_chain_blocks_valid WHERE chain_id=42 AND block_hash=$1")
         .bind(candidate.as_slice()).fetch_one(&pool).await?;

@@ -26,6 +26,7 @@ use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 use fhevm_engine_common::versioning::{reconcile_stack_mode, StackMode};
 use sqlx::postgres::PgPoolOptions;
 
+use crate::database::history_verification::verify_finalized_history;
 use crate::database::ingest::{
     ingest_block_logs, update_finalized_blocks, validate_block_logs, BlockLogs,
     IngestOptions,
@@ -633,6 +634,16 @@ impl InfiniteLogIter {
 
     pub async fn get_block_by_number(&self, number: u64) -> Result<Block> {
         self.get_block_by_id(BlockId::number(number)).await
+    }
+
+    async fn verify_committed_history(&self, db: &Database) -> Result<()> {
+        verify_finalized_history(db, |number| async move {
+            self.get_block_by_number(number)
+                .await
+                .map(|b| b.header.hash)
+        })
+        .await
+        .map(|_| ())
     }
 
     async fn get_current_block(&self) -> Result<Block> {
@@ -1413,6 +1424,30 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
 
         // Check connection works
         log_iter.new_log_stream_no_retry().await?;
+        // Check retained segments even if catchup has no logs or terminates at
+        // --end-at-block without ever reaching the realtime finalization loop.
+        loop {
+            match log_iter.verify_committed_history(&db).await {
+                Ok(()) => break,
+                Err(err)
+                    if matches!(
+                        err.downcast_ref::<sqlx::Error>(),
+                        Some(sqlx::Error::Protocol(_))
+                    ) =>
+                {
+                    return Err(err)
+                }
+                Err(err) => {
+                    warn!(%err, "Cannot verify startup history; retrying");
+                    log_iter.tick_timeout.update();
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    // Verification may have lost its websocket provider.
+                    // Reconnect before retrying instead of polling a closed
+                    // transport forever; unfinished catchup is preserved.
+                    log_iter.new_log_stream().await;
+                }
+            }
+        }
 
         loop {
             log_iter.stream = None; // force new connection each iteration
@@ -1437,6 +1472,23 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
                     // Keep observing the tip so pending catchup can reach finality,
                     // without ingesting realtime blocks beyond a requested range.
                     continue;
+                }
+                if block_logs.finalized {
+                    if let Err(err) =
+                        log_iter.verify_committed_history(&db).await
+                    {
+                        if matches!(
+                            err.downcast_ref::<sqlx::Error>(),
+                            Some(sqlx::Error::Protocol(_))
+                        ) {
+                            return Err(err);
+                        }
+                        warn!(%err, block_number = block_logs.summary.number,
+                            "Cannot verify committed history; retaining catchup for retry");
+                        log_iter.retry_from_block(block_logs.summary.number);
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
                 }
                 let status = db_insert_block(
                     chain_id,
@@ -2387,5 +2439,121 @@ mod tests {
         assert_eq!(iter.catchup_block_from(&provider).await.unwrap(), 1);
         iter.catchup_margin = 0;
         assert_eq!(iter.catchup_block_from(&provider).await.unwrap(), 6);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn sparse_catchup_checks_old_history_before_admitting_a_new_tip(
+    ) -> Result<()> {
+        use crate::contracts::{AclContract, TfheContract};
+        use crate::database::ingest::{ingest_block_logs, IngestOptions};
+        use alloy::{
+            primitives::U256, sol_types::SolEvent, transports::mock::Asserter,
+        };
+        use fhevm_engine_common::chain_recovery::is_halted;
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow!("{e}"))?;
+        let chain = ChainId::try_from(42_u64)?;
+        let mut db = Database::new(&instance.db_url, chain, 128).await?;
+        let pool = db.pool().await;
+        let make = |n: u64, canonical: bool| {
+            let h = |n| {
+                BlockHash::with_last_byte(
+                    (n + if canonical && n >= 75 { 100 } else { 0 }) as u8,
+                )
+            };
+            let mut b = rpc_block(0);
+            b.header.hash = h(n);
+            b.header.inner.number = n;
+            b.header.inner.parent_hash = h(n - 1);
+            b.header.inner.timestamp = n;
+            b
+        };
+        let options = IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain: 0,
+            is_protocol_config_listener: false,
+            disable_synthetic_ops: true,
+        };
+        for n in 74..=80 {
+            let block = BlockLogs {
+                logs: vec![],
+                summary: make(n, false).into(),
+                catchup: true,
+                finalized: true,
+            };
+            ingest_block_logs(
+                chain,
+                &mut db,
+                &block,
+                &None,
+                &None,
+                &None,
+                &None,
+                &None,
+                options.clone(),
+            )
+            .await?;
+        }
+        let canonical = make(82, true);
+        let mut handle = BlockHash::with_last_byte(0);
+        handle.0[0] = 0x51;
+        handle.0[21] = 0xff;
+        handle.0[22..30].copy_from_slice(&42_u64.to_be_bytes());
+        handle.0[30] = 5;
+        let events = [
+            TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt: U256::from(7),
+                toType: 5,
+                result: handle,
+            }
+            .encode_log_data(),
+            AclContract::Allowed {
+                caller: Address::ZERO,
+                account: Address::ZERO,
+                handle,
+            }
+            .encode_log_data(),
+        ];
+        let logs = events
+            .into_iter()
+            .enumerate()
+            .map(|(i, data)| Log {
+                inner: alloy::primitives::Log {
+                    address: Address::ZERO,
+                    data,
+                },
+                block_number: Some(82),
+                block_hash: Some(canonical.header.hash),
+                transaction_hash: Some(BlockHash::with_last_byte(0xe1)),
+                log_index: Some(i as u64),
+                ..Default::default()
+            })
+            .collect();
+        let asserter = Asserter::new();
+        asserter.push_success(&canonical);
+        asserter.push_success(&make(80, true));
+        let mut iter = new_test_iter(50);
+        iter.block_history.add_block(make(110, true).into());
+        *iter.provider.write().await =
+            Some(ProviderBuilder::new().connect_mocked_client(asserter));
+        let page = iter.split_by_block(logs).await?;
+        assert_eq!(page.len(), 1);
+        assert!(page[0].finalized);
+        let err = iter.verify_committed_history(&db).await.unwrap_err();
+        assert!(err.to_string().contains("committed canonical history"));
+        assert!(is_halted(&pool).await?);
+        let new_tip: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM host_chain_blocks_valid WHERE block_number = 82)",
+        ).fetch_one(&pool).await?;
+        assert!(
+            !new_tip,
+            "history verification must precede catchup admission"
+        );
+        Ok(())
     }
 }
