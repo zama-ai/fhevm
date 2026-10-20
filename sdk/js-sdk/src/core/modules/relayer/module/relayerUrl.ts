@@ -50,6 +50,15 @@ export function validateRelayerBaseUrl(relayerUrl: unknown, hasAuth: boolean): U
     );
   }
 
+  if (parsed.search !== '' || parsed.hash !== '') {
+    throw new InvalidUrlError(
+      {
+        message: `Invalid relayerUrl: must not contain a query string or fragment (got '${parsed.search}${parsed.hash}'). Use options.query to add query parameters.`,
+      },
+      {},
+    );
+  }
+
   if (hasAuth && parsed.protocol === 'http:') {
     const isLocalhost =
       parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1' || parsed.hostname === '[::1]';
@@ -74,4 +83,12 @@ export function buildRelayerUrlString(relayerBaseUrl: URL, path: string): string
   const sanitizedPath = removeSuffix(removePrefix(path, '/'), '/');
   const url = new URL(sanitizedPath, relayerBaseUrl).toString();
   return removeSuffix(url, '/');
+}
+
+export function appendRelayerQuery(url: string, query: Record<string, string> | undefined): string {
+  assert(!url.includes('?'));
+  const search = Object.entries(query ?? {})
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+  return search === '' ? url : `${url}?${search}`;
 }

@@ -10,7 +10,7 @@ import { assertRecordArrayProperty, assertRecordNonNullableProperty } from '../.
 import { fetchWithRetry, normalizeHeaders } from '../../../base/fetch.js';
 import { sdkName, version } from '../../../_version.js';
 import { assertRecordStringArrayProperty, assertRecordStringProperty } from '../../../base/string.js';
-import { buildRelayerUrlString, validateRelayerBaseUrl } from './relayerUrl.js';
+import { appendRelayerQuery, buildRelayerUrlString, validateRelayerBaseUrl } from './relayerUrl.js';
 import { readErrorMessage } from './readErrorMessage.js';
 import { assert } from '../../../base/errors/InternalError.js';
 
@@ -38,7 +38,7 @@ export async function fetchFheEncryptionKeySource(
   );
 
   assert(relayerBaseUrl.pathname.endsWith('/'));
-  const url = buildRelayerUrlString(relayerBaseUrl, 'v2/keyurl');
+  const url = appendRelayerQuery(buildRelayerUrlString(relayerBaseUrl, 'v2/keyurl'), options?.query);
 
   let response;
   try {

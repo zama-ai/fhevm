@@ -35,6 +35,7 @@ export type FetchDelegatedUserDecryptResult = readonly FetchUserDecryptResultIte
 export type RelayerCommonOptions = {
   auth?: Auth | undefined;
   headers?: Record<string, string>;
+  query?: Record<string, string> | undefined;
   debug?: boolean | undefined;
   fetchRetries?: number | undefined;
   fetchRetryDelayInMilliseconds?: number | undefined;

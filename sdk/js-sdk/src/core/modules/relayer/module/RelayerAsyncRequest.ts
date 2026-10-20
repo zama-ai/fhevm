@@ -67,6 +67,7 @@ import {
 } from './guards/RelayerResponseQueued.js';
 import { assertIsRelayerUserDecryptSucceeded } from './guards/RelayerUserDecryptSucceeded.js';
 import { readErrorMessage } from './readErrorMessage.js';
+import { appendRelayerQuery } from './relayerUrl.js';
 
 /*
     Actions:
@@ -144,6 +145,7 @@ export class RelayerAsyncRequest {
   private readonly _payload: Record<string, unknown>;
   private readonly _fhevmAuth: Auth | undefined;
   private readonly _customHeaders: Record<string, string> | undefined;
+  private readonly _query: Record<string, string> | undefined;
   private _retryAfterTimeoutPromiseFuncReject?: ((reason?: unknown) => void) | undefined;
   private readonly _onProgress?:
     | ((
@@ -213,6 +215,7 @@ export class RelayerAsyncRequest {
     this._logger = params.logger;
     this._fhevmAuth = params.options?.auth;
     this._customHeaders = normalizeHeaders(params.options?.headers);
+    this._query = params.options?.query;
     this._onProgress = params.options?.onProgress as typeof this._onProgress;
     this._state = {
       aborted: false,
@@ -1259,7 +1262,7 @@ export class RelayerAsyncRequest {
 
     let response;
     try {
-      response = await fetch(this._url, init);
+      response = await fetch(appendRelayerQuery(this._url, this._query), init);
     } catch (cause) {
       this._state.fetching = false;
 
@@ -1330,7 +1333,7 @@ export class RelayerAsyncRequest {
 
     let response;
     try {
-      response = await fetch(`${this._url}/${this.jobId}`, init);
+      response = await fetch(appendRelayerQuery(`${this._url}/${this.jobId}`, this._query), init);
     } catch (cause) {
       this._state.fetching = false;
       // Warning: `terminated` can be `true` here!

@@ -23,6 +23,20 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe('fetchFheEncryptionKeySource query option', () => {
+  it('appends `options.query` to the keyurl request', async () => {
+    mockFetchStatus(401, '');
+
+    await expect(
+      fetchFheEncryptionKeySource(relayerClient, { options: { query: { zama_sdk_version: '1.2.3' } } }),
+    ).rejects.toThrow(RelayerFetchError);
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://relayer.example.com/v2/keyurl?zama_sdk_version=1.2.3',
+      expect.anything(),
+    );
+  });
+});
+
 describe('fetchFheEncryptionKeySource error surfacing', () => {
   it('401 surfaces the message from { error: { message } }', async () => {
     mockFetchStatus(401, JSON.stringify({ error: { message: 'invalid x-api-key', label: 'unauthorized' } }));

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { InvalidUrlError } from '../../../base/errors/InvalidUrlError.js';
-import { buildRelayerUrlString, validateRelayerBaseUrl } from './relayerUrl.js';
+import { appendRelayerQuery, buildRelayerUrlString, validateRelayerBaseUrl } from './relayerUrl.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/relayerUrl.test.ts
@@ -113,6 +113,18 @@ describe('validateRelayerBaseUrl', () => {
       errorMatch: /credentials/,
     },
     {
+      name: 'has query string',
+      input: 'https://relayer.example.com/api?label=x',
+      hasAuth: false,
+      errorMatch: /query string or fragment \(got '\?label=x'\)/,
+    },
+    {
+      name: 'has fragment',
+      input: 'https://relayer.example.com/api#f',
+      hasAuth: false,
+      errorMatch: /query string or fragment \(got '#f'\)/,
+    },
+    {
       name: 'http + hasAuth + non-localhost',
       input: 'http://relayer.example.com/',
       hasAuth: true,
@@ -222,5 +234,27 @@ describe('buildRelayerUrlString', () => {
     const b = validateRelayerBaseUrl('https://relayer.example.com/api/', false);
     expect(buildRelayerUrlString(a, 'v2/keyurl')).toBe('https://relayer.example.com/api/v2/keyurl');
     expect(buildRelayerUrlString(b, 'v2/keyurl')).toBe('https://relayer.example.com/api/v2/keyurl');
+  });
+});
+
+////////////////////////////////////////////////////////////////////////////////
+
+describe('appendRelayerQuery', () => {
+  const url = 'https://relayer.example.com/v2/keyurl';
+
+  it('returns the url unchanged without a query', () => {
+    expect(appendRelayerQuery(url, undefined)).toBe(url);
+    expect(appendRelayerQuery(url, {})).toBe(url);
+  });
+
+  it('appends the percent-encoded query string', () => {
+    expect(appendRelayerQuery(url, { zama_sdk_version: '1.2.3', zama_sdk_operation: 'decrypt values' })).toBe(
+      `${url}?zama_sdk_version=1.2.3&zama_sdk_operation=decrypt%20values`,
+    );
+    expect(appendRelayerQuery(url, { 'a&b': 'c=d' })).toBe(`${url}?a%26b=c%3Dd`);
+  });
+
+  it('throws when the url already has a query string', () => {
+    expect(() => appendRelayerQuery(`${url}?a=1`, { b: '2' })).toThrow();
   });
 });
