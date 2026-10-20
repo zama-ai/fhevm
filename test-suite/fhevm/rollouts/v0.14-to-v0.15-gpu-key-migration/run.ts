@@ -389,7 +389,10 @@ export const gatewayContractUpgradePlan = [
   ["task:upgradeGatewayConfig", "GatewayConfig"],
 ] as const;
 
-export const hostContractUpgradePlan = [["task:upgradeKMSGeneration", "KMSGeneration"]] as const;
+export const hostContractUpgradePlan = [
+  ["task:upgradeProtocolConfig", "ProtocolConfig"],
+  ["task:upgradeKMSGeneration", "KMSGeneration"],
+] as const;
 
 const upgradeContracts = async (ctx: RolloutRunContext, targetLock: string) => {
   await ctx.snapshotContracts("gateway");
