@@ -626,6 +626,19 @@ pub async fn ingest_block_logs(
                         .map_err(|reason| {
                             sqlx::Error::Protocol(reason.into())
                         })?;
+                    // Old handles did not commit operand origin. Recognize
+                    // their exact preimage, not a guessed activation height.
+                    // Wildcard development configurations without an ACL
+                    // address cannot prove that preimage and remain strict.
+                    let has_legacy_operand_origin = !is_synthetic
+                        && acl_contract_address.is_some_and(|acl| {
+                            super::legacy_executor::has_legacy_operand_origin(
+                                &event.data,
+                                acl,
+                                chain_id.as_u64(),
+                                &block_logs.summary,
+                            )
+                        });
                     fhe_event_count = fhe_event_count.saturating_add(1);
                     let log = LogTfhe {
                         event,
@@ -639,6 +652,7 @@ pub async fn ingest_block_logs(
                         tx_depth_size: 0,
                         log_index: log.log_index,
                         operand_boundary_mask: None,
+                        has_legacy_operand_origin,
                         is_executor_minted: true,
                         is_fallback_grant: false,
                         is_synthetic,
@@ -806,6 +820,7 @@ pub async fn ingest_block_logs(
                         // This row is synthesized by the listener after a
                         // bridge event; the executor never called
                         // `_markMinted` for it.
+                        has_legacy_operand_origin: false,
                         is_executor_minted: false,
                         is_fallback_grant: true,
                         is_synthetic: false,
@@ -2010,6 +2025,7 @@ pub async fn synthesize_finalized_fallback_grants(
             // executor never ran, so `_markMinted` never recorded this
             // handle and it must not become a same-transaction minted
             // operand for a later real executor operation.
+            has_legacy_operand_origin: false,
             is_executor_minted: false,
             is_fallback_grant: true,
             is_synthetic: false,
@@ -2450,6 +2466,7 @@ mod tests {
             dependence_chain: tx,
             log_index,
             operand_boundary_mask: None,
+            has_legacy_operand_origin: false,
             is_executor_minted,
             is_fallback_grant: false,
             is_synthetic: false,

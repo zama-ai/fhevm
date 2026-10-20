@@ -328,6 +328,10 @@ pub struct LogTfhe {
     /// `None` is only valid before ordered block ingestion derives it (or for
     /// non-computation events such as `VerifyInput`).
     pub operand_boundary_mask: Option<OperandBoundaryMask>,
+    /// The output matches the old executor preimage, which did not commit
+    /// operand origin. Persist NULL so fresh replay uses the same legacy
+    /// inference as retained pre-mask rows, including repeated output handles.
+    pub has_legacy_operand_origin: bool,
     /// Whether this event is an actual executor operation whose result is
     /// marked in executor transient storage. Bridge fallback synthesis emits
     /// a `TrivialEncrypt`-shaped computation row but did not execute the
@@ -993,12 +997,14 @@ impl Database {
         output_count: i16,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
-        let operand_boundary_mask = log.operand_boundary_mask.as_ref().ok_or_else(|| {
+        let derived_mask = log.operand_boundary_mask.as_ref().ok_or_else(|| {
             SqlxError::Protocol(
                 "refusing computation insert without authoritative operand boundary mask"
                     .into(),
             )
         })?;
+        let operand_boundary_mask =
+            (!log.has_legacy_operand_origin).then_some(derived_mask.as_slice());
         // Schema isolation handles BCS/GCS routing at the connection layer
         // (`search_path = gcs,public` for GCS, default `public` for BCS), so
         // this INSERT references `computations` unqualified.
@@ -1014,7 +1020,9 @@ impl Database {
         // That means unknown metadata, not a conflicting mask. Preserve NULL
         // (and the worker's legacy inference) instead of backfilling new
         // execution semantics onto retained pre-upgrade work. All other
-        // metadata, and every already-recorded mask, remain immutable.
+        // metadata, and every already-recorded mask, remain immutable. Handles
+        // verified against the old executor preimage also start with NULL on
+        // fresh historical replay: their origin was never committed on-chain.
         let conflicting: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM computations
              WHERE output_handle = $1 AND transaction_id IS NOT DISTINCT FROM $2
@@ -1023,7 +1031,7 @@ impl Database {
                    IS DISTINCT FROM
                    ($3::bytea[], $4::smallint, $5::boolean, $6::bigint, $7::bigint,
                     $9::bytea, $10::smallint, $11::smallint)
-                    OR (operand_boundary_mask IS NOT NULL
+                    OR ($8::bytea IS NOT NULL AND operand_boundary_mask IS NOT NULL
                         AND operand_boundary_mask IS DISTINCT FROM $8::bytea)))",
         )
         .bind(output_handle)
@@ -1033,7 +1041,7 @@ impl Database {
         .bind(is_scalar)
         .bind(self.chain_id.as_i64())
         .bind(log.block_number as i64)
-        .bind(operand_boundary_mask.as_slice())
+        .bind(operand_boundary_mask)
         .bind(&group_id_vec)
         .bind(output_index)
         .bind(output_count)
@@ -1084,7 +1092,7 @@ impl Database {
             !output_allowed,
             self.chain_id.as_i64(),
             log.block_number as i64,
-            operand_boundary_mask.as_slice(),
+            operand_boundary_mask,
             group_id_vec,
             output_index,
             output_count,
