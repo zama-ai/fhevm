@@ -79,25 +79,6 @@ pub fn safe_rpc_error(error: &TransportError) -> String {
     }
 }
 
-/// These dependencies emit full RPC URLs, response bodies, or request details
-/// independently of our error formatting. Disable their events AND spans in
-/// both JSON logs and OTLP, including when the sender runs at DEBUG/TRACE.
-pub fn gateway_tracing_filter(metadata: &tracing::Metadata<'_>) -> bool {
-    let target = metadata.target();
-    ![
-        "alloy",
-        "reqwest",
-        "hyper",
-        "rustls",
-        "h2",
-        "tower_http",
-        "tungstenite",
-        "tokio_tungstenite",
-    ]
-    .iter()
-    .any(|prefix| target.starts_with(prefix))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
