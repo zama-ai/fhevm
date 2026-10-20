@@ -10,6 +10,39 @@ use fhevm_engine_common::versioning::{
 };
 use test_harness::instance::{setup_test_db, ImportMode};
 
+fn pause_test_config(
+    database_url: DatabaseURL,
+    anvil: &alloy::node_bindings::AnvilInstance,
+    dependent_ops_max_per_chain: u32,
+) -> PollerConfig {
+    PollerConfig {
+        url: anvil.endpoint(),
+        acl_address: Address::with_last_byte(1),
+        tfhe_address: Address::with_last_byte(2),
+        kms_generation_address: None,
+        protocol_config_address: None,
+        confidential_bridge_address: None,
+        database_url,
+        finality_lag: 20,
+        batch_size: 100,
+        poll_interval: Duration::from_millis(100),
+        retry_interval: Duration::from_millis(10),
+        service_name: "retired-poller-test".into(),
+        max_http_retries: 0,
+        rpc_compute_units_per_second: 1000,
+        health_port: 0,
+        seed_start_block: None,
+        replay_window: 64,
+        dependence_cache_size: 64,
+        dependence_by_connexity: false,
+        dependence_cross_block: false,
+        dependent_ops_max_per_chain,
+        gcs_mode: false,
+        disable_synthetic_ops: true,
+        canonical_protocol_config_chain_id: None,
+    }
+}
+
 async fn assert_retired_poller_pauses(
     dependent_ops_max_per_chain: u32,
     retire_during_startup: bool,
@@ -35,32 +68,11 @@ async fn assert_retired_poller_pauses(
         None
     };
     let anvil = alloy::node_bindings::Anvil::new().chain_id(42).spawn();
-    let config = PollerConfig {
-        url: anvil.endpoint(),
-        acl_address: Address::with_last_byte(1),
-        tfhe_address: Address::with_last_byte(2),
-        kms_generation_address: None,
-        protocol_config_address: None,
-        confidential_bridge_address: None,
-        database_url: instance.db_url.clone(),
-        finality_lag: 20,
-        batch_size: 100,
-        poll_interval: Duration::from_millis(100),
-        retry_interval: Duration::from_millis(10),
-        service_name: "retired-poller-test".into(),
-        max_http_retries: 0,
-        rpc_compute_units_per_second: 1000,
-        health_port: 0,
-        seed_start_block: None,
-        replay_window: 64,
-        dependence_cache_size: 64,
-        dependence_by_connexity: false,
-        dependence_cross_block: false,
+    let config = pause_test_config(
+        instance.db_url.clone(),
+        &anvil,
         dependent_ops_max_per_chain,
-        gcs_mode: false,
-        disable_synthetic_ops: true,
-        canonical_protocol_config_chain_id: None,
-    };
+    );
     let poller = run_poller(config);
     tokio::pin!(poller);
     if let Some(mut tx) = cutover.take() {
@@ -1001,20 +1013,14 @@ async fn changed_committed_host_header_is_contained_before_replay() -> Result<()
         parent_hash: B256::ZERO,
         timestamp: 100,
     };
-    validate_committed_header(
-        &pool,
-        ChainId::try_from(42_u64)?,
-        &header,
-        false,
-    )
-    .await?;
+    validate_committed_header(&pool, ChainId::try_from(42_u64)?, &header)
+        .await?;
     assert!(!is_halted(&pool).await?);
     header.hash = B256::repeat_byte(2);
     assert!(validate_committed_header(
         &pool,
         ChainId::try_from(42_u64)?,
         &header,
-        false
     )
     .await
     .is_err());
@@ -1539,7 +1545,7 @@ async fn legacy_pending_fork_below_cursor_does_not_false_halt() -> Result<()> {
             timestamp: 65,
         },
     };
-    validate_committed_header(&pool, chain, &block.summary, false).await?;
+    validate_committed_header(&pool, chain, &block.summary).await?;
     ingest_block_logs(
         chain,
         &mut db,
@@ -1563,9 +1569,144 @@ async fn legacy_pending_fork_below_cursor_does_not_false_halt() -> Result<()> {
     // must still be contained even though the legacy pending sibling remains.
     let mut changed = block.summary;
     changed.hash = B256::repeat_byte(2);
-    assert!(validate_committed_header(&pool, chain, &changed, false)
+    assert!(validate_committed_header(&pool, chain, &changed)
         .await
         .is_err());
     assert!(is_halted(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+#[tracing_test::traced_test]
+async fn contained_poller_startup_stays_alive_without_starting_replay(
+) -> Result<()> {
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow!("{err}"))?;
+    let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+    record_halt(
+        &pool,
+        HistoryMismatch {
+            source: ListenerSource::Host,
+            gcs_mode: false,
+            chain_id: 42,
+            block_number: 65,
+            expected_hash: Some(&[1_u8; 32]),
+            observed_hash: Some(&[2_u8; 32]),
+            reason: "test committed history conflict",
+        },
+    )
+    .await?;
+    let anvil = alloy::node_bindings::Anvil::new().chain_id(42).spawn();
+    let config = pause_test_config(instance.db_url.clone(), &anvil, 0);
+    let poller = run_poller(config);
+    tokio::pin!(poller);
+    tokio::select! {
+        result = &mut poller => panic!("contained poller exited: {result:?}"),
+        result = tokio::time::timeout(Duration::from_secs(10), async {
+            while !logs_contain("Host listener paused by chain history containment") {
+                sleep(Duration::from_millis(10)).await;
+            }
+        }) => result?,
+    }
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), &mut poller)
+            .await
+            .is_err()
+    );
+    let replays: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM public.listener_replay_state")
+            .fetch_one(&pool)
+            .await?;
+    assert_eq!(replays, 0);
+    assert!(readiness_blocked(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn poller_header_check_queued_at_promotion_uses_live_role_and_lock(
+) -> Result<()> {
+    use fhevm_engine_common::chain_recovery::lock_history_tx;
+    use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow!("{err}"))?;
+    let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+    let green = green_host_pool(&pool, instance.db_url()).await?;
+    sqlx::query("INSERT INTO public.host_chain_blocks_valid (chain_id, block_hash, block_number, block_status) VALUES (42, $1, 65, 'finalized')")
+        .bind(vec![1_u8; 32]).execute(&pool).await?;
+    let mut cutover = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(CUTOVER_LOCK_ID)
+        .execute(&mut *cutover)
+        .await?;
+    let cutover_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *cutover)
+        .await?;
+    let check = tokio::spawn(async move {
+        let header = BlockSummary {
+            number: 65,
+            hash: B256::repeat_byte(2),
+            parent_hash: B256::ZERO,
+            timestamp: 100,
+        };
+        validate_committed_header(&green, ChainId::try_from(42_u64)?, &header)
+            .await
+    });
+    async fn wait_for_waiter(pool: &sqlx::PgPool, blocker: i32) -> Result<()> {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid)))")
+                    .bind(blocker).fetch_one(pool).await?;
+                if waiting { return Ok::<_, sqlx::Error>(()); }
+                tokio::task::yield_now().await;
+            }
+        }).await??;
+        Ok(())
+    }
+    wait_for_waiter(&pool, cutover_pid).await?;
+    sqlx::query(&format!(
+        "ALTER SCHEMA {GCS_SCHEMA_QUOTED} RENAME TO host_previous_green"
+    ))
+    .execute(&mut *cutover)
+    .await?;
+    let mut live = pool.begin().await?;
+    lock_history_tx(&mut live, ListenerSource::Host, false, 42).await?;
+    let live_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *live)
+        .await?;
+    cutover.commit().await?;
+    wait_for_waiter(&pool, live_pid).await?;
+    assert!(!check.is_finished());
+    assert!(!is_halted(&pool).await?);
+    live.rollback().await?;
+    assert!(tokio::time::timeout(Duration::from_secs(5), check)
+        .await??
+        .is_err());
+    let roles: Vec<String> = sqlx::query_scalar("SELECT stack_role FROM public.chain_recovery_halts WHERE resolved_at IS NULL").fetch_all(&pool).await?;
+    assert_eq!(roles, vec!["BCS"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn retired_poller_header_check_does_not_record_a_halt() -> Result<()> {
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow!("{err}"))?;
+    let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+    sqlx::query("INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number, block_status) VALUES (42, $1, 65, 'finalized')")
+        .bind(vec![1_u8; 32]).execute(&pool).await?;
+    sqlx::query("UPDATE versioning SET consensus_version = 9999")
+        .execute(&pool)
+        .await?;
+    let header = BlockSummary {
+        number: 65,
+        hash: B256::repeat_byte(2),
+        parent_hash: B256::ZERO,
+        timestamp: 100,
+    };
+    validate_committed_header(&pool, ChainId::try_from(42_u64)?, &header)
+        .await?;
+    assert!(!is_halted(&pool).await?);
     Ok(())
 }

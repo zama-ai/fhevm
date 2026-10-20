@@ -23,7 +23,8 @@ Pending replay blocks upgrade readiness/promotion until repair completes. It
 an upgrade while existing workloads continue. Completion wakes both host and
 Gateway readiness gates without requiring another block; the gates also recheck
 every five seconds. The websocket listener does not
-perform the poller's bounded restart replay. It exits on rejected block data;
+perform the poller's bounded restart replay. It exits on rejected block data
+unless a durable containment halt is present;
 exhausted database retries rewind the iterator and refetch in-process. Neither
 path acknowledges the failed block or silently skips it.
 
@@ -43,6 +44,41 @@ across this database, including both stacks: dependencies can cross host chains.
 It is not cleared by restarting a service. Automatic drift rollback also waits
 for audited recovery, preserving its pending signal for retry. SNS retains a dequeued upload while
 contained; Gateway ingestion fails without advancing its durable cursor.
+
+The poller and websocket listener observe halts before ingestion startup, after
+failed writes, and with a five-second polling interval while idle. They pause with healthy
+`/liveness` and failing `/healthz`, rather than repeatedly exiting. A paused
+listener requires restart after audited recovery, even after the halt is
+resolved: it must reload cursors and discard cached or buffered history.
+
+For ordinary host work, "finalized" is the application's configured confirmation
+depth (`--finality-lag` for the poller), not the RPC's Ethereum finalized tag.
+A small lag alone does not halt anything; a later canonical hash change at an
+already finalized block does. A reorg within the unfinalized window does not
+trigger this policy. Choose the lag for each host chain with the database-wide
+containment consequence in mind.
+
+## Alerting
+
+Readiness includes recovery state, but also fails during ordinary bounded
+replay; it is not a dedicated containment alert. The poller's existing metrics
+endpoint now exports `host_listener_recovery_paused`: zero during normal
+operation/replay, one after containment until restart. Both listener modes emit
+the structured error `event="chain_recovery_paused"` when they pause. A newly
+committed halt emits `event="chain_history_halt"` with its source, stack role,
+chain, block number and reason.
+
+The coprocessor Helm chart provides the opt-in critical alert
+`CoprocessorChainHistoryContained`. Enable `chainRecoveryAlerts.enabled` and
+`hostListenerPollerShared.serviceMonitor.enabled`, with a poller enabled for the
+deployment. The alert covers this release's pollers in its namespace and fires
+on the first evaluation with a paused poller. Configure
+`chainRecoveryAlerts.additionalLabels` to match the Prometheus rule selector and
+route the alert through Alertmanager. Outside Helm, alert on
+`host_listener_recovery_paused == 1` using the deployment's target labels.
+Websocket-only deployments must route the structured error events to their log
+alerting system; the websocket binary does not expose the poller's metrics
+endpoint. See the [Prometheus Operator alerting documentation](https://prometheus-operator.dev/docs/developer/alerting/).
 
 ## Repairs after commitment
 

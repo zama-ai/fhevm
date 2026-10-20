@@ -370,6 +370,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         blockchain_provider: blockchain_provider.clone(),
         database_pool: db.pool.clone(),
         database_tick: db.tick.clone(),
+        recovery_paused: Default::default(),
     };
     let health_check_server = HealthHttpServer::new(
         Arc::new(health_check),

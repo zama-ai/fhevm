@@ -1333,6 +1333,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         blockchain_provider: log_iter.provider.clone(),
         database_pool: db.pool.clone(),
         database_tick: db.tick.clone(),
+        recovery_paused: Default::default(),
     };
 
     let cancel_token = CancellationToken::new();
@@ -1350,7 +1351,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     // Start health check before drift-revert init so the service stays
     // healthy while waiting for a revert to complete.
     let health_check_server = HealthHttpServer::new(
-        Arc::new(health_check),
+        Arc::new(health_check.clone()),
         args.health_port,
         cancel_token.clone(),
     );
@@ -1360,158 +1361,171 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
         }
     });
 
-    let mut background_tasks = JoinSet::new();
+    let work = async {
+        let mut background_tasks = JoinSet::new();
 
-    // Drift-revert: must run before any DB state reads so we don't read
-    // pre-revert state.
-    let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
-        &args.database_url,
-        PgPoolOptions::new().max_connections(1),
-        Some(&cancel_token),
-    )
-    .await?;
-    drift_revert::init(
-        drift_revert_pool,
-        cancel_token.clone(),
-        None,
-        drift_revert::WatcherTimeouts::default(),
-    )
-    .await?;
+        // Drift-revert: must run before any DB state reads so we don't read
+        // pre-revert state.
+        let (drift_revert_pool, _pool_refresh_handle) =
+            connect_pool_with_options(
+                &args.database_url,
+                PgPoolOptions::new().max_connections(1),
+                Some(&cancel_token),
+            )
+            .await?;
+        drift_revert::init(
+            drift_revert_pool,
+            cancel_token.clone(),
+            None,
+            drift_revert::WatcherTimeouts::default(),
+        )
+        .await?;
 
-    // Notifications cover a running listener; reconcile explicitly when a
-    // retired stack starts after the cutover notification has already passed.
-    reconcile_stack_mode(&db.pool().await, &stack_mode).await?;
-    wait_while_paused(&stack_mode, &log_iter.tick_block, &cancel_token).await;
+        // Notifications cover a running listener; reconcile explicitly when a
+        // retired stack starts after the cutover notification has already passed.
+        reconcile_stack_mode(&db.pool().await, &stack_mode).await?;
+        wait_while_paused(&stack_mode, &log_iter.tick_block, &cancel_token)
+            .await;
 
-    if args.dependent_ops_max_per_chain == 0 {
-        let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
-        if promoted > 0 {
-            info!(
+        if args.dependent_ops_max_per_chain == 0 {
+            let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
+            if promoted > 0 {
+                info!(
                 count = promoted,
                 "Slow-lane disabled: promoted all chains to fast on startup"
             );
+            }
         }
-    }
 
-    if log_iter.start_at_block.is_none() {
-        log_iter.start_at_block =
-            db.read_last_valid_block_checked().await?.map(|n| {
-                n.saturating_sub_unsigned(
-                    args.catchup_finalization_in_blocks
-                        .saturating_add(args.catchup_margin),
+        if log_iter.start_at_block.is_none() {
+            log_iter.start_at_block =
+                db.read_last_valid_block_checked().await?.map(|n| {
+                    n.saturating_sub_unsigned(
+                        args.catchup_finalization_in_blocks
+                            .saturating_add(args.catchup_margin),
+                    )
+                    .max(0)
+                });
+        }
+
+        // Check connection works
+        log_iter.new_log_stream_no_retry().await?;
+
+        loop {
+            log_iter.stream = None; // force new connection each iteration
+
+            while let Some(block_logs) = log_iter.next().await {
+                // Keep the pending page intact while retired. Dropping its blocks
+                // without acknowledgement would repeatedly refetch the same page.
+                wait_while_paused(
+                    &stack_mode,
+                    &log_iter.tick_block,
+                    &cancel_token,
                 )
-                .max(0)
-            });
-    }
-
-    // Check connection works
-    log_iter.new_log_stream_no_retry().await?;
-
-    loop {
-        log_iter.stream = None; // force new connection each iteration
-
-        while let Some(block_logs) = log_iter.next().await {
-            // Keep the pending page intact while retired. Dropping its blocks
-            // without acknowledgement would repeatedly refetch the same page.
-            wait_while_paused(&stack_mode, &log_iter.tick_block, &cancel_token)
                 .await;
-            if args.only_catchup_loop && !block_logs.catchup {
-                break;
-            }
-            if !block_logs.catchup
-                && log_iter
-                    .absolute_end_at_block
-                    .is_some_and(|end| block_logs.summary.number > end)
-            {
-                // Keep observing the tip so pending catchup can reach finality,
-                // without ingesting realtime blocks beyond a requested range.
-                continue;
-            }
-            let status = db_insert_block(
-                chain_id,
-                &mut db,
-                &block_logs,
-                &acl_contract_address,
-                &tfhe_contract_address,
-                &kms_generation_address,
-                &protocol_config_address,
-                &confidential_bridge_address,
-                &args,
-                is_protocol_config_listener,
-            )
-            .await;
-            if let Err(err) = status {
-                // Keep CFI fail-closed admission: rejected event metadata and
-                // committed-history conflicts must not be skipped.
-                if matches!(
-                    err.downcast_ref::<sqlx::Error>(),
-                    Some(sqlx::Error::Protocol(_))
-                ) {
-                    return Err(err);
+                if args.only_catchup_loop && !block_logs.catchup {
+                    break;
                 }
-                // logging & retry on error is already done in db_insert_block
-                log_iter.retry_from_block(block_logs.summary.number);
-                continue;
-            };
-            // Advance the page only after its block transactions commit.
-            log_iter.acknowledge_catchup_block();
-            log_iter.last_valid_block = Some(
-                block_logs
-                    .summary
-                    .number
-                    .max(log_iter.last_valid_block.unwrap_or(0)),
-            );
-            if !block_logs.catchup {
-                if kms_generation_address.is_some() {
-                    match log_iter.get_block_by_id(BlockId::finalized()).await {
-                        Ok(finalized) => {
-                            log_iter.rpc_finalized_block =
-                                i64::try_from(finalized.header.number).ok();
-                        }
-                        Err(error) => {
-                            log_iter.rpc_finalized_block = None;
-                            warn!(%error, "Cannot resolve finalized block, postponing compressed key migration");
+                if !block_logs.catchup
+                    && log_iter
+                        .absolute_end_at_block
+                        .is_some_and(|end| block_logs.summary.number > end)
+                {
+                    // Keep observing the tip so pending catchup can reach finality,
+                    // without ingesting realtime blocks beyond a requested range.
+                    continue;
+                }
+                let status = db_insert_block(
+                    chain_id,
+                    &mut db,
+                    &block_logs,
+                    &acl_contract_address,
+                    &tfhe_contract_address,
+                    &kms_generation_address,
+                    &protocol_config_address,
+                    &confidential_bridge_address,
+                    &args,
+                    is_protocol_config_listener,
+                )
+                .await;
+                if let Err(err) = status {
+                    // Keep CFI fail-closed admission: rejected event metadata and
+                    // committed-history conflicts must not be skipped.
+                    if matches!(
+                        err.downcast_ref::<sqlx::Error>(),
+                        Some(sqlx::Error::Protocol(_))
+                    ) {
+                        return Err(err);
+                    }
+                    // logging & retry on error is already done in db_insert_block
+                    log_iter.retry_from_block(block_logs.summary.number);
+                    continue;
+                };
+                // Advance the page only after its block transactions commit.
+                log_iter.acknowledge_catchup_block();
+                log_iter.last_valid_block = Some(
+                    block_logs
+                        .summary
+                        .number
+                        .max(log_iter.last_valid_block.unwrap_or(0)),
+                );
+                if !block_logs.catchup {
+                    if kms_generation_address.is_some() {
+                        match log_iter
+                            .get_block_by_id(BlockId::finalized())
+                            .await
+                        {
+                            Ok(finalized) => {
+                                log_iter.rpc_finalized_block =
+                                    i64::try_from(finalized.header.number).ok();
+                            }
+                            Err(error) => {
+                                log_iter.rpc_finalized_block = None;
+                                warn!(%error, "Cannot resolve finalized block, postponing compressed key migration");
+                            }
                         }
                     }
+                    update_finalized_blocks(
+                        &mut db,
+                        &mut log_iter,
+                        block_logs.summary.number,
+                        args.catchup_finalization_in_blocks,
+                    )
+                    .await;
                 }
-                update_finalized_blocks(
-                    &mut db,
-                    &mut log_iter,
-                    block_logs.summary.number,
-                    args.catchup_finalization_in_blocks,
-                )
-                .await;
+                if kms_generation_address.is_some() {
+                    background_tasks.spawn(process_kms_generation_activations(
+                        db.pool.read().await.clone(),
+                        aws_s3_client,
+                        log_iter.rpc_finalized_block,
+                    ));
+                }
             }
-            if kms_generation_address.is_some() {
-                background_tasks.spawn(process_kms_generation_activations(
-                    db.pool.read().await.clone(),
-                    aws_s3_client,
-                    log_iter.rpc_finalized_block,
-                ));
+
+            if !args.only_catchup_loop {
+                break;
             }
-        }
 
-        if !args.only_catchup_loop {
-            break;
-        }
-
-        info!(
-            sleep_secs = args.catchup_loop_sleep_secs,
-            "Catchup loop iteration complete, sleeping"
-        );
-        tokio::time::sleep(Duration::from_secs(args.catchup_loop_sleep_secs))
+            info!(
+                sleep_secs = args.catchup_loop_sleep_secs,
+                "Catchup loop iteration complete, sleeping"
+            );
+            tokio::time::sleep(Duration::from_secs(
+                args.catchup_loop_sleep_secs,
+            ))
             .await;
 
-        // Reset state for next iteration
-        log_iter.reset_for_catchup_loop();
-    }
-    cancel_token.cancel();
-    for t in background_tasks.join_all().await.iter() {
-        if let Err(err) = t {
-            error!(error = %err, "Error in background task");
+            // Reset state for next iteration
+            log_iter.reset_for_catchup_loop();
         }
-    }
-    anyhow::Result::Ok(())
+        for t in background_tasks.join_all().await.iter() {
+            if let Err(err) = t {
+                error!(error = %err, "Error in background task");
+            }
+        }
+        anyhow::Result::Ok(())
+    };
+    health_check.run_with_containment(&cancel_token, work).await
 }
 
 #[cfg(test)]
@@ -1846,6 +1860,7 @@ mod tests {
                         .unwrap(),
                 )),
                 database_tick: HeartBeat::with_elapsed_secs(30),
+                recovery_paused: Default::default(),
             };
             assert!(!health.is_alive().await);
 
@@ -2089,6 +2104,69 @@ mod tests {
                 .await?;
         db.pool().await.close().await;
         assert!(db.read_last_valid_block_checked().await.is_err());
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    #[tracing_test::traced_test]
+    async fn contained_listener_startup_stays_alive() -> Result<()> {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow!("{err}"))?;
+        let db =
+            Database::new(&instance.db_url, ChainId::try_from(42_u64)?, 128)
+                .await?;
+        let pool = db.pool().await;
+        fhevm_engine_common::chain_recovery::record_halt(
+            &pool,
+            fhevm_engine_common::chain_recovery::HistoryMismatch {
+                source:
+                    fhevm_engine_common::chain_recovery::ListenerSource::Host,
+                gcs_mode: false,
+                chain_id: 42,
+                block_number: 65,
+                expected_hash: Some(&[1_u8; 32]),
+                observed_hash: Some(&[2_u8; 32]),
+                reason: "test committed history conflict",
+            },
+        )
+        .await?;
+        let anvil = Anvil::new().spawn();
+        let args = Args::parse_from([
+            "host-listener",
+            "--url",
+            &anvil.ws_endpoint(),
+            "--database-url",
+            instance.db_url(),
+            "--acl-contract-address",
+            "0x0000000000000000000000000000000000000001",
+            "--tfhe-contract-address",
+            "0x0000000000000000000000000000000000000002",
+            "--health-port",
+            "0",
+            "--start-at-block",
+            "0",
+        ]);
+        let listener = main(args);
+        tokio::pin!(listener);
+        tokio::select! {
+            result = &mut listener => panic!("contained listener exited: {result:?}"),
+            result = tokio::time::timeout(Duration::from_secs(10), async {
+                while !logs_contain("Host listener paused by chain history containment") {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            }) => result?,
+        }
+        assert!(tokio::time::timeout(
+            Duration::from_millis(100),
+            &mut listener
+        )
+        .await
+        .is_err());
+        assert!(!logs_contain("Error creating new log stream, retrying"));
+
         Ok(())
     }
 

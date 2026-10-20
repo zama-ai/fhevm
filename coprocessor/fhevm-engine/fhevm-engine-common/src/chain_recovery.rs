@@ -196,7 +196,17 @@ pub async fn record_halt(pool: &PgPool, mismatch: HistoryMismatch<'_>) -> Result
             .execute(&mut *tx)
             .await?;
     }
-    tx.commit().await
+    tx.commit().await?;
+    tracing::error!(
+        event = "chain_history_halt",
+        source = mismatch.source.as_str(),
+        stack_role = stack_role(mismatch.gcs_mode),
+        chain_id = mismatch.chain_id,
+        block_number = mismatch.block_number,
+        reason = mismatch.reason,
+        "Committed history conflict contained; audited operator recovery required"
+    );
+    Ok(())
 }
 
 #[derive(sqlx::FromRow)]
