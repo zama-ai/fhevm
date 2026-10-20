@@ -20,7 +20,7 @@
 # Env:
 #   NAMESPACE (required)
 #   TARGET_TAG (default: the coprocessor Green tag, else the listener image tag)
-#   COMPONENTS (default: "kms-connector relayer test-suite")
+#   COMPONENTS (default: "kms-connector relayer-migrate relayer test-suite")
 #   KMS_CONNECTOR_CHART (default: the checkout's charts/kms-connector)
 #   COMMON_CHART / COMMON_CHART_VERSION (default: the values the deploy workflow uses; pulling it
 #     needs registry credentials, so this half only works where those are available)
@@ -31,7 +31,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 KMS_CONNECTOR_CHART="${KMS_CONNECTOR_CHART:-${root}/charts/kms-connector}"
 COMMON_CHART="${COMMON_CHART:-oci://hub.zama.org/ghcr/zama-zws/helm-charts/common}"
 COMMON_CHART_VERSION="${COMMON_CHART_VERSION:-0.3.3}"
-COMPONENTS="${COMPONENTS:-kms-connector relayer test-suite}"
+COMPONENTS="${COMPONENTS:-kms-connector relayer-migrate relayer test-suite}"
 # Same precedence as bg-green.sh: the Green coprocessor carries the tag the round upgrades to.
 GREEN_SLOT="${GREEN_SLOT--gcs}"
 fail() { echo "::error::$*" >&2; exit 1; }
@@ -126,12 +126,24 @@ upgrade)
     echo "kms-connector: ${nb_kms} release(s) at ${TARGET_TAG}"
   fi
 
-  for comp in relayer test-suite; do
+  # relayer-migrate first: the relayer binary reads a schema the migrate image of the
+  # same release creates. Left behind, every input proof fails on the missing column.
+  for comp in relayer-migrate relayer test-suite; do
     [[ " ${COMPONENTS} " == *" ${comp} "* ]] || continue
     echo "${comp}: upgrading to ${TARGET_TAG}"
+    wait_args=()
+    if [[ "${comp}" == "relayer-migrate" ]]; then
+      # spec.template of a Job is immutable, so helm cannot patch the finished one.
+      # Pull the chart first: deleting before a failed pull leaves no migrate job at all.
+      helm show chart "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" >/dev/null \
+        || fail "${comp}: cannot pull ${COMMON_CHART} (registry credentials?)"
+      kubectl delete job -n "${NAMESPACE}" relayer-migrate --ignore-not-found >/dev/null
+      wait_args=(--wait --wait-for-jobs --timeout=5m)
+    fi
     helm upgrade "${comp}" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-      -n "${NAMESPACE}" --reuse-values --set-string "image.tag=${TARGET_TAG}" >/dev/null \
-      || fail "${comp}: helm upgrade failed (pulling ${COMMON_CHART} needs registry credentials)"
+      -n "${NAMESPACE}" --reuse-values --set-string "image.tag=${TARGET_TAG}" \
+      ${wait_args[@]+"${wait_args[@]}"} >/dev/null \
+      || fail "${comp}: helm upgrade failed (see the error above; pulling ${COMMON_CHART} needs registry credentials)"
   done
   [[ " ${COMPONENTS} " == *" relayer "* ]] && { kubectl rollout status -n "${NAMESPACE}" \
     deploy/relayer --timeout=300s >/dev/null || fail "relayer did not become ready"; }
