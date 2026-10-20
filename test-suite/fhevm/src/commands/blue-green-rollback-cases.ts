@@ -269,14 +269,18 @@ const assertEveryOperatorRolledBack = async (ctx: RollbackCaseContext) => {
     // Only on an operator that stayed up. One that was down indexes the
     // window again when it catches up, and those rows are not residue.
     if (index === TARGET_OPERATOR) continue;
+    // A row the operator indexed after the rollback is live work, not residue.
     const residue = await ctx.psqlQuery(
       database,
       `SELECT (SELECT count(*) FROM "gcs-${ctx.gcsStackVersion}".computations
-                WHERE block_number <= w.last_block)
+                WHERE block_number <= w.last_block
+                  AND created_at AT TIME ZONE 'UTC' < w.rolled_back_at)
             + (SELECT count(*) FROM "gcs-${ctx.gcsStackVersion}".state_hash
                 WHERE block_number <= w.last_block
-                  AND chain_id IN (SELECT host_chain_id FROM upgrade_state WHERE stack_role='GCS'))
-         FROM (SELECT MAX(end_block) AS last_block FROM upgrade_state WHERE stack_role='GCS') w;`,
+                  AND chain_id IN (SELECT host_chain_id FROM upgrade_state WHERE stack_role='GCS')
+                  AND created_at < w.rolled_back_at)
+         FROM (SELECT MAX(end_block) AS last_block, MAX(updated_at) AS rolled_back_at
+                 FROM upgrade_state WHERE stack_role='GCS') w;`,
     );
     if (residue !== "0") throw new Error(`${database} kept ${residue} row(s) from the window`);
   }
