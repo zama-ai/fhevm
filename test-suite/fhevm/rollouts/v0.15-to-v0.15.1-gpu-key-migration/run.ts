@@ -865,9 +865,11 @@ export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
     label: string,
     task: string,
     activated: (before: ContextAndEpoch, current: ContextAndEpoch) => boolean,
+    afterBroadcast?: (before: ContextAndEpoch) => Promise<void>,
   ) => {
     const before = await readKmsEpoch();
     await ctx.runHostContractTask(`npx hardhat ${task} --use-internal-proxy-address true`);
+    await afterBroadcast?.(before);
     await waitUntil(`the ${label} reshared the migrated key and activated on chain`, async () =>
       activated(before, await readKmsEpoch()), 600);
     await ctx.test("public-decryption", { parallel: false });
@@ -875,6 +877,14 @@ export default async function runMigrationAndAdoption(ctx: RolloutRunContext) {
   };
   await reshare("epoch rotation", "task:defineNewEpochForCurrentKmsContext", (before, current) =>
     current.contextId === before.contextId && current.epochId !== before.epochId);
-  await reshare("context switch", "task:defineNewKmsContextAndEpoch", (before, current) =>
-    current.contextId !== before.contextId);
+  await reshare(
+    "context switch",
+    "task:defineNewKmsContextAndEpoch",
+    (before, current) => current.contextId !== before.contextId,
+    // The gateway only accepts decryptions for KMS contexts registered on GatewayConfig.
+    (before) =>
+      ctx.runGatewayContractTask("npx hardhat task:updateKmsContext --use-internal-proxy-address true", {
+        env: { KMS_CONTEXT_ID: (before.contextId + 1n).toString() },
+      }),
+  );
 }
