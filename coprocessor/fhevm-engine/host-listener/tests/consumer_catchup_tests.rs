@@ -226,8 +226,10 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
         expected.sort();
         assert_eq!(actual, expected, "every retained request must be replayed exactly once");
         wait_for_events(&pool, &blocks).await;
-        // Observe another reconciliation tick, including the empty-startup case.
-        assert!(tokio::time::timeout(std::time::Duration::from_secs(6), requests.recv()).await.is_err(),
+        // Observe another reconciliation tick. Empty startup must also wait
+        // through the ten-second WATCH propagation grace period.
+        let observe_seconds = if expected.is_empty() { 16 } else { 6 };
+        assert!(tokio::time::timeout(std::time::Duration::from_secs(observe_seconds), requests.recv()).await.is_err(),
             "startup must not create or reissue unexpected requests");
         let stored: Vec<(uuid::Uuid, i64, i64, String, bool)> = sqlx::query_as(
             "SELECT id, block_start, block_end, status, owner_id IS NOT NULL AND lease_until > clock_timestamp() FROM host_consumer_catchups WHERE chain_id = $1 AND consumer_id = $2 ORDER BY id",

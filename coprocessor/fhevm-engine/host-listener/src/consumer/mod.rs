@@ -54,6 +54,7 @@ mod migration;
 const MAX_DB_RETRIES: u64 = 10;
 const STATS_REPORT_INTERVAL: Duration = Duration::from_secs(60);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
+const WATCH_PROPAGATION_DELAY: Duration = Duration::from_secs(10);
 static SLOW_LANE_PROMOTION_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 const STATS_FINALIZATION_MARGIN: i64 = 5;
 /// How often the retirement watcher re-reads the paused flag.
@@ -444,6 +445,9 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         client.ensure_catchup_consumer().await?;
         info!("Consumer registering contracts");
         client.register_live_and_final_contracts(&contracts).await?;
+        // WATCH confirms publication, not activation. Allow filters to propagate
+        // before starting live/finalized readers or catchup coordination.
+        sleep(WATCH_PROPAGATION_DELAY).await;
     }
 
     let health_check = HealthCheck {
