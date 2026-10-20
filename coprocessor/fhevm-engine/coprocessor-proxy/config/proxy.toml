@@ -1,0 +1,102 @@
+# Example configuration of the coprocessor `Proxy`
+
+# Service name for tracing (optional, defaults to "coprocessor-proxy")
+# ENV: COPROCESSOR_PROXY_SERVICE_NAME
+# service_name = "coprocessor-proxy"
+
+# Log level (optional, defaults to "info")
+# ENV: COPROCESSOR_PROXY_LOG_LEVEL
+# log_level = "info"
+
+# Bind address of the proxy (optional, defaults to "0.0.0.0:8443")
+# ENV: COPROCESSOR_PROXY_BIND_ADDRESS
+# bind_address = "0.0.0.0:8443"
+
+# Chain ID for the Ethereum network, Sepolia here (required)
+# ENV: COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID
+ethereum_chain_id = 11155111
+
+# Address of the ProtocolConfig contract on Ethereum (required)
+# Part of the `FhevmSig` EIP-712 domain, and the source of the accepted signers: the KMS tx-senders
+# of the Active KMS contexts.
+# ENV: COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS
+protocol_config_address = "0x0000000000000000000000000000000000000000"
+
+# Ethereum RPC the KMS tx-senders are read through (required). Never logged: it can carry an API key.
+# ENV: COPROCESSOR_PROXY_ETHEREUM_RPC_URL
+ethereum_rpc_url = "http://localhost:8545"
+
+# How often the latest finalized block is checked (optional, defaults to "5s"). The KMS tx-senders
+# are read again when it moved forward. A request signed by an unknown tx-sender makes the proxy
+# check it within a second. A failed poll retries at the next poll, so a long interval also delays
+# readiness after a failed first read. The role of RFC-038's `KMS_REGISTRY_REFRESH_INTERVAL`.
+# ENV: COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL (format: https://docs.rs/humantime/latest/humantime/)
+# kms_registry_poll_interval = "5s"
+
+# This coprocessor's registered signer address: the audience the accepted requests are signed for (required)
+# ENV: COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS
+coprocessor_signer_address = "0x0000000000000000000000000000000000000000"
+
+# `host:port` addresses of the endpoints the requests are forwarded to, over HTTP/2 cleartext (required).
+# Each endpoint must also answer `GET /healthz` with `200` over HTTP/2 cleartext on that address:
+# the proxy sends requests only to endpoints that do.
+# Can be a Kubernetes ClusterIP Service (kube-proxy balances), a docker-compose service name, or
+# plain IPs. Hostnames are resolved once at startup.
+# ENV: COPROCESSOR_PROXY_ENDPOINT_ADDRESSES (comma-separated list, e.g. "endpoint-1:8080,endpoint-2:8080")
+endpoint_addresses = ["endpoint:8080"]
+
+# Timeout to establish a TCP connection to an endpoint (optional, defaults to "3s")
+# ENV: COPROCESSOR_PROXY_ENDPOINT_CONNECT_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# endpoint_connect_timeout = "3s"
+
+# How often the endpoints are probed in the background to filter which ones receive requests (optional, defaults to "3s").
+# ENV: COPROCESSOR_PROXY_ENDPOINT_HEALTHCHECK_FREQUENCY (format: https://docs.rs/humantime/latest/humantime/)
+# endpoint_healthcheck_frequency = "3s"
+
+# How long the proxy waits for an endpoint response before answering `504` (optional, defaults to "120s").
+# An endpoint can hold a request until its result is ready, so this must exceed how long the callers wait.
+# ENV: COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# endpoint_response_timeout = "120s"
+
+# How long an idle pooled endpoint connection is kept open (optional, defaults to "10s").
+# Behind a ClusterIP Service, a new connection can reach newly scaled endpoint pods. Over HTTP/2 the
+# requests share the connection, so it closes only after a pause in traffic.
+# ENV: COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# endpoint_idle_timeout = "10s"
+
+# Maximum number of concurrent requests on one HTTP/2 endpoint connection (optional, defaults to 100)
+# ENV: COPROCESSOR_PROXY_ENDPOINT_MAX_H2_STREAMS
+# endpoint_max_h2_streams = 100
+
+# Maximum size of a request body, in bytes (optional, defaults to 0: no body)
+# ENV: COPROCESSOR_PROXY_MAX_BODY_BYTES
+# max_body_bytes = 0
+
+# How long the proxy waits for the client to send request bytes (optional, defaults to "30s")
+# ENV: COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# request_read_timeout = "30s"
+
+# How long in-flight requests are given to complete after SIGTERM (optional, defaults to "120s").
+# ENV: COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD (format: https://docs.rs/humantime/latest/humantime/)
+# shutdown_grace_period = "120s"
+
+# Port of /healthz, /liveness and /version (optional, defaults to 8080)
+# ENV: COPROCESSOR_PROXY_HEALTHCHECK_PORT
+# healthcheck_port = 8080
+
+# Address of the Prometheus /metrics endpoint (optional, defaults to "0.0.0.0:9100")
+# ENV: COPROCESSOR_PROXY_METRICS_ENDPOINT
+# metrics_endpoint = "0.0.0.0:9100"
+
+# The timeout to perform each external service connection healthcheck (optional, defaults to 3s)
+# ENV: COPROCESSOR_PROXY_HEALTHCHECK_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# healthcheck_timeout = "3s"
+
+# TLS configuration of the proxy (required)
+[tls_config]
+# Path of the PEM certificate chain
+# ENV: COPROCESSOR_PROXY_TLS_CONFIG__CERT_PATH
+cert_path = "/etc/coprocessor-proxy/tls/tls.crt"
+# Path of the PEM private key
+# ENV: COPROCESSOR_PROXY_TLS_CONFIG__KEY_PATH
+key_path = "/etc/coprocessor-proxy/tls/tls.key"
