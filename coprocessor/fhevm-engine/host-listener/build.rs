@@ -7,6 +7,7 @@ use semver::Version;
 use std::{env, fs, path::Path, process::Command};
 
 fn build_contracts() {
+    println!("cargo:rerun-if-changed=contracts/ArtifactStallTest.sol");
     println!(
         "cargo:rerun-if-changed=../../../host-contracts/contracts/ACL.sol"
     );
