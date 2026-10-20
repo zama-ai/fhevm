@@ -8,6 +8,7 @@ import {
   supportsConsensusDetector,
   supportsCoprocessorDbStateRevert,
   supportsHostListenerConsumer,
+  supportsPrfService,
   supportsUpgradeController,
 } from "../compat/compat";
 import { BootstrapTimeout, ContainerCrashed, ObjectStoreError, PreflightError, ProbeTimeout, RpcError } from "../errors";
@@ -211,7 +212,7 @@ export const postBootHealthGate = async (containers: string[], delayMs = POST_BO
 };
 
 /** Lists the coprocessor containers whose health determines coprocessor readiness. */
-export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "versions">) => {
+export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "versions" | "overrides">) => {
   if (state.scenario.kind === "blue-green") {
     return blueGreenServiceNames(state, { includeMigration: false });
   }
@@ -221,7 +222,8 @@ export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "ver
       !suffix.includes("migration") &&
       (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
       (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
-      (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
+      (suffix !== "upgrade-controller" || supportsUpgradeController(state)) &&
+      (suffix !== "prf-service" || supportsPrfService(state)),
   );
   const topology = topologyForState(state);
   const names: string[] = [];
@@ -319,6 +321,9 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
       await waitCoreFleet(`${prefix}gcs-`, false);
       await waitForContainer(`${prefix}gcs-upgrade-controller`, "running");
       await waitForContainer(`${prefix}gcs-consensus-detector`, "running");
+      if (supportsPrfService(state)) {
+        await waitForContainer(`${prefix}gcs-prf-service`, "running");
+      }
     }
   }
   // Both of these are about who is allowed to serve the queues, so they belong

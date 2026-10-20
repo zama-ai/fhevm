@@ -17,6 +17,7 @@ import {
   supportsConnectorHttp,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
+  supportsPrfService,
   supportsUpgradeController,
 } from "../compat/compat";
 import {
@@ -177,6 +178,7 @@ const COPROCESSOR_BUILD_TARGETS: Record<string, string> = {
   "coprocessor-transaction-sender": "transaction-sender",
   "coprocessor-consensus-detector": "consensus-detector",
   "coprocessor-upgrade-controller": "upgrade-controller",
+  "coprocessor-prf-service": "prf-service",
 };
 
 const coprocessorBuildSpec = (target: string, e2ePublicRuntime = false) =>
@@ -539,11 +541,11 @@ const applyInstanceAdjustments = (
 };
 
 // Suffixes of services that only run on the GCS fleet in blue-green mode.
-export const GCS_ONLY_SUFFIXES = new Set(["upgrade-controller", "consensus-detector"]);
+export const GCS_ONLY_SUFFIXES = new Set(["upgrade-controller", "consensus-detector", "prf-service"]);
 
 /** Blue-green container names per operator: BCS (previous-release shape) + GCS fleet reusing BCS's db-migration. */
 export const blueGreenServiceNames = (
-  state: Pick<State, "scenario" | "versions">,
+  state: Pick<State, "scenario" | "versions" | "overrides">,
   options: { includeMigration: boolean; includeDeferredGreen?: boolean },
 ): string[] => {
   const includeConsumer = supportsHostListenerConsumer(state);
@@ -561,6 +563,7 @@ export const blueGreenServiceNames = (
       for (const suffix of GROUP_SERVICE_SUFFIXES.coprocessor) {
         if (suffix.includes("migration")) continue;
         if (suffix === "host-listener-consumer" && !includeConsumer) continue;
+        if (suffix === "prf-service" && !supportsPrfService(state)) continue;
         names.push(`${prefix}gcs-${suffix}`);
       }
     }
@@ -609,12 +612,14 @@ export const serviceNameList = (
   const includeConsumer = supportsHostListenerConsumer(state);
   const includeConsensusDetector = supportsConsensusDetector(state);
   const includeUpgradeController = supportsUpgradeController(state);
+  const includePrfService = supportsPrfService(state);
   const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (suffix) =>
       (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
       (includeConsumer || suffix !== "host-listener-consumer") &&
       (includeConsensusDetector || suffix !== "consensus-detector") &&
-      (includeUpgradeController || suffix !== "upgrade-controller"),
+      (includeUpgradeController || suffix !== "upgrade-controller") &&
+      (includePrfService || suffix !== "prf-service"),
   );
   const topology = topologyForState(state);
   const names: string[] = [];
@@ -769,6 +774,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     ...(supportsHostListenerConsumer(plan) ? [] : ["coprocessor-host-listener-consumer"]),
     ...(supportsConsensusDetector(plan) ? [] : ["coprocessor-consensus-detector"]),
     ...(supportsUpgradeController(plan) ? [] : ["coprocessor-upgrade-controller"]),
+    ...(supportsPrfService(plan) ? [] : ["coprocessor-prf-service"]),
   ]);
   const includeConsumer = supportsHostListenerConsumer(plan);
   const isBlueGreen = Boolean(plan.blueGreen);
@@ -891,6 +897,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
           continue;
         }
         if (baseName === "coprocessor-db-migration") {
+          continue;
+        }
+        if (baseName === "coprocessor-prf-service" && !supportsPrfService(plan)) {
           continue;
         }
         const suffix = baseName.replace(/^coprocessor-/, "");
