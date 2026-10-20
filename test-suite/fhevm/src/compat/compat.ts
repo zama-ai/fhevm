@@ -448,6 +448,15 @@ export const supportsUpgradeController = (state: Pick<CompatState, "versions">) 
   return !versionBeforeReleaseFamily(version, [0, 14, 0], { unparsed: "modern" });
 };
 
+/** Detects when the resolved coprocessor bundle includes the prf-service, published or built locally. */
+export const supportsPrfService = (state: Pick<CompatState, "versions" | "overrides">) =>
+  Boolean(state.versions.env.COPROCESSOR_PRF_SERVICE_VERSION) ||
+  state.overrides.some(
+    (override) =>
+      override.group === "coprocessor" &&
+      (!override.services?.length || override.services.includes("coprocessor-prf-service")),
+  );
+
 /** Detects when the resolved kms-connector bundle includes the HTTP decryption path. */
 export const supportsConnectorHttp = (state: Pick<CompatState, "versions" | "overrides">) => {
   const available = (service: string, versionKey: string) =>

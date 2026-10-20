@@ -346,5 +346,14 @@ services:
       coprocessor-prf-service-fake:
         condition: service_healthy
 
+  coprocessor-prf-service:
+    container_name: coprocessor-prf-service
+    image: ghcr.io/zama-ai/fhevm/coprocessor/prf-service:${COPROCESSOR_PRF_SERVICE_VERSION}
+    platform: linux/amd64
+    restart: "on-failure:10"
+    command:
+      - prf-service
+      - --http-endpoint=0.0.0.0:8090
+
 volumes:
   keys-cache:
