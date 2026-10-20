@@ -9,9 +9,11 @@ replay block does not itself halt other chains or either stack.
 
 The default restart window is 64 committed blocks. `--replay-window` accepts
 1 through 10,000. Pending ranges survive restart and are adopted by replacement
-pollers. Overlapping ranges are combined, with an absolute 10,000-block bound;
-a larger obligation requires operator recovery. Each startup gets a generation,
-so an older replica cannot clear a newer replay obligation.
+pollers. Overlapping ranges are combined without dropping unfinished history;
+adopters process at most 10,000 blocks per chunk and persist the remaining range.
+Each startup gets a generation, so completion of an older replay cannot clear a
+newer obligation. Running pollers also adopt pending generations, without creating
+another generation: a pod that dies during startup cannot strand the fleet's replay.
 
 Replay does not lower the durable cursor. `--seed-start-block` only initializes
 an absent cursor. Startup resolves the cursor's actual schema under the cutover
@@ -34,7 +36,10 @@ Websocket startup catchup uses the observed head and configured finality lag;
 it does not mark recent blocks finalized merely because they were fetched.
 Host admission compares retained committed block/parent identities under a
 per-chain transaction lock, including deferred finalization. Unknown legacy
-parent hashes are not contradictions. Replay also checks immutable computation
+parent hashes are not contradictions. Sparse catchup may require recovery of an
+empty canonical replacement. These finalizer-requested repairs are authoritative
+observations below the confirmation boundary, so contradictions are contained
+rather than discarded as delayed live forks. Replay also checks immutable computation
 metadata. Legacy NULL operand-boundary masks remain NULL and retain the worker's
 legacy inference; replay compares masks only where a mask was already recorded.
 Other recorded execution metadata remains immutable for legacy rows too.
@@ -88,8 +93,9 @@ exists, a replay that adds computations, upgrades their eligibility or changes
 the sealed producer inventory rolls back and records a recovery halt. The halt
 names the affected producer block, including when its ACL arrives in a later
 block. Replaying unchanged events and repairing only dependency-chain scheduling
-remain permitted. Admitting a different unfinalized fork does not change the
-sealed inventory of its sibling.
+remain permitted. Roots orphaned by canonical admission are excluded from the
+inventory comparison; retracting their fallback grants is normal fork retirement.
+Their existing seals and signed archives remain retained.
 
 This deliberately contains at **hash creation / manifest sealing**, even if the
 database has not recorded successful publication. An S3 PUT can succeed before
@@ -102,10 +108,13 @@ Refreshing an unpublished digest retains its previous descriptor count as
 evidence of sealing. Older rows whose seal was cleared are also protected when
 a published descendant includes them in its history.
 
-Hash creation, manifest selection/sealing and ingestion share the per-stack,
-per-host-chain history fence. Manifest selection skips a busy history fence;
-selected publication retains it through its bounded S3 operation. Publication
-also observes the database-wide recovery halt under the cutover fence. Deploy
+Hash creation, manifest preparation/sealing and ingestion share the per-stack,
+per-host-chain history fence. Manifest selection skips a busy history fence.
+Preparation commits its seals and range commitments before upload, releasing
+history admission for ingestion. A separate publisher lock spans both phases on
+one database connection. Upload rechecks the selected seal and stack role, and
+retains the cutover fence and publication row lock through the bounded S3 operation.
+Publication also observes the database-wide recovery halt. Deploy
 the listener and consensus-detector changes together before relying on this
 protection. No additional migration is introduced.
 

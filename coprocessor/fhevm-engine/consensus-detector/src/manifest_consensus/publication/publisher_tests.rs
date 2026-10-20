@@ -20,6 +20,169 @@ use crate::manifest_consensus::{
     Config as ManifestConsensusConfig, ExecutionError,
 };
 
+async fn assert_upload_does_not_hold_history(cancel_upload: bool) {
+    use fhevm_engine_common::chain_recovery::{lock_history_tx, ListenerSource};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let instance = setup_test_db(ImportMode::None).await.unwrap();
+    // The production path must span both transactions on one connection.
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(instance.db_url())
+        .await
+        .unwrap();
+    let observer = PgPool::connect(instance.db_url()).await.unwrap();
+    const CHAIN: i64 = 137;
+    let hash = B256::repeat_byte(0x62);
+    seed_revision_publication_block(
+        &pool,
+        CHAIN,
+        62,
+        hash,
+        B256::repeat_byte(0x61),
+        B256::repeat_byte(0x63),
+        B256::repeat_byte(0x64),
+        B256::repeat_byte(0x65),
+        B256::repeat_byte(0x66),
+        B256::repeat_byte(0x67),
+        B256::repeat_byte(0x68),
+        B256::repeat_byte(0x69),
+    )
+    .await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        loop {
+            let mut bytes = [0; 4096];
+            let n = socket.read(&mut bytes).await.unwrap();
+            assert!(n > 0);
+            request.extend_from_slice(&bytes[..n]);
+            if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                let headers = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                let length: usize = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.strip_prefix("content-length:")
+                            .map(|n| n.trim().parse().unwrap())
+                    })
+                    .unwrap();
+                if request.len() >= end + 4 + length {
+                    break;
+                }
+            }
+        }
+        started_tx.send(()).unwrap();
+        let _ = finish_rx.await;
+        let _ = socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            .await;
+    });
+    let client = Client::from_conf(
+        aws_sdk_s3::Config::builder()
+            .behavior_version_latest()
+            .region(aws_sdk_s3::config::Region::new("us-east-1"))
+            .credentials_provider(aws_sdk_s3::config::Credentials::new(
+                "test", "test", None, None, "test",
+            ))
+            .endpoint_url(endpoint)
+            .force_path_style(true)
+            .build(),
+    );
+    let signer: CoproSigner = Arc::new(PrivateKeySigner::random());
+    assert_eq!(
+        progress_chain(
+            &pool,
+            &client,
+            "test",
+            CHAIN,
+            &signer,
+            &ManifestConsensusConfig::default(),
+            &ManifestWorkGate::always_enabled(),
+            block_manifest::LEGACY_CONSENSUS_EPOCH,
+        )
+        .await
+        .unwrap(),
+        PublicationProgress::Advanced
+    );
+    let upload_pool = pool.clone();
+    let upload = tokio::spawn(async move {
+        progress_chain(
+            &upload_pool,
+            &client,
+            "test",
+            CHAIN,
+            &signer,
+            &ManifestConsensusConfig::default(),
+            &ManifestWorkGate::always_enabled(),
+            block_manifest::LEGACY_CONSENSUS_EPOCH,
+        )
+        .await
+    });
+    tokio::time::timeout(Duration::from_secs(10), started_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut admission = observer.begin().await.unwrap();
+    tokio::time::timeout(
+        Duration::from_secs(2),
+        lock_history_tx(&mut admission, ListenerSource::Host, false, CHAIN),
+    )
+    .await
+    .expect("ingestion must not wait for the paused S3 PUT")
+    .unwrap();
+    let durable: bool = sqlx::query_scalar(
+        "SELECT block_content_digest IS NOT NULL AND block_handle_count IS NOT NULL
+         FROM block_manifest_state WHERE host_chain_id=$1 AND block_hash=$2",
+    )
+    .bind(CHAIN)
+    .bind(hash.as_slice())
+    .fetch_one(&mut *admission)
+    .await
+    .unwrap();
+    assert!(durable, "inventory protection must commit before the PUT");
+    admission.commit().await.unwrap();
+    if cancel_upload {
+        upload.abort();
+        assert!(upload.await.unwrap_err().is_cancelled());
+    } else {
+        finish_tx.send(()).unwrap();
+        assert_eq!(
+            upload.await.unwrap().unwrap(),
+            PublicationProgress::Advanced
+        );
+    }
+    // Cancellation must not leak the session lock into the one-connection pool.
+    let lock = PgAdvisoryLock::new(format!(
+        "manifest-publication:{}:{CHAIN}",
+        block_manifest::LEGACY_CONSENSUS_EPOCH,
+    ));
+    let conn = tokio::time::timeout(Duration::from_secs(2), pool.acquire())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        lock.try_acquire(conn).await.unwrap(),
+        Either::Left(_)
+    ));
+    server.abort();
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn upload_commits_inventory_and_releases_history_before_s3() {
+    assert_upload_does_not_hold_history(false).await;
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn cancelling_upload_releases_the_publisher_lock() {
+    assert_upload_does_not_hold_history(true).await;
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn durable_history_halt_prevents_manifest_sealing() {

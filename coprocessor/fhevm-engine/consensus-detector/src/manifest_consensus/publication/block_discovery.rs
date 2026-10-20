@@ -527,8 +527,8 @@ pub(crate) async fn lock_next_block_to_progress_for_consensus_epoch(
     set_local_statement_timeout(trx, MANIFEST_WORK_SELECTION_TIMEOUT).await?;
     // Production holds the cutover fence before this call. Use ingestion's
     // history lock before selecting/locking a manifest row: sealing and replay
-    // must not each certify a different inventory. Keep it through publication,
-    // including ancestor seals created while building a detailed range.
+    // must not each certify a different inventory. Commit preparation (including
+    // ancestor seals) before upload; the publisher-only lock spans both phases.
     use fhevm_engine_common::chain_recovery::{host_role_tx, try_lock_history_tx, ListenerSource};
     let role = host_role_tx(trx).await?;
     if !try_lock_history_tx(trx, ListenerSource::Host, role, host_chain_id).await? {

@@ -3,9 +3,9 @@ use std::{sync::Arc, time::Duration};
 use alloy_primitives::U256;
 use aws_sdk_s3::{error::ProvideErrorMetadata, primitives::ByteStream, Client};
 use block_manifest::{SignedManifest, MAX_MANIFEST_BYTES};
-use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
+use fhevm_engine_common::versioning::{begin_write_guarded_conn, GcsRollbackPolicy, WriteGuard};
 use fhevm_engine_common::{pg_pool::is_fatal_connection_error, types::CoproSigner};
-use sqlx::PgPool;
+use sqlx::{postgres::PgAdvisoryLock, Either, PgPool};
 use tokio::{task::JoinHandle, time::MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -28,7 +28,7 @@ use crate::manifest_consensus::{
         },
         manifest_builder::{
             is_block_manifest_ready, load_manifest_descriptors, missing_handles_are_uncomputed,
-            prepare_manifest, seal_block_content,
+            prepare_manifest, seal_block_content, PreparedManifest,
         },
         publication_status::{
             exhaust_manifest_publication_error, mark_manifest_published,
@@ -63,6 +63,12 @@ enum PublicationProgress {
     Advanced,
     Waiting,
     WorkBusy,
+}
+
+enum PreparedCandidate {
+    Sealed,
+    Waiting,
+    Publish(Box<PreparedManifest>),
 }
 
 pub(crate) fn spawn_manifest_publisher(
@@ -256,13 +262,27 @@ async fn progress_chain(
         if !work_gate.work_enabled_for(consensus_epoch) {
             return Ok(PublicationProgress::Waiting);
         }
-        let mut trx =
-            match begin_write_guarded(pool, work_gate.mode.gcs_mode(), GcsRollbackPolicy::Skip)
-                .await?
-            {
-                WriteGuard::Proceed(tx) => tx,
-                WriteGuard::Stop | WriteGuard::Skip => return Ok(PublicationProgress::Waiting),
+        // This publisher-only lock survives the preparation commit. Ingestion
+        // does not take it. SQLx queues its release on cancellation/drop before
+        // the same connection can be returned to the pool.
+        let publication_lock = PgAdvisoryLock::new(format!(
+            "manifest-publication:{consensus_epoch}:{host_chain_id}"
+        ));
+        let mut publication_guard =
+            match publication_lock.try_acquire(pool.acquire().await?).await? {
+                Either::Left(guard) => guard,
+                Either::Right(_) => return Ok(PublicationProgress::WorkBusy),
             };
+        let mut trx = match begin_write_guarded_conn(
+            &mut publication_guard,
+            work_gate.mode.gcs_mode(),
+            GcsRollbackPolicy::Skip,
+        )
+        .await?
+        {
+            WriteGuard::Proceed(tx) => tx,
+            WriteGuard::Stop | WriteGuard::Skip => return Ok(PublicationProgress::Waiting),
+        };
         let selected = match lock_next_block_to_progress_for_consensus_epoch(
             &mut trx,
             host_chain_id,
@@ -308,16 +328,71 @@ async fn progress_chain(
         attempted_candidate = true;
         cursor.advance_to(&block);
 
-        let result = progress_locked_block(
-            &mut trx,
-            client,
-            bucket,
-            host_chain_id,
-            &block,
-            signer,
-            consensus,
-        )
-        .await;
+        let prepared_role = fhevm_engine_common::chain_recovery::host_role_tx(&mut trx).await?;
+        let prepared =
+            prepare_locked_block(&mut trx, host_chain_id, &block, signer, consensus).await;
+        if !work_gate.work_enabled_for(consensus_epoch) {
+            trx.rollback().await?;
+            return Ok(PublicationProgress::Waiting);
+        }
+        let result = match prepared {
+            Ok(PreparedCandidate::Sealed) => Ok(PublicationProgress::Advanced),
+            Ok(PreparedCandidate::Waiting) => Ok(PublicationProgress::Waiting),
+            Err(error) => Err(error),
+            Ok(PreparedCandidate::Publish(prepared)) => {
+                // Persist all seals/range commitments before releasing history
+                // admission. Replay now observes the committed inventory while
+                // the network upload runs, including any synthesized ancestors.
+                trx.commit().await?;
+                trx = match begin_write_guarded_conn(
+                    &mut publication_guard,
+                    work_gate.mode.gcs_mode(),
+                    GcsRollbackPolicy::Skip,
+                )
+                .await?
+                {
+                    WriteGuard::Proceed(tx) => tx,
+                    WriteGuard::Stop | WriteGuard::Skip => return Ok(PublicationProgress::Waiting),
+                };
+                if !work_gate.work_enabled_for(consensus_epoch)
+                    || fhevm_engine_common::chain_recovery::host_role_tx(&mut trx).await?
+                        != prepared_role
+                {
+                    trx.rollback().await?;
+                    return Ok(PublicationProgress::Waiting);
+                }
+                // A lifecycle transition or an older publisher can run between
+                // transactions. Revalidate and lock the identity before sending.
+                // Keep this row lock and the cutover fence, but no history lock,
+                // through S3 and the publication bookkeeping.
+                let unchanged: Option<bool> = sqlx::query_scalar(
+                    "SELECT TRUE FROM block_manifest_state
+                     WHERE host_chain_id = $1 AND block_hash = $2 AND consensus_epoch = $3
+                       AND manifest_revision = $4 AND NOT manifest_published
+                       AND manifest_digest IS NULL
+                       AND block_content_digest IS NOT DISTINCT FROM $5
+                       AND block_handle_count IS NOT DISTINCT FROM $6
+                     FOR UPDATE",
+                )
+                .bind(host_chain_id)
+                .bind(&block.block_hash)
+                .bind(consensus_epoch)
+                .bind(block.manifest_revision)
+                .bind(&block.block_content_digest)
+                .bind(block.block_handle_count)
+                .fetch_optional(&mut *trx)
+                .await?;
+                if unchanged.is_none() {
+                    trx.rollback().await?;
+                    return Ok(PublicationProgress::Waiting);
+                }
+                publish_prepared_manifest(
+                    &mut trx, client, bucket, &block, signer, consensus, *prepared,
+                )
+                .await
+                .map(|()| PublicationProgress::Advanced)
+            }
+        };
         if !work_gate.work_enabled_for(consensus_epoch) {
             trx.rollback().await?;
             return Ok(PublicationProgress::Waiting);
@@ -343,6 +418,7 @@ async fn progress_chain(
             }
             Err(err) => {
                 trx.rollback().await?;
+                drop(publication_guard);
                 record_candidate_failure(pool, &block, &err, max_attempts, retry_delay_micros)
                     .await;
             }
@@ -416,19 +492,17 @@ fn is_statement_timeout(error: &sqlx::Error) -> bool {
         .is_some_and(|code| code == "57014")
 }
 
-async fn progress_locked_block(
+async fn prepare_locked_block(
     trx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    client: &Client,
-    bucket: &str,
     host_chain_id: i64,
     block: &PendingBlock,
     signer: &CoproSigner,
     consensus: &ManifestConsensusConfig,
-) -> Result<PublicationProgress, ExecutionError> {
+) -> Result<PreparedCandidate, ExecutionError> {
     if block.block_content_digest.is_none() {
         let allow_uncomputed = missing_handles_are_uncomputed(trx, block, consensus).await?;
         if !is_block_manifest_ready(trx, block).await? && !allow_uncomputed {
-            return Ok(PublicationProgress::Waiting);
+            return Ok(PreparedCandidate::Waiting);
         }
         let descriptors = load_manifest_descriptors(trx, block, allow_uncomputed).await?;
         seal_block_content(trx, block, COPROCESSOR_CONTEXT_ID_1, &descriptors).await?;
@@ -441,11 +515,11 @@ async fn progress_locked_block(
             discovered_children = discovered,
             "Sealed block manifest content"
         );
-        return Ok(PublicationProgress::Advanced);
+        return Ok(PreparedCandidate::Sealed);
     }
 
-    match publish_block_manifest(trx, client, bucket, block, signer, consensus).await {
-        Ok(()) => Ok(PublicationProgress::Advanced),
+    match prepare_manifest(trx, block, COPROCESSOR_CONTEXT_ID_1, signer.address()).await {
+        Ok(prepared) => Ok(PreparedCandidate::Publish(Box::new(prepared))),
         Err(ExecutionError::StaleBlockSeal {
             host_chain_id,
             block_number,
@@ -455,7 +529,7 @@ async fn progress_locked_block(
                 host_chain_id,
                 block_number, reason, "Discarded stale unpublished seal; block will reseal"
             );
-            Ok(PublicationProgress::Waiting)
+            Ok(PreparedCandidate::Waiting)
         }
         Err(ExecutionError::PredecessorUnsealed {
             host_chain_id,
@@ -465,21 +539,21 @@ async fn progress_locked_block(
                 host_chain_id,
                 block_number, "Waiting for an unsealed predecessor before publishing this manifest"
             );
-            Ok(PublicationProgress::Waiting)
+            Ok(PreparedCandidate::Waiting)
         }
         Err(error) => Err(error),
     }
 }
 
-pub(crate) async fn publish_block_manifest(
+async fn publish_prepared_manifest(
     trx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     client: &Client,
     bucket: &str,
     block: &PendingBlock,
     signer: &CoproSigner,
     consensus: &ManifestConsensusConfig,
+    prepared: PreparedManifest,
 ) -> Result<(), ExecutionError> {
-    let prepared = prepare_manifest(trx, block, COPROCESSOR_CONTEXT_ID_1, signer.address()).await?;
     let frontier_range_count = prepared.history_frontier.as_slice().len();
     let signed = prepared
         .payload
