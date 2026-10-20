@@ -29,10 +29,14 @@ pub(super) async fn run(
         )?;
         Ok(())
     };
-    tokio::select! {
+    let result = tokio::select! {
         _ = client.cancel_token.cancelled() => Ok(()),
         result = work => result,
+    };
+    if mode.is_paused() {
+        client.cancel();
     }
+    result
 }
 
 async fn configure_requested(
