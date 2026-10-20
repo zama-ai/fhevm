@@ -282,6 +282,23 @@ mod tests {
         assert_eq!(parse_major_minor("1.x"), None);
         assert_eq!(parse_major_minor(".1"), None);
         assert_eq!(parse_major_minor("99999999999.1"), None);
+        assert_eq!(parse_major_minor("foo.bar.0"), None);
+        assert_eq!(parse_major_minor("x.1"), None);
+        assert_eq!(parse_major_minor(""), None);
+        assert_eq!(parse_major_minor("."), None);
+        assert_eq!(parse_major_minor("1."), None);
+        assert_eq!(parse_major_minor("1..2"), None);
+        assert_eq!(parse_major_minor("-1.2"), None);
+        assert_eq!(parse_major_minor(" 1.2"), None);
+        assert_eq!(parse_major_minor("1.+2"), None);
+        assert_eq!(parse_major_minor("1.2e1"), None);
+        assert_eq!(parse_major_minor("١.٢"), None);
+    }
+
+    #[test]
+    fn parse_major_minor_ignores_components_after_minor() {
+        assert_eq!(parse_major_minor("1.2.foo").as_deref(), Some("1.2"));
+        assert_eq!(parse_major_minor("1.2.").as_deref(), Some("1.2"));
     }
 
     #[test]
