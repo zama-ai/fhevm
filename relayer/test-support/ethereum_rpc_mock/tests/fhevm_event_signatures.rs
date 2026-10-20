@@ -56,14 +56,14 @@ fn print_all_fhevm_event_signatures() {
 
     println!("=== FHEVM EVENT SIGNATURES ===\n");
 
-    println!("1. PublicDecryptionRequest_0");
+    println!("1. PublicDecryptionRequest");
     println!(
         "   Signature: {}",
-        Decryption::PublicDecryptionRequest_0::SIGNATURE
+        Decryption::PublicDecryptionRequest::SIGNATURE
     );
     println!(
         "   Hash:      0x{}\n",
-        hex::encode(Decryption::PublicDecryptionRequest_0::SIGNATURE_HASH)
+        hex::encode(Decryption::PublicDecryptionRequest::SIGNATURE_HASH)
     );
 
     println!("2. PublicDecryptionResponse");

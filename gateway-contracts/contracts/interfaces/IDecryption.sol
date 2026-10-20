@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { CtHandleContractPair, HandleEntry, SnsCiphertextMaterial } from "../shared/Structs.sol";
+import { CtHandleContractPair, HandleEntry } from "../shared/Structs.sol";
 
 /**
  * @title Interface for the Decryption contract.
@@ -60,8 +60,7 @@ interface IDecryption {
      * @dev Signature validation is performed off-chain by the KMS Connector, which
      * reconstructs the EIP-712 digest from the signed message and verifies the signature
      * against it. The gateway forwards the EIP-712 signed message plus the signature
-     * verbatim in this struct. `snsCtMaterials` and `handles` are not part of the signed
-     * message and are excluded.
+     * verbatim in this struct. `handles` is not part of the signed message and is excluded.
      */
     struct UserDecryptionRequestPayload {
         /// @notice The identity asserting authorization.
@@ -93,25 +92,10 @@ interface IDecryption {
     }
 
     /**
-     * @notice Emitted when an public decryption request is made.
-     * @param decryptionId The decryption request ID.
-     * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
-     * @custom:deprecated Emitted for the v0.14 -> v0.15 upgrade period. Should be removed in v0.16.
-     */
-    event PublicDecryptionRequest(
-        uint256 indexed decryptionId,
-        SnsCiphertextMaterial[] snsCtMaterials,
-        bytes extraData
-    );
-
-    /**
      * @notice Emitted for a public decryption request, carrying only the ciphertext handles.
      * @param decryptionId The decryption request ID.
      * @param ctHandles The handles of the ciphertexts to decrypt.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
-     * @dev Shares its name with the legacy event via Solidity event overloading — the
-     * distinct parameter list produces a distinct `topic0`.
      */
     event PublicDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, bytes extraData);
 
@@ -146,49 +130,6 @@ interface IDecryption {
     );
 
     /**
-     * @notice Emitted when a user decryption request is made via the legacy paths
-     * (`userDecryptionRequest(CtHandleContractPair[], ...)` and `delegatedUserDecryptionRequest`).
-     * @param decryptionId The decryption request ID.
-     * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
-     * @param userAddress The user's address.
-     * @param publicKey The user's public key for used reencryption.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
-     * @custom:deprecated Emitted only by the legacy user decryption paths. Removed when the
-     * relayer-sdk deprecation window for old-format signatures closes. New callers should subscribe
-     * to the overloaded unified EIP-712 `UserDecryptionRequest` event emitted by
-     * `userDecryptionRequest(HandleEntry[], ...)`.
-     * @custom:deprecated Emitted for the v0.14 -> v0.15 upgrade period. Should be removed in v0.16.
-     */
-    event UserDecryptionRequest(
-        uint256 indexed decryptionId,
-        SnsCiphertextMaterial[] snsCtMaterials,
-        address userAddress,
-        bytes publicKey,
-        bytes extraData
-    );
-
-    /**
-     * @notice Emitted for a unified EIP-712 user decryption request.
-     * @param decryptionId The decryption request ID.
-     * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt. Not part
-     * of the signed message.
-     * @param handles The handle entries (handle, contractAddress, ownerAddress). Not part
-     * of the signed message.
-     * @param payload The EIP-712 signed message and the raw signature, grouped so the KMS
-     * Connector has everything it needs to reconstruct the digest and verify the signature
-     * off-chain. See `UserDecryptionRequestPayload`.
-     * @dev Shares its name with the legacy event via Solidity event overloading — the
-     * distinct parameter list produces a distinct `topic0`.
-     * @custom:deprecated Emitted for the v0.14 -> v0.15 upgrade period. Should be removed in v0.16.
-     */
-    event UserDecryptionRequest(
-        uint256 indexed decryptionId,
-        SnsCiphertextMaterial[] snsCtMaterials,
-        HandleEntry[] handles,
-        UserDecryptionRequestPayload payload
-    );
-
-    /**
      * @notice Emitted for a user decryption request made via the legacy paths
      * (`userDecryptionRequest(CtHandleContractPair[], ...)` and `delegatedUserDecryptionRequest`),
      * carrying only the ciphertext handles.
@@ -217,7 +158,7 @@ interface IDecryption {
      * @param decryptionId The decryption request ID.
      * @param handles The handle entries (handle, contractAddress, ownerAddress). Not part of the
      * signed message. Consumers resolve the ciphertext materials off-chain from the signed S3
-     * attestations (RFC-023 Part 2), so no on-chain `SnsCiphertextMaterial[]` is carried here.
+     * attestations.
      * @param payload The EIP-712 signed message and the raw signature, grouped so the KMS Connector
      * has everything it needs to reconstruct the digest and verify the signature off-chain. See
      * `UserDecryptionRequestPayload`.
@@ -384,18 +325,6 @@ interface IDecryption {
     error ContractNotInContractAddresses(address contractAddress, address[] contractAddresses);
 
     /**
-     * @notice Error indicating that the key IDs in a given SNS ciphertext materials list are not the same.
-     * @param firstSnsCtMaterial The first SNS ciphertext material in the list with the expected key ID.
-     * @param invalidSnsCtMaterial The SNS ciphertext material found with a different key ID.
-     * @dev This should be removed once batched decryption requests with different keys is support by the KMS
-     * See https://github.com/zama-ai/fhevm-internal/issues/376
-     */
-    error DifferentKeyIdsNotAllowed(
-        SnsCiphertextMaterial firstSnsCtMaterial,
-        SnsCiphertextMaterial invalidSnsCtMaterial
-    );
-
-    /**
      * @notice Error indicating that the extraData length is invalid.
      * @param length The length of the extraData.
      * @param minimumLength The minimum expected length.
@@ -505,11 +434,11 @@ interface IDecryption {
     /**
      * @notice Requests a user decryption (unified EIP-712 path).
      * @dev Supports direct and delegated access in one call via the per-handle `ownerAddress`.
-     * The gateway performs no signature verification; it validates format, fetches ciphertext
-     * materials, and emits `UserDecryptionRequest`. Authorization (signature, ACL, invalidation)
-     * moves to the KMS Connector. The event packs every signed EIP-712 field plus the signature
-     * into `UserDecryptionRequestPayload`; `snsCtMaterials` and `handles` are not signed and
-     * travel as separate event parameters. Empty `allowedContracts` selects permissive mode.
+     * The gateway performs no signature verification; it validates format and emits
+     * `UserDecryptionRequest`. Authorization (signature, ACL, invalidation) moves to the KMS
+     * Connector. The event packs every signed EIP-712 field plus the signature into
+     * `UserDecryptionRequestPayload`; `handles` are not signed and travel as a separate event
+     * parameter. Empty `allowedContracts` selects permissive mode.
      * @param handles The handle entries (handle, contractAddress, ownerAddress).
      * @param userAddress The identity asserting authorization.
      * @param publicKey The user's public key used for reencryption.
@@ -544,7 +473,8 @@ interface IDecryption {
 
     /**
      * @notice Indicates if ciphertext material exists for public decryption.
-     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
+     * @custom:deprecated Always returns `true`. Ciphertext material availability is checked off-chain
+     * by the Relayer since v0.15; this function is only kept to preserve the ABI.
      * @param ctHandles The ciphertext handles.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
@@ -555,7 +485,8 @@ interface IDecryption {
 
     /**
      * @notice Indicates if ciphertext material exists for user decryption (legacy path input shape).
-     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
+     * @custom:deprecated Always returns `true`. Ciphertext material availability is checked off-chain
+     * by the Relayer since v0.15; this function is only kept to preserve the ABI.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      * @custom:deprecated Used only by the legacy user decryption path. Removed when the
@@ -569,7 +500,8 @@ interface IDecryption {
 
     /**
      * @notice Indicates if ciphertext material exists for user decryption (unified EIP-712 input shape).
-     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
+     * @custom:deprecated Always returns `true`. Ciphertext material availability is checked off-chain
+     * by the Relayer since v0.15; this function is only kept to preserve the ABI.
      * @param handles The handle entries as submitted to the unified `userDecryptionRequest`.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
@@ -580,7 +512,8 @@ interface IDecryption {
 
     /**
      * @notice Indicates if ciphertext material exists for user decryption.
-     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
+     * @custom:deprecated Always returns `true`. Ciphertext material availability is checked off-chain
+     * by the Relayer since v0.15; this function is only kept to preserve the ABI.
      * @param userAddress The user's address (unused, kept for backward compatibility).
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
@@ -594,7 +527,8 @@ interface IDecryption {
 
     /**
      * @notice Indicates if ciphertext material exists for delegated user decryption.
-     * @dev Checks only ciphertext-material availability. ACL checks happen off-chain in the KMS.
+     * @custom:deprecated Always returns `true`. Ciphertext material availability is checked off-chain
+     * by the Relayer since v0.15; this function is only kept to preserve the ABI.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      * @custom:deprecated Used only by the legacy delegated user decryption path. Removed when the
