@@ -90,6 +90,13 @@ async fn load(
     // finish already-admitted work concurrently. Manifest inventory is fork-
     // specific, so admitting another unfinalized variant does not cause a halt.
     // Unqualified names intentionally follow the listener's BCS/GCS routing.
+    //
+    // A non-empty state hash already proves FHE activity: finalized headers can
+    // be pruned, then restored by a full or ACL-only replay. Losing/restoring
+    // that metadata must not change the captured inventory. The empty sentinel
+    // is SHA-256 of zero bytes (consensus-detector's EMPTY_BLOCK_STATE_HASH).
+    // Still inspect headers so discovering FHE events in a block committed as
+    // empty is detected even when its computations were already present.
     sqlx::query_as(
         "WITH RECURSIVE manifest_coverage AS (
              SELECT b.block_number AS root_number, b.block_hash AS root_hash,
@@ -117,9 +124,10 @@ async fn load(
                 (SELECT COUNT(*) FROM computations c WHERE c.host_chain_id = $1
                     AND c.block_number = sh.block_number AND c.is_allowed) AS allowed,
                 0::bigint AS producers,
-                EXISTS(SELECT 1 FROM host_chain_blocks_valid b WHERE b.chain_id = $1
+                (sh.state_hash <> encode(sha256(''::bytea), 'hex')
+                 OR EXISTS(SELECT 1 FROM host_chain_blocks_valid b WHERE b.chain_id = $1
                     AND b.block_number = sh.block_number AND b.block_status = 'finalized'
-                    AND b.fhe_event_count > 0) AS nonempty
+                    AND b.fhe_event_count > 0)) AS nonempty
          FROM state_hash sh WHERE sh.chain_id = $1 AND sh.block_number = ANY($2)
          UNION
          SELECT b.block_number, b.block_hash, 0::bigint,

@@ -3,27 +3,32 @@
 mod ingest_fixtures;
 use ingest_fixtures::*;
 
+use alloy::rpc::types::Log;
+use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::chain_recovery::{
     is_halted, lock_history_tx, ListenerSource,
 };
+use host_listener::database::ingest::{ingest_block_logs, BlockLogs};
 use host_listener::database::tfhe_event_propagate::Database;
 use serial_test::serial;
 use sqlx::PgPool;
 use test_harness::instance::DBInstance;
 use tokio::time::{timeout, Duration};
 
-async fn partial_block() -> anyhow::Result<(Database, PgPool, DBInstance)> {
-    let (mut db, pool, instance) = setup().await?;
+fn partial_logs() -> Vec<Log> {
     let b = block();
     let tx = computed_handle(0xe1);
+    vec![
+        rpc_log(&trivial_encrypt(computed_handle(1)), &b, tx, 0),
+        rpc_log(&allowed(computed_handle(1)), &b, tx, 1),
+        rpc_log(&trivial_encrypt(computed_handle(2)), &b, tx, 2),
+    ]
+}
+
+async fn partial_block() -> anyhow::Result<(Database, PgPool, DBInstance)> {
+    let (mut db, pool, instance) = setup().await?;
     let a = computed_handle(1);
-    let b_handle = computed_handle(2);
-    let logs = vec![
-        rpc_log(&trivial_encrypt(a), &b, tx, 0),
-        rpc_log(&allowed(a), &b, tx, 1),
-        rpc_log(&trivial_encrypt(b_handle), &b, tx, 2),
-    ];
-    ingest(&mut db, &b, logs, false).await?;
+    ingest(&mut db, &block(), partial_logs(), false).await?;
     sqlx::query(
         "UPDATE host_chain_blocks_valid SET block_status = 'finalized'",
     )
@@ -38,8 +43,47 @@ async fn partial_block() -> anyhow::Result<(Database, PgPool, DBInstance)> {
     sqlx::query("INSERT INTO ciphertexts (tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
                  VALUES (0, $1, '\\xaabb', 0, 5)")
         .bind(a.to_vec()).execute(&pool).await?;
-    assert_eq!(computation_flags(&pool, b_handle).await?, (false, true));
+    assert_eq!(
+        computation_flags(&pool, computed_handle(2)).await?,
+        (false, true)
+    );
     Ok((db, pool, instance))
+}
+
+async fn finalized_replay(
+    db: &mut Database,
+    logs: Vec<Log>,
+) -> anyhow::Result<()> {
+    ingest_block_logs(
+        ChainId::try_from(42u64)?,
+        db,
+        &BlockLogs {
+            logs,
+            summary: block(),
+            catchup: true,
+            finalized: true,
+        },
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        OPTIONS,
+    )
+    .await?;
+    Ok(())
+}
+
+async fn prune_header(db: &Database, pool: &PgPool) -> anyhow::Result<()> {
+    sqlx::query("UPDATE host_chain_blocks_valid SET created_at = NOW() - INTERVAL '8 days'")
+        .execute(pool).await?;
+    assert_eq!(db.prune_finalized_block_history(20_000).await?, 1);
+    let remaining: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM host_chain_blocks_valid")
+            .fetch_one(pool)
+            .await?;
+    assert_eq!(remaining, 0);
+    Ok(())
 }
 
 async fn hash_block(pool: &PgPool, uploaded: bool) -> anyhow::Result<()> {
@@ -112,19 +156,7 @@ async fn unchanged_replay(
     db: &mut Database,
     pool: &PgPool,
 ) -> anyhow::Result<()> {
-    let b = block();
-    let tx = computed_handle(0xe1);
-    ingest(
-        db,
-        &b,
-        vec![
-            rpc_log(&trivial_encrypt(computed_handle(1)), &b, tx, 0),
-            rpc_log(&allowed(computed_handle(1)), &b, tx, 1),
-            rpc_log(&trivial_encrypt(computed_handle(2)), &b, tx, 2),
-        ],
-        true,
-    )
-    .await?;
+    ingest(db, &block(), partial_logs(), true).await?;
     assert!(!is_halted(pool).await?, "an identical replay is harmless");
     Ok(())
 }
@@ -175,6 +207,136 @@ async fn repair_after_hash_upload_is_contained() -> anyhow::Result<()> {
 #[serial(db)]
 async fn later_acl_cannot_change_an_older_hashed_block() -> anyhow::Result<()> {
     hashed_repair(true, true).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn identical_replay_restores_pruned_hashed_header() -> anyhow::Result<()>
+{
+    let (mut db, pool, _instance) = partial_block().await?;
+    hash_block(&pool, true).await?;
+    finalized_replay(&mut db, partial_logs()).await?;
+    let before: Vec<serde_json::Value> = sqlx::query_scalar(
+        "SELECT to_jsonb(c) FROM computations c ORDER BY output_handle",
+    )
+    .fetch_all(&pool)
+    .await?;
+    let hash_before: serde_json::Value =
+        sqlx::query_scalar("SELECT to_jsonb(sh) FROM state_hash sh")
+            .fetch_one(&pool)
+            .await?;
+    for acl_only_first in [false, true] {
+        prune_header(&db, &pool).await?;
+        if acl_only_first {
+            // A partial delivery can restore a finalized header with count 0.
+            // It must not erase the retained hash's evidence of FHE activity.
+            finalized_replay(&mut db, vec![partial_logs()[1].clone()]).await?;
+        }
+        finalized_replay(&mut db, partial_logs()).await?;
+        assert!(!is_halted(&pool).await?);
+        let header: (String, i32) = sqlx::query_as(
+            "SELECT block_status, fhe_event_count FROM host_chain_blocks_valid",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(header, ("finalized".into(), 2));
+        let after: Vec<serde_json::Value> = sqlx::query_scalar(
+            "SELECT to_jsonb(c) FROM computations c ORDER BY output_handle",
+        )
+        .fetch_all(&pool)
+        .await?;
+        assert_eq!(before, after, "only the header needed restoration");
+        let hash_after: serde_json::Value =
+            sqlx::query_scalar("SELECT to_jsonb(sh) FROM state_hash sh")
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(
+            hash_before, hash_after,
+            "preserve the hash and upload status"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn identical_empty_replay_restores_pruned_hashed_header(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    finalized_replay(&mut db, vec![]).await?;
+    sqlx::query(
+        "INSERT INTO state_hash (chain_id, block_number, state_hash)
+        VALUES (42, 100, encode(sha256(''::bytea), 'hex'))",
+    )
+    .execute(&pool)
+    .await?;
+    prune_header(&db, &pool).await?;
+    finalized_replay(&mut db, vec![]).await?;
+    assert!(!is_halted(&pool).await?);
+    let unchanged: bool = sqlx::query_scalar(
+        "SELECT sh.state_hash = encode(sha256(''::bytea), 'hex') AND b.fhe_event_count = 0
+         FROM state_hash sh JOIN host_chain_blocks_valid b
+           ON b.chain_id = sh.chain_id AND b.block_number = sh.block_number
+         WHERE b.block_status = 'finalized'",
+    ).fetch_one(&pool).await?;
+    assert!(unchanged);
+    Ok(())
+}
+
+async fn empty_hash_event_repair(pruned: bool) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = partial_block().await?;
+    // A prior partial delivery stored the computations but marked the block
+    // empty. Replaying their events changes only the header's event count.
+    sqlx::query("UPDATE host_chain_blocks_valid SET fhe_event_count = 0")
+        .execute(&pool)
+        .await?;
+    sqlx::query(
+        "INSERT INTO state_hash (chain_id, block_number, state_hash)
+        VALUES (42, 100, encode(sha256(''::bytea), 'hex'))",
+    )
+    .execute(&pool)
+    .await?;
+    if pruned {
+        prune_header(&db, &pool).await?;
+    }
+    let error = finalized_replay(&mut db, partial_logs()).await.unwrap_err();
+    assert!(
+        error.to_string().contains("inventory already committed"),
+        "{error}"
+    );
+    assert_contained(&pool).await?;
+    let unchanged: bool = sqlx::query_scalar(
+        "SELECT state_hash = encode(sha256(''::bytea), 'hex') FROM state_hash",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert!(unchanged);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn event_count_repair_of_a_known_empty_commitment_is_contained(
+) -> anyhow::Result<()> {
+    empty_hash_event_repair(false).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn event_count_repair_of_a_pruned_empty_commitment_is_contained(
+) -> anyhow::Result<()> {
+    empty_hash_event_repair(true).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn acl_repair_after_header_pruning_is_still_contained(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = partial_block().await?;
+    hash_block(&pool, true).await?;
+    prune_header(&db, &pool).await?;
+    assert!(repair(&mut db, false).await.is_err());
+    assert_contained(&pool).await
 }
 
 async fn sealed_repair(
@@ -250,11 +412,12 @@ async fn repair_of_history_in_a_published_descendant_is_contained(
     sealed_repair(false, true).await
 }
 
-#[tokio::test]
-#[serial(db)]
-async fn new_computation_cannot_extend_a_hashed_block() -> anyhow::Result<()> {
+async fn extend_hashed_block(pruned: bool) -> anyhow::Result<()> {
     let (mut db, pool, _instance) = partial_block().await?;
     hash_block(&pool, true).await?;
+    if pruned {
+        prune_header(&db, &pool).await?;
+    }
     let b = block();
     let new = computed_handle(3);
     assert!(ingest(
@@ -277,6 +440,19 @@ async fn new_computation_cannot_extend_a_hashed_block() -> anyhow::Result<()> {
     .await?;
     assert_eq!(count, 0);
     Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn new_computation_cannot_extend_a_hashed_block() -> anyhow::Result<()> {
+    extend_hashed_block(false).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn new_computation_cannot_extend_a_pruned_hashed_block(
+) -> anyhow::Result<()> {
+    extend_hashed_block(true).await
 }
 
 #[tokio::test]
