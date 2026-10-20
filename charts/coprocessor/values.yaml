@@ -11,6 +11,7 @@
 # - SNS worker (notification service)
 # - Consensus detector (manifest publication and peer verification)
 # - Transaction sender (blockchain transaction submission)
+# - Coprocessor proxy (public HTTPS entry point, FhevmSig auth)
 # - Upgrade controller / consensus detector (RFC-021 GCS control plane, off by default)
 # =============================================================================
 
@@ -1845,6 +1846,118 @@ txSender:
 
   # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
   podLabels: {}
+
+  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
+  nodeSelector:
+  affinity:
+  tolerations:
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
+# Coprocessor proxy
+# -----------------------------------------------------------------------------
+# Public HTTPS entry point: checks each request's FhevmSig against the KMS
+# tx-senders ProtocolConfig lists, then forwards it unchanged to prf-service, its
+# one upstream, over HTTP/2 cleartext. The Service is ClusterIP; exposing it is
+# the deployment's, within the requirement in the chart README.
+coprocessorProxy:
+  enabled: false
+  # nameOverride: override default <release>-<component> resource name.
+  nameOverride:
+
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/coprocessor-proxy
+    # Required when enabled.
+    tag: ""
+
+  # Stateless: replicas answer alike.
+  replicas: 2
+
+  tls:
+    # kubernetes.io/tls Secret holding tls.crt and tls.key.
+    secretName: ""
+
+  # The FhevmSig EIP-712 domain and the accepted signers come from the chain hosting
+  # ProtocolConfig: the `chains` entry whose chainId is commonConfig.canonicalProtocolConfigChainId
+  # (both quoted strings).
+  # Its protocolConfigContractAddress (or ...ValueFrom) and httpUrl (or httpUrlValueFrom) are
+  # required. The proxy never logs the RPC URL.
+
+  # This coprocessor's signer address: the audience requests must be signed for (required).
+  coprocessorSignerAddress:
+
+  # `host:port` of the endpoints the proxy forwards to (required): prf-service, which serves
+  # the PRF route, e.g. ["prf-service:8080"]. Each must answer `GET /healthz` with 200 over
+  # HTTP/2 cleartext on that address (chart README).
+  endpointAddresses: []
+  # How long the proxy waits for an endpoint's answer. prf-service holds a request until the
+  # PRF output is ready, so this must exceed the KMS connector's PRF_RETRIEVAL_DEADLINE
+  # (RFC-038): only the connector gives up on a held request.
+  # It is also the shutdown grace period: after SIGTERM, in-flight requests get this long to
+  # complete. Pingora waits this long on every shutdown, even with no request in flight, so it
+  # delays each pod's rollout by as much. The pod's terminationGracePeriodSeconds is this plus 10.
+  endpointResponseTimeoutSeconds: 120
+
+  # Ingress of the endpoint pods: only the proxy reaches them.
+  endpointNetworkPolicy:
+    enabled: true
+    # Labels of the endpoint pods (required when enabled), e.g. {app: prf-service}.
+    podSelector: {}
+    # More ingress rules for those pods, e.g. Prometheus scraping their metrics port.
+    extraIngress: []
+
+  # Additional environment variables, e.g. COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL.
+  # coprocessor/fhevm-engine/coprocessor-proxy/config/proxy.toml lists every setting.
+  env: []
+
+  tracing:
+    # Defaults to commonConfig.tracing.enabled.
+    enabled: false
+    # OTEL service name. If empty, the proxy uses "coprocessor-proxy".
+    service: ""
+
+  ports:
+    https: 8443
+    healthcheck: 8080
+    metrics: 9100
+
+  serviceMonitor:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  probes:
+    liveness:
+      enabled: true
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: true
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      # Above the proxy's 3 s TLS self-check timeout.
+      timeoutSeconds: 5
+
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
+
+  serviceAccountName:
 
   # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
   nodeSelector:
