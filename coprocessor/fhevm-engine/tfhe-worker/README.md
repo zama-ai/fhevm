@@ -44,6 +44,42 @@ cargo test
 ```
 `operators_from_events` uses the full type matrix by default. To run a lighter local matrix (up to `uint64`) set `TFHE_WORKER_EVENT_TYPE_MATRIX=local` before `cargo test`.
 
+### Artifact ingestion recovery regression
+
+From `coprocessor/fhevm-engine`, run the CPU end-to-end regression with:
+
+```sh
+SQLX_OFFLINE=true cargo test --locked -p tfhe-worker \
+  --test artifact_ingestion_e2e --profile coverage -- --test-threads=1
+```
+
+This requires Anvil on `PATH` and Docker for an isolated PostgreSQL database.
+The normal test harness imports the repository's test keys. The tests deploy
+event-emitting contracts on Anvil, omit the producer's ACL log on first delivery,
+and feed the actual RPC logs through production block ingestion. A real
+`tfhe_worker` process uses the production scheduler and CPU FHE implementation.
+An independent computation must complete while the producer and its descendants
+remain stalled.
+
+The four cases exercise full-block replay with a warm cache, full-block and
+ACL-only replay after recreating the listener's database/cache object, and an
+ACL database-write failure followed by retry on the same object. Recovery must
+repair the computation row and event counts, and finalize the producing block.
+A failed replay must roll all three back. The producer, both children, and a
+grandchild must complete and decrypt correctly. Duplicate replay must preserve
+their ciphertexts and completion flags.
+
+The checked-in Solidity fixtures follow the listener's `RawLog` fixture pattern;
+Cargo does not invoke a Solidity compiler. All three worker CI shards install
+Anvil, and these cases share the `fhe-keys` concurrency limit. Each test stops its
+worker before loading the server key for decryption to keep one key in memory.
+
+Fault injection occurs at the block-log delivery boundary. These tests do not
+exercise WebSocket reconnects, poller cursor persistence, Gateway commits, or KMS
+decryption. Listener transport tests and the full-stack fork suite cover parts
+of those paths separately. Disabling `Database::upgrade_allowed_computations`
+must fail the assertion that replay promotes the existing producer.
+
 ## Running the first working fhevm coprocessor smoke test
 
 Reload database and apply schemas from scratch
