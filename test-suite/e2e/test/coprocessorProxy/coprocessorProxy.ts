@@ -3,6 +3,8 @@
 // COPROCESSOR_SIGNER_ADDRESSES, PRF_SERVICE_FAKE_COUNT_URLS, COPROCESSOR_PROXY_METRICS_URLS,
 // COPROCESSOR_PROXY_CA_CERT and the mapping of KMS party 1's KMS_CONNECTOR_PRIVATE_KEY, and with
 // the steps of fhevm-cli's kms-context-switch profile that run its "across a KMS context switch" tests.
+// ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh loads the proxies through its "through a
+// rolling restart" test, and needs another client then.
 //
 // The suite signs as party 1's connector, a tx-sender of the active KMS context, for each
 // coprocessor's signer. Behind each proxy runs the fake prf-service of
@@ -41,14 +43,14 @@ interface Sent {
 function get(url: string, authorization: string): Promise<Omit<Sent, 'forwarded' | 'where'>> {
   const ca = readFileSync(process.env.COPROCESSOR_PROXY_CA_CERT!);
   return new Promise((resolve, reject) => {
-    https
+    const req = https
       .get(url, { ca, headers: { authorization }, timeout: 30_000 }, (res) => {
         let body = '';
         res.setEncoding('utf8');
         res.on('data', (chunk) => (body += chunk));
         res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
       })
-      .on('error', reject);
+      .on('error', (err) => reject(new Error(`${err.message}${req.reusedSocket ? ' on a reused connection' : ''}`)));
   });
 }
 
@@ -198,6 +200,38 @@ describe('Coprocessor proxy', function () {
         expectRefused(sent, 502, 'upstream_transient', true);
         expect(sent.headers['retry-after'], sent.where).to.equal('1');
       }
+    });
+  });
+
+  // Run by ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh, which restarts every proxy
+  // Deployment once this test logs that its load started.
+  describe('through a rolling restart', function () {
+    const loadSeconds = Number(process.env.COPROCESSOR_PROXY_LOAD_SECONDS ?? 0);
+
+    before(function () {
+      if (!loadSeconds) this.skip();
+    });
+
+    it('answers every signed request while its pods are replaced', async function () {
+      this.timeout((loadSeconds + 120) * 1000);
+      const countsBefore = await Promise.all(countUrls.map(prfRequests));
+      const failures: string[] = [];
+      let sent = 0;
+      console.log('[coprocessor-proxy] load started');
+      for (const end = Date.now() + loadSeconds * 1000; Date.now() < end; sent += 1) {
+        const i = sent % urls.length;
+        try {
+          const reply = await get(`${urls[i]}${PRF_PATH}`, await sign(i, PRF_PATH));
+          if (reply.status !== 200) failures.push(`${urls[i]} -> ${reply.status} ${reply.body}`);
+        } catch (err) {
+          failures.push(`${urls[i]} -> ${err}`);
+        }
+      }
+      const countsAfter = await Promise.all(countUrls.map(prfRequests));
+      const forwarded = countsAfter.reduce((sum, count, i) => sum + count - countsBefore[i], 0);
+      console.log(`[coprocessor-proxy] load ended: ${sent} requests, ${failures.length} failed`);
+      expect(failures, failures.slice(0, 10).join('\n')).to.deep.equal([]);
+      expect(forwarded).to.equal(sent);
     });
   });
 });
