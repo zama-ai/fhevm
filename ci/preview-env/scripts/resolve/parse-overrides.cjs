@@ -5,6 +5,7 @@
 // Dispatch-only default: relayer_sdk_version=0.4.4 (PR stays empty → @fhevm/sdk only).
 
 const ALLOWED = new Set([
+  "bcs_image_tag",
   "host_contracts_version",
   "gateway_contracts_version",
   "contracts_chart_version",
@@ -25,6 +26,7 @@ const ALLOWED = new Set([
 ]);
 
 const ALWAYS_DEFAULTS = {
+  bcs_image_tag: "v0.14.1",
   coprocessor_infra_chart_version: "0.6.5",
   common_chart_version: "0.3.3",
   // zama-ai/kms v0.14.1 (75b85afd, 2026-09-01). Image tag is github.ref_name
