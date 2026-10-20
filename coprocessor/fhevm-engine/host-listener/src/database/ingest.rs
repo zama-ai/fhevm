@@ -2091,7 +2091,7 @@ pub async fn update_finalized_blocks(
     finality_lag: u64,
 ) {
     let iter_ref = &*log_iter;
-    let result = update_finalized_blocks_aux(
+    let result = match update_finalized_blocks_aux(
         db,
         last_block_number,
         finality_lag,
@@ -2101,7 +2101,14 @@ pub async fn update_finalized_blocks(
             Ok(block.header.hash)
         },
     )
-    .await;
+    .await
+    {
+        Ok(result) => result,
+        Err(err) => {
+            warn!(%err, "Cannot update finalized blocks; will retry");
+            return;
+        }
+    };
     if let Some(number) = result.missing_canonical_block {
         if let Err(err) = log_iter.queue_canonical_block_for_retry(number).await
         {
@@ -2110,7 +2117,7 @@ pub async fn update_finalized_blocks(
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct FinalizationResult {
     /// A pending fork exists at this height, but its canonical replacement
     /// has never been ingested. Callers must recover the full block, including
@@ -2118,33 +2125,27 @@ pub struct FinalizationResult {
     pub missing_canonical_block: Option<u64>,
 }
 
+/// Verify committed history before finalizing pending observations. On error,
+/// callers must defer further finalized admission and cursor/replay advancement.
 pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     db: &mut Database,
     last_block_number: u64,
     finality_lag: u64,
     mut get_block_hash_by_number: GetBlockHash,
-) -> FinalizationResult
+) -> anyhow::Result<FinalizationResult>
 where
     GetBlockHash: FnMut(u64) -> GetBlockHashFuture,
     GetBlockHashFuture: Future<Output = anyhow::Result<BlockHash>>,
 {
     info!(last_block_number, finality_lag, "Updating finalized blocks");
+    // A failed verification is not an empty successful finalization: callers
+    // must retry before admitting new finalized blocks or advancing replay.
     let verified_hashes =
-        match super::history_verification::verify_finalized_history(
+        super::history_verification::verify_finalized_history(
             db,
             &mut get_block_hash_by_number,
         )
-        .await
-        {
-            Ok(hashes) => hashes,
-            Err(err) => {
-                error!(
-                    ?err,
-                    "Cannot verify committed history before finalization"
-                );
-                return FinalizationResult::default();
-            }
-        };
+        .await?;
     let last_finalized_block = last_block_number.saturating_sub(finality_lag);
 
     // Read the candidate numbers in a short transaction, then resolve the
@@ -2158,14 +2159,14 @@ where
                 info!(
                     "cutover completed — skipping finalized-blocks lookup (retired stack)"
                 );
-                return FinalizationResult::default();
+                return Ok(FinalizationResult::default());
             }
             Err(err) => {
                 error!(
                     ?err,
                     "Failed to create transaction for finalized blocks update"
                 );
-                return FinalizationResult::default();
+                return Err(err.into());
             }
         };
         let candidates = async {
@@ -2193,7 +2194,7 @@ where
                     last_finalized_block,
                     "Failed to fetch finalization candidates"
                 );
-                return FinalizationResult::default();
+                return Err(err.into());
             }
         }
     };
@@ -2243,21 +2244,21 @@ where
         }
     }
     if canonical.is_empty() {
-        return FinalizationResult::default();
+        return Ok(FinalizationResult::default());
     }
 
     let mut tx = match db.new_transaction().await {
         Ok(Some(tx)) => tx,
         Ok(None) => {
             info!("cutover completed — skipping finalized-blocks update (retired stack)");
-            return FinalizationResult::default();
+            return Ok(FinalizationResult::default());
         }
         Err(err) => {
             error!(
                 ?err,
                 "Failed to create transaction for finalized blocks update"
             );
-            return FinalizationResult::default();
+            return Err(err.into());
         }
     };
     // Finalization changes committed identity just like ingestion. Resolve the
@@ -2282,7 +2283,7 @@ where
         Ok(role) => role,
         Err(err) => {
             error!(?err, "Failed to lock host history for finalization");
-            return FinalizationResult::default();
+            return Err(err.into());
         }
     };
     let mut result = FinalizationResult::default();
@@ -2316,7 +2317,7 @@ where
                     ?err,
                     "Failed to check committed history before finalization"
                 );
-                return FinalizationResult::default();
+                return Err(err.into());
             }
         };
         if let Some(conflict) = conflict {
@@ -2324,7 +2325,7 @@ where
             // batch first, then persist containment under the exclusive fence.
             if let Err(err) = tx.rollback().await {
                 error!(?err, "Failed to roll back conflicting finalization");
-                return FinalizationResult::default();
+                return Err(err.into());
             }
             if let Err(err) = record_halt(
                 &db.pool().await,
@@ -2337,8 +2338,9 @@ where
             .await
             {
                 error!(?err, "Failed to contain conflicting finalization");
+                return Err(err.into());
             }
-            return FinalizationResult::default();
+            return Err(sqlx::Error::Protocol(conflict.reason.into()).into());
         }
         if Some(block_number) == verify_only_tip {
             // This was a consistency check, not a new finalization. Avoid
@@ -2366,7 +2368,7 @@ where
                         ?err,
                         "Failed to retract orphaned event state during finalization"
                     );
-                    return FinalizationResult::default();
+                    return Err(err.into());
                 }
                 // The block just became final: materialize its deferred
                 // fallback grants in the same transaction, so the synthesis
@@ -2384,7 +2386,7 @@ where
                         ?err,
                         "Failed to synthesize finalized fallback grants"
                     );
-                    return FinalizationResult::default();
+                    return Err(err.into());
                 }
             }
             Ok(None) => {
@@ -2414,13 +2416,13 @@ where
                     ?err,
                     "Failed to update block as finalized"
                 );
-                return FinalizationResult::default();
+                return Err(err.into());
             }
         }
     }
     if let Err(err) = tx.commit().await {
         error!(?err, "Failed to commit finalized blocks update");
-        return FinalizationResult::default();
+        return Err(err.into());
     }
     // Notify the database of the new block
     // Delayed delegation rely on this signal to reconsider ready delegation
@@ -2438,7 +2440,7 @@ where
         Ok(pruned) => info!(pruned, "Pruned finalized block history"),
         Err(err) => error!(?err, "Failed to prune finalized block history"),
     }
-    result
+    Ok(result)
 }
 
 #[cfg(test)]

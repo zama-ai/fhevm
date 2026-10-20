@@ -89,9 +89,9 @@ async fn finalization_refuses_mismatched_parent_and_stops_batch() {
         async move { Ok(hash) }
     })
     .await;
-    assert_eq!(
-        result.missing_canonical_block, None,
-        "contradictory stored history must not be retried as a missing block"
+    assert!(
+        result.unwrap_err().to_string().contains("committed canonical history"),
+        "contradictory stored history must fail instead of returning a missing block"
     );
 
     for (hash, what) in [
@@ -139,7 +139,8 @@ async fn finalization_stops_batch_at_fetch_failure() {
                 hash.ok_or_else(|| anyhow::anyhow!("rpc unavailable for {n}"))
             }
         })
-        .await;
+        .await
+        .expect("finalize the safe prefix");
     assert_eq!(
         result.missing_canonical_block, None,
         "an unavailable canonical hash must not authorize a recovery block"
@@ -261,7 +262,8 @@ async fn finalization_accepts_linked_chain_and_orphans_sibling() {
             .expect("requested block");
         async move { Ok(hash) }
     })
-    .await;
+    .await
+    .expect("finalize linked chain");
 
     assert_eq!(block_status(&db, &b2).await.as_deref(), Some("finalized"));
     assert_eq!(block_status(&db, &b3).await.as_deref(), Some("finalized"));

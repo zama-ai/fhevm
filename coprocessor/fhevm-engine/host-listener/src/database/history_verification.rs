@@ -52,6 +52,24 @@ async fn segment_tips(
     .await
 }
 
+async fn anchor_is_finalized(
+    tx: &mut Transaction<'_>,
+    chain_id: i64,
+    height: i64,
+    hash: &[u8],
+) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM host_chain_blocks_valid
+         WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3
+           AND block_status = 'finalized')",
+    )
+    .bind(chain_id)
+    .bind(height)
+    .bind(hash)
+    .fetch_one(&mut **tx)
+    .await
+}
+
 /// Retain successful work even if a later RPC fails or another replica extends
 /// the tip. Check only the bounded batch's identities under the admission lock;
 /// rescanning the entire history after each batch would make cold scans quadratic.
@@ -108,8 +126,8 @@ async fn cache_verified_batch(
 
 /// Check every disconnected committed segment, including empty heights that
 /// range catchup never stored. MAX(block_number) alone can hide an older fork.
-/// RPC runs outside database transactions; recheck the snapshot and stack role
-/// under the history lock before recording a halt or completing verification.
+/// RPC runs outside database transactions; recheck the stack role and either
+/// the conflicting anchor or the successful snapshot under the history lock.
 /// Successful batches survive retries in memory; process restart rechecks them.
 /// Return this pass's RPC observations for reuse by deferred finalization.
 pub async fn verify_finalized_history<GetHash, HashFuture>(
@@ -128,16 +146,7 @@ where
     let chain_id = db.chain_id.as_i64();
     let tips = segment_tips(&mut tx, chain_id).await?;
     let previous_tip_retained = if let Some((height, hash)) = &verified.tip {
-        sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS (SELECT 1 FROM host_chain_blocks_valid
-             WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3
-               AND block_status = 'finalized')",
-        )
-        .bind(chain_id)
-        .bind(height)
-        .bind(hash)
-        .fetch_one(&mut *tx)
-        .await?
+        anchor_is_finalized(&mut tx, chain_id, *height, hash).await?
     } else {
         false
     };
@@ -197,7 +206,11 @@ where
             checked.clear();
         }
     }
-    if !checked.is_empty()
+    // A negative observation is validated independently below. Checkpointing
+    // the positive prefix here could discard that observation merely because
+    // the snapshot's newest tip was removed while the RPC was in flight.
+    if conflict.is_none()
+        && !checked.is_empty()
         && !cache_verified_batch(db, &mut verified, role, &tips[0], &checked)
             .await?
     {
@@ -214,9 +227,30 @@ where
     lock_history_tx(&mut tx, ListenerSource::Host, current_role, chain_id)
         .await?;
     anyhow::ensure!(
-        current_role == role && segment_tips(&mut tx, chain_id).await? == tips,
+        current_role == role,
         "committed history changed during verification; retry before advancing"
     );
+    if let Some(conflict) = &conflict {
+        // A concurrent extension can change the segment tips, even absorb the
+        // conflicting tip into a longer segment. It does not invalidate a
+        // mismatch against the same retained finalized block. Only removal of
+        // that anchor (or a role change above) makes the observation obsolete.
+        anyhow::ensure!(
+            anchor_is_finalized(
+                &mut tx,
+                chain_id,
+                conflict.block_number,
+                &conflict.expected_hash,
+            )
+            .await?,
+            "committed history changed during verification; retry before advancing"
+        );
+    } else {
+        anyhow::ensure!(
+            segment_tips(&mut tx, chain_id).await? == tips,
+            "committed history changed during verification; retry before advancing"
+        );
+    }
     tx.rollback().await?;
     if let Some(conflict) = conflict {
         record_halt(

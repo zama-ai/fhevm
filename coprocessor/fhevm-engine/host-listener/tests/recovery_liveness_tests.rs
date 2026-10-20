@@ -76,13 +76,13 @@ async fn sparse_catchup_repair_contains_a_contradiction_instead_of_repeating(
     // Sparse historical delivery can retain disconnected finalized segments.
     // The latest segment alone does not prove that the older one is canonical.
     admit(&mut db, header(82, true), true).await?;
-    let result =
-        update_finalized_blocks_aux(&mut db, 100, 10, |n| async move {
-            Ok(header(n, true).hash)
-        })
-        .await;
+    let error = update_finalized_blocks_aux(&mut db, 100, 10, |n| async move {
+        Ok(header(n, true).hash)
+    })
+    .await
+    .unwrap_err();
     // Verify the disconnected older segment before queuing any gap repair.
-    assert_eq!(result.missing_canonical_block, None);
+    assert!(error.to_string().contains("committed canonical history"));
     assert!(is_halted(&pool).await?);
     let repaired: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM host_chain_blocks_valid WHERE block_hash=$1",
@@ -184,13 +184,13 @@ async fn sparse_finalized_gap_without_pending_rows_is_detected(
     // No row for 81: it has never carried an event and the old listener was
     // disconnected. Range catchup jumps straight to the first logged block.
     admit(&mut db, header(82, true), true).await?;
-    let result =
-        update_finalized_blocks_aux(&mut db, 100, 10, |n| async move {
-            Ok(header(n, true).hash)
-        })
-        .await;
+    let error = update_finalized_blocks_aux(&mut db, 100, 10, |n| async move {
+        Ok(header(n, true).hash)
+    })
+    .await
+    .unwrap_err();
     assert!(is_halted(&pool).await?);
-    assert_eq!(result.missing_canonical_block, None);
+    assert!(error.to_string().contains("committed canonical history"));
     Ok(())
 }
 
@@ -257,17 +257,21 @@ async fn a_verified_tip_is_rechecked_after_a_sparse_reorg() -> anyhow::Result<()
 
 #[tokio::test]
 #[serial(db)]
-async fn history_changed_during_rpc_is_retried_without_containment(
+async fn removing_the_conflicting_anchor_during_rpc_invalidates_the_observation(
 ) -> anyhow::Result<()> {
     let (mut db, pool, _instance) = setup().await?;
     admit(&mut db, header(80, false), true).await?;
-    let other = db.clone();
     let error = verify_finalized_history(&db, |n| {
-        let mut other = other.clone();
+        let pool = pool.clone();
         async move {
-            // No admission lock is held over RPC. Simulate another replica's
-            // commit after the snapshot, with an obsolete conflicting answer.
-            admit(&mut other, header(82, false), true).await?;
+            // Simulate pruning/recovery removing the observed identity while
+            // RPC is in flight. It no longer justifies containing this history.
+            sqlx::query(
+                "DELETE FROM host_chain_blocks_valid WHERE block_number = $1",
+            )
+            .bind(n as i64)
+            .execute(&pool)
+            .await?;
             Ok(header(n, true).hash)
         }
     })
@@ -277,6 +281,125 @@ async fn history_changed_during_rpc_is_retried_without_containment(
     assert!(!is_halted(&pool).await?);
     verify_finalized_history(&db, |n| async move { Ok(header(n, false).hash) })
         .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn promotion_during_rpc_invalidates_a_conflicting_observation(
+) -> anyhow::Result<()> {
+    use fhevm_engine_common::database::{GCS_SCHEMA_QUOTED, GCS_SEARCH_PATH};
+    use fhevm_engine_common::versioning::CUTOVER_LOCK_ID;
+    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+
+    let (mut db, pool, instance) = setup().await?;
+    admit(&mut db, header(80, false), true).await?;
+    // Resolve the initial role through the green cursor namespace. History is
+    // deliberately identical across the role change: only the role invalidates
+    // the old observation.
+    sqlx::query(&format!("CREATE SCHEMA {GCS_SCHEMA_QUOTED}"))
+        .execute(&pool)
+        .await?;
+    sqlx::query(&format!(
+        "CREATE TABLE {GCS_SCHEMA_QUOTED}.host_listener_poller_state
+         (LIKE public.host_listener_poller_state INCLUDING ALL)"
+    ))
+    .execute(&pool)
+    .await?;
+    let green_pool = PgPoolOptions::new()
+        .max_connections(2)
+        .connect_with(
+            instance
+                .db_url()
+                .parse::<PgConnectOptions>()?
+                .options([("search_path", GCS_SEARCH_PATH)]),
+        )
+        .await?;
+    *db.pool.write().await = green_pool;
+    let error = verify_finalized_history(&db, |n| {
+        let pool = pool.clone();
+        async move {
+            let mut tx = pool.begin().await?;
+            sqlx::query("SELECT pg_advisory_xact_lock($1)")
+                .bind(CUTOVER_LOCK_ID).execute(&mut *tx).await?;
+            sqlx::query(&format!(
+                "ALTER SCHEMA {GCS_SCHEMA_QUOTED} RENAME TO host_before_promotion"
+            ))
+            .execute(&mut *tx).await?;
+            tx.commit().await?;
+            Ok(header(n, true).hash)
+        }
+    }).await.unwrap_err();
+    assert!(error.to_string().contains("changed during verification"));
+    assert!(!is_halted(&pool).await?);
+    verify_finalized_history(&db, |n| async move { Ok(header(n, false).hash) })
+        .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn concurrent_extensions_do_not_mask_a_retained_history_conflict(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    admit(&mut db, header(80, false), true).await?;
+    let other = db.clone();
+    let error = verify_finalized_history(&db, |n| {
+        let mut other = other.clone();
+        async move {
+            // Production admission by another replica, while the verifier has
+            // no database lock open. The old tip becomes an interior block
+            // and a newer disconnected segment is added; neither removes it.
+            admit(&mut other, header(81, false), true).await?;
+            admit(&mut other, header(84, true), true).await?;
+            Ok(header(n, true).hash)
+        }
+    })
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("committed canonical history"));
+    assert!(is_halted(&pool).await?);
+    let halt: (i64, Vec<u8>, Vec<u8>) = sqlx::query_as(
+        "SELECT block_number, expected_hash, observed_hash
+         FROM public.chain_recovery_halts WHERE resolved_at IS NULL",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(
+        halt,
+        (
+            80,
+            header(80, false).hash.to_vec(),
+            header(80, true).hash.to_vec()
+        )
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn removing_an_unrelated_tip_does_not_mask_a_retained_conflict(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    for n in [80, 84] {
+        admit(&mut db, header(n, false), true).await?;
+    }
+    let error = verify_finalized_history(&db, |n| {
+        let pool = pool.clone();
+        async move {
+            if n == 80 {
+                // The positive prefix cannot be checkpointed against its old
+                // newest tip anymore, but the conflicting 80 is still present.
+                sqlx::query("DELETE FROM host_chain_blocks_valid WHERE block_number = 84")
+                    .execute(&pool).await?;
+            }
+            Ok(header(n, n == 80).hash)
+        }
+    })
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("committed canonical history"));
+    assert!(is_halted(&pool).await?);
     Ok(())
 }
 

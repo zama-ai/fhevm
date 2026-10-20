@@ -10,7 +10,7 @@ use fhevm_engine_common::versioning::{
 };
 use test_harness::instance::{setup_test_db, ImportMode};
 
-fn pause_test_config(
+pub(super) fn pause_test_config(
     database_url: DatabaseURL,
     anvil: &alloy::node_bindings::AnvilInstance,
     dependent_ops_max_per_chain: u32,
@@ -470,7 +470,8 @@ async fn missing_canonical_blocks_recover_across_gaps_in_observed_forks(
             }))
         };
         let result =
-            update_finalized_blocks_aux(&mut db, 120, 10, canonical_hash).await;
+            update_finalized_blocks_aux(&mut db, 120, 10, canonical_hash)
+                .await?;
         assert_eq!(result.missing_canonical_block, Some(103));
         let finalized: Vec<i64> = sqlx::query_scalar("SELECT block_number FROM host_chain_blocks_valid WHERE chain_id=$1 AND block_status='finalized' ORDER BY block_number")
             .bind(chain.as_i64()).fetch_all(&pool).await?;
@@ -535,7 +536,8 @@ async fn missing_canonical_blocks_recover_across_gaps_in_observed_forks(
         )
         .await?;
         let result =
-            update_finalized_blocks_aux(&mut db, 120, 10, canonical_hash).await;
+            update_finalized_blocks_aux(&mut db, 120, 10, canonical_hash)
+                .await?;
         assert_eq!(result.missing_canonical_block, None);
         let statuses: Vec<(Vec<u8>, String)> = sqlx::query_as("SELECT block_hash, block_status FROM host_chain_blocks_valid WHERE chain_id=$1 AND block_number >= 103 ORDER BY block_hash")
             .bind(chain.as_i64()).fetch_all(&pool).await?;
@@ -607,7 +609,7 @@ async fn deferred_finalization_checks_the_committed_tip_without_pending_work(
         requested.push(number);
         async move { Ok(canonical) }
     })
-    .await;
+    .await?;
     assert_eq!(requested, vec![100]);
     assert!(
         !is_halted(&pool).await?,
@@ -622,7 +624,8 @@ async fn deferred_finalization_checks_the_committed_tip_without_pending_work(
     update_finalized_blocks_aux(&mut db, 120, 20, |_| async {
         Ok(B256::repeat_byte(3))
     })
-    .await;
+    .await
+    .expect_err("changed committed tip must fail verification");
     assert!(is_halted(&pool).await?);
     Ok(())
 }
@@ -647,7 +650,8 @@ async fn deferred_finalization_waits_for_an_unavailable_committed_tip(
         requested.push(number);
         async { anyhow::bail!("canonical header temporarily unavailable") }
     })
-    .await;
+    .await
+    .expect_err("unavailable tip must fail verification");
     assert_eq!(
         requested,
         vec![100],
@@ -663,7 +667,7 @@ async fn deferred_finalization_waits_for_an_unavailable_committed_tip(
         requested.push(number);
         async move { Ok(B256::repeat_byte(if number == 100 { 2 } else { 3 })) }
     })
-    .await;
+    .await?;
     assert_eq!(requested, vec![100, 101]);
     let status: String = sqlx::query_scalar("SELECT block_status FROM host_chain_blocks_valid WHERE chain_id = 42 AND block_number = 101")
         .fetch_one(&pool).await?;
@@ -704,7 +708,8 @@ async fn deferred_finalization_checks_all_retained_neighbors() -> Result<()> {
                 B256::repeat_byte(20)
             })
         })
-        .await;
+        .await
+        .expect_err("conflicting neighbor must fail finalization");
         assert!(
             is_halted(&pool).await?,
             "neighbor {neighbor} must be contained"
@@ -741,7 +746,7 @@ async fn deferred_finalization_accepts_unknown_legacy_parents() -> Result<()> {
     update_finalized_blocks_aux(&mut db, 100, 0, |number| async move {
         Ok(B256::with_last_byte(number as u8))
     })
-    .await;
+    .await?;
     assert!(!is_halted(&pool).await?);
     let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM host_chain_blocks_valid WHERE chain_id=42 AND block_status='pending'")
         .fetch_one(&pool).await?;
@@ -774,7 +779,8 @@ async fn deferred_finalization_serializes_with_host_admission() -> Result<()> {
         update_finalized_blocks_aux(&mut finalizer_db, 100, 0, |_| async {
             Ok(candidate)
         })
-        .await;
+        .await
+        .expect_err("concurrent admission must invalidate the snapshot");
     });
     // Wait for actual lock contention, not an assumed task scheduling delay.
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -810,7 +816,8 @@ async fn deferred_finalization_serializes_with_host_admission() -> Result<()> {
             candidate
         })
     })
-    .await;
+    .await
+    .expect_err("conflicting successor must fail finalization");
     assert!(is_halted(&pool).await?);
     let status: String = sqlx::query_scalar("SELECT block_status FROM host_chain_blocks_valid WHERE chain_id=42 AND block_hash=$1")
         .bind(candidate.as_slice()).fetch_one(&pool).await?;

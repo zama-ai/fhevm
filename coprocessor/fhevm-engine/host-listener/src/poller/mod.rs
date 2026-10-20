@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod history_tests;
 mod http_client;
 mod metrics;
 #[cfg(test)]
@@ -585,7 +587,7 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
             blockchain_timeout_tick.update();
             let client_ref = &client;
             let tick_ref = &blockchain_tick;
-            let finalization = update_finalized_blocks_aux(
+            let finalization = match update_finalized_blocks_aux(
                 &mut db,
                 latest,
                 config.finality_lag,
@@ -596,7 +598,19 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
                     Ok(header.hash)
                 },
             )
-            .await;
+            .await
+            {
+                Ok(result) => result,
+                Err(err) => {
+                    // In particular, unavailable historical headers must not
+                    // let new finalized work, the cursor, or replay completion
+                    // pass an unverified segment. Retry this chain without
+                    // turning a transient RPC failure into a durable halt.
+                    warn!(%err, "Cannot verify or finalize committed history; leaving progress unchanged");
+                    sleep(config.retry_interval).await;
+                    continue;
+                }
+            };
             if let Some(missing) = finalization.missing_canonical_block {
                 // Recover disconnected pending forks even when they precede the
                 // restart overlap. Use the ordinary coherent block/log ingestion
