@@ -288,6 +288,8 @@ pub struct HostAclCheckConfig {
 pub enum GwCiphertextCheckConfig {
     /// Ask the Gateway chain whether the ciphertext material exists, via
     /// `Decryption.isPublicDecryptionReady` / `isUserDecryptionReady_1`.
+    /// Since Decryption v0.8.0 (RFC 023 Part 3) these functions always return `true`, so this
+    /// source no longer gates anything; use `coprocessor_attestations`.
     GatewayChain { retry: RetrySettings },
     /// Evaluate Coprocessor attestation consensus off-chain, per handle (RFC 023).
     CoprocessorAttestations {
