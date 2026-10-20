@@ -81,6 +81,15 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "event UpdatePublicDecryptionThreshold(uint256)",
       "event UpdateUserDecryptionThreshold(uint256)",
       "event UpdateKmsGenThreshold(uint256)",
+      // Thresholds are fixed at KMS context creation, matching the host. Changing one requires a new context.
+      "function updateMpcThresholdForContext(uint256,uint256)",
+      "function updatePublicDecryptionThresholdForContext(uint256,uint256)",
+      "function updateUserDecryptionThresholdForContext(uint256,uint256)",
+      "function updateKmsGenThresholdForContext(uint256,uint256)",
+      "event UpdateMpcThresholdForContext(uint256 indexed,uint256)",
+      "event UpdatePublicDecryptionThresholdForContext(uint256 indexed,uint256)",
+      "event UpdateUserDecryptionThresholdForContext(uint256 indexed,uint256)",
+      "event UpdateKmsGenThresholdForContext(uint256 indexed,uint256)",
     ],
     // KMSGeneration was frozen to a view-only implementation after the move of key generation to
     // Ethereum. State-changing entrypoints and the errors/events they emitted were removed from
