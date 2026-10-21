@@ -18,7 +18,7 @@ use connector_utils::types::{
     u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, HandleEntry, UserDecryptionRequest_1 as UserDecryptionRequestV2,
+    self, DecryptionInstance, HandleEntry, UserDecryptionRequest_3 as UserDecryptionRequestV2,
     delegatedUserDecryptionRequestCall, userDecryptionRequest_1Call as userDecryptionRequestCall,
 };
 use futures::{

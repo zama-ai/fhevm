@@ -10,9 +10,9 @@ use anyhow::anyhow;
 // Handle-only overloaded decryption events
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
-        DecryptionEvents, HandleEntry, PublicDecryptionRequest,
-        UserDecryptionRequest_0 as UserDecryptionRequest,
-        UserDecryptionRequest_1 as UserDecryptionRequestV2,
+        DecryptionEvents, HandleEntry, PublicDecryptionRequest_1 as PublicDecryptionRequest,
+        UserDecryptionRequest_2 as UserDecryptionRequest,
+        UserDecryptionRequest_3 as UserDecryptionRequestV2,
     },
     IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
 };
@@ -832,11 +832,13 @@ impl TryFrom<DecryptionEvents> for ProtocolEventKind {
 
     fn try_from(value: DecryptionEvents) -> Result<Self, Self::Error> {
         match value {
-            // `UserDecryptionRequest_0` is the legacy-style user event and `UserDecryptionRequest_1`
-            // the RFC016 unified user event.
-            DecryptionEvents::PublicDecryptionRequest(e) => Ok(e.into()),
-            DecryptionEvents::UserDecryptionRequest_0(e) => Ok(e.into()),
-            DecryptionEvents::UserDecryptionRequest_1(e) => Ok(e.into()),
+            // Handle-only overloads (v0.15): `_1` for public, `_2` for the legacy-style user
+            // event and `_3` for the RFC016 unified user event
+            // The `SnsCiphertextMaterial`-carrying variants (public `_0` and user `_0`, `_1`) are
+            // intentionally ignored.
+            DecryptionEvents::PublicDecryptionRequest_1(e) => Ok(e.into()),
+            DecryptionEvents::UserDecryptionRequest_2(e) => Ok(e.into()),
+            DecryptionEvents::UserDecryptionRequest_3(e) => Ok(e.into()),
             _ => Err(anyhow!("Unexpected Decryption event")),
         }
     }
