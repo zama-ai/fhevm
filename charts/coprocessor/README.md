@@ -6,7 +6,7 @@ A helm chart to distribute and deploy the Zama fhevm coprocessor services.
 
 `coprocessorProxy` deploys the coprocessor's public HTTPS entry point. The proxy checks each
 request's `FhevmSig` signature (RFC-038) and forwards an accepted request unchanged, over HTTP/2
-cleartext, to the endpoints in `coprocessorProxy.endpointAddresses`. Today its only route is the
+cleartext, to the endpoints in `coprocessorProxy.endpointAddresses`. Its only route is the
 PRF route, `GET` and `HEAD` `/v1/prf/{prf}/labels/{label}/{padLength}`, served by prf-service. The
 proxy checks the shape of the path. prf-service checks the encoding of its parameters, and checks
 the `FhevmSig` header again.
@@ -41,28 +41,25 @@ The proxy reads its TLS certificate at startup: a renewed secret takes effect af
 `commonConfig.env` applies to the proxy too, which is the internet-facing pod, so it must hold
 nothing the proxy should not.
 
-A NetworkPolicy admits only the proxy pods to the pods that `endpointNetworkPolicy.podSelector`
-selects, so no caller reaches prf-service without the proxy's checks. Add any other ingress those
-pods need, such as metrics scraping, to `endpointNetworkPolicy.extraIngress`.
+A NetworkPolicy allows this release's proxy pods to reach the endpoint pods selected by
+`endpointNetworkPolicy.podSelector`, on `endpointNetworkPolicy.ports` (TCP 8080 by default).
+Set these to the endpoint **pod** ports, which may differ from the Service ports in
+`endpointAddresses`. Add other required ingress, such as metrics scraping, to
+`endpointNetworkPolicy.extraIngress`. Isolation requires a CNI that enforces NetworkPolicy
+and no other policy granting broader access: Kubernetes policies are additive.
 
 The proxy reads the signers at the latest finalized block. It checks that block every 5 s
-(`COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL`) and reads the signers again when it moved forward,
-so a signer change takes effect within 5 s of its block being finalized (about 13 minutes on
-Ethereum). The KMS connector's gw-listener likewise reads Ethereum events only up to the finalized
-block. A failed poll retries at the next poll, so a long interval also delays readiness after a
-failed first read.
+(`COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL`) after each poll completes, and reads the signers
+again when the block advances. Refresh latency includes RPC time and any delay in that RPC's
+finalized head. Each poll is bounded at 30 s; a failure retains the last set and retries on the
+next poll. Before the first successful read, readiness fails.
 
 The KMS connector serves a new context as soon as its own RPC node reports the activation block
-finalized. So a request signed by an unknown signer makes the proxy poll once: the poll starts
-within a second, checks the finalized block, and reads the signers if it moved. The request is
-checked again when that poll ends, or after 3 s if it has not ended. A signer still unknown then
-gets `502` with `"code": "upstream_transient"`, `"retryable": true` and `Retry-After: 1`, the
-pace at which the proxy can poll again, and the proxy logs a warning with the signer's address. The connector retries, so a proxy RPC node that lags the
-connector's, or a poll that fails, delays a first request of a new context instead of failing it.
-The cost: a caller that signs correctly but is not a KMS tx-sender is told to retry until its own
-deadline, never refused. Any request whose signature recovers an address the proxy does not know
-causes such a poll and gets this answer, whatever audience, path or body it was signed for. These
-polls start at least 1 s apart, so they cost at most one finalized-block query a second.
+finalized. An unknown signer wakes a poll and waits at most 3 s before being checked again.
+Concurrent misses share the poll; an in-flight poll can delay the next one, and woken polls start
+at least 1 s apart. A signer still unknown gets `502 upstream_transient`, `retryable: true` and
+`Retry-After: 1`. The caller must retry within its own deadline. Any signature that recovers an
+unknown address can trigger this path, including one signed for another audience, path or body.
 
 The NetworkPolicy matches the proxy pods in the release namespace only. When prf-service runs in
 another namespace, add its own policy there.
@@ -74,11 +71,15 @@ ready and answers `502` with `"code": "upstream_transient"` and `"retryable": tr
 check the TLS listener, each probe sends it `GET /` and expects `404`, counted in
 `coprocessor_proxy_requests_total{route="none",status="404"}`.
 
+`coprocessor_kms_tx_senders_read_timestamp_seconds` is the timestamp of the finalized block used
+for the accepted set, or 0 before the first read. It advances only after applying a newer block;
+equal, older or failed RPC replies leave it unchanged. Its age includes the chain's normal
+finality delay. Readiness does not check ongoing signer freshness.
+
 prf-service holds a request until its output is ready, so `coprocessorProxy.endpointResponseTimeoutSeconds`
 (120 by default) must exceed the KMS connector's `PRF_RETRIEVAL_DEADLINE`. It is also the shutdown
-grace period: on `SIGTERM` the proxy stops accepting connections and gives in-flight requests that
-long to complete. Pingora, which the proxy runs on, waits that long on every shutdown, even when no
-request is in flight, so each pod's rollout takes as long. The pod's
+grace period: on `SIGTERM` the proxy drains in-flight requests. Pingora waits for this grace on
+every shutdown, even with no request in flight. The pod's
 `terminationGracePeriodSeconds` is that value plus 10 s: Pingora's 5 s to close the remaining
 connections, and 5 s margin.
 

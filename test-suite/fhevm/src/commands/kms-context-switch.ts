@@ -144,20 +144,20 @@ const waitForActivation = async (
   return current;
 };
 
-/** Waits until the finalized block reaches the latest block, and returns the Unix second it did. */
+/** Waits for the latest block to finalize and returns that block's timestamp. */
 const waitForLatestFinalized = async (rpcUrl: string): Promise<number> => {
   const url = hostReachableRpcUrl(rpcUrl);
-  const blockNumber = async (...tag: string[]) =>
+  const castNumber = async (...tag: string[]) =>
     Number((await run(["cast", ...tag, "--rpc-url", url])).stdout.trim());
-  const latest = await blockNumber("block-number");
+  const latest = await castNumber("block-number");
   const deadline = Date.now() + FINALITY_TIMEOUT_MS;
-  while ((await blockNumber("block", "finalized", "--field", "number")) < latest) {
+  while ((await castNumber("block", "finalized", "--field", "number")) < latest) {
     if (Date.now() >= deadline) {
       throw new PreflightError(`kms-context-switch: block ${latest} not finalized within ${FINALITY_TIMEOUT_MS / 1000}s`);
     }
     await Bun.sleep(FINALITY_POLL_MS);
   }
-  return Math.floor(Date.now() / 1000);
+  return castNumber("block", String(latest), "--field", "timestamp");
 };
 
 /** The private key of KMS party `party`'s tx-sender, from its connector's env. */
@@ -529,12 +529,7 @@ const destroyContextAndEpoch = async (
   await runSmoke(`kms-context-switch: input-proof after destroying retired context ${oldContextId} and epoch ${oldEpochId}`);
 };
 
-/**
- * After the node swap: destroys every context but the swap's, which leaves the dropped node(s) in
- * no Active context, and checks that every coprocessor-proxy then refuses them. The refusal is
- * checked only after each proxy started a read of the KMS tx-senders once the destroys were
- * finalized.
- */
+/** Destroys pre-swap contexts and checks refusal after every proxy applies the finalized state. */
 const proxyRefusesDroppedNodes = async (
   state: State,
   target: DestroyTarget,
@@ -554,12 +549,12 @@ const proxyRefusesDroppedNodes = async (
     }
   }
   await assertCurrentUnchanged(rpcUrl, protocolConfig, ids.current, "destroying the pre-swap contexts");
-  const finalizedAt = await waitForLatestFinalized(rpcUrl);
+  const blockTimestamp = await waitForLatestFinalized(rpcUrl);
   for (const party of committeePlan(state.scenario.kms).dropped) {
     await runProxyCheck(
       `kms-context-switch: every coprocessor-proxy refuses dropped node ${party}`,
       "refuses a node that is only in the destroyed context",
-      { COPROCESSOR_PROXY_SWITCH_SIGNER_KEY: await kmsTxSenderKey(party), COPROCESSOR_PROXY_SWITCH_FINALIZED_AT: String(finalizedAt) },
+      { COPROCESSOR_PROXY_SWITCH_SIGNER_KEY: await kmsTxSenderKey(party), COPROCESSOR_PROXY_SWITCH_BLOCK_TIMESTAMP: String(blockTimestamp) },
     );
   }
 };

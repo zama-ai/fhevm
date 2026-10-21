@@ -1882,11 +1882,9 @@ coprocessorProxy:
     # kubernetes.io/tls Secret holding tls.crt and tls.key.
     secretName: ""
 
-  # The FhevmSig EIP-712 domain and the accepted signers come from the chain hosting
-  # ProtocolConfig: the `chains` entry whose chainId is commonConfig.canonicalProtocolConfigChainId
-  # (both quoted strings).
-  # Its protocolConfigContractAddress (or ...ValueFrom) and httpUrl (or httpUrlValueFrom) are
-  # required. The proxy never logs the RPC URL.
+  # Domain and registry RPC come from the chains entry matching
+  # commonConfig.canonicalProtocolConfigChainId. That entry needs a ProtocolConfig address
+  # and HTTP RPC URL (literal or valueFrom). The RPC URL is never logged.
 
   # This coprocessor's signer address: the audience requests must be signed for (required).
   coprocessorSignerAddress:
@@ -1895,19 +1893,18 @@ coprocessorProxy:
   # the PRF route, e.g. ["prf-service:8080"]. Each must answer `GET /healthz` with 200 over
   # HTTP/2 cleartext on that address (chart README).
   endpointAddresses: []
-  # How long the proxy waits for an endpoint's answer. prf-service holds a request until the
-  # PRF output is ready, so this must exceed the KMS connector's PRF_RETRIEVAL_DEADLINE
-  # (RFC-038): only the connector gives up on a held request.
-  # It is also the shutdown grace period: after SIGTERM, in-flight requests get this long to
-  # complete. Pingora waits this long on every shutdown, even with no request in flight, so it
-  # delays each pod's rollout by as much. The pod's terminationGracePeriodSeconds is this plus 10.
+  # Must exceed the connector's PRF_RETRIEVAL_DEADLINE; also sets the SIGTERM drain grace.
+  # Pingora waits this grace even when idle. The pod's termination budget adds 10 s.
   endpointResponseTimeoutSeconds: 120
 
-  # Ingress of the endpoint pods: only the proxy reaches them.
+  # Ingress allowed from this release's proxy pods to the endpoints.
   endpointNetworkPolicy:
     enabled: true
     # Labels of the endpoint pods (required when enabled), e.g. {app: prf-service}.
     podSelector: {}
+    # Endpoint pod ports, which may differ from the Service ports in endpointAddresses.
+    ports:
+      - {port: 8080, protocol: TCP}
     # More ingress rules for those pods, e.g. Prometheus scraping their metrics port.
     extraIngress: []
 
@@ -1916,8 +1913,8 @@ coprocessorProxy:
   env: []
 
   tracing:
-    # Defaults to commonConfig.tracing.enabled.
-    enabled: false
+    # null inherits commonConfig.tracing.enabled; true/false overrides it.
+    enabled: null
     # OTEL service name. If empty, the proxy uses "coprocessor-proxy".
     service: ""
 

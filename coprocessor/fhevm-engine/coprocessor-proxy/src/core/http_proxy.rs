@@ -300,13 +300,9 @@ impl ProxyHttp for Proxy {
         e: &Error,
         _ctx: &mut Self::CTX,
     ) -> FailToProxy {
-        // The connection is closed after the answer (`can_reuse_downstream: false`), so the answer
-        // says `Connection: close`, as Pingora's own `write_error_response` does: a client must not
-        // send its next request on it.
+        // Tell the client this failed connection cannot be reused.
         session.set_keepalive(None);
-        // The endpoint's answer has started, e.g. the endpoint failed mid-body: an error answer
-        // would land in its body. Nothing more is written, as Pingora's own `write_error_response`
-        // does, and the closed connection cuts the answer short.
+        // Once the response has started, a JSON error would corrupt its body. Close instead.
         if session
             .response_written()
             .is_some_and(|written| !written.status.is_informational())
@@ -324,9 +320,7 @@ impl ProxyHttp for Proxy {
                 }
                 status.as_u16()
             }
-            // An upstream failure (unreachable endpoint, timeout...) gets an `ErrorResponse` body.
-            // The detailed Pingora error (which includes the endpoint's address) is only logged
-            // server-side by `logging()`; the client, e.g. the relayer, gets a fixed message.
+            // Keep upstream details in server logs; clients get a fixed error message.
             None if *e.esource() == ErrorSource::Upstream => {
                 // An endpoint that cannot be connected to is unavailable, a timeout or not.
                 let (code, message) = match e.etype() {

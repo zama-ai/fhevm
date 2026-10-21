@@ -1,35 +1,9 @@
-//! The KMS tx-senders that `ProtocolConfig` lists: the callers whose `FhevmSig` requests a
-//! coprocessor accepts.
+//! Tracks the tx-senders of Active KMS contexts at the latest finalized `ProtocolConfig` block.
+//! Active contexts can serve decryptions; Created and Pending contexts cannot. Both node sets
+//! remain accepted during a switch, until the outgoing context is destroyed.
 //!
-//! A tx-sender is accepted only while its KMS context is Active, from the context's activation
-//! until it is destroyed: the contexts for which `getKmsNodesForContext` returns the nodes. Active
-//! is the first state in which a context's nodes can serve a decryption: every node has attested
-//! the same keys and CRS on chain (`confirmEpochActivation`, unanimous). The requests a coprocessor
-//! authenticates this way are made only to serve a decryption, so a Pending or Created context has
-//! none to make, and its nodes cannot make a coprocessor spend work. The outgoing context stays
-//! Active until it is destroyed, so both node sets are accepted during a switch. The contract's
-//! own `isKmsTxSenderForContext` also accepts Created contexts, because their nodes send
-//! confirmation transactions during resharing. A request to a coprocessor is not part of the
-//! switch.
-//!
-//! A [`Follower`] polls every poll interval: it reads the number of the latest finalized block and,
-//! when that block is newer than the one of the last successful read, reads the set at that block
-//! and replaces the content of a [`RefreshableSigners`]. An older block comes from a lagging or
-//! load-balanced RPC node, and reading at it could bring back an older set. A context switch takes
-//! effect within one poll interval of its block being finalized. A failed poll keeps the last set.
-//! Until the first read succeeds the set is empty and [`Loaded::is_loaded`] is false.
-//!
-//! A KMS connector serves a new context as soon as its own RPC node reports the activation block
-//! finalized. So a request signed by an unknown tx-sender wakes the loop
-//! ([`Follower::refresh_after_miss`]) and is checked again after one poll that started after it,
-//! or after the caller's wait if that poll has not finished by then. The woken poll starts at once,
-//! or [`WOKEN_POLL_SPACING`] after the previous poll started if that is later. Any header whose
-//! signature recovers an address can cause such a wake: a signature made for another audience,
-//! path or body recovers an unrelated address, and the body is read only after authentication. The
-//! spacing bounds that cost at one finalized-block query a second. That one poll may not yet see
-//! the activation block finalized, because this RPC node lags the connector's, and it may fail or
-//! outlast the wait. So a caller should answer a tx-sender still unknown with a retryable error:
-//! the connector's retries then absorb a lag of any length.
+//! Failed or non-advancing polls retain the last set. An unknown signer can wake a coalesced,
+//! rate-limited poll, but a lagging RPC may still miss its activation: callers must retry.
 
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},
@@ -74,7 +48,7 @@ static KMS_TX_SENDERS: LazyLock<IntGauge> = LazyLock::new(|| {
 static KMS_TX_SENDERS_READ_TIMESTAMP: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
         "coprocessor_kms_tx_senders_read_timestamp_seconds",
-        "Unix time the KMS tx-sender set was last confirmed current at the finalized block"
+        "Unix timestamp of the finalized block used for the KMS tx-sender set; 0 before the first read"
     )
     .unwrap()
 });
@@ -136,8 +110,8 @@ impl<P: Provider> Follower<P> {
 
     /// Polls every `poll_interval`, and sooner for a miss, until `stop` completes.
     pub async fn run(&self, stop: impl Future<Output = ()>) {
-        // A set never read shows as no tx-senders, not as a missing series.
         KMS_TX_SENDERS.set(0);
+        KMS_TX_SENDERS_READ_TIMESTAMP.set(0);
         let mut reader = self.reader.lock().await;
         let mut polls = self.polls.subscribe();
         let mut last = None;
@@ -150,16 +124,16 @@ impl<P: Provider> Follower<P> {
                 .unwrap_or_else(|_| Err(anyhow!("no answer within {READ_TIMEOUT:?}")));
             match poll {
                 Ok(read) => {
-                    if let Some(senders) = read {
+                    if let Some((senders, block_timestamp)) = read {
                         if last.as_ref() != Some(&senders) {
                             info!(senders = senders.len(), "KMS tx-sender set updated");
                         }
-                        KMS_TX_SENDERS.set(senders.len() as i64);
                         self.signers.replace(senders.iter().copied());
+                        KMS_TX_SENDERS.set(senders.len() as i64);
                         self.loaded.0.store(true, Ordering::Relaxed);
                         last = Some(senders);
+                        KMS_TX_SENDERS_READ_TIMESTAMP.set(block_timestamp as i64);
                     }
-                    KMS_TX_SENDERS_READ_TIMESTAMP.set(fhevm_sig_auth::unix_now() as i64);
                 }
                 Err(err) => warn!(
                     error = describe_read_error(&err),
@@ -215,9 +189,8 @@ impl<P: Provider> Reader<P> {
         }
     }
 
-    /// The set at the latest finalized block, or `None` when that block is not newer than the one
-    /// last read.
-    async fn poll(&mut self) -> anyhow::Result<Option<HashSet<Address>>> {
+    /// The set and its finalized block's timestamp, or `None` if the block has not advanced.
+    async fn poll(&mut self) -> anyhow::Result<Option<(HashSet<Address>, u64)>> {
         let finalized = self
             .protocol_config
             .provider()
@@ -225,14 +198,16 @@ impl<P: Provider> Reader<P> {
             .await
             .context("finalized block")?
             .context("no finalized block")?
-            .header
-            .number;
-        if self.read_at.is_some_and(|read_at| finalized <= read_at) {
+            .header;
+        if self
+            .read_at
+            .is_some_and(|read_at| finalized.number <= read_at)
+        {
             return Ok(None);
         }
-        let senders = self.read(finalized).await?;
-        self.read_at = Some(finalized);
-        Ok(Some(senders))
+        let senders = self.read(finalized.number).await?;
+        self.read_at = Some(finalized.number);
+        Ok(Some((senders, finalized.timestamp)))
     }
 
     async fn read(&mut self, finalized: u64) -> anyhow::Result<HashSet<Address>> {
@@ -279,9 +254,7 @@ impl<P: Provider> Reader<P> {
     }
 }
 
-/// A failed read as logged: the step that failed, which is our own text, and the kind of RPC
-/// failure. Nothing the RPC side wrote is kept: the RPC URL often carries the provider's API key,
-/// and an error body or message can echo it, with or without the scheme.
+/// Logs only our step and the RPC failure kind: provider messages can echo API keys.
 fn describe_read_error(err: &anyhow::Error) -> String {
     let rpc_failure = err.chain().find_map(|cause| {
         if let Some(error) = cause.downcast_ref::<TransportError>() {
@@ -419,7 +392,7 @@ mod tests {
             valid(false),
         ]);
         assert_eq!(
-            reader.poll().await.unwrap().unwrap(),
+            reader.poll().await.unwrap().unwrap().0,
             HashSet::from([a, b, c])
         );
         assert!(asserter.read_q().is_empty());
@@ -430,7 +403,10 @@ mod tests {
         for active in [false, false, true, false] {
             asserter.push_success(&valid(active));
         }
-        assert_eq!(reader.poll().await.unwrap().unwrap(), HashSet::from([b, c]));
+        assert_eq!(
+            reader.poll().await.unwrap().unwrap().0,
+            HashSet::from([b, c])
+        );
         assert!(asserter.read_q().is_empty());
     }
 
@@ -438,7 +414,7 @@ mod tests {
     async fn no_context_is_no_tx_sender() {
         let (mut reader, asserter) =
             reader(&[getCurrentKmsContextIdCounterCall::abi_encode_returns(&U256::ZERO).into()]);
-        assert!(reader.poll().await.unwrap().unwrap().is_empty());
+        assert!(reader.poll().await.unwrap().unwrap().0.is_empty());
         assert!(asserter.read_q().is_empty());
     }
 
@@ -504,7 +480,7 @@ mod tests {
         let (provider, recorded) = recorded_provider(first_read(a));
         let mut reader = Reader::new(IProtocolConfigBase::new(Address::ZERO, provider));
 
-        assert_eq!(reader.poll().await.unwrap().unwrap(), HashSet::from([a]));
+        assert_eq!(reader.poll().await.unwrap().unwrap().0, HashSet::from([a]));
         let params = recorded.params.lock().unwrap();
         assert_eq!(params.len(), 3, "{params:?}");
         // The finalized block is number 100.

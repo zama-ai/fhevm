@@ -1,14 +1,6 @@
-// Plays the KMS connector against every coprocessor's proxy until the RFC-038 pad connector and its
-// e2e land. Remove this suite then, with the test-suite env only it reads: COPROCESSOR_PROXY_URLS,
-// COPROCESSOR_SIGNER_ADDRESSES, PRF_SERVICE_FAKE_COUNT_URLS, COPROCESSOR_PROXY_METRICS_URLS,
-// COPROCESSOR_PROXY_CA_CERT and the mapping of KMS party 1's KMS_CONNECTOR_PRIVATE_KEY, and with
-// the steps of fhevm-cli's kms-context-switch profile that run its "across a KMS context switch" tests.
-// ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh loads the proxies through its "through a
-// rolling restart" test, and needs another client then.
-//
-// The suite signs as party 1's connector, a tx-sender of the active KMS context, for each
-// coprocessor's signer. Behind each proxy runs the fake prf-service of
-// test-suite/e2e/scripts/fake-prf-service.ts, which counts the PRF requests it receives.
+// Temporary KMS-connector client against every proxy and its fake PRF backend. Replace with the
+// real pad-connector e2e when it lands. kms-context-switch and preview rollout checks invoke this
+// suite and must switch to that client too, removing the proxy-only env and party-1 key mapping.
 import { expect } from 'chai';
 import { type BaseWallet, Signature, Wallet, concat, toBeHex } from 'ethers';
 import { readFileSync } from 'node:fs';
@@ -59,8 +51,8 @@ async function prfRequests(countUrl: string): Promise<number> {
   return ((await resp.json()) as { prfRequests: number }).prfRequests;
 }
 
-/** Unix second at which the proxy last confirmed its KMS tx-senders at the finalized block. */
-async function signersReadAt(metricsUrl: string): Promise<number> {
+/** Timestamp of the finalized block applied to the proxy's signer set. */
+async function signersBlockTimestamp(metricsUrl: string): Promise<number> {
   const resp = await fetch(metricsUrl, { signal: AbortSignal.timeout(10_000) });
   const gauge = (await resp.text())
     .split('\n')
@@ -68,22 +60,13 @@ async function signersReadAt(metricsUrl: string): Promise<number> {
   return Number(gauge?.split(' ')[1] ?? 0);
 }
 
-async function waitForSignersReadAfter(metricsUrl: string, after: number): Promise<number> {
+async function waitForSignersBlock(metricsUrl: string, timestamp: number) {
   const deadline = Date.now() + 60_000;
   for (;;) {
-    const readAt = await signersReadAt(metricsUrl);
-    if (readAt > after) return readAt;
-    if (Date.now() > deadline) throw new Error(`${metricsUrl}: no read of the KMS tx-senders after ${after}`);
+    if ((await signersBlockTimestamp(metricsUrl)) >= timestamp) return;
+    if (Date.now() > deadline) throw new Error(`${metricsUrl}: signer set has not reached block timestamp ${timestamp}`);
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-}
-
-/**
- * Waits for a read of the KMS tx-senders that started after `after`. The gauge is set when a read
- * ends, so the first read seen after `after` may have started before it; the next one did not.
- */
-async function waitForSignersReadStartedAfter(metricsUrl: string, after: number) {
-  await waitForSignersReadAfter(metricsUrl, await waitForSignersReadAfter(metricsUrl, after));
 }
 
 /** The high-s twin of the header's signature: it recovers the same signer, and EIP-2 refuses it. */
@@ -173,7 +156,6 @@ describe('Coprocessor proxy', function () {
   // Run by fhevm-cli's kms-context-switch profile around its node swap, which passes the tx-sender
   // key of a KMS node in COPROCESSOR_PROXY_SWITCH_SIGNER_KEY.
   describe('across a KMS context switch', function () {
-    // The refusal waits for two reads of the KMS tx-senders per proxy.
     this.timeout(180_000);
     const switchSigner = () => new Wallet(process.env.COPROCESSOR_PROXY_SWITCH_SIGNER_KEY!);
 
@@ -191,11 +173,10 @@ describe('Coprocessor proxy', function () {
     });
 
     it('refuses a node that is only in the destroyed context', async function () {
-      // The Unix second at which the profile saw the destroy finalized.
-      const finalizedAt = Number(process.env.COPROCESSOR_PROXY_SWITCH_FINALIZED_AT);
-      expect(Number.isInteger(finalizedAt), 'COPROCESSOR_PROXY_SWITCH_FINALIZED_AT').to.equal(true);
+      const blockTimestamp = Number(process.env.COPROCESSOR_PROXY_SWITCH_BLOCK_TIMESTAMP);
+      expect(Number.isInteger(blockTimestamp) && blockTimestamp > 0, 'COPROCESSOR_PROXY_SWITCH_BLOCK_TIMESTAMP').to.equal(true);
       for (const i of urls.keys()) {
-        await waitForSignersReadStartedAfter(metricsUrls[i], finalizedAt);
+        await waitForSignersBlock(metricsUrls[i], blockTimestamp);
         const sent = await send(i, PRF_PATH, await sign(i, PRF_PATH, { signer: switchSigner() }));
         expectRefused(sent, 502, 'upstream_transient', true);
         expect(sent.headers['retry-after'], sent.where).to.equal('1');

@@ -49,9 +49,8 @@ fn run() -> anyhow::Result<()> {
         Subcommands::Start { config } => {
             let config = Config::from_env_and_file(config.as_ref())?;
 
-            // The tonic OTLP exporter spawns its channel worker with `tokio::spawn` at build time,
-            // so a runtime must be entered here. The worker then runs on this runtime's threads,
-            // so it must stay alive for the whole process lifetime.
+            // The OTLP exporter spawns on the entered runtime during setup. Keep it alive
+            // alongside Pingora's runtimes until shutdown.
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(1)
                 .enable_all()

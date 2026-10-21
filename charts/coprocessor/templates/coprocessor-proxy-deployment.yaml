@@ -1,5 +1,9 @@
 {{- if .Values.coprocessorProxy.enabled -}}
 {{- $proxy := .Values.coprocessorProxy -}}
+{{- $tracingEnabled := .Values.commonConfig.tracing.enabled -}}
+{{- if ne $proxy.tracing.enabled nil -}}
+{{- $tracingEnabled = $proxy.tracing.enabled -}}
+{{- end -}}
 {{- /* The FhevmSig domain and the KMS tx-senders come from the chain hosting ProtocolConfig: the chains entry of the canonical chain id. */ -}}
 {{- $canonicalChainId := required "commonConfig.canonicalProtocolConfigChainId must be set for coprocessorProxy" .Values.commonConfig.canonicalProtocolConfigChainId | toString -}}
 {{- $protocolConfigChain := dict -}}
@@ -29,6 +33,7 @@ spec:
   selector:
     matchLabels:
       app: coprocessor-proxy
+      app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
       {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
   {{- if $proxy.updateStrategy }}
   strategy:
@@ -102,7 +107,6 @@ spec:
               value: {{ $proxy.ports.healthcheck | quote }}
             - name: COPROCESSOR_PROXY_METRICS_ENDPOINT
               value: "0.0.0.0:{{ $proxy.ports.metrics }}"
-            # A request in flight at SIGTERM completes within the response timeout.
             - name: COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD
               value: "{{ int $proxy.endpointResponseTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID
@@ -127,7 +131,7 @@ spec:
               value: {{ $proxy.endpointAddresses | join "," | quote }}
             - name: COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT
               value: "{{ int $proxy.endpointResponseTimeoutSeconds }}s"
-          {{- if default .Values.commonConfig.tracing.enabled $proxy.tracing.enabled }}
+          {{- if $tracingEnabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
             {{- with $proxy.tracing.service }}

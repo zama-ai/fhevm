@@ -44,7 +44,7 @@ pub const SENDER_KEY: &str = "0x010101010101010101010101010101010101010101010101
 /// [`TestProxy::answer_code`] for a signer the proxy accepts: the signature checks out, then the
 /// signed digest does not match the empty body.
 pub const ACCEPTED: &str = "auth_body_mismatch";
-/// [`TestProxy::answer_code`] for a signer the proxy does not know after a fresh read.
+/// [`TestProxy::answer_code`] for a signer still unknown after waiting for a registry refresh.
 pub const NOT_YET_KNOWN: &str = "upstream_transient";
 
 /// The test proxy's own coprocessor signer address, the audience of the headers it accepts.
@@ -135,13 +135,12 @@ struct StubState {
     connections: Mutex<HashSet<SocketAddr>>,
     /// The HTTP versions of the `/healthz` probes.
     probe_versions: Mutex<Vec<Version>>,
+    release: tokio::sync::Notify,
 }
 
 /// A stub prf-service endpoint, over HTTP/1.1 and HTTP/2 cleartext.
 ///
-/// Like a strict HTTP/2 server, it answers `400` to an HTTP/2 request with a `Host` header. It holds a request for the milliseconds of an `x-stub-delay-ms` header, answers `429` with
-/// `Retry-After` on [`rate_limited_path`], fails after the first 32 bytes of the answer with an
-/// `x-stub-fail-mid-body` header, and answers [`stub_output`] with [`stub_attestation`] otherwise.
+/// Rejects `Host` over h2. Test headers can delay, hold or interrupt a response.
 pub struct StubEndpoint {
     pub addr: SocketAddr,
     state: Arc<StubState>,
@@ -184,6 +183,11 @@ impl StubEndpoint {
 
     pub fn hits(&self) -> usize {
         self.state.hits.load(Ordering::SeqCst)
+    }
+
+    /// Releases one request carrying `x-stub-hold`.
+    pub fn release_held_request(&self) {
+        self.state.release.notify_one();
     }
 
     pub fn last_request(&self) -> SeenRequest {
@@ -237,6 +241,9 @@ async fn prf(
         headers: headers.clone(),
         body: body.to_vec(),
     };
+    if headers.contains_key("x-stub-hold") {
+        state.release.notified().await;
+    }
     if let Some(delay_ms) = headers
         .get("x-stub-delay-ms")
         .and_then(|v| v.to_str().ok())

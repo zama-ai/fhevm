@@ -3,8 +3,9 @@
 {{- if not $policy.podSelector }}
 {{- fail "coprocessorProxy.endpointNetworkPolicy.podSelector must select the endpoint pods" }}
 {{- end }}
-# Only the proxy reaches the endpoints: they trust what it forwards no more than any caller, but
-# nothing else may bypass its checks.
+{{- if not $policy.ports }}
+{{- fail "coprocessorProxy.endpointNetworkPolicy.ports must list the endpoint pod ports" }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -25,6 +26,8 @@ spec:
               app: coprocessor-proxy
               app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
               {{- include "coprocessor.extraSelectorLabels" . | nindent 14 }}
+      ports:
+        {{- toYaml $policy.ports | nindent 8 }}
     {{- with $policy.extraIngress }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
