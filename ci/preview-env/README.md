@@ -472,7 +472,7 @@ The two out-of-chart inputs the proxy needs are produced at deploy time by
 ## coprocessor-proxy
 
 Except on blue-green stacks, each `coprocessor-<i>` release also runs the
-coprocessor-proxy (`values-coprocessor-proxy-e2e.yaml`), two replicas in front of a
+coprocessor-proxy (`values-coprocessor-proxy-e2e.yaml`), one replica in front of a
 fake prf-service until prf-service deploys here. `scripts/deploy/deploy-coprocessor.sh`
 provides what the chart does not:
 
