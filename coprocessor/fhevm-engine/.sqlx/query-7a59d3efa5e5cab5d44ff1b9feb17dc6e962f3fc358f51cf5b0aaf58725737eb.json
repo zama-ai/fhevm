@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pads (prf_instance, label, pad_length, triggered_by)\n         VALUES ($1, $2, $3, $4)\n         ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "Int4",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7a59d3efa5e5cab5d44ff1b9feb17dc6e962f3fc358f51cf5b0aaf58725737eb"
+}
