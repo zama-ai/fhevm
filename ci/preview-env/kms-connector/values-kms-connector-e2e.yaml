@@ -31,11 +31,15 @@ commonConfig:
   databaseUrl: "postgresql://zama:zama@postgres-connector-1:5432/connector"
   gatewayUrl: "http://anvil-gateway-anvil-node:8546"
   gatewayChainId: "54321"
-  # gatewayContractAddresses.* / ethereumContractAddresses.* are injected via
-  # --set-string in deploy-kms-connector.sh (see header note above).
+  # Chart 1.5.3 (v0.14.2) reads these flat keys. Chart 2.x ignores them and
+  # reads hostChains below. apply-chain-env.sh rewrites both shapes together.
+  # ethereumContractAddresses.acl is injected by deploy-kms-connector.sh, same
+  # as kmsGeneration / protocolConfig. gatewayContractAddresses.* too.
+  ethereumUrl: "http://anvil-host-anvil-node:8545"
+  ethereumChainId: "12345"
 
-  # url/chainId are rewritten by apply-chain-env.sh on; aclAddress by
-  # deploy-kms-connector.sh
+  # url/chainId are rewritten by apply-chain-env.sh; aclAddress by
+  # deploy-kms-connector.sh. Chart 2.x shape.
   hostChains:
     ethereum:
       url: "http://anvil-host-anvil-node:8545"
@@ -48,6 +52,15 @@ kmsConnectorKmsWorker:
     # Overridden per-release to this party's own kms-core-<i>-core-<i> - see
     # header note. Party 1's endpoint is the standalone-template-safe default.
     kmsCoreEndpoints: "http://kms-core-1-core-1:50100"
+    # Chart 1.5.3 renders KMS_CONNECTOR_HOST_CHAINS from this list and expands
+    # the $(...) refs from KMS_CONNECTOR_ETHEREUM_* at runtime. Its chart default
+    # also lists Polygon, whose empty chain id is not valid JSON once expanded.
+    # Chart 2.x builds that env from commonConfig.hostChains and ignores this
+    # list. The Polygon overlay replaces it when deploy_polygon is set.
+    hostChains:
+      - url: "$(KMS_CONNECTOR_ETHEREUM_URL)"
+        chainId: "$(KMS_CONNECTOR_ETHEREUM_CHAIN_ID)"
+        aclAddress: "$(KMS_CONNECTOR_ETHEREUM_ACL_ADDRESS)"
 
 # kmsConnectorTxSender.wallet.secret defaults to {name: kms-connector-tx-sender, key: kms-wallet}
 # - overridden per-release by the script to kms-connector-tx-sender-<i>. The
