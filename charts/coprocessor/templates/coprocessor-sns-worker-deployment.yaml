@@ -1,245 +1,53 @@
-{{- if .Values.snsWorker.enabled -}}
-{{- $disabled := default (list) .Values.snsWorker.disabledArgs -}}
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  labels:
-    app: coprocessor-sns-worker
-    app.kubernetes.io/name: {{ include "snsWorkerName" . }}
-  name: {{ include "snsWorkerName" . }}
-spec:
-  replicas: {{ .Values.snsWorker.replicas }}
-  selector:
-    matchLabels:
-      app: coprocessor-sns-worker
-      {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
-  {{- if .Values.snsWorker.updateStrategy }}
-  strategy:
-    {{- toYaml .Values.snsWorker.updateStrategy | nindent 4 }}
-  {{- end }}
-  template:
-    metadata:
-      labels:
-        app: coprocessor-sns-worker
-        app.kubernetes.io/name: {{ include "snsWorkerName" . }}
-        {{- include "coprocessor.extraSelectorLabels" . | nindent 8 }}
-        {{- with .Values.commonConfig.stackVersion }}
-        app.kubernetes.io/version: {{ . | quote }}
-        {{- end }}
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
-        {{- with .Values.snsWorker.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
-      {{- with .Values.podAnnotations }}
-      annotations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-    spec:
-      imagePullSecrets:
-        - name: registry-credentials
-      restartPolicy: Always
-      {{- with .Values.snsWorker.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.snsWorker.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.snsWorker.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- if .Values.snsWorker.serviceAccountName }}
-      serviceAccountName: {{ .Values.snsWorker.serviceAccountName }}
-      {{- end }}
-      containers:
-        - name: coprocessor-sns-worker
-          image: {{ .Values.snsWorker.image.name }}:{{ .Values.snsWorker.image.tag }}
-          command: ["sns_worker"]
-          {{- if .Values.commonConfig.stackVersionProbe.enabled }}
-          startupProbe:
-            exec:
-              command: ["sns_worker", "--stack-version"]
-            periodSeconds: {{ .Values.commonConfig.stackVersionProbe.periodSeconds | default 10 }}
-            failureThreshold: {{ .Values.commonConfig.stackVersionProbe.failureThreshold | default 30 }}
-          {{- end }}
-          args:
-            {{- if not (has "database-url" $disabled) }}
-            - --database-url=$(DATABASE_URL)
-            {{- end }}
-            {{- with .Values.commonConfig.tenantApiKey }}
-            {{- if and (or .value .valueFrom) (not (has "tenant-api-key" $disabled)) }}
-            - --tenant-api-key=$(TENANT_API_KEY)
-            {{- end }}
-            {{- end }}
-            {{- if not (has "bucket-name" $disabled) }}
-            - --bucket-name=$(S3_BUCKET_NAME)
-            {{- end }}
-            {{- if .Values.snsWorker.wallet.enabled }}
-            {{- if not (has "signer-type" $disabled) }}
-            {{- if .Values.snsWorker.wallet.awsKms.enabled }}
-            - --signer-type=aws-kms
-            {{- else }}
-            - --signer-type=private-key
-            {{- end }}
-            {{- end }}
-            {{- if and (not .Values.snsWorker.wallet.awsKms.enabled) (not (has "private-key" $disabled)) }}
-            - --private-key=$(TX_SENDER_PRIVATE_KEY)
-            {{- end }}
-            {{- end }}
-            {{- if not (has "metrics-addr" $disabled) }}
-            - --metrics-addr=0.0.0.0:{{ .Values.snsWorker.ports.metrics }}
-            {{- end }}
-            {{- if not (has "health-check-port" $disabled) }}
-            - --health-check-port={{ .Values.snsWorker.ports.healthcheck }}
-            {{- end }}
-            {{- with .Values.snsWorker.extraArgs }}
-            {{- toYaml . | nindent 12 }}
-            {{- end }}
-          env:
-            {{- if .Values.commonConfig.forceLegacyServerKey }}
-            - name: FORCE_LEGACY_SERVER_KEY
-              value: "true"
-            {{- end }}
-            {{- with .Values.commonConfig.databaseUser }}
-            - name: DATABASE_USER
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.databaseEndpoint }}
-            - name: DATABASE_ENDPOINT
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
-            {{- with .Values.commonConfig.databasePassword }}
-            - name: DATABASE_PASSWORD
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.databaseUrl }}
-            - name: DATABASE_URL
-              value: {{ . | quote }}
-            {{- end }}
-            {{- if eq (include "coprocessorDatabaseAuthMode" .) "iam" }}
-            - name: DATABASE_IAM_AUTH_ENABLED
-              value: "true"
-            {{- with .Values.commonConfig.databaseIamRegion }}
-            - name: DATABASE_IAM_REGION
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" .) "true" }}
-            {{- include "coprocessor.databaseSslRootCertEnv" . | nindent 12 }}
-            {{- end }}
-            {{- end }}
-            {{- with .Values.commonConfig.tenantApiKey }}
-            - name: TENANT_API_KEY
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- with .Values.snsWorker.config.s3BucketName }}
-            - name: S3_BUCKET_NAME
-              {{- if .value }}
-              value: {{ .value | quote }}
-              {{- else if .valueFrom }}
-              valueFrom:
-                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
-              {{- end }}
-            {{- end }}
-            {{- with .Values.snsWorker.config.s3Migration }}
-            {{- with .mode }}
-            - name: S3_MIGRATION_MODE
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with .sleepDuration }}
-            - name: S3_MIGRATION_SLEEP_DURATION
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with .maxRetries }}
-            - name: S3_MIGRATION_MAX_RETRIES
-              value: {{ . | quote }}
-            {{- end }}
-            {{- end }}
-            {{- if .Values.snsWorker.wallet.enabled }}
-            {{- if .Values.snsWorker.wallet.awsKms.enabled }}
-            - name: AWS_KEY_ID
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ .Values.snsWorker.wallet.awsKms.configmap.name | quote }}
-                  key: {{ .Values.snsWorker.wallet.awsKms.configmap.key | quote }}
-            {{- else if .Values.snsWorker.wallet.secret.value }}
-            - name: TX_SENDER_PRIVATE_KEY
-              value: {{ .Values.snsWorker.wallet.secret.value | quote }}
-            {{- else }}
-            - name: TX_SENDER_PRIVATE_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.snsWorker.wallet.secret.name | quote }}
-                  key: {{ .Values.snsWorker.wallet.secret.key | quote }}
-            {{- end }}
-            {{- end }}
-          {{- if default .Values.commonConfig.tracing.enabled .Values.snsWorker.tracing.enabled }}
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.commonConfig.tracing.endpoint | quote }}
-            - name: OTEL_SERVICE_NAME
-              {{- if .Values.snsWorker.tracing.service }}
-              value: {{ .Values.snsWorker.tracing.service | quote }}
-              {{- else }}
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-              {{- end }}
-          {{- end }}
-          {{- with .Values.commonConfig.env }}
-            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
-          {{- end }}
-          {{- with .Values.snsWorker.env }}
-            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
-          {{- end }}
-          ports:
-            {{- range $portName, $portValue := .Values.snsWorker.ports }}
-            - name: {{ $portName }}
-              containerPort: {{ $portValue }}
-              protocol: TCP
-            {{- end }}
-          {{- include "coprocessor.containerResources" .Values.snsWorker.resources | nindent 10 }}
-          {{- if and .Values.snsWorker.probes .Values.snsWorker.probes.liveness.enabled }}
-          livenessProbe:
-            {{- toYaml (omit .Values.snsWorker.probes.liveness "enabled") | nindent 12 }}
-          {{- end }}
-          {{- if and .Values.snsWorker.probes .Values.snsWorker.probes.readiness.enabled }}
-          readinessProbe:
-            {{- toYaml (omit .Values.snsWorker.probes.readiness "enabled") | nindent 12 }}
-          {{- end }}
-          {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
-          {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 10 }}
-          {{- end }}
-      {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
-      {{- include "coprocessor.databaseSslRootCertVolume" . | nindent 6 }}
-      {{- end }}
+{{- define "coprocessor.snsWorker.args" -}}
+{{- $tenant := .root.Values.commonConfig.tenantApiKey | default dict -}}
+- --database-url=$(DATABASE_URL)
+{{- if or $tenant.value $tenant.valueFrom }}
+- --tenant-api-key=$(TENANT_API_KEY)
+{{- end }}
+- --bucket-name=$(S3_BUCKET_NAME)
+{{- if .c.wallet.enabled }}
+{{- include "coprocessor.args.wallet" (dict "wallet" .c.wallet) }}
+{{- end }}
+- --metrics-addr=0.0.0.0:{{ .c.ports.metrics }}
+- --health-check-port={{ .c.ports.healthcheck }}
 {{- end -}}
+
+{{- define "coprocessor.snsWorker.env" -}}
+{{- $config := .c.config | default dict -}}
+{{- include "coprocessor.env.forceLegacyServerKey" .root }}
+{{- include "coprocessor.env.database" .root }}
+{{- include "coprocessor.env.tenant" .root }}
+{{- include "coprocessor.envVar" (dict "root" .root "name" "S3_BUCKET_NAME" "spec" $config.s3BucketName) }}
+{{- with $config.s3Migration }}
+{{- with .mode }}
+- name: S3_MIGRATION_MODE
+  value: {{ . | quote }}
+{{- end }}
+{{- with .sleepDuration }}
+- name: S3_MIGRATION_SLEEP_DURATION
+  value: {{ . | quote }}
+{{- end }}
+{{- with .maxRetries }}
+- name: S3_MIGRATION_MAX_RETRIES
+  value: {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- if .c.wallet.enabled }}
+{{- include "coprocessor.env.wallet" (dict "wallet" .c.wallet) }}
+{{- end }}
+{{- include "coprocessor.env.tracing" . }}
+{{- include "coprocessor.env.extra" (dict "root" .root "lists" (list .c.env)) }}
+{{- end -}}
+
+{{- with include "coprocessor.workload" (dict "root" . "key" "snsWorker") | fromYaml }}
+{{- $ctx := dict "root" $ "c" .c }}
+{{- include "coprocessor.deployment" (merge (dict
+  "name" .name
+  "appLabel" .appLabel
+  "container" .appLabel
+  "command" "sns_worker"
+  "args" (include "coprocessor.snsWorker.args" $ctx)
+  "extraArgs" (list $ctx.c.extraArgs)
+  "env" (include "coprocessor.snsWorker.env" $ctx)
+  "extraSelectorLabels" true) $ctx) }}
+{{- end }}

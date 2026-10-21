@@ -14,7 +14,7 @@ Appends commonConfig.stackVersion (lowercased, dots as dashes) to a resource
 name so blue and green releases each own their copy. The base name is
 truncated instead of the suffix to keep names distinct within 63 characters.
 Returns the name unchanged when stackVersion is empty.
-Usage: include "coprocessor.versionedName" (dict "root" $ "name" "eth-sc-addresses")
+Usage: include "coprocessor.versionedName" (dict "root" $ "name" "contract-addresses")
 */}}
 {{- define "coprocessor.versionedName" -}}
 {{- $suffix := .root.Values.commonConfig.stackVersion | default "" | toString | lower | replace "." "-" | trimAll "-" -}}
@@ -26,104 +26,159 @@ Usage: include "coprocessor.versionedName" (dict "root" $ "name" "eth-sc-address
 {{- end -}}
 {{- end -}}
 
-{{- define "coprocessor.hostContractConfigMapName" -}}
-{{- include "coprocessor.versionedName" (dict "root" . "name" .Values.hostContractConfigMap.name) -}}
+{{/*
+Contract ConfigMap name. Defaults to <release>-contract-addresses so every
+release owns its copy, even when several releases share a namespace.
+*/}}
+{{- define "coprocessor.contractConfigMapName" -}}
+{{- $base := (.Values.contractConfigMap).name | default (printf "%s-contract-addresses" .Release.Name) -}}
+{{- include "coprocessor.versionedName" (dict "root" . "name" $base) -}}
 {{- end -}}
 
-{{- define "coprocessor.gatewayContractConfigMapName" -}}
-{{- include "coprocessor.versionedName" (dict "root" . "name" .Values.gatewayContractConfigMap.name) -}}
+{{/* Returns "true" when the contract ConfigMap renders: commonConfig.network set and contractConfigMap.enabled. */}}
+{{- define "coprocessor.contractConfigMapEnabled" -}}
+{{- if and .Values.commonConfig.network (.Values.contractConfigMap).enabled -}}
+true
+{{- end -}}
 {{- end -}}
 
-{{- define "coprocessor.polygonContractConfigMapName" -}}
-{{- include "coprocessor.versionedName" (dict "root" . "name" .Values.polygonContractConfigMap.name) -}}
+{{/*
+contractConfigMap data: configs/<commonConfig.network>.yaml overlaid with
+contractConfigMap.addresses. Returns YAML; parse with fromYaml.
+*/}}
+{{- define "coprocessor.contractAddresses" -}}
+{{- $cm := .Values.contractConfigMap | default dict -}}
+{{- $allowed := list "" "devnet" "testnet" "mainnet" -}}
+{{- $network := default "" .Values.commonConfig.network -}}
+{{- if not (has $network $allowed) -}}
+{{- fail (printf "commonConfig.network must be one of: devnet, testnet, mainnet (or empty); got %q" $network) -}}
+{{- end -}}
+{{- $preset := dict -}}
+{{- if $network -}}
+{{- $preset = .Files.Get (printf "configs/%s.yaml" $network) | fromYaml -}}
+{{- end -}}
+{{- toYaml (mergeOverwrite (deepCopy $preset) ($cm.addresses | default dict)) -}}
+{{- end -}}
+
+{{/*
+Effective host chains list, returned as YAML under a "chains" key:
+  (include "coprocessor.chains" . | fromYaml).chains
+
+When the contract ConfigMap renders (see coprocessor.contractConfigMapEnabled), one entry is generated per
+"<prefix>.chain_id" key whose "<prefix>.acl.address" is non-empty (so the
+gateway and undeployed chains are skipped). Each entry gets:
+  name     <- "<prefix>.name", or the prefix itself
+  chainId  <- "<prefix>.chain_id"
+  *ContractAddressValueFrom -> configMapKeyRef on the contract ConfigMap for
+  every non-empty "<prefix>.{acl,fhevm_executor,kms_generation,protocol_config}.address"
+.Values.chains entries with the same name are merged on top (values win);
+entries matching no generated chain are appended unchanged.
+*/}}
+{{- define "coprocessor.chains" -}}
+{{- $valuesChains := .Values.chains | default list -}}
+{{- $generated := list -}}
+{{- if eq (include "coprocessor.contractConfigMapEnabled" .) "true" -}}
+{{- $addresses := include "coprocessor.contractAddresses" . | fromYaml -}}
+{{- $cmName := include "coprocessor.contractConfigMapName" . -}}
+{{- $fields := dict "aclContractAddressValueFrom" "acl" "fhevmExecutorContractAddressValueFrom" "fhevm_executor" "kmsGenerationContractAddressValueFrom" "kms_generation" "protocolConfigContractAddressValueFrom" "protocol_config" -}}
+{{- range $key, $chainId := $addresses -}}
+  {{- if hasSuffix ".chain_id" $key -}}
+    {{- $prefix := trimSuffix ".chain_id" $key -}}
+    {{- if get $addresses (printf "%s.acl.address" $prefix) -}}
+      {{- $chain := dict "name" (get $addresses (printf "%s.name" $prefix) | default $prefix | toString) "chainId" (toString $chainId) -}}
+      {{- range $field, $contract := $fields -}}
+        {{- $addrKey := printf "%s.%s.address" $prefix $contract -}}
+        {{- if get $addresses $addrKey -}}
+          {{- $_ := set $chain $field (dict "configMapKeyRef" (dict "name" $cmName "key" $addrKey)) -}}
+        {{- end -}}
+      {{- end -}}
+      {{- $generated = append $generated $chain -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $overrides := dict -}}
+{{- range $c := $valuesChains -}}
+  {{- $_ := set $overrides (toString $c.name) $c -}}
+{{- end -}}
+{{- $chains := list -}}
+{{- $seen := dict -}}
+{{- range $g := $generated -}}
+  {{- $chains = append $chains (mergeOverwrite $g (deepCopy (get $overrides $g.name | default dict))) -}}
+  {{- $_ := set $seen $g.name true -}}
+{{- end -}}
+{{- range $c := $valuesChains -}}
+  {{- if not (hasKey $seen (toString $c.name)) -}}
+    {{- $chains = append $chains $c -}}
+  {{- end -}}
+{{- end -}}
+{{- toYaml (dict "chains" $chains) -}}
+{{- end -}}
+
+{{/*
+Effective commonConfig.gatewayContractAddresses, returned as YAML; parse with
+fromYaml. For each of inputVerification, ciphertextCommits, gatewayConfig and
+multichainAcl: the values entry when it sets value or valueFrom, otherwise a
+configMapKeyRef to "gateway.<snake_case>.address" in the contract ConfigMap
+when the preset has that key, otherwise an empty map.
+*/}}
+{{- define "coprocessor.gatewayContractAddresses" -}}
+{{- $explicit := .Values.commonConfig.gatewayContractAddresses | default dict -}}
+{{- $addresses := dict -}}
+{{- $cmName := "" -}}
+{{- if eq (include "coprocessor.contractConfigMapEnabled" .) "true" -}}
+{{- $addresses = include "coprocessor.contractAddresses" . | fromYaml -}}
+{{- $cmName = include "coprocessor.contractConfigMapName" . -}}
+{{- end -}}
+{{- $fields := dict "inputVerification" "input_verification" "ciphertextCommits" "ciphertext_commits" "gatewayConfig" "gateway_config" "multichainAcl" "multichain_acl" -}}
+{{- $result := dict -}}
+{{- range $field, $contract := $fields -}}
+  {{- $entry := get $explicit $field | default dict -}}
+  {{- $addrKey := printf "gateway.%s.address" $contract -}}
+  {{- if or $entry.value $entry.valueFrom -}}
+    {{- $_ := set $result $field $entry -}}
+  {{- else if get $addresses $addrKey -}}
+    {{- $_ := set $result $field (dict "valueFrom" (dict "configMapKeyRef" (dict "name" $cmName "key" $addrKey))) -}}
+  {{- else -}}
+    {{- $_ := set $result $field dict -}}
+  {{- end -}}
+{{- end -}}
+{{- toYaml $result -}}
 {{- end -}}
 
 {{/*
 Renders a valueFrom block (or env list) through tpl so values can reference
-chart helpers, e.g. name: '{{ include "coprocessor.hostContractConfigMapName" . }}'.
+chart helpers, e.g. name: '{{ include "coprocessor.contractConfigMapName" . }}'.
 Usage: include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom)
 */}}
 {{- define "coprocessor.valueFrom" -}}
 {{- tpl (toYaml .valueFrom) .root -}}
 {{- end -}}
 
-{{- define "upgradeControllerName" -}}
-{{- $default := printf "%s-%s" .Release.Name "upgrade-controller" }}
-{{- default $default .Values.upgradeController.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{/*
+Resource name of a singleton component: <release>-<suffix>, or the
+component's nameOverride.
+Usage: include "coprocessor.componentName" (dict "root" $ "key" "tfheWorker" "suffix" "tfhe-worker")
+*/}}
+{{- define "coprocessor.componentName" -}}
+{{- $override := (index .root.Values .key | default dict).nameOverride -}}
+{{- default (printf "%s-%s" .root.Release.Name .suffix) $override | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "consensusDetectorName" -}}
-{{- $default := printf "%s-%s" .Release.Name "consensus-detector" }}
-{{- default $default .Values.consensusDetector.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "tfheWorkerName" -}}
-{{- $tfheWorkerNameDefault := printf "%s-%s" .Release.Name "tfhe-worker" }}
-{{- default $tfheWorkerNameDefault .Values.tfheWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "hostListenerName" -}}
-{{- $hostListenerNameDefault := printf "%s-%s" .Release.Name "host-listener" }}
-{{- default $hostListenerNameDefault .Values.hostListenerShared.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "hostListenerPollerName" -}}
-{{- $hostListenerPollerNameDefault := printf "%s-%s" .Release.Name "host-listener-poller" }}
-{{- default $hostListenerPollerNameDefault .Values.hostListenerPollerShared.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "hostListenerCatchupOnlyName" -}}
-{{- $hostListenerCatchupOnlyNameDefault := printf "%s-%s" .Release.Name "host-listener-catchup-only" }}
-{{- default $hostListenerCatchupOnlyNameDefault .Values.hostListenerCatchupOnlyShared.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "coprocessor.failIfDeprecatedTopLevelListenerKeysPresent" -}}
-{{- $deprecatedKeys := list -}}
-{{- if hasKey .Values "hostListener" -}}
-  {{- $deprecatedKeys = append $deprecatedKeys "hostListener" -}}
-{{- end -}}
-{{- if hasKey .Values "hostListenerPoller" -}}
-  {{- $deprecatedKeys = append $deprecatedKeys "hostListenerPoller" -}}
-{{- end -}}
-{{- if hasKey .Values "hostListenerCatchupOnly" -}}
-  {{- $deprecatedKeys = append $deprecatedKeys "hostListenerCatchupOnly" -}}
-{{- end -}}
-{{- if gt (len $deprecatedKeys) 0 -}}
-{{- fail (printf "deprecated top-level listener keys are no longer supported: %s. Use hostListenerShared / hostListenerPollerShared / hostListenerCatchupOnlyShared plus .Values.chains instead" (join ", " $deprecatedKeys)) -}}
-{{- end -}}
-{{- end -}}
-
+{{/* Fails when more than one chain claims the unsuffixed legacy name for the same listener mode. */}}
 {{- define "coprocessor.failIfMultipleLegacyNameClaims" -}}
-{{- $componentKey := .componentKey -}}
-{{- $claims := 0 -}}
-{{- range $chain := .root.Values.chains -}}
-  {{- if and (hasKey $chain $componentKey) ((index $chain $componentKey).useLegacyName | default false) -}}
-    {{- $claims = add1 $claims -}}
+{{- $chains := (include "coprocessor.chains" . | fromYaml).chains -}}
+{{- range $mode := (include "coprocessor.hostListenerModes" . | fromYaml).modes -}}
+  {{- $claims := 0 -}}
+  {{- range $chain := $chains -}}
+    {{- if (index ($chain.hostListener | default dict) $mode.key | default dict).useLegacyName -}}
+      {{- $claims = add1 $claims -}}
+    {{- end -}}
+  {{- end -}}
+  {{- if gt $claims 1 -}}
+    {{- fail (printf "only one chains entry may set hostListener.%s.useLegacyName=true" $mode.key) -}}
   {{- end -}}
 {{- end -}}
-{{- if gt $claims 1 -}}
-{{- fail (printf "only one chains entry may set %s.useLegacyName=true" $componentKey) -}}
-{{- end -}}
-{{- end -}}
-
-{{- define "txSenderName" -}}
-{{- $txSenderNameDefault := printf "%s-%s" .Release.Name "tx-sender" }}
-{{- default $txSenderNameDefault .Values.txSender.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "gwListenerName" -}}
-{{- $gwListenerNameDefault := printf "%s-%s" .Release.Name "gw-listener" }}
-{{- default $gwListenerNameDefault .Values.gwListener.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "zkProofWorkerName" -}}
-{{- $zkProofWorkerNameDefault := printf "%s-%s" .Release.Name "zkproof-worker" }}
-{{- default $zkProofWorkerNameDefault .Values.zkProofWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "snsWorkerName" -}}
-{{- $snsWorkerNameDefault := printf "%s-%s" .Release.Name "sns-worker" }}
-{{- default $snsWorkerNameDefault .Values.snsWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 
@@ -202,28 +257,5 @@ volumes:
   - name: rds-ca-cert
     configMap:
       name: {{ include "coprocessor.databaseSslRootCertConfigMapName" . }}
-{{- end -}}
-
-{{/*
-Container resources for FHE workers. CPU/memory keep the previous defaults;
-nvidia.com/gpu is passed through when set so pods can land on GPU nodepools.
-*/}}
-{{- define "coprocessor.containerResources" -}}
-{{- $res := default dict . -}}
-{{- $req := default dict $res.requests -}}
-{{- $lim := default dict $res.limits -}}
-resources:
-  requests:
-    cpu: {{ default "100m" $req.cpu }}
-    memory: {{ default "256Mi" $req.memory }}
-    {{- with index $req "nvidia.com/gpu" }}
-    nvidia.com/gpu: {{ . | quote }}
-    {{- end }}
-  limits:
-    cpu: {{ default "500m" $lim.cpu }}
-    memory: {{ default "512Mi" $lim.memory }}
-    {{- with index $lim "nvidia.com/gpu" }}
-    nvidia.com/gpu: {{ . | quote }}
-    {{- end }}
 {{- end -}}
 

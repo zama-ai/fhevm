@@ -27,23 +27,12 @@ commonConfig:
   databaseEndpoint: {value: "postgres-coprocessor:5432"}
   databaseUrl: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e"
   databaseAuthMode: password
-  hostChainWsUrl: "ws://anvil-host-anvil-node:8545"
-  hostChainHttpUrl: "http://anvil-host-anvil-node:8545"
-  aclContractAddress:
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: acl.address}}
-  fhevmExecutorContractAddress:
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
-  kmsGenerationContractAddress:
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
-  protocolConfigContractAddress:
-    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
   # Must be ws:// (not http://): both gwListener's --gw-url and txSender's
   # --gateway-url alloy providers use ProviderBuilder::connect_ws/WsConnect
   # (confirmed via coprocessor/fhevm-engine/{gw-listener/src/bin/gw_listener.rs,
   # transaction-sender/src/bin/transaction_sender.rs}) - there's no separate
-  # ws/http split field here the way commonConfig.hostChain{Ws,Http}Url has for
-  # the host chain, since neither consumer needs an HTTP connection to the
-  # gateway. anvil serves both HTTP and WS on the same port (see
+  # ws/http split field here the way chains[].wsUrl/httpUrl has for the host
+  # chain, since neither consumer needs an HTTP connection to the gateway. anvil serves both HTTP and WS on the same port (see
   # ../gateway-chain/values-anvil-gateway-e2e.yaml's single `port: 8546`), so
   # only the scheme changes, not the host:port.
   gatewayUrl: {value: "ws://anvil-gateway-anvil-node:8546"}
@@ -61,73 +50,65 @@ commonConfig:
     # txSender.disabledArgs below drops the corresponding legacy CLI arg.
 
 #=======================================================
-# Image tags below are placeholders - preview-env-deploy.yml overrides
-# every one of them via --set-string with the real per-PR short-SHA tag
-# (or `latest` when this component didn't change in the PR).
+# The tag is a placeholder - deploy-coprocessor.sh overrides every
+# component's image.tag via --set-string with the real per-PR short-SHA tag
+# (or `latest` when that component didn't change in the PR).
+defaults:
+  image:
+    registry: hub.zama.org/ghcr/zama-ai/fhevm
+    tag: latest
+  # IRSA-annotated SA created by coprocessor-infra's Crossplane chart (see
+  # ../coprocessor-infra/values-coprocessor-infra-e2e.yaml's
+  # coprocessorBucket.irsa block) - matches zama-zws/gitops's
+  # values-zws-testnet.yaml pairing. The S3-touching workers (tfheWorker,
+  # zkProofWorker, snsWorker, host listeners) need it: on the namespace's
+  # `default` SA the AWS SDK has no credentials at all ("Failed to check
+  # bucket existence" / "dispatch failure"); host-listener downloads key
+  # material from S3 on ActivateKey events. gwListener, txSender and
+  # dbMigration run on the namespace default SA: they unset it below.
+  # deploy-coprocessor.sh overrides this per party (coprocessor-<i>).
+  serviceAccountName: coprocessor
+
+#=======================================================
 dbMigration:
-  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/db-migration, tag: latest}
+  serviceAccountName: ""
   # The coprocessor-<i> release runs first on each party's empty database, so it
   # is allowed to create it. values-coprocessor-gcs-e2e.yaml sets this to false
   # for the coprocessor-<i>-gcs release: it must find the database, not create it.
   allowBootstrap: true
 
 #=======================================================
-hostListenerShared:
-  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
-  # host-listener also downloads key material (ServerKey/PublicKey) straight
-  # from S3 on ActivateKey events (see its "Downloading failed" /
-  # "failed to load region from IMDS" errors when this was unset - same
-  # `default` SA / no-IAM-role gap as tfheWorker/zkProofWorker/snsWorker
-  # below, just not caught until the KMS keygen ceremony actually fired an
-  # ActivateKey event this far into the pipeline).
-  serviceAccountName: coprocessor
-
-#=======================================================
-hostListenerPollerShared:
-  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
-  # NOTE: the poller is NOT run inside this coprocessor release. It is the
-  # DB-side background processor that downloads key/CRS material from the KMS
-  # public-vault S3 on pending kms_key_activation_events (the consumer only
-  # records the event; only the poller does the S3 download that fills the
-  # `keys`/`crs` tables). It is deployed as its OWN release per party
-  # (coprocessor-poller-<i>, ../coprocessor/values-coprocessor-poller-e2e.yaml),
-  # mirroring zama-zws/gitops's eth-coproc-listener-poller app - so it stays
-  # disabled in chains[] below.
-  serviceAccountName: coprocessor
-hostListenerCatchupOnlyShared:
-  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
-  serviceAccountName: coprocessor
-hostListenerConsumerShared:
-  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
-  serviceAccountName: coprocessor
-  config:
-    # Broker URL for the host-listener-consumer, rendered as BROKER_URL /
-    # --broker-url (see charts/coprocessor/templates/coprocessor-host-listener-
-    # consumer-deployment.yaml). Points at THIS party's Redis
-    # (coprocessor-redis-<i>-master, standalone -> "<fullname>-master" Service),
-    # which the party's listener producer (listener-<i>) publishes to. The
-    # workflow overrides .value per party via --set; the default below is the
-    # single-party (N=1) shape. Unlike the old built-in hostListener (which read
-    # the chain directly and wrote the DB), the producer here is the dedicated
-    # `listener` chart, so this consumer is the ONLY host-chain event path (the
-    # built-in hostListener + poller are disabled in chains[] below).
-    brokerUrl: {value: "redis://coprocessor-redis-1-master:6379"}
+# NOTE: the poller is NOT run inside this coprocessor release. It is the
+# DB-side background processor that downloads key/CRS material from the KMS
+# public-vault S3 on pending kms_key_activation_events (the consumer only
+# records the event; only the poller does the S3 download that fills the
+# `keys`/`crs` tables). It is deployed as its OWN release per party
+# (coprocessor-poller-<i>, ../coprocessor/values-coprocessor-poller-e2e.yaml),
+# mirroring zama-zws/gitops's eth-coproc-listener-poller app - so it stays
+# disabled in chains[] below.
+hostListener:
+  modes:
+    consumer:
+      config:
+        # Broker URL for the host-listener-consumer, rendered as BROKER_URL /
+        # --broker-url. Points at THIS party's Redis
+        # (coprocessor-redis-<i>-master, standalone -> "<fullname>-master" Service),
+        # which the party's listener producer (listener-<i>) publishes to. The
+        # workflow overrides .value per party via --set; the default below is the
+        # single-party (N=1) shape. Unlike the old built-in hostListener (which read
+        # the chain directly and wrote the DB), the producer here is the dedicated
+        # `listener` chart, so this consumer is the ONLY host-chain event path (the
+        # built-in listener + poller are disabled in chains[] below).
+        brokerUrl: {value: "redis://coprocessor-redis-1-master:6379"}
 
 #=======================================================
 gwListener:
   enabled: true
-  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/gw-listener, tag: latest}
+  serviceAccountName: ""
 
 #=======================================================
 tfheWorker:
   enabled: true
-  replicas: 1
-  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/tfhe-worker, tag: latest}
-  # IRSA-annotated SA created by coprocessor-infra's Crossplane chart (see
-  # ../coprocessor-infra/values-coprocessor-infra-e2e.yaml's
-  # coprocessorBucket.irsa block) - matches zama-zws/gitops's
-  # values-zws-testnet.yaml pairing (all 3 S3-touching workers use it).
-  serviceAccountName: coprocessor
   # --run-bg-worker is what actually starts the background compute loop; without
   # it the tfhe_worker process comes up idle and never polls the `computations`
   # table, so FHE ops (incl. trivial encrypts) never produce ct64 -> no SnS ->
@@ -170,9 +151,6 @@ tfheWorker:
 #=======================================================
 zkProofWorker:
   enabled: true
-  replicas: 1
-  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/zkproof-worker, tag: latest}
-  serviceAccountName: coprocessor
   # --pg-listen-channel/--pg-notify-channel aren't chart-templated (see
   # charts/coprocessor/values.yaml's zkProofWorker.extraArgs comment) - the
   # binary refuses to start without them ("required arguments were not
@@ -199,16 +177,6 @@ zkProofWorker:
 #=======================================================
 snsWorker:
   enabled: true
-  replicas: 1
-  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/sns-worker, tag: latest}
-  # Without this, the pod runs as the namespace's `default` SA (no IAM role
-  # bound at all) - confirmed live: `kubectl get pod ... -o jsonpath='{.spec.
-  # serviceAccountName}'` returned "default", while a real "coprocessor" SA
-  # with an eks.amazonaws.com/role-arn annotation (from coprocessor-infra's
-  # Crossplane chart, see values-coprocessor-infra-e2e.yaml) sat unused in
-  # the same namespace. Without it, the AWS SDK has no credentials at all -
-  # "Failed to check bucket existence" / "dispatch failure".
-  serviceAccountName: coprocessor
   # HEAD sns-worker images sign ciphertext attestations and REQUIRE a PrivateKey
   # signer - they abort startup with "Private key is required for PrivateKey
   # signer" when none is wired (the chart default wallet.enabled=false leaves it
@@ -260,7 +228,7 @@ snsWorker:
 #=======================================================
 txSender:
   enabled: true
-  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/tx-sender, tag: latest}
+  serviceAccountName: ""
   # Hardhat/anvil account #4 (addr 0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65).
   # MUST match the coprocessor identity registered on-chain in GatewayConfig -
   # see ../gateway-chain/values-gateway-contracts-e2e.yaml's
@@ -315,20 +283,21 @@ chains:
     fhevmExecutorContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: fhevm_executor.address}}
     kmsGenerationContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
     protocolConfigContractAddressValueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
-    # Built-in real-time (WebSocket) producer DISABLED: the dedicated `listener`
-    # chart (listener-<i>, ../listener/values-listener-e2e.yaml) is the producer
-    # now. It indexes the host chain and publishes to coprocessor-redis-<i>, and
-    # the hostListenerConsumer below ingests those events into the DB. This
-    # mirrors zama-zws/gitops's producer(listener)/broker(redis)/consumer/poller
-    # split (eth-listener + eth-coproc-listener-{consumer,poller}).
-    hostListener: {enabled: false, useLegacyName: true}
-    # Poller runs as its OWN release (coprocessor-poller-<i>), not here - see the
-    # hostListenerPollerShared note above and values-coprocessor-poller-e2e.yaml.
-    hostListenerPoller: {enabled: false, useLegacyName: true}
-    # Catchup-only stays off: it backfills historical blocks on a live chain
-    # (prod mainnet); a fresh per-PR anvil has no history to catch up on.
-    hostListenerCatchupOnly: {enabled: false, useLegacyName: true}
-    # Real-time host-chain event path: reads this party's Redis broker (filled by
-    # listener-<i>) and writes decoded ACL/executor/kms-generation events to the
-    # coprocessor DB. brokerUrl is set in hostListenerConsumerShared above.
-    hostListenerConsumer: {enabled: true, useLegacyName: true}
+    hostListener:
+      # Built-in real-time (WebSocket) producer DISABLED: the dedicated `listener`
+      # chart (listener-<i>, ../listener/values-listener-e2e.yaml) is the producer
+      # now. It indexes the host chain and publishes to coprocessor-redis-<i>, and
+      # the consumer below ingests those events into the DB. This mirrors
+      # zama-zws/gitops's producer(listener)/broker(redis)/consumer/poller split
+      # (eth-listener + eth-coproc-listener-{consumer,poller}).
+      listener: {enabled: false, useLegacyName: true}
+      # Poller runs as its OWN release (coprocessor-poller-<i>), not here - see the
+      # hostListener note above and values-coprocessor-poller-e2e.yaml.
+      poller: {enabled: false, useLegacyName: true}
+      # Catchup-only stays off: it backfills historical blocks on a live chain
+      # (prod mainnet); a fresh per-PR anvil has no history to catch up on.
+      catchupOnly: {enabled: false, useLegacyName: true}
+      # Real-time host-chain event path: reads this party's Redis broker (filled by
+      # listener-<i>) and writes decoded ACL/executor/kms-generation events to the
+      # coprocessor DB. brokerUrl is set in hostListener.modes.consumer above.
+      consumer: {enabled: true, useLegacyName: true}

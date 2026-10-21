@@ -49,6 +49,7 @@ txSender:
 # share one identity and are separated by consumer group; that is what the
 # overlay deploys normally. A single run cannot cover both arrangements,
 # because manufacturing the predecessor is what splits them apart.
-hostListenerConsumerShared:
-  args:
-    serviceName: host-listener-consumer-legacy
+hostListener:
+  modes:
+    consumer:
+      serviceName: host-listener-consumer-legacy

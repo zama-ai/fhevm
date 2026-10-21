@@ -1,0 +1,28 @@
+{{- range $w := (include "coprocessor.workloads" . | fromYaml).workloads }}
+{{- if $w.service }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: {{ $w.appLabel }}
+    app.kubernetes.io/name: {{ $w.name }}
+  name: {{ $w.name }}
+spec:
+  ports:
+    {{- range $port := list "metrics" "healthcheck" }}
+    {{- with index ($w.c.ports | default dict) $port }}
+    - name: {{ $port }}
+      port: {{ . }}
+      targetPort: {{ $port }}
+    {{- end }}
+    {{- end }}
+  selector:
+    app: {{ $w.appLabel }}
+    app.kubernetes.io/name: {{ $w.name }}
+    {{- if $w.extraSelectorLabels }}
+    {{- include "coprocessor.extraSelectorLabels" $ | nindent 4 }}
+    {{- end }}
+  type: ClusterIP
+{{- end }}
+{{- end }}
