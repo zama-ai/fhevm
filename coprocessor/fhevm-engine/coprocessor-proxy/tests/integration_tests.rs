@@ -288,82 +288,51 @@ async fn test_default_deny_routing() {
 async fn test_rejects_request_bodies() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
     let path = prf_path(1);
+    let addr = t.addr;
+    let auth = auth_header(&sender(), &path, b"").await;
 
-    let auth = auth_header(&sender(), &path, b"x").await;
-    let response = t
-        .client
-        .get(t.url(&path))
-        .header("authorization", auth)
-        .body("x")
-        .send()
-        .await
-        .unwrap();
-    assert_proxy_error(response, StatusCode::BAD_REQUEST, "malformed", false).await;
-
-    // Chunked bodies carry no `Content-Length`: enforce the cap while streaming without
-    // waiting for the endpoint response timeout.
-    let started = std::time::Instant::now();
-    assert_eq!(
-        send_chunked(&t, &path, &[1], b" ").await,
-        StatusCode::BAD_REQUEST
-    );
-    assert!(started.elapsed() < Duration::from_secs(5));
+    for method in ["GET", "HEAD"] {
+        for body in [
+            "Content-Length: 1\r\n\r\nx",
+            "Transfer-Encoding: chunked\r\n\r\n1\r\nx\r\n0\r\n\r\n",
+            "Transfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+        ] {
+            let request = format!(
+                "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
+                 Connection: close\r\n{body}"
+            );
+            let response = raw_response(&t, request.as_bytes()).await;
+            assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+            assert!(
+                response
+                    .to_ascii_lowercase()
+                    .contains("\r\ncache-control: no-store\r\n"),
+                "{response}"
+            );
+        }
+    }
     assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 }
 
 #[tokio::test]
-async fn test_checks_streamed_bodies_against_their_signature() {
+async fn test_rejects_incomplete_bodies_before_forwarding() {
     let t = TestProxy::start_with_config(vec![StubEndpoint::start().await], |config| {
-        config.max_body_bytes = 4
-    })
-    .await;
-    let path = prf_path(1);
-    // What the endpoint received of the last request: it may receive the start of a body the
-    // proxy rejects, never the whole of it.
-    let received = || t.endpoints[0].last_request().body;
-
-    assert_eq!(
-        send_chunked(&t, &path, &[2, 3], b"     ").await,
-        StatusCode::BAD_REQUEST
-    );
-    assert!(received().len() <= 4, "{:?}", received());
-    assert_eq!(
-        send_chunked(&t, &path, &[2, 2], b"{}").await,
-        StatusCode::UNAUTHORIZED
-    );
-    assert!(received().len() < 4, "{:?}", received());
-    assert_eq!(
-        send_chunked(&t, &path, &[2, 2], b"    ").await,
-        StatusCode::OK
-    );
-    assert_eq!(received(), b"    ");
-}
-
-#[tokio::test]
-async fn test_errors_pingora_writes_are_not_cached() {
-    let t = TestProxy::start_with_config(vec![StubEndpoint::start().await], |config| {
-        config.max_body_bytes = 4;
         config.request_read_timeout = Duration::from_millis(500);
     })
     .await;
     let path = prf_path(1);
     let addr = t.addr;
-    let auth = auth_header(&sender(), &path, b"    ").await;
-    // Two of the four signed bytes, then nothing: reading the body times out, and Pingora's own
-    // error answer is written.
+    let auth = auth_header(&sender(), &path, b"").await;
+    // The declared body never arrives: reject from the headers without reaching the endpoint.
     let request = format!(
         "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
-         Content-Length: 4\r\nConnection: close\r\n\r\n  "
+         Content-Length: 4\r\nConnection: close\r\n\r\n"
     );
-
-    let response = raw_response(&t, request.as_bytes())
-        .await
-        .to_ascii_lowercase();
-    assert!(response.starts_with("http/1.1 400"), "{response}");
-    assert!(
-        response.contains("\r\ncache-control: no-store\r\n"),
-        "{response}"
+    assert_eq!(
+        send_raw(&t, request.as_bytes()).await,
+        StatusCode::BAD_REQUEST
     );
+    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 }
 
 #[tokio::test]
@@ -737,30 +706,6 @@ async fn test_counts_requests_by_route_and_status() {
 // ---------------------------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------------------------
-
-/// Sends a `Transfer-Encoding: chunked` `GET` of `path` made of whitespace chunks of the given
-/// sizes, with a header signed for `signed_body`, and returns the response status.
-async fn send_chunked(
-    t: &TestProxy,
-    path: &str,
-    chunk_sizes: &[usize],
-    signed_body: &[u8],
-) -> StatusCode {
-    let addr = t.addr;
-    let auth = auth_header(&sender(), path, signed_body).await;
-    let mut request = format!(
-        "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
-         Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
-    )
-    .into_bytes();
-    for size in chunk_sizes {
-        request.extend_from_slice(format!("{size:x}\r\n").as_bytes());
-        request.extend(std::iter::repeat_n(b' ', *size));
-        request.extend_from_slice(b"\r\n");
-    }
-    request.extend_from_slice(b"0\r\n\r\n");
-    send_raw(t, &request).await
-}
 
 /// Sends raw request bytes over TLS and returns the response status.
 async fn send_raw(t: &TestProxy, request: &[u8]) -> StatusCode {

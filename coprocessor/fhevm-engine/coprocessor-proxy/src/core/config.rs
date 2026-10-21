@@ -2,8 +2,6 @@ use alloy::{primitives::Address, transports::http::reqwest::Url};
 use config::{Config as ConfigBuilder, Environment, File, FileFormat};
 use http::uri::Authority;
 use serde::{Deserialize, Deserializer};
-#[cfg(test)]
-use serde::{Serialize, Serializer};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
@@ -19,7 +17,7 @@ const ENV_PREFIX: &str = "COPROCESSOR_PROXY";
 ///
 /// It derives `Debug` for tests only: `ethereum_rpc_url` can carry an API key.
 #[derive(Clone, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Debug, Serialize))]
+#[cfg_attr(test, derive(Debug))]
 pub struct Config {
     /// The public bind address of the proxy.
     #[serde(default = "default_bind_address")]
@@ -41,7 +39,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_kms_registry_poll_interval"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub kms_registry_poll_interval: Duration,
     /// This coprocessor's registered signer address: the `audience` the accepted headers are
     /// signed for.
@@ -49,46 +46,37 @@ pub struct Config {
 
     /// The `host:port` addresses of the endpoints to forward requests to.
     #[serde(deserialize_with = "parse_endpoint_addresses")]
-    #[cfg_attr(test, serde(serialize_with = "serialize_endpoint_addresses"))]
     pub endpoint_addresses: Vec<Authority>,
     /// The timeout to establish a TCP connection to an endpoint.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_connect_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_connect_timeout: Duration,
     /// How often the endpoints are probed in the background to filter which ones receive requests.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_healthcheck_frequency"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_healthcheck_frequency: Duration,
     /// How long the proxy waits for an endpoint response before answering `504`.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_response_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_response_timeout: Duration,
     /// How long an idle pooled endpoint connection is kept before being closed.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_idle_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_idle_timeout: Duration,
 
-    /// The maximum accepted size of a request body.
-    #[serde(default)]
-    pub max_body_bytes: usize,
     /// How long the proxy waits for the client to send request bytes before dropping it.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_request_read_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub request_read_timeout: Duration,
     /// How long in-flight requests are given to complete after `SIGTERM`.
     #[serde(with = "humantime_serde", default = "default_shutdown_grace_period")]
@@ -98,7 +86,6 @@ pub struct Config {
     #[serde(default = "default_service_name")]
     pub service_name: String,
     #[serde(deserialize_with = "deserialize_level", default = "default_log_level")]
-    #[cfg_attr(test, serde(serialize_with = "serialize_level"))]
     pub log_level: Level,
     /// The port of `/healthz`, `/liveness` and `/version`.
     #[serde(default = "default_healthcheck_port")]
@@ -111,7 +98,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_healthcheck_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 
@@ -142,7 +128,6 @@ impl Config {
 
 /// The TLS material used by the proxy to terminate TLS.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct TlsConfig {
     /// The path of the PEM certificate chain.
     pub cert_path: PathBuf,
@@ -278,7 +263,6 @@ impl Default for Config {
             endpoint_healthcheck_frequency: default_endpoint_healthcheck_frequency(),
             endpoint_response_timeout: default_endpoint_response_timeout(),
             endpoint_idle_timeout: default_endpoint_idle_timeout(),
-            max_body_bytes: 0,
             request_read_timeout: default_request_read_timeout(),
             shutdown_grace_period: default_shutdown_grace_period(),
             service_name: default_service_name(),
@@ -288,22 +272,6 @@ impl Default for Config {
             healthcheck_timeout: default_healthcheck_timeout(),
         }
     }
-}
-
-#[cfg(test)]
-fn serialize_endpoint_addresses<S>(
-    addresses: &[http::uri::Authority],
-    s: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    s.collect_seq(addresses.iter().map(Authority::as_str))
-}
-
-#[cfg(test)]
-fn serialize_level<S: Serializer>(level: &Level, s: S) -> Result<S::Ok, S::Error> {
-    s.serialize_str(level.as_str())
 }
 
 #[cfg(test)]
@@ -331,7 +299,6 @@ mod tests {
             env::remove_var("COPROCESSOR_PROXY_ENDPOINT_HEALTHCHECK_FREQUENCY");
             env::remove_var("COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT");
             env::remove_var("COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT");
-            env::remove_var("COPROCESSOR_PROXY_MAX_BODY_BYTES");
             env::remove_var("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT");
             env::remove_var("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD");
             env::remove_var("COPROCESSOR_PROXY_SERVICE_NAME");
@@ -387,7 +354,6 @@ mod tests {
             env::set_var("COPROCESSOR_PROXY_ENDPOINT_HEALTHCHECK_FREQUENCY", "500ms");
             env::set_var("COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT", "45s");
             env::set_var("COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT", "7s");
-            env::set_var("COPROCESSOR_PROXY_MAX_BODY_BYTES", "2048");
             env::set_var("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT", "12s");
             env::set_var("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD", "15s");
             env::set_var("COPROCESSOR_PROXY_SERVICE_NAME", "coprocessor-proxy-test");
@@ -432,7 +398,6 @@ mod tests {
         );
         assert_eq!(config.endpoint_response_timeout, Duration::from_secs(45));
         assert_eq!(config.endpoint_idle_timeout, Duration::from_secs(7));
-        assert_eq!(config.max_body_bytes, 2048);
         assert_eq!(config.request_read_timeout, Duration::from_secs(12));
         assert_eq!(config.shutdown_grace_period, Duration::from_secs(15));
         assert_eq!(config.service_name, "coprocessor-proxy-test");

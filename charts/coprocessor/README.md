@@ -9,7 +9,8 @@ request's `FhevmSig` signature (RFC-038) and forwards an accepted request unchan
 to the endpoints in `coprocessorProxy.endpointAddresses`. Its only route is the
 PRF route, `GET` and `HEAD` `/v1/prf/{prf}/labels/{label}/{padLength}`, served by prf-service. The
 proxy checks the shape of the path. prf-service checks the encoding of its parameters, and checks
-the `FhevmSig` header again.
+the `FhevmSig` header again. Request bodies are rejected; the signed body digest must be that of
+an empty body.
 
 The accepted signers are the KMS tx-senders of the Active KMS contexts that the `ProtocolConfig`
 contract lists. A context becomes Active once all its nodes have

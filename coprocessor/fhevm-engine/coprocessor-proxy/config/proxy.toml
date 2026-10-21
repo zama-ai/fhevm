@@ -63,10 +63,6 @@ endpoint_addresses = ["endpoint:8080"]
 # ENV: COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # endpoint_idle_timeout = "10s"
 
-# Maximum size of a request body, in bytes (optional, defaults to 0: no body)
-# ENV: COPROCESSOR_PROXY_MAX_BODY_BYTES
-# max_body_bytes = 0
-
 # How long the proxy waits for the client to send request bytes (optional, defaults to "30s")
 # ENV: COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # request_read_timeout = "30s"

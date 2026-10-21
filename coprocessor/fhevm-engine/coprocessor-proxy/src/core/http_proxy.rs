@@ -1,7 +1,7 @@
 //! The Pingora [`ProxyHttp`] implementation of [`Proxy`]: the request lifecycle of the proxy.
 
 use crate::core::{ErrorCode, ErrorResponse, Proxy, Route, RouteError, match_route};
-use alloy::primitives::{Address, B256, KECCAK256_EMPTY, Keccak256};
+use alloy::primitives::{Address, KECCAK256_EMPTY};
 use async_trait::async_trait;
 use bytes::Bytes;
 use fhevm_engine_common::kms_tx_senders::WOKEN_POLL_SPACING;
@@ -55,8 +55,7 @@ const NO_STORE: &str = "no-store";
 pub const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
 const SIGNER_NOT_YET_KNOWN: &str = "signer not yet known";
 
-/// Error message for oversized request bodies.
-const BODY_TOO_LARGE: &str = "request body too large";
+const BODY_NOT_ALLOWED: &str = "request body is not allowed";
 const NOT_ORIGIN_FORM: &str = "request target must be an origin-form UTF-8 path";
 
 /// Per-request context.
@@ -66,12 +65,6 @@ pub struct RequestContext {
     endpoint: Option<String>,
     /// The sender authenticated by the `FhevmSig` header.
     sender: Option<Address>,
-    /// The body digest signed in the `FhevmSig` header.
-    body_digest: B256,
-    /// The `keccak256` of the body received so far.
-    body_hasher: Keccak256,
-    /// The number of body bytes received.
-    body_len: usize,
 }
 
 impl Proxy {
@@ -118,9 +111,6 @@ impl ProxyHttp for Proxy {
             route: None,
             endpoint: None,
             sender: None,
-            body_digest: B256::ZERO, // `ZERO` (matching no body) until it's parsed from header
-            body_hasher: Keccak256::new(),
-            body_len: 0,
         }
     }
 
@@ -133,8 +123,7 @@ impl ProxyHttp for Proxy {
         Ok(())
     }
 
-    // Request target (400), route (404/405), `FhevmSig` header (401), body cap (400), all before
-    // any endpoint connection. A request without a body is fully authenticated here.
+    // Check the target, route, signature and absence of a body before any endpoint connection.
     async fn request_filter(
         &self,
         session: &mut Session,
@@ -201,50 +190,19 @@ impl ProxyHttp for Proxy {
         };
         ctx.sender = Some(sender);
 
-        let declared_length = req
-            .headers
-            .get(CONTENT_LENGTH)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse::<usize>().ok());
-        if declared_length.is_some_and(|len| len > self.config.max_body_bytes) {
-            let error = ErrorResponse::new(ErrorCode::Malformed, BODY_TOO_LARGE);
+        if !session.is_body_empty() {
+            let error = ErrorResponse::new(ErrorCode::Malformed, BODY_NOT_ALLOWED);
             self.respond_with_error(session, error, None).await?;
             return Ok(true);
         }
 
-        if session.is_body_empty() && KECCAK256_EMPTY != body_digest {
+        if KECCAK256_EMPTY != body_digest {
             self.respond_with_error(session, auth_error_response(&AuthError::BodyMismatch), None)
                 .await?;
             return Ok(true);
         }
-        ctx.body_digest = body_digest;
 
         Ok(false)
-    }
-
-    // Streams the body, within the cap, while hashing it. It is checked against the signed
-    // digest before its last chunk is written, so the endpoint never receives a whole body that
-    // does not match: it gets a truncated request and a closed connection instead.
-    async fn request_body_filter(
-        &self,
-        _session: &mut Session,
-        body: &mut Option<Bytes>,
-        end_of_stream: bool,
-        ctx: &mut Self::CTX,
-    ) -> pingora::Result<()> {
-        if let Some(chunk) = body {
-            ctx.body_len += chunk.len();
-            if ctx.body_len > self.config.max_body_bytes {
-                return abort_with(ErrorResponse::new(ErrorCode::Malformed, BODY_TOO_LARGE))
-                    .map_err(Error::into_down);
-            }
-            ctx.body_hasher.update(chunk);
-        }
-        if end_of_stream && ctx.body_hasher.clone().finalize() != ctx.body_digest {
-            return abort_with(auth_error_response(&AuthError::BodyMismatch))
-                .map_err(Error::into_down);
-        }
-        Ok(())
     }
 
     async fn upstream_peer(
