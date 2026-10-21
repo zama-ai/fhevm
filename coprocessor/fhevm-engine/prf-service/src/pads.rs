@@ -5,6 +5,11 @@ use alloy::primitives::{Address, B256};
 use anyhow::Context;
 use ciphertext_attestation::{prf::Version, PrfOutputAttestation};
 use sqlx::PgPool;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// The response body and the attestation of a complete row.
 #[derive(Debug, Clone, PartialEq)]
@@ -13,7 +18,6 @@ pub struct PadOutput {
     pub attestation: PrfOutputAttestation,
 }
 
-/// The state of an existing row.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PadState {
     Pending,
@@ -21,7 +25,6 @@ pub enum PadState {
     Failed,
 }
 
-/// The result of [`admit`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum Admission {
     /// This request added the row. Its connector pays for the evaluation.
@@ -32,60 +35,95 @@ pub enum Admission {
     OverBudget,
 }
 
-/// Joins the row of the request, or adds the row if `connector` has budget for it.
-pub async fn admit(
-    pool: &PgPool,
-    path: &PrfPath,
-    connector: Address,
+/// Admits requests in one pod.
+pub struct Admissions {
+    pool: PgPool,
     max_pending_bits: i64,
-) -> anyhow::Result<Admission> {
-    if let Some(state) = read(pool, path).await? {
-        return Ok(Admission::Existing(state));
+    max_adds_per_connector: usize,
+    /// One semaphore for each connector that added a row in this pod.
+    adds: Mutex<HashMap<Address, Arc<Semaphore>>>,
+}
+
+impl Admissions {
+    pub fn new(pool: PgPool, max_pending_bits: i64, max_adds_per_connector: usize) -> Self {
+        Self {
+            pool,
+            max_pending_bits,
+            max_adds_per_connector,
+            adds: Mutex::default(),
+        }
     }
 
-    let mut tx = pool.begin().await?;
-    // Lock the connector, so two requests of one connector cannot use the same budget.
-    sqlx::query!(
-        "SELECT pg_advisory_xact_lock(hashtextextended('pads:' || encode($1, 'hex'), 0))",
-        connector.as_slice(),
-    )
-    .execute(tx.as_mut())
-    .await?;
-    let pending = sqlx::query_scalar!(
-        r#"SELECT COALESCE(SUM(pad_length), 0)::BIGINT AS "pending!"
-             FROM pads
-            WHERE triggered_by = $1 AND signature IS NULL AND NOT is_error"#,
-        connector.as_slice(),
-    )
-    .fetch_one(tx.as_mut())
-    .await?;
-    if pending + i64::from(path.pad_length) > max_pending_bits {
-        drop(tx);
-        // Another connector can add the row after the first read. Then this request joins it.
-        return Ok(match read(pool, path).await? {
-            Some(state) => Admission::Existing(state),
-            None => Admission::OverBudget,
-        });
+    /// Joins the row of the request, or adds the row if `connector` has budget for it.
+    // TODO: take a signer that the FhevmSig check gives, not an Address. Do it after fhevm#4558.
+    pub async fn admit(&self, path: &PrfPath, connector: Address) -> anyhow::Result<Admission> {
+        if let Some(state) = read(&self.pool, path).await? {
+            return Ok(Admission::Existing(state));
+        }
+        // Wait in memory: a request that waits for the lock in Postgres holds a connection.
+        let _slot = self.add_slot(connector).await;
+        self.add(path, connector).await
     }
-    let inserted = sqlx::query!(
-        "INSERT INTO pads (prf_instance, label, pad_length, triggered_by)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT DO NOTHING",
-        i32::from(path.prf),
-        path.label.as_slice(),
-        i32::from(path.pad_length),
-        connector.as_slice(),
-    )
-    .execute(tx.as_mut())
-    .await?
-    .rows_affected();
-    tx.commit().await?;
 
-    // No row inserted: another request added it at the same time.
-    Ok(match inserted {
-        0 => Admission::Existing(PadState::Pending),
-        _ => Admission::Created,
-    })
+    async fn add(&self, path: &PrfPath, connector: Address) -> anyhow::Result<Admission> {
+        let mut tx = self.pool.begin().await?;
+        // Lock the connector, so two requests of one connector cannot use the same budget.
+        sqlx::query!(
+            "SELECT pg_advisory_xact_lock(hashtextextended('pads:' || encode($1, 'hex'), 0))",
+            connector.as_slice(),
+        )
+        .execute(tx.as_mut())
+        .await?;
+        let pending = sqlx::query_scalar!(
+            r#"SELECT COALESCE(SUM(pad_length), 0)::BIGINT AS "pending!"
+                 FROM pads
+                WHERE triggered_by = $1 AND signature IS NULL AND NOT is_error"#,
+            connector.as_slice(),
+        )
+        .fetch_one(tx.as_mut())
+        .await?;
+        if pending + i64::from(path.pad_length) > self.max_pending_bits {
+            drop(tx);
+            // Another connector can add the row after the first read. Then this request joins it.
+            return Ok(match read(&self.pool, path).await? {
+                Some(state) => Admission::Existing(state),
+                None => Admission::OverBudget,
+            });
+        }
+        let inserted = sqlx::query!(
+            "INSERT INTO pads (prf_instance, label, pad_length, triggered_by)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT DO NOTHING",
+            i32::from(path.prf),
+            path.label.as_slice(),
+            i32::from(path.pad_length),
+            connector.as_slice(),
+        )
+        .execute(tx.as_mut())
+        .await?
+        .rows_affected();
+        tx.commit().await?;
+
+        // No row inserted: another request added it at the same time.
+        Ok(match inserted {
+            0 => Admission::Existing(PadState::Pending),
+            _ => Admission::Created,
+        })
+    }
+
+    async fn add_slot(&self, connector: Address) -> OwnedSemaphorePermit {
+        let semaphore = self
+            .adds
+            .lock()
+            .expect("adds lock")
+            .entry(connector)
+            .or_insert_with(|| Arc::new(Semaphore::new(self.max_adds_per_connector)))
+            .clone();
+        semaphore
+            .acquire_owned()
+            .await
+            .expect("the semaphore is never closed")
+    }
 }
 
 /// Reads the row of `path`, if it exists.
