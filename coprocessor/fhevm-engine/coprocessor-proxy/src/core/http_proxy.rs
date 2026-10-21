@@ -82,8 +82,7 @@ impl Proxy {
         error: ErrorResponse,
         extra_header: Option<(HeaderName, &str)>,
     ) -> pingora::Result<()> {
-        let status = StatusCode::from_u16(error.code.http_status())
-            .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let status = error.code.http_status();
         let body = serde_json::to_vec(&error).unwrap_or_default();
         let mut header = ResponseHeader::build(status, None)?;
         header.insert_header(CONTENT_TYPE, "application/json")?;
@@ -186,7 +185,7 @@ impl ProxyHttp for Proxy {
             Ok(signed) => signed,
             // This RPC node can lag the connector's by any amount: the connector retries instead.
             Err(AuthError::UnknownSigner(signer)) => {
-                warn!(%signer, "Unknown signer after a fresh read of the KMS tx-senders");
+                warn!(%signer, "Unknown signer after waiting for a registry refresh");
                 let error = ErrorResponse::new(ErrorCode::UpstreamTransient, SIGNER_NOT_YET_KNOWN);
                 // No sooner than the reader can poll again.
                 let retry_after = WOKEN_POLL_SPACING.as_secs().to_string();
@@ -319,8 +318,7 @@ impl ProxyHttp for Proxy {
         }
         let error_code = match e.root_cause().downcast_ref::<ErrorResponse>() {
             Some(error) => {
-                let status = StatusCode::from_u16(error.code.http_status())
-                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+                let status = error.code.http_status();
                 if let Err(e) = self.respond_with_error(session, error.clone(), None).await {
                     error!("Failed to send error response to downstream: {e}");
                 }
@@ -336,8 +334,7 @@ impl ProxyHttp for Proxy {
                     _ => (ErrorCode::UpstreamTransient, "endpoint unavailable"),
                 };
                 let error = ErrorResponse::new(code, message);
-                let status = StatusCode::from_u16(error.code.http_status())
-                    .unwrap_or(StatusCode::BAD_GATEWAY);
+                let status = error.code.http_status();
                 if let Err(e) = self.respond_with_error(session, error, None).await {
                     error!("Failed to send error response to downstream: {e}");
                 }
@@ -422,7 +419,7 @@ fn route_error_response(error: &RouteError) -> ErrorResponse {
 ///
 /// The [`ErrorResponse`] is kept as the cause so `fail_to_proxy` can send it back to the client.
 fn abort_with<T>(error: ErrorResponse) -> pingora::Result<T> {
-    let etype = ErrorType::HTTPStatus(error.code.http_status());
+    let etype = ErrorType::HTTPStatus(error.code.http_status().as_u16());
     Error::e_because(etype, error.to_string(), error)
 }
 

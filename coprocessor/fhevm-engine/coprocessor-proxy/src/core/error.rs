@@ -1,5 +1,6 @@
 //! The errors the proxy answers itself, in the RFC-033 JSON shape `{code, message, retryable}`.
 
+use http::StatusCode;
 use serde::{Serialize, Serializer};
 use std::fmt::Display;
 
@@ -18,14 +19,14 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
-    pub fn http_status(self) -> u16 {
+    pub fn http_status(self) -> StatusCode {
         match self {
-            Self::Malformed => 400,
-            Self::Auth { .. } => 401,
-            Self::NotFound => 404,
-            Self::MethodNotAllowed => 405,
-            Self::UpstreamTransient => 502,
-            Self::Timeout => 504,
+            Self::Malformed => StatusCode::BAD_REQUEST,
+            Self::Auth { .. } => StatusCode::UNAUTHORIZED,
+            Self::NotFound => StatusCode::NOT_FOUND,
+            Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
+            Self::UpstreamTransient => StatusCode::BAD_GATEWAY,
+            Self::Timeout => StatusCode::GATEWAY_TIMEOUT,
         }
     }
 
@@ -111,7 +112,10 @@ mod tests {
             (ErrorCode::UpstreamTransient, 502, true),
             (ErrorCode::Timeout, 504, true),
         ] {
-            assert_eq!((code.http_status(), code.retryable()), (status, retryable));
+            assert_eq!(
+                (code.http_status().as_u16(), code.retryable()),
+                (status, retryable)
+            );
         }
     }
 }
