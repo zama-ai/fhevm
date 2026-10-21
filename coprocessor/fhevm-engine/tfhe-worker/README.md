@@ -44,13 +44,13 @@ cargo test
 ```
 `operators_from_events` uses the full type matrix by default. To run a lighter local matrix (up to `uint64`) set `TFHE_WORKER_EVENT_TYPE_MATRIX=local` before `cargo test`.
 
-### Artifact ingestion recovery regression
+### Artifact ingestion recovery integration regressions
 
-From `coprocessor/fhevm-engine`, run the CPU end-to-end regression with:
+From `coprocessor/fhevm-engine`, run the CPU integration regression with:
 
 ```sh
 SQLX_OFFLINE=true cargo test --locked -p tfhe-worker \
-  --test artifact_ingestion_e2e --profile coverage -- --test-threads=1
+  --test artifact_ingestion_integration --profile coverage -- --test-threads=1
 ```
 
 This requires Anvil on `PATH` and Docker for an isolated PostgreSQL database.
@@ -85,21 +85,23 @@ loads the decryption key.
 ACL fault injection occurs at the block-log delivery boundary; the stranded-chain
 cases inject only the legacy scheduler state. These tests do not
 exercise WebSocket reconnects, poller cursor persistence, Gateway commits, or KMS
-decryption. Listener transport tests and the full-stack fork suite cover parts
-of those paths separately. Disabling `Database::upgrade_allowed_computations`
+decryption. Listener transport tests cover the entry points separately. Full-environment
+Artifact recovery lives in `test-suite/e2e/test/consensus/artifactRecovery.ts`,
+driven by `test-suite/fhevm/scripts/run-artifact-ingestion-recovery.sh`; see
+[test-suite instructions](../../../test-suite/e2e/test/consensus/README.md#artifact-ingestion-recovery). Disabling `Database::upgrade_allowed_computations`
 must fail the assertion that replay promotes the existing producer. Disabling
 `repair_pending_computation_chain` for already-allowed rows must fail the cold
 replay assertion before a warm replay can mask the missing repair.
 
 Complementary entry-point coverage lives in the listener's
-`recovery_transport_e2e` suite. It starts real poller, WebSocket and broker
+`recovery_transport_integration` suite. It starts real poller, WebSocket and broker
 consumer processes against Anvil, including restart during a gap longer than
 32 blocks, the 1,000-height initial audit boundary, hidden-fork containment,
 independent broker recovery and a single frame larger than 16 MiB. Run it with:
 
 ```sh
 SQLX_OFFLINE=true cargo test --locked -p host-listener \
-  --test recovery_transport_e2e -- --test-threads=1
+  --test recovery_transport_integration -- --test-threads=1
 ```
 
 The broker case starts an isolated Redis container. Local runs can instead set

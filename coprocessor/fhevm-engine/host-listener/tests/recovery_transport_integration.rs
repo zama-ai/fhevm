@@ -1,4 +1,4 @@
-//! Exercise the deployed listeners through actual HTTP/WebSocket transports.
+//! Exercise listener binaries in an isolated component harness through actual HTTP/WebSocket transports.
 //! The proxy can make one header unavailable, drop a connection, and send a
 //! single large frame; all successful RPC results come from a real Anvil node.
 mod common;
@@ -522,7 +522,7 @@ async fn broker_final_catchup_queue_repairs_a_blocked_final_delivery(
         };
     let broker = Broker::from_url(&url).await?;
     let service = format!(
-        "recovery-e2e-{}",
+        "recovery-integration-{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_nanos()
