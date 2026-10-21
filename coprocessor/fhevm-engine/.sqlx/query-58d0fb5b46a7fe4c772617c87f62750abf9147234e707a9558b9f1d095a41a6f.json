@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COALESCE(SUM(pad_length), 0)::BIGINT AS \"pending!\"\n             FROM pads\n            WHERE triggered_by = $1 AND signature IS NULL AND NOT is_error",
+  "query": "SELECT COALESCE(SUM(pad_length), 0)::BIGINT AS \"pending!\"\n                 FROM pads\n                WHERE triggered_by = $1 AND signature IS NULL AND NOT is_error",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       null
     ]
   },
-  "hash": "e60412423aef0acdb286fc27d336203dba5e28d32e9ab9aed460237bca2ee641"
+  "hash": "58d0fb5b46a7fe4c772617c87f62750abf9147234e707a9558b9f1d095a41a6f"
 }
