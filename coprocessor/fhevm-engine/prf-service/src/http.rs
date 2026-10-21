@@ -20,12 +20,14 @@ const PRF_ROUTE: &str = "/v1/prf/{prf}/labels/{label}/{pad_length}";
 const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
 
 fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(
-        web::resource(PRF_ROUTE)
-            .route(web::get().to(prf_output))
-            .route(web::head().to(prf_output)),
-    )
-    .default_service(web::to(prf_output));
+    // For the endpoint probe of coprocessor-proxy, which checks the port that it forwards to.
+    cfg.route("/healthz", web::get().to(HttpResponse::Ok))
+        .service(
+            web::resource(PRF_ROUTE)
+                .route(web::get().to(prf_output))
+                .route(web::head().to(prf_output)),
+        )
+        .default_service(web::to(prf_output));
 }
 
 pub(crate) fn run_server(
@@ -35,7 +37,7 @@ pub(crate) fn run_server(
     HttpServer::new(|| App::new().configure(configure))
         .shutdown_signal(cancel_token.cancelled_owned())
         .shutdown_timeout(SHUTDOWN_TIMEOUT_SECS)
-        .bind(endpoint)
+        .bind_auto_h2c(endpoint)
         .map_err(|e| anyhow!("Failed to bind HTTP server to {endpoint}: {e}"))
         .map(|server| server.run())
 }
