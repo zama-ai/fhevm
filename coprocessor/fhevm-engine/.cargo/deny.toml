@@ -177,6 +177,11 @@ allow = [
 ]
 # List of crates to deny
 deny = [
+    # RUSTSEC-2026-0381: only 0.26.11 is a root-free shim to the patched 1.x
+    # bundle. Enforce both ranges so audit.toml's version-blind exception cannot
+    # hide a downgrade of the actual root certificates (including the parent).
+    { crate = "webpki-roots:<0.26.11", reason = "RUSTSEC-2026-0381: upgrade the root bundle to >=1.0.10" },
+    { crate = "webpki-roots:>0.26.11, <1.0.10", reason = "RUSTSEC-2026-0381: upgrade the root bundle to >=1.0.10" },
     #"ansi_term@0.11.0",
     #{ crate = "ansi_term@0.11.0", reason = "you can specify a reason it is banned" },
     # Wrapper crates can optionally be specified to allow the crate when it

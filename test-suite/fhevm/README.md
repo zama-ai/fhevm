@@ -778,3 +778,19 @@ The CLI owns:
 - `.fhevm/runtime/addresses/`
 
 `status` shows the active stack state, the active scenario origin when present, and any CLI-owned local build images.
+
+## Ingestion recovery against a full environment
+
+The `ingestion-recovery` consensus selection exercises an actual partial ACL
+delivery and replay across deployed services, ending in three-operator Gateway
+consensus and SDK/KMS public decryption. On a compatible isolated
+`three-of-three-backlog` stack running the branch images:
+
+```sh
+./scripts/run-artifact-ingestion-recovery.sh overlap
+./scripts/run-artifact-ingestion-recovery.sh cursor
+```
+
+See [the scenario contract and complete branch test split](../e2e/test/consensus/README.md#artifact-ingestion-recovery)
+for prerequisites, assertions and failure recovery. These cases deliberately
+stop services and must not share an environment with another campaign.

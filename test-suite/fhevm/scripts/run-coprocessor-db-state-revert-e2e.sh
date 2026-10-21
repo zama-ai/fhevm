@@ -113,14 +113,14 @@ docker run --rm \
   "$REVERT_IMAGE" \
   "/revert_coprocessor_db_state.sh"
 
-COMP_AFTER=$(psql_query "SELECT COUNT(*) FROM computations WHERE host_chain_id = $CHAIN_ID")
+COMP_AFTER=$(psql_query "SELECT COUNT(*) FROM computations WHERE is_completed = true AND host_chain_id = $CHAIN_ID")
 ACL_AFTER=$(psql_query "SELECT COUNT(*) FROM allowed_handles WHERE host_chain_id = $CHAIN_ID")
 PBS_AFTER=$(psql_query "SELECT COUNT(*) FROM pbs_computations WHERE host_chain_id = $CHAIN_ID")
 DIGEST_AFTER=$(psql_query "SELECT COUNT(*) FROM ciphertext_digest WHERE host_chain_id = $CHAIN_ID")
 CT_AFTER=$(psql_query "SELECT COUNT(*) FROM ciphertexts WHERE handle IN (SELECT output_handle FROM computations WHERE host_chain_id = $CHAIN_ID)")
 CT128_AFTER=$(psql_query "SELECT COUNT(*) FROM ciphertexts128 WHERE handle IN (SELECT output_handle FROM computations WHERE host_chain_id = $CHAIN_ID)")
 echo "  After revert:"
-echo "    computations: $COMP_AFTER (was $COMP_TOTAL)"
+echo "    completed computations: $COMP_AFTER (was $COMP_COMPLETED)"
 echo "    allowed_handles: $ACL_AFTER (was $ACL_TOTAL)"
 echo "    pbs_computations: $PBS_AFTER (was $PBS_TOTAL)"
 echo "    ciphertext_digest: $DIGEST_AFTER (was $DIGEST_TOTAL)"
@@ -128,7 +128,7 @@ echo "    ciphertexts: $CT_AFTER (was $CT_TOTAL)"
 echo "    ciphertexts128: $CT128_AFTER (was $CT128_TOTAL)"
 
 REVERT_OK=true
-[ "$COMP_AFTER" -ge "$COMP_TOTAL" ] && echo "ERROR: Revert did not delete any computations" && REVERT_OK=false
+[ "$COMP_AFTER" -ge "$COMP_COMPLETED" ] && echo "ERROR: Revert did not reset any completed computations" && REVERT_OK=false
 [ "$ACL_AFTER" -ge "$ACL_TOTAL" ] && [ "$ACL_TOTAL" -gt 0 ] && echo "ERROR: Revert did not delete any allowed_handles" && REVERT_OK=false
 [ "$PBS_AFTER" -ge "$PBS_TOTAL" ] && [ "$PBS_TOTAL" -gt 0 ] && echo "ERROR: Revert did not delete any pbs_computations" && REVERT_OK=false
 [ "$DIGEST_AFTER" -ge "$DIGEST_TOTAL" ] && [ "$DIGEST_TOTAL" -gt 0 ] && echo "ERROR: Revert did not delete any ciphertext_digest" && REVERT_OK=false

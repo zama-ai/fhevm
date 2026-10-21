@@ -4,7 +4,12 @@
 [advisories]
 # RUSTSEC-2023-0071 (rsa): no fix released. Reached only via sqlx-mysql, which we
 # never compile (postgres-only).
-ignore = ["RUSTSEC-2023-0071"]
+# RUSTSEC-2026-0381: webpki-roots 0.26.11 contains no roots; it only re-exports
+# the patched 1.0.10 bundle. sqlx/tokio-tungstenite still require that shim.
+# cargo-audit cannot restrict an ignore to a version. Keep the matching bans in
+# deny.toml and the CI `cargo deny check bans` step: they reject every vulnerable
+# root-bundle version, allowing only this exact shim below 1.0.10.
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0381"]
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"
 

@@ -8,6 +8,55 @@ use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 const CHAIN_ID: i64 = 137;
 const ANVIL_CHAIN_ID: i64 = 31337;
 
+#[tokio::test]
+#[serial(db)]
+async fn manifest_selection_serializes_with_ingestion_before_locking_rows() {
+    use fhevm_engine_common::chain_recovery::{
+        lock_history_tx, try_lock_history_tx, ListenerSource,
+    };
+    let (_instance, pool) = setup_pool().await;
+    let hash = vec![0x30; 32];
+    insert_manifest_state(&pool, 30, &hash, &[0x29; 32]).await;
+    let mut ingestion = pool.begin().await.unwrap();
+    lock_history_tx(&mut ingestion, ListenerSource::Host, false, CHAIN_ID)
+        .await
+        .unwrap();
+    let mut publication = pool.begin().await.unwrap();
+    assert!(
+        lock_next_block_to_progress(&mut publication, CHAIN_ID, &ManifestProgressCursor::start())
+            .await
+            .unwrap()
+            .is_none(),
+        "busy ingestion must prevent sealing"
+    );
+    publication.rollback().await.unwrap();
+    ingestion.commit().await.unwrap();
+
+    let mut publication = pool.begin().await.unwrap();
+    assert!(lock_next_block_to_progress(
+        &mut publication,
+        CHAIN_ID,
+        &ManifestProgressCursor::start()
+    )
+    .await
+    .unwrap()
+    .is_some());
+    let mut ingestion = pool.begin().await.unwrap();
+    assert!(
+        !try_lock_history_tx(&mut ingestion, ListenerSource::Host, false, CHAIN_ID)
+            .await
+            .unwrap(),
+        "publication must retain the fence through commit"
+    );
+    publication.commit().await.unwrap();
+    assert!(
+        try_lock_history_tx(&mut ingestion, ListenerSource::Host, false, CHAIN_ID)
+            .await
+            .unwrap()
+    );
+    ingestion.rollback().await.unwrap();
+}
+
 async fn setup_pool() -> (DBInstance, PgPool) {
     let instance = setup_test_db(ImportMode::None)
         .await
