@@ -462,24 +462,24 @@ async fn reproduce_and_recover(replay: Replay) -> Result {
 
 #[tokio::test]
 #[serial(db)]
-async fn artifact_full_block_replay_unstalls_descendants() -> Result {
+async fn artifact_full_block_replay_unblocks_descendants() -> Result {
     reproduce_and_recover(Replay::WarmFullBlock).await
 }
 
 #[tokio::test]
 #[serial(db)]
-async fn artifact_full_block_replay_after_listener_restart_unstalls_descendants() -> Result {
+async fn artifact_full_block_replay_after_listener_restart_unblocks_descendants() -> Result {
     reproduce_and_recover(Replay::ColdFullBlock).await
 }
 
 #[tokio::test]
 #[serial(db)]
-async fn artifact_acl_only_replay_after_listener_restart_unstalls_descendants() -> Result {
+async fn artifact_acl_only_replay_after_listener_restart_unblocks_descendants() -> Result {
     reproduce_and_recover(Replay::ColdAclOnly).await
 }
 
 #[tokio::test]
 #[serial(db)]
-async fn artifact_failed_acl_replay_then_retry_unstalls_descendants() -> Result {
+async fn artifact_failed_acl_replay_then_retry_unblocks_descendants() -> Result {
     reproduce_and_recover(Replay::FailedThenRetried).await
 }
