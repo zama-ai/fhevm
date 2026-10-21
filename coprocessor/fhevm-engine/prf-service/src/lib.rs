@@ -2,7 +2,10 @@ mod error;
 mod http;
 mod metrics;
 mod pad_source;
+pub mod pads;
 mod path;
+
+pub use path::PrfPath;
 
 use anyhow::{bail, Context};
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};

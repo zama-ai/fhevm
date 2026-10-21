@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE(SUM(pad_length), 0)::BIGINT AS \"pending!\"\n             FROM pads\n            WHERE triggered_by = $1 AND signature IS NULL AND NOT is_error",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e60412423aef0acdb286fc27d336203dba5e28d32e9ab9aed460237bca2ee641"
+}

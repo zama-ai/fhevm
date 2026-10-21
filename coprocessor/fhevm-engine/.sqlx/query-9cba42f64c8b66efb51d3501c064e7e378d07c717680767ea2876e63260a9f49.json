@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT is_error, ciphertext128, ciphertext_digest, sns_ciphertext_digest, signer, signature\n           FROM pads\n          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "is_error",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "sns_ciphertext_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "signer",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "signature",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "9cba42f64c8b66efb51d3501c064e7e378d07c717680767ea2876e63260a9f49"
+}
