@@ -1,5 +1,6 @@
 mod error;
 mod http;
+pub mod in_flight;
 mod metrics;
 mod pad_source;
 pub mod pads;
