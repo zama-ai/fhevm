@@ -14,6 +14,7 @@ hex = { workspace = true }
 prometheus = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sqlx = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -24,7 +25,6 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["json"] }
-sqlx = { workspace = true }
 test-harness = { path = "../test-harness" }
 
 [[bin]]
