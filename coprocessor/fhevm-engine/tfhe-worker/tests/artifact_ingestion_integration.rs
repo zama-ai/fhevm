@@ -730,11 +730,24 @@ async fn artifact_orphan_completes_before_same_transaction_on_canonical_fork() -
     provider
         .anvil_set_next_block_timestamp(orphan.summary.timestamp + 2)
         .await?;
+    // Alloy can still confirm this transaction hash from its orphan-block cache.
+    // Mine the replacement explicitly before reading its receipt: get_receipt()
+    // can otherwise report NullResp while Anvil has not mined the new fork yet.
+    provider.anvil_set_auto_mine(false).await?;
+    let canonical_tx = provider.send_raw_transaction(&raw).await?;
+    assert!(
+        provider
+            .get_transaction_receipt(*canonical_tx.tx_hash())
+            .await?
+            .is_none(),
+        "replayed transaction must remain pending until explicitly mined"
+    );
+    provider.anvil_mine(Some(1), None).await?;
     let canonical_receipt = provider
-        .send_raw_transaction(&raw)
+        .get_transaction_receipt(*canonical_tx.tx_hash())
         .await?
-        .get_receipt()
-        .await?;
+        .ok_or("canonical replay was mined without a receipt")?;
+    provider.anvil_set_auto_mine(true).await?;
     assert_eq!(canonical_receipt.transaction_hash, receipt.transaction_hash);
     let mut canonical = block_logs(&provider, &canonical_receipt, exe, acl).await?;
     let canonical_handle = emitted_seed(&canonical)?;
