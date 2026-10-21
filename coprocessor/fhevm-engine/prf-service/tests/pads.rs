@@ -1,24 +1,47 @@
 use alloy::primitives::{Address, B256};
 use ciphertext_attestation::{prf::Version, PrfOutputAttestation};
 use prf_service::{
-    pads::{admit, read, Admission, PadOutput, PadState},
+    pads::{read, Admission, Admissions, PadOutput, PadState},
     PrfPath,
 };
 use sqlx::{postgres::PgPoolOptions, PgPool};
+use std::{sync::Arc, time::Duration};
 use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 
 const LIMIT: i64 = 100;
+const MAX_ADDS: usize = 2;
 const CONNECTOR: Address = Address::repeat_byte(0x11);
 const OTHER_CONNECTOR: Address = Address::repeat_byte(0x22);
 
-async fn test_db() -> (DBInstance, PgPool) {
+async fn test_db() -> (DBInstance, PgPool, Arc<Admissions>) {
     let instance = setup_test_db(ImportMode::None).await.expect("test db");
     let pool = PgPoolOptions::new()
         .max_connections(16)
         .connect(instance.db_url())
         .await
         .expect("pool");
-    (instance, pool)
+    let admissions = Arc::new(Admissions::new(pool.clone(), LIMIT, MAX_ADDS));
+    (instance, pool, admissions)
+}
+
+async fn lock_connector(
+    pool: &PgPool,
+    connector: Address,
+) -> sqlx::Transaction<'static, sqlx::Postgres> {
+    let mut lock = pool.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('pads:' || encode($1, 'hex'), 0))")
+        .bind(connector.as_slice())
+        .execute(lock.as_mut())
+        .await
+        .unwrap();
+    lock
+}
+
+async fn lock_waiters(pool: &PgPool) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted")
+        .fetch_one(pool)
+        .await
+        .unwrap()
 }
 
 fn path(label: u8, pad_length: u16) -> PrfPath {
@@ -64,11 +87,11 @@ async fn set_error(pool: &PgPool, path: &PrfPath) {
 
 #[tokio::test]
 async fn concurrent_requests_make_one_row() {
-    let (_instance, pool) = test_db().await;
+    let (_instance, _pool, admissions) = test_db().await;
     let requests = (0..13).map(|i| {
-        let pool = pool.clone();
+        let admissions = admissions.clone();
         let connector = Address::repeat_byte(i + 1);
-        tokio::spawn(async move { admit(&pool, &path(1, 64), connector, LIMIT).await })
+        tokio::spawn(async move { admissions.admit(&path(1, 64), connector).await })
     });
     let requests: Vec<_> = requests.collect();
     let mut created = 0;
@@ -83,10 +106,10 @@ async fn concurrent_requests_make_one_row() {
 
 #[tokio::test]
 async fn concurrent_requests_of_a_connector_stay_in_its_budget() {
-    let (_instance, pool) = test_db().await;
+    let (_instance, _pool, admissions) = test_db().await;
     let requests = (0..10).map(|label| {
-        let pool = pool.clone();
-        tokio::spawn(async move { admit(&pool, &path(label, 64), CONNECTOR, LIMIT).await })
+        let admissions = admissions.clone();
+        tokio::spawn(async move { admissions.admit(&path(label, 64), CONNECTOR).await })
     });
     let requests: Vec<_> = requests.collect();
     let mut created = 0;
@@ -100,38 +123,51 @@ async fn concurrent_requests_of_a_connector_stay_in_its_budget() {
 }
 
 #[tokio::test]
+async fn requests_on_two_pods_stay_in_the_budget() {
+    let (_instance, pool, pod_a) = test_db().await;
+    let pod_b = Arc::new(Admissions::new(pool.clone(), LIMIT, MAX_ADDS));
+    let requests: Vec<_> = (0..10)
+        .map(|label| {
+            let pod = if label % 2 == 0 {
+                pod_a.clone()
+            } else {
+                pod_b.clone()
+            };
+            tokio::spawn(async move { pod.admit(&path(label, 64), CONNECTOR).await })
+        })
+        .collect();
+    let mut created = 0;
+    for request in requests {
+        match request.await.unwrap().unwrap() {
+            Admission::Created => created += 1,
+            admission => assert_eq!(admission, Admission::OverBudget),
+        }
+    }
+    assert_eq!(created, 1);
+}
+
+#[tokio::test]
 async fn connector_over_budget_joins_a_row_added_during_its_admission() {
-    let (_instance, pool) = test_db().await;
+    let (_instance, pool, admissions) = test_db().await;
     assert_eq!(
-        admit(&pool, &path(1, 64), CONNECTOR, LIMIT).await.unwrap(),
+        admissions.admit(&path(1, 64), CONNECTOR).await.unwrap(),
         Admission::Created
     );
 
     // Hold the lock of CONNECTOR. Its `admit` then stops after the first read.
-    let mut lock = pool.begin().await.unwrap();
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('pads:' || encode($1, 'hex'), 0))")
-        .bind(CONNECTOR.as_slice())
-        .execute(lock.as_mut())
-        .await
-        .unwrap();
+    let lock = lock_connector(&pool, CONNECTOR).await;
     let blocked = tokio::spawn({
-        let pool = pool.clone();
-        async move { admit(&pool, &path(2, 64), CONNECTOR, LIMIT).await }
+        let admissions = admissions.clone();
+        async move { admissions.admit(&path(2, 64), CONNECTOR).await }
     });
-    while sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap()
-        == 0
-    {
+    while lock_waiters(&pool).await == 0 {
         tokio::task::yield_now().await;
     }
 
     // Another connector adds the row now.
     assert_eq!(
-        admit(&pool, &path(2, 64), OTHER_CONNECTOR, LIMIT)
+        admissions
+            .admit(&path(2, 64), OTHER_CONNECTOR)
             .await
             .unwrap(),
         Admission::Created
@@ -144,11 +180,49 @@ async fn connector_over_budget_joins_a_row_added_during_its_admission() {
 }
 
 #[tokio::test]
+async fn requests_of_a_connector_wait_in_memory_not_on_the_lock() {
+    let (_instance, pool, admissions) = test_db().await;
+    // Hold the lock of CONNECTOR, so its requests stop before they can add a row.
+    let lock = lock_connector(&pool, CONNECTOR).await;
+    let requests: Vec<_> = (0..10)
+        .map(|label| {
+            let admissions = admissions.clone();
+            tokio::spawn(async move { admissions.admit(&path(label, 64), CONNECTOR).await })
+        })
+        .collect();
+    while lock_waiters(&pool).await < MAX_ADDS as i64 {
+        tokio::task::yield_now().await;
+    }
+    // Only MAX_ADDS requests wait for the lock with a connection. The others wait in memory.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(lock_waiters(&pool).await, MAX_ADDS as i64);
+
+    // Another connector is not blocked.
+    assert_eq!(
+        admissions
+            .admit(&path(20, 64), OTHER_CONNECTOR)
+            .await
+            .unwrap(),
+        Admission::Created
+    );
+
+    lock.rollback().await.unwrap();
+    let mut created = 0;
+    for request in requests {
+        match request.await.unwrap().unwrap() {
+            Admission::Created => created += 1,
+            admission => assert_eq!(admission, Admission::OverBudget),
+        }
+    }
+    assert_eq!(created, 1);
+}
+
+#[tokio::test]
 async fn budget_counts_the_pending_pad_bits_of_each_connector() {
-    let (_instance, pool) = test_db().await;
+    let (_instance, pool, admissions) = test_db().await;
     let admit = |path, connector| {
-        let pool = pool.clone();
-        async move { admit(&pool, &path, connector, LIMIT).await.unwrap() }
+        let admissions = admissions.clone();
+        async move { admissions.admit(&path, connector).await.unwrap() }
     };
 
     assert_eq!(admit(path(1, 64), CONNECTOR).await, Admission::Created);
@@ -176,11 +250,11 @@ async fn budget_counts_the_pending_pad_bits_of_each_connector() {
 
 #[tokio::test]
 async fn complete_row_gives_the_output() {
-    let (_instance, pool) = test_db().await;
+    let (_instance, pool, admissions) = test_db().await;
     let path = path(1, 64);
     assert_eq!(read(&pool, &path).await.unwrap(), None);
     assert_eq!(
-        admit(&pool, &path, CONNECTOR, LIMIT).await.unwrap(),
+        admissions.admit(&path, CONNECTOR).await.unwrap(),
         Admission::Created
     );
 
@@ -199,14 +273,14 @@ async fn complete_row_gives_the_output() {
     let complete = PadState::Complete(output);
     assert_eq!(read(&pool, &path).await.unwrap(), Some(complete.clone()));
     assert_eq!(
-        admit(&pool, &path, OTHER_CONNECTOR, LIMIT).await.unwrap(),
+        admissions.admit(&path, OTHER_CONNECTOR).await.unwrap(),
         Admission::Existing(complete)
     );
 }
 
 #[tokio::test]
 async fn table_refuses_a_pad_length_above_uint16() {
-    let (_instance, pool) = test_db().await;
+    let (_instance, pool, _admissions) = test_db().await;
     let label = B256::repeat_byte(1);
     let insert = |pad_length: i32| {
         sqlx::query(
