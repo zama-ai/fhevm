@@ -6299,6 +6299,8 @@ dependencies = [
  "reqwest 0.12.23",
  "serde",
  "serde_json",
+ "sqlx",
+ "test-harness",
  "thiserror 2.0.16",
  "tokio",
  "tokio-util",
