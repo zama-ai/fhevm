@@ -318,13 +318,11 @@ Examples:
 `);
 }
 
-// Force-exit once our own work is done: the tfhe/tkms WASM modules spawn a
-// worker thread pool (`initThreadPool()` in
-// src/core/modules/encrypt/module/init-p.ts) that has no teardown path by
-// design — the module is a permanent per-process singleton (see this
-// project's README). Those workers keep the event loop alive forever, so
-// letting the process exit "naturally" would just hang here regardless of
-// how cleanly every scenario itself finished.
+// Force-exit once our own work is done. The tfhe WASM worker pool
+// (`initThreadPool()` in src/core/modules/encrypt/module/init-p.ts) is a
+// permanent per-process singleton with no teardown path by design; its
+// workers are unref'd at startup so they no longer pin the event loop, but a
+// scenario that leaked any other handle would still hang the harness here.
 main()
   .then(() => {
     process.exit(process.exitCode ?? 0);
