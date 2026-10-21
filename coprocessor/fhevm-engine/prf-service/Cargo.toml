@@ -24,6 +24,8 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["json"] }
+sqlx = { workspace = true }
+test-harness = { path = "../test-harness" }
 
 [[bin]]
 name = "prf-service"
