@@ -1386,3 +1386,5 @@ mod tests {
         assert!(!all_slots_filled(&empty));
     }
 }
+#[cfg(test)]
+mod ingestion_recovery_tests;
