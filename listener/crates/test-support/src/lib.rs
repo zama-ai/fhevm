@@ -9,6 +9,10 @@ static REDIS_URL: OnceCell<String> = OnceCell::const_new();
 /// end of the `OnceCell` init closure. The container therefore stays alive
 /// for all tests in the suite. Cleanup is handled by `make test-e2e-*`
 /// targets via `docker rm -f e2e-redis`.
+///
+/// The tag tracks the deployed image (`redis-server-iamguarded:8.6.2`). It
+/// must stay on 7.0 or newer: `XINFO GROUPS` only reports `lag` from 7.0, and
+/// the consumer-group cleanup paths are driven by that field.
 pub async fn shared_redis_url() -> &'static str {
     REDIS_URL
         .get_or_init(|| async {
@@ -18,7 +22,7 @@ pub async fn shared_redis_url() -> &'static str {
 
             let container = Redis::default()
                 .with_container_name("e2e-redis")
-                .with_tag("6.2.0")
+                .with_tag("8.6.2")
                 .with_reuse(ReuseDirective::CurrentSession)
                 .start()
                 .await

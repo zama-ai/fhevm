@@ -1089,7 +1089,7 @@ async fn test_mark_transient_retries_until_redis_recovers() {
     use testcontainers::runners::AsyncRunner;
     use testcontainers_modules::redis::Redis;
 
-    let container = Redis::default().with_tag("6.2.0").start().await.unwrap();
+    let container = Redis::default().with_tag("8.6.2").start().await.unwrap();
     let port = container.get_host_port_ipv4(6379).await.unwrap();
     let url = format!("redis://127.0.0.1:{port}");
 
@@ -2186,6 +2186,64 @@ async fn redis_group_count(url: &str, stream: &str) -> usize {
     }
 }
 
+// ── Test: max_stream_len bounds a stream the trimmer cannot touch ─────────────
+
+/// The trimmer is conditional: with no consumer groups it falls back to
+/// `fallback_maxlen`, and with groups present it trims to the slowest group's
+/// position. A group that exists but never advances therefore pins the safe
+/// point and defeats both paths. `max_stream_len` is the unconditional
+/// `MAXLEN ~` on every `XADD`, which is the only bound left in that case.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn test_max_stream_len_bounds_stream_with_a_frozen_group() {
+    let url = shared_redis_url().await;
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+
+    let stream = format!("maxlen.frozen-group.{suffix}");
+    let ceiling: u64 = 100;
+    let publish_count: u64 = 5000;
+
+    let conn = RedisConnectionManager::new(url).await.unwrap();
+
+    // A group that is created and then never read from: last-delivered-id stays
+    // at 0-0 while the stream grows.
+    StreamManager::new(conn.clone())
+        .ensure_consumer_group(&stream, "frozen-group", "0")
+        .await
+        .unwrap();
+
+    // No auto_trim at all — the ceiling is the only thing bounding this stream.
+    let publisher = RedisPublisher::builder(conn)
+        .max_stream_len(ceiling as usize)
+        .build();
+
+    for i in 0..publish_count {
+        publisher
+            .publish(&stream, &BlockEvent { block_number: i })
+            .await
+            .unwrap();
+    }
+
+    assert_eq!(
+        redis_group_count(url, &stream).await,
+        1,
+        "the frozen group must still be present — it is what makes the trimmer useless here"
+    );
+
+    let len = redis_xlen(url, &stream).await;
+    publisher.shutdown().await;
+
+    // `MAXLEN ~` trims on macro-node boundaries, so assert an order of
+    // magnitude rather than the exact ceiling.
+    assert!(
+        len <= ceiling * 10,
+        "XADD ceiling should bound the stream despite the frozen group (len={len}, ceiling={ceiling}, published={publish_count})"
+    );
+}
+
 // ── Test: auto_trim + fallback_maxlen works without groups ─────────────────────
 
 #[tokio::test]
@@ -2615,4 +2673,115 @@ async fn test_exists_returns_false_for_non_stream_key() {
     let found = inspector.exists(key).await.unwrap();
 
     assert!(!found, "TYPE check should return false for non-stream keys");
+}
+
+/// Exercise the three cleanup accessors against a real server.
+///
+/// These are the primitives a janitor needs: see which groups exist and
+/// whether each is draining (`list_groups`), remove one group while leaving
+/// the stream (`destroy_group`), and remove the stream outright
+/// (`delete_stream`). The "already gone" paths matter as much as the happy
+/// ones — anything cleaning up after a departed consumer races other replicas
+/// and must not treat a lost race as an error.
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn test_group_cleanup_accessors() {
+    use broker::redis::StreamManager;
+
+    let url = shared_redis_url().await;
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let stream = format!("cleanup.accessors.{suffix}");
+
+    let conn = RedisConnectionManager::new(url).await.unwrap();
+    let manager = StreamManager::new(conn.clone());
+
+    // A stream that was never created has no groups, and reports so without
+    // erroring.
+    assert!(
+        manager.list_groups(&stream).await.unwrap().is_empty(),
+        "a nonexistent stream should report no groups, not fail"
+    );
+    assert!(
+        !manager.destroy_group(&stream, "absent").await.unwrap(),
+        "destroying a group on a nonexistent stream should report nothing removed"
+    );
+
+    manager
+        .ensure_consumer_group(&stream, "group-live", "0")
+        .await
+        .unwrap();
+    manager
+        .ensure_consumer_group(&stream, "group-retired", "0")
+        .await
+        .unwrap();
+
+    // Three entries nobody has read: both groups are behind by three.
+    let publisher = RedisPublisher::new(conn);
+    for seq in 0..3 {
+        publish(&publisher, &stream, seq).await;
+    }
+
+    let groups = manager.list_groups(&stream).await.unwrap();
+    assert_eq!(groups.len(), 2, "both groups should be listed");
+
+    let retired = groups
+        .iter()
+        .find(|g| g.name == "group-retired")
+        .expect("group-retired should be listed");
+    assert_eq!(
+        retired.last_delivered_id, "0-0",
+        "a group that never read should still sit at its start id"
+    );
+    assert_eq!(
+        retired.pending, 0,
+        "nothing delivered means nothing pending"
+    );
+    // Redis 7.0+ reports lag. The test fixture is pinned at or above that
+    // version precisely so this is observable — a frozen last-delivered-id
+    // only means "retired" rather than "idle" when lag proves work is waiting.
+    assert_eq!(
+        retired.lag,
+        Some(3),
+        "three unread entries should surface as lag"
+    );
+
+    assert!(
+        manager
+            .destroy_group(&stream, "group-retired")
+            .await
+            .unwrap(),
+        "destroying an existing group should report it removed"
+    );
+    assert!(
+        !manager
+            .destroy_group(&stream, "group-retired")
+            .await
+            .unwrap(),
+        "destroying the same group twice should be idempotent"
+    );
+
+    let groups = manager.list_groups(&stream).await.unwrap();
+    assert_eq!(groups.len(), 1, "only the surviving group should remain");
+    assert_eq!(groups[0].name, "group-live");
+    assert_eq!(
+        redis_xlen(url, &stream).await,
+        3,
+        "destroying a group must not touch stream entries"
+    );
+
+    assert!(
+        manager.delete_stream(&stream).await.unwrap(),
+        "deleting an existing stream should report it removed"
+    );
+    assert!(
+        !manager.delete_stream(&stream).await.unwrap(),
+        "deleting the same stream twice should be idempotent"
+    );
+    assert!(
+        manager.list_groups(&stream).await.unwrap().is_empty(),
+        "deleting the stream takes its remaining groups with it"
+    );
 }
