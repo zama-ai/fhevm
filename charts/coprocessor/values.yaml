@@ -287,7 +287,9 @@ dbMigration:
 # Effective values of a mode: defaults, then common, then modes.<mode>.
 # env, extraArgs and disabledArgs are concatenated instead: common, then
 # modes.<mode>, then the chain entry. serviceName sets --service-name
-# (chains[].hostListener.<mode>.serviceName wins).
+# (chains[].hostListener.<mode>.serviceName wins). For the consumer it is the
+# telemetry label only: the broker identity is compiled in, so renaming a
+# release cannot move it to other queues.
 #
 # Template-injected args: --database-url, --url (not consumer),
 # --acl-contract-address, --tfhe-contract-address, --kms-generation-address
