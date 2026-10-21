@@ -10,16 +10,12 @@
 # RUSTSEC-2026-0391, -0398, -0403 (zstd 0.13.3, zstd-safe 7.3.0): pingora-header-serde 0.9.0, the
 # latest Pingora, pins them. It only (de)serializes pingora-cache metadata, and coprocessor-proxy
 # never enables the cache, so this zstd never runs.
-# RUSTSEC-2026-0258 (h2 0.3, via actix-web http2 in prf-service): low severity, no 0.3 fix. Only
-# coprocessor-proxy reaches prf-service. A real fix is tracked in
-# https://github.com/zama-ai/fhevm-internal/issues/1923
 ignore = [
     "RUSTSEC-2023-0071",
     "RUSTSEC-2026-0387",
     "RUSTSEC-2026-0391",
     "RUSTSEC-2026-0398",
     "RUSTSEC-2026-0403",
-    "RUSTSEC-2026-0258",
 ]
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"

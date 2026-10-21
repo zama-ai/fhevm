@@ -37,7 +37,7 @@ pub(crate) fn run_server(
     HttpServer::new(|| App::new().configure(configure))
         .shutdown_signal(cancel_token.cancelled_owned())
         .shutdown_timeout(SHUTDOWN_TIMEOUT_SECS)
-        .bind_auto_h2c(endpoint)
+        .bind(endpoint)
         .map_err(|e| anyhow!("Failed to bind HTTP server to {endpoint}: {e}"))
         .map(|server| server.run())
 }
