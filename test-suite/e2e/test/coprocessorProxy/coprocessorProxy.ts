@@ -44,7 +44,7 @@ function get(url: string, authorization: string): Promise<Omit<Sent, 'forwarded'
   const ca = readFileSync(process.env.COPROCESSOR_PROXY_CA_CERT!);
   return new Promise((resolve, reject) => {
     const req = https
-      .get(url, { ca, headers: { authorization }, timeout: 30_000 }, (res) => {
+      .get(url, { ca, headers: { authorization }, signal: AbortSignal.timeout(30_000) }, (res) => {
         let body = '';
         res.setEncoding('utf8');
         res.on('data', (chunk) => (body += chunk));
