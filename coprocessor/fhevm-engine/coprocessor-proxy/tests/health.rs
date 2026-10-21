@@ -73,11 +73,11 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     // The endpoints' health is reported, not a readiness condition.
     assert_eq!(status.dependencies.len(), 2, "{status:?}");
     assert!(status.details.is_empty(), "{status:?}");
-    // The endpoints are probed over HTTP/2, the protocol of the proxied requests.
+    // The endpoints are probed over HTTP/1.1, the protocol of the proxied requests.
     for endpoint in &t.endpoints {
         let versions = endpoint.probe_versions();
         assert!(
-            !versions.is_empty() && versions.iter().all(|v| *v == Version::HTTP_2),
+            !versions.is_empty() && versions.iter().all(|v| *v == Version::HTTP_11),
             "{versions:?}"
         );
     }

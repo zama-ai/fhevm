@@ -57,10 +57,8 @@ async fn test_forwards_authenticated_requests_untouched() {
     assert_eq!(keccak256(&body), keccak256(stub_output(&path)));
 
     let seen = t.endpoints[0].last_request();
-    assert_eq!(seen.version, Some(Version::HTTP_2));
-    // The client's `Host`, as `:authority` only.
-    assert_eq!(seen.authority, Some(t.addr.to_string()));
-    assert!(!seen.headers.contains_key("host"));
+    assert_eq!(seen.version, Some(Version::HTTP_11));
+    assert_eq!(seen.headers["host"], t.addr.to_string());
     // prf-service checks the `FhevmSig` header again.
     assert_eq!(seen.headers["authorization"], auth.as_str());
     assert_eq!(seen.headers["x-forwarded-for"], "127.0.0.1");
@@ -302,9 +300,8 @@ async fn test_rejects_request_bodies() {
         .unwrap();
     assert_proxy_error(response, StatusCode::BAD_REQUEST, "malformed", false).await;
 
-    // Chunked bodies carry no `Content-Length`, the cap is enforced while streaming. The answer
-    // comes at once: the HTTP/2 upstream path would otherwise wait for the endpoint until the
-    // response timeout and answer `504`.
+    // Chunked bodies carry no `Content-Length`: enforce the cap while streaming without
+    // waiting for the endpoint response timeout.
     let started = std::time::Instant::now();
     assert_eq!(
         send_chunked(&t, &path, &[1], b" ").await,
@@ -404,12 +401,9 @@ async fn test_holds_requests_until_the_endpoint_answers() {
 }
 
 #[tokio::test]
-async fn test_held_requests_share_one_endpoint_connection() {
+async fn test_held_requests_complete_concurrently() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
     let path = prf_path(1);
-    // One request first, so its connection is pooled before the next ones look for one.
-    let response = t.get(&path).await.send().await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
 
     let held = (0..5).map(|_| async {
         t.get(&path)
@@ -423,7 +417,7 @@ async fn test_held_requests_share_one_endpoint_connection() {
     for status in futures_util::future::join_all(held).await {
         assert_eq!(status, StatusCode::OK);
     }
-    assert_eq!(t.endpoints[0].connections(), 1);
+    assert!(t.endpoints[0].connections() > 1);
 }
 
 #[tokio::test]

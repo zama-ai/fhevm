@@ -1,6 +1,6 @@
 # common chart overlay for coprocessor-<i>-prf-service-fake: the stand-in for prf-service behind
 # party i's coprocessor-proxy (values-coprocessor-proxy-e2e.yaml), until prf-service deploys here.
-# It runs test-suite/e2e/scripts/fake-prf-service.ts from the test-suite image: h2c on 8080, its PRF
+# It runs test-suite/e2e/scripts/fake-prf-service.ts from the test-suite image: HTTP/1.1 on 8080, its PRF
 # request count over plain HTTP on 9090. scripts/deploy/deploy-coprocessor.sh sets `fake.image` and
 # `fake.party`; `party` labels the pods the proxy's NetworkPolicy selects.
 #
@@ -38,7 +38,7 @@ additionalResources:
                 image: "{{ .Values.fake.image }}"
                 command: ["node", "/app/test-suite/e2e/scripts/fake-prf-service.ts"]
                 ports:
-                  - {name: h2c, containerPort: 8080}
+                  - {name: http, containerPort: 8080}
                   - {name: count, containerPort: 9090}
                 # From inside the pod: a kubelet probe could be subject to the proxy's NetworkPolicy.
                 readinessProbe:
@@ -59,5 +59,5 @@ additionalResources:
           app: prf-service-fake
           fhevm.zama.ai/party: "{{ .Values.fake.party }}"
         ports:
-          - {name: h2c, port: 8080}
+          - {name: http, port: 8080}
           - {name: count, port: 9090}

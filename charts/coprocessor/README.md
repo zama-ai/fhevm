@@ -5,8 +5,8 @@ A helm chart to distribute and deploy the Zama fhevm coprocessor services.
 ## Coprocessor proxy
 
 `coprocessorProxy` deploys the coprocessor's public HTTPS entry point. The proxy checks each
-request's `FhevmSig` signature (RFC-038) and forwards an accepted request unchanged, over HTTP/2
-cleartext, to the endpoints in `coprocessorProxy.endpointAddresses`. Its only route is the
+request's `FhevmSig` signature (RFC-038) and forwards an accepted request unchanged, over HTTP/1.1,
+to the endpoints in `coprocessorProxy.endpointAddresses`. Its only route is the
 PRF route, `GET` and `HEAD` `/v1/prf/{prf}/labels/{label}/{padLength}`, served by prf-service. The
 proxy checks the shape of the path. prf-service checks the encoding of its parameters, and checks
 the `FhevmSig` header again.
@@ -28,14 +28,12 @@ through environment variables only. `coprocessor/fhevm-engine/coprocessor-proxy/
 lists every setting; `coprocessorProxy.env` sets the others. The Service is a ClusterIP. Exposing it
 outside the cluster is left to the deployment, within the requirement below.
 
-Each endpoint must answer `GET /healthz` with `200` over HTTP/2 cleartext on its address in
+Each endpoint must answer `GET /healthz` with `200` over HTTP/1.1 on its address in
 `endpointAddresses`: the proxy sends requests only to the endpoints that do. The healthz server of
 the other coprocessor services runs on its own port, so it does not meet this.
 
-With a ClusterIP Service as the endpoint address, a proxy replica sends its requests over one
-HTTP/2 connection, up to 100 at a time, to the pod that connection reached. The connection closes
-after 10 s without traffic, so pods added under steady traffic receive requests only from new
-connections.
+With a ClusterIP Service as the endpoint address, each new connection can reach a different pod.
+Idle pooled connections close after 10 s without traffic.
 
 The proxy reads its TLS certificate at startup: a renewed secret takes effect after a pod restart.
 `commonConfig.env` applies to the proxy too, which is the internet-facing pod, so it must hold

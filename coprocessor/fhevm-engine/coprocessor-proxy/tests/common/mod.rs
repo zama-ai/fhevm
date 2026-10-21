@@ -11,9 +11,8 @@ use alloy::{
 };
 use axum::{
     Json, Router,
-    extract::{ConnectInfo, Path, Request, State},
-    http::{HeaderMap, Uri, Version, header::HOST},
-    middleware::{self, Next},
+    extract::{ConnectInfo, Path, State},
+    http::{HeaderMap, Version},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -121,8 +120,6 @@ pub fn stub_attestation(path: &str) -> String {
 #[derive(Clone, Debug, Default)]
 pub struct SeenRequest {
     pub version: Option<Version>,
-    /// The request's `:authority`.
-    pub authority: Option<String>,
     pub headers: HeaderMap,
     pub body: Vec<u8>,
 }
@@ -138,9 +135,8 @@ struct StubState {
     release: tokio::sync::Notify,
 }
 
-/// A stub prf-service endpoint, over HTTP/1.1 and HTTP/2 cleartext.
-///
-/// Rejects `Host` over h2. Test headers can delay, hold or interrupt a response.
+/// A stub prf-service endpoint over HTTP/1.1.
+/// Test headers can delay, hold or interrupt a response.
 pub struct StubEndpoint {
     pub addr: SocketAddr,
     state: Arc<StubState>,
@@ -161,7 +157,6 @@ impl StubEndpoint {
                 ),
             )
             .route("/v1/prf/:prf/labels/:label/:pad_length", get(prf))
-            .layer(middleware::from_fn(refuse_host_over_h2))
             .with_state(Arc::clone(&state));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -213,21 +208,11 @@ impl StubEndpoint {
     }
 }
 
-/// nginx answers `400` ("duplicate host header") to an HTTP/2 request with both `:authority` and
-/// `Host`, even equal ones.
-async fn refuse_host_over_h2(request: Request, next: Next) -> Response {
-    if request.version() == Version::HTTP_2 && request.headers().contains_key(HOST) {
-        return StatusCode::BAD_REQUEST.into_response();
-    }
-    next.run(request).await
-}
-
 async fn prf(
     State(state): State<Arc<StubState>>,
     ConnectInfo(client): ConnectInfo<SocketAddr>,
     Path((prf, label, pad_length)): Path<(String, String, String)>,
     version: Version,
-    uri: Uri,
     headers: HeaderMap,
     // Read as prf-service does to check it against the signed digest: a body the proxy cuts
     // short is never handled.
@@ -237,7 +222,6 @@ async fn prf(
     state.connections.lock().unwrap().insert(client);
     *state.last.lock().unwrap() = SeenRequest {
         version: Some(version),
-        authority: uri.authority().map(ToString::to_string),
         headers: headers.clone(),
         body: body.to_vec(),
     };

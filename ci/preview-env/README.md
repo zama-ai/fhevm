@@ -478,7 +478,7 @@ provides what the chart does not:
 
 - **The fake**: a `common` chart release `coprocessor-<i>-prf-service-fake`
   (`values-prf-service-fake-e2e.yaml`) running `test-suite/e2e/scripts/fake-prf-service.ts`
-  from the test-suite image: the PRF route over h2c on 8080, its request count on 9090.
+  from the test-suite image: the PRF route over HTTP/1.1 on 8080, its request count on 9090.
   The proxy's NetworkPolicy selects its pods (`fhevm.zama.ai/party: <i>`) and lets
   test-suite pods (`app: fhevm-test-suite`) reach port 9090 only.
 - **TLS**: the Secret `coprocessor-proxy-tls`, made as for the kms-connector proxies,

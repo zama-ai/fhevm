@@ -26,7 +26,7 @@ tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
-axum = { workspace = true, features = ["http2"] }
+axum.workspace = true
 fhevm_host_bindings = { path = "../../../host-contracts/rust_bindings", default-features = false }
 futures-util.workspace = true
 rcgen.workspace = true

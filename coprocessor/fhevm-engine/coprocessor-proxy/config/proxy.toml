@@ -37,8 +37,8 @@ ethereum_rpc_url = "http://localhost:8545"
 # ENV: COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS
 coprocessor_signer_address = "0x0000000000000000000000000000000000000000"
 
-# `host:port` addresses of the endpoints the requests are forwarded to, over HTTP/2 cleartext (required).
-# Each endpoint must also answer `GET /healthz` with `200` over HTTP/2 cleartext on that address:
+# `host:port` addresses of the endpoints the requests are forwarded to, over HTTP/1.1 (required).
+# Each endpoint must also answer `GET /healthz` with `200` over HTTP/1.1 on that address:
 # the proxy sends requests only to endpoints that do.
 # Can be a Kubernetes ClusterIP Service (kube-proxy balances), a docker-compose service name, or
 # plain IPs. Hostnames are resolved once at startup.
@@ -59,14 +59,9 @@ endpoint_addresses = ["endpoint:8080"]
 # endpoint_response_timeout = "120s"
 
 # How long an idle pooled endpoint connection is kept open (optional, defaults to "10s").
-# Behind a ClusterIP Service, a new connection can reach newly scaled endpoint pods. Over HTTP/2 the
-# requests share the connection, so it closes only after a pause in traffic.
+# Behind a ClusterIP Service, a new connection can reach newly scaled endpoint pods.
 # ENV: COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # endpoint_idle_timeout = "10s"
-
-# Maximum number of concurrent requests on one HTTP/2 endpoint connection (optional, defaults to 100)
-# ENV: COPROCESSOR_PROXY_ENDPOINT_MAX_H2_STREAMS
-# endpoint_max_h2_streams = 100
 
 # Maximum size of a request body, in bytes (optional, defaults to 0: no body)
 # ENV: COPROCESSOR_PROXY_MAX_BODY_BYTES

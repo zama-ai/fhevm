@@ -79,9 +79,6 @@ pub struct Config {
     )]
     #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_idle_timeout: Duration,
-    /// The maximum number of concurrent requests on one HTTP/2 endpoint connection.
-    #[serde(default = "default_endpoint_max_h2_streams")]
-    pub endpoint_max_h2_streams: usize,
 
     /// The maximum accepted size of a request body.
     #[serde(default)]
@@ -235,14 +232,7 @@ fn default_endpoint_response_timeout() -> Duration {
 }
 
 fn default_endpoint_idle_timeout() -> Duration {
-    // A Kubernetes ClusterIP Service picks the target pod once per TCP connection. Over HTTP/2
-    // the requests share the pooled connection, which goes idle only when traffic pauses: then
-    // this timeout lets the next connection reach newly scaled-up or restarted pods.
     Duration::from_secs(10)
-}
-
-fn default_endpoint_max_h2_streams() -> usize {
-    100
 }
 
 fn default_request_read_timeout() -> Duration {
@@ -288,7 +278,6 @@ impl Default for Config {
             endpoint_healthcheck_frequency: default_endpoint_healthcheck_frequency(),
             endpoint_response_timeout: default_endpoint_response_timeout(),
             endpoint_idle_timeout: default_endpoint_idle_timeout(),
-            endpoint_max_h2_streams: default_endpoint_max_h2_streams(),
             max_body_bytes: 0,
             request_read_timeout: default_request_read_timeout(),
             shutdown_grace_period: default_shutdown_grace_period(),
@@ -342,7 +331,6 @@ mod tests {
             env::remove_var("COPROCESSOR_PROXY_ENDPOINT_HEALTHCHECK_FREQUENCY");
             env::remove_var("COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT");
             env::remove_var("COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT");
-            env::remove_var("COPROCESSOR_PROXY_ENDPOINT_MAX_H2_STREAMS");
             env::remove_var("COPROCESSOR_PROXY_MAX_BODY_BYTES");
             env::remove_var("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT");
             env::remove_var("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD");
@@ -399,7 +387,6 @@ mod tests {
             env::set_var("COPROCESSOR_PROXY_ENDPOINT_HEALTHCHECK_FREQUENCY", "500ms");
             env::set_var("COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT", "45s");
             env::set_var("COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT", "7s");
-            env::set_var("COPROCESSOR_PROXY_ENDPOINT_MAX_H2_STREAMS", "50");
             env::set_var("COPROCESSOR_PROXY_MAX_BODY_BYTES", "2048");
             env::set_var("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT", "12s");
             env::set_var("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD", "15s");
@@ -445,7 +432,6 @@ mod tests {
         );
         assert_eq!(config.endpoint_response_timeout, Duration::from_secs(45));
         assert_eq!(config.endpoint_idle_timeout, Duration::from_secs(7));
-        assert_eq!(config.endpoint_max_h2_streams, 50);
         assert_eq!(config.max_body_bytes, 2048);
         assert_eq!(config.request_read_timeout, Duration::from_secs(12));
         assert_eq!(config.shutdown_grace_period, Duration::from_secs(15));

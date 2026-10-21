@@ -225,9 +225,6 @@ impl ProxyHttp for Proxy {
     // Streams the body, within the cap, while hashing it. It is checked against the signed
     // digest before its last chunk is written, so the endpoint never receives a whole body that
     // does not match: it gets a truncated request and a closed connection instead.
-    //
-    // Both errors are the client's. Pingora's HTTP/2 upstream path ends the request only on a
-    // downstream error: any other one keeps waiting for the endpoint's response.
     async fn request_body_filter(
         &self,
         _session: &mut Session,
@@ -272,9 +269,6 @@ impl ProxyHttp for Proxy {
         peer.options.read_timeout = Some(self.config.endpoint_response_timeout);
         peer.options.write_timeout = Some(self.config.endpoint_response_timeout);
         peer.options.idle_timeout = Some(self.config.endpoint_idle_timeout);
-        // HTTP/2 prior knowledge (h2c), so the requests an endpoint holds share few connections.
-        peer.options.set_http_version(2, 2);
-        peer.options.max_h2_streams = self.config.endpoint_max_h2_streams;
         Ok(Box::new(peer))
     }
 

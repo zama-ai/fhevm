@@ -435,7 +435,7 @@ const connectorEndpointPort = (envs: Record<string, Record<string, string>>) =>
 const connectorEndpointAddress = (envs: Record<string, Record<string, string>>, party: number) =>
   `${kmsConnectorPrefix(party)}-endpoint:${connectorEndpointPort(envs)}`;
 
-/** Port the fake prf-service (`test-suite/e2e/scripts/fake-prf-service.ts`) serves HTTP/2 on. */
+/** Port the fake prf-service (`test-suite/e2e/scripts/fake-prf-service.ts`) serves HTTP/1.1 on. */
 const PRF_SERVICE_FAKE_PORT = 8080;
 
 /** Port the fake prf-service reports its PRF request count on, over plain HTTP. */
