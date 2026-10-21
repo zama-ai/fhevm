@@ -16,7 +16,7 @@ http
   .createServer((req, res) => {
     if (req.method === 'GET' && req.url === '/healthz') {
       res.writeHead(200).end();
-    } else if ((req.method === 'GET' || req.method === 'HEAD') && PRF_ROUTE.test(req.url)) {
+    } else if ((req.method === 'GET' || req.method === 'HEAD') && PRF_ROUTE.test(req.url ?? '')) {
       prfRequests += 1;
       res
         .writeHead(200, { 'content-type': 'application/octet-stream', 'x-prf-attestation': 'fake-prf-attestation' })
