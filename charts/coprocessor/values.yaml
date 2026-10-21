@@ -1876,7 +1876,7 @@ coprocessorProxy:
     tag: ""
 
   # Stateless: replicas answer alike.
-  replicas: 2
+  replicas: 1
 
   tls:
     # kubernetes.io/tls Secret holding tls.crt and tls.key.
