@@ -106,6 +106,13 @@ pub(crate) async fn repair_is_contained(db: &mut Database, pool: &PgPool) -> any
 /// Capture the actual signed S3 PUT without Docker or cloud credentials.
 pub(crate) async fn object_store(
 ) -> anyhow::Result<(aws_sdk_s3::Client, tokio::task::JoinHandle<Vec<u8>>)> {
+    object_store_with_response(std::future::ready(())).await
+}
+
+/// Delay the response after receiving the complete PUT, for in-flight races.
+pub(crate) async fn object_store_with_response(
+    response: impl std::future::Future<Output = ()> + Send + 'static,
+) -> anyhow::Result<(aws_sdk_s3::Client, tokio::task::JoinHandle<Vec<u8>>)> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let endpoint = format!("http://{}", listener.local_addr()?);
@@ -132,6 +139,7 @@ pub(crate) async fn object_store(
                 }
             }
         };
+        response.await;
         socket
             .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
             .await

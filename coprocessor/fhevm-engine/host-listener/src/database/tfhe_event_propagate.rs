@@ -1019,21 +1019,22 @@ impl Database {
         // consumed it. The block-ingestion caller rolls back and durably halts.
         // Chain grouping and ACL eligibility are deliberately not immutable:
         // a cold replay can regroup work or restore a missing permission.
-        // The boundary-mask migration intentionally leaves legacy rows NULL.
-        // That means unknown metadata, not a conflicting mask. Preserve NULL
-        // (and the worker's legacy inference) instead of backfilling new
-        // execution semantics onto retained pre-upgrade work. All other
-        // metadata, and every already-recorded mask, remain immutable. Handles
+        // The block-number and boundary-mask migrations leave legacy rows NULL.
+        // That means unknown metadata, not a contradiction. Preserve NULL
+        // (and the worker's legacy inference) instead of backfilling metadata
+        // onto retained pre-upgrade work. All other metadata, and every
+        // already-recorded height or mask, remain immutable. Handles
         // verified against the old executor preimage also start with NULL on
         // fresh historical replay: their origin was never committed on-chain.
         let conflicting: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM computations
              WHERE output_handle = $1 AND transaction_id IS NOT DISTINCT FROM $2
-               AND ((dependencies, fhe_operation, is_scalar, host_chain_id, block_number,
+               AND ((dependencies, fhe_operation, is_scalar, host_chain_id,
                      group_id, output_index, output_count)
                    IS DISTINCT FROM
-                   ($3::bytea[], $4::smallint, $5::boolean, $6::bigint, $7::bigint,
+                   ($3::bytea[], $4::smallint, $5::boolean, $6::bigint,
                     $9::bytea, $10::smallint, $11::smallint)
+                    OR (block_number IS NOT NULL AND block_number IS DISTINCT FROM $7::bigint)
                     OR ($8::bytea IS NOT NULL AND operand_boundary_mask IS NOT NULL
                         AND operand_boundary_mask IS DISTINCT FROM $8::bytea)))",
         )

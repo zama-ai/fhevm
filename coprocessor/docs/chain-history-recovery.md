@@ -74,8 +74,10 @@ and retry the original delivery. This prevents sparse traffic from establishing
 new disconnected finalized anchors without repeatedly scanning retained history.
 
 Replay also checks immutable computation
-metadata. Legacy NULL operand-boundary masks remain NULL and retain the worker's
-legacy inference; replay compares masks only where a mask was already recorded.
+metadata. Legacy NULL block numbers remain unknown; replay does not backfill them
+or treat them as conflicting heights. Legacy NULL operand-boundary masks remain
+NULL and retain the worker's legacy inference; replay compares heights and masks
+only where those values were already recorded.
 Other recorded execution metadata remains immutable for legacy rows too.
 A confirmed identity, execution-metadata or committed-inventory contradiction records a durable halt
 in `public.chain_recovery_halts`. A halt blocks guarded writes and submissions
@@ -184,9 +186,11 @@ are outside this change. No Gateway checkpoint insertion is required at rollout.
 These checks do not certify all historical data. Replay is bounded and depends
 on trustworthy historical RPC responses. Work can be consumed or published
 before a contradiction is discovered. Containment drains transactions already
-holding the shared cutover fence; an in-flight submission can finish before the
-halt commits. It cannot undo external transactions or previously published
-results. A pending legacy fork row is not independently proof of committed
+holding the shared cutover fence; upgrade hash uploads retain it through their
+database bookkeeping, with a 15-second S3 deadline. An in-flight submission can
+finish before the halt commits. A timed-out or cancelled upload remains unmarked
+in the database; its request may already have reached S3. Containment cannot undo
+external transactions or previously published results. A pending legacy fork row is not independently proof of committed
 canonical identity; ambiguous pre-upgrade history requires investigation.
 
 ## Deployment and recovery

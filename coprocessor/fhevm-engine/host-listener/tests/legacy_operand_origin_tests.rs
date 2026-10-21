@@ -250,3 +250,66 @@ async fn modern_origin_changes_still_halt_replay() -> anyhow::Result<()> {
     assert!(is_halted(&pool).await?);
     Ok(())
 }
+
+#[tokio::test]
+#[serial(db)]
+async fn historical_replay_preserves_unknown_block_numbers(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    let logs = events(false, Executor::BeforeContext, 1);
+    replay(&mut db, logs.clone()).await?;
+    // The block-number migration did not backfill computations already stored
+    // by older listeners. Replaying the same events must preserve that state.
+    sqlx::query("UPDATE computations SET block_number = NULL")
+        .execute(&pool)
+        .await?;
+    replay(&mut db, logs).await?;
+    let heights: Vec<Option<i64>> =
+        sqlx::query_scalar("SELECT block_number FROM computations")
+            .fetch_all(&pool)
+            .await?;
+    assert!(!heights.is_empty());
+    assert!(
+        heights.iter().all(Option::is_none),
+        "replay must not backfill legacy inventory"
+    );
+    assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn historical_replay_contains_recorded_height_conflicts(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    let logs = events(false, Executor::BeforeContext, 1);
+    replay(&mut db, logs.clone()).await?;
+    sqlx::query("UPDATE computations SET block_number = block_number - 1")
+        .execute(&pool)
+        .await?;
+    let error = replay(&mut db, logs).await.unwrap_err();
+    assert!(
+        error.to_string().contains("execution metadata differs"),
+        "{error}"
+    );
+    assert!(is_halted(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn unknown_height_does_not_hide_conflicting_execution_metadata(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    let logs = events(false, Executor::BeforeContext, 1);
+    replay(&mut db, logs.clone()).await?;
+    sqlx::query("UPDATE computations SET block_number = NULL, is_scalar = NOT is_scalar")
+        .execute(&pool).await?;
+    let error = replay(&mut db, logs).await.unwrap_err();
+    assert!(
+        error.to_string().contains("execution metadata differs"),
+        "{error}"
+    );
+    assert!(is_halted(&pool).await?);
+    Ok(())
+}
