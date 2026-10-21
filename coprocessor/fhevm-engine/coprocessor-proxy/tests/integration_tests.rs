@@ -699,8 +699,19 @@ async fn test_counts_requests_by_route_and_status() {
         t.client.get(t.url("/")).send().await.unwrap().status(),
         StatusCode::NOT_FOUND
     );
-    assert!(count("prf", "200") > ok);
-    assert!(count("none", "404") > not_found);
+    // Pingora's `logging` hook counts a request after its answer has reached the client.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while count("prf", "200") <= ok || count("none", "404") <= not_found {
+        assert!(
+            Instant::now() < deadline,
+            "prf/200 {} -> {}, none/404 {} -> {}",
+            ok as u64,
+            count("prf", "200") as u64,
+            not_found as u64,
+            count("none", "404") as u64
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
