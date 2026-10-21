@@ -1477,6 +1477,8 @@ async fn test_chain_queue_counts_each_acquisition_state() {
         (4, "NOW() + interval '30 seconds'", "processing"),
         (5, "NOW() - interval '1 second'", "processing"),
         (6, "NULL", "processed"),
+        // Unowned with a past retry cooldown (v0.14): waiting, not expired.
+        (7, "NOW() - interval '1 second'", "updated"),
     ] {
         sqlx::query(&format!(
             "INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at, \
@@ -1494,7 +1496,7 @@ async fn test_chain_queue_counts_each_acquisition_state() {
         chain_queue(&pool).await.unwrap(),
         ChainQueue {
             held: 1,
-            waiting: 2,
+            waiting: 3,
             lease_expired: 1,
         }
     );
@@ -1509,7 +1511,7 @@ async fn test_chain_queue_counts_each_acquisition_state() {
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(scaling_count, 4);
+    assert_eq!(scaling_count, 5);
     let sns_query = std::fs::read_to_string(configs.join("sns-worker-scaling-query.sql")).unwrap();
     let _: i64 = sqlx::query_scalar(&sns_query)
         .fetch_one(&pool)

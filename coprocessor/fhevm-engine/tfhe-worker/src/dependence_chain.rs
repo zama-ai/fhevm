@@ -89,7 +89,8 @@ pub async fn chain_queue(pool: &sqlx::PgPool) -> Result<ChainQueue, sqlx::Error>
              WHERE worker_id IS NOT NULL AND lock_expires_at >= NOW()), \
            (SELECT count(*) FROM dependence_chain \
              WHERE status = 'updated' AND worker_id IS NULL AND dependency_count = 0), \
-           (SELECT count(*) FROM dependence_chain WHERE lock_expires_at < NOW())",
+           (SELECT count(*) FROM dependence_chain \
+             WHERE worker_id IS NOT NULL AND lock_expires_at < NOW())",
     )
     .fetch_one(pool)
     .await?;
