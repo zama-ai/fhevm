@@ -524,3 +524,13 @@ The CLI owns:
 - `.fhevm/runtime/addresses/`
 
 `status` shows the active stack state, the active scenario origin when present, and any CLI-owned local build images.
+
+## Artifact ingestion recovery
+
+The [v0.14 full-environment recovery test](../e2e/test/ingestionRecovery/README.md) runs against an isolated two-of-two stack. It injects a partial ACL delivery at the actual poller RPC boundary, performs an explicit cursor replay, and verifies the original graph through both operators, Gateway, and KMS:
+
+```sh
+ARTIFACT_RECOVERY_ISOLATED=1 ./scripts/run-artifact-ingestion-recovery.sh
+```
+
+The Rust Artifact tests are component integration regressions; this opt-in runner provides the deployed end-to-end coverage.
