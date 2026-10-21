@@ -22,7 +22,7 @@ edition = "2021"
 license = "BSD-3-Clause-Clear"
 
 [workspace.dependencies]
-actix-web = { version = "=4.15.0", default-features = false }
+actix-web = { version = "=4.15.0", default-features = false, features = ["http2"] }
 alloy = { version = "2.2.0", default-features = false, features = [
     "essentials",
     "std",
