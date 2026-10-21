@@ -70,7 +70,7 @@ ready and answers `502` with `"code": "upstream_transient"` and `"retryable": tr
 check the TLS listener, each probe sends it `GET /` and expects `404`, counted in
 `coprocessor_proxy_requests_total{route="none",status="404"}`.
 
-`coprocessor_kms_tx_senders_read_timestamp_seconds` is the timestamp of the finalized block used
+`coprocessor_kms_tx_senders_block_timestamp_seconds` is the timestamp of the finalized block used
 for the accepted set, or 0 before the first read. It advances only after applying a newer block;
 equal, older or failed RPC replies leave it unchanged. Its age includes the chain's normal
 finality delay. Readiness does not check ongoing signer freshness.

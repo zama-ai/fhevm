@@ -23,7 +23,7 @@ fn block(number: u64, timestamp: u64) -> Block {
 fn timestamp() -> i64 {
     prometheus::gather()
         .iter()
-        .find(|metric| metric.name() == "coprocessor_kms_tx_senders_read_timestamp_seconds")
+        .find(|metric| metric.name() == "coprocessor_kms_tx_senders_block_timestamp_seconds")
         .expect("timestamp series exists before the first successful read")
         .get_metric()[0]
         .get_gauge()

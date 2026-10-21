@@ -56,7 +56,7 @@ async function signersBlockTimestamp(metricsUrl: string): Promise<number> {
   const resp = await fetch(metricsUrl, { signal: AbortSignal.timeout(10_000) });
   const gauge = (await resp.text())
     .split('\n')
-    .find((line) => line.startsWith('coprocessor_kms_tx_senders_read_timestamp_seconds '));
+    .find((line) => line.startsWith('coprocessor_kms_tx_senders_block_timestamp_seconds '));
   return Number(gauge?.split(' ')[1] ?? 0);
 }
 

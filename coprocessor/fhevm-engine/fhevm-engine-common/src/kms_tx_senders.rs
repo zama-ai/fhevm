@@ -45,9 +45,9 @@ static KMS_TX_SENDERS: LazyLock<IntGauge> = LazyLock::new(|| {
     .unwrap()
 });
 
-static KMS_TX_SENDERS_READ_TIMESTAMP: LazyLock<IntGauge> = LazyLock::new(|| {
+static KMS_TX_SENDERS_BLOCK_TIMESTAMP: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
-        "coprocessor_kms_tx_senders_read_timestamp_seconds",
+        "coprocessor_kms_tx_senders_block_timestamp_seconds",
         "Unix timestamp of the finalized block used for the KMS tx-sender set; 0 before the first read"
     )
     .unwrap()
@@ -111,7 +111,7 @@ impl<P: Provider> Follower<P> {
     /// Polls every `poll_interval`, and sooner for a miss, until `stop` completes.
     pub async fn run(&self, stop: impl Future<Output = ()>) {
         KMS_TX_SENDERS.set(0);
-        KMS_TX_SENDERS_READ_TIMESTAMP.set(0);
+        KMS_TX_SENDERS_BLOCK_TIMESTAMP.set(0);
         let mut reader = self.reader.lock().await;
         let mut polls = self.polls.subscribe();
         let mut last = None;
@@ -132,7 +132,7 @@ impl<P: Provider> Follower<P> {
                         KMS_TX_SENDERS.set(senders.len() as i64);
                         self.loaded.0.store(true, Ordering::Relaxed);
                         last = Some(senders);
-                        KMS_TX_SENDERS_READ_TIMESTAMP.set(block_timestamp as i64);
+                        KMS_TX_SENDERS_BLOCK_TIMESTAMP.set(block_timestamp as i64);
                     }
                 }
                 Err(err) => warn!(
