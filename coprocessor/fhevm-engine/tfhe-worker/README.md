@@ -44,6 +44,75 @@ cargo test
 ```
 `operators_from_events` uses the full type matrix by default. To run a lighter local matrix (up to `uint64`) set `TFHE_WORKER_EVENT_TYPE_MATRIX=local` before `cargo test`.
 
+### Artifact ingestion recovery integration regressions
+
+From `coprocessor/fhevm-engine`, run the CPU integration regression with:
+
+```sh
+SQLX_OFFLINE=true cargo test --locked -p tfhe-worker \
+  --test artifact_ingestion_integration --profile coverage -- --test-threads=1
+```
+
+This requires Anvil on `PATH` and Docker for an isolated PostgreSQL database.
+The normal test harness imports the repository's test keys. The tests deploy
+event-emitting contracts on Anvil, omit the producer's ACL log on first delivery,
+and feed the actual RPC logs through production block ingestion. A real
+`tfhe_worker` process uses the production scheduler and CPU FHE implementation.
+An independent computation must complete while the producer and its descendants
+remain stalled.
+
+The original four cases exercise full-block replay with a warm cache, full-block and
+ACL-only replay after recreating the listener's database/cache object, and an
+ACL database-write failure followed by retry on the same object. Recovery must
+repair the computation row and event counts, and finalize the producing block.
+A failed replay must roll all three back. The producer, both children, and a
+grandchild must complete and decrypt correctly. Duplicate replay must preserve
+their ciphertexts and completion flags.
+
+Three further cases cover already-allowed pending work whose stored chain was
+processed or deleted, and an orphan producer completed before the same signed
+transaction arrives on the canonical fork. The first two run concurrent warm
+and cold replays with two real workers and different inferred/stored chain IDs.
+The reorg case uses the production block-context handle preimage and verifies
+both fork outputs and the canonical consumer by decryption.
+
+The checked-in Solidity fixtures follow the listener's `RawLog` fixture pattern;
+Cargo does not invoke a Solidity compiler. All three worker CI shards install
+Anvil. Single-worker cases share the `fhe-keys` concurrency limit; the two-worker
+cases run alone under nextest on the 32 GB runner. Workers stop before the test
+loads the decryption key.
+
+ACL fault injection occurs at the block-log delivery boundary; the stranded-chain
+cases inject only the legacy scheduler state. These tests do not
+exercise WebSocket reconnects, poller cursor persistence, Gateway commits, or KMS
+decryption. Listener transport tests cover the entry points separately. Full-environment
+Artifact recovery lives in `test-suite/e2e/test/consensus/artifactRecovery.ts`,
+driven by `test-suite/fhevm/scripts/run-artifact-ingestion-recovery.sh`; see
+[test-suite instructions](../../../test-suite/e2e/test/consensus/README.md#artifact-ingestion-recovery). Disabling `Database::upgrade_allowed_computations`
+must fail the assertion that replay promotes the existing producer. Disabling
+`repair_pending_computation_chain` for already-allowed rows must fail the cold
+replay assertion before a warm replay can mask the missing repair.
+
+Complementary entry-point coverage lives in the listener's
+`recovery_transport_integration` suite. It starts real poller, WebSocket and broker
+consumer processes against Anvil, including restart during a gap longer than
+32 blocks, the 1,000-height initial audit boundary, hidden-fork containment,
+independent broker recovery and a single frame larger than 16 MiB. Run it with:
+
+```sh
+SQLX_OFFLINE=true cargo test --locked -p host-listener \
+  --test recovery_transport_integration -- --test-threads=1
+```
+
+The broker case starts an isolated Redis container. Local runs can instead set
+`FHEVM_TEST_BROKER_URL` to a dedicated Redis instance. These transport tests do
+not load FHE keys. The consensus-detector's
+`published_manifest_contains_replay_that_would_add_a_producer` and
+`uploaded_upgrade_hash_contains_replay_that_would_add_work` tests compose actual
+commitment creation and S3 uploads with ingestion. They verify that late repair
+is rolled back and contained after publication; their ciphertexts are fixtures,
+and S3 is a local HTTP test server.
+
 ## Running the first working fhevm coprocessor smoke test
 
 Reload database and apply schemas from scratch

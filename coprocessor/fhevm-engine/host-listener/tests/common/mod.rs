@@ -50,14 +50,23 @@ where
         .into_transaction_request()
 }
 
-pub fn mock_trivial_encrypt_result(pt: U256, to_type: u8) -> FixedBytes<32> {
+pub fn mock_trivial_encrypt_result(
+    pt: U256,
+    to_type: u8,
+    chain_id: u64,
+) -> FixedBytes<32> {
     let mut payload = Vec::with_capacity(
         "trivialEncrypt".len() + std::mem::size_of::<[u8; 32]>() + 1,
     );
     payload.extend_from_slice(b"trivialEncrypt");
     payload.extend_from_slice(&pt.to_be_bytes::<32>());
     payload.push(to_type);
-    keccak256(&payload)
+    let mut handle = keccak256(&payload);
+    handle[21] = 0xff;
+    handle[22..30].copy_from_slice(&chain_id.to_be_bytes());
+    handle[30] = to_type;
+    handle[31] = 0;
+    handle
 }
 
 pub fn mock_fhe_add_result(
@@ -70,7 +79,11 @@ pub fn mock_fhe_add_result(
     payload.extend_from_slice(lhs.as_slice());
     payload.extend_from_slice(rhs.as_slice());
     payload.extend_from_slice(scalar_byte.as_slice());
-    keccak256(&payload)
+    let mut handle = keccak256(&payload);
+    // FheAdd preserves the encrypted operand's chain/type/version metadata.
+    handle[21] = 0xff;
+    handle[22..32].copy_from_slice(&lhs[22..32]);
+    handle
 }
 
 pub fn trivial_encrypt_request<P, N>(
@@ -78,6 +91,7 @@ pub fn trivial_encrypt_request<P, N>(
     caller: Address,
     pt: U256,
     to_type: u8,
+    chain_id: u64,
 ) -> TransactionRequest
 where
     P: Provider<N>,
@@ -87,7 +101,7 @@ where
         caller,
         pt,
         toType: to_type,
-        result: mock_trivial_encrypt_result(pt, to_type),
+        result: mock_trivial_encrypt_result(pt, to_type, chain_id),
     };
     emit_log_request(emitter, event.encode_log_data())
 }
