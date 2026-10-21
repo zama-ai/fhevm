@@ -23,7 +23,7 @@ ciphertext-attestation = { path = "../../../shared/ciphertext-attestation" }
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 [dev-dependencies]
-reqwest = { workspace = true, features = ["http2", "json"] }
+reqwest = { workspace = true, features = ["json"] }
 
 [[bin]]
 name = "prf-service"

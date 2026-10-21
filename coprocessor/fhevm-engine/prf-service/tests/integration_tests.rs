@@ -102,23 +102,15 @@ async fn head_returns_same_headers_without_body() {
 }
 
 #[tokio::test]
-async fn serves_h2c_and_healthz() {
+async fn serves_healthz() {
     let service = TestService::start();
-    let h2c = Client::builder().http2_prior_knowledge().build().unwrap();
-    for client in [&Client::new(), &h2c] {
-        let health = service.request(client, Method::GET, "/healthz").await;
-        assert_eq!(health.status(), StatusCode::OK);
-        assert!(health.bytes().await.unwrap().is_empty());
-    }
+    let client = Client::new();
+    let health = service.request(&client, Method::GET, "/healthz").await;
+    assert_eq!(health.version(), Version::HTTP_11);
+    assert_eq!(health.status(), StatusCode::OK);
+    assert!(health.bytes().await.unwrap().is_empty());
 
-    let response = service
-        .request(&h2c, Method::GET, &prf_path("0", LABEL, "1"))
-        .await;
-    assert_eq!(response.version(), Version::HTTP_2);
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(response.bytes().await.unwrap().len(), 32);
-
-    drop(h2c);
+    drop(client);
     service.stop().await;
 }
 

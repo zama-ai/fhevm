@@ -10,7 +10,7 @@ use tracing::Level;
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Internal HTTP endpoint. Only the proxy connects to it, over HTTP/1.1 or h2c.
+    /// Internal HTTP endpoint. Only the proxy connects to it, over HTTP/1.1.
     #[arg(long, env = "PRF_HTTP_ENDPOINT", default_value = "0.0.0.0:8090")]
     http_endpoint: SocketAddr,
 

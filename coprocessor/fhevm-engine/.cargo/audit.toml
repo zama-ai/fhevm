@@ -4,10 +4,7 @@
 [advisories]
 # RUSTSEC-2023-0071 (rsa): no fix released. Reached only via sqlx-mysql, which we
 # never compile (postgres-only).
-# RUSTSEC-2026-0258 (h2 0.3, via actix-web http2 in prf-service): low severity, no 0.3 fix. Only
-# coprocessor-proxy reaches prf-service. A real fix is tracked in
-# https://github.com/zama-ai/fhevm-internal/issues/1923
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0258"]
+ignore = ["RUSTSEC-2023-0071"]
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"
 
