@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.prf_instance, p.label\n               FROM UNNEST($1::INTEGER[], $2::BYTEA[]) AS w (prf_instance, label)\n               JOIN pads p USING (prf_instance, label)\n              WHERE p.signature IS NOT NULL OR p.is_error",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "prf_instance",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "label",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4Array",
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1343f6715f7f8e89ada17a40f044bdfbc63e7efb0ba1ffdde05f080d3e9916a4"
+}

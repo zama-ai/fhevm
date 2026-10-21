@@ -4,6 +4,7 @@ mod metrics;
 mod pad_source;
 pub mod pads;
 mod path;
+pub mod waiter;
 
 pub use path::PrfPath;
 
