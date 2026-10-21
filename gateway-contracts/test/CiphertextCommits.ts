@@ -409,7 +409,9 @@ describe('CiphertextCommits', function () {
     });
 
     it("Should revert with HostChainDisabled (SNS) when the handle's chain has been disabled", async function () {
-      // Disabling the chain must reject lookups against handles from that chain.
+      // getSnsCiphertextMaterials is the gating point for Decryption.publicDecryptionRequest,
+      // which has no top-level chain modifier. Disabling the chain must reject lookups against
+      // handles from that chain.
       await gatewayConfig.connect(owner).disableHostChain(hostChainId);
 
       await expect(ciphertextCommits.getSnsCiphertextMaterials([ctHandle]))
