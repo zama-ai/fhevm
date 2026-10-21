@@ -336,9 +336,9 @@ async fn send_user_decryption_v2_inner(
 fn extract_user_decryption_id_from_receipt(receipt: &TransactionReceipt) -> anyhow::Result<U256> {
     extract_id_from_receipt(
         receipt,
-        Decryption::UserDecryptionRequest_0::SIGNATURE_HASH,
+        Decryption::UserDecryptionRequest_2::SIGNATURE_HASH,
         |log| {
-            Decryption::UserDecryptionRequest_0::decode_log_data(log)
+            Decryption::UserDecryptionRequest_2::decode_log_data(log)
                 .map(|event| event.decryptionId)
                 .map_err(|e| anyhow!("Failed to decode event data {e}"))
         },
@@ -350,9 +350,9 @@ fn extract_user_decryption_v2_id_from_receipt(
 ) -> anyhow::Result<U256> {
     extract_id_from_receipt(
         receipt,
-        Decryption::UserDecryptionRequest_1::SIGNATURE_HASH,
+        Decryption::UserDecryptionRequest_3::SIGNATURE_HASH,
         |log| {
-            Decryption::UserDecryptionRequest_1::decode_log_data(log)
+            Decryption::UserDecryptionRequest_3::decode_log_data(log)
                 .map(|event| event.decryptionId)
                 .map_err(|e| anyhow!("Failed to decode event data {e}"))
         },
