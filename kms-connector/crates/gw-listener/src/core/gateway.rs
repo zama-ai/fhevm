@@ -3,7 +3,7 @@ use crate::{
         Config,
         publish::{ChainName, publish_batch},
     },
-    monitoring::metrics::{EVENT_LISTENING_ERRORS, EVENT_RECEIVED_COUNTER},
+    monitoring::metrics::EVENT_LISTENING_ERRORS,
 };
 use alloy::{
     network::Ethereum,
@@ -169,7 +169,7 @@ where
         Ok((to_block.saturating_add(1), to_block < current_block))
     }
 
-    /// Decodes logs and prepares `ProtocolEvent` structs with OTLP context and metrics.
+    /// Decodes logs and prepares `ProtocolEvent` structs with OTLP context.
     fn prepare_events(logs: Vec<Log>) -> anyhow::Result<Vec<ProtocolEvent>> {
         let mut events = Vec::with_capacity(logs.len());
         for log in logs {
@@ -177,9 +177,6 @@ where
                 .map_err(|e| anyhow!("Failed to decode Decryption event: {e}"))?
                 .data
                 .try_into()?;
-            EVENT_RECEIVED_COUNTER
-                .with_label_values(&[EventType::from(&event_kind).as_str()])
-                .inc();
 
             let span = info_span!("handle_gateway_event", event = %event_kind);
             let otlp_ctx = PropagationContext::inject(&span.context());

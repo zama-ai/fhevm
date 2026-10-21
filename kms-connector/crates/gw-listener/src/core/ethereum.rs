@@ -3,7 +3,7 @@ use crate::{
         Config,
         publish::{ChainName, publish_batch, publish_context_and_epoch},
     },
-    monitoring::metrics::{EVENT_LISTENING_ERRORS, EVENT_RECEIVED_COUNTER},
+    monitoring::metrics::EVENT_LISTENING_ERRORS,
 };
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},
@@ -18,7 +18,7 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
         KMS_CONTEXT_COUNTER_BASE, ProtocolEvent,
-        db::{EventType, RequestSource, invalidate_kms_context, invalidate_kms_epoch},
+        db::{RequestSource, invalidate_kms_context, invalidate_kms_epoch},
     },
 };
 use fhevm_host_bindings::{
@@ -307,9 +307,6 @@ where
                 warn!("Skipping log from unexpected address: {log_address}");
                 continue;
             };
-            EVENT_RECEIVED_COUNTER
-                .with_label_values(&[EventType::from(&event_kind).as_str()])
-                .inc();
 
             let span = info_span!("handle_ethereum_event", event = %event_kind);
             let otlp_ctx = PropagationContext::inject(&span.context());

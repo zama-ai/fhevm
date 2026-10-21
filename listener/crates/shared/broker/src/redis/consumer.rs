@@ -24,7 +24,8 @@ use crate::traits::message::{Message, MessageMetadata};
 
 use super::{
     circuit_breaker::CircuitBreaker, claim_task::ClaimSweeper, config::RedisPrefetchConfig,
-    connection::RedisConnectionManager, error::RedisConsumerError,
+    config::StreamTopology, connection::RedisConnectionManager, error::RedisConsumerError,
+    stream_manager::StreamManager,
 };
 
 /// Result of processing a message in a worker task.
@@ -142,6 +143,31 @@ impl RedisConsumer {
         &self.connection
     }
 
+    /// Ensure the stream topology exists without starting to consume.
+    ///
+    /// Mirrors `RmqConsumer::ensure_topology`. Creates the main stream and its
+    /// dead-letter companion so that a publisher which gates on stream
+    /// existence can route to this consumer before it has ever run.
+    ///
+    /// This is not merely an optimization. A publisher that checks the stream
+    /// exists before writing, and a consumer that only creates the stream once
+    /// it starts reading, will wait for each other indefinitely. Declaring the
+    /// topology up front is what breaks that cycle — which is why the AMQP side
+    /// has always done it.
+    pub async fn ensure_topology(
+        &self,
+        config: &RedisPrefetchConfig,
+    ) -> Result<(), RedisConsumerError> {
+        let topology = StreamTopology::new(
+            config.retry.base.stream.clone(),
+            config.retry.dead_stream.clone(),
+        );
+
+        StreamManager::new((*self.connection).clone())
+            .ensure_topology(&topology)
+            .await
+    }
+
     // ─────────────────────────────────────────────────────────────
     // Strategy 1: Simple consumer — no retry, XACK on every message
     // ─────────────────────────────────────────────────────────────
@@ -164,8 +190,14 @@ impl RedisConsumer {
         handler: impl Handler + 'static,
     ) -> Result<(), RedisConsumerError> {
         let handler: Arc<dyn Handler> = Arc::new(handler);
-        // Ensure consumer group exists
-        self.ensure_group(&config.retry.base.stream, &config.retry.base.group_name)
+        // Ensure consumer group exists. `start_id` only applies if this call
+        // is the one that creates it; an existing group keeps its own cursor.
+        StreamManager::new((*self.connection).clone())
+            .ensure_consumer_group(
+                &config.retry.base.stream,
+                &config.retry.base.group_name,
+                &config.retry.base.start_id,
+            )
             .await?;
         let classification_marker_key = config.retry.classification_marker_key();
 
@@ -1169,38 +1201,6 @@ impl RedisConsumer {
                 Err(e) => return Err(e),
             }
         }
-    }
-
-    /// Create consumer group (idempotent).
-    async fn ensure_group(&self, stream: &str, group: &str) -> Result<(), RedisConsumerError> {
-        let mut conn = self.connection.get_connection();
-
-        let result: Result<String, redis::RedisError> = redis::cmd("XGROUP")
-            .arg("CREATE")
-            .arg(stream)
-            .arg(group)
-            .arg("0")
-            .arg("MKSTREAM")
-            .query_async(&mut conn)
-            .await;
-
-        match result {
-            Ok(_) => {
-                info!(stream = %stream, group = %group, "Consumer group created");
-            }
-            Err(e) if e.to_string().contains("BUSYGROUP") => {
-                debug!(stream = %stream, group = %group, "Consumer group already exists");
-            }
-            Err(e) => {
-                return Err(RedisConsumerError::GroupCreation {
-                    stream: stream.to_string(),
-                    group: group.to_string(),
-                    source: e,
-                });
-            }
-        }
-
-        Ok(())
     }
 
     /// XREADGROUP wrapper that returns parsed (stream_id, data) pairs.

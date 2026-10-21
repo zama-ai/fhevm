@@ -1,6 +1,7 @@
 import { runManifestHealingStressProfile } from "./manifest-healing-stress";
 import path from "node:path";
 import { createBlueGreenManifestChecks } from "./blue-green-manifests";
+import { runRollbackCases } from "./blue-green-rollback-cases";
 import { DRY_RUN_DRIFT_CLEANUP_SQL, GCS_SCHEMA_SQL, dryRunDriftInstallSql } from "./blue-green-dry-run-drift";
 import { runManifestLifecycleNoDriftProfile } from "./manifest-lifecycle-no-drift";
 import { runManifestLifecycleProfile } from "./manifest-lifecycle";
@@ -94,6 +95,8 @@ const TEST_PROFILE_NAMES = [
   "blue-green",
   "blue-green-manifests",
   "blue-green-dry-run-drift",
+  "blue-green-delayed-sns",
+  "blue-green-sns-outage",
   "ciphertext-drift",
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
@@ -174,6 +177,14 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
     "Run blue-green-manifests with one operator's Green corrupting a dry-run ct64: the upgrade still cuts over on " +
     "the probe's agreement, then the faulty operator detects and heals the drift (same as BLUE_GREEN_DRY_RUN_DRIFT=1; " +
     "use --scenario blue-green-manifest).",
+  "blue-green-delayed-sns":
+    "Run blue-green-manifests with one operator's Green SNS holding back only the dry-run probe's job: that " +
+    "operator must defer its cutover until the probe's ct128 exists, then publish the same probe descriptor as its " +
+    "peers (same as BLUE_GREEN_DELAY_SNS=hold; use --scenario blue-green-manifest).",
+  "blue-green-sns-outage":
+    "Run blue-green-manifests with one operator's Green SNS down across the whole dry run: once it is back it must " +
+    "still be released and let that operator cut over (same as BLUE_GREEN_DELAY_SNS=outage; use --scenario " +
+    "blue-green-manifest).",
   "ciphertext-drift": "Run ciphertext drift detection checks (requires 2+ coprocessors).",
   "ciphertext-drift-auto-recovery":
     "Run ciphertext drift auto-recovery checks — services self-recover (requires 2+ coprocessors).",
@@ -1080,11 +1091,48 @@ const startContinuousErc20Traffic = (targets: TrafficTarget[], streams: number):
  * asserts the reset (PAUSED/failed, latches cleared, schema recreated empty,
  * versioning untouched) and the successful flow then reruns over the residue.
  */
+type DelaySns = "hold" | "outage";
+const parseDelaySns = (value: string | undefined): DelaySns | undefined => {
+  if (value === undefined || value === "") return undefined;
+  if (value === "hold" || value === "outage") return value;
+  throw new PreflightError(`BLUE_GREEN_DELAY_SNS must be "hold" or "outage", got ${JSON.stringify(value)}`);
+};
+
+/**
+ * Hides the dry-run probe's SNS job on insert: the row lands already marked done, so the
+ * released sns-worker skips it, and is recorded for `releaseHeldProbeSql`. The probe is
+ * the row carrying a synthetic transaction hash, which the listener records in
+ * upgrade_state in the same ingest transaction.
+ */
+const holdProbeSnsSql = (gcsSchema: string) => `
+BEGIN;
+CREATE TABLE public.e2e_held_probe_pbs (handle BYTEA PRIMARY KEY, held_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE FUNCTION public.e2e_hold_probe_pbs() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF octet_length(NEW.transaction_id) = 32 AND EXISTS (
+       SELECT 1 FROM public.upgrade_state u
+        WHERE u.stack_role = 'GCS' AND position(NEW.transaction_id IN u.synthetic_txn_hashes) > 0) THEN
+    NEW.is_completed := TRUE;
+    INSERT INTO public.e2e_held_probe_pbs(handle) VALUES (NEW.handle) ON CONFLICT DO NOTHING;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER e2e_hold_probe_pbs BEFORE INSERT ON "${gcsSchema.replaceAll('"', '""')}".pbs_computations
+  FOR EACH ROW EXECUTE FUNCTION public.e2e_hold_probe_pbs();
+COMMIT;`;
+const releaseHeldProbeSql = (gcsSchema: string) =>
+  `UPDATE "${gcsSchema.replaceAll('"', '""')}".pbs_computations SET is_completed = FALSE
+    WHERE handle IN (SELECT handle FROM public.e2e_held_probe_pbs);`;
+const HOLD_PROBE_SNS_CLEANUP_SQL =
+  "DROP FUNCTION IF EXISTS public.e2e_hold_probe_pbs() CASCADE; DROP TABLE IF EXISTS public.e2e_held_probe_pbs;";
+
 const runBlueGreenProfile = async (
   state: State,
   options: Pick<TestOptions, "network" | "noHardhatCompile">,
   withManifests = process.env.BLUE_GREEN_MANIFESTS === "1",
   dryRunDrift = process.env.BLUE_GREEN_DRY_RUN_DRIFT === "1",
+  delaySns = parseDelaySns(process.env.BLUE_GREEN_DELAY_SNS),
 ): Promise<boolean> => {
   if (state.scenario.kind !== "blue-green") {
     throw new PreflightError(
@@ -1099,7 +1147,8 @@ const runBlueGreenProfile = async (
   await run(["cast", "rpc", "--rpc-url", gatewayRpcUrl, "evm_setAutomine", "true"]);
   console.log("OK:   Gateway anvil mines on demand for this profile");
   try {
-    return await runBlueGreenSteps(state, options, gatewayRpcUrl, withManifests || dryRunDrift, dryRunDrift);
+    return await runBlueGreenSteps(state, options, gatewayRpcUrl, withManifests || dryRunDrift || delaySns !== undefined,
+      dryRunDrift, delaySns);
   } finally {
     await run(["cast", "rpc", "--rpc-url", gatewayRpcUrl, "evm_setIntervalMining", "1"]);
   }
@@ -1111,6 +1160,7 @@ const runBlueGreenSteps = async (
   gatewayRpcUrl: string,
   withManifests: boolean,
   dryRunDrift: boolean,
+  delaySns: DelaySns | undefined,
 ): Promise<boolean> => {
   // The E2E image already contains compiled contracts. Multiple traffic
   // streams share its artifacts directory, so none may compile or prune it.
@@ -1160,6 +1210,12 @@ const runBlueGreenSteps = async (
   if (dryRunDrift && (quietSynthetic || faultHost || interruptDetector || interrupt !== "none")) {
     throw new PreflightError("run dry-run drift separately from the other upgrade fault modes");
   }
+  if (delaySns !== undefined && (state.scenario.topology.count !== 3 || state.scenario.topology.threshold !== 2)) {
+    throw new PreflightError("delayed SNS needs three operators and threshold two, so two peers cut over first");
+  }
+  if (delaySns !== undefined && (dryRunDrift || quietSynthetic || faultHost || interruptDetector || interrupt !== "none")) {
+    throw new PreflightError("run delayed SNS separately from the other upgrade fault modes");
+  }
   if (interrupt !== "none") {
     if (state.scenario.topology.count !== 3 || state.scenario.topology.threshold !== 2 || state.scenario.hostChains.length !== 2) {
       throw new PreflightError("upgrade interruption requires the three-operator, two-chain topology");
@@ -1168,7 +1224,9 @@ const runBlueGreenSteps = async (
     if (hooks.stdout.trim() !== "true") throw new PreflightError("upgrade interruption requires upgrade-controller/test-failpoints binaries");
   }
 
-  const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
+  // The rollback cases take ids 2 to 4, so the cutover proposal follows them.
+const CUTOVER_PROPOSAL_ID = 5;
+const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;
   // Opt-in manifest publication/verification checks on the Green detectors.
   const manifests = withManifests
@@ -1183,6 +1241,25 @@ const runBlueGreenSteps = async (
   const driftDatabase = dryRunDrift ? operatorDatabases[1]! : undefined;
   let dryRunDriftInstalled = false;
   // Hosts switched to mine only on transactions for the dry-run drift; restored on every exit.
+  // Operator 1's Green SNS, delayed across cutover: `hold` hides only the probe's job, so the
+  // worker is released and busy; `outage` freezes the worker through the whole dry run.
+  // Released on every exit.
+  const delayedSnsDatabase = delaySns !== undefined ? operatorDatabases[1]! : undefined;
+  const delayedSnsContainer = "coprocessor1-gcs-sns-worker";
+  let snsPaused = false;
+  let probeHeldSchema: string | undefined;
+  const resumeSns = async () => {
+    if (snsPaused) {
+      await run(["docker", "unpause", delayedSnsContainer]);
+      snsPaused = false;
+      console.log(`OK:   ${delayedSnsContainer} resumed`);
+    }
+    if (probeHeldSchema) {
+      await psqlQuery(delayedSnsDatabase!, releaseHeldProbeSql(probeHeldSchema));
+      probeHeldSchema = undefined;
+      console.log(`OK:   ${delayedSnsDatabase} released the probe's SNS job`);
+    }
+  };
   const automineHosts = new Set<string>();
   const hostRpcUrl = (key: string) => hostReachableRpcUrl(state.discovery!.endpoints.hosts[key]!.http);
   const restoreHostMining = async () => {
@@ -1219,10 +1296,15 @@ const runBlueGreenSteps = async (
 
   const gatewayTip = async () =>
     Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim());
-  // gw_start_block is pinned to the Gateway tip at proposal time, so the Gateway gate opens
-  // without any Gateway transaction.
-  const assertGatewayGateOpens = async (tipBeforeProposal: number, tipAfterProposal: number) => {
-    for (const db of operatorDatabases) {
+  // gw_start_block is pinned to the Gateway tip at proposal time, so the gate opens on a block already reached.
+  const assertGatewayGateOpens = async (
+    tipBeforeProposal: number,
+    tipAfterProposal: number,
+    // The rollback cases take one operator out before the window opens, so
+    // they assert the gate on the operators that stay.
+    databases: string[] = operatorDatabases,
+  ) => {
+    for (const db of databases) {
       const gwStartBlock = Number(
         await psqlQuery(db, "SELECT MIN(gw_start_block) FROM upgrade_state WHERE stack_role='GCS';"),
       );
@@ -1232,7 +1314,7 @@ const runBlueGreenSteps = async (
         );
       }
       await waitUntil({
-        label: `${db}  gw_dry_run_started without a Gateway tx (gw_start_block=${gwStartBlock}, tip=${tipAfterProposal})`,
+        label: `${db}  gw_dry_run_started (gw_start_block=${gwStartBlock}, tip=${tipAfterProposal})`,
         timeoutSecs: 60,
         check: async () =>
           (await psqlQuery(
@@ -1419,6 +1501,93 @@ const runBlueGreenSteps = async (
   const reenabled = await setSyntheticOps(true);
   console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
 
+  // Rollback cases, before the cutover: the cutover moves `versioning` and
+  // merges the GCS schema away, so nothing can follow it. Each case leaves its
+  // rows at `failed`, which is what the listener needs for the next proposal.
+  //
+  // The plain profile only. Every other mode drives this same flow with its own
+  // perturbation — manifest checks that count attempts, a drifting operator 1,
+  // host-report faults, a controller interruption — and three more attempts
+  // would land in the middle of it.
+  const plainProfile =
+    !withManifests && !dryRunDrift && !faultHost && !interruptDetector && !quietSynthetic && interrupt === "none";
+  if (opCount >= 2 && plainProfile && process.env.BLUE_GREEN_ROLLBACK_CASES !== "0") {
+    await runRollbackCases({
+      operatorDatabases,
+      hostChainCount: hostChains.length,
+      gcsStackVersion,
+      psqlQuery,
+      waitUntil,
+      propose: async (proposalId: number, duration: string) => {
+        const startTime = new Date(Date.now() + 30_000).toISOString();
+        const tipBefore = await gatewayTip();
+        await runContractTask(
+          "host-sc",
+          "host-sc-deploy",
+          'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
+            '--environment local --start-time "$PROPOSE_START_TIME" --buffer 10s ' +
+            `--duration ${duration} --proposal-id ${proposalId} ` +
+            '--software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+          {
+            env: {
+              LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
+              LOCAL_HOST_CHAINS: localHostChains,
+              PROPOSE_START_TIME: startTime,
+              PROPOSE_SW_VERSION: gcsVersionLive,
+            },
+          },
+        );
+        const tipAfter = await gatewayTip();
+        for (const db of operatorDatabases) {
+          await waitUntil({
+            label: `${db}  GCS rows for proposal ${proposalId}`,
+            timeoutSecs: 120,
+            check: async () =>
+              (await psqlQuery(
+                db,
+                `SELECT CASE WHEN COUNT(*)=${hostChains.length} AND COUNT(DISTINCT proposal_block)=1
+                             THEN 'ready' ELSE 'waiting' END
+                   FROM upgrade_state WHERE stack_role='GCS' AND status='in_progress';`,
+              )) === "ready",
+          });
+        }
+        return { tipBefore, tipAfter };
+      },
+      waitDryRunStarted: async (databases, tips) => {
+        for (const db of databases) {
+          await waitUntil({
+            label: `${db}  GCS DryRunStarted`,
+            timeoutSecs: 300,
+            check: async () =>
+              (await psqlQuery(
+                db,
+                `SELECT CASE WHEN COUNT(*)=${hostChains.length}
+                                    AND BOOL_AND(state='DryRunStarted')
+                                    AND COUNT(DISTINCT proposal_id)=1
+                                    AND COUNT(DISTINCT proposal_block)=1
+                             THEN 'ready' ELSE 'waiting' END
+                   FROM upgrade_state WHERE stack_role='GCS';`,
+              )) === "ready",
+          });
+        }
+        await assertGatewayGateOpens(tips.tipBefore, tips.tipAfter, databases);
+      },
+      withTraffic: async body => {
+        // A stopped operator can starve the proofs and end the traffic. The
+        // case continues, so nothing reads `stream.errored`.
+        const stream = startContinuousErc20Traffic(trafficTargets, blueGreenTrafficStreams);
+        try {
+          return await body();
+        } finally {
+          const stats = await stream.stop();
+          console.log(
+            `OK:   case traffic stopped (${stats.iterations} run(s), ${stats.failures} failure(s))`,
+          );
+        }
+      },
+    });
+  }
+
   // Deploy ERC20 + mint before the proposal so the balance handle lands in
   // public.ciphertexts with block_number < start_block. Transfers during the
   // dry-run window will force GCS's tfhe-worker to fall back to
@@ -1453,6 +1622,20 @@ const runBlueGreenSteps = async (
   }
 
   const completeUpgrade = async () => {
+  if (delayedSnsDatabase && delaySns === "outage") {
+    // Before the proposal, so the worker misses the whole dry run, its release included.
+    snsPaused = true;
+    await run(["docker", "pause", delayedSnsContainer]);
+    console.log(`OK:   ${delayedSnsContainer} paused: ${delayedSnsDatabase} cannot produce the probe's ct128`);
+  }
+  if (delayedSnsDatabase && delaySns === "hold") {
+    // The rollback recreated the Green schema empty; the trigger rides on it into the dry run.
+    const schemas = (await psqlQuery(delayedSnsDatabase, GCS_SCHEMA_SQL)).split("\n").filter(Boolean);
+    if (schemas.length !== 1) throw new Error(`${delayedSnsDatabase} has Green schemas ${JSON.stringify(schemas)}, expected one`);
+    probeHeldSchema = schemas[0]!;
+    await psqlQuery(delayedSnsDatabase, holdProbeSnsSql(probeHeldSchema));
+    console.log(`OK:   ${delayedSnsDatabase}  Green SNS will skip the dry-run probe's job until released`);
+  }
   if (driftDatabase) {
     // The rollback recreated the Green schema empty; the trigger rides on it into the dry run.
     const schemas = (await psqlQuery(driftDatabase, GCS_SCHEMA_SQL)).split("\n").filter(Boolean);
@@ -1470,7 +1653,8 @@ const runBlueGreenSteps = async (
     "host-sc-deploy",
     'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
       '--environment local --start-time "$PROPOSE_START_TIME" --duration 5m --buffer 10s ' +
-      '--proposal-id 2 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+      `--proposal-id ${CUTOVER_PROPOSAL_ID} --software-version "$PROPOSE_SW_VERSION" ` +
+      "--use-internal-proxy-address true",
     {
       env: {
         LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
@@ -1481,7 +1665,9 @@ const runBlueGreenSteps = async (
     },
   );
   const proposeTipAfter = await gatewayTip();
-  console.log(`OK:   activation emitted via task (proposalId=2, version=${gcsVersionLive}, start=${proposeStartTime})`);
+  console.log(
+    `OK:   activation emitted via task (proposalId=${CUTOVER_PROPOSAL_ID}, version=${gcsVersionLive}, start=${proposeStartTime})`,
+  );
   // The dry run must compute real application handles for the trigger to pick
   // one: run traffic from the proposal until DryRunStarted, while Green queues
   // every block from start_block for the dry run to compute.
@@ -1521,10 +1707,10 @@ const runBlueGreenSteps = async (
     console.log(`\n[7/11] verify committed GCS DryRunStarted transitions per operator`);
     for (const db of operatorDatabases) {
       await waitUntil({
-        label: `${db}  proposal 2 entered GCS DryRunStarted`,
+        label: `${db}  proposal ${CUTOVER_PROPOSAL_ID} entered GCS DryRunStarted`,
         timeoutSecs: 120,
         check: async () => (await psqlQuery(db,
-          dryRunEvidenceReadinessSql(gcsStackVersion, hostChains.map(chain => chain.chainId), 2))) === "ready",
+          dryRunEvidenceReadinessSql(gcsStackVersion, hostChains.map(chain => chain.chainId), CUTOVER_PROPOSAL_ID))) === "ready",
       });
     }
     await assertGatewayGateOpens(proposeTipBefore, proposeTipAfter);
@@ -1536,6 +1722,41 @@ const runBlueGreenSteps = async (
     }
   }
   if (dryRunTrafficFailures > 0) throw new Error(`${dryRunTrafficFailures} erc20 iteration(s) failed during the dry run`);
+
+  if (delayedSnsDatabase) {
+    // Resolved before any traffic: until the delayed operator cuts over it still runs Blue,
+    // whose ciphertexts differ from its upgraded peers', so the e2e consensus watchdog
+    // would fail every transaction in between. The state hash only needs ct64: the peers
+    // cut over, while the operator whose SNS is paused must defer on its probe's ct128
+    // instead of copying an incomplete descriptor.
+    for (const db of operatorDatabases.filter(db => db !== delayedSnsDatabase)) {
+      await waitUntil({
+        label: `${db}  cut over while ${delayedSnsDatabase}'s Green SNS is delayed`,
+        timeoutSecs: 300,
+        check: async () => (await psqlQuery(db, "SELECT stack_version FROM versioning;")) === gcsVersionLive,
+      });
+    }
+    await waitUntil({
+      label: `${delayedSnsDatabase}  defers cutover on the probe's ct128`,
+      timeoutSecs: 180,
+      check: async () => (await run(["bash", "-c",
+        "docker logs coprocessor1-gcs-upgrade-controller 2>&1 | grep -c \"a dry-run probe's ct128 is still pending\" || true"],
+        { allowFailure: true })).stdout.trim() !== "0",
+    });
+    const stuck = await psqlQuery(delayedSnsDatabase, "SELECT stack_version FROM versioning;");
+    if (stuck === gcsVersionLive) {
+      throw new Error(`${delayedSnsDatabase} cut over without its probe's ct128`);
+    }
+    if (delaySns === "hold" && (await psqlQuery(delayedSnsDatabase, "SELECT count(*) FROM public.e2e_held_probe_pbs;")) === "0") {
+      throw new Error(`${delayedSnsDatabase} never held the probe's SNS job`);
+    }
+    await resumeSns();
+    await waitUntil({
+      label: `${delayedSnsDatabase}  cut over once its SNS caught up`,
+      timeoutSecs: 300,
+      check: async () => (await psqlQuery(delayedSnsDatabase, "SELECT stack_version FROM versioning;")) === gcsVersionLive,
+    });
+  }
 
   console.log(
     `\n[8/11] start ${blueGreenTrafficStreams} background stream(s) across ` +
@@ -1609,6 +1830,20 @@ const runBlueGreenSteps = async (
       ]);
     }
     await restoreHostMining();
+    if (delayedSnsDatabase) {
+      // Every operator copied a complete, identical probe descriptor.
+      const copies = new Map<string, string>();
+      for (const db of operatorDatabases) {
+        copies.set(db, await psqlQuery(db, `SELECT COALESCE(string_agg(encode(handle, 'hex') || ':' ||
+            COALESCE(encode(ciphertext, 'hex'), '-') || ':' || COALESCE(encode(ciphertext128, 'hex'), '-'), ',' ORDER BY handle), '')
+          FROM public.synthetic_handle_digest;`));
+      }
+      const values = [...copies.values()];
+      if (values.some(value => value === "" || value.includes(":-")) || new Set(values).size !== 1) {
+        throw new Error(`probe copies differ or are incomplete: ${JSON.stringify(Object.fromEntries(copies))}`);
+      }
+      console.log(`OK:   every operator copied the same complete probe descriptor`);
+    }
 
     // Cutover takes the consensus version from the binary, so it must have moved too.
     for (const db of operatorDatabases) {
@@ -1757,6 +1992,9 @@ const runBlueGreenSteps = async (
       ...dryRunInstalled.map(db => psqlQuery(db, DRY_RUN_EVIDENCE_CLEANUP_SQL)),
       ...(driftDatabase && dryRunDriftInstalled ? [psqlQuery(driftDatabase, DRY_RUN_DRIFT_CLEANUP_SQL)] : []),
       restoreHostMining(),
+      resumeSns().then(() => delaySns === "hold" && delayedSnsDatabase
+        ? psqlQuery(delayedSnsDatabase, HOLD_PROBE_SNS_CLEANUP_SQL)
+        : undefined),
     ]);
     const failures = cleanup.filter((result): result is PromiseRejectedResult => result.status === "rejected");
     if (failures.length) {
@@ -2076,6 +2314,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "blue-green-dry-run-drift") {
       return runBlueGreenProfile(state, options, true, true);
+    }
+    if (name === "blue-green-delayed-sns") {
+      return runBlueGreenProfile(state, options, true, false, "hold");
+    }
+    if (name === "blue-green-sns-outage") {
+      return runBlueGreenProfile(state, options, true, false, "outage");
     }
     if (name === "coprocessor-db-state-revert") {
       return runDbStateRevert(state, options);

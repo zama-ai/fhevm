@@ -568,7 +568,7 @@ pub async fn query_sns_tasks(
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
     let query = format!(
         "
-        SELECT a.*, c.ciphertext
+        SELECT a.*, c.ciphertext, c.consensus_version
         FROM pbs_computations a
         JOIN ciphertexts c 
         ON a.handle = c.handle
@@ -602,6 +602,7 @@ pub async fn query_sns_tasks(
                 .map_err(|e| ExecutionError::ConversionError(e.into()))?;
             let handle: Vec<u8> = record.try_get("handle")?;
             let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
+            let ct64_consensus_version: Option<i16> = record.try_get("consensus_version")?;
             let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
             let task_span = tracing::info_span!(
                 "task",
@@ -622,6 +623,7 @@ pub async fn query_sns_tasks(
                 ct64_digest: None,
                 ct128_digest: None,
                 s3_format_version: None,
+                ct64_consensus_version,
                 span: task_span,
                 transaction_id,
             })

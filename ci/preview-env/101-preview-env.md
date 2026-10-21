@@ -77,10 +77,12 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   Forces `nb_coprocessor=2` when N=1. The `preview-env-blue-green` PR label
   is the other gate. With `deploy_polygon` (so also with `chain_mode=testnets`)
   the upgrade spans both host chains.
-- `enable_gpu` — GPU workers + Default FHE params (default `false`), including
-  on Anvil. CLI `--gpu`. Dispatch-only: the `preview-env-gpu` label cannot
-  carry a worker tag. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS
-  stays CPU. CPU Anvil stays on Test params.
+- `enable_gpu` — GPU workers (default `false`), including on Anvil. CLI
+  `--gpu`. Dispatch-only: the `preview-env-gpu` label cannot carry a worker
+  tag. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS stays CPU. GPU
+  workers need Default FHE params, so not with `fhe_keys=test-secure`.
+- `fhe_keys` — `default-insecure` (the default), `default-secure` or
+  `test-secure`. CLI `--fhe-keys`. See "FHE keys" below.
 - `workers_tag` — image tag for tfhe, sns, and zkproof. Required when
   `enable_gpu=true` on a dispatch (CLI `--workers-tag`). Must be empty when
   GPU is off. The `preview-env-gpu` label cannot carry a tag, so a GPU
@@ -188,6 +190,7 @@ helm-install; Actions stays the write path. `--ref` must already be on origin.
 ci/preview-env/preview-env launch --ref <your-branch> --tests
 ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b1-cuda12.8-sm70 --tests
 ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b1-cuda12.8-sm70 --testnets --tests
+ci/preview-env/preview-env launch --ref <your-branch> --fhe-keys default-secure --lifetime 12 --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
 ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
@@ -198,7 +201,7 @@ ci/preview-env/preview-env launch --ref <your-branch> --tests \
 ```
 
 `--blue-green` sends `enable_blue_green=true` and `nb_coprocessor=2`.
-`--gpu` sends `enable_gpu=true` (GPU workers and Default FHE params) and
+`--gpu` sends `enable_gpu=true` (GPU workers) and
 requires `--workers-tag`, the image tag for tfhe, sns, and zkproof. Combine
 with `--testnets` for Sepolia/Amoy, or `--blue-green` for Green-only GPU.
 `--parties 2` without `--blue-green` is two-party consensus only.
@@ -215,6 +218,30 @@ ci/preview-env/preview-env namespace --run-id <run-id>
 ```
 
 ---
+
+## FHE keys
+
+Each preview makes its own FHE keys. `fhe_keys` (CLI `--fhe-keys`) picks the
+parameters and the keygen, as `<params>-<keygen>`:
+
+| `fhe_keys` | Time (4 KMS parties) | Use it for |
+| --- | --- | --- |
+| `default-insecure` (the default) | key in about 6 min | Almost everything: production-size keys, made with a shortcut. |
+| `default-secure` | about 2 h | Production-like runs, and testing the preprocessing and DKG themselves. Set `--lifetime` to cover it. |
+| `test-secure` | tens of minutes | Testing the preprocessing and keygen flow faster (for example key rotation). |
+
+Test parameters with the insecure keygen test neither production-size keys nor
+the real keygen, so that pair is not offered.
+
+- `default` parameters are the production ones. `test` parameters are much
+  smaller, so FHE operations are far cheaper than in production.
+- `insecure`: the KMS insecure keygen, a shortcut where one party makes the key
+  and shares it. Test environments only. The preview runs the docker stack's
+  `kms-insecure-keygen-redirect` in front of each KMS core to use it (see `README.md`).
+- `secure`: the real multi-party preprocessing and DKG, as in production.
+- The CRS is always made by the real ceremony.
+- GPU workers need `default` parameters, so `--gpu` refuses `--fhe-keys test-secure`.
+- PR-label deploys always use the defaults.
 
 ## Connect to your environment
 
@@ -268,12 +295,14 @@ kubectl port-forward -n <namespace> svc/jaeger 16686:16686    # http://localhost
 - **Without:** the stack is deployed with an idle test-suite Job — run tests
   yourself against the namespace, or re-label with `preview-env-e2e-tests`.
 
-To poke a party's connector proxy by hand (self-signed cert, so `-k`; the API
-key is the fixed test literal from `ci/preview-env/kms-connector/values-kms-connector-e2e.yaml`):
+To poke a party's connector proxy by hand (self-signed cert, so `-k`). Requests need an
+`Authorization: FhevmSig ...` header (RFC 038, see `fhevmSigHeader` in
+`test-suite/e2e/test/sdk/connector/connectorHttp.ts`), so an unsigned call only proves the
+proxy is up, answering `401` with `auth_missing`:
 
 ```bash
 kubectl port-forward -n <namespace> svc/kms-connector-1-kms-connector-proxy 8443:8443
-curl -sk -H "Authorization: Bearer fhevm-e2e-kms-connector-api-key" https://localhost:8443/v1/version
+curl -sk https://localhost:8443/version
 ```
 
 ## KMS context switch

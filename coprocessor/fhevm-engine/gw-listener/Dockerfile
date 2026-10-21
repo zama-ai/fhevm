@@ -22,6 +22,12 @@ ARG CARGO_PROFILE=release
 ARG SCCACHE_BUCKET
 ARG SCCACHE_REGION=eu-west-3
 ARG SCCACHE_S3_PREFIX
+
+# Preview-env only: compile this image as a different release. Set both or
+# neither - see the feature pair in fhevm-engine-common/Cargo.toml. Empty is
+# the production path and leaves the image unchanged.
+ARG BUILD_CONSENSUS_VERSION=
+ARG BUILD_STACK_VERSION=
 ENV SCCACHE_IDLE_TIMEOUT=0
 ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
 ENV SCCACHE_REGION=${SCCACHE_REGION}
@@ -60,7 +66,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
     cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p gw-listener && \
+    version_override=""; \
+    if [ -n "${BUILD_CONSENSUS_VERSION}" ] || [ -n "${BUILD_STACK_VERSION}" ]; then \
+      : "${BUILD_CONSENSUS_VERSION:?must be set together with BUILD_STACK_VERSION}"; \
+      : "${BUILD_STACK_VERSION:?must be set together with BUILD_CONSENSUS_VERSION}"; \
+      version_override="--features fhevm-engine-common/consensus-version-override,fhevm-engine-common/stack-version-override"; \
+    fi && \
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build ${version_override} --profile=${CARGO_PROFILE} -p gw-listener && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     cp target/${CARGO_PROFILE}/gw_listener /tmp/gw_listener
 

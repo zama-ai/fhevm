@@ -238,11 +238,12 @@ async fn detector_caps_upgrade_discovery_at_the_consensus_epoch_start() {
     insert_producer_block(&pool, 62, &current_block_hash, &current_handle).await;
     insert_completed_sns_digest(&pool, 62, &current_block_hash, &current_handle).await;
 
-    sqlx::query(
+    sqlx::query(&format!(
         "INSERT INTO consensus_epoch_history (
-             consensus_epoch, proposal_id, proposal_block, stack_version, outcome
-         ) VALUES ('1', $1, 50, 'test-green', 'pending')",
-    )
+             consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome
+         ) VALUES ('1', $1, 50, 'test-green', {}, 'pending')",
+        fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION
+    ))
     .bind(vec![0x91_u8; 32])
     .execute(&pool)
     .await
@@ -332,11 +333,12 @@ async fn initial_consensus_epoch_bootstraps_at_the_latest_finalized_block() {
 }
 
 async fn open_upgrade_window(pool: &PgPool, start_block: i64) {
-    sqlx::query(
+    sqlx::query(&format!(
         "INSERT INTO consensus_epoch_history (
-             consensus_epoch, proposal_id, proposal_block, stack_version, outcome
-         ) VALUES ('1', $1, $2, 'test-green', 'pending')",
-    )
+             consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome
+         ) VALUES ('1', $1, $2, 'test-green', {}, 'pending')",
+        fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION
+    ))
     .bind(vec![0x91_u8; 32])
     .bind(start_block - 10)
     .execute(pool)
@@ -492,11 +494,12 @@ async fn blue_and_green_discover_the_same_block_without_consensus_epoch_collisio
     let parent_hash = vec![0x61; 32];
     let handle = vec![0x42; 32];
 
-    sqlx::query(
+    sqlx::query(&format!(
         "INSERT INTO consensus_epoch_history (
-             consensus_epoch, proposal_id, proposal_block, stack_version, outcome
-         ) VALUES ('1', $1, 60, 'test-green', 'pending')",
-    )
+             consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome
+         ) VALUES ('1', $1, 60, 'test-green', {}, 'pending')",
+        fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION
+    ))
     .bind(vec![0xa1_u8; 32])
     .execute(&admin_pool)
     .await

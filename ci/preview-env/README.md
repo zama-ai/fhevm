@@ -73,6 +73,7 @@ ci/preview-env/
 ├── kms-connector/
 │   ├── values-kms-connector-e2e.yaml       # kms-connector overlay
 │   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain (deploy_polygon)
+│   ├── values-kms-insecure-keygen-redirect-e2e.yaml # `common` chart overlay: kms-worker -> kms-core redirect, insecure keygen (fhe_keys=default-insecure)
 │   └── values-postgres-connector-e2e.yaml  # `common` chart overlay: in-cluster Postgres, dedicated to kms-connector
 ├── observability/
 │   ├── values-prometheus-e2e.yaml # `common` chart overlay (raw objects): in-namespace Prometheus, endpoints-SD scraping
@@ -296,14 +297,24 @@ The two host chains are the real public testnets, so this is the only preview sh
   the coprocessor tx-senders, `#0` and `#3` are gateway-side and come from the Nitro faucet.
 - **Ceremony timing.** The kms-connector's Ethereum listener pins its reads to the
   *finalized* block, ~14 min behind head on Sepolia, and that is hardcoded in the
-  connector. CPU launches keep **Test** FHE parameters (`params-type=1`). GPU
-  launches (dispatch `enable_gpu` / `--gpu`, including Anvil) switch
-  to production-size **Default** parameters (`params-type=0`) because Test
-  parameters use drift noise reduction, which TFHE 1.6.3's GPU conversion rejects.
-  A four-party Default-parameter DKG is multi-hour work, so GPU launches allow 4 h
-  for keygen and 1 h for CRS generation, with `KEYGEN_TIMEOUT=310m` giving Helm
-  room for both in one pod. CPU testnets stay at 60 m / 40 m waits and 110 m Helm.
-  This GPU path deliberately consumes most of the deploy job's six-hour budget.
+  connector. Dispatch `fhe_keys` / `--fhe-keys` picks the keys (table in
+  `101-preview-env.md`; PR-label runs use the default):
+  - `default-insecure` (the default): production-size **Default**
+    parameters (`params-type=0`), and each kms-worker reaches its core through
+    `kms-insecure-keygen-redirect-<i>` (the docker stack's keygen proxy script), which switches keygen to
+    the KMS insecure keygen (minutes, no DKG). The redirect also sits on every other
+    kms-worker call, decryptions included. The CRS ceremony is the real one; key
+    and CRS took about 6 min on a 4-party Anvil preview, so the 15 m waits and
+    45 m Helm stay; testnets 60 m / 40 m and 110 m Helm.
+  - `default-secure`: Default parameters from the real DKG. A four-party Default
+    DKG is multi-hour work, so it allows 4 h for keygen and 1 h for CRS, with
+    `KEYGEN_TIMEOUT=310m` giving Helm room for both in one pod. It deliberately
+    consumes most of the deploy job's six-hour budget.
+  - `test-secure`: **Test** parameters
+    (`params-type=1`) from the real DKG. Anvil keeps the 15 m waits and 45 m
+    Helm; testnets 60 m / 40 m and 110 m Helm.
+  GPU workers need Default parameters: Test parameters use drift noise reduction,
+  which TFHE 1.6.3's GPU conversion rejects, so `--gpu` refuses `--fhe-keys test-secure`.
   The relayer inherits the same dependency - it seeds `/v2/keyurl` from `getCrsMaterials`
   at the finalized block and exits if the CRS is not visible yet - so `deploy-relayer.sh`
   waits on its rollout before the e2e Workflows start, otherwise every test fails on
@@ -440,14 +451,18 @@ The two out-of-chart inputs the proxy needs are produced at deploy time by
   rotate the cert under proxies that only read it at startup. The compose path's
   checked-in `test-suite/fhevm/static/config/kms-connector-proxy/tls.crt` is *not*
   reusable here: its SANs are the compose hostnames, and Node rejects a SAN mismatch.
-- **API key**: the fixed test literal `fhevm-e2e-kms-connector-api-key` (same as
-  `.env.test-suite`); its digest is inline in `values-kms-connector-e2e.yaml`
-  (`kmsConnectorProxy.apiKeyDigest.value`), no Secret.
+- **FhevmSig auth**: the e2e suite signs with a fixed test key
+  (`KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY` in the test-suite overlays, same as
+  `.env.test-suite`) whose address is `kmsConnectorProxy.allowedSenders` in
+  `values-kms-connector-e2e.yaml`, no Secret. Each party's
+  `kmsConnectorProxy.txSenderAddress` (the request `audience`) is set by the
+  script from the derived KMS tx-sender wallets (`WALLETS_JSON`).
 - **Test-suite wiring**: the script publishes ConfigMap **`kms-connector-http`**
-  (`endpoint-urls` = one https URL per party, `kms-threshold` = MPC `t` from
-  `lib.sh`'s `kms_t`, `ca.crt` = the proxies' cert). The idle Job and the
-  `@fhevm/sdk` + Polygon Argo Workflow overlays `configMapKeyRef` it into
-  `KMS_CONNECTOR_ENDPOINT_URLS`, `KMS_THRESHOLD` and `KMS_CONNECTOR_PROXY_CA`, and
+  (`endpoint-urls` = one https URL per party, `tx-sender-addresses` = each party's
+  audience in the same order, `kms-threshold` = MPC `t` from `lib.sh`'s `kms_t`,
+  `ca.crt` = the proxies' cert). The idle Job and the `@fhevm/sdk` + Polygon Argo
+  Workflow overlays `configMapKeyRef` it into `KMS_CONNECTOR_ENDPOINT_URLS`,
+  `KMS_CONNECTOR_TX_SENDER_ADDRESSES`, `KMS_THRESHOLD` and `KMS_CONNECTOR_PROXY_CA`, and
   their startup script writes the PEM to `NODE_EXTRA_CA_CERTS` (Node only trusts
   extra CAs from a file, and the generic `common` chart gives a one-shot Job no
   ConfigMap volume). Their DAG's last task, `connector-http`, runs the
@@ -614,9 +629,9 @@ before broadcasting again.
   `preview-env --gpu --workers-tag <tag>`, applies `values-coprocessor-gpu-e2e.yaml`
   to `tfhe` / `sns` / `zkproof`, and uses that tag for those workers. The
   `preview-env-gpu` label cannot carry a tag, so GPU deploys are dispatch-only.
-  GPU launches generate Default FHE params. With `preview-env-blue-green` / `--blue-green`
-  as well, that overlay lands on Green (GCS) only; Blue (BCS) stays on the CPU
-  `coprocessor` pool. CPU launches keep Test params.
+  GPU workers need Default FHE params (not `fhe_keys=test-secure`). With
+  `preview-env-blue-green` / `--blue-green` as well, that overlay lands on Green
+  (GCS) only; Blue (BCS) stays on the CPU `coprocessor` pool.
 - ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain
   (`deploy_polygon`)" above (opt-in; ETH + Polygon Amoy sharing one KMS key).
 - ~~Deploy against real public testnets~~ — done, see "Chain modes" above

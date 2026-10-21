@@ -2,8 +2,13 @@
 #![allow(dead_code)]
 
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, dev::ServerHandle, web};
-use alloy::transports::http::reqwest::Client;
-use http::uri::Authority;
+use alloy::{
+    primitives::Address,
+    signers::local::PrivateKeySigner,
+    transports::http::reqwest::{Client, RequestBuilder},
+};
+use connector_utils::config::{ContractConfig, contract::default_protocol_config_contract_config};
+use http::uri::{Authority, PathAndQuery};
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
     VersionResponse,
@@ -14,17 +19,49 @@ use proxy::{
 };
 use serde_json::json;
 use std::{
+    collections::HashSet,
     net::{SocketAddr, TcpListener},
     path::PathBuf,
     sync::Arc,
     time::{Duration, Instant},
 };
 
-pub const API_KEY: &str = "test";
-// sha256("test")
-pub const API_KEY_DIGEST: &str =
-    "0x9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
 pub const MAX_BODY_BYTES: usize = 1024;
+/// The private key of the only allowed sender.
+pub const SENDER_KEY: &str = "0x0101010101010101010101010101010101010101010101010101010101010101";
+/// The test proxy's own address, the audience of the headers it accepts.
+pub const AUDIENCE: Address = Address::repeat_byte(0xa1);
+pub const CHAIN_ID: u64 = 1;
+pub const PROTOCOL_CONFIG: Address = Address::repeat_byte(0xc0);
+
+/// The only allowed sender.
+pub fn sender() -> PrivateKeySigner {
+    SENDER_KEY.parse().unwrap()
+}
+
+pub fn now() -> u64 {
+    fhevm_sig_auth::unix_now()
+}
+
+/// An `Authorization` value signed by `signer` for the test proxy, expiring at `expires`.
+pub async fn auth_header_expiring(
+    signer: &PrivateKeySigner,
+    path: &str,
+    body: &[u8],
+    expires: u64,
+) -> String {
+    let domain = fhevm_sig_auth::domain(CHAIN_ID, PROTOCOL_CONFIG);
+    let path = PathAndQuery::try_from(path).unwrap();
+    fhevm_sig_auth::sign(signer, &domain, AUDIENCE, &path, body, expires)
+        .await
+        .unwrap()
+        .to_string()
+}
+
+/// An `Authorization` value signed by `signer` for the test proxy, valid for one minute.
+pub async fn auth_header(signer: &PrivateKeySigner, path: &str, body: &[u8]) -> String {
+    auth_header_expiring(signer, path, body, now() + 60).await
+}
 
 /// A stub Connector endpoint echoing what it receives.
 pub struct StubEndpoint {
@@ -122,20 +159,18 @@ impl TestProxy {
         endpoint_addresses: Vec<Authority>,
         endpoints: Vec<StubEndpoint>,
     ) -> Self {
-        Self::start_with_config(endpoint_addresses, endpoints, Duration::from_secs(60)).await
+        Self::start_with_config(endpoint_addresses, endpoints, |_| {}).await
     }
 
     pub async fn start_with_config(
         endpoint_addresses: Vec<Authority>,
         endpoints: Vec<StubEndpoint>,
-        endpoint_response_timeout: Duration,
+        customize: impl FnOnce(&mut Config),
     ) -> Self {
         let addr = free_addr();
         let tls = TestTls::generate(addr);
-        let config = Config {
-            endpoint_response_timeout,
-            ..Self::config(addr, &tls, endpoint_addresses)
-        };
+        let mut config = Self::config(addr, &tls, endpoint_addresses);
+        customize(&mut config);
         let (proxy, state) = Proxy::from_config(config).unwrap();
         std::thread::spawn(move || proxy.run());
 
@@ -162,7 +197,13 @@ impl TestProxy {
                 cert_path: tls.cert_path.clone(),
                 key_path: tls.key_path.clone(),
             },
-            api_key_digest: API_KEY_DIGEST.parse().unwrap(),
+            ethereum_chain_id: CHAIN_ID,
+            protocol_config_contract: ContractConfig {
+                address: PROTOCOL_CONFIG,
+                ..default_protocol_config_contract_config()
+            },
+            allowed_senders: HashSet::from([sender().address()]),
+            tx_sender_address: AUDIENCE,
             endpoint_addresses,
             endpoint_connect_timeout: Duration::from_millis(500),
             endpoint_healthcheck_frequency: ENDPOINT_HEALTHCHECK_FREQUENCY,
@@ -174,6 +215,24 @@ impl TestProxy {
 
     pub fn url(&self, route: &str) -> String {
         format!("https://{}{route}", self.addr)
+    }
+
+    /// A `POST` of `body` to `route`, signed by the allowed sender.
+    pub async fn post(&self, route: &str, body: impl Into<Vec<u8>>) -> RequestBuilder {
+        let body = body.into();
+        let auth = auth_header(&sender(), route, &body).await;
+        self.client
+            .post(self.url(route))
+            .header("authorization", auth)
+            .body(body)
+    }
+
+    /// A `GET` of `route`, signed by the allowed sender.
+    pub async fn get(&self, route: &str) -> RequestBuilder {
+        let auth = auth_header(&sender(), route, b"").await;
+        self.client
+            .get(self.url(route))
+            .header("authorization", auth)
     }
 }
 

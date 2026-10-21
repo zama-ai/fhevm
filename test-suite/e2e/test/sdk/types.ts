@@ -24,6 +24,7 @@ export interface SdkInstance {
     readonly signer: Signer & { readonly address: string };
     readonly startTimestamp?: number | undefined;
     readonly transportKeypair?: { readonly privateKey: string; readonly publicKey: string } | undefined;
+    readonly timeoutMs?: number | undefined;
   }): Promise<ClearValueType>;
 
   delegatedUserDecryptSingleHandle(parameters: {

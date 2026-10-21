@@ -384,17 +384,35 @@ where
 /// hash that the next tick's rewind cannot repair. The latch is only written by the
 /// listener in (or after) its alignment transaction, so requiring it here holds the GW
 /// track until the listener has provably aligned to this window.
-pub(crate) async fn gw_window_rewound<'e, E>(executor: E) -> Result<bool, sqlx::Error>
+///
+/// Returns `(gw_start_block, gw_tip, gw_window_rewound)` read in ONE statement, so all three
+/// come from one snapshot even under READ COMMITTED. The listener lowers the watermark and
+/// sets the latch in the same transaction; separate reads could pair a stale pre-rewind
+/// watermark with the post-rewind latch and seal a block still being re-ingested. `None`
+/// when `gw_start_block` or the watermark is unset.
+pub(crate) async fn gw_window_rewound<'e, E>(
+    executor: E,
+) -> Result<Option<(i64, i64, bool)>, sqlx::Error>
 where
     E: sqlx::Executor<'e, Database = Postgres>,
 {
-    let v: Option<bool> = sqlx::query_scalar(
-        "SELECT BOOL_AND(gw_window_rewound) FROM upgrade_state
-          WHERE stack_role = 'GCS' AND status = 'in_progress'",
-    )
-    .fetch_one(executor)
-    .await?;
-    Ok(v.unwrap_or(false))
+    let (gw_start, gw_tip, rewound): (Option<i64>, Option<i64>, Option<bool>) =
+        sqlx::query_as(&format!(
+            "SELECT
+               (SELECT gw_start_block FROM upgrade_state
+                 WHERE stack_role = 'GCS' AND status = 'in_progress'
+                 ORDER BY host_chain_id
+                 LIMIT 1),
+               (SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+                 WHERE dummy_id = true),
+               (SELECT BOOL_AND(gw_window_rewound) FROM upgrade_state
+                 WHERE stack_role = 'GCS' AND status = 'in_progress')"
+        ))
+        .fetch_one(executor)
+        .await?;
+    Ok(gw_start
+        .zip(gw_tip)
+        .map(|(start, tip)| (start, tip, rewound.unwrap_or(false))))
 }
 
 /// Uploads GCS `state_hash` rows with `s3_uploaded_at IS NULL`, attaching the
@@ -409,6 +427,27 @@ where
 /// height, so the join now yields a single deterministic block_hash per upload.
 /// The in-progress attempt `(proposal_id, proposal_block)`, if any.
 type Attempt = Option<(Vec<u8>, i64)>;
+
+/// Blue ingested the `end_block` of this chain at least `cutoff` ago.
+pub(crate) async fn chain_upload_closed(
+    pool: &Pool<Postgres>,
+    chain_id: i64,
+    end_block: i64,
+    cutoff: Duration,
+) -> Result<bool, sqlx::Error> {
+    let (closed,): (bool,) = sqlx::query_as(
+        "SELECT EXISTS(
+            SELECT 1 FROM public.host_chain_blocks_valid b
+             WHERE b.chain_id = $1 AND b.block_number >= $2
+               AND b.created_at <= NOW() - make_interval(secs => $3))",
+    )
+    .bind(chain_id)
+    .bind(end_block)
+    .bind(cutoff.as_secs_f64())
+    .fetch_one(pool)
+    .await?;
+    Ok(closed)
+}
 
 /// `(in-progress attempt, every chain's end_block was ingested by Blue at least cutoff
 /// ago)`. Past the cutoff peers have decided, so a hash published now could only
@@ -703,7 +742,7 @@ async fn compute_and_upload_state_hashes(
     // gw_ready captures "GW track eligible this pass" (not anchored AND watermark past gw_start);
     // it gates compute AND upload.
     let mut gw_ready = false;
-    if let Some((_, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
+    if let Some((_, _, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
         let skip_gw = gw_consensus_reached(&mut *tx).await?;
         for (chain_id, start, end) in windows {
             compute_and_insert_gcs(
@@ -723,11 +762,7 @@ async fn compute_and_upload_state_hashes(
         // The gate itself lives in compute_and_insert_gw_input_hashes (it self-skips);
         // here it is mirrored into gw_ready to gate the upload.
         if !skip_gw {
-            if let (Some(gw_start), Some(gw_tip)) = (
-                gw_start_block(&mut *tx).await?,
-                gw_listener_tip(&mut *tx).await?,
-            ) {
-                let gw_aligned = gw_window_rewound(&mut *tx).await?;
+            if let Some((gw_start, gw_tip, gw_aligned)) = gw_window_rewound(&mut *tx).await? {
                 gw_ready = gw_aligned && gw_tip >= gw_start;
                 compute_and_insert_gw_input_hashes(
                     &mut tx,

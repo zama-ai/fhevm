@@ -81,41 +81,20 @@ fn consensus_is_older_than(live: i64) -> bool {
     i64::from(CONSENSUS_PROTOCOL_VERSION) < live
 }
 
-/// Layout of a consensus epoch minted from a finalized upgrade log:
-/// `{version}/block_{block_number}`.
+/// Build the consensus-epoch identifier of a finalized
+/// `CoprocessorUpgradeProposed` log: `{consensus_version}/block_{block_number}`.
 ///
-/// `version` is currently the software version and will become the consensus
-/// protocol version. It must be unique across breaking upgrades; `block_number`
-/// is only a fail-safe if the same version is reused. `block_number` is the
-/// block that contains `CoprocessorUpgradeProposed`, not `gwStartBlock`. The
-/// log is only ingested on `CANONICAL_PROTOCOL_CONFIG_CHAIN_ID`, so the chain
-/// id is not part of the identifier.
-pub const CONSENSUS_EPOCH_MAX_BYTES: usize = 256;
-
-/// Build the consensus-epoch identifier from a finalized
-/// `CoprocessorUpgradeProposed` log. Every coprocessor that ingested that log
-/// derives the same string, with no shared counter.
-pub fn format_consensus_epoch(version: &str, block_number: u64) -> Result<String, String> {
-    if version.is_empty() {
-        return Err("consensus epoch version is empty".to_owned());
-    }
-    if version.contains('\0') {
-        return Err(
-            "consensus epoch version contains NUL, which PostgreSQL text cannot store".to_owned(),
-        );
-    }
-    for segment in version.split('/') {
-        if segment.is_empty() {
-            return Err(format!(
-                "consensus epoch version contains invalid path segment {segment:?}"
-            ));
-        }
-    }
-    let consensus_epoch = format!("{version}/block_{block_number}");
-    if consensus_epoch.len() > CONSENSUS_EPOCH_MAX_BYTES {
-        return Err("consensus epoch exceeds 256 bytes".to_owned());
-    }
-    Ok(consensus_epoch)
+/// `consensus_version` is the protocol version the proposal upgrades to: the
+/// live `versioning.consensus_version` plus one, since every proposal raises
+/// [`CONSENSUS_PROTOCOL_VERSION`] by exactly one. It is read from the database,
+/// not from the binary, so Blue and Green derive the same identifier whichever
+/// ingests the log first. `block_number` is only a fail-safe if the same version
+/// is reused, e.g. after a failed attempt. It is the block that contains
+/// `CoprocessorUpgradeProposed`, not `gwStartBlock`. The log is only ingested on
+/// `CANONICAL_PROTOCOL_CONFIG_CHAIN_ID`, so the chain id is not part of the
+/// identifier.
+pub fn format_consensus_epoch(consensus_version: i64, block_number: u64) -> String {
+    format!("{consensus_version}/block_{block_number}")
 }
 
 /// Runtime stack mode, shared between a service's work loop and the
@@ -459,6 +438,22 @@ pub async fn is_retired(conn: &mut PgConnection) -> Result<bool, sqlx::Error> {
         .is_some_and(consensus_is_older_than))
 }
 
+/// Re-read the live consensus version on `conn` and report whether every
+/// version below this binary's has been retired, i.e. this binary's
+/// [`CONSENSUS_PROTOCOL_VERSION`] is not newer than the live one.
+///
+/// This gates destroying what older stacks hold, so unlike [`is_retired`] it
+/// fails closed: a missing `versioning` row answers `false`.
+pub async fn older_versions_are_retired(conn: &mut PgConnection) -> Result<bool, sqlx::Error> {
+    Ok(older_versions_retired_under(
+        live_consensus_version(conn).await?,
+    ))
+}
+
+fn older_versions_retired_under(live: Option<i64>) -> bool {
+    live.is_some_and(|live| !consensus_is_newer_than(live))
+}
+
 /// Re-read the live consensus version on `conn` and fail if this binary is strictly
 /// older (a retired stack). A missing `versioning` row is permissive, mirroring
 /// [`resolve_gcs_mode`]'s default, so a fresh/unseeded DB is not locked out.
@@ -637,7 +632,7 @@ pub async fn begin_write_guarded_conn(
 mod tests {
     use super::{
         consensus_is_newer_than, consensus_is_older_than, consensus_matches,
-        format_consensus_epoch, parse_version, versions_equal,
+        format_consensus_epoch, older_versions_retired_under, parse_version, versions_equal,
     };
     use super::{run_stack_version_listener, ListenerPoolClosed, StackMode};
     use crate::STACK_VERSION;
@@ -752,34 +747,23 @@ mod tests {
     }
 
     #[test]
+    fn older_versions_are_retired_only_once_mine_is_live() {
+        let mine = i64::from(crate::CONSENSUS_PROTOCOL_VERSION);
+        // Shadow: the live fleet is still on an older version.
+        assert!(!older_versions_retired_under(Some(mine - 1)));
+        assert!(older_versions_retired_under(Some(mine)));
+        // Retired myself: everything below me is older still.
+        assert!(older_versions_retired_under(Some(mine + 1)));
+        // Unseeded: destroying on a guess is not allowed.
+        assert!(!older_versions_retired_under(None));
+    }
+
+    #[test]
     fn consensus_epoch_is_derived_from_the_finalized_log() {
+        assert_eq!(format_consensus_epoch(3, 19283746), "3/block_19283746");
         assert_eq!(
-            format_consensus_epoch("v0.15.1", 19283746).unwrap(),
-            "v0.15.1/block_19283746",
+            format_consensus_epoch(i64::MAX, u64::MAX),
+            "9223372036854775807/block_18446744073709551615"
         );
-        assert_eq!(
-            format_consensus_epoch("v0.15/extra", 1).unwrap(),
-            "v0.15/extra/block_1"
-        );
-        for version in [
-            ".",
-            "..",
-            "v0.15/../rc1",
-            "v0.15/./rc1",
-            "release candidate",
-            "révision",
-            "~2E",
-            "%2E%2E",
-            " v0.15 ",
-        ] {
-            assert_eq!(
-                format_consensus_epoch(version, 1).unwrap(),
-                format!("{version}/block_1")
-            );
-        }
-        for version in ["/v0.15", "v0.15/", "v0.15//rc1", "v0.15\0rc1"] {
-            assert!(format_consensus_epoch(version, 1).is_err(), "{version}");
-        }
-        assert!(format_consensus_epoch("", 1).is_err());
     }
 }

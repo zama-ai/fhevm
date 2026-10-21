@@ -17,6 +17,8 @@ pub enum ErrorCode {
     UnsupportedAttestationType,
     /// Sender authentication failure (connector proxy).
     SenderAuthenticationFailed,
+    /// The sender's `FhevmSig` has expired: re-sign and retry (connector proxy).
+    AuthExpired,
     /// Per-sender rate limit exceeded (connector proxy).
     RateLimited,
     /// Endpoint is overloaded.
@@ -25,6 +27,8 @@ pub enum ErrorCode {
     AclDenied,
     /// The user's EIP-712 / ERC-1271 signature was rejected per RFC 016 (kms_worker row).
     UserSignatureRejected,
+    /// The signed user-decryption validity interval has ended; a new signed request is needed.
+    UserDecryptionExpired,
     /// Ciphertext material not found (kms_worker row).
     CiphertextNotFound,
     /// Coprocessor ciphertext-attestation consensus could not confirm the material.
@@ -50,8 +54,8 @@ impl ErrorCode {
     pub fn http_status(self) -> u16 {
         match self {
             Self::Malformed | Self::UnsupportedAttestationType => 400,
-            Self::SenderAuthenticationFailed => 401,
-            Self::AclDenied | Self::UserSignatureRejected => 403,
+            Self::SenderAuthenticationFailed | Self::AuthExpired => 401,
+            Self::AclDenied | Self::UserSignatureRejected | Self::UserDecryptionExpired => 403,
             Self::CiphertextNotFound => 404,
             Self::KmsContextDestroyed => 410,
             Self::KmsContextInvalid => 412,
@@ -75,9 +79,11 @@ impl ErrorCode {
             Self::Malformed
             | Self::UnsupportedAttestationType
             | Self::SenderAuthenticationFailed
+            | Self::UserDecryptionExpired
             | Self::KmsContextDestroyed
             | Self::Unprocessable => false,
-            Self::RateLimited
+            Self::AuthExpired
+            | Self::RateLimited
             | Self::Overloaded
             | Self::AclDenied
             | Self::UserSignatureRejected
@@ -154,6 +160,14 @@ mod tests {
             assert_eq!(code.as_str().parse::<ErrorCode>().unwrap(), code);
         }
         assert!("not_a_code".parse::<ErrorCode>().is_err());
+    }
+
+    #[test]
+    fn auth_expired_is_a_retryable_401() {
+        assert_eq!(ErrorCode::AuthExpired.as_str(), "auth_expired");
+        assert_eq!(ErrorCode::AuthExpired.http_status(), 401);
+        assert!(ErrorCode::AuthExpired.retryable());
+        assert!(!ErrorCode::SenderAuthenticationFailed.retryable());
     }
 
     #[test]

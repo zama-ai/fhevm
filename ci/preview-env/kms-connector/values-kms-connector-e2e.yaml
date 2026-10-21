@@ -70,8 +70,10 @@ kmsConnectorKmsWorker:
 # and needs no such out-of-band step).
 
 kmsConnectorProxy:
-  apiKeyDigest:
-    value: "0x75e65d843ac0b8656e1d75b2efc1cc7879e4b6c1854651cb28664686625a6e23"
+  # Address of the e2e suite's test key (KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY in the test-suite overlays).
+  # txSenderAddress is set per-release by deploy-kms-connector.sh to that party's tx-sender.
+  allowedSenders:
+    - "0xAE808c0968fF9557C8E0EAbcf57747c75B490Aa0"
   # `kubernetes.io/tls` Secret the chart does NOT create. deploy-kms-connector.sh
   # generates ONE self-signed certificate per namespace and stores it under this
   # name before the first release installs. So all N releases share it and the

@@ -6,9 +6,8 @@ use alloy::{
 use anyhow::anyhow;
 // Handle-only overloaded decryption events
 use fhevm_gateway_bindings::decryption::Decryption::{
-    PublicDecryptionRequest_1 as PublicDecryptionRequest,
-    UserDecryptionRequest_2 as UserDecryptionRequest,
-    UserDecryptionRequest_3 as UserDecryptionRequestV2,
+    PublicDecryptionRequest, UserDecryptionRequest_0 as UserDecryptionRequest,
+    UserDecryptionRequest_1 as UserDecryptionRequestV2,
 };
 use fhevm_host_bindings::{
     kms_generation::{

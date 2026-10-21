@@ -98,7 +98,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
      * It checks that the version is correct, the owner/pauser are set to the expected addresses, and the fhevmExecutor address is correct.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.5.0")));
+        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.7.0")));
         assertEq(acl.owner(), owner);
         assertEq(acl.isPauser(pauser), true);
         assertEq(acl.getFHEVMExecutorAddress(), fhevmExecutorAdd);
@@ -465,6 +465,50 @@ contract ACLTest is HostContractsDeployerTestUtils {
 
         vm.warp(uint256(expirationDate) + 1);
         vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+    }
+
+    /**
+     * @dev A per-contract delegation row is active, with no handle allowed, until the delegator revokes it.
+     */
+    function test_IsDelegatedForUserDecryptionUntilRevoked(
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        _assumeWildcardTestPreconditions(sender, delegate, contractAddress);
+
+        vm.assertFalse(acl.isDelegatedForUserDecryption(sender, delegate, contractAddress));
+
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, contractAddress, uint64(block.timestamp + 7 hours));
+        vm.assertTrue(acl.isDelegatedForUserDecryption(sender, delegate, contractAddress));
+
+        vm.roll(block.number + 1);
+        vm.prank(sender);
+        acl.revokeDelegationForUserDecryption(delegate, contractAddress);
+        vm.assertFalse(acl.isDelegatedForUserDecryption(sender, delegate, contractAddress));
+    }
+
+    /**
+     * @dev A wildcard delegation row is active for any contract before the expiration timestamp and inactive at it.
+     */
+    function test_IsDelegatedForUserDecryptionWithWildcardUntilExpiration(
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        _assumeWildcardTestPreconditions(sender, delegate, contractAddress);
+
+        uint64 expirationDate = uint64(block.timestamp + 7 hours);
+        address wildcardDelegation = acl.WILDCARD_DELEGATION_ADDRESS();
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, wildcardDelegation, expirationDate);
+
+        vm.warp(uint256(expirationDate) - 1);
+        vm.assertTrue(acl.isDelegatedForUserDecryption(sender, delegate, contractAddress));
+
+        vm.warp(expirationDate);
+        vm.assertFalse(acl.isDelegatedForUserDecryption(sender, delegate, contractAddress));
     }
 
     /**
@@ -903,7 +947,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
     }
 
     /**
-     * @dev Tests that user decryption delegation cannot be called if the contract is paused.
+     * @dev Tests that user decryption delegations can neither be granted nor updated while paused.
      */
     function test_CannotDelegateForUserDecryptionIfPaused(
         address sender,
@@ -920,38 +964,86 @@ contract ACLTest is HostContractsDeployerTestUtils {
         vm.prank(sender);
         acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
 
+        vm.roll(block.number + 1);
         vm.prank(pauser);
         acl.pause();
 
         vm.prank(sender);
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
-        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate + 1 hours);
+
+        vm.prank(sender);
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate - 1 hours);
+
+        address wildcard = acl.WILDCARD_DELEGATION_ADDRESS();
+        vm.prank(sender);
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        acl.delegateForUserDecryption(delegate, wildcard, expirationDate);
     }
 
     /**
-     * @dev Tests that revoke delegation for user decryption cannot be called if the contract is paused.
+     * @dev Tests that per-contract and wildcard delegations can be revoked while paused.
      */
-    function test_CannotRevokeDelegationForUserDecryptionIfPaused(
+    function test_CanRevokeDelegationForUserDecryptionIfPaused(
+        bytes32 handle,
         address sender,
         address delegate,
-        address contractAddress
+        address contractAddress,
+        bool wildcard
     ) public {
-        vm.assume(sender != contractAddress);
-        vm.assume(sender != delegate);
-        vm.assume(delegate != contractAddress);
-        vm.assume(delegate != acl.WILDCARD_DELEGATION_ADDRESS());
+        _assumeWildcardTestPreconditions(sender, delegate, contractAddress);
 
         uint64 expirationDate = uint64(block.timestamp) + 7 hours;
+        address delegationContract = wildcard ? acl.WILDCARD_DELEGATION_ADDRESS() : contractAddress;
 
         vm.prank(sender);
-        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
+        acl.delegateForUserDecryption(delegate, delegationContract, expirationDate);
+
+        _allowHandle(handle, sender);
+        _allowHandle(handle, contractAddress);
 
         vm.prank(pauser);
         acl.pause();
 
+        assertTrue(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+
+        // The one-delegate-or-revoke-per-block rule still applies during a pause.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ACL.AlreadyDelegatedOrRevokedInSameBlock.selector,
+                sender,
+                delegate,
+                delegationContract,
+                block.number
+            )
+        );
         vm.prank(sender);
-        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
-        acl.revokeDelegationForUserDecryption(delegate, contractAddress);
+        acl.revokeDelegationForUserDecryption(delegate, delegationContract);
+        vm.roll(block.number + 1);
+
+        vm.expectEmit(address(acl));
+        emit ACLEvents.RevokedDelegationForUserDecryption(sender, delegate, delegationContract, 2, expirationDate);
+        vm.prank(sender);
+        acl.revokeDelegationForUserDecryption(delegate, delegationContract);
+
+        assertTrue(acl.paused());
+        assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+        assertEq(acl.getUserDecryptionDelegationExpirationDate(sender, delegate, delegationContract), 0);
+        ACL.UserDecryptionDelegation memory delegation = _getUserDecryptionDelegation(
+            sender,
+            delegate,
+            delegationContract
+        );
+        assertEq(delegation.delegationCounter, 2);
+        assertEq(delegation.lastBlockDelegateOrRevoke, block.number);
+        assertTrue(acl.persistAllowed(handle, sender));
+        assertTrue(acl.persistAllowed(handle, contractAddress));
+
+        vm.roll(block.number + 1);
+        vm.expectRevert(abi.encodeWithSelector(ACL.NotDelegatedYet.selector, sender, delegate, delegationContract));
+        vm.prank(sender);
+        acl.revokeDelegationForUserDecryption(delegate, delegationContract);
     }
 
     /**

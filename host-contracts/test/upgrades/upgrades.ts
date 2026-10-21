@@ -8,6 +8,7 @@ import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 const KEY_COUNTER_BASE = BigInt(4) << BigInt(248);
 const CRS_COUNTER_BASE = BigInt(5) << BigInt(248);
+const INITIALIZABLE_STORAGE = '0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00';
 
 describe('Upgrades', function () {
   before(async function () {
@@ -27,12 +28,12 @@ describe('Upgrades', function () {
     });
     await acl.waitForDeployment();
     const ownerBef = await acl.owner();
-    expect(await acl.getVersion()).to.equal('ACL v0.5.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.7.0');
     const acl2 = await upgrades.upgradeProxy(acl, this.aclFactoryUpgraded);
     await acl2.waitForDeployment();
     const ownerAft = await acl2.owner();
     expect(ownerBef).to.equal(ownerAft);
-    expect(await acl2.getVersion()).to.equal('ACL v0.6.0');
+    expect(await acl2.getVersion()).to.equal('ACL v0.8.0');
     const aclAddress = ethers.getCreateAddress({
       from: this.signers.alice.address,
       nonce: nonceBef + 1,
@@ -51,7 +52,7 @@ describe('Upgrades', function () {
       },
     });
     await pc.waitForDeployment();
-    expect(await pc.getVersion()).to.equal('ProtocolConfig v0.3.0');
+    expect(await pc.getVersion()).to.equal('ProtocolConfig v0.4.0');
     const expectThresholds = async (c: any) => {
       expect(await c.getPublicDecryptionThreshold()).to.equal(1n);
       expect(await c.getUserDecryptionThreshold()).to.equal(2n);
@@ -61,8 +62,36 @@ describe('Upgrades', function () {
     await expectThresholds(pc);
     const pc2 = await upgrades.upgradeProxy(pc, factoryUpgraded);
     await pc2.waitForDeployment();
-    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.4.0');
+    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.5.0');
     await expectThresholds(pc2);
+  });
+
+  it('upgrades a ProtocolConfig proxy in place to ProtocolConfigReplica', async function () {
+    const factory = await ethers.getContractFactory('ProtocolConfig', this.signers.fred);
+    const replicaFactory = await ethers.getContractFactory('ProtocolConfigReplica', this.signers.fred);
+    const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
+    const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
+      },
+    });
+    await pc.waitForDeployment();
+    const [contextId, epochId] = await pc.getCurrentKmsContextAndEpoch();
+    // Existing replica proxies run the v0.15 ProtocolConfig, which is at initialized version 4.
+    await ethers.provider.send('hardhat_setStorageAt', [
+      await pc.getAddress(),
+      INITIALIZABLE_STORAGE,
+      ethers.toBeHex(4, 32),
+    ]);
+
+    const replica = await upgrades.upgradeProxy(pc, replicaFactory, { call: { fn: 'reinitializeV4' } });
+    await replica.waitForDeployment();
+    expect(await replica.getVersion()).to.equal('ProtocolConfigReplica v0.4.0');
+    expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId]);
+
+    await (await replica.mirrorKmsEpoch(contextId, epochId + 1n)).wait();
+    expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId + 1n]);
   });
 
   it('deploy upgradeable KMSGeneration', async function () {
@@ -152,11 +181,11 @@ describe('Upgrades', function () {
     const origACLAdd = readHostAddress('ACL_CONTRACT_ADDRESS');
     const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     const acl = (await this.aclFactory.attach(origACLAdd, deployer)) as ACL;
-    expect(await acl.getVersion()).to.equal('ACL v0.5.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.7.0');
     const newaclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample', deployer);
     const acl2 = (await upgrades.upgradeProxy(acl, newaclFactoryUpgraded)) as unknown as ACLUpgradedExample;
     await acl2.waitForDeployment();
-    expect(await acl2.getVersion()).to.equal('ACL v0.6.0');
+    expect(await acl2.getVersion()).to.equal('ACL v0.8.0');
     expect(await acl2.getAddress()).to.equal(origACLAdd);
     const newSigner = (await ethers.getSigners())[1];
     await acl2.transferOwnership(newSigner);
@@ -166,6 +195,6 @@ describe('Upgrades', function () {
     const newaclFactoryUpgraded3 = await ethers.getContractFactory('ACLUpgradedExample2', newSigner);
     const acl3 = await upgrades.upgradeProxy(acl2, newaclFactoryUpgraded3); // new owner can upgrade ACL
     await acl3.waitForDeployment();
-    expect(await acl3.getVersion()).to.equal('ACL v0.7.0');
+    expect(await acl3.getVersion()).to.equal('ACL v0.9.0');
   });
 });

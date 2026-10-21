@@ -12,7 +12,7 @@ use crate::{
     },
     monitoring::{
         health::{KmsHealthClient, State},
-        metrics::register_event_latency,
+        metrics::{inc_event_completed_counter, inc_event_failed_counter, register_event_latency},
     },
 };
 use anyhow::anyhow;
@@ -22,6 +22,7 @@ use connector_utils::{
     types::{KmsResponse, ProtocolEvent, ProtocolEventKind, db::RequestSource},
 };
 use fhevm_host_bindings::acl::ACL;
+use futures::FutureExt;
 use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -88,15 +89,18 @@ where
             let response_publisher = self.response_publisher.clone();
             let max_decryption_attempts = self.max_decryption_attempts;
 
-            spawn_with_limit(async move {
-                Self::handle_event(
-                    event_processor,
-                    response_publisher,
-                    event,
-                    max_decryption_attempts,
-                )
-                .await
-            })
+            spawn_with_limit(
+                async move {
+                    Self::handle_event(
+                        event_processor,
+                        response_publisher,
+                        event,
+                        max_decryption_attempts,
+                    )
+                    .await
+                }
+                .boxed(),
+            )
             .await;
         }
     }
@@ -127,7 +131,7 @@ where
         };
         info!("Event successfully processed!");
         let Some(response_kind) = response_kind else {
-            return;
+            return inc_event_completed_counter(&event);
         };
 
         let response = KmsResponse::new(response_kind, otlp_context, event.source);
@@ -142,6 +146,7 @@ where
             .await;
         } else {
             register_event_latency(&event);
+            inc_event_completed_counter(&event);
         }
     }
 
@@ -250,6 +255,8 @@ where
             if let Err(e) = response_publisher.mark_event_as_failed(event).await {
                 warn!("{e}");
             }
+        } else {
+            inc_event_failed_counter(event, "failed");
         }
     }
 }

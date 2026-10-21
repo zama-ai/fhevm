@@ -9,6 +9,44 @@ their immutable selectors. Preview-env sets e.g. fhevm.zama.ai/fleet=bcs.
 {{- end }}
 {{- end -}}
 
+{{/*
+Appends commonConfig.stackVersion (lowercased, dots as dashes) to a resource
+name so blue and green releases each own their copy. The base name is
+truncated instead of the suffix to keep names distinct within 63 characters.
+Returns the name unchanged when stackVersion is empty.
+Usage: include "coprocessor.versionedName" (dict "root" $ "name" "eth-sc-addresses")
+*/}}
+{{- define "coprocessor.versionedName" -}}
+{{- $suffix := .root.Values.commonConfig.stackVersion | default "" | toString | lower | replace "." "-" | trimAll "-" -}}
+{{- if $suffix -}}
+{{- $base := .name | trunc (int (sub 62 (len $suffix))) | trimSuffix "-" -}}
+{{- printf "%s-%s" $base $suffix -}}
+{{- else -}}
+{{- .name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "coprocessor.hostContractConfigMapName" -}}
+{{- include "coprocessor.versionedName" (dict "root" . "name" .Values.hostContractConfigMap.name) -}}
+{{- end -}}
+
+{{- define "coprocessor.gatewayContractConfigMapName" -}}
+{{- include "coprocessor.versionedName" (dict "root" . "name" .Values.gatewayContractConfigMap.name) -}}
+{{- end -}}
+
+{{- define "coprocessor.polygonContractConfigMapName" -}}
+{{- include "coprocessor.versionedName" (dict "root" . "name" .Values.polygonContractConfigMap.name) -}}
+{{- end -}}
+
+{{/*
+Renders a valueFrom block (or env list) through tpl so values can reference
+chart helpers, e.g. name: '{{ include "coprocessor.hostContractConfigMapName" . }}'.
+Usage: include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom)
+*/}}
+{{- define "coprocessor.valueFrom" -}}
+{{- tpl (toYaml .valueFrom) .root -}}
+{{- end -}}
+
 {{- define "upgradeControllerName" -}}
 {{- $default := printf "%s-%s" .Release.Name "upgrade-controller" }}
 {{- default $default .Values.upgradeController.nameOverride | trunc 63 | trimSuffix "-" -}}
@@ -139,7 +177,7 @@ indent with nindent (12 for deployments, 10 for the dbMigration job).
   value: {{ .Values.commonConfig.databaseSslRootCertPath.value | quote }}
 {{- else if (.Values.commonConfig.databaseSslRootCertPath).valueFrom }}
   valueFrom:
-    {{- toYaml .Values.commonConfig.databaseSslRootCertPath.valueFrom | nindent 4 }}
+    {{- include "coprocessor.valueFrom" (dict "root" . "valueFrom" .Values.commonConfig.databaseSslRootCertPath.valueFrom) | nindent 4 }}
 {{- end }}
 {{- end -}}
 
