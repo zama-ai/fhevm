@@ -324,7 +324,11 @@ async fn test_rejects_request_bodies() {
         send_raw(&t, request.as_bytes()).await,
         StatusCode::BAD_REQUEST
     );
-    assert!(started.elapsed() < UNKNOWN_SIGNER_WAIT / 3, "{:?}", started.elapsed());
+    assert!(
+        started.elapsed() < UNKNOWN_SIGNER_WAIT / 3,
+        "{:?}",
+        started.elapsed()
+    );
     assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 }
 

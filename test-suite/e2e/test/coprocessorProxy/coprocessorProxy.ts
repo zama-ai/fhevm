@@ -64,7 +64,8 @@ async function waitForSignersBlock(metricsUrl: string, timestamp: number) {
   const deadline = Date.now() + 60_000;
   for (;;) {
     if ((await signersBlockTimestamp(metricsUrl)) >= timestamp) return;
-    if (Date.now() > deadline) throw new Error(`${metricsUrl}: signer set has not reached block timestamp ${timestamp}`);
+    if (Date.now() > deadline)
+      throw new Error(`${metricsUrl}: signer set has not reached block timestamp ${timestamp}`);
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 }
@@ -174,7 +175,10 @@ describe('Coprocessor proxy', function () {
 
     it('refuses a node that is only in the destroyed context', async function () {
       const blockTimestamp = Number(process.env.COPROCESSOR_PROXY_SWITCH_BLOCK_TIMESTAMP);
-      expect(Number.isInteger(blockTimestamp) && blockTimestamp > 0, 'COPROCESSOR_PROXY_SWITCH_BLOCK_TIMESTAMP').to.equal(true);
+      expect(
+        Number.isInteger(blockTimestamp) && blockTimestamp > 0,
+        'COPROCESSOR_PROXY_SWITCH_BLOCK_TIMESTAMP',
+      ).to.equal(true);
       for (const i of urls.keys()) {
         await waitForSignersBlock(metricsUrls[i], blockTimestamp);
         const sent = await send(i, PRF_PATH, await sign(i, PRF_PATH, { signer: switchSigner() }));
