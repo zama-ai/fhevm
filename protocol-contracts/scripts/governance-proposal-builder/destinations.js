@@ -62,24 +62,6 @@ const DESTINATIONS = {
     rpcEnvVar: 'RPC_GATEWAY_DEVNET',
     defaultRpc: 'https://rpc-zama-testnet-0.t.conduit.xyz',
   },
-  'polygon-amoy-testnet': {
-    displayName: 'Polygon Amoy (testnet)',
-    // GovernanceOAppSender on Sepolia -> Polygon Amoy.
-    oappSender: '0xe57ea2f14f3051296d3965Bae8caAF86acdd6050',
-    // Amoy multisig.
-    destinationExecutor: '0xF0b1FE5DecfFe400fb141BBEAF9B181bCF76E3Cb',
-    rpcEnvVar: 'RPC_POLYGON_AMOY_TESTNET',
-    defaultRpc: 'https://polygon-amoy-bor-rpc.publicnode.com',
-  },
-  'polygon-amoy-devnet': {
-    displayName: 'Polygon Amoy (devnet)',
-    // GovernanceOAppSender on Sepolia -> Polygon Amoy (devnet).
-    oappSender: '0xbB0D1F2982cb1073e934695c78ADC45dE46d873a',
-    // Amoy devnet multisig.
-    destinationExecutor: '0xb8E03De46F3539aEA7FEb072eEAE6A8f4A14913B',
-    rpcEnvVar: 'RPC_POLYGON_AMOY_DEVNET',
-    defaultRpc: 'https://polygon-amoy-bor-rpc.publicnode.com',
-  },
   'polygon-mainnet': {
     displayName: 'Polygon Mainnet',
     // GovernanceOAppSender on Ethereum -> Polygon Mainnet.

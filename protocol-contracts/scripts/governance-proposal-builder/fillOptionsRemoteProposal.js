@@ -36,7 +36,7 @@ const EXPECTED_EMPTY_OPTIONS = '0x'
 // basis points (10000 = 100%).
 //
 // NOTE: these were calibrated for the Ethereum -> Gateway path. They may not
-// hold for other destinations (e.g. Polygon Amoy) — if a proposal gets stuck
+// hold for other destinations (e.g. Polygon) — if a proposal gets stuck
 // on delivery, recover it via the manual-execution runbook and recalibrate
 // these constants here (a fix here benefits every future proposal).
 const GAS_BASE_OVERHEAD = 130_000
