@@ -237,7 +237,7 @@ are not recorded.
 #### Metric Name: `kms_connector_endpoint_decryption_lookup_counter`
 
 - **Type / labels**: Counter; `route`, `outcome`.
-- **Description**: Committed lookups: `served` returns an existing response; `stored` submits new work; `retried` submits work after an old error; `attached` joins existing work, possibly skipping an old error.
+- **Description**: Committed lookups: `served` returns an existing response; `stored` submits new work; `retried` submits work after an old error; `already_in_progress` joins existing work, possibly skipping an old error.
 - **Alarm**: Diagnostic only. Worker metrics cannot isolate HTTP work because they lack a source label.
 
 #### Metric Name: `kms_connector_endpoint_decryption_wait_duration_seconds`

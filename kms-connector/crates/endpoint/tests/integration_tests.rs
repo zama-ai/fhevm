@@ -240,7 +240,7 @@ async fn test_duplicate_submissions_share_one_request() -> anyhow::Result<()> {
     let second = endpoint.spawn_pdec(&request);
 
     wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, id).await;
-    wait_for_counter(|| lookups("public_decrypt", "attached"), 1).await;
+    wait_for_counter(|| lookups("public_decrypt", "already_in_progress"), 1).await;
     assert_eq!(admitted_requests(), 2);
     complete_public(&endpoint.db, id).await?;
 
@@ -254,7 +254,7 @@ async fn test_duplicate_submissions_share_one_request() -> anyhow::Result<()> {
 
     assert_requests("public_decrypt", "200", "success", 2).await;
     assert_eq!(lookups("public_decrypt", "stored"), 1);
-    assert_eq!(lookups("public_decrypt", "attached"), 1);
+    assert_eq!(lookups("public_decrypt", "already_in_progress"), 1);
     assert_eq!(admitted_requests(), 0);
     endpoint.stop().await
 }
@@ -618,7 +618,7 @@ async fn test_retryable_or_expired_error_row_attaches_to_reprocessing(
 
     let pending = endpoint.spawn_pdec(&public);
     // Attachment is observable without changing the request row or consuming the old error.
-    wait_for_counter(|| lookups("public_decrypt", "attached"), 1).await;
+    wait_for_counter(|| lookups("public_decrypt", "already_in_progress"), 1).await;
     assert_eq!(
         request_status(&endpoint.db, PUBLIC_REQUESTS, public_id)
             .await
@@ -642,7 +642,7 @@ async fn test_retryable_or_expired_error_row_attaches_to_reprocessing(
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(error_body(response).await.message, "after");
 
-    assert_eq!(lookups("public_decrypt", "attached"), 1);
+    assert_eq!(lookups("public_decrypt", "already_in_progress"), 1);
     assert_eq!(lookups("public_decrypt", "retried"), 0);
     assert_eq!(lookups("user_decrypt", "retried"), 1);
     endpoint.stop().await
@@ -886,7 +886,7 @@ async fn test_listener_reconnection_fails_in_flight_requests_fast() -> anyhow::R
     wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, request.id()).await;
 
     let duplicate = endpoint.spawn_pdec(&request);
-    wait_for_counter(|| lookups("public_decrypt", "attached"), 1).await;
+    wait_for_counter(|| lookups("public_decrypt", "already_in_progress"), 1).await;
     info!("Killing the listener connection...");
     let killed = sqlx::query(
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity

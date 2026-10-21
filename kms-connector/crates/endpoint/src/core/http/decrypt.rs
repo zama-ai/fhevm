@@ -61,9 +61,14 @@ pub trait DecryptionRoute {
 enum LookupOutcome<Row> {
     /// A payload or an irrecoverable error within its serve window to serve as is.
     Serve(Row),
-    /// Disposition and stale-row handling are independent: an attached request can skip an old error.
+    /// The response has to be waited for.
     Wait {
-        disposition: &'static str,
+        /// How the request was handled, for metrics: `stored` (new request), `retried` (request reset after an old
+        /// error), or `already_in_progress` (already being processed).
+        outcome: &'static str,
+        /// The `created_at` of the old error row skipped by the lookup, if any. Waking up to that same row again means
+        /// the new response is not there yet. Set for `retried`, and also for `already_in_progress` when another
+        /// request already reset the request after that error.
         old_response_created_at: Option<DateTime<Utc>>,
     },
 }
@@ -100,11 +105,11 @@ pub async fn handle<R: DecryptionRoute>(
             row
         }
         LookupOutcome::Wait {
-            disposition,
+            outcome,
             old_response_created_at,
         } => {
             metrics::LOOKUP
-                .with_label_values(&[R::LABEL, disposition])
+                .with_label_values(&[R::LABEL, outcome])
                 .inc();
             wait_and_read_response::<R>(state, id, &mut waiter, old_response_created_at).await?
         }
@@ -144,7 +149,7 @@ async fn find_response_or_store_request<R: DecryptionRoute>(
 
     let otlp_ctx = PropagationContext::inject(&tracing::Span::current().context());
     let result = R::upsert_request(&mut *tx, id, request, &otlp_ctx).await?;
-    let disposition = match (result.rows_affected(), old_response_created_at.is_some()) {
+    let outcome = match (result.rows_affected(), old_response_created_at.is_some()) {
         (1, true) => {
             info!(decryption_id = %id, "Retrying failed decryption request");
             "retried"
@@ -155,14 +160,14 @@ async fn find_response_or_store_request<R: DecryptionRoute>(
         }
         (0, _) => {
             debug!(decryption_id = %id, "Decryption request already in progress, attaching");
-            "attached"
+            "already_in_progress"
         }
         (n, _) => return Err(anyhow!("unexpected upsert result: {n} rows affected")),
     };
 
     tx.commit().await?;
     Ok(LookupOutcome::Wait {
-        disposition,
+        outcome,
         old_response_created_at,
     })
 }

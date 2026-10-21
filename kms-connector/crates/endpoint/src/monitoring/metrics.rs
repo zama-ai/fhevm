@@ -16,13 +16,13 @@ use tokio::sync::Semaphore;
 pub static HTTP: LazyLock<HttpMetrics> =
     LazyLock::new(|| HttpMetrics::register("kms_connector_endpoint"));
 
-/// Decryption lookup counts by route and outcome: served, stored, retried, or attached.
+/// Decryption lookup counts by route and outcome: served, stored, retried, or already_in_progress.
 ///
 /// Updated by `decrypt::handle` after the database transaction commits.
 pub static LOOKUP: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "kms_connector_endpoint_decryption_lookup_counter",
-        "Committed decryption lookups by disposition",
+        "Committed decryption lookups by outcome",
         &["route", "outcome"]
     )
     .expect("register lookup counter")
@@ -78,7 +78,7 @@ pub fn init(limiter: Arc<Semaphore>, capacity: usize) -> prometheus::Result<()> 
         HTTP.requests.with_label_values(&[route, "200", "success"]);
     }
     for route in [PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE].map(route_label) {
-        for outcome in ["served", "stored", "retried", "attached"] {
+        for outcome in ["served", "stored", "retried", "already_in_progress"] {
             LOOKUP.with_label_values(&[route, outcome]);
         }
         WAIT.with_label_values(&[route]);
