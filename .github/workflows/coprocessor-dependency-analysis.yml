@@ -71,4 +71,7 @@ jobs:
       - name: Security issue whitelist
         run: |
           cd coprocessor/fhevm-engine
+          # Preserve version-specific enforcement for the webpki-roots shim
+          # exception, which cargo-audit itself can only express by advisory ID.
+          cargo-deny deny check bans
           cargo-audit audit
