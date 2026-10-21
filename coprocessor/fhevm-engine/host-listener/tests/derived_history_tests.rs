@@ -12,6 +12,7 @@ use host_listener::database::ingest::{ingest_block_logs, BlockLogs};
 use host_listener::database::tfhe_event_propagate::Database;
 use serial_test::serial;
 use sqlx::PgPool;
+use test_harness::db_utils::revert_coprocessor_db_state_sql;
 use test_harness::instance::DBInstance;
 use tokio::time::{timeout, Duration};
 
@@ -159,6 +160,175 @@ async fn unchanged_replay(
 ) -> anyhow::Result<()> {
     ingest(db, &block(), partial_logs(), true).await?;
     assert!(!is_halted(pool).await?, "an identical replay is harmless");
+    Ok(())
+}
+
+async fn rollback_preserves_committed_inventory(
+    manifest: bool,
+    published: bool,
+    automatic: bool,
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = partial_block().await?;
+    sqlx::query("INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (42, 'test', '0xACL')")
+        .execute(&pool).await?;
+    if manifest {
+        seal_block(&pool, published).await?;
+    } else {
+        hash_block(&pool, published).await?;
+    }
+    let commitments_before: serde_json::Value = sqlx::query_scalar(
+        "SELECT jsonb_build_object(
+            'hashes', (SELECT jsonb_agg(to_jsonb(h)) FROM state_hash h),
+            'manifests', (SELECT jsonb_agg(to_jsonb(m)) FROM block_manifest_state m),
+            'producers', (SELECT jsonb_agg(to_jsonb(p)) FROM handle_producer_block p))",
+    )
+    .fetch_one(&pool)
+    .await?;
+    let metadata_before: Vec<serde_json::Value> = sqlx::query_scalar(
+        "SELECT to_jsonb(c) - ARRAY['is_completed', 'is_error', 'error_message', 'error_retry_count']
+         FROM computations c ORDER BY output_handle",
+    )
+    .fetch_all(&pool)
+    .await?;
+    // Cover both a retired chain and a chain already removed by cleanup.
+    if published {
+        sqlx::query("DELETE FROM dependence_chain")
+            .execute(&pool)
+            .await?;
+    } else {
+        sqlx::query("UPDATE dependence_chain SET status = 'processed'")
+            .execute(&pool)
+            .await?;
+    }
+    sqlx::query("UPDATE computations SET is_error = TRUE, error_message = 'previous execution', error_retry_count = 3 WHERE is_allowed")
+        .execute(&pool).await?;
+
+    if automatic {
+        fhevm_engine_common::drift_revert::execute_revert(&pool, 42, 100)
+            .await?;
+    } else {
+        sqlx::raw_sql(&revert_coprocessor_db_state_sql(42, 99))
+            .execute(&pool)
+            .await?;
+    }
+    assert_eq!(
+        computation_flags(&pool, computed_handle(1)).await?,
+        (true, false),
+        "the allowed producer keeps its metadata but must run again"
+    );
+    assert_eq!(
+        computation_flags(&pool, computed_handle(2)).await?,
+        (false, true),
+        "rollback must not invent a missing permission"
+    );
+    let remaining: (i64, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT COUNT(*) FROM ciphertexts),
+                (SELECT COUNT(*) FROM computations WHERE is_error OR error_message IS NOT NULL OR error_retry_count <> 0),
+                (SELECT COUNT(*) FROM host_chain_blocks_valid)",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(remaining, (0, 0, 0));
+
+    finalized_replay(&mut db, partial_logs()).await?;
+    assert!(!is_halted(&pool).await?);
+    let metadata_after: Vec<serde_json::Value> = sqlx::query_scalar(
+        "SELECT to_jsonb(c) - ARRAY['is_completed', 'is_error', 'error_message', 'error_retry_count']
+         FROM computations c ORDER BY output_handle",
+    )
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(metadata_after, metadata_before);
+    let reachable: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM computations c JOIN dependence_chain d
+            ON d.dependence_chain_id = c.dependence_chain_id
+            WHERE c.output_handle = $1 AND d.status = 'updated')",
+    )
+    .bind(computed_handle(1).to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert!(
+        reachable,
+        "replay must re-arm the retained producer's chain"
+    );
+    let commitments_after: serde_json::Value = sqlx::query_scalar(
+        "SELECT jsonb_build_object(
+            'hashes', (SELECT jsonb_agg(to_jsonb(h)) FROM state_hash h),
+            'manifests', (SELECT jsonb_agg(to_jsonb(m)) FROM block_manifest_state m),
+            'producers', (SELECT jsonb_agg(to_jsonb(p)) FROM handle_producer_block p))",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(commitments_after, commitments_before);
+
+    // Recovery is not an exemption from the inventory guard. A genuinely new
+    // permission must still be rejected against the retained original metadata.
+    let error = repair(&mut db, false).await.unwrap_err();
+    assert!(error.to_string().contains("inventory already committed"));
+    assert_contained(&pool).await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn rollback_replays_a_hashed_block() -> anyhow::Result<()> {
+    rollback_preserves_committed_inventory(false, false, false).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn automatic_rollback_replays_an_uploaded_hash() -> anyhow::Result<()> {
+    rollback_preserves_committed_inventory(false, true, true).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn rollback_replays_a_sealed_manifest() -> anyhow::Result<()> {
+    rollback_preserves_committed_inventory(true, false, false).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn automatic_rollback_replays_a_published_manifest() -> anyhow::Result<()>
+{
+    rollback_preserves_committed_inventory(true, true, true).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn rollback_keeps_a_retained_computation_complete_when_its_ciphertext_is_shared(
+) -> anyhow::Result<()> {
+    let (_db, pool, _instance) = partial_block().await?;
+    sqlx::query("INSERT INTO host_chains (chain_id, name, acl_contract_address) VALUES (42, 'test', '0xACL')")
+        .execute(&pool).await?;
+    hash_block(&pool, false).await?;
+    // A pre-boundary computation still needs these bytes. Rollback must keep
+    // both its ciphertext and the completion of the committed later producer.
+    sqlx::query("INSERT INTO computations
+        (output_handle, dependencies, fhe_operation, is_scalar, transaction_id,
+         host_chain_id, dependence_chain_id, block_number, is_allowed, is_completed)
+        SELECT output_handle, dependencies, fhe_operation, is_scalar, $2,
+               host_chain_id, dependence_chain_id, 99, is_allowed, is_completed
+        FROM computations WHERE output_handle = $1")
+        .bind(computed_handle(1).to_vec())
+        .bind(computed_handle(0xe0).to_vec())
+        .execute(&pool).await?;
+    sqlx::raw_sql(&revert_coprocessor_db_state_sql(42, 99))
+        .execute(&pool)
+        .await?;
+    let (rows, completed): (i64, bool) = sqlx::query_as(
+        "SELECT COUNT(*), BOOL_AND(is_completed) FROM computations WHERE output_handle = $1",
+    )
+    .bind(computed_handle(1).to_vec())
+    .fetch_one(&pool).await?;
+    assert_eq!((rows, completed), (2, true));
+    let ciphertext: Vec<u8> = sqlx::query_scalar(
+        "SELECT ciphertext FROM ciphertexts WHERE handle = $1",
+    )
+    .bind(computed_handle(1).to_vec())
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(ciphertext, vec![0xaa, 0xbb]);
     Ok(())
 }
 

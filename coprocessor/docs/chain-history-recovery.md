@@ -148,6 +148,17 @@ Refreshing an unpublished digest retains its previous descriptor count as
 evidence of sealing. Older rows whose seal was cleared are also protected when
 a published descendant includes them in its history.
 
+An ordinary database rollback preserves computation admission metadata for
+blocks referenced by upgrade hashes or manifest state, including their original
+eligibility. It clears execution results and resets the retained computations
+for replay; the listener then re-arms their dependency chains. Identical replay
+can therefore restore ciphertexts without adding inventory underneath existing
+commitments. Uncommitted computation rows are deleted as before. This applies
+to both the manual rollback script and automatic drift rollback. Hashes, seals,
+signed manifests and producer history are retained. This is not permission to
+rewrite published commitments: a genuinely new computation or eligibility
+change still triggers containment and requires the audited recovery below.
+
 Hash creation, manifest preparation/sealing and ingestion share the per-stack,
 per-host-chain history fence. Manifest selection skips a busy history fence.
 Preparation commits its seals and range commitments before upload, releasing

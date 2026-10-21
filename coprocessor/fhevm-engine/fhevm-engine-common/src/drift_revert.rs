@@ -551,9 +551,9 @@ enum HostHistoryPreflightError {
 ///
 /// `to_block = offending_host_block_number - 1` — we subtract 1 because the
 /// script reverts everything strictly greater than `to_block`, and we want the
-/// offending block itself gone. If ciphertexts from earlier blocks also
-/// drifted (due to out-of-order processing), the drift detector will catch
-/// them eventually in subsequent rounds.
+/// offending block's results cleared (committed admission metadata is retained).
+/// If ciphertexts from earlier blocks also drifted (due to out-of-order
+/// processing), the drift detector will catch them in subsequent rounds.
 ///
 /// Refuses to revert when `offending <= 1`: the SQL script rejects
 /// `to_block <= 0`, and clamping to `to_block = 1` would silently leave
