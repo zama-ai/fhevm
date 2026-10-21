@@ -112,8 +112,7 @@ contract ProtocolConfig is IProtocolConfig, UUPSUpgradeableEmptyProxy, ACLOwnabl
         /// @notice MPC threshold per context.
         /// @dev The SDK derives the MPC threshold from the MPC nodes it knows about instead of reading this value.
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
-        /// @dev Deprecated. Liveness reads `contextState`, so nothing reads or writes this mapping.
-        ///      It stays to keep the storage layout.
+        /// @dev Deprecated.
         mapping(uint256 contextId => bool) destroyedContexts;
         /// @notice The most recently activated KMS context ID, the one reads resolve against.
         ///         Several contexts may remain in the `Active` state at once (prior contexts are not
