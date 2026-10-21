@@ -2812,6 +2812,7 @@ dependencies = [
  "fhevm_gateway_bindings",
  "futures",
  "hex",
+ "host-listener",
  "humantime",
  "prometheus",
  "reqwest 0.12.23",
@@ -4448,7 +4449,9 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-s3",
  "aws-smithy-mocks",
+ "axum 0.7.9",
  "bigdecimal",
+ "broker",
  "clap",
  "consumer",
  "fhevm-engine-common",
@@ -4465,9 +4468,11 @@ dependencies = [
  "sha3 0.10.8",
  "sqlx",
  "test-harness",
+ "testcontainers",
  "tfhe",
  "time",
  "tokio",
+ "tokio-tungstenite",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
@@ -8359,9 +8364,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.8.1"
+version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d60dcde24115624e62a9a8dc627daa8d3dad40e8de69975957d12ee9ab70a2b"
+checksum = "f7c68a185ef0d2287eeb9ae3123e6d0f927dc3a33cc9ff393e59987104dcb816"
 dependencies = [
  "aligned-vec",
  "bincode",
