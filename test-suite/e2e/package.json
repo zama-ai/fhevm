@@ -24,7 +24,8 @@
     "solidity-coverage": "^0.8.17",
     "ts-node": "^10.9.2",
     "typechain": "^8.3.2",
-    "typescript": "^6.0.0"
+    "typescript": "^6.0.0",
+    "@types/pg": "^8.15.5"
   },
   "scripts": {
     "codegen": "../../library-solidity/codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
@@ -40,6 +41,7 @@
     "@safe-global/safe-contracts": "1.4.1-2",
     "bigint-buffer": "^1.1.5",
     "dotenv": "^16.0.3",
-    "ethers": "^6.15.0"
+    "ethers": "^6.15.0",
+    "pg": "^8.16.3"
   }
 }

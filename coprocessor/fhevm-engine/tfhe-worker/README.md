@@ -46,11 +46,11 @@ cargo test
 
 ### Artifact ingestion recovery regression
 
-From `coprocessor/fhevm-engine`, run the CPU-only end-to-end regression with:
+From `coprocessor/fhevm-engine`, run the CPU-only component integration regressions with:
 
 ```sh
 SQLX_OFFLINE=true cargo test --locked -p tfhe-worker \
-  --test artifact_ingestion_e2e --profile coverage -- --test-threads=1
+  --test artifact_ingestion_integration --profile coverage -- --test-threads=1
 ```
 
 This requires Anvil on `PATH` and Docker for an isolated PostgreSQL database.
@@ -72,6 +72,7 @@ tests run in the worker's CPU CI job, which installs Anvil.
 The fault injection is at the block-log delivery boundary; these tests do not
 exercise WebSocket reconnect/cursor persistence, Gateway commits, or KMS
 decryption. Existing listener transport tests cover catch-up separately.
+For the deployed pipeline, use the [full-environment recovery test](../../../test-suite/e2e/test/ingestionRecovery/README.md).
 The fixed release branch should pass; disabling
 `Database::upgrade_allowed_computations` reproduces the original failure at
 the assertion that replay promotes the existing producer.
