@@ -4,15 +4,19 @@ pragma solidity ^0.8.27;
 import {aclAdd, hcuLimitAdd, inputVerifierAdd} from "../host-contracts/addresses/FHEVMHostAddresses.sol";
 import {FHEVMExecutor, IInputVerifier, HCULimit} from "../host-contracts/contracts/FHEVMExecutor.sol";
 import {FheType} from "../host-contracts/contracts/shared/FheType.sol";
+import {PaddedInputter} from "../host-contracts/contracts/PaddedInputter.sol";
 import {CleartextACL} from "./CleartextACL.sol";
 import {CleartextArithmetic} from "./CleartextArithmetic.sol";
+import {CleartextPad} from "./CleartextPad.sol";
 import {FheTypeBitWidth} from "./FheTypeBitWidth.sol";
 
 //import {InputProofHelper} from "../InputProofHelper.sol";
 
 /// @notice FHEVMExecutor variant that mirrors every operation result into a `plaintexts` mapping.
 /// @dev Each override calls `super` (symbolic handle flow) then stores the cleartext.
-contract CleartextFHEVMExecutor is FHEVMExecutor {
+///      `fromExternal` packages starting with `0x00` follow the RFC-030 pad-based flow (`PaddedInputter`);
+///      the input is unmasked on-chain with the cleartext PRF stand-in (`CleartextPad`).
+contract CleartextFHEVMExecutor is FHEVMExecutor, PaddedInputter {
     /// @notice CleartextACL.
     CleartextACL private constant acl = CleartextACL(aclAdd);
     HCULimit private constant hcuLimit = HCULimit(hcuLimitAdd);
@@ -86,14 +90,19 @@ contract CleartextFHEVMExecutor is FHEVMExecutor {
     }
 
     /// @notice Verifies input and extracts cleartext from the proof's extra-data suffix.
-    function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inputProof, FheType inputType)
+    /// @dev A package starting with `0x00` is an RFC-030 input package, routed to `PaddedInputter`.
+    function verifyInput(bytes32 inputHandle, address userAddress, bytes memory inputData, FheType inputType)
         public
         override
         returns (bytes32 result)
     {
-        (bool foundCleartext, uint256 cleartext) = _tryReadCleartextFromProof(inputHandle, inputProof);
-        // result = super.verifyInput(inputHandle, userAddress, inputProof, inputType);
-        // (bool foundCleartext, uint256 cleartext) = _tryReadCleartextFromProof(inputHandle, inputProof);
+        if (_isPaddedPackage(inputData)) {
+            return _verifyPaddedInputWithCleartext(inputHandle, userAddress, inputData, inputType);
+        }
+
+        (bool foundCleartext, uint256 cleartext) = _tryReadCleartextFromProof(inputHandle, inputData);
+        // result = super.verifyInput(inputHandle, userAddress, inputData, inputType);
+        // (bool foundCleartext, uint256 cleartext) = _tryReadCleartextFromProof(inputHandle, inputData);
         // if (foundCleartext) {
         //     plaintexts[result] = CleartextArithmetic.normalizePlaintextToType(cleartext, uint8(inputType));
         // }
@@ -101,7 +110,7 @@ contract CleartextFHEVMExecutor is FHEVMExecutor {
             ContextUserInputs({userAddress: userAddress, contractAddress: msg.sender});
         FheType typeCt = _typeOf(inputHandle);
         if (inputType != typeCt) revert InvalidType();
-        result = inputVerifier.verifyInput(contextUserInputs, inputHandle, inputProof);
+        result = inputVerifier.verifyInput(contextUserInputs, inputHandle, inputData);
         //acl.allowTransient(result, msg.sender);
         if (foundCleartext) {
             acl.allowTransientWithCleartext(
@@ -110,7 +119,54 @@ contract CleartextFHEVMExecutor is FHEVMExecutor {
         } else {
             acl.allowTransient(result, msg.sender);
         }
-        emit VerifyInput(msg.sender, inputHandle, userAddress, inputProof, inputType, result);
+        emit VerifyInput(msg.sender, inputHandle, userAddress, inputData, inputType, result);
+    }
+
+    /// @dev RFC-030 `fromExternal`: verify through `PaddedInputter`, mark the compute handle minted (it is
+    ///      derived in this transaction), then grant the transient allowance with the unmasked cleartext.
+    function _verifyPaddedInputWithCleartext(
+        bytes32 externalHandle,
+        address claimedSubmitter,
+        bytes memory inputPackage,
+        FheType inputType
+    ) private returns (bytes32 computeHandle) {
+        if (inputType != _typeOf(externalHandle)) revert InvalidType();
+
+        PaddedPackage memory pkg;
+        uint8 inputIndex;
+        (computeHandle, pkg, inputIndex) = _verifyPaddedInput(externalHandle, claimedSubmitter, msg.sender, inputPackage);
+
+        _markMinted(computeHandle);
+        acl.allowTransientWithCleartext(
+            computeHandle, msg.sender, _unmaskPaddedPart(inputPackage, pkg, inputIndex, inputType)
+        );
+    }
+
+    /// @dev Cleartext unmasking of part `inputIndex`: m = c ⊕ r over the part's bytes, least significant byte
+    ///      first, with the padding bits cleared (as the coprocessor does) before normalizing to the type.
+    function _unmaskPaddedPart(bytes memory inputPackage, PaddedPackage memory pkg, uint8 inputIndex, FheType inputType)
+        private
+        pure
+        returns (uint256 value)
+    {
+        (uint256 byteOffset, uint256 byteLength) = _paddedPartRange(inputPackage, pkg, inputIndex);
+        for (uint256 k = 0; k < byteLength; ++k) {
+            uint8 c = uint8(inputPackage[pkg.ciphertextOffset + byteOffset + k]);
+            uint8 r = CleartextPad.padByte(pkg.prf, pkg.label, byteOffset + k);
+            value |= uint256(c ^ r) << (8 * k);
+        }
+        value = CleartextArithmetic.clamp(value, FheTypeBitWidth.bitWidthForType(uint8(inputType)));
+        value = CleartextArithmetic.normalizePlaintextToType(value, inputType);
+    }
+
+    /// @dev Cleartext mode has no `PaddedInputter` registry: every PRF instance is accepted, as in
+    ///      `CleartextInputVerifier.getPadShares`.
+    function _isSupportedPadPrf(uint16) internal pure override returns (bool) {
+        return true;
+    }
+
+    function _padAclAddress() internal pure override returns (address) {
+        return aclAdd;
     }
 
     function _generateRand(FheType randType, bytes16 seed) internal override returns (bytes32 result) {

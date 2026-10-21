@@ -9,6 +9,7 @@ import {IProtocolConfigBase} from "../host-contracts/contracts/interfaces/IProto
 import {EXTRA_DATA_V2} from "../host-contracts/contracts/shared/Constants.sol";
 import {aclAdd, kmsVerifierAdd, protocolConfigAdd} from "../host-contracts/addresses/FHEVMHostAddresses.sol";
 import {CleartextACL} from "./CleartextACL.sol";
+import {CleartextPad} from "./CleartextPad.sol";
 
 // -----------------------------------------------------------------------------------------
 // RFC-030 (pad-based input encryption) — pad decryption request/response types.
@@ -67,14 +68,11 @@ contract CleartextInputVerifier is InputVerifier {
     /// @notice Domain tag of the label preimage.
     bytes8 private constant PAD_LABEL_DOMAIN_SEPARATOR = "FHE_padl";
 
-    /// @notice Domain tag of the cleartext PRF (stand-in for `PRF_{FHE(k)}`, cleartext mode only).
-    bytes8 private constant CLEARTEXT_PAD_DOMAIN_SEPARATOR = "FHE_cpad";
-
     /// @notice Domain tag of the cleartext session id (stand-in for the MPC session, cleartext mode only).
     bytes8 private constant CLEARTEXT_SESSION_DOMAIN_SEPARATOR = "FHE_csid";
 
     /// @notice Bits per block of the cleartext PRF (one keccak256 output).
-    uint256 public constant CLEARTEXT_PAD_BLOCK_BITS = 256;
+    uint256 public constant CLEARTEXT_PAD_BLOCK_BITS = CleartextPad.BLOCK_BITS;
 
     /// @notice The only witness format currently defined.
     uint8 public constant PAD_WITNESS_VERSION = 0x00;
@@ -150,7 +148,7 @@ contract CleartextInputVerifier is InputVerifier {
      *      returns each requested pad keyed by label. All-or-nothing: any failing witness reverts.
      *
      *      Deviations from the real KMS, all inherent to cleartext mode:
-     *      - The pad comes from a keccak-based stand-in PRF (see `_cleartextPad`), not from
+     *      - The pad comes from a keccak-based stand-in PRF (see `CleartextPad`), not from
      *        `PRF_{FHE(k)}(label)`. It is deterministic in `(prf, label)` only, as RFC-030 requires.
      *      - Every PRF instance id is accepted (there is no `PaddedInputter` registry yet); `prf`
      *        is still bound into both the label and the cleartext pad.
@@ -212,7 +210,7 @@ contract CleartextInputVerifier is InputVerifier {
             padShares[i] = PadShare({
                 label: w.label,
                 sessionId: bytes16(keccak256(abi.encodePacked(CLEARTEXT_SESSION_DOMAIN_SEPARATOR, payload.prf, w.label))),
-                share: _xorMask(_cleartextPad(payload.prf, w.label, w.padLength), mask)
+                share: _xorMask(CleartextPad.padBlocks(payload.prf, w.label, w.padLength), mask)
             });
         }
 
@@ -374,22 +372,6 @@ contract CleartextInputVerifier is InputVerifier {
             if (acl.isDelegatedForUserDecryption(w.decryptors[i], user, w.consumer)) return;
         }
         revert PadUserNotAuthorized(w.label, user);
-    }
-
-    /// @dev Cleartext stand-in for `PRF_{FHE(k)}(label)` in counter mode: block `i` is
-    ///      keccak256("FHE_cpad" ‖ prf ‖ label ‖ uint32(i)) (256 bits); the stream is the blocks'
-    ///      bytes concatenated, and stream bit `j` is bit `j % 8` (least significant first) of
-    ///      byte `j / 8`. Returns the ⌈padLength/256⌉ whole blocks covering `padLength` bits; the
-    ///      client keeps the first `padLength` bits.
-    function _cleartextPad(uint16 prf, bytes32 label, uint16 padLength) private pure returns (bytes memory pad) {
-        uint256 numBlocks = (uint256(padLength) + CLEARTEXT_PAD_BLOCK_BITS - 1) / CLEARTEXT_PAD_BLOCK_BITS;
-        pad = new bytes(numBlocks * 32);
-        for (uint256 i = 0; i < numBlocks; ++i) {
-            bytes32 blockBits = keccak256(abi.encodePacked(CLEARTEXT_PAD_DOMAIN_SEPARATOR, prf, label, uint32(i)));
-            assembly {
-                mstore(add(add(pad, 32), mul(i, 32)), blockBits)
-            }
-        }
     }
 
     /// @dev First 32 bytes of the user's public key, the mock encryption mask.
