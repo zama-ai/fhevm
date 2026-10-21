@@ -123,12 +123,13 @@ impl ProxyHttp for Proxy {
         Ok(())
     }
 
-    // Check the target, route, signature and absence of a body before any endpoint connection.
+    // Check the target, route, absence of a body and signature before any endpoint connection.
     async fn request_filter(
         &self,
         session: &mut Session,
         ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
+        let body_empty = session.is_body_empty();
         let req = session.req_header();
 
         // Pingora forwards the raw target, but its URI renders an absolute-form or non-UTF-8 target
@@ -156,6 +157,13 @@ impl ProxyHttp for Proxy {
             }
         };
         ctx.route = Some(route);
+
+        // Before the signature, so a body never wakes a read of the KMS tx-senders.
+        if !body_empty {
+            let error = ErrorResponse::new(ErrorCode::Malformed, BODY_NOT_ALLOWED);
+            self.respond_with_error(session, error, None).await?;
+            return Ok(true);
+        }
 
         let authorization = req.headers.get(AUTHORIZATION).map(HeaderValue::as_bytes);
         let verified = match self.verifier.verify_header(authorization, target) {
@@ -189,12 +197,6 @@ impl ProxyHttp for Proxy {
             }
         };
         ctx.sender = Some(sender);
-
-        if !session.is_body_empty() {
-            let error = ErrorResponse::new(ErrorCode::Malformed, BODY_NOT_ALLOWED);
-            self.respond_with_error(session, error, None).await?;
-            return Ok(true);
-        }
 
         if KECCAK256_EMPTY != body_digest {
             self.respond_with_error(session, auth_error_response(&AuthError::BodyMismatch), None)

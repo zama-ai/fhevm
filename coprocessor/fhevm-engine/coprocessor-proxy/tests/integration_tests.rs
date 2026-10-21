@@ -311,15 +311,26 @@ async fn test_rejects_request_bodies() {
             );
         }
     }
+
+    // A body is refused before the signature is checked: an unknown signer does not wait for a
+    // read of the KMS tx-senders.
+    let stranger = auth_header(&PrivateKeySigner::random(), &path, b"").await;
+    let request = format!(
+        "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {stranger}\r\n\
+         Connection: close\r\nContent-Length: 1\r\n\r\nx"
+    );
+    let started = Instant::now();
+    assert_eq!(
+        send_raw(&t, request.as_bytes()).await,
+        StatusCode::BAD_REQUEST
+    );
+    assert!(started.elapsed() < UNKNOWN_SIGNER_WAIT / 3, "{:?}", started.elapsed());
     assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 }
 
 #[tokio::test]
 async fn test_rejects_incomplete_bodies_before_forwarding() {
-    let t = TestProxy::start_with_config(vec![StubEndpoint::start().await], |config| {
-        config.request_read_timeout = Duration::from_millis(500);
-    })
-    .await;
+    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
     let path = prf_path(1);
     let addr = t.addr;
     let auth = auth_header(&sender(), &path, b"").await;
