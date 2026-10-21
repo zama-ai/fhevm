@@ -1,6 +1,8 @@
 //! Tracks the tx-senders of Active KMS contexts at the latest finalized `ProtocolConfig` block.
 //! Active contexts can serve decryptions; Created and Pending contexts cannot. Both node sets
 //! remain accepted during a switch, until the outgoing context is destroyed.
+//! `isKmsTxSenderForContext` also accepts Created contexts because their nodes confirm resharing
+//! on chain; a request to a coprocessor only serves a decryption, so they have none to make.
 //!
 //! Failed or non-advancing polls retain the last set. An unknown signer can wake a coalesced,
 //! rate-limited poll, but a lagging RPC may still miss its activation: callers must retry.
