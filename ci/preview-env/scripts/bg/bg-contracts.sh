@@ -64,7 +64,8 @@ contract_info() { # <dir> <Contract>
     *) return 1 ;;
   esac
 }
-contracts_of() { case "$1" in host-contracts) echo "ACL FHEVMExecutor HCULimit InputVerifier KMSGeneration KMSVerifier ProtocolConfig" ;; gateway-contracts) echo "CiphertextCommits Decryption GatewayConfig InputVerification" ;; esac; }
+# HCULimit before ACL: ACL.reinitializeV7 refuses to run until HCULimit is upgraded (host-contracts/upgrade-manifest.json).
+contracts_of() { case "$1" in host-contracts) echo "HCULimit ACL FHEVMExecutor InputVerifier KMSGeneration KMSVerifier ProtocolConfig" ;; gateway-contracts) echo "CiphertextCommits Decryption GatewayConfig InputVerification" ;; esac; }
 
 releases=()
 for rel in host-contracts host-contracts-polygon gateway-contracts; do

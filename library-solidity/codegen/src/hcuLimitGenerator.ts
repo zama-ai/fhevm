@@ -464,7 +464,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     function setCrossTxDepthLimit(uint48 maxDepth, uint48 decayPerBlock) external onlyACLOwner {
         if ((maxDepth == 0) != (decayPerBlock == 0)) revert InvalidCrossTxDepthLimit();
         HCULimitStorage storage $ = _getHCULimitStorage();
-        if (maxDepth != 0 && maxDepth < $.maxHCUDepthPerTx) revert CrossTxDepthBelowMaxDepthPerTx();
+        if (maxDepth != 0) {
+            if (maxDepth < $.maxHCUDepthPerTx) revert CrossTxDepthBelowMaxDepthPerTx();
+            // Every operation on a stored handle reads ACL.getStoredDepth: refuse to enable before ACL has it.
+            ACL(aclAdd).getStoredDepth(bytes32(0), address(0));
+        }
         $.maxCrossTxDepth = maxDepth;
         $.crossTxDepthDecayPerBlock = decayPerBlock;
         emit CrossTxDepthLimitSet(maxDepth, decayPerBlock);

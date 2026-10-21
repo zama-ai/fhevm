@@ -240,6 +240,16 @@ contract CrossTxDepthTest is HostContractsDeployerTestUtils {
         vm.stopPrank();
     }
 
+    function test_LimitCannotBeEnabledBeforeACLIsUpgraded() public {
+        // An ACL without getStoredDepth, like ACL before this upgrade.
+        vm.mockCallRevert(aclAdd, abi.encodeWithSelector(ACL.getStoredDepth.selector), "");
+        vm.startPrank(owner);
+        vm.expectRevert();
+        hcu.setCrossTxDepthLimit(20_000_000, 10_000_000);
+        hcu.setCrossTxDepthLimit(0, 0);
+        vm.stopPrank();
+    }
+
     /// @dev Enables the limit without bound, starts `user`'s chain and returns its starting depth and the depth one addition adds.
     function _startAndMeasure(DepthUser user) internal returns (uint48 start, uint48 step) {
         _setLimit(type(uint48).max, 1);
