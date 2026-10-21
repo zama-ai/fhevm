@@ -11,8 +11,10 @@
 set -euo pipefail
 
 : "${NAMESPACE:?}" "${NB_COPROCESSOR:?}" "${E2E_IMAGE:?}" "${HOST_CHAIN_ID:?}"
-# Long enough to cover a rolling restart: each old pod drains for up to its grace period.
-load_seconds=600
+# Every party's proxy restarts at once and must finish within restart_seconds; each old pod
+# drains for up to its grace period. The load outlasts that budget and the 5 s wait for its start.
+restart_seconds=600
+load_seconds=$((restart_seconds + 60))
 pod=coprocessor-proxy-check
 deployments=()
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
@@ -97,9 +99,14 @@ done
 kubectl logs "${pod}" -n "${NAMESPACE}" | grep '^networkpolicy:'
 
 restart_started=$(date -u +%s)
+restart_deadline=$((SECONDS + restart_seconds))
 for deploy in "${deployments[@]}"; do
   kubectl rollout restart "deploy/${deploy}" -n "${NAMESPACE}"
-  kubectl rollout status "deploy/${deploy}" -n "${NAMESPACE}" --timeout=600s
+done
+for deploy in "${deployments[@]}"; do
+  # A zero timeout would wait forever.
+  remaining=$((restart_deadline - SECONDS))
+  kubectl rollout status "deploy/${deploy}" -n "${NAMESPACE}" --timeout="$((remaining > 0 ? remaining : 1))s"
 done
 # The load must still be running, or it did not cover the whole restart.
 if [[ "$(phase)" != "Running" ]]; then
