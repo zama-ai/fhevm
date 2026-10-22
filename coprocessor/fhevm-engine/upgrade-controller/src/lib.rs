@@ -1646,6 +1646,30 @@ async fn delete_bcs_gw_leftovers(tx: &mut Transaction<'_, Postgres>) -> Result<(
             .await?;
     }
 
+    // Also clear in-window `ciphertext_digest` rows for input handles. An input that is
+    // allowed (ACL `Allowed` / `AllowedForDecryption`) gets a pbs_computation, so the
+    // sns-worker produces its ct128 + digest — but an input has no `computations` row, so
+    // the host-window delete in `delete_bcs_chain_leftovers` (which joins through
+    // `computations`) never reaches it. Green re-verifies and re-randomizes inputs, so
+    // blue's digest goes stale; left here it is write-once, and a lagging operator's
+    // post-cutover re-digest loops forever on "computed ciphertext digest mismatch".
+    // Dropping it lets the merge (or the post-cutover re-digest) lay down green's value.
+    // Reached through `input_handles`, so it must run before that table is cleared below.
+    let deleted_input_digests = sqlx::query(
+        "DELETE FROM public.ciphertext_digest d
+           USING public.input_handles ih
+          WHERE d.handle = ih.handle AND ih.block_number >= $1",
+    )
+    .bind(gw_start_block)
+    .execute(&mut **tx)
+    .await?
+    .rows_affected();
+    info!(
+        gw_start_block,
+        rows_deleted = deleted_input_digests,
+        "delete_bcs_gw_leftovers: deleted BCS-leftover input ciphertext_digest rows"
+    );
+
     // Clear the whole gw window last: the ciphertext deletes above reach their rows
     // through this table, and the merge restores every handle green reproduced.
     let deleted_input_handles = sqlx::query!(
