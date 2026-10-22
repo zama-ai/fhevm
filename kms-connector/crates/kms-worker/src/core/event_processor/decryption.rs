@@ -870,7 +870,9 @@ mod tests {
     /// of being retried as a chain the ACL map lacks.
     #[tokio::test]
     async fn an_evm_request_naming_a_solana_handle_is_refused_once() {
-        let processor = setup_test_processor(Asserter::new(), rand_handle());
+        let asserter = Asserter::new();
+        let evm_handle = rand_handle();
+        let processor = setup_test_processor(asserter.clone(), evm_handle);
         let handle = rand_solana_handle();
         let user_signer = PrivateKeySigner::random();
         let user_address = user_signer.address();
@@ -879,6 +881,7 @@ mod tests {
                 ctHandle: handle,
                 contractAddress: rand_address(),
             }],
+            contractsInfo: contracts_info_for(evm_handle),
             ..Default::default()
         }
         .abi_encode();
@@ -896,13 +899,16 @@ mod tests {
             processor
                 .check_ciphertexts_allowed_for_public_decryption(&[handle])
                 .await,
-            processor
-                .check_ciphertexts_allowed_for_user_decryption(
-                    user_calldata,
-                    &[handle],
-                    user_address,
-                )
-                .await,
+            {
+                asserter.push_success(&U256::ZERO.abi_encode()); // invalidation check: not invalidated
+                processor
+                    .check_ciphertexts_allowed_for_user_decryption(
+                        user_calldata,
+                        &[handle],
+                        user_address,
+                    )
+                    .await
+            },
             processor
                 .check_user_decryption_request_v2(&v2_request)
                 .await,
