@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT status as \"status: CatchupStatus\", consumer_id\n            FROM catchup_requests\n            WHERE catchup_id = $1\n            ",
+  "query": "\n            SELECT status as \"status: CatchupStatus\"\n            FROM catchup_requests\n            WHERE chain_id = $1 AND catchup_id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -19,22 +19,17 @@
             }
           }
         }
-      },
-      {
-        "ordinal": 1,
-        "name": "consumer_id",
-        "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
+        "Int8",
         "Uuid"
       ]
     },
     "nullable": [
-      false,
       false
     ]
   },
-  "hash": "6fedff3ab5f9c6560979122cbf346e6d4ef311f5c0ffe50057d96004b1afd1aa"
+  "hash": "1f7376f596be426df624c9e71c5c5fc0c849d31d868b0bec543b494b74c8e1e7"
 }

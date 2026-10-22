@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE catchup_requests\n               SET fanned_out_at = NOW()\n             WHERE chain_id = $1 AND catchup_id = $2 AND fanned_out_at IS NULL\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "38cdba2c6bb3d2781cd6136474f3755ffc1e9be04ff916080bb685fdd8d5baad"
+}
