@@ -21,7 +21,4 @@ coprocessorProxy:
   tls:
     secretName: coprocessor-proxy-tls
   coprocessorSignerAddress: "0x00000000000000000000000000000000000000a1"
-  endpointAddresses: ["prf-service-a:8080", "prf-service-b:8080"]
-  endpointNetworkPolicy:
-    podSelector:
-      app: prf-service
+  endpointAddresses: ["prf-service-a:8090", "prf-service-b:8090"]

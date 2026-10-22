@@ -501,8 +501,8 @@ new pod may be Ready before its log shows its first read of the KMS tx-senders. 
 also reports whether a test-suite pod reaches the fake's PRF port, that is, whether
 the cluster enforces NetworkPolicy; that result does not fail the run.
 
-When prf-service deploys here, the fake release, its `extraIngress` rule and the
-count URLs go; the endpoint and podSelector point at prf-service.
+When prf-service deploys here, the fake release, the NetworkPolicy overrides and the count
+URLs go, and the endpoint points at prf-service.
 
 ## Multichain: second Polygon host chain (`deploy_polygon`)
 

@@ -14,6 +14,9 @@ coprocessorProxy:
   tls:
     secretName: coprocessor-proxy-tls
   endpointNetworkPolicy:
+    # The fake serves the PRF route and /healthz on 8080.
+    ports:
+      - {port: 8080, protocol: TCP}
     # The e2e suite reads the fake's request count; it reaches nothing else of the fake.
     extraIngress:
       - from:
